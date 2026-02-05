@@ -61,13 +61,7 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
 
   private def isEnabled: Boolean = rapidsConf.isSpeculativeBroadcastEnabled
 
-  private def broadcastThreshold: Long = {
-    val configuredThreshold = rapidsConf.get(RapidsConf.SPECULATIVE_BROADCAST_THRESHOLD)
-    val autoThreshold = spark.sessionState.conf.autoBroadcastJoinThreshold
-    configuredThreshold.getOrElse {
-      if (autoThreshold > 0) autoThreshold else 10L * 1024 * 1024 // 10MB default
-    }
-  }
+  private def targetThreshold: Long = rapidsConf.speculativeBroadcastTargetThreshold
 
   override def apply(plan: SparkPlan): SparkPlan = {
     // Check if plan contains SpeculativeBroadcastHashJoinExec
@@ -181,10 +175,10 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
           }
         }
 
-        if (buildSize < broadcastThreshold) {
+        if (buildSize < targetThreshold) {
           // Small enough - use broadcast join (no stream side shuffle!)
           logWarning(s"SpeculativeBroadcastRule: Build side small ($buildSize bytes < " +
-            s"$broadcastThreshold), using BroadcastHashJoin - stream side avoids shuffle!")
+            s"$targetThreshold), using BroadcastHashJoin - stream side avoids shuffle!")
 
           // Remap build keys to buildStage.output attributes for HashedRelationBroadcastMode
           val originalBuildKeys = specJoin.buildSide match {
@@ -255,7 +249,7 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
         } else {
           // Too large - fall back to shuffled hash join (need stream side shuffle)
           logWarning(s"SpeculativeBroadcastRule: Build side too large ($buildSize bytes >= " +
-            s"$broadcastThreshold), falling back to ShuffledHashJoin")
+            s"$targetThreshold), falling back to ShuffledHashJoin")
 
           // Stream keys don't need remapping for shuffle partitioning (uses original refs)
           val streamKeys = specJoin.buildSide match {

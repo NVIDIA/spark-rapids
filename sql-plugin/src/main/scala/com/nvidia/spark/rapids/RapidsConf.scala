@@ -1133,13 +1133,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
-  val SPECULATIVE_BROADCAST_THRESHOLD =
-    conf("spark.rapids.sql.speculativeBroadcast.threshold")
-    .doc("Size threshold in bytes for speculative broadcast. If the actual shuffled size " +
-      "of the build side is below this threshold, the data will be broadcast instead of " +
-      "proceeding with shuffle join. Defaults to spark.sql.autoBroadcastJoinThreshold.")
+  val SPECULATIVE_BROADCAST_TARGET_THRESHOLD =
+    conf("spark.rapids.sql.speculativeBroadcast.targetThreshold")
+    .doc("Target size threshold in bytes for speculative broadcast. If the actual shuffled " +
+      "size of the build side is below this threshold, the data will be broadcast instead " +
+      "of proceeding with shuffle join. During candidate selection, only joins where the " +
+      "build side estimate exceeds autoBroadcastJoinThreshold but is less than this value " +
+      "times 100 are considered (i.e., the filter must be reasonably selective to bring " +
+      "the data below this threshold).")
     .bytesConf(ByteUnit.BYTE)
-    .createOptional
+    .createWithDefault(1024L * 1024L * 1024L)
 
   val ENABLE_HASH_OPTIMIZE_SORT = conf("spark.rapids.sql.hashOptimizeSort.enabled")
     .doc("Whether sorts should be inserted after some hashed operations to improve " +
@@ -3487,6 +3490,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val enableReplaceSortMergeJoin: Boolean = get(ENABLE_REPLACE_SORTMERGEJOIN)
 
   lazy val isSpeculativeBroadcastEnabled: Boolean = get(SPECULATIVE_BROADCAST_ENABLED)
+
+  lazy val speculativeBroadcastTargetThreshold: Long =
+    get(SPECULATIVE_BROADCAST_TARGET_THRESHOLD)
 
   lazy val enableHashOptimizeSort: Boolean = get(ENABLE_HASH_OPTIMIZE_SORT)
 

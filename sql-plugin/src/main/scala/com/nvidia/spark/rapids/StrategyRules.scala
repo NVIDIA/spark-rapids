@@ -19,9 +19,13 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.delta.DeltaProvider
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight}
+import org.apache.spark.sql.catalyst.expressions.{And, BinaryComparison, DynamicPruningSubquery,
+  Expression, In, InSet, IsNotNull, MultiLikeBase, Not, Or, StringPredicate,
+  StringRegexExpression}
+import org.apache.spark.sql.catalyst.optimizer.{BuildLeft, BuildRight, BuildSide}
 import org.apache.spark.sql.catalyst.planning.ExtractEquiJoinKeys
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti, LeftOuter, LeftSemi, RightOuter}
+import org.apache.spark.sql.catalyst.plans.logical.{Filter, Join, LeafNode, LogicalPlan}
 import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy}
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, ShuffleExchangeExec}
@@ -61,14 +65,16 @@ class StrategyRules extends SparkStrategy with Logging {
   /**
    * Plan speculative broadcast join if the plan is a candidate.
    *
-   * This identifies joins where:
-   * 1. Build side size is uncertain (near the broadcast threshold)
-   * 2. AQE is enabled (required for runtime decision)
-   * 3. Join type supports broadcast
+   * Strict Candidate Selection Criteria:
+   * 1. AQE must be enabled (required for runtime decision)
+   * 2. Neither side's subtree can contain another shuffle-based Join
+   * 3. Large side: only IS NOT NULL filters allowed (no substantive filtering)
+   * 4. Small side: must have "likely selective" filter (EqualTo, DPP, etc.)
+   * 5. Small side size estimate: > autoBroadcastThreshold AND < targetThreshold * 100
    *
    * It creates SpeculativeBroadcastHashJoinExec with asymmetric distribution:
-   * - Build side: ClusteredDistribution (will get shuffle)
-   * - Stream side: UnspecifiedDistribution (no shuffle initially)
+   * - Build side (small): ClusteredDistribution (will get shuffle)
+   * - Stream side (large): UnspecifiedDistribution (no shuffle initially)
    */
   private def planSpeculativeBroadcastJoin(
       plan: LogicalPlan,
@@ -76,114 +82,254 @@ class StrategyRules extends SparkStrategy with Logging {
 
     // Check if AQE is enabled (required for speculative broadcast to work)
     if (!plan.conf.adaptiveExecutionEnabled) {
-      logInfo("SpeculativeBroadcast: AQE is disabled, skipping")
+      logDebug("SpeculativeBroadcast: AQE is disabled, skipping")
       return Nil
     }
 
-    // Get threshold, with a sensible default if autoBroadcastJoinThreshold is disabled (-1)
-    val configuredThreshold = conf.get(RapidsConf.SPECULATIVE_BROADCAST_THRESHOLD)
-    val autoThreshold = plan.conf.autoBroadcastJoinThreshold
-    val threshold = configuredThreshold.getOrElse {
-      if (autoThreshold > 0) autoThreshold else 10L * 1024 * 1024 // 10MB default
-    }
-
-    logInfo(s"SpeculativeBroadcast: Checking plan ${plan.getClass.getSimpleName}, " +
-      s"threshold=$threshold (configured=$configuredThreshold, auto=$autoThreshold)")
+    val autoBroadcastThreshold = plan.conf.autoBroadcastJoinThreshold
+    val targetThreshold = conf.speculativeBroadcastTargetThreshold
 
     plan match {
       case ExtractEquiJoinKeys(joinType, leftKeys, rightKeys, otherCondition,
           _, left, right, _) =>
-        logInfo(s"SpeculativeBroadcast: Found equi-join, joinType=$joinType")
+        logDebug(s"SpeculativeBroadcast: Found equi-join, joinType=$joinType")
 
-        // Get size estimates
-        val leftSize = left.stats.sizeInBytes.toLong
-        val rightSize = right.stats.sizeInBytes.toLong
+        // Check subtree simplicity first
+        if (containsShuffleJoin(left) || containsShuffleJoin(right)) {
+          logDebug("SpeculativeBroadcast: Subtree contains shuffle-based join, skipping")
+          return Nil
+        }
 
-        // Check if this is a candidate for speculative broadcast
-        val buildSide = chooseBuildSide(leftSize, rightSize, joinType)
-        buildSide.flatMap { side =>
-          val buildSize = if (side == BuildLeft) leftSize else rightSize
-          if (isSpeculativeCandidate(buildSize, threshold)) {
-            // Plan children first
-            val leftPlan = planLater(left)
-            val rightPlan = planLater(right)
+        // Try to identify large side and small side
+        val candidateOpt = identifyLargeAndSmallSide(
+          left, right, joinType, autoBroadcastThreshold, targetThreshold)
 
-            // IMPORTANT: We must add ShuffleExchangeExec explicitly here, rather than
-            // relying on EnsureRequirements to add it based on requiredChildDistribution.
-            //
-            // Reason: EnsureRequirements only adds shuffle when child's outputPartitioning
-            // does NOT satisfy the required distribution. If build side already has compatible
-            // partitioning (e.g., from a previous aggregation), EnsureRequirements won't add
-            // any shuffle. But we NEED a ShuffleExchangeExec so that:
-            // 1. AQE wraps it as ShuffleQueryStageExec
-            // 2. The shuffle stage gets materialized independently
-            // 3. We can obtain runtime statistics (mapStats) with actual data size
-            //
-            // Without explicit shuffle, there's no ShuffleQueryStageExec, no mapStats,
-            // and SpeculativeBroadcastRule cannot make the runtime decision.
-            val numPartitions = plan.conf.numShufflePartitions
-            val (_, plannedLeft, plannedRight) = side match {
-              case BuildLeft =>
-                val partitioning = HashPartitioning(leftKeys, numPartitions)
-                val buildShuffle = ShuffleExchangeExec(partitioning, leftPlan, ENSURE_REQUIREMENTS)
-                (leftKeys, buildShuffle, rightPlan)
-              case BuildRight =>
-                val partitioning = HashPartitioning(rightKeys, numPartitions)
-                val buildShuffle = ShuffleExchangeExec(partitioning, rightPlan, ENSURE_REQUIREMENTS)
-                (rightKeys, leftPlan, buildShuffle)
-            }
+        candidateOpt.map { case (largeSide, smallSide, buildSide) =>
+          val smallSideSize = smallSide.stats.sizeInBytes.toLong
+          val largeSideSize = largeSide.stats.sizeInBytes.toLong
+          logInfo(s"SpeculativeBroadcast: Candidate found! " +
+            s"largeSide=${largeSide.nodeName} (size=$largeSideSize bytes), " +
+            s"smallSide=${smallSide.nodeName} (size=$smallSideSize bytes), " +
+            s"buildSide=$buildSide, targetThreshold=$targetThreshold")
 
-            logInfo(s"SpeculativeBroadcast: Creating join with explicit shuffle on " +
-              s"${side} side, numPartitions=$numPartitions")
+          // Plan children first
+          val leftPlan = planLater(left)
+          val rightPlan = planLater(right)
 
-            Some(SpeculativeBroadcastHashJoinExec(
-              leftKeys, rightKeys, joinType, side, otherCondition,
-              plannedLeft, plannedRight, threshold) :: Nil)
-          } else {
-            None
+          // IMPORTANT: We must add ShuffleExchangeExec explicitly here, rather than
+          // relying on EnsureRequirements to add it based on requiredChildDistribution.
+          //
+          // Reason: EnsureRequirements only adds shuffle when child's outputPartitioning
+          // does NOT satisfy the required distribution. If build side already has compatible
+          // partitioning (e.g., from a previous aggregation), EnsureRequirements won't add
+          // any shuffle. But we NEED a ShuffleExchangeExec so that:
+          // 1. AQE wraps it as ShuffleQueryStageExec
+          // 2. The shuffle stage gets materialized independently
+          // 3. We can obtain runtime statistics (mapStats) with actual data size
+          //
+          // Without explicit shuffle, there's no ShuffleQueryStageExec, no mapStats,
+          // and SpeculativeBroadcastRule cannot make the runtime decision.
+          val numPartitions = plan.conf.numShufflePartitions
+          val (plannedLeft, plannedRight) = buildSide match {
+            case BuildLeft =>
+              val partitioning = HashPartitioning(leftKeys, numPartitions)
+              val buildShuffle = ShuffleExchangeExec(partitioning, leftPlan, ENSURE_REQUIREMENTS)
+              (buildShuffle, rightPlan)
+            case BuildRight =>
+              val partitioning = HashPartitioning(rightKeys, numPartitions)
+              val buildShuffle = ShuffleExchangeExec(partitioning, rightPlan, ENSURE_REQUIREMENTS)
+              (leftPlan, buildShuffle)
           }
+
+          logInfo(s"SpeculativeBroadcast: Creating join with explicit shuffle on " +
+            s"$buildSide side (small side), numPartitions=$numPartitions")
+
+          SpeculativeBroadcastHashJoinExec(
+            leftKeys, rightKeys, joinType, buildSide, otherCondition,
+            plannedLeft, plannedRight, targetThreshold) :: Nil
         }.getOrElse(Nil)
 
       case _ => Nil
     }
   }
 
-  private def isSpeculativeCandidate(
-      buildSizeEstimate: Long,
-      threshold: Long): Boolean = {
-    // Candidate if:
-    // - Size unknown (negative)
-    // - Size estimate is below threshold * 2 (might actually fit after shuffle)
-    // We use 2x threshold as upper bound because estimates can be inaccurate
-    buildSizeEstimate < 0 || buildSizeEstimate < threshold * 2
+  /**
+   * Identify which side is "large" (stream side) and which is "small" (build side).
+   * Returns Some((largeSide, smallSide, buildSide)) if valid candidate, None otherwise.
+   */
+  private def identifyLargeAndSmallSide(
+      left: LogicalPlan,
+      right: LogicalPlan,
+      joinType: JoinType,
+      autoBroadcastThreshold: Long,
+      targetThreshold: Long): Option[(LogicalPlan, LogicalPlan, BuildSide)] = {
+
+    // Try left as large side, right as small side
+    if (isValidLargeSide(left) && isValidSmallSide(right, autoBroadcastThreshold, targetThreshold)
+        && canBuildRight(joinType)) {
+      return Some((left, right, BuildRight))
+    }
+
+    // Try right as large side, left as small side
+    if (isValidLargeSide(right) && isValidSmallSide(left, autoBroadcastThreshold, targetThreshold)
+        && canBuildLeft(joinType)) {
+      return Some((right, left, BuildLeft))
+    }
+
+    // No valid candidate
+    None
   }
 
-  private def chooseBuildSide(
-      leftSize: Long,
-      rightSize: Long,
-      joinType: org.apache.spark.sql.catalyst.plans.JoinType
-  ): Option[org.apache.spark.sql.catalyst.optimizer.BuildSide] = {
-    import org.apache.spark.sql.rapids.execution.GpuHashJoin
+  /**
+   * Check if a plan subtree is valid as "large side" (stream side).
+   * Requirements:
+   * - Has a FileScan as leaf
+   * - Only IS NOT NULL filters allowed (no substantive filtering)
+   */
+  private def isValidLargeSide(plan: LogicalPlan): Boolean = {
+    hasFileScan(plan) && hasOnlyIsNotNullFilter(plan)
+  }
 
-    val canBuildLeft = GpuHashJoin.canBuildLeft(joinType)
-    val canBuildRight = GpuHashJoin.canBuildRight(joinType)
-
-    if (canBuildLeft && canBuildRight) {
-      if (leftSize >= 0 && rightSize >= 0) {
-        Some(if (leftSize <= rightSize) BuildLeft else BuildRight)
-      } else if (leftSize >= 0) {
-        Some(BuildLeft)
-      } else if (rightSize >= 0) {
-        Some(BuildRight)
-      } else {
-        Some(BuildRight) // Both unknown, default to right
-      }
-    } else if (canBuildLeft) {
-      Some(BuildLeft)
-    } else if (canBuildRight) {
-      Some(BuildRight)
-    } else {
-      None
+  /**
+   * Check if a plan subtree is valid as "small side" (build side).
+   * Requirements:
+   * - Has a FileScan as leaf
+   * - Has "likely selective" filter (EqualTo, DPP, etc.)
+   * - Size estimate > autoBroadcastThreshold (otherwise Spark would broadcast anyway)
+   * - Size estimate < targetThreshold * 100 (filter must be selective enough)
+   */
+  private def isValidSmallSide(
+      plan: LogicalPlan,
+      autoBroadcastThreshold: Long,
+      targetThreshold: Long): Boolean = {
+    if (!hasFileScan(plan)) {
+      logDebug(s"SpeculativeBroadcast: Small side ${plan.nodeName} has no FileScan")
+      return false
     }
+
+    if (!hasLikelySelectiveFilter(plan)) {
+      logDebug(s"SpeculativeBroadcast: Small side ${plan.nodeName} has no selective filter")
+      return false
+    }
+
+    val estimate = plan.stats.sizeInBytes.toLong
+    val maxAllowed = targetThreshold * 100
+
+    // Skip if size unknown or too small (would broadcast anyway) or too large
+    if (estimate < 0) {
+      logDebug(s"SpeculativeBroadcast: Small side size unknown")
+      return false
+    }
+    // If autoBroadcastThreshold > 0 and estimate <= threshold, Spark would broadcast anyway
+    if (autoBroadcastThreshold > 0 && estimate <= autoBroadcastThreshold) {
+      logDebug(s"SpeculativeBroadcast: Small side too small ($estimate <= $autoBroadcastThreshold)")
+      return false
+    }
+    if (estimate > maxAllowed) {
+      logDebug(s"SpeculativeBroadcast: Small side too large ($estimate > $maxAllowed)")
+      return false
+    }
+
+    true
+  }
+
+  /**
+   * Check if the plan subtree contains a shuffle-based join.
+   * BroadcastHashJoin is allowed (no shuffle), but SortMergeJoin/ShuffledHashJoin are not.
+   */
+  private def containsShuffleJoin(plan: LogicalPlan): Boolean = {
+    plan.exists {
+      case j: Join =>
+        // Check hint to see if it's broadcast join
+        // If no broadcast hint, it will likely become shuffle join
+        val hasBroadcastHint = j.hint.leftHint.exists(_.strategy.contains(
+          org.apache.spark.sql.catalyst.plans.logical.BROADCAST)) ||
+          j.hint.rightHint.exists(_.strategy.contains(
+            org.apache.spark.sql.catalyst.plans.logical.BROADCAST))
+        !hasBroadcastHint
+      case _ => false
+    }
+  }
+
+  /**
+   * Check if the plan has a FileScan (or LogicalRelation) as leaf.
+   * LeafNode is a trait that includes LogicalRelation, FileSourceScanExec, etc.
+   */
+  private def hasFileScan(plan: LogicalPlan): Boolean = {
+    plan.exists(_.isInstanceOf[LeafNode])
+  }
+
+  /**
+   * Check if all Filter nodes in the plan only have IS NOT NULL conditions.
+   * Returns false if there's any Filter with non-IS-NOT-NULL conditions.
+   */
+  private def hasOnlyIsNotNullFilter(plan: LogicalPlan): Boolean = {
+    !plan.exists {
+      case f: Filter => !isOnlyIsNotNullCondition(f.condition)
+      case _ => false
+    }
+  }
+
+  /**
+   * Check if the expression is only composed of IS NOT NULL and AND.
+   */
+  private def isOnlyIsNotNullCondition(expr: Expression): Boolean = expr match {
+    case IsNotNull(_) => true
+    case And(l, r) => isOnlyIsNotNullCondition(l) && isOnlyIsNotNullCondition(r)
+    case _ => false
+  }
+
+  /**
+   * Check if the plan has at least one Filter with "likely selective" condition.
+   * This is based on Spark's isLikelySelective logic from predicates.scala,
+   * plus DynamicPruningSubquery (DPP) check.
+   */
+  private def hasLikelySelectiveFilter(plan: LogicalPlan): Boolean = {
+    plan.exists {
+      case f: Filter =>
+        isLikelySelective(f.condition) || hasDPP(f.condition)
+      case _ => false
+    }
+  }
+
+  /**
+   * Check if expression is likely selective.
+   * Borrowed from Spark's PredicateHelper.isLikelySelective.
+   */
+  private def isLikelySelective(e: Expression): Boolean = e match {
+    case Not(expr) => isLikelySelective(expr)
+    case And(l, r) => isLikelySelective(l) || isLikelySelective(r)
+    case Or(l, r) => isLikelySelective(l) && isLikelySelective(r)
+    case _: StringRegexExpression => true
+    case _: BinaryComparison => true
+    case _: In | _: InSet => true
+    case _: StringPredicate => true
+    case _: MultiLikeBase => true
+    case _ => false
+  }
+
+  /**
+   * Check if expression contains DynamicPruningSubquery (DPP).
+   */
+  private def hasDPP(expr: Expression): Boolean = {
+    expr.exists(_.isInstanceOf[DynamicPruningSubquery])
+  }
+
+  /**
+   * Check if the join type allows building on the left side.
+   */
+  private def canBuildLeft(joinType: JoinType): Boolean = joinType match {
+    case _: org.apache.spark.sql.catalyst.plans.InnerLike => true
+    case RightOuter => true
+    case _ => false
+  }
+
+  /**
+   * Check if the join type allows building on the right side.
+   */
+  private def canBuildRight(joinType: JoinType): Boolean = joinType match {
+    case _: org.apache.spark.sql.catalyst.plans.InnerLike => true
+    case LeftOuter | LeftSemi | LeftAnti => true
+    case _ => false
   }
 }
