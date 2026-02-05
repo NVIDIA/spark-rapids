@@ -2919,29 +2919,27 @@ def test_hash_agg_with_aliased_grouping_key_in_result_expr(kudo_enabled):
         )
 
         # Use year_col in groupBy but alias it in the aggregate result
-        from pyspark.sql.functions import col, sum as sql_sum
-
         agg1 = df1.groupBy("warehouse_id", "year_col") \
-            .agg(sql_sum("sales").alias("total")) \
+            .agg(f.sum("sales").alias("total")) \
             .select(
-                col("warehouse_id"),
-                col("year_col").alias("year"),
-                col("total").alias("sales_1")
+                f.col("warehouse_id"),
+                f.col("year_col").alias("year"),
+                f.col("total").alias("sales_1")
             )
 
         agg2 = df2.groupBy("warehouse_id", "year_col") \
-            .agg(sql_sum("sales").alias("total")) \
+            .agg(f.sum("sales").alias("total")) \
             .select(
-                col("warehouse_id"),
-                col("year_col").alias("year"),
-                col("total").alias("sales_2")
+                f.col("warehouse_id"),
+                f.col("year_col").alias("year"),
+                f.col("total").alias("sales_2")
             )
 
         union_result = agg1.union(agg2)
 
         # Aggregate over union - groups by different keys than union children
         final = union_result.groupBy("warehouse_id", "year") \
-            .agg(sql_sum("sales_1").alias("combined_sales"))
+            .agg(f.sum("sales_1").alias("combined_sales"))
 
         return final
 
