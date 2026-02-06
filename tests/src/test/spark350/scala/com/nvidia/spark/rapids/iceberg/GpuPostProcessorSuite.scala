@@ -66,6 +66,14 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     SpillFramework.initialize(new RapidsConf(new SparkConf()))
   }
 
+  override def afterAll(): Unit = {
+    try {
+      SpillFramework.shutdown()
+    } finally {
+      super.afterAll()
+    }
+  }
+
   private def createBlockMetaData(rowCount: Long): BlockMetaData = {
     val block = new BlockMetaData()
     block.setRowCount(rowCount)
@@ -527,17 +535,16 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val schema =
       StructType(Array(StructField("array_col", ArrayType(LongType, true), true)))
     val inputBatch = FuzzerUtils.createColumnarBatch(schema, rowCount = 3, seed = 42)
-    
+    val spillable = closeOnExcept(inputBatch) { batch =>
+      SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    }
+
     // Process the batch - it should pass through without errors
-    withResource(inputBatch) { _ =>
-      closeOnExcept(
-        SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) {
-        spillable =>
-        withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
-          // Verify basic properties
-          assert(outputBatch.numRows() == 3)
-          assert(outputBatch.numCols() == 1)
-        }
+    withResource(spillable) { _ =>
+      withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
+        // Verify basic properties
+        assert(outputBatch.numRows() == 3)
+        assert(outputBatch.numCols() == 1)
       }
     }
   }
@@ -598,17 +605,16 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
       )),
       true)))
     val inputBatch = FuzzerUtils.createColumnarBatch(schema, rowCount = 2, seed = 42)
-    
+    val spillable = closeOnExcept(inputBatch) { batch =>
+      SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    }
+
     // Process the batch - it should pass through without errors
-    withResource(inputBatch) { _ =>
-      closeOnExcept(
-        SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) {
-        spillable =>
-        withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
-          // Verify basic properties
-          assert(outputBatch.numRows() == 2)
-          assert(outputBatch.numCols() == 1)
-        }
+    withResource(spillable) { _ =>
+      withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
+        // Verify basic properties
+        assert(outputBatch.numRows() == 2)
+        assert(outputBatch.numCols() == 1)
       }
     }
   }
@@ -661,17 +667,16 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val schema =
       StructType(Array(StructField("map_col", MapType(LongType, DoubleType, true), true)))
     val inputBatch = FuzzerUtils.createColumnarBatch(schema, rowCount = 2, seed = 42)
-    
+    val spillable = closeOnExcept(inputBatch) { batch =>
+      SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    }
+
     // Process the batch - it should pass through without errors
-    withResource(inputBatch) { _ =>
-      closeOnExcept(
-        SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) {
-        spillable =>
-        withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
-          // Verify basic properties
-          assert(outputBatch.numRows() == 2)
-          assert(outputBatch.numCols() == 1)
-        }
+    withResource(spillable) { _ =>
+      withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
+        // Verify basic properties
+        assert(outputBatch.numRows() == 2)
+        assert(outputBatch.numCols() == 1)
       }
     }
   }
@@ -730,28 +735,27 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
         StructField("b", DoubleType, true)
       )), true)))
     val inputBatch = FuzzerUtils.createColumnarBatch(schema, rowCount = 2, seed = 42)
-    
+    val spillable = closeOnExcept(inputBatch) { batch =>
+      SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    }
+
     // Process the batch - this should exercise ProcessStruct with transformation
-    withResource(inputBatch) { _ =>
-      closeOnExcept(
-        SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) {
-        spillable =>
-        withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
-          // Verify basic properties
-          assert(outputBatch.numRows() == 2)
-          assert(outputBatch.numCols() == 1)
-          
-          // Verify the output has the correct types
-          import com.nvidia.spark.rapids.GpuColumnVector
-          val gpuCol = outputBatch.column(0).asInstanceOf[GpuColumnVector]
-          val cudfCol = gpuCol.getBase
-          // It's a struct with 2 children
-          assert(cudfCol.getNumChildren == 2)
-          // First child should be INT64 (promoted from INT32)
-          assert(cudfCol.getChildColumnView(0).getType.equals(ai.rapids.cudf.DType.INT64))
-          // Second child should be FLOAT64
-          assert(cudfCol.getChildColumnView(1).getType.equals(ai.rapids.cudf.DType.FLOAT64))
-        }
+    withResource(spillable) { _ =>
+      withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
+        // Verify basic properties
+        assert(outputBatch.numRows() == 2)
+        assert(outputBatch.numCols() == 1)
+
+        // Verify the output has the correct types
+        import com.nvidia.spark.rapids.GpuColumnVector
+        val gpuCol = outputBatch.column(0).asInstanceOf[GpuColumnVector]
+        val cudfCol = gpuCol.getBase
+        // It's a struct with 2 children
+        assert(cudfCol.getNumChildren == 2)
+        // First child should be INT64 (promoted from INT32)
+        assert(cudfCol.getChildColumnView(0).getType.equals(ai.rapids.cudf.DType.INT64))
+        // Second child should be FLOAT64
+        assert(cudfCol.getChildColumnView(1).getType.equals(ai.rapids.cudf.DType.FLOAT64))
       }
     }
   }
