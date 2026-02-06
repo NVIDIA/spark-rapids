@@ -30,15 +30,21 @@ import java.util.{HashMap => JHashMap}
 
 import scala.collection.JavaConverters._
 
+import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.iceberg.parquet._
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded.unshade
 import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
-import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.{MetadataColumns, Schema}
-import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType, Type => ShadedType, Types => ShadedTypes}
-import org.apache.iceberg.shaded.org.apache.parquet.schema.PrimitiveType.{PrimitiveTypeName => ShadedPrimitiveTypeName}
+import org.apache.iceberg.shaded.org.apache.parquet.schema.{
+  MessageType => ShadedMessageType,
+  Type => ShadedType,
+  Types => ShadedTypes
+}
+import org.apache.iceberg.shaded.org.apache.parquet.schema.PrimitiveType.{
+  PrimitiveTypeName => ShadedPrimitiveTypeName
+}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.Type.{Repetition => ShadedRepetition}
 import org.apache.iceberg.types.Types
 import org.apache.parquet.hadoop.metadata.BlockMetaData
@@ -106,28 +112,36 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val structField2Id = 32
 
     // Build shaded parquet schema - use INT64, DOUBLE, BOOLEAN which map directly
-    val longType = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+    val longType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(longFieldId).named("long_col")
-    val doubleType = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+    val doubleType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
       .id(doubleFieldId).named("double_col")
-    val boolType = ShadedTypes.primitive(ShadedPrimitiveTypeName.BOOLEAN, ShadedRepetition.OPTIONAL)
+    val boolType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.BOOLEAN, ShadedRepetition.OPTIONAL)
       .id(boolFieldId).named("bool_col")
 
-    val arrayElementType = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+    val arrayElementType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(arrayElementId).named("element")
     val arrayType = ShadedTypes.optionalList().element(arrayElementType)
       .id(arrayFieldId).named("array_col")
 
-    val mapKeyType = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.REQUIRED)
+    val mapKeyType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.REQUIRED)
       .id(mapKeyId).named("key")
-    val mapValueType = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+    val mapValueType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
       .id(mapValueId).named("value")
     val mapType = ShadedTypes.optionalMap().key(mapKeyType).value(mapValueType)
       .id(mapFieldId).named("map_col")
 
-    val structField1 = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+    val structField1 =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(structField1Id).named("x")
-    val structField2 = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+    val structField2 =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
       .id(structField2Id).named("y")
     val structType = ShadedTypes.optionalGroup().addField(structField1).addField(structField2)
       .id(structFieldId).named("struct_col")
@@ -143,7 +157,11 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
       Types.NestedField.optional(arrayFieldId, "array_col",
         Types.ListType.ofOptional(arrayElementId, Types.LongType.get())),
       Types.NestedField.optional(mapFieldId, "map_col",
-        Types.MapType.ofOptional(mapKeyId, mapValueId, Types.LongType.get(), Types.DoubleType.get())),
+      Types.MapType.ofOptional(
+        mapKeyId,
+        mapValueId,
+        Types.LongType.get(),
+        Types.DoubleType.get())),
       Types.NestedField.optional(structFieldId, "struct_col",
         Types.StructType.of(
           Types.NestedField.optional(structField1Id, "x", Types.LongType.get()),
@@ -229,38 +247,48 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val msFieldBId = 402  // INT32 -> LONG (promotion)
 
     // Build shaded parquet schema
-    val ptLongType = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+    val ptLongType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(ptLongId).named("pt_long")
-    val ptDoubleType = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+    val ptDoubleType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
       .id(ptDoubleId).named("pt_double")
 
     // Passthrough list: array<INT64>
-    val ptListElement = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+    val ptListElement =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(ptListElementId).named("element")
     val ptListType = ShadedTypes.optionalList().element(ptListElement)
       .id(ptListId).named("pt_list")
 
     // Passthrough map: map<INT64, DOUBLE>
-    val ptMapKey = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.REQUIRED)
+    val ptMapKey =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.REQUIRED)
       .id(ptMapKeyId).named("key")
-    val ptMapValue = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+    val ptMapValue =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
       .id(ptMapValueId).named("value")
     val ptMapType = ShadedTypes.optionalMap().key(ptMapKey).value(ptMapValue)
       .id(ptMapId).named("pt_map")
 
     // Passthrough struct: struct<x: INT64, y: DOUBLE>
-    val ptStructFieldX = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+    val ptStructFieldX =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(ptStructFieldXId).named("x")
-    val ptStructFieldY = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+    val ptStructFieldY =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
       .id(ptStructFieldYId).named("y")
     val ptStructType = ShadedTypes.optionalGroup().addField(ptStructFieldX).addField(ptStructFieldY)
       .id(ptStructId).named("pt_struct")
 
-    val promoIntType = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT32, ShadedRepetition.OPTIONAL)
+    val promoIntType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT32, ShadedRepetition.OPTIONAL)
       .id(promoIntId).named("promo_int")
-    val promoFloatType = ShadedTypes.primitive(ShadedPrimitiveTypeName.FLOAT, ShadedRepetition.OPTIONAL)
+    val promoFloatType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.FLOAT, ShadedRepetition.OPTIONAL)
       .id(promoFloatId).named("promo_float")
-    val promoBinaryType = ShadedTypes.primitive(ShadedPrimitiveTypeName.BINARY, ShadedRepetition.OPTIONAL)
+    val promoBinaryType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.BINARY, ShadedRepetition.OPTIONAL)
       .id(promoBinaryId).named("promo_binary")
 
     // array<struct<a: INT32, b: INT64>>
@@ -274,7 +302,8 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
       .id(arrayOfStructId).named("array_of_struct")
 
     // struct<x: array<INT32>, y: DOUBLE>
-    val swaArrayElement = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT32, ShadedRepetition.OPTIONAL)
+    val swaArrayElement =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT32, ShadedRepetition.OPTIONAL)
       .id(swaArrayElementId).named("element")
     val swaFieldX = ShadedTypes.optionalList().element(swaArrayElement)
       .id(swaFieldXId).named("x")
@@ -284,9 +313,11 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
       .id(structWithArrayId).named("struct_with_array")
 
     // map<BINARY, DOUBLE>
-    val mapKeyType = ShadedTypes.primitive(ShadedPrimitiveTypeName.BINARY, ShadedRepetition.REQUIRED)
+    val mapKeyType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.BINARY, ShadedRepetition.REQUIRED)
       .id(mapKeyId).named("key")
-    val mapValueType = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+    val mapValueType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
       .id(mapValueId).named("value")
     val mapType = ShadedTypes.optionalMap().key(mapKeyType).value(mapValueType)
       .id(mapId).named("map_col")
@@ -431,7 +462,8 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val col1Id = 1
     val col2Id = 2  // Required but missing from file
 
-    val col1Type: ShadedType = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+    val col1Type: ShadedType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(col1Id).named("col1")
     val parquetSchema = new ShadedMessageType("test", Seq(col1Type).asJava)
 
@@ -465,7 +497,8 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val arrayElementId = 2
 
     // Build shaded parquet schema: array<INT64>
-    val arrayElementType = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+    val arrayElementType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(arrayElementId).named("element")
     val arrayType = ShadedTypes.optionalList().element(arrayElementType)
       .id(arrayFieldId).named("array_col")
@@ -491,12 +524,15 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
 
     // Create a columnar batch with array<long> data using FuzzerUtils
     import com.nvidia.spark.rapids.FuzzerUtils
-    val schema = StructType(Array(StructField("array_col", ArrayType(LongType, true), true)))
+    val schema =
+      StructType(Array(StructField("array_col", ArrayType(LongType, true), true)))
     val inputBatch = FuzzerUtils.createColumnarBatch(schema, rowCount = 3, seed = 42)
     
     // Process the batch - it should pass through without errors
     withResource(inputBatch) { _ =>
-      closeOnExcept(SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { spillable =>
+      closeOnExcept(
+        SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) {
+        spillable =>
         withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
           // Verify basic properties
           assert(outputBatch.numRows() == 3)
@@ -520,11 +556,14 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val fieldBId = 3
 
     // Build shaded parquet schema: struct<a: INT64, b: DOUBLE>
-    val fieldA = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+    val fieldA =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(fieldAId).named("a")
-    val fieldB = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+    val fieldB =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
       .id(fieldBId).named("b")
-    val structType = ShadedTypes.optionalGroup().addField(fieldA).addField(fieldB)
+    val structType =
+      ShadedTypes.optionalGroup().addField(fieldA).addField(fieldB)
       .id(structFieldId).named("struct_col")
 
     val parquetSchema = new ShadedMessageType("test", Seq[ShadedType](structType).asJava)
@@ -551,16 +590,20 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
 
     // Create a columnar batch with struct<long, double> data using FuzzerUtils
     import com.nvidia.spark.rapids.FuzzerUtils
-    val schema = StructType(Array(StructField("struct_col",
+    val schema = StructType(Array(StructField(
+      "struct_col",
       StructType(Seq(
         StructField("a", LongType, true),
         StructField("b", DoubleType, true)
-      )), true)))
+      )),
+      true)))
     val inputBatch = FuzzerUtils.createColumnarBatch(schema, rowCount = 2, seed = 42)
     
     // Process the batch - it should pass through without errors
     withResource(inputBatch) { _ =>
-      closeOnExcept(SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { spillable =>
+      closeOnExcept(
+        SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) {
+        spillable =>
         withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
           // Verify basic properties
           assert(outputBatch.numRows() == 2)
@@ -584,9 +627,11 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val mapValueId = 3
 
     // Build shaded parquet schema: map<INT64, DOUBLE>
-    val mapKeyType = ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.REQUIRED)
+    val mapKeyType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.REQUIRED)
       .id(mapKeyId).named("key")
-    val mapValueType = ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
+    val mapValueType =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.DOUBLE, ShadedRepetition.OPTIONAL)
       .id(mapValueId).named("value")
     val mapType = ShadedTypes.optionalMap().key(mapKeyType).value(mapValueType)
       .id(mapFieldId).named("map_col")
@@ -613,12 +658,15 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
 
     // Create a columnar batch with map<long, double> data using FuzzerUtils
     import com.nvidia.spark.rapids.FuzzerUtils
-    val schema = StructType(Array(StructField("map_col", MapType(LongType, DoubleType, true), true)))
+    val schema =
+      StructType(Array(StructField("map_col", MapType(LongType, DoubleType, true), true)))
     val inputBatch = FuzzerUtils.createColumnarBatch(schema, rowCount = 2, seed = 42)
     
     // Process the batch - it should pass through without errors
     withResource(inputBatch) { _ =>
-      closeOnExcept(SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { spillable =>
+      closeOnExcept(
+        SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) {
+        spillable =>
         withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
           // Verify basic properties
           assert(outputBatch.numRows() == 2)
@@ -685,7 +733,9 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     
     // Process the batch - this should exercise ProcessStruct with transformation
     withResource(inputBatch) { _ =>
-      closeOnExcept(SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) { spillable =>
+      closeOnExcept(
+        SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)) {
+        spillable =>
         withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
           // Verify basic properties
           assert(outputBatch.numRows() == 2)

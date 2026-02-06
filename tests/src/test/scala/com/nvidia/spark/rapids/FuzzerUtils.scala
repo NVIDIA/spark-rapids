@@ -212,22 +212,31 @@ object FuzzerUtils {
   /**
    * Builds a cuDF column from Scala data
    */
-  private def buildCudfColumn(dataType: DataType, data: Seq[Any], nullable: Boolean): ai.rapids.cudf.ColumnVector = {
+  private def buildCudfColumn(
+      dataType: DataType,
+      data: Seq[Any],
+      nullable: Boolean): ai.rapids.cudf.ColumnVector = {
     import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
     
     dataType match {
       case LongType =>
-        CudfColumnVector.fromBoxedLongs(data.map(v => if (v == null) null else Long.box(v.asInstanceOf[Long])): _*)
+        val values = data.map(v => if (v == null) null else Long.box(v.asInstanceOf[Long]))
+        CudfColumnVector.fromBoxedLongs(values: _*)
       case IntegerType =>
-        CudfColumnVector.fromBoxedInts(data.map(v => if (v == null) null else Int.box(v.asInstanceOf[Int])): _*)
+        val values = data.map(v => if (v == null) null else Int.box(v.asInstanceOf[Int]))
+        CudfColumnVector.fromBoxedInts(values: _*)
       case DoubleType =>
-        CudfColumnVector.fromBoxedDoubles(data.map(v => if (v == null) null else Double.box(v.asInstanceOf[Double])): _*)
+        val values = data.map(v => if (v == null) null else Double.box(v.asInstanceOf[Double]))
+        CudfColumnVector.fromBoxedDoubles(values: _*)
       case FloatType =>
-        CudfColumnVector.fromBoxedFloats(data.map(v => if (v == null) null else Float.box(v.asInstanceOf[Float])): _*)
+        val values = data.map(v => if (v == null) null else Float.box(v.asInstanceOf[Float]))
+        CudfColumnVector.fromBoxedFloats(values: _*)
       case BooleanType =>
-        CudfColumnVector.fromBoxedBooleans(data.map(v => if (v == null) null else Boolean.box(v.asInstanceOf[Boolean])): _*)
+        val values = data.map(v => if (v == null) null else Boolean.box(v.asInstanceOf[Boolean]))
+        CudfColumnVector.fromBoxedBooleans(values: _*)
       case StringType =>
-        CudfColumnVector.fromStrings(data.map(v => if (v == null) null else v.asInstanceOf[String]): _*)
+        val values = data.map(v => if (v == null) null else v.asInstanceOf[String])
+        CudfColumnVector.fromStrings(values: _*)
       case ArrayType(elementType, _) =>
         val listType = getHostListType(elementType, nullable)
         val javaLists = data.map { v =>
@@ -271,7 +280,9 @@ object FuzzerUtils {
           else {
             val map = v.asInstanceOf[Map[_, _]]
             map.map { case (k, v) =>
-              new HostColumnVector.StructData(boxValue(k).asInstanceOf[Object], boxValue(v).asInstanceOf[Object])
+              new HostColumnVector.StructData(
+                boxValue(k).asInstanceOf[Object],
+                boxValue(v).asInstanceOf[Object])
             }.toList.asJava
           }
         }
@@ -284,7 +295,9 @@ object FuzzerUtils {
   /**
    * Creates a HostColumnVector type descriptor for lists
    */
-  private def getHostListType(elementType: DataType, nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
+  private def getHostListType(
+      elementType: DataType,
+      nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
     import ai.rapids.cudf.HostColumnVector
     
     new HostColumnVector.ListType(nullable, getHostColumnType(elementType, nullable))
@@ -293,7 +306,9 @@ object FuzzerUtils {
   /**
    * Creates a HostColumnVector type descriptor for any data type
    */
-  private def getHostColumnType(dataType: DataType, nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
+  private def getHostColumnType(
+      dataType: DataType,
+      nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
     import ai.rapids.cudf.{DType, HostColumnVector}
     
     dataType match {

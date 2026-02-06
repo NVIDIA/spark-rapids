@@ -128,7 +128,8 @@ class GpuMultiThreadIcebergParquetReader(
 
     val requiredSchema = deleteFilter.map(_.requiredSchema).getOrElse(conf.expectedSchema)
 
-    val (filteredParquet, shadedFileReadSchema) = super.filterParquetBlocks(icebergFile, requiredSchema)
+    val (filteredParquet, shadedFileReadSchema) =
+      super.filterParquetBlocks(icebergFile, requiredSchema)
 
     val postProcessor = new GpuParquetReaderPostProcessor(
       filteredParquet,

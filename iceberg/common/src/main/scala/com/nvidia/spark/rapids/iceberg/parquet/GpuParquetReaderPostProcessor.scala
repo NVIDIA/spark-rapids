@@ -21,10 +21,16 @@ import java.util.{List => JList, Map => JMap}
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
-import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.CastOptions
+import com.nvidia.spark.rapids.GpuCast
+import com.nvidia.spark.rapids.GpuColumnVector
+import com.nvidia.spark.rapids.GpuMetric
+import com.nvidia.spark.rapids.GpuScalar
+import com.nvidia.spark.rapids.NoopMetric
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.SpillableColumnarBatch
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
 import org.apache.iceberg.{MetadataColumns, Schema}
@@ -36,8 +42,6 @@ import org.apache.iceberg.types.{Type, Types}
 
 import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-
-import com.nvidia.spark.rapids.{GpuMetric, NoopMetric}
 
 /**
  * Pre-computed action tree for processing columnar batches.
@@ -627,7 +631,8 @@ class GpuParquetReaderPostProcessor(
         "PassThrough"
       case other =>
         throw new IllegalStateException(
-          s"Root action must be ProcessStruct or PassThrough, but got: ${other.getClass.getSimpleName}")
+          "Root action must be ProcessStruct or PassThrough, but got: " +
+            other.getClass.getSimpleName)
     }
   }
 
