@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,17 +27,17 @@ class GpuScalarUnitTest extends GpuUnitTests {
   test("Test throws exception after closed") {
     val gsv = GpuScalar(1, FloatType)
     gsv.close()
-    assertThrows[NullPointerException](gsv.getBase)
-    assertThrows[NullPointerException](gsv.getValue)
+    assertThrows[IllegalStateException](gsv.getBase)
+    assertThrows[IllegalStateException](gsv.getValue)
     assertThrows[NullPointerException](gsv.isValid)
-    assertThrows[NullPointerException](gsv.isNan)
+    assertThrows[IllegalStateException](gsv.isNan)
 
     val gsc = GpuScalar(Scalar.fromFloat(1), FloatType)
     gsc.close()
-    assertThrows[NullPointerException](gsc.getBase)
-    assertThrows[NullPointerException](gsc.getValue)
+    assertThrows[IllegalStateException](gsc.getBase)
+    assertThrows[IllegalStateException](gsc.getValue)
     assertThrows[NullPointerException](gsc.isValid)
-    assertThrows[NullPointerException](gsc.isNan)
+    assertThrows[IllegalStateException](gsc.isNan)
   }
 
   test("Test closed too many times") {
