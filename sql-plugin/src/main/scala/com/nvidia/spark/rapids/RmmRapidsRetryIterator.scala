@@ -959,6 +959,19 @@ object RetryStateTracker {
     }
   }
 
+  /**
+   * Get the current retry block nesting depth for the current thread.
+   * Returns 0 if not in a retry block or tracking is disabled.
+   */
+  def getRetryBlockDepth: Int = {
+    if (!trackRetryBlock) {
+      0
+    } else {
+      val depth = localRetryBlockDepth.get()
+      if (depth == null) 0 else depth.intValue()
+    }
+  }
+
   def setCurThreadRetrying(retrying: Boolean): Unit = localIsRetrying.set(retrying)
 
   def clearCurThreadRetrying(): Unit = localIsRetrying.remove()
