@@ -89,6 +89,9 @@ class GpuShuffleAsyncCoalesceIterator(iter: Iterator[CoalescedHostResult],
       throw new NoSuchElementException("No more batches")
     }
     NvtxRegistry.ASYNC_SHUFFLE_READ {
+      // Release the GPU semaphore before waiting for async host IO,
+      // allowing other tasks to use the GPU while we wait for data.
+      GpuSemaphore.releaseIfNecessary(TaskContext.get())
       val hostConcatedRet = GpuMetric.ns(asyncReadTimeMetric, opTimeMetric) {
         readFutureOpt.map { readFuture =>
           // An async read is running, waiting for the result

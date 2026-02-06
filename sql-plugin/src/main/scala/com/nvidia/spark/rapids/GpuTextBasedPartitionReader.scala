@@ -666,6 +666,9 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
 
   override def next(): Boolean = {
     batch.foreach(_.close())
+    // Release the GPU semaphore before host IO for the next batch,
+    // allowing other tasks to use the GPU while we read from disk.
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
     batch = if (isExhausted) {
       None
     } else {
