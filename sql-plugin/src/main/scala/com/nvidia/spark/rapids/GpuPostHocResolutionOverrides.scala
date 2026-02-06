@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,12 +30,22 @@ case class GpuPostHocResolutionOverrides(spark: SparkSession) extends Rule[Logic
 
   @transient private val rapidsConf = new RapidsConf(spark.sessionState.conf)
 
+  // Sub-rules to apply
+  private val sequenceFileRDDConversionRule = SequenceFileRDDConversionRule(spark)
+
   override def apply(plan: LogicalPlan): LogicalPlan = {
+    var result = plan
+
+    // Apply SequenceFile RDD conversion rule (if enabled)
+    result = sequenceFileRDDConversionRule.apply(result)
+
     // If the hybrid backend is enabled, we need to resolve potential hybrid scan hints
-    Option(rapidsConf.loadHybridBackend).filter(identity).map { _ =>
-      HybridExecOverrides.resolveHybridScanHint(plan)
+    result = Option(rapidsConf.loadHybridBackend).filter(identity).map { _ =>
+      HybridExecOverrides.resolveHybridScanHint(result)
     }.getOrElse {
-      plan
+      result
     }
+
+    result
   }
 }
