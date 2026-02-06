@@ -237,11 +237,11 @@ class GpuDeltaParquetFileFormatBase(
       fileScan.allMetrics,
       useMetadataRowIndex = false,
       tablePath,
-      // queryUsesInputFile is used to enable combining small files in the multi-threaded reader.
+      // queryUsesInputFile is used to disable combining small files in the multi-threaded reader.
       // When it is true, combining small files is disabled. Since we don't currently support
       // combining small files with deletion vectors, we need to disable it when deletion vectors
       // exist (which is when tablePath is defined).
-      queryUsesInputFile = tablePath.isEmpty && fileScan.queryUsesInputFile)
+      queryUsesInputFile = hasTablePath || fileScan.queryUsesInputFile)
   }
 
   /**
