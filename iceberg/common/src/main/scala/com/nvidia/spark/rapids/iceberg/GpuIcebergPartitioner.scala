@@ -40,14 +40,18 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
  *
  * @param keyType the iceberg struct type of the partition keys
  * @param dataType the iceberg struct type of the input data
+ * @param dataSparkType optional Spark StructType with field IDs - if provided, will be used
+ *                      instead of converting from dataType
  */
 class GpuIcebergPartitioner(
   val keyType: Types.StructType,
-  val dataType: Types.StructType) {
+  val dataType: Types.StructType,
+  val dataSparkType: Option[StructType] = None) {
 
   private val keySparkType: StructType = GpuTypeToSparkType.toSparkType(keyType)
-  private val dataSparkType: StructType = GpuTypeToSparkType.toSparkType(dataType)
-  private val valueSparkType: Array[DataType] = dataSparkType.fields.map(_.dataType)
+  private val dataSparkTypeInternal: StructType = dataSparkType.getOrElse(
+    GpuTypeToSparkType.toSparkType(dataType))
+  private val valueSparkType: Array[DataType] = dataSparkTypeInternal.fields.map(_.dataType)
 
   /**
    * Partition the columnar batches by the given keys.
@@ -116,17 +120,22 @@ class GpuIcebergPartitioner(
  *
  * @param spec the iceberg partition spec
  * @param dataType the iceberg struct type of the input data
+ * @param dataSparkType optional Spark StructType with field IDs - if provided, will be used
+ *                      instead of converting from dataType
  */
 class GpuIcebergSpecPartitioner(val spec: PartitionSpec,
-  val dataType: Types.StructType) {
+  val dataType: Types.StructType,
+  val dataSparkType: Option[StructType] = None) {
   require(spec.isPartitioned, "Should not create a partitioner for unpartitioned table")
   private val inputSchema: Schema = spec.schema()
-  private val dataSparkType: StructType = GpuTypeToSparkType.toSparkType(dataType)
+  private val dataSparkTypeInternal: StructType = dataSparkType.getOrElse(
+    GpuTypeToSparkType.toSparkType(dataType))
 
   private val partitionExprs: Seq[GpuExpression] = spec.fields().asScala.map(getPartitionExpr).toSeq
 
   // Create the underlying partitioner
-  private val partitioner = new GpuIcebergPartitioner(spec.partitionType(), dataType)
+  private val partitioner = new GpuIcebergPartitioner(spec.partitionType(), dataType,
+    Some(dataSparkTypeInternal))
 
   /**
    * Partition the `input` columnar batch using iceberg's partition spec.
@@ -160,7 +169,7 @@ class GpuIcebergSpecPartitioner(val spec: PartitionSpec,
   : GpuExpression = {
     val transform = field.transform()
     val inputIndex = fieldIndex(inputSchema, field.sourceId())
-    val sparkField = dataSparkType.fields(inputIndex)
+    val sparkField = dataSparkTypeInternal.fields(inputIndex)
     val inputRefExpr = GpuBoundReference(inputIndex, sparkField.dataType,
       sparkField.nullable)(newExprId, s"input$inputIndex")
 

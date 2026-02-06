@@ -49,7 +49,8 @@ class GpuSparkBatch(
       new GpuSparkInputPartition(partition.asInstanceOf[SparkInputPartition],
         parentScan.rapidsConf,
         hadoopConf,
-        expectedSchemaString)
+        expectedSchemaString,
+        parentScan.useFieldId)
     }
   }
 

@@ -144,7 +144,8 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
       metrics,
       threadConf,
       task.expectedSchema,
-      nameMapping)
+      nameMapping,
+      task.useFieldId)
   }
 
   private def constantsMap(icebergFile: IcebergPartitionedFile): java.util.Map[Integer, _] = {

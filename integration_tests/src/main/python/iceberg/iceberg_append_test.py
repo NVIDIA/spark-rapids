@@ -19,7 +19,7 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
-    get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf
+    get_full_table_name, iceberg_write_enabled_conf
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
 
@@ -73,7 +73,7 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
     gpu_table_name = f"{base_table_name}_gpu"
 
     def create_table(spark, table_name: str):
-        sql = f"""CREATE TABLE {table_name} (id int, name string) USING ICEBERG """
+        sql = f"""CREATE TABLE {table_name} (id int, name string, nested struct<a:string, b:int>) USING ICEBERG """
         if partition_table:
             sql += "PARTITIONED BY (bucket(8, id)) "
 
@@ -86,7 +86,7 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
     with_cpu_session(lambda spark: create_table(spark, gpu_table_name))
 
     def insert_data(spark, table_name: str):
-        spark.sql(f"INSERT INTO {table_name} VALUES (1, 'a'), (2, 'b'), (3, 'c')")
+        spark.sql(f"INSERT INTO {table_name} VALUES (1, 'a', struct('hello', 100)), (2, 'b', struct('world', 200)), (3, 'c', struct('test', 300))")
 
     with_gpu_session(lambda spark: insert_data(spark, gpu_table_name),
                      conf = iceberg_write_enabled_conf)
@@ -96,31 +96,6 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
-
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_into_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
-    table_prop = {"format-version": "2"}
-
-    def this_gen_df(spark):
-        cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        return gen_df(spark, list(zip(cols, iceberg_full_gens_list)))
-
-    def insert_data(spark, table_name: str):
-        df = this_gen_df(spark)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-
-    table_name = get_full_table_name(spark_tmp_table_factory)
-    create_iceberg_table(table_name, table_prop=table_prop, df_gen=this_gen_df)
-
-    assert_gpu_fallback_collect(lambda spark: insert_data(spark, table_name),
-                                "AppendDataExec",
-                                conf = iceberg_write_enabled_conf)
 
 
 def _do_test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql):
@@ -187,34 +162,6 @@ def test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sq
 def test_insert_into_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
     _do_test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql)
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_into_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
-    table_prop = {"format-version": "2"}
-
-    def this_gen_df(spark):
-        cols = [ f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        return gen_df(spark, list(zip(cols, iceberg_full_gens_list)))
-
-    def insert_data(spark, table_name: str):
-        df = this_gen_df(spark)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-
-    table_name = get_full_table_name(spark_tmp_table_factory)
-    create_iceberg_table(table_name,
-                          partition_col_sql="bucket(16, _c2), bucket(16, _c3)",
-                          table_prop=table_prop,
-                          df_gen=this_gen_df)
-
-    assert_gpu_fallback_collect(lambda spark: insert_data(spark, table_name),
-                                "AppendDataExec",
-                                conf = iceberg_write_enabled_conf)
-
 
 @iceberg
 @ignore_order(local=True)

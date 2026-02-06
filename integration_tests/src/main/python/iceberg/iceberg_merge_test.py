@@ -18,7 +18,7 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
 from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
-                     iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list)
+                     iceberg_base_table_cols, iceberg_gens_list)
 from marks import allow_non_gpu, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_35x, with_gpu_session, with_cpu_session
 
@@ -419,80 +419,6 @@ def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory,
     def read_func(spark, table_name):
         # Select 1 to avoid unsupported file format read error
         return spark.sql(f"SELECT 1")
-    
-    assert_gpu_fallback_write_sql(
-        write_func,
-        read_func,
-        base_table_name + "_target",
-        [fallback_exec],
-        conf=iceberg_merge_enabled_conf
-    )
-
-
-@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "ProjectExec")
-@iceberg
-@ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize('merge_mode,fallback_exec', [
-    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
-    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
-])
-def test_iceberg_merge_fallback_unsupported_data_type(spark_tmp_table_factory, merge_mode, fallback_exec):
-    """Test MERGE falls back with unsupported data types (e.g., Decimal128, nested types)"""
-    base_table_name = get_full_table_name(spark_tmp_table_factory)
-    
-    def data_gen(spark):
-        # Use iceberg_full_gens_list which includes types that may not be fully supported on GPU
-        return gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_full_gens_list)))
-    
-    # Phase 1: Initialize tables
-    def init_table(table_name, ensure_distinct_key=False):
-        table_props = {
-            'format-version': '2',
-            'write.merge.mode': merge_mode,
-        }
-        
-        create_iceberg_table(table_name, table_prop=table_props, df_gen=data_gen)
-        
-        def insert_data(spark):
-            df = data_gen(spark)
-            
-            # MERGE requires: each target row matches at most one source row
-            # Deduplicate before insert to preserve schema
-            if ensure_distinct_key:
-                # Create temp view and use SQL to deduplicate while preserving schema
-                df.createOrReplaceTempView("temp_merge_data")
-                df = spark.sql("""
-                    SELECT * FROM (
-                        SELECT *, ROW_NUMBER() OVER (PARTITION BY _c0 ORDER BY _c0) as rn
-                        FROM temp_merge_data
-                    ) WHERE rn = 1
-                """).drop("rn")
-            
-            df.writeTo(table_name).append()
-        
-        with_cpu_session(insert_data)
-    
-    cpu_target_table = f'{base_table_name}_target_cpu'
-    gpu_target_table = f'{base_table_name}_target_gpu'
-    source_table = f'{base_table_name}_source'
-    
-    init_table(cpu_target_table)
-    init_table(gpu_target_table)
-    init_table(source_table, ensure_distinct_key=True)
-    
-    # Phase 2: MERGE operation
-    def write_func(spark, target_table_name):
-        spark.sql(f"""
-            MERGE INTO {target_table_name} t
-            USING {source_table} s
-            ON t._c0 = s._c0
-            WHEN MATCHED THEN UPDATE SET *
-            WHEN NOT MATCHED THEN INSERT *
-        """)
-    
-    def read_func(spark, table_name):
-        return spark.sql(f"SELECT * FROM {table_name}")
     
     assert_gpu_fallback_write_sql(
         write_func,

@@ -119,8 +119,6 @@ def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, rea
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("data_gens", iceberg_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-# TODO: Add support for nested data type: https://github.com/NVIDIA/spark-rapids/issues/12298
-@pytest.mark.allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 def test_iceberg_parquet_read_round_trip_all_types(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     full_table = get_full_table_name(spark_tmp_table_factory)

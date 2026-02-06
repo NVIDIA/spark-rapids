@@ -27,7 +27,8 @@ import org.apache.spark.util.SerializableConfiguration
 class GpuSparkInputPartition(val cpuPartition: SparkInputPartition,
     rapidsConf: RapidsConf,
     val hadoopConf: Broadcast[SerializableConfiguration],
-    val expectedSchemaStr: String) extends
+    val expectedSchemaStr: String,
+    val useFieldId: Boolean) extends
   InputPartition with HasPartitionKey with Serializable {
 
   val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows

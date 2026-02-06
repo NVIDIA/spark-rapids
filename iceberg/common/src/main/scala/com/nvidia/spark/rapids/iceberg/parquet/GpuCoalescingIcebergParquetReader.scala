@@ -54,11 +54,12 @@ class GpuCoalescingIcebergParquetReader(
   private def createParquetReader() = {
     val clippedBlocks = files.map(f => (f, super.filterParquetBlocks(f, conf.expectedSchema)))
       .flatMap {
-        case (file, info) =>
+        case (file, (info, shadedFileReadSchema)) =>
           val postProcessor = new GpuParquetReaderPostProcessor(
             info,
             constantsProvider(file),
-            conf.expectedSchema)
+            conf.expectedSchema,
+            shadedFileReadSchema)
 
           info.blocks.map { block =>
             ParquetSingleDataBlockMeta(
@@ -96,7 +97,7 @@ class GpuCoalescingIcebergParquetReader(
       conf.threadConf.asInstanceOf[MultiFile].poolConfBuilder.build(),
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
-      false) // useFieldId
+      conf.useFieldId) // useFieldId
       {
       override def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
           nextBlockInfo: SingleDataBlockInfo): Boolean = {

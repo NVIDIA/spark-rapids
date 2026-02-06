@@ -45,6 +45,20 @@ class GpuIcebergParquetAppender(
   private var footer: ParquetMetadata = _
 
   override def add(d: SpillableColumnarBatch): Unit = {
+    // DEBUG: Print batch content
+    println(s"[DEBUG GpuIcebergParquetAppender.add] Batch numRows=${d.numRows()}, sizeInBytes=${d.sizeInBytes}")
+    withResource(d.getColumnarBatch()) { cb =>
+      println(s"[DEBUG GpuIcebergParquetAppender.add] ColumnarBatch: numCols=${cb.numCols()}, numRows=${cb.numRows()}")
+      (0 until cb.numCols()).foreach { i =>
+        val col = cb.column(i)
+        col match {
+          case gpuCol: com.nvidia.spark.rapids.GpuColumnVector =>
+            println(s"[DEBUG GpuIcebergParquetAppender.add] Column $i: dataType=${gpuCol.dataType()}, hasNull=${col.hasNull()}, nullCount=${col.numNulls()}")
+          case _ =>
+            println(s"[DEBUG GpuIcebergParquetAppender.add] Column $i: NOT GpuColumnVector (${col.getClass.getName}), hasNull=${col.hasNull()}, nullCount=${col.numNulls()}")
+        }
+      }
+    }
     inner.writeSpillableAndClose(d)
   }
 

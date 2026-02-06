@@ -123,7 +123,7 @@ private class SingleFileReader(
   private def open() = {
     val requiredSchema = deleteFilter.map(_.requiredSchema).getOrElse(conf.expectedSchema)
 
-    val filteredParquet = super.filterParquetBlocks(file, requiredSchema)
+    val (filteredParquet, shadedFileReadSchema) = super.filterParquetBlocks(file, requiredSchema)
 
     val parquetPartReader = new ParquetPartitionReader(
       rapidsFileIO,
@@ -146,12 +146,13 @@ private class SingleFileReader(
       DateTimeRebaseCorrected, // dateRebaseMode
       DateTimeRebaseCorrected, // timestampRebaseMode
       true, // hasInt96Timestamps
-      false) // useFieldId
+      conf.useFieldId) // useFieldId
 
     val parquetReader = new PartitionReaderWithBytesRead(parquetPartReader)
     val postProcessor = new GpuParquetReaderPostProcessor(filteredParquet,
       idToConstant,
-      requiredSchema)
+      requiredSchema,
+      shadedFileReadSchema)
 
     inited = true
     (parquetReader, postProcessor)
