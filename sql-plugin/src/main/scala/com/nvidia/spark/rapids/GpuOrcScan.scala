@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1210,6 +1210,9 @@ class GpuOrcPartitionReader(
       return true
     }
     batchIter = EmptyGpuColumnarBatchIterator
+    // Release the GPU semaphore before host IO for the next batch,
+    // allowing other tasks to use the GPU while we read from disk.
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
     if (ctx.blockIterator.hasNext) {
       batchIter = readBatches()
     }

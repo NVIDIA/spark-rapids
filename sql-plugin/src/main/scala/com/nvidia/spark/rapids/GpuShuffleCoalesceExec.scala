@@ -792,6 +792,9 @@ abstract class GpuCoalesceIteratorBase[T <: AutoCloseable : ClassTag](
     getNextResult() match {
       case Some(result) => result
       case None =>
+        // Release the GPU semaphore before host coalescing work,
+        // allowing other tasks to use the GPU while we buffer data.
+        GpuSemaphore.releaseIfNecessary(TaskContext.get())
         // No pending results, proceed with normal concatenation
         withResource(new NvtxRange("BufferNextBatch", NvtxColor.ORANGE)) { _ =>
           bufferNextBatch()

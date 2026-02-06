@@ -3159,6 +3159,9 @@ class ParquetPartitionReader(
       return true
     }
     batchIter = EmptyGpuColumnarBatchIterator
+    // Release the GPU semaphore before host IO for the next batch,
+    // allowing other tasks to use the GPU while we read from disk.
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
