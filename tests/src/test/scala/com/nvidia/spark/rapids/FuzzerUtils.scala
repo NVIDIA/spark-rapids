@@ -278,7 +278,7 @@ object FuzzerUtils {
         val javaLists = data.map { v =>
           if (v == null) null
           else {
-            val map = v.asInstanceOf[Map[_, _]]
+            val map = v.asInstanceOf[Map[Any, Any]]
             map.map { case (k, v) =>
               new HostColumnVector.StructData(
                 boxValue(k).asInstanceOf[Object],
