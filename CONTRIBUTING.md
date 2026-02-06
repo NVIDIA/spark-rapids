@@ -118,24 +118,24 @@ You can also install some manually and build a combined jar. For instance to bui
 
 ```shell script
 mvn clean
-mvn -Dbuildver=320 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=321 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=321cdh install -Drat.skip=true -DskipTests
+mvn -Dbuildver=330 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=331 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=332 install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
 
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar spark330.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar(/spark330/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark330.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar spark330.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar(/spark330/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark330.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -177,7 +177,7 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -197,7 +197,7 @@ NOTE: Build process does not require an ARM machine, so if you want to build the
 on X86 machine, please also add `-DskipTests` in commands.
 
 ```bash
-mvn clean verify -Dbuildver=320 -Parm64
+mvn clean verify -Dbuildver=330 -Parm64
 ```
 
 ### Iterative development during local testing
@@ -253,7 +253,7 @@ The following acronyms may appear in directory names:
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
 |db     |Databricks  |332db  |Databricks Spark based on Spark 3.3.2         |
-|cdh    |Cloudera CDH|321cdh |Cloudera CDH Spark based on Apache Spark 3.2.1|
+|cdh    |Cloudera CDH|(removed)|Cloudera CDH shims have been removed         |
 
 The version-specific directory names have one of the following forms / use cases:
 
@@ -410,7 +410,7 @@ Install [Scala Metals extension](https://scalameta.org/metals/docs/editors/vscod
 either locally or into a Remote-SSH extension destination depending on your target environment.
 When your project folder is open in VS Code, it may prompt you to import Maven project.
 IMPORTANT: always decline with "Don't ask again", otherwise it will overwrite the Bloop projects
-generated with the default `320` profile. If you need to use a different profile, always rerun the
+generated with the default `330` profile. If you need to use a different profile, always rerun the
 command above manually. When regenerating projects it's recommended to proceed to Metals
 "Build commands" View, and click:
 1. "Restart build server"
