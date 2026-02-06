@@ -205,11 +205,9 @@ def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader
 
 _resource_bounded_pool_conf_matrix = resource_bounded_multithreaded_reader_conf(
     file_type='parquet',
-    specialized_conf={
-        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        int96RebaseModeInReadKey: 'CORRECTED',
-        datetimeRebaseModeInReadKey: 'CORRECTED'
-    })
+    specialized_conf={int96RebaseModeInReadKey: 'CORRECTED', datetimeRebaseModeInReadKey: 'CORRECTED'}
+)
+
 @pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_confs', _resource_bounded_pool_conf_matrix, ids=idfn)
 @tz_sensitive_test
@@ -221,6 +219,33 @@ def test_parquet_read_multithread_flow_ctrl_round_trip(spark_tmp_path, parquet_g
             lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
             conf=rebase_write_corrected_conf)
     assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf=reader_confs)
+
+_res_bnd_pool_conf_mat_simple = resource_bounded_multithreaded_reader_conf(
+    file_type='parquet',
+    specialized_conf={int96RebaseModeInReadKey: 'CORRECTED', datetimeRebaseModeInReadKey: 'CORRECTED'},
+    combine_size_conf=[0, '64m'],
+    keep_order_conf=[False, True],
+    reader_type_conf=['MULTITHREADED'],
+    pool_size_conf=[16],
+    memory_limit_conf=[4 << 20, 16 << 20],
+    timeout_conf=[5000]
+)
+
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list[:1], ids=idfn)
+@pytest.mark.parametrize('reader_confs', _res_bnd_pool_conf_mat_simple, ids=idfn)
+@tz_sensitive_test
+@allow_non_gpu(*non_utc_allow)
+def test_parquet_read_multithread_flow_ctrl_selective_read(spark_tmp_path, parquet_gens, reader_confs):
+    """Test selective column reading with resource-bounded multithreaded reader."""
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list, length=2048).write.parquet(data_path),
+            conf=rebase_write_corrected_conf)
+    select_cols = [f'_c{i}' for i in range(len(gen_list)) if i % 3 == 0]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).selectExpr(*select_cols),
+        conf=reader_confs)
 
 # Ensure that the multithreaded reader with resource bounded pool can handle an excessive host
 # memory request that cannot be satisfied by the pool.
