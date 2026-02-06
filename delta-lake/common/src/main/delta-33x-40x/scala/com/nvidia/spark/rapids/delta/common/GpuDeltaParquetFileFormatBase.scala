@@ -236,7 +236,12 @@ class GpuDeltaParquetFileFormatBase(
       fileScan.rapidsConf,
       fileScan.allMetrics,
       useMetadataRowIndex = false,
-      tablePath)
+      tablePath,
+      // queryUsesInputFile is used to disable combining small files in the multi-threaded reader.
+      // When it is true, combining small files is disabled. Since we don't currently support
+      // combining small files with deletion vectors, we need to disable it when deletion vectors
+      // exist (which is when tablePath is defined).
+      queryUsesInputFile = hasTablePath || fileScan.queryUsesInputFile)
   }
 
   /**
@@ -314,13 +319,14 @@ class DeltaMultiFileReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
     useMetadataRowIndex: Boolean,
-    tablePath: Option[String]
+    tablePath: Option[String],
+    queryUsesInputFile: Boolean
     ) extends GpuParquetMultiFilePartitionReaderFactory(sqlConf, broadcastedConf,
       dataSchema, readDataSchema, partitionSchema,
       filters, rapidsConf,
       poolConfBuilder = ThreadPoolConfBuilder(rapidsConf),
       metrics = metrics,
-      queryUsesInputFile = true) {
+      queryUsesInputFile = queryUsesInputFile) {
 
   private val schemaWithIndices = readDataSchema.fields.zipWithIndex
   def findColumn(name: String): Option[ColumnMetadata] = {
