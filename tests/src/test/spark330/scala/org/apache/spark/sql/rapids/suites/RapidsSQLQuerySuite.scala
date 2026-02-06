@@ -183,6 +183,34 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
     }
   }
 
+  // GPU-specific test for "SPARK-3349 partitioning after limit"
+  // Original test: SQLQuerySuite.scala (search for "SPARK-3349")
+  // This test verifies that partitioning is correct after a LIMIT operation.
+  // The original Spark bug (SPARK-3349) was about partition count mismatch causing
+  // "Can't zip RDDs with unequal numbers of partitions" errors.
+  // GPU hash joins don't guarantee output order, so we use order-insensitive comparison.
+  testRapids("SPARK-3349 partitioning after limit") {
+    withTempView("subset1", "subset2") {
+      sql("SELECT DISTINCT n FROM lowerCaseData ORDER BY n DESC")
+        .limit(2)
+        .createOrReplaceTempView("subset1")
+      sql("SELECT DISTINCT n FROM lowerCaseData ORDER BY n ASC")
+        .limit(2)
+        .createOrReplaceTempView("subset2")
+      // Use order-insensitive comparison since GPU joins don't guarantee output order
+      checkAnswer(
+        sql("SELECT * FROM lowerCaseData INNER JOIN subset1 ON subset1.n = lowerCaseData.n")
+          .sort("n"),
+        Row(3, "c", 3) ::
+        Row(4, "d", 4) :: Nil)
+      checkAnswer(
+        sql("SELECT * FROM lowerCaseData INNER JOIN subset2 ON subset2.n = lowerCaseData.n")
+          .sort("n"),
+        Row(1, "a", 1) ::
+        Row(2, "b", 2) :: Nil)
+    }
+  }
+
   // GPU-specific test for "SPARK-36093: RemoveRedundantAliases should not change expression's name"
   // Original test: SQLQuerySuite.scala lines 4233-4264
   testRapids("SPARK-36093: RemoveRedundantAliases should not change expression's name") {

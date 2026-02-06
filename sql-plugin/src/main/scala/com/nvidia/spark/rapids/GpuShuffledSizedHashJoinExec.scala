@@ -340,8 +340,7 @@ object GpuShuffledSizedHashJoinExec {
       lazyStream: Iterator[LazySpillableColumnarBatch],
       joinOptions: JoinOptions,
       conditionForLogging: Option[Expression],
-      opTime: GpuMetric,
-      joinTime: GpuMetric): Iterator[ColumnarBatch] = {
+      metrics: JoinMetrics): Iterator[ColumnarBatch] = {
     info.joinType match {
       case FullOuter =>
         // Create a LazyCompiledCondition for this iterator (it takes ownership)
@@ -349,31 +348,31 @@ object GpuShuffledSizedHashJoinExec {
         new HashOuterJoinIterator(FullOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
           info.buildStats, None, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
           lazyCond, joinOptions, info.buildSide,
-          info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
+          info.exprs.compareNullsEqual, conditionForLogging, metrics)
       case LeftOuter if info.buildSide == GpuBuildLeft =>
         val lazyCond = info.exprs.createLazyCompiledCondition()
         new HashOuterJoinIterator(LeftOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
           info.buildStats, None, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
           lazyCond, joinOptions, info.buildSide,
-          info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
+          info.exprs.compareNullsEqual, conditionForLogging, metrics)
       case RightOuter if info.buildSide == GpuBuildRight =>
         val lazyCond = info.exprs.createLazyCompiledCondition()
         new HashOuterJoinIterator(RightOuter, spillableBuiltBatch, info.exprs.boundBuildKeys,
           info.buildStats, None, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
           lazyCond, joinOptions, info.buildSide,
-          info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
+          info.exprs.compareNullsEqual, conditionForLogging, metrics)
       case _ if info.exprs.boundCondition.isDefined =>
-        // ConditionalHashJoinIterator will close the LazyCompiledCondition
-        val lazyCond = info.exprs.createLazyCompiledCondition().get
-        new ConditionalHashJoinIterator(spillableBuiltBatch, info.exprs.boundBuildKeys,
+        // HashJoinIterator will close the LazyCompiledCondition
+        val lazyCond = info.exprs.createLazyCompiledCondition()
+        new HashJoinIterator(spillableBuiltBatch, info.exprs.boundBuildKeys,
           info.buildStats, lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
           lazyCond, joinOptions, info.joinType,
-          info.buildSide, info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
+          info.buildSide, info.exprs.compareNullsEqual, conditionForLogging, metrics)
       case _ =>
         new HashJoinIterator(spillableBuiltBatch, info.exprs.boundBuildKeys, info.buildStats,
-          lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput,
+          lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput, None,
           joinOptions, info.joinType, info.buildSide,
-          info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
+          info.exprs.compareNullsEqual, conditionForLogging, metrics)
     }
   }
 }
@@ -407,7 +406,14 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     SMALL_JOIN_COUNT -> createMetric(DEBUG_LEVEL, DESCRIPTION_SMALL_JOIN_COUNT),
     BIG_JOIN_COUNT -> createMetric(DEBUG_LEVEL, DESCRIPTION_BIG_JOIN_COUNT),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    NUM_DISTINCT_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_DISTINCT_JOINS),
+    NUM_HASH_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_HASH_JOINS),
+    NUM_SORT_MERGE_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_SORT_MERGE_JOINS),
+    JOIN_DISTINCT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_DISTINCT_TIME),
+    JOIN_HASH_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_HASH_TIME),
+    JOIN_SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_SORT_TIME),
+    JOIN_KEY_REMAP_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_KEY_REMAP_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] =
     Seq(GpuHashPartitioning.getDistribution(cpuLeftKeys),
@@ -527,7 +533,7 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       LazySpillableColumnarBatch(batch, "built")
     }
     createJoinIterator(info, spillableBuiltBatch, lazyStream, joinOptions,
-      condition, opTime, metricsMap(JOIN_TIME))
+      condition, JoinMetrics(metricsMap))
   }
 
   /**
@@ -1687,8 +1693,7 @@ class BigSizedJoinIterator(
   }
 
   private var isExhausted = joinGroups.isEmpty
-  private val opTime = metrics(OP_TIME_LEGACY)
-  private val joinTime = metrics(JOIN_TIME)
+  private val joinMetrics = JoinMetrics(metrics)
 
   private lazy val lazyCompiledCondition = info.exprs.createLazyCompiledCondition().map { cond =>
     use(cond)
@@ -1761,7 +1766,7 @@ class BigSizedJoinIterator(
               buildPartitioner.getBuildBatch(currentJoinGroupIndex), info.exprs.boundBuildKeys,
               info.buildStats, tracker, Iterator.empty, info.exprs.boundStreamKeys,
               info.exprs.streamOutput, None, joinOptions,
-              info.buildSide, info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime))
+              info.buildSide, info.exprs.compareNullsEqual, conditionForLogging, joinMetrics))
           }
         } else {
           isExhausted = true
@@ -1807,10 +1812,10 @@ class BigSizedJoinIterator(
         builtBatch, info.exprs.boundBuildKeys, info.buildStats, buildRowTracker,
         lazyStream, info.exprs.boundStreamKeys, info.exprs.streamOutput, lazyCompiledCondition,
         joinOptions, info.buildSide,
-        info.exprs.compareNullsEqual, conditionForLogging, opTime, joinTime)
+        info.exprs.compareNullsEqual, conditionForLogging, joinMetrics)
     } else {
       GpuShuffledSizedHashJoinExec.createJoinIterator(info, builtBatch, lazyStream,
-        joinOptions, conditionForLogging, opTime, joinTime)
+        joinOptions, conditionForLogging, joinMetrics)
     }
   }
 }

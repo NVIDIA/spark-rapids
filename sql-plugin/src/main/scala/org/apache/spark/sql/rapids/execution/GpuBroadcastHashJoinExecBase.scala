@@ -119,7 +119,14 @@ abstract class GpuBroadcastHashJoinExecBase(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    NUM_DISTINCT_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_DISTINCT_JOINS),
+    NUM_HASH_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_HASH_JOINS),
+    NUM_SORT_MERGE_JOINS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_SORT_MERGE_JOINS),
+    JOIN_DISTINCT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_DISTINCT_TIME),
+    JOIN_HASH_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_HASH_TIME),
+    JOIN_SORT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_SORT_TIME),
+    JOIN_KEY_REMAP_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_KEY_REMAP_TIME))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -149,9 +156,7 @@ abstract class GpuBroadcastHashJoinExecBase(
   protected def doColumnarBroadcastJoin(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val streamTime = gpuLongMetric(STREAM_TIME)
-    val joinTime = gpuLongMetric(JOIN_TIME)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
@@ -187,12 +192,12 @@ abstract class GpuBroadcastHashJoinExecBase(
               boundStreamKeys)
           }
           doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
-            numOutputBatches, opTime, joinTime)
+            numOutputBatches, JoinMetrics(gpuLongMetric))
         }
       } else {
         // builtBatch will be closed in doJoin
-        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
-          joinTime)
+        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches,
+          JoinMetrics(gpuLongMetric))
       }
     }
   }
