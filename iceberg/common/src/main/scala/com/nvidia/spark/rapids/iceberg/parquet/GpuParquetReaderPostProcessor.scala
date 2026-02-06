@@ -23,6 +23,7 @@ import scala.collection.JavaConverters._
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
 import com.nvidia.spark.rapids.{CastOptions, GpuCast, GpuColumnVector, GpuScalar, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
@@ -226,20 +227,19 @@ private[iceberg] case class ProcessMap(
         childView.copyToColumnVector()
       }
       withResource(structCol) { _ =>
-        val keyCol = withResource(structCol.getChildColumnView(0)) { childView =>
-          childView.copyToColumnVector()
+        val childCols = Seq(0, 1).safeMap { idx =>
+          withResource(structCol.getChildColumnView(idx)) { childView =>
+            childView.copyToColumnVector()
+          }
         }
-        val valueCol = withResource(structCol.getChildColumnView(1)) { childView =>
-          childView.copyToColumnVector()
-        }
-        withResource(keyCol) { _ =>
-          withResource(valueCol) { _ =>
-            withResource(keyAction.execute(ctx.withColumn(keyCol))) { newKey =>
-              withResource(valueAction.execute(ctx.withColumn(valueCol))) { newValue =>
-                withResource(CudfColumnVector.makeStruct(newKey, newValue)) { kvStruct =>
-                  withResource(col.replaceListChild(kvStruct)) { view =>
-                    view.copyToColumnVector()
-                  }
+        withResource(childCols) { cols =>
+          val keyCol = cols(0)
+          val valueCol = cols(1)
+          withResource(keyAction.execute(ctx.withColumn(keyCol))) { newKey =>
+            withResource(valueAction.execute(ctx.withColumn(valueCol))) { newValue =>
+              withResource(CudfColumnVector.makeStruct(newKey, newValue)) { kvStruct =>
+                withResource(col.replaceListChild(kvStruct)) { view =>
+                  view.copyToColumnVector()
                 }
               }
             }
@@ -283,17 +283,19 @@ private[iceberg] case class ProcessStruct(
         // Struct is missing from file - all fields must be generated
         require(inputIndices.forall(_.isEmpty),
           "When struct column is missing, all inputIndices must be None")
-        val childCols = fieldActions.map(action => action.execute(ctx))
+        val childCols = fieldActions.safeMap(action => action.execute(ctx))
         withResource(childCols) { cols =>
           CudfColumnVector.makeStruct(ctx.numRows, cols: _*)
         }
       
       case Some(col) =>
-        val childCols = fieldActions.zip(inputIndices).map { case (action, inputIdx) =>
+        val childCols = fieldActions.zip(inputIndices).safeMap { case (action, inputIdx) =>
           inputIdx match {
             case Some(idx) =>
               // Field exists in input - get child at the correct index
-              val childCol = col.getChildColumnView(idx).copyToColumnVector()
+              val childCol = withResource(col.getChildColumnView(idx)) { childView =>
+                childView.copyToColumnVector()
+              }
               if (action == PassThrough) {
                 childCol
               } else {
@@ -652,7 +654,7 @@ class GpuParquetReaderPostProcessor(
         withResource(scb.getColumnarBatch()) { batch =>
           currentNumRows = batch.numRows()
 
-          val fields = expectedSchema.asStruct().fields().asScala
+          val fields = expectedFields
 
           // Execute actions on batch (rootAction must be ProcessStruct here since
           // PassThrough is handled by canPassThroughBatch early return)
@@ -666,18 +668,17 @@ class GpuParquetReaderPostProcessor(
           // The batch is in readSchema order (expected order with missing fields skipped).
           // For PassThrough columns, we incRefCount so they survive when batch is closed.
           // For transformed columns, we create new column vectors.
-          val columns = new Array[ColumnVector](fieldActions.size)
-          closeOnExcept(columns) { _ =>
-            fieldActions.zip(fields).zipWithIndex.foreach { case ((action, field), idx) =>
+          val columns: Seq[ColumnVector] = fieldActions.zip(fields).zipWithIndex.safeMap {
+            case ((action, field), idx) =>
               val batchIdx = fieldIdToBatchIndex.get(field.fieldId())
               val col = batchIdx.map(i => batch.column(i).asInstanceOf[GpuColumnVector].getBase)
               val ctx = new ColumnActionContext(this, col)
               val result = action.execute(ctx)
-            columns(idx) = GpuColumnVector.from(result, expectedSparkTypes(idx))
-            }
+              closeOnExcept(result) { _ =>
+                GpuColumnVector.from(result, expectedSparkTypes(idx)).asInstanceOf[ColumnVector]
+              }
           }
-
-          new ColumnarBatch(columns, currentNumRows)
+          new ColumnarBatch(columns.toArray[ColumnVector], currentNumRows)
         }
       }
     }
