@@ -50,18 +50,14 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.{ExecRule, GpuOverrides}
+
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.ShowNamespacesExec
 
-/**
- * Exec rules for ShowNamespacesExec (exists before refactor to ShowNamespacesCommand).
- */
 object ShowNamespacesExecShims {
-  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
-    Seq(
-      GpuOverrides.neverReplaceExec[ShowNamespacesExec]("Namespace metadata operation")
-    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-  }
+  val neverReplaceExec: Option[ExecRule[_ <: SparkPlan]] = Some(
+    GpuOverrides.neverReplaceExec[ShowNamespacesExec]("Namespace metadata operation")
+  )
 }
 
