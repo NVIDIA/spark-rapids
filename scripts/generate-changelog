@@ -252,8 +252,9 @@ def get_pr_via_commits(ver_commits: set, token: str):
         for res in pr_iterators:
             commit = ''
             try:
-                commit = res.json()['data']['repository']['commit']['abbreviatedOid']
-                pr_item = res.json()['data']['repository']['commit']['associatedPullRequests']['edges'][0]['node']
+                data = res.json()
+                commit = data['data']['repository']['commit']['abbreviatedOid']
+                pr_item = data['data']['repository']['commit']['associatedPullRequests']['edges'][0]['node']
                 pr_item['ver'] = version
                 # Handle the case of multiple commits being associated with the same PR
                 if pr_item not in pr_list and pr_item['mergedAt'] is not None:
