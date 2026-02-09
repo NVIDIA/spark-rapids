@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,8 +33,8 @@ GLUTEN_VERSION=${GLUTEN_VERSION:-"1.2.0"}
 SUPPORTED_HYBRID_SHIMS=${SUPPORTED_HYBRID_SHIMS:-"3.2 3.3 3.4"}
 CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-"cuda12"}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
-PROJECT_VER=${PROJECT_VER:-"26.02.0-SNAPSHOT"}
-PROJECT_TEST_VER=${PROJECT_TEST_VER:-"26.02.0-SNAPSHOT"}
+PROJECT_VER=${PROJECT_VER:-"26.02.0"}
+PROJECT_TEST_VER=${PROJECT_TEST_VER:-"26.02.0"}
 SPARK_VER=${SPARK_VER:-"3.3.0"}
 SPARK_VER_213=${SPARK_VER_213:-"3.5.0"}
 SCALA_BINARY_VER=${SCALA_BINARY_VER:-"2.12"}
