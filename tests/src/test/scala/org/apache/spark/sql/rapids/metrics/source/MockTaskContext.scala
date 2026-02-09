@@ -30,7 +30,7 @@ import org.apache.spark.scheduler.TaskLocality
 import org.apache.spark.shuffle.FetchFailedException
 import org.apache.spark.util.{AccumulatorV2, TaskCompletionListener, TaskFailureListener}
 
-class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext {
+abstract class MockTaskContextBase(taskAttemptId: Long, partitionId: Int) extends TaskContext {
 
   val listeners = new ListBuffer[TaskCompletionListener]
 
@@ -116,7 +116,11 @@ class MockTaskContext(taskAttemptId: Long, partitionId: Int) extends TaskContext
   private[spark] def createResourceUninterruptibly[T <: Closeable](
       resourceBuilder: => T): T = resourceBuilder
 
-  // New methods in Databricks 17.3 / Spark 4.1
-  override def addTaskInterruptListener(listener: org.apache.spark.util.TaskInterruptListener): TaskContext = this
-  private[spark] override def getTaskFailure(): Option[Throwable] = None
+  /**
+   * These below methods were introduced in Spark-4.1 / Databricks 17.3. Not shimmed and added
+   * to the common class by removing the override keyword.
+   * Note: addTaskInterruptListener is omitted because TaskInterruptListener type does not exist
+   * in Spark <= 4.0.
+   */
+  private[spark] def getTaskFailure(): Option[Throwable] = None
 }

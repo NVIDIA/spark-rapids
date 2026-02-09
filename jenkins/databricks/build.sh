@@ -258,7 +258,7 @@ if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
     else
         UPSTREAM_BUILDVER=$($MVN_CMD help:evaluate -q -f $POM_FILE -pl dist -Dexpression=buildver -DforceStdout)
     fi
-    $MVN_CMD -B -f $POM_FILE package -pl dist -am -DskipTests -Dmaven.scaladoc.skip $MVN_OPT \
+    $MVN_CMD -B -f $POM_FILE -Dbuildver=$UPSTREAM_BUILDVER package -pl dist -am -DskipTests -Dmaven.scaladoc.skip $MVN_OPT \
         -Dincluded_buildvers=$UPSTREAM_BUILDVER,$BUILDVER
 fi
 
