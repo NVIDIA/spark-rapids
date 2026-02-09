@@ -42,7 +42,6 @@
                         <plugin>
                             <groupId>net.alchim31.maven</groupId>
                             <artifactId>scala-maven-plugin</artifactId>
-                            <version>${scala.plugin.version}</version>
                             <configuration>
                                 <target>${java.major.version}</target>
                             </configuration>
@@ -54,8 +53,11 @@
         <profile>
             <id>jdk9plus</id>
              <activation>
-                <!-- activate for all java versions after 9 -->
                 <jdk>[9,)</jdk>
+                <property>
+                    <name>buildver</name>
+                    <value>!411</value>
+                </property>
             </activation>
             <build>
                 <pluginManagement>
@@ -63,9 +65,34 @@
                         <plugin>
                             <groupId>net.alchim31.maven</groupId>
                             <artifactId>scala-maven-plugin</artifactId>
-                            <version>${scala.plugin.version}</version>
                             <configuration>
                                 <release>${java.major.version}</release>
+                            </configuration>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
+        </profile>
+        <profile>
+            <id>release411</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>411</value>
+                </property>
+            </activation>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>net.alchim31.maven</groupId>
+                            <artifactId>scala-maven-plugin</artifactId>
+                            <configuration>
+                                 <!--
+                                IMPORTANT: we must not pass release but the plugin always sets if target is defined
+                                https://github.com/davidB/scala-maven-plugin/blame/6e324d29443c1cb6d5b997c11fc00a416e969a9e/src/main/java/scala_maven/ScalaMojoSupport.java#L635-L640
+                                -->
+                                <addJavacArgs conf.combine="override">-Xlint:all,-serial,-path,-try,-processing|-target|${java.major.version}</addJavacArgs>
                             </configuration>
                         </plugin>
                     </plugins>

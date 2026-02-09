@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -58,6 +58,7 @@ import sys
 import subprocess
 from argparse import ArgumentParser
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 
@@ -156,6 +157,7 @@ query ($sha: String!) {
   repository(name: "spark-rapids", owner: "NVIDIA") {
     commit: object(expression: $sha) {
       ... on Commit {
+        abbreviatedOid
         associatedPullRequests(first: 10) {
           edges {
             node {
@@ -244,16 +246,21 @@ def get_commits(releases: set):
 def get_pr_via_commits(ver_commits: set, token: str):
     pr_list = []
     for version, commits in ver_commits.items():
-        for sha in commits:
-            res = post(query=query_pr_by_commit, token=token, variable={'sha': sha})
+        # Fetch the PRs for each commit in parallel, yields results in the input order
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            pr_iterators = ex.map(lambda sha: post(query=query_pr_by_commit, token=token, variable={'sha': sha}), commits)
+        for res in pr_iterators:
+            commit = ''
             try:
-                pr_item = res.json()['data']['repository']['commit']['associatedPullRequests']['edges'][0]['node']
+                data = res.json()
+                commit = data['data']['repository']['commit']['abbreviatedOid']
+                pr_item = data['data']['repository']['commit']['associatedPullRequests']['edges'][0]['node']
                 pr_item['ver'] = version
                 # Handle the case of multiple commits being associated with the same PR
                 if pr_item not in pr_list and pr_item['mergedAt'] is not None:
                     pr_list.append(pr_item)
             except Exception as e:
-                print(f"Exception: {e}, commit sha '{sha}' does not have the associated Pull Request")
+                print(f"Exception: {e}, commit sha '{commit}' does not have the associated Pull Request")
                 continue
     return pr_list
 

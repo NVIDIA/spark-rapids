@@ -47,6 +47,7 @@
 {"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -70,25 +71,19 @@ import org.apache.spark.sql.execution.datasources.v2.orc.OrcScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.execution.exchange.BroadcastExchangeExec
 import org.apache.spark.sql.execution.joins._
-import org.apache.spark.sql.execution.python._
 import org.apache.spark.sql.execution.window.WindowExecBase
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.aggregate._
 import org.apache.spark.sql.rapids.execution._
-import org.apache.spark.sql.rapids.execution.python._
-import org.apache.spark.sql.rapids.shims._
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
-import org.apache.spark.sql.types._
-import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
  * Shim base class that can be compiled with every supported 3.2.0+
  */
-trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
-
-  def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression]
+trait Spark320PlusShims extends SparkShims with RebaseShims with WindowInPandasShims
+    with Logging {
 
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
     "A wrapper of shuffle query stage",
@@ -151,8 +146,9 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
 
   override def isWindowFunctionExec(plan: SparkPlan): Boolean = plan.isInstanceOf[WindowExecBase]
 
-  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-    GpuOverrides.expr[Cast](
+  override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+    val baseExprs: Seq[ExprRule[_ <: Expression]] = Seq(
+      GpuOverrides.expr[Cast](
       "Convert a column of one type of data into another type",
       new CastChecks(),
       (cast, conf, p, r) => {
@@ -204,29 +200,6 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
         // ANSI support for ABS was added in 3.2.0 SPARK-33275
         override def convertToGpu(child: Expression): GpuExpression = GpuAbs(child, ansiEnabled)
       }),
-    GpuOverrides.expr[TimeAdd](
-      "Adds interval to timestamp",
-      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
-        ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
-        ("interval", TypeSig.lit(TypeEnum.DAYTIME) + TypeSig.lit(TypeEnum.CALENDAR),
-          TypeSig.DAYTIME + TypeSig.CALENDAR)),
-      (timeAdd, conf, p, r) => new BinaryExprMeta[TimeAdd](timeAdd, conf, p, r) {
-        override def tagExprForGpu(): Unit = {
-          GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
-            lit.dataType match {
-              case CalendarIntervalType =>
-                val intvl = lit.value.asInstanceOf[CalendarInterval]
-                if (intvl.months != 0) {
-                  willNotWorkOnGpu("interval months isn't supported")
-                }
-              case _: DayTimeIntervalType => // Supported
-            }
-          }
-        }
-
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuTimeAdd(lhs, rhs)
-      }),
     GpuOverrides.expr[SpecifiedWindowFrame](
       "Specification of the width of the group (or \"frame\") of input rows " +
         "around which a window function is evaluated",
@@ -254,7 +227,12 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64 +
               TypeSig.DAYTIME, TypeSig.numericAndInterval))),
       (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r))
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+    )
+    val result = new scala.collection.mutable.HashMap[
+      Class[_ <: Expression], ExprRule[_ <: Expression]]()
+    baseExprs.foreach(r => result(r.getClassFor.asSubclass(classOf[Expression])) = r)
+    result.toMap ++ TimeAddShims.exprs
+  }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
     val maps: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
@@ -285,30 +263,10 @@ trait Spark320PlusShims extends SparkShims with RebaseShims with Logging {
           TypeSig.STRUCT + TypeSig.MAP + TypeSig.ARRAY + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
           TypeSig.all),
-        (p, conf, parent, r) => new OverwriteByExpressionExecV1Meta(p, conf, parent, r)),
-      exec[WindowInPandasExec](
-        "The backend for Window Aggregation Pandas UDF, Accelerates the data transfer between" +
-          " the Java process and the Python process. It also supports scheduling GPU resources" +
-          " for the Python process when enabled. For now it only supports row based window frame.",
-        ExecChecks(
-          (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested(TypeSig.commonCudfTypes),
-          TypeSig.all),
-        (winPy, conf, p, r) => new GpuWindowInPandasExecMetaBase(winPy, conf, p, r) {
-          override val windowExpressions: Seq[BaseExprMeta[NamedExpression]] =
-            getWindowExpressions(winPy).map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
-
-          override def convertToGpu(): GpuExec = {
-            GpuWindowInPandasExec(
-              windowExpressions.map(_.convertToGpu()),
-              partitionSpec.map(_.convertToGpu()),
-              // leave ordering expression on the CPU, it's not used for GPU computation
-              winPy.orderSpec,
-              childPlans.head.convertIfNeeded()
-            )(winPy.partitionSpec)
-          }
-        }).disabledByDefault("it only supports row based frame for now")
+        (p, conf, parent, r) => new OverwriteByExpressionExecV1Meta(p, conf, parent, r))
+      // WindowInPandasExec moved to WindowInPandasExecShims to handle version differences
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-    maps ++ ScanExecShims.execs
+    maps ++ ScanExecShims.execs ++ WindowInPandasExecShims.execs
   }
 
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Seq(

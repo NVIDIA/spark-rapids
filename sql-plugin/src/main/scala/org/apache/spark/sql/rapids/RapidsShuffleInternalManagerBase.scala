@@ -46,7 +46,7 @@ import org.apache.spark.shuffle.api._
 import org.apache.spark.shuffle.sort.SortShuffleManager
 import org.apache.spark.shuffle.sort.io.{RapidsLocalDiskShuffleDataIO, RapidsLocalDiskShuffleMapOutputWriter}
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_THREADED_WRITER_LIMITER_WAIT_TIME, METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.{METRIC_DATA_READ_SIZE, METRIC_DATA_SIZE, METRIC_SHUFFLE_DESERIALIZATION_TIME, METRIC_SHUFFLE_READ_TIME, METRIC_THREADED_READER_DESER_WAIT_TIME, METRIC_THREADED_READER_IO_WAIT_TIME, METRIC_THREADED_READER_LIMITER_ACQUIRE_COUNT, METRIC_THREADED_READER_LIMITER_ACQUIRE_FAIL_COUNT, METRIC_THREADED_READER_LIMITER_PENDING_BLOCK_COUNT, METRIC_THREADED_WRITER_INPUT_FETCH_TIME, METRIC_THREADED_WRITER_LIMITER_WAIT_TIME, METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME}
 import org.apache.spark.sql.rapids.shims.{GpuShuffleBlockResolver, RapidsShuffleThreadedReader, RapidsShuffleThreadedWriter}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{RapidsShuffleBlockFetcherIterator, _}
@@ -65,7 +65,7 @@ class ShuffleHandleWithMetrics[K, V, C](
     shuffleId: Int,
     val metrics: Map[String, SQLMetric],
     override val dependency: GpuShuffleDependency[K, V, C])
-    extends BaseShuffleHandle(shuffleId, dependency) {
+  extends BaseShuffleHandle(shuffleId, dependency) {
 }
 
 abstract class GpuShuffleBlockResolverBase(
@@ -73,18 +73,45 @@ abstract class GpuShuffleBlockResolverBase(
     catalog: ShuffleBufferCatalog)
   extends ShuffleBlockResolver with Logging {
   override def getBlockData(blockId: BlockId, dirs: Option[Array[String]]): ManagedBuffer = {
-    val hasActiveShuffle: Boolean = blockId match {
-      case sbbid: ShuffleBlockBatchId =>
-        catalog.hasActiveShuffle(sbbid.shuffleId)
+    // Get MultithreadedShuffleBufferCatalog dynamically since it may not be
+    // initialized when the resolver is created
+    val mtCatalogOpt = GpuShuffleEnv.getMultithreadedCatalog
+
+    blockId match {
       case sbid: ShuffleBlockId =>
-        catalog.hasActiveShuffle(sbid.shuffleId)
-      case _ => throw new IllegalArgumentException(s"${blockId.getClass} $blockId "
+        // Check MultithreadedShuffleBufferCatalog for single partition blocks
+        mtCatalogOpt match {
+          case Some(mtc) if mtc.hasData(sbid) =>
+            return mtc.getMergedBuffer(sbid)
+          case _ =>
+        }
+
+        // Check UCX/CACHE_ONLY catalog
+        if (catalog != null && catalog.hasActiveShuffle(sbid.shuffleId)) {
+          throw new IllegalStateException(s"The block $blockId is being managed by the catalog")
+        }
+
+        // Fall back to disk-based resolver
+        wrapped.getBlockData(blockId, dirs)
+
+      case sbbid: ShuffleBlockBatchId =>
+        // ShuffleBlockBatchId contains multiple reduce partitions for batch fetch
+        mtCatalogOpt match {
+          case Some(mtc) if mtc.hasActiveShuffle(sbbid.shuffleId) =>
+            return mtc.getMergedBatchBuffer(sbbid)
+          case _ =>
+        }
+
+        // Check UCX/CACHE_ONLY catalog
+        if (catalog != null && catalog.hasActiveShuffle(sbbid.shuffleId)) {
+          throw new IllegalStateException(s"The block $blockId is being managed by the catalog")
+        }
+        wrapped.getBlockData(blockId, dirs)
+
+      case _ =>
+        throw new IllegalArgumentException(s"${blockId.getClass} $blockId "
           + "is not currently supported")
     }
-    if (hasActiveShuffle) {
-      throw new IllegalStateException(s"The block $blockId is being managed by the catalog")
-    }
-    wrapped.getBlockData(blockId, dirs)
   }
 
   override def stop(): Unit = wrapped.stop()
@@ -138,9 +165,9 @@ object RapidsShuffleInternalManagerBase extends Logging {
    */
   private class Slot(slotNum: Int, slotType: String) {
     private val p = Executors.newSingleThreadExecutor(new ThreadFactoryBuilder()
-        .setNameFormat(s"rapids-shuffle-$slotType-$slotNum")
-        .setDaemon(true)
-        .build())
+      .setNameFormat(s"rapids-shuffle-$slotType-$slotNum")
+      .setDaemon(true)
+      .build())
 
     def offer[T](task: Callable[T]): Future[T] = {
       p.submit(task)
@@ -277,8 +304,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     maxBytesInFlight: Long,
     shuffleExecutorComponents: ShuffleExecutorComponents,
     numWriterThreads: Int)
-      extends RapidsShuffleWriter[K, V]
-        with RapidsShuffleWriterShimHelper {
+  extends RapidsShuffleWriter[K, V]
+    with RapidsShuffleWriterShimHelper {
   private val dep: ShuffleDependency[K, V, V] = handle.dependency
   private val shuffleId = dep.shuffleId
   private val partitioner = dep.partitioner
@@ -290,14 +317,16 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     handle.metrics.get(METRIC_THREADED_WRITER_LIMITER_WAIT_TIME)
   private val serializationWaitTimeMetric =
     handle.metrics.get(METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME)
+  private val inputFetchTimeMetric =
+    handle.metrics.get(METRIC_THREADED_WRITER_INPUT_FETCH_TIME)
 
   private var shuffleWriteRange: NvtxId = NvtxRegistry.THREADED_WRITER_WRITE.push()
 
   // Case class for tracking partial sorted files in multi-batch scenario
   private case class PartialFile(
-    handle: SpillablePartialFileHandle,
-    partitionLengths: Array[Long],
-    mapOutputWriter: ShuffleMapOutputWriter)
+      handle: SpillablePartialFileHandle,
+      partitionLengths: Array[Long],
+      mapOutputWriter: ShuffleMapOutputWriter)
 
   /**
    * Represents a single compressed record ready to be written to disk.
@@ -404,6 +433,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     // Each record has its own independent buffer for memory isolation.
     val partitionRecords = new ConcurrentHashMap[Int,
       ConcurrentLinkedQueue[Future[CompressedRecord]]]()
+
 
     // Synchronization strategy for maxPartitionIdQueued and mergerCondition:
     //
@@ -610,6 +640,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     // Track total written size (compressed size)
     val totalCompressedSize = new AtomicLong(0L)
     var waitTimeOnLimiterNs: Long = 0L
+    var inputFetchTimeNs: Long = 0L
 
     // Multi-batch tracking
     val batchStates = new ArrayBuffer[BatchState]()
@@ -627,8 +658,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     var currentBatch = createBatchState(currentBatchId, mapOutputWriter)
 
     try {
+      var inputFetchStart = System.nanoTime()
       while (records.hasNext) {
         val record = records.next()
+        inputFetchTimeNs += System.nanoTime() - inputFetchStart
+
         val key = record._1
         val value = record._2
         val reducePartitionId: Int = partitioner.getPartition(key)
@@ -735,7 +769,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             case e: Exception =>
               throw new IOException(
                 s"Failed compression task for shuffle $shuffleId, map $mapId, " +
-                s"partition $reducePartitionId", e)
+                  s"partition $reducePartitionId", e)
           }
         })
 
@@ -752,7 +786,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           currentBatch.hasNewWork.set(true)
           currentBatch.mergerCondition.notifyAll()
         }
+
+        // Reset timer for next iteration's hasNext/next
+        inputFetchStart = System.nanoTime()
       }
+      // Account for the final hasNext call that returned false
+      inputFetchTimeNs += System.nanoTime() - inputFetchStart
 
       // Mark end of last batch by setting maxPartitionIdQueued to numPartitions.
       // This signals the merger thread that all partitions have been queued.
@@ -777,25 +816,26 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           case ee: ExecutionException => throw ee.getCause
         }
 
-        // CRITICAL: For multi-batch, preserve handle before any commit
+        // CRITICAL: Preserve handle before any commit
         // commitAllPartitions() would flush/rename data, so we extract first
-        if (isMultiBatch) {
+        val mtCatalog = GpuShuffleEnv.getMultithreadedCatalog
+        if (isMultiBatch || mtCatalog.isDefined) {
+          // For multi-batch or when using catalog mode, extract handle
           val (handle, partLengths) = extractHandleAndLengthsFromWriter(
             batch.mapOutputWriter)
           partialFiles += PartialFile(handle, partLengths, batch.mapOutputWriter)
         } else {
-          // Single batch: commit normally
+          // Single batch without catalog: commit normally
           commitAllPartitions(batch.mapOutputWriter, true)
         }
       }
 
-      // Update write metrics
-      val totalWriteTime = System.nanoTime() - writeStartTime
-      writeMetrics.incWriteTime(totalWriteTime - waitTimeOnLimiterNs)
+      // Update write metrics (except writeTime which is calculated at the end)
       writeMetrics.incRecordsWritten(recordsWritten)
       writeMetrics.incBytesWritten(totalCompressedSize.get())
       limiterWaitTimeMetric.foreach(_ += waitTimeOnLimiterNs)
       serializationWaitTimeMetric.foreach(_ += totalSerializationWaitTimeNs)
+      inputFetchTimeMetric.foreach(_ += inputFetchTimeNs)
 
     } finally {
       // Helper to cleanup a single batch
@@ -831,29 +871,111 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       }
     }
 
-    // Handle final output
-    if (isMultiBatch) {
-      // Multi-batch: create NEW writer for final merge
-      // CRITICAL: Cannot reuse mapOutputWriter as it would write to same outputTempFile
-      val finalMergeWriter = shuffleExecutorComponents.createMapOutputWriter(
-        shuffleId,
-        mapId,
-        numPartitions)
-      mapOutputWriters += finalMergeWriter  // Track for cleanup
+    // Track whether handles have been transferred to catalog or merged
+    var handlesTransferred = false
 
-      // Force file-only mode for final merge writer since it doesn't benefit
-      // from memory buffering (merge operation is already doing sequential I/O)
-      finalMergeWriter match {
-        case rapidsWriter: RapidsLocalDiskShuffleMapOutputWriter =>
-          rapidsWriter.setForceFileOnlyMode()
-        case _ => // Other writer types don't need this optimization
+    try {
+      // Handle final output
+      val mtCatalog = GpuShuffleEnv.getMultithreadedCatalog
+
+      val result = mtCatalog match {
+        case Some(catalog) =>
+          // Store data in MultithreadedShuffleBufferCatalog instead of merging.
+          // The catalog takes ownership of the handles.
+          val lengths = storePartialFilesInCatalog(catalog, partialFiles.toSeq, isMultiBatch)
+          handlesTransferred = true
+          lengths
+        case None =>
+          // Fallback to original merge behavior
+          if (isMultiBatch) {
+            // Multi-batch: create NEW writer for final merge
+            val finalMergeWriter = shuffleExecutorComponents.createMapOutputWriter(
+              shuffleId,
+              mapId,
+              numPartitions)
+            mapOutputWriters += finalMergeWriter
+
+            finalMergeWriter match {
+              case rapidsWriter: RapidsLocalDiskShuffleMapOutputWriter =>
+                rapidsWriter.setForceFileOnlyMode()
+              case _ =>
+            }
+
+            // mergePartialFiles closes handles in its finally block
+            val lengths = mergePartialFiles(partialFiles.toSeq, finalMergeWriter)
+            handlesTransferred = true
+            lengths
+          } else {
+            getPartitionLengths
+          }
       }
 
-      mergePartialFiles(partialFiles.toSeq, finalMergeWriter)
-    } else {
-      // Single batch: already committed, just return lengths
-      getPartitionLengths
+      // Update write time: total time from start minus input fetch time
+      val totalWriteTime = System.nanoTime() - writeStartTime
+      writeMetrics.incWriteTime(totalWriteTime - inputFetchTimeNs)
+      result
+    } finally {
+      // Clean up handles if they weren't transferred to catalog or merged
+      if (!handlesTransferred) {
+        partialFiles.foreach { pf =>
+          try {
+            pf.handle.close()
+          } catch {
+            case e: Exception =>
+              logWarning(s"Failed to close partial file handle during cleanup", e)
+          }
+        }
+      }
     }
+  }
+
+  /**
+   * Store partial files in MultithreadedShuffleBufferCatalog instead of merging.
+   * This avoids the I/O cost of merging while keeping data in memory when possible.
+   *
+   * @param catalog the MultithreadedShuffleBufferCatalog to store data
+   * @param partialFiles list of partial files from all batches
+   * @param isMultiBatch whether this is a multi-batch scenario
+   * @return array of partition lengths (sum across all batches for each partition)
+   */
+  private def storePartialFilesInCatalog(
+      catalog: MultithreadedShuffleBufferCatalog,
+      partialFiles: Seq[PartialFile],
+      isMultiBatch: Boolean): Array[Long] = {
+    val accumulatedLengths = new Array[Long](numPartitions)
+
+    if (isMultiBatch) {
+      // Multi-batch: store each partial file's partitions in catalog
+      partialFiles.foreach { pf =>
+        var offset = 0L
+        for (partId <- 0 until numPartitions) {
+          val length = pf.partitionLengths(partId)
+          if (length > 0) {
+            catalog.addPartition(shuffleId, mapId, partId, pf.handle, offset, length)
+          }
+          accumulatedLengths(partId) += length
+          offset += length
+        }
+        // Don't close the handle here - it will be closed when shuffle is unregistered
+        // Disk write savings are recorded by the reducer when reading the data
+      }
+    } else {
+      // Single batch: use handle already extracted in the write loop
+      // (partialFiles should have exactly one element in single-batch mode)
+      val pf = partialFiles.head
+      var offset = 0L
+      for (partId <- 0 until numPartitions) {
+        val length = pf.partitionLengths(partId)
+        if (length > 0) {
+          catalog.addPartition(shuffleId, mapId, partId, pf.handle, offset, length)
+        }
+        accumulatedLengths(partId) = length
+        offset += length
+      }
+      // Disk write savings are recorded by the reducer when reading the data
+    }
+
+    accumulatedLengths
   }
 
   /**
@@ -874,8 +996,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       partialFiles: Seq[PartialFile],
       finalWriter: ShuffleMapOutputWriter): Array[Long] = {
 
-    val mergeStartTime = System.nanoTime()
-
     try {
       // For each partition, copy data from all partial files in order
       // Note: Each partial file is read sequentially from beginning to end,
@@ -888,7 +1008,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
             val partitionLength = partialFile.partitionLengths(partitionId)
             if (partitionLength > 0) {
               val handle = partialFile.handle
-              
+
               // Read partition data sequentially
               // No reset needed - handle maintains read position automatically
               val temp = new Array[Byte](fileBufferSize)
@@ -902,8 +1022,8 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 } else {
                   throw new IOException(
                     s"EOF reading partition $partitionId " +
-                    s"from partial file ${partialFiles.indexOf(partialFile)}, " +
-                    s"expected $partitionLength bytes, got ${partitionLength - remaining}")
+                      s"from partial file ${partialFiles.indexOf(partialFile)}, " +
+                      s"expected $partitionLength bytes, got ${partitionLength - remaining}")
                 }
               }
             }
@@ -921,8 +1041,6 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         }
       }
     }
-
-    writeMetrics.incWriteTime(System.nanoTime() - mergeStartTime)
 
     // Commit final merged output
     commitAllPartitions(finalWriter, true)
@@ -946,7 +1064,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
       case _ =>
         throw new IllegalStateException(
           s"Unexpected writer type: ${writer.getClass.getName}. " +
-          "RapidsShuffleManager should always use RapidsLocalDiskShuffleMapOutputWriter.")
+            "RapidsShuffleManager should always use RapidsLocalDiskShuffleMapOutputWriter.")
     }
   }
 
@@ -1022,6 +1140,16 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
   private val deserializationTimeNs = sqlMetrics.get(METRIC_SHUFFLE_DESERIALIZATION_TIME)
   private val shuffleReadTimeNs = sqlMetrics.get(METRIC_SHUFFLE_READ_TIME)
   private val dataReadSize = sqlMetrics.get(METRIC_DATA_READ_SIZE)
+  // New metrics for wall time breakdown
+  private val ioWaitTimeNs = sqlMetrics.get(METRIC_THREADED_READER_IO_WAIT_TIME)
+  private val deserWaitTimeNs = sqlMetrics.get(METRIC_THREADED_READER_DESER_WAIT_TIME)
+  // Limiter metrics
+  private val limiterAcquireCount =
+    sqlMetrics.get(METRIC_THREADED_READER_LIMITER_ACQUIRE_COUNT)
+  private val limiterAcquireFailCount =
+    sqlMetrics.get(METRIC_THREADED_READER_LIMITER_ACQUIRE_FAIL_COUNT)
+  private val limiterPendingBlockCount =
+    sqlMetrics.get(METRIC_THREADED_READER_LIMITER_PENDING_BLOCK_COUNT)
 
   private var shuffleReadRange: NvtxId = NvtxRegistry.THREADED_READER_READ.push()
 
@@ -1079,7 +1207,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           private var currentIter: Iterator[(Any, Any)] = _
           private var currentStream: AutoCloseable = _
           override def hasNext: Boolean = fetcherIterator.hasNext || (
-              currentIter != null && currentIter.hasNext)
+            currentIter != null && currentIter.hasNext)
 
           override def close(): Unit = {
             if (currentStream != null) {
@@ -1246,7 +1374,9 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             NvtxRegistry.BATCH_WAIT {
               waitTimeStart = System.nanoTime()
               val pending = futures.dequeue().get // wait for one future
-              waitTime += System.nanoTime() - waitTimeStart
+              val futureWaitThisCall = System.nanoTime() - waitTimeStart
+              waitTime += futureWaitThisCall
+              deserWaitTimeNs.foreach(_ += futureWaitThisCall)
               // if the future returned a block state, we have more work to do
               pending match {
                 case Some(leftOver@BlockState(_, _, _)) =>
@@ -1267,13 +1397,15 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           // here while we wait.
           waitTimeStart = System.nanoTime()
           val res = queued.take()
+          val queueWaitThisCall = System.nanoTime() - waitTimeStart
+          // limiter is now released immediately after deserialization in deserializeTask
           res match {
-            case (_, cb: ColumnarBatch) =>
-              limiter.release(SerializedTableColumn.getMemoryUsed(cb))
+            case (_, _: ColumnarBatch) =>
               popFetchedIfAvailable()
-            case _ => 0 // TODO: do we need to handle other types here?
+            case _ => // do nothing
           }
-          waitTime += System.nanoTime() - waitTimeStart
+          waitTime += queueWaitThisCall
+          deserWaitTimeNs.foreach(_ += queueWaitThisCall)
           deserializationTimeNs.foreach(_ += waitTime)
           shuffleReadTimeNs.foreach(_ += waitTime)
           res
@@ -1296,10 +1428,12 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
       res
     }
 
-    private def deserializeTask(blockState: BlockState): Unit = {
+    private def deserializeTask(blockState: BlockState, acquiredSize: Long): Unit = {
       val slot = RapidsShuffleInternalManagerBase.getNextReaderSlot
       futures += RapidsShuffleInternalManagerBase.queueReadTask(slot, () => {
         var success = false
+        // Track the size we need to release (starts with the pre-acquired size)
+        var sizeToRelease = acquiredSize
         try {
           var currentBatchSize = blockState.getNextBatchSize
           var didFit = true
@@ -1308,7 +1442,14 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             queued.offer(batch)
             // peek at the next batch
             currentBatchSize = blockState.getNextBatchSize
+            limiterAcquireCount.foreach(_ += 1)
             didFit = limiter.acquire(currentBatchSize)
+            if (didFit) {
+              // Successfully acquired, add to sizeToRelease for later release
+              sizeToRelease += currentBatchSize
+            } else {
+              limiterAcquireFailCount.foreach(_ += 1)
+            }
           }
           success = true
           if (!didFit) {
@@ -1317,7 +1458,12 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             None // no further batches
           }
         } finally {
-          if (!success) {
+          // Release limiter immediately after deserialization completes
+          limiter.release(sizeToRelease)
+          // Close blockState (Netty buffer) immediately if:
+          // - failed (success = false), or
+          // - all batches processed (success = true and returned None)
+          if (!success || !blockState.hasNext) {
             blockState.close()
           }
         }
@@ -1332,11 +1478,14 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         while(pendingIts.nonEmpty && continue) {
           val blockState = pendingIts.head
           // check if we can handle the head batch now
-          if (limiter.acquire(blockState.getNextBatchSize)) {
+          val nextBatchSize = blockState.getNextBatchSize
+          limiterAcquireCount.foreach(_ += 1)
+          if (limiter.acquire(nextBatchSize)) {
             // kick off deserialization task
             pendingIts.dequeue()
-            deserializeTask(blockState)
+            deserializeTask(blockState, nextBatchSize)
           } else {
+            limiterAcquireFailCount.foreach(_ += 1)
             continue = false
           }
         }
@@ -1362,20 +1511,26 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
               // fetch block time accounts for time spent waiting for streams.next()
               val readBlockedStart = System.nanoTime()
               val (blockId: BlockId, inputStream) = fetcherIterator.next()
-              readBlockedTime += System.nanoTime() - readBlockedStart
+              val ioWaitThisBlock = System.nanoTime() - readBlockedStart
+              readBlockedTime += ioWaitThisBlock
+              ioWaitTimeNs.foreach(_ += ioWaitThisBlock)
 
               val deserStream = serializerInstance.deserializeStream(inputStream)
               val batchIter = deserStream.asKeyValueIterator
                 .asInstanceOf[BaseSerializedTableIterator]
               val blockState = BlockState(blockId, batchIter, inputStream)
               // get the next known batch size (there could be multiple batches)
-              if (limiter.acquire(blockState.getNextBatchSize)) {
+              val nextBatchSize = blockState.getNextBatchSize
+              limiterAcquireCount.foreach(_ += 1)
+              if (limiter.acquire(nextBatchSize)) {
                 // we can fit at least the first batch in this block
                 // kick off a deserialization task
-                deserializeTask(blockState)
+                deserializeTask(blockState, nextBatchSize)
               } else {
                 // first batch didn't fit, put iterator aside and stop asking for results
                 // from the fetcher
+                limiterAcquireFailCount.foreach(_ += 1)
+                limiterPendingBlockCount.foreach(_ += 1)
                 pendingIts.enqueue(blockState)
                 didFit = false
               }
@@ -1490,7 +1645,7 @@ class RapidsCachingWriter[K, V](
         val partId = p._1.asInstanceOf[Int]
         val batch = p._2.asInstanceOf[ColumnarBatch]
         logDebug(s"Caching shuffle_id=${handle.shuffleId} map_id=$mapId, partId=$partId, "
-            + s"batch=[num_cols=${batch.numCols()}, num_rows=${batch.numRows()}]")
+          + s"batch=[num_cols=${batch.numCols()}, num_rows=${batch.numRows()}]")
         recordsWritten = recordsWritten + batch.numRows()
         var partSize: Long = 0
         val blockId = ShuffleBlockId(handle.shuffleId, mapId, partId)
@@ -1557,7 +1712,7 @@ class RapidsCachingWriter[K, V](
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
 class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
-    extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
+  extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
 
@@ -1606,7 +1761,7 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     }
 
   logWarning(s"Rapids Shuffle Plugin enabled. ${transportEnabledMessage}. To disable the " +
-      s"RAPIDS Shuffle Manager set `${RapidsConf.SHUFFLE_MANAGER_ENABLED}` to false")
+    s"RAPIDS Shuffle Manager set `${RapidsConf.SHUFFLE_MANAGER_ENABLED}` to false")
 
   //Many of these values like blockManager are not initialized when the constructor is called,
   // so they all need to be lazy values that are executed when things are first called
@@ -1627,9 +1782,13 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     if (rapidsConf.isSqlExplainOnlyEnabled) {
       fallThroughReasons += "Plugin is in explain only mode"
     }
+    if (GpuShuffleEnv.isRowBasedChecksumEnabled) {
+      fallThroughReasons += "Detected spark.shuffle.checksum.enabled=true. " +
+        "This feature is supported in Spark 4.1+, but is not yet supported by Spark-Rapids."
+    }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
-          s"because: ${fallThroughReasons.mkString(", ")}")
+        s"because: ${fallThroughReasons.mkString(", ")}")
     }
     fallThroughReasons.nonEmpty
   }
@@ -1645,11 +1804,18 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   protected def getCatalogOrThrow: ShuffleBufferCatalog =
     Option(GpuShuffleEnv.getCatalog).getOrElse(
       throw new IllegalStateException("The ShuffleBufferCatalog is not initialized but the " +
-          "RapidsShuffleManager is configured"))
+        "RapidsShuffleManager is configured"))
 
   protected lazy val resolver =
-    if (shouldFallThroughOnEverything || rapidsConf.isMultiThreadedShuffleManagerMode) {
+    if (shouldFallThroughOnEverything) {
       wrapped.shuffleBlockResolver
+    } else if (rapidsConf.isMultiThreadedShuffleManagerMode) {
+      // MULTITHREADED mode: use GpuShuffleBlockResolver
+      // mtCatalog will be fetched dynamically in getBlockData() since it may not be
+      // initialized yet when this resolver is created
+      new GpuShuffleBlockResolver(
+        wrapped.shuffleBlockResolver.asInstanceOf[IndexShuffleBlockResolver],
+        null) // No UCX catalog in MULTITHREADED mode
     } else { // we didn't fallback && we are using the UCX shuffle
       val catalog = GpuShuffleEnv.getCatalog
       if (catalog == null) {
@@ -1664,7 +1830,7 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
           // is enabled, we need to fail.
           throw new IllegalStateException(
             "An executor with RapidsShuffleManager is trying to use a ShuffleBufferCatalog " +
-                "that isn't initialized."
+              "that isn't initialized."
           )
         }
       } else {
@@ -1726,17 +1892,17 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     // Check if user configured a different ShuffleDataIO plugin
     val configuredPlugin = conf.get("spark.shuffle.sort.io.plugin.class", "")
     val rapidsPlugin = "org.apache.spark.shuffle.sort.io.RapidsLocalDiskShuffleDataIO"
-    
+
     if (configuredPlugin.nonEmpty && !configuredPlugin.endsWith("RapidsLocalDiskShuffleDataIO")) {
       throw new IllegalArgumentException(
         s"RapidsShuffleManager requires 'spark.shuffle.sort.io.plugin.class' to be " +
-        s"'$rapidsPlugin' or unset, but found '$configuredPlugin'. " +
-        s"Please update your configuration.")
+          s"'$rapidsPlugin' or unset, but found '$configuredPlugin'. " +
+          s"Please update your configuration.")
     }
-    
+
     val rapidsDataIO = new RapidsLocalDiskShuffleDataIO(conf)
     val executorComponents = rapidsDataIO.executor()
-    
+
     val extraConfigs = conf.getAllWithPrefix(ShuffleDataIOUtils.SHUFFLE_SPARK_CONF_PREFIX).toMap
     executorComponents.initializeExecutor(
       conf.getAppId,
@@ -1760,8 +1926,10 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   }
 
   override def getWriter[K, V](
-      handle: ShuffleHandle, mapId: Long, context: TaskContext,
-    metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
+      handle: ShuffleHandle,
+      mapId: Long,
+      context: TaskContext,
+      metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
     handle match {
       case gpu: GpuShuffleHandle[_, _] =>
         registerGpuShuffle(handle.shuffleId)
@@ -1776,10 +1944,12 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       case handle: BaseShuffleHandle[_, _, _] =>
         handle.dependency match {
           case gpuDep: GpuShuffleDependency[_, _, _]
-              if gpuDep.useMultiThreadedShuffle &&
-                  rapidsConf.shuffleMultiThreadedWriterThreads > 0 =>
+            if gpuDep.useMultiThreadedShuffle &&
+              rapidsConf.shuffleMultiThreadedWriterThreads > 0 =>
             // use the threaded writer if the number of threads specified is 1 or above,
             // with 0 threads we fallback to the Spark-provided writer.
+            // Register shuffle with MultithreadedShuffleBufferCatalog
+            registerGpuShuffle(handle.shuffleId)
             val handleWithMetrics = new ShuffleHandleWithMetrics(
               handle.shuffleId,
               gpuDep.metrics,
@@ -1810,21 +1980,21 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   }
 
   override def getReader[K, C](
-      handle: ShuffleHandle,
-      startMapIndex: Int,
-      endMapIndex: Int,
-      startPartition: Int,
-      endPartition: Int,
-      context: TaskContext,
-      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+                                  handle: ShuffleHandle,
+                                  startMapIndex: Int,
+                                  endMapIndex: Int,
+                                  startPartition: Int,
+                                  endPartition: Int,
+                                  context: TaskContext,
+                                  metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     handle match {
       case gpuHandle: GpuShuffleHandle[_, _] =>
         logInfo(s"Asking map output tracker for dependency ${gpuHandle.dependency}, " +
-            s"map output sizes for: ${gpuHandle.shuffleId}, parts=$startPartition-$endPartition")
+          s"map output sizes for: ${gpuHandle.shuffleId}, parts=$startPartition-$endPartition")
         if (gpuHandle.dependency.keyOrdering.isDefined) {
           // very unlikely, but just in case
           throw new IllegalStateException("A key ordering was requested for a gpu shuffle "
-              + s"dependency ${gpuHandle.dependency.keyOrdering.get}, this is not supported.")
+            + s"dependency ${gpuHandle.dependency.keyOrdering.get}, this is not supported.")
         }
 
         val blocksByAddress = NvtxRegistry.GET_MAP_SIZES_BY_EXEC_ID {
@@ -1840,8 +2010,8 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
           getCatalogOrThrow,
           gpuHandle.dependency.sparkTypes)
       case other: ShuffleHandle if
-          rapidsConf.isMultiThreadedShuffleManagerMode
-            && rapidsConf.shuffleMultiThreadedReaderThreads > 0 =>
+        rapidsConf.isMultiThreadedShuffleManagerMode
+          && rapidsConf.shuffleMultiThreadedReaderThreads > 0 =>
         // we enable a multi-threaded reader in the case where we have 1 or
         // more threads and we have enbled the MULTITHREADED shuffle mode.
         // We special case the threads=1 case in the reader to behave like regular
@@ -1901,6 +2071,11 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       logInfo(s"Registering shuffle $shuffleId")
       catalog.registerShuffle(shuffleId)
     }
+    // Also register with MultithreadedShuffleBufferCatalog if available
+    GpuShuffleEnv.getMultithreadedCatalog.foreach { mtCatalog =>
+      logInfo(s"Registering shuffle $shuffleId with multithreaded catalog")
+      mtCatalog.registerShuffle(shuffleId)
+    }
   }
 
   def unregisterGpuShuffle(shuffleId: Int): Unit = {
@@ -1909,6 +2084,16 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       logInfo(s"Unregistering shuffle $shuffleId from shuffle buffer catalog")
       catalog.unregisterShuffle(shuffleId)
     }
+    // For MultithreadedShuffleBufferCatalog:
+    // Cleanup is triggered by ShuffleCleanupListener on job end, not here.
+    // The ShuffleCleanupEndpoint polls the driver for shuffles to clean and calls
+    // mtCatalog.unregisterShuffle on executors.
+    //
+    // Note: This method is called via GC-triggered ContextCleaner.doCleanupShuffle().
+    // We do not register for cleanup here because:
+    // 1. GC timing is unpredictable and often happens too late (at app shutdown)
+    // 2. By that time, executors may already be shutting down
+    // 3. ShuffleCleanupListener triggers cleanup proactively on job end
   }
 
   override def unregisterShuffle(shuffleId: Int): Boolean = {

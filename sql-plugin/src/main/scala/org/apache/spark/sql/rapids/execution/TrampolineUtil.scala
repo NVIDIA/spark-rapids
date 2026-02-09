@@ -253,6 +253,9 @@ object TrampolineUtil {
   def markTaskFailed(ctx: TaskContext, error: Throwable): Unit = {
     ctx.markTaskFailed(error)
   }
+
+  /** Get the key for spark.shuffle.service.enabled config (which is private[spark]) */
+  def shuffleServiceEnabledKey: String = config.SHUFFLE_SERVICE_ENABLED.key
 }
 
 /**

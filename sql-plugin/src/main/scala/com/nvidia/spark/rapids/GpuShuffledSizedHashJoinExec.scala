@@ -34,7 +34,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans._
-import org.apache.spark.sql.catalyst.plans.physical.Distribution
+import org.apache.spark.sql.catalyst.plans.physical.{Distribution, Partitioning, PartitioningCollection, UnknownPartitioning}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
@@ -825,6 +825,16 @@ case class GpuShuffledSymmetricHashJoinExec(
       startWithLeftSide: Boolean): JoinSizer[SpillableColumnarBatch] = {
     new SpillableColumnarBatchSymmetricJoinSizer(startWithLeftSide)
   }
+
+  override def outputPartitioning: Partitioning = joinType match {
+    case _: InnerLike =>
+      PartitioningCollection(Seq(left.outputPartitioning, right.outputPartitioning))
+    case FullOuter =>
+      UnknownPartitioning(left.outputPartitioning.numPartitions)
+    case x =>
+      throw new IllegalArgumentException(
+        s"GpuShuffledSymmetricHashJoinExec should not take $x as the JoinType")
+  }
 }
 
 object GpuShuffledAsymmetricHashJoinExec {
@@ -1146,6 +1156,14 @@ case class GpuShuffledAsymmetricHashJoinExec(
   override protected def createSpillableColumnarBatchSizer(
       startWithLeftSide: Boolean): JoinSizer[SpillableColumnarBatch] = {
     new SpillableColumnarBatchAsymmetricJoinSizer(magnificationThreshold)
+  }
+
+  override def outputPartitioning: Partitioning = joinType match {
+    case LeftOuter => left.outputPartitioning
+    case RightOuter => right.outputPartitioning
+    case x =>
+      throw new IllegalArgumentException(
+        s"GpuShuffledAsymmetricHashJoinExec should not take $x as the JoinType")
   }
 }
 

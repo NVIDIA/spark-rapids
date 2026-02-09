@@ -313,6 +313,29 @@ object GpuShuffleExchangeExecBase {
     "rapidsThreadedWriterSerializationWaitTime"
   val METRIC_DESC_THREADED_WRITER_SERIALIZATION_WAIT_TIME =
     "threaded writer serialization wait time"
+  val METRIC_THREADED_WRITER_INPUT_FETCH_TIME = "rapidsThreadedWriterInputFetchTime"
+  val METRIC_DESC_THREADED_WRITER_INPUT_FETCH_TIME =
+    "threaded writer input fetch time (records.hasNext/next)"
+
+  // New metrics for shuffle read wall time breakdown
+  val METRIC_THREADED_READER_IO_WAIT_TIME = "rapidsThreadedReaderIoWaitTime"
+  val METRIC_DESC_THREADED_READER_IO_WAIT_TIME =
+    "threaded reader time waiting for IO (fetcherIterator.next)"
+  val METRIC_THREADED_READER_DESER_WAIT_TIME = "rapidsThreadedReaderDeserWaitTime"
+  val METRIC_DESC_THREADED_READER_DESER_WAIT_TIME =
+    "threaded reader time waiting for background deserialization (future.get + queued.take)"
+  val METRIC_THREADED_READER_LIMITER_ACQUIRE_COUNT =
+    "rapidsThreadedReaderLimiterAcquireCount"
+  val METRIC_DESC_THREADED_READER_LIMITER_ACQUIRE_COUNT =
+    "threaded reader total number of limiter.acquire() calls"
+  val METRIC_THREADED_READER_LIMITER_ACQUIRE_FAIL_COUNT =
+    "rapidsThreadedReaderLimiterAcquireFailCount"
+  val METRIC_DESC_THREADED_READER_LIMITER_ACQUIRE_FAIL_COUNT =
+    "threaded reader number of times limiter.acquire() returned false"
+  val METRIC_THREADED_READER_LIMITER_PENDING_BLOCK_COUNT =
+    "rapidsThreadedReaderLimiterPendingBlockCount"
+  val METRIC_DESC_THREADED_READER_LIMITER_PENDING_BLOCK_COUNT =
+    "threaded reader number of blocks deferred due to limiter being full"
 
   def createAdditionalExchangeMetrics(gpu: GpuExec): Map[String, GpuMetric] = Map(
     // dataSize and dataReadSize are uncompressed, one is on write and the other on read
@@ -337,7 +360,25 @@ object GpuShuffleExchangeExecBase {
           METRIC_DESC_THREADED_WRITER_LIMITER_WAIT_TIME),
     METRIC_THREADED_WRITER_SERIALIZATION_WAIT_TIME ->
         gpu.createNanoTimingMetric(DEBUG_LEVEL,
-          METRIC_DESC_THREADED_WRITER_SERIALIZATION_WAIT_TIME)
+          METRIC_DESC_THREADED_WRITER_SERIALIZATION_WAIT_TIME),
+    METRIC_THREADED_WRITER_INPUT_FETCH_TIME ->
+        gpu.createNanoTimingMetric(DEBUG_LEVEL,
+          METRIC_DESC_THREADED_WRITER_INPUT_FETCH_TIME),
+    METRIC_THREADED_READER_IO_WAIT_TIME ->
+        gpu.createNanoTimingMetric(DEBUG_LEVEL,
+          METRIC_DESC_THREADED_READER_IO_WAIT_TIME),
+    METRIC_THREADED_READER_DESER_WAIT_TIME ->
+        gpu.createNanoTimingMetric(DEBUG_LEVEL,
+          METRIC_DESC_THREADED_READER_DESER_WAIT_TIME),
+    METRIC_THREADED_READER_LIMITER_ACQUIRE_COUNT ->
+        gpu.createMetric(DEBUG_LEVEL,
+          METRIC_DESC_THREADED_READER_LIMITER_ACQUIRE_COUNT),
+    METRIC_THREADED_READER_LIMITER_ACQUIRE_FAIL_COUNT ->
+        gpu.createMetric(DEBUG_LEVEL,
+          METRIC_DESC_THREADED_READER_LIMITER_ACQUIRE_FAIL_COUNT),
+    METRIC_THREADED_READER_LIMITER_PENDING_BLOCK_COUNT ->
+        gpu.createMetric(DEBUG_LEVEL,
+          METRIC_DESC_THREADED_READER_LIMITER_PENDING_BLOCK_COUNT)
   )
 
   def prepareBatchShuffleDependency(

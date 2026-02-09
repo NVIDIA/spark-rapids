@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,11 +27,13 @@ import org.apache.spark.internal.Logging
 class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   private var shuffleCatalog: ShuffleBufferCatalog = _
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
+  private var multithreadedCatalog: MultithreadedShuffleBufferCatalog = _
 
-  private lazy val conf = SparkEnv.get.conf
-
-  private lazy val isRapidsShuffleConfigured: Boolean =
-    GpuShuffleEnv.isRapidsShuffleConfigured(conf)
+  private lazy val isRapidsShuffleConfigured: Boolean = {
+    val conf = SparkEnv.get.conf
+    conf.contains("spark.shuffle.manager") &&
+      conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
+  }
 
   lazy val rapidsShuffleCodec: Option[TableCompressionCodec] = {
     val codecName = rapidsConf.shuffleCompressionCodec.toLowerCase(Locale.ROOT)
@@ -49,6 +51,28 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
           new ShuffleBufferCatalog()
       shuffleReceivedBufferCatalog =
           new ShuffleReceivedBufferCatalog()
+      // Initialize MultithreadedShuffleBufferCatalog for MULTITHREADED mode when:
+      // 1. skipMerge is enabled
+      // 2. External Shuffle Service is disabled (ESS cannot access in-memory catalog)
+      // 3. Off-heap memory limits are enabled (prevents OOM from unbounded buffer growth)
+      if (rapidsConf.isMultiThreadedShuffleManagerMode) {
+        if (!rapidsConf.isMultithreadedShuffleSkipMergeEnabled) {
+          logInfo("MultithreadedShuffleBufferCatalog disabled - " +
+            "spark.rapids.shuffle.multithreaded.skipMerge is false")
+        } else if (GpuShuffleEnv.isExternalShuffleEnabled) {
+          logWarning("MultithreadedShuffleBufferCatalog disabled - " +
+            "External Shuffle Service (ESS) is enabled. ESS cannot access in-memory catalog. " +
+            "Disable ESS (spark.shuffle.service.enabled=false) to use skipMerge feature.")
+        } else if (!rapidsConf.offHeapLimitEnabled) {
+          logWarning("MultithreadedShuffleBufferCatalog disabled - " +
+            "spark.rapids.memory.host.offHeapLimit.enabled is false. " +
+            "Without off-heap memory limits, shuffle buffers could grow unbounded and cause OOM. " +
+            "Set spark.rapids.memory.host.offHeapLimit.enabled=true to use skipMerge feature.")
+        } else {
+          multithreadedCatalog = new MultithreadedShuffleBufferCatalog()
+          logInfo("MultithreadedShuffleBufferCatalog enabled (ESS disabled, off-heap limits on)")
+        }
+      }
     }
   }
 
@@ -56,8 +80,12 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = shuffleReceivedBufferCatalog
 
+  def getMultithreadedCatalog: Option[MultithreadedShuffleBufferCatalog] = {
+    Option(multithreadedCatalog)
+  }
+
   def getShuffleFetchTimeoutSeconds: Long = {
-    conf.getTimeAsSeconds("spark.network.timeout", "120s")
+    SparkEnv.get.conf.getTimeAsSeconds("spark.network.timeout", "120s")
   }
 }
 
@@ -106,6 +134,16 @@ object GpuShuffleEnv extends Logging {
   def isSparkAuthenticateEnabled: Boolean = {
     val conf = SparkEnv.get.conf
     conf.getBoolean("spark.authenticate", false)
+  }
+
+  // Returns true if row-based checksum is enabled, which is not supported
+  // by the RAPIDS Shuffle Manager
+  def isRowBasedChecksumEnabled: Boolean = {
+    val conf = SparkEnv.get.conf
+    // Row-based checksum feature was added in Spark 4.1.x (SPARK-51756).
+    // Fully supporting this feature would require kernel development to compute
+    // checksums on the GPU side.
+    conf.getBoolean("spark.shuffle.checksum.enabled", false)
   }
 
   //
@@ -174,6 +212,10 @@ object GpuShuffleEnv extends Logging {
     null
   } else {
     env.getCatalog
+  }
+
+  def getMultithreadedCatalog: Option[MultithreadedShuffleBufferCatalog] = {
+    Option(env).flatMap(_.getMultithreadedCatalog)
   }
 
   private def validateRapidsShuffleManager(shuffManagerClassName: String): Unit = {

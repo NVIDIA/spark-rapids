@@ -24,7 +24,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti}
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
@@ -137,6 +137,8 @@ abstract class GpuBroadcastHashJoinExecBase(
         UnspecifiedDistribution :: BroadcastDistribution(mode) :: Nil
     }
   }
+
+  override def outputPartitioning: Partitioning = streamedPlan.outputPartitioning
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] =>

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@
 {"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.storage
 
@@ -74,6 +75,7 @@ import org.apache.spark.network.shuffle.checksum.{Cause, ShuffleChecksumHelper}
 import org.apache.spark.network.util.{NettyUtils, TransportConf}
 import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.shuffle.{FetchFailedException, ShuffleReadMetricsReporter}
+import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.util.{CompletionIterator, TaskCompletionListener, Utils}
 
 /**
@@ -440,7 +442,13 @@ final class RapidsShuffleBlockFetcherIterator(
         localBlocks ++= mergedBlockInfos.map(info => (info.blockId, info.mapIndex))
         localBlockBytes += mergedBlockInfos.map(_.size).sum
       } else if (blockManager.hostLocalDirManager.isDefined &&
-        address.host == blockManager.blockManagerId.host) {
+        address.host == blockManager.blockManagerId.host &&
+        // When MultithreadedShuffleBufferCatalog is enabled, we skip host-local optimization
+        // and treat these blocks as remote. This is because each executor has its own catalog
+        // in memory, and host-local disk access won't work when shuffle data is stored in memory.
+        // Remote fetch will go through network to the target executor, which can then serve
+        // data from its own catalog.
+        !GpuShuffleEnv.getMultithreadedCatalog.isDefined) {
         val mergedBlockInfos = mergeContinuousShuffleBlockIdsIfNeeded(
           blockInfos.map(info => FetchBlockInfo(info._1, info._2, info._3)), doBatchFetch)
         numBlocksToFetch += mergedBlockInfos.size

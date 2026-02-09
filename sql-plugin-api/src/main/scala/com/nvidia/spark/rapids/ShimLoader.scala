@@ -21,6 +21,7 @@ import java.net.URL
 import scala.collection.JavaConverters.enumerationAsScalaIteratorConverter
 import scala.util.Try
 
+import com.nvidia.spark.GpuCachedBatchSerializer
 import org.apache.commons.lang3.reflect.MethodUtils
 
 import org.apache.spark.{SPARK_BRANCH, SPARK_BUILD_DATE, SPARK_BUILD_USER, SPARK_REPO_URL, SPARK_REVISION, SPARK_VERSION, SparkConf, SparkEnv}
@@ -382,4 +383,10 @@ object ShimLoader {
   def loadGpuColumnVector(): Class[_] = {
     ShimReflectionUtils.loadClass("com.nvidia.spark.rapids.GpuColumnVector")
   }
+
+  def newParquetCachedBatchSerializer(): GpuCachedBatchSerializer = {
+    ShimReflectionUtils.newInstanceOf(
+      "com.nvidia.spark.rapids.parquet.ParquetCachedBatchSerializer")
+  }
+
 }
