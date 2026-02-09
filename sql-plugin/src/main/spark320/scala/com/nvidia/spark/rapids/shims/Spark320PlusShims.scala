@@ -48,6 +48,7 @@
 {"spark": "400"}
 {"spark": "400db173"}
 {"spark": "401"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -84,7 +85,7 @@ import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
  * Shim base class that can be compiled with every supported 3.2.0+
  */
 trait Spark320PlusShims extends SparkShims with RebaseShims
-    with AggregateInPandasShims with Logging {
+    with WindowInPandasShims with Logging {
 
 
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](

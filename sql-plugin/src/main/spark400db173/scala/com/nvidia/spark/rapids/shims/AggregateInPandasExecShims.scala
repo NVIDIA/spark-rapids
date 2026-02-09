@@ -47,4 +47,3 @@ object AggregateInPandasExecShims {
     plan.asInstanceOf[ArrowAggregatePythonExec].groupingExpressions
   }
 }
-
