@@ -157,6 +157,7 @@ query ($sha: String!) {
   repository(name: "spark-rapids", owner: "NVIDIA") {
     commit: object(expression: $sha) {
       ... on Commit {
+        abbreviatedOid
         associatedPullRequests(first: 10) {
           edges {
             node {
@@ -245,21 +246,21 @@ def get_commits(releases: set):
 def get_pr_via_commits(ver_commits: set, token: str):
     pr_list = []
     for version, commits in ver_commits.items():
-        # Fetch the PRs for each commit in parallel
-        with ThreadPoolExecutor() as ex:
-            futures = {ex.submit(post, query=query_pr_by_commit, token=token, variable={'sha': sha}): sha for sha in commits}
-            for f in as_completed(futures):
-                commit = futures[f]
-                res = f.result()
-                try:
-                    pr_item = res.json()['data']['repository']['commit']['associatedPullRequests']['edges'][0]['node']
-                    pr_item['ver'] = version
-                    # Handle the case of multiple commits being associated with the same PR
-                    if pr_item not in pr_list and pr_item['mergedAt'] is not None:
-                        pr_list.append(pr_item)
-                except Exception as e:
-                    print(f"Exception: {e}, commit sha '{commit}' does not have the associated Pull Request")
-                    continue
+        # Fetch the PRs for each commit in parallel, yields results in the input order
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            pr_iterators = ex.map(lambda sha: post(query=query_pr_by_commit, token=token, variable={'sha': sha}), commits)
+        for res in pr_iterators:
+            commit = ''
+            try:
+                commit = res.json()['data']['repository']['commit']['abbreviatedOid']
+                pr_item = res.json()['data']['repository']['commit']['associatedPullRequests']['edges'][0]['node']
+                pr_item['ver'] = version
+                # Handle the case of multiple commits being associated with the same PR
+                if pr_item not in pr_list and pr_item['mergedAt'] is not None:
+                    pr_list.append(pr_item)
+            except Exception as e:
+                print(f"Exception: {e}, commit sha '{commit}' does not have the associated Pull Request")
+                continue
     return pr_list
 
 def process_changelog(resource_type: str, changelog: dict, releases: set, projects: set, token: str):
