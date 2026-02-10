@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@
 {"spark": "343"}
 {"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
@@ -44,14 +45,38 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "400"}
+{"spark": "401"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.$_spark.version.classifier_
+package org.apache.spark.sql.rapids
 
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.rapids.ProxyRapidsShuffleManagerShim
+import org.apache.spark.{SparkConf, TaskContext}
+import org.apache.spark.shuffle._
 
-/** A shuffle manager optimized for the RAPIDS Plugin for Apache Spark. */
-sealed class RapidsShuffleManager(
+/**
+ * Shimmed intermediate class that bridges ProxyRapidsShuffleInternalManagerBase and
+ * ShuffleManager. This class must live in the org.apache.spark package because
+ * ShuffleManager is private[spark].
+ *
+ * It provides the version-specific getReader implementation. The standard Spark
+ * versions use a 7-parameter getReader signature.
+ */
+class ProxyRapidsShuffleManagerShim(
     conf: SparkConf,
     isDriver: Boolean
-) extends ProxyRapidsShuffleManagerShim(conf, isDriver)
+) extends ProxyRapidsShuffleInternalManagerBase(conf, isDriver) with ShuffleManager {
+
+  override def getReader[K, C](
+      handle: ShuffleHandle,
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int,
+      context: TaskContext,
+      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+    realImpl.getReader(handle, startMapIndex, endMapIndex,
+      startPartition, endPartition, context, metrics)
+  }
+}
+
