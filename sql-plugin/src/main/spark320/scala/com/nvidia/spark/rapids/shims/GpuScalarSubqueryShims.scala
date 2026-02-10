@@ -49,14 +49,6 @@
 {"spark": "401"}
 {"spark": "411"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.ExprId
-import org.apache.spark.sql.execution.BaseSubqueryExec
-
-case class GpuScalarSubquery(
-    plan: BaseSubqueryExec,
-    exprId: ExprId) extends GpuScalarSubqueryBase(plan, exprId) {
-
-  override def withNewPlan(query: BaseSubqueryExec): GpuScalarSubquery = copy(plan = query)
-}
+trait GpuScalarSubqueryShims

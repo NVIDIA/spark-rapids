@@ -17,21 +17,14 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids
-
-import org.apache.spark.sql.catalyst.expressions.ExprId
-import org.apache.spark.sql.execution.BaseSubqueryExec
+package com.nvidia.spark.rapids.shims
 
 /**
- * Databricks 17.3 version with resultUpdated() method.
+ * Shim trait for GpuScalarSubquery.
+ * Databricks 17.3 adds the resultUpdated() method to ExecSubqueryExpression.
  */
-case class GpuScalarSubquery(
-    plan: BaseSubqueryExec,
-    exprId: ExprId) extends GpuScalarSubqueryBase(plan, exprId) {
-  
-  override def withNewPlan(query: BaseSubqueryExec): GpuScalarSubquery = copy(plan = query)
+trait GpuScalarSubqueryShims {
+  protected def updated: Boolean
 
-  // New method in Databricks 17.3
-  override def resultUpdated(): Boolean = updated
+  def resultUpdated(): Boolean = updated
 }
-

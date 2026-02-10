@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuScalar}
-import com.nvidia.spark.rapids.shims.ShimExpression
+import com.nvidia.spark.rapids.shims.{GpuScalarSubqueryShims, ShimExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ExprId}
 import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression}
@@ -25,16 +25,22 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-abstract class GpuScalarSubqueryBase(
+/**
+ * GPU placeholder of ScalarSubquery, which returns the scalar result with columnarEval method.
+ * This placeholder is to make ScalarSubquery working as a GPUExpression to cooperate
+ * other GPU overrides.
+ */
+case class GpuScalarSubquery(
     plan: BaseSubqueryExec,
     exprId: ExprId)
-  extends ExecSubqueryExpression with GpuExpression with ShimExpression {
+  extends ExecSubqueryExpression with GpuExpression with ShimExpression
+    with GpuScalarSubqueryShims {
 
   override def dataType: DataType = plan.schema.fields.head.dataType
   override def children: Seq[Expression] = Seq.empty
   override def nullable: Boolean = true
   override def toString: String = plan.simpleString(SQLConf.get.maxToStringFields)
-  def withNewPlan(query: BaseSubqueryExec): GpuScalarSubqueryBase
+  override def withNewPlan(query: BaseSubqueryExec): GpuScalarSubquery = copy(plan = query)
 
   // the first column in first row from `query`.
   @volatile private var result: Any = _
