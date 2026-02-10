@@ -66,11 +66,11 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
   override def apply(plan: SparkPlan): SparkPlan = {
     // Check if plan contains SpeculativeBroadcastHashJoinExec
     val specJoins = plan.collect { case s: SpeculativeBroadcastHashJoinExec => s }
-    logWarning(s"SpeculativeBroadcastRule.apply called, isEnabled=$isEnabled, " +
+    logDebug(s"SpeculativeBroadcastRule.apply called, isEnabled=$isEnabled, " +
       s"plan=${plan.getClass.getSimpleName}, containsSpecJoin=${specJoins.nonEmpty}, " +
       s"specJoinCount=${specJoins.size}")
     if (specJoins.nonEmpty) {
-      logWarning(s"SpeculativeBroadcastRule: Plan tree:\n${plan.treeString}")
+      logDebug(s"SpeculativeBroadcastRule: Plan tree:\n${plan.treeString}")
     }
     if (!isEnabled) {
       return plan
@@ -78,7 +78,7 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
 
     val result = plan.transformUp {
       case specJoin: SpeculativeBroadcastHashJoinExec =>
-        logWarning(s"SpeculativeBroadcastRule: Found SpeculativeBroadcastHashJoinExec, " +
+        logDebug(s"SpeculativeBroadcastRule: Found SpeculativeBroadcastHashJoinExec, " +
           s"buildSide=${specJoin.buildSide}, left=${specJoin.left.getClass.getSimpleName}, " +
           s"right=${specJoin.right.getClass.getSimpleName}")
         transformSpeculativeJoin(specJoin)
@@ -86,10 +86,10 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
 
     // Verify transformation
     val remaining = result.collect { case s: SpeculativeBroadcastHashJoinExec => s }
-    logWarning(s"SpeculativeBroadcastRule: After transform, remaining SpecJoins: " +
+    logDebug(s"SpeculativeBroadcastRule: After transform, remaining SpecJoins: " +
       s"${remaining.size}, result root: ${result.getClass.getSimpleName}")
     if (remaining.nonEmpty) {
-      logWarning(s"SpeculativeBroadcastRule: Result tree:\n${result.treeString}")
+      logDebug(s"SpeculativeBroadcastRule: Result tree:\n${result.treeString}")
     }
     result
   }
@@ -107,17 +107,17 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
     }
 
     // Log detailed attribute info for debugging
-    logWarning(s"SpeculativeBroadcastRule: specJoin.left.output = ${specJoin.left.output}")
-    logWarning(s"SpeculativeBroadcastRule: specJoin.right.output = ${specJoin.right.output}")
-    logWarning(s"SpeculativeBroadcastRule: specJoin.leftKeys = ${specJoin.leftKeys}")
-    logWarning(s"SpeculativeBroadcastRule: specJoin.rightKeys = ${specJoin.rightKeys}")
+    logDebug(s"SpeculativeBroadcastRule: specJoin.left.output = ${specJoin.left.output}")
+    logDebug(s"SpeculativeBroadcastRule: specJoin.right.output = ${specJoin.right.output}")
+    logDebug(s"SpeculativeBroadcastRule: specJoin.leftKeys = ${specJoin.leftKeys}")
+    logDebug(s"SpeculativeBroadcastRule: specJoin.rightKeys = ${specJoin.rightKeys}")
 
     // Find the build side shuffle stage
     findShuffleStageInfo(buildChild) match {
       case Some((buildStage, buildSize)) =>
-        logWarning(s"SpeculativeBroadcastRule: buildChild.output = ${buildChild.output}")
-        logWarning(s"SpeculativeBroadcastRule: buildStage.output = ${buildStage.output}")
-        logWarning(s"SpeculativeBroadcastRule: streamChild.output = ${streamChild.output}")
+        logDebug(s"SpeculativeBroadcastRule: buildChild.output = ${buildChild.output}")
+        logDebug(s"SpeculativeBroadcastRule: buildStage.output = ${buildStage.output}")
+        logDebug(s"SpeculativeBroadcastRule: streamChild.output = ${streamChild.output}")
 
         // Create position-based attribute mapping
         // Maps attribute by finding its position in child output and using corresponding
@@ -177,7 +177,7 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
 
         if (buildSize < targetThreshold) {
           // Small enough - use broadcast join (no stream side shuffle!)
-          logWarning(s"SpeculativeBroadcastRule: Build side small ($buildSize bytes < " +
+          logInfo(s"SpeculativeBroadcastRule: Build side small ($buildSize bytes < " +
             s"$targetThreshold), using BroadcastHashJoin - stream side avoids shuffle!")
 
           // Remap build keys to buildStage.output attributes for HashedRelationBroadcastMode
@@ -239,16 +239,16 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
           // Since queryStageOptimizerRules run after postStageCreationRules (where GpuOverrides
           // normally runs), we need to manually invoke GpuOverrides to convert this new join
           // to GPU if applicable.
-          logWarning(s"SpeculativeBroadcastRule: Created BroadcastHashJoinExec, " +
+          logDebug(s"SpeculativeBroadcastRule: Created BroadcastHashJoinExec, " +
             s"invoking GpuOverrides to convert to GPU")
           val gpuConverted = GpuOverrides().apply(cpuJoin)
-          logWarning(s"SpeculativeBroadcastRule: After GpuOverrides: " +
+          logDebug(s"SpeculativeBroadcastRule: After GpuOverrides: " +
             s"${gpuConverted.getClass.getSimpleName}")
           gpuConverted
 
         } else {
           // Too large - fall back to shuffled hash join (need stream side shuffle)
-          logWarning(s"SpeculativeBroadcastRule: Build side too large ($buildSize bytes >= " +
+          logInfo(s"SpeculativeBroadcastRule: Build side too large ($buildSize bytes >= " +
             s"$targetThreshold), falling back to ShuffledHashJoin")
 
           // Stream keys don't need remapping for shuffle partitioning (uses original refs)
@@ -299,17 +299,17 @@ case class SpeculativeBroadcastRule(spark: SparkSession) extends Rule[SparkPlan]
           // Since queryStageOptimizerRules run after postStageCreationRules (where GpuOverrides
           // normally runs), we need to manually invoke GpuOverrides to convert this new join
           // to GPU if applicable.
-          logWarning(s"SpeculativeBroadcastRule: Created ShuffledHashJoinExec, " +
+          logDebug(s"SpeculativeBroadcastRule: Created ShuffledHashJoinExec, " +
             s"invoking GpuOverrides to convert to GPU")
           val gpuConverted = GpuOverrides().apply(cpuJoin)
-          logWarning(s"SpeculativeBroadcastRule: After GpuOverrides: " +
+          logDebug(s"SpeculativeBroadcastRule: After GpuOverrides: " +
             s"${gpuConverted.getClass.getSimpleName}")
           gpuConverted
         }
 
       case None =>
         // Build side not ready yet, keep as-is (should not happen normally)
-        logWarning("SpeculativeBroadcastRule: Build side shuffle not ready")
+        logDebug("SpeculativeBroadcastRule: Build side shuffle not ready")
         specJoin
     }
   }

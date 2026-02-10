@@ -63,7 +63,7 @@ class SQLExecPlugin extends (SparkSessionExtensions => Unit) with Logging {
           "injectQueryStageOptimizerRule",
           classOf[Function1[SparkSession, Rule[SparkPlan]]])
         method.invoke(extensions, rule)
-        logWarning("Injected SpeculativeBroadcastRule for speculative broadcast join")
+        logInfo("Injected SpeculativeBroadcastRule for speculative broadcast join")
       }
     } catch {
       case _: NoSuchMethodException =>
