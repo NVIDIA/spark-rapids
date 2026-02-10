@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,16 +19,14 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-// Spark 4.1.0+: StoragePartitionJoinParams moved to joins package
-import org.apache.spark.sql.execution.joins.StoragePartitionJoinParams
+import org.apache.spark.sql.catalyst.expressions.NamedExpression
+import org.apache.spark.sql.execution.python.ArrowWindowPythonExec
 
 /**
- * Shim for StoragePartitionJoinParams to handle package location change.
- * In Spark 4.0.x, it's in org.apache.spark.sql.execution.datasources.v2
- * In Spark 4.1.0+, it moved to org.apache.spark.sql.execution.joins
+ * WindowInPandasExec was renamed to ArrowWindowPythonExec in Spark 4.1.
+ * This trait provides the implementation for 4.1+.
  */
-object StoragePartitionJoinShims {
-  type SpjParams = StoragePartitionJoinParams
-
-  def default(): SpjParams = StoragePartitionJoinParams()
+trait WindowInPandasShims {
+  def getWindowExpressions(winPy: ArrowWindowPythonExec): Seq[NamedExpression] = 
+    winPy.windowExpression
 }

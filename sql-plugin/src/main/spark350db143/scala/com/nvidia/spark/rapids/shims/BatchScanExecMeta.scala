@@ -33,7 +33,7 @@ class BatchScanExecMeta(p: BatchScanExec,
     rule: DataFromReplacementRule)
     extends BatchScanExecMetaBase(p, conf, parent, rule) {
   override def convertToGpu(): GpuExec = {
-    val spj = StoragePartitionJoinShims.fromBatchScan(p.spjParams)
+    val spj = p.spjParams
     GpuBatchScanExec(p.output, childScans.head.convertToGpu(), runtimeFilters,
       p.ordering, p.table, spj)
   }

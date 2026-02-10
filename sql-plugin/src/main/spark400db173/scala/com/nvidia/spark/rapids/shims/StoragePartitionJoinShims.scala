@@ -16,33 +16,20 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "400db173"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
+// Spark 4.1.0+: StoragePartitionJoinParams moved to joins package
+import org.apache.spark.sql.execution.joins.StoragePartitionJoinParams
 
 /**
- * Databricks 17.3 stub for StoragePartitionJoinParams which doesn't exist in this version.
- * We provide a minimal stub that satisfies the interface but has no SPJ functionality.
+ * Shim for StoragePartitionJoinParams to handle package location change.
+ * In Spark 4.0.x, it's in org.apache.spark.sql.execution.datasources.v2
+ * In Spark 4.1.0+, it moved to org.apache.spark.sql.execution.joins
  */
-case class SpjParamsStub(
-    keyGroupedPartitioning: Option[Seq[Expression]] = None,
-    joinKeyPositions: Option[Seq[Int]] = None,
-    commonPartitionValues: Option[Seq[(InternalRow, Int)]] = None,
-    applyPartialClustering: Boolean = false,
-    replicatePartitions: Boolean = false
-)
-
 object StoragePartitionJoinShims {
-  type SpjParams = SpjParamsStub
-  
-  def default(): SpjParams = SpjParamsStub()
+  type SpjParams = StoragePartitionJoinParams
 
-  /**
-   * Databricks 17.3 doesn't have StoragePartitionJoinParams in BatchScanExec,
-   * so we return the default stub.
-   */
-  def fromBatchScan(spjParams: Any): SpjParams = SpjParamsStub()
+  def default(): SpjParams = StoragePartitionJoinParams()
 }
-
