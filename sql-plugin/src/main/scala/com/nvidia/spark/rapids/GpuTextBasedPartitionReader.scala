@@ -64,7 +64,7 @@ trait LineBufferer extends AutoCloseable {
   def add(line: Array[Byte], offset: Int, len: Int): Unit
 
   // Match Java's String.trim() which treats all chars <= '\u0020' as whitespace.
-  // This is important for CSV blank line filtering to be consistent with Spark CPU.
+  // This is important for CSV blank lines filtering to be consistent with Spark CPU.
   def isWhiteSpace(b: Byte): Boolean = {
     (b & 0xFF) <= 0x20
   }
