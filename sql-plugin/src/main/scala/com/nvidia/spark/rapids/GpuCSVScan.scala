@@ -445,9 +445,11 @@ class CSVPartitionReader(
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric]) extends
-  CSVPartitionReaderBase[HostLineBufferer, FilterCsvEmptyHostLineBuffererFactory.type](conf, partFile,
+  CSVPartitionReaderBase[HostLineBufferer,
+    FilterCsvEmptyHostLineBuffererFactory.type](conf, partFile,
     dataSchema, readDataSchema, parsedOptions, maxRowsPerChunk,
-    maxBytesPerChunk, execMetrics, FilterCsvEmptyHostLineBuffererFactory) {
+    maxBytesPerChunk, execMetrics,
+    FilterCsvEmptyHostLineBuffererFactory) {
 
   def buildCsvOptions(
       parsedOptions: CSVOptions,
