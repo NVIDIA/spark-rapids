@@ -72,6 +72,14 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-27279: Reuse Subquery", ADJUST_UT("Replaced by testRapids version for GPU execution"))
     .exclude("SPARK-36280: Remove redundant aliases after RewritePredicateSubquery", ADJUST_UT("Replaced by testRapids version that checks GPU or CPU shuffle exchange"))
     .exclude("SPARK-15832: Test embedded existential predicate sub-queries", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14221 - Causes deadlock with AQE when executing deeply nested subqueries (3+ levels)"))
+    .exclude("SPARK-28441: COUNT bug in WHERE clause (Filter) with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug in SELECT clause (Project) with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug in HAVING clause (Filter) with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug in Aggregate with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug negative examples with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug in nested subquery with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug with nasty predicate expr with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug with attribute ref in subquery input and output with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
   enableSuite[RapidsSQLViewSuite]
   enableSuite[RapidsDataFrameSuite]
     .exclude("SPARK-28224: Aggregate sum big decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
