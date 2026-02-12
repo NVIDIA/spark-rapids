@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -249,6 +249,21 @@ object GpuSemaphore {
   def releaseIfNecessary(context: TaskContext): Unit = {
     if (context != null) {
       getInstance.releaseIfNecessary(context)
+    }
+  }
+
+  /**
+   * Acquire the GPU semaphore, execute the given block, then release.
+   * This is the preferred pattern for scoped GPU work that has a clear
+   * start and end point. The semaphore is guaranteed to be released
+   * even if the block throws an exception.
+   */
+  def withGpuSemaphore[T](context: TaskContext)(block: => T): T = {
+    acquireIfNecessary(context)
+    try {
+      block
+    } finally {
+      releaseIfNecessary(context)
     }
   }
 
