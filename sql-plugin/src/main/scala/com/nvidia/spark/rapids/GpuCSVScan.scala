@@ -446,10 +446,13 @@ class CSVPartitionReader(
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric]) extends
   CSVPartitionReaderBase[HostLineBufferer,
-    FilterCsvEmptyHostLineBuffererFactory.type](conf, partFile,
+    LineBuffererFactory[HostLineBufferer]](conf, partFile,
     dataSchema, readDataSchema, parsedOptions, maxRowsPerChunk,
     maxBytesPerChunk, execMetrics,
-    FilterCsvEmptyHostLineBuffererFactory) {
+    // In multiLine mode, empty lines within quoted fields are
+    // legitimate data and must not be filtered out.
+    if (parsedOptions.multiLine) HostLineBuffererFactory
+    else FilterCsvEmptyHostLineBuffererFactory) {
 
   def buildCsvOptions(
       parsedOptions: CSVOptions,
