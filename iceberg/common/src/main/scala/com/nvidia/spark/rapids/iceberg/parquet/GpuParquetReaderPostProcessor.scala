@@ -93,11 +93,7 @@ private[iceberg] case class UpCast(
 ) extends ColumnAction {
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
     val col = ctx.column.get
-    if (DataType.equalsStructurally(fromType, toType)) {
-      col.incRefCount()
-    } else {
-      GpuCast.doCast(col, fromType, toType, CastOptions.DEFAULT_CAST_OPTIONS)
-    }
+    GpuCast.doCast(col, fromType, toType, CastOptions.DEFAULT_CAST_OPTIONS)
   }
 
   override def display(indent: Int): String = {

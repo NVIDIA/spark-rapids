@@ -86,8 +86,7 @@ import org.apache.parquet.schema.{
   LogicalTypeAnnotation,
   MessageType,
   PrimitiveType,
-  Type,
-  Types
+  Type
 }
 import org.apache.parquet.schema.LogicalTypeAnnotation.{
   DateLogicalTypeAnnotation,
@@ -1554,54 +1553,12 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       out: OutputStream,
       blocks: Seq[BlockMetaData],
       schema: MessageType): Unit = {
-    // Ensure schema matches actual columns in blocks
-    val correctedSchema = buildSchemaFromBlocks(blocks, schema)
-    
-    val fileMeta = new FileMetaData(correctedSchema, Collections.emptyMap[String, String],
+    val fileMeta = new FileMetaData(schema, Collections.emptyMap[String, String],
       ParquetPartitionReader.PARQUET_CREATOR)
     val metadataConverter = new ParquetMetadataConverter
     val footer = new ParquetMetadata(fileMeta, blocks.asJava)
     val meta = metadataConverter.toParquetMetadata(ParquetPartitionReader.PARQUET_VERSION, footer)
     org.apache.parquet.format.Util.writeFileMetaData(meta, out)
-  }
-  
-  /**
-   * CRITICAL BUG FIX for nested types:
-   * When reading Iceberg files with nested types, the schema passed from Iceberg might not
-   * exactly match the columns actually present in the clipped blocks. This causes cuDF to
-   * crash with cudaErrorIllegalAddress when trying to read the reconstructed Parquet file.
-   * 
-   * This method builds a schema that exactly matches the columns present in the blocks.
-   */
-  protected def buildSchemaFromBlocks(
-      blocks: Seq[BlockMetaData],
-      originalSchema: MessageType): MessageType = {
-    if (blocks.isEmpty) {
-      return originalSchema
-    }
-    
-    // Get all column paths from the first block (all blocks should have the same columns)
-    val actualColumnPaths = blocks.head.getColumns.asScala.map(_.getPath.toDotString).toSet
-    
-    // Filter the original schema to only include fields whose leaf paths are in actualColumnPaths
-    val filteredFields = originalSchema.getFields.asScala.filter { field =>
-      val leafPaths = getLeafPaths(field, "")
-      leafPaths.forall(actualColumnPaths.contains)
-    }
-    
-    val builder = Types.buildMessage()
-    filteredFields.foreach(f => builder.addField(f))
-    builder.named(originalSchema.getName)
-  }
-  
-  private def getLeafPaths(field: Type, prefix: String): Seq[String] = {
-    val currentPath = if (prefix.isEmpty) field.getName else s"$prefix.${field.getName}"
-    field match {
-      case g: GroupType =>
-        g.getFields.asScala.flatMap(f => getLeafPaths(f, currentPath)).toSeq
-      case _: PrimitiveType =>
-        Seq(currentPath)
-    }
   }
 
   private def copyDataRange(
