@@ -716,12 +716,15 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
   // to use a shared HostMemoryBuffer to avoid the overhead of allocating and deallocating, check
   // SparkResourceAdaptor.cpuDeallocate to understand the overhead.
 
-  // Used to track the first 10 batch sizes
-  // and decide if to use a shared HostMemoryBuffer or not.
-  private[this] val firstTenBatchesSizes = new ArrayBuffer[Long](10)
+  // Used to track the first 5 batch sizes and decide if to use a shared HostMemoryBuffer.
+  // After seeing 5 batches, we estimate the shared buffer size based on average batch size.
+  private[this] val firstBatchesSizes = new ArrayBuffer[Long](5)
+  private[this] val sharedBufferSampleCount: Int = 5
   private[this] var sharedBuffer: Option[HostMemoryBuffer] = None
   private[this] val sharedBufferTriggerSize: Int = 1 << 20 // 1MB
-  private[this] val sharedBufferTotalSize: Int = 20 << 20 // 20MB
+  private[this] val sharedBufferMinSize: Int = 1 << 20 // 1MB minimum
+  private[this] val sharedBufferMaxSize: Int = 20 << 20 // 20MB maximum
+  private[this] var sharedBufferAllocatedSize: Int = 0 // actual allocated size (dynamic)
   private[this] var sharedBufferCurrentUse: Int = 0
 
   // Don't install the callback if in a unit test
@@ -778,15 +781,18 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
           if (sharedBuffer.isEmpty) {
             closeOnExcept(allocateHostWithRetry(header.getTotalDataLen)) { allocated =>
 
-              if (firstTenBatchesSizes.length < 10) {
-                firstTenBatchesSizes += header.getTotalDataLen
-                if (firstTenBatchesSizes.length == 10) {
-                  // If we have 10 batches, we can decide if to use a shared buffer or not.
-                  val maxSize = firstTenBatchesSizes.max
+              if (firstBatchesSizes.length < sharedBufferSampleCount) {
+                firstBatchesSizes += header.getTotalDataLen
+                if (firstBatchesSizes.length == sharedBufferSampleCount) {
+                  // After seeing enough samples, decide if to use a shared buffer.
+                  val maxSize = firstBatchesSizes.max
                   if (maxSize < sharedBufferTriggerSize) {
-                    // If the max size of the first 10 batches is less than the threshold,
-                    // we can use a shared buffer.
-                    sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
+                    // All sampled batches are small, use shared buffer with dynamic size.
+                    // Estimate buffer size: 10 * average batch size, clamped to [1MB, 20MB].
+                    val avgSize = firstBatchesSizes.sum / firstBatchesSizes.length
+                    sharedBufferAllocatedSize = math.min(sharedBufferMaxSize,
+                      math.max(sharedBufferMinSize, (avgSize * 10).toInt))
+                    sharedBuffer = Some(allocateHostWithRetry(sharedBufferAllocatedSize))
                     sharedBufferCurrentUse = 0
                   }
                 }
@@ -795,16 +801,16 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
               allocated
             }
           } else {
-            if (header.getTotalDataLen > sharedBufferTotalSize / 2) {
+            if (header.getTotalDataLen > sharedBufferAllocatedSize / 2) {
               // Too big to use shared buffer, this should rarely happen since
-              // first ten batches all much smaller.
+              // sampled batches were all much smaller.
               allocateHostWithRetry(header.getTotalDataLen)
             } else {
-              if (sharedBufferCurrentUse + header.getTotalDataLen > sharedBufferTotalSize) {
+              if (sharedBufferCurrentUse + header.getTotalDataLen > sharedBufferAllocatedSize) {
                 // If not enough room left, we need to allocate a new shared buffer.
                 sharedBuffer.get.close()
                 sharedBufferCurrentUse = 0
-                sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
+                sharedBuffer = Some(allocateHostWithRetry(sharedBufferAllocatedSize))
               }
               val ret = sharedBuffer.get.slice(sharedBufferCurrentUse,
                 header.getTotalDataLen)
