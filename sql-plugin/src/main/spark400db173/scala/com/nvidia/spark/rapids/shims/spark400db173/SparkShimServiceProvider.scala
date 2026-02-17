@@ -35,10 +35,9 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
 
   def matchesVersion(version: String): Boolean = {
     val shimEnabledProp = "spark.rapids.shims.spark400db173" + ".enabled"
-    // disabled by default
     val shimEnabled = Option(SparkEnv.get)
       .flatMap(_.conf.getOption(shimEnabledProp).map(_.toBoolean))
-      .getOrElse(false)
+      .getOrElse(true)
 
     DatabricksShimServiceProvider.matchesVersion(
       dbrVersion = "17.3.x",
