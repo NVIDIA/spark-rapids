@@ -34,7 +34,7 @@ import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, Par
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
 import org.apache.spark.sql.delta.actions._
-import org.apache.spark.sql.delta.deletionvectors.StoredBitmap
+import org.apache.spark.sql.delta.deletionvectors.{RapidsDeletionVectorStore, RapidsDeletionVectorStoredBitmap, StoredBitmap}
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
@@ -402,6 +402,37 @@ class DeltaMultiFileParquetPartitionReader(
 }
 
 object RapidsDeletionVectorUtils {
+
+  /**
+   * Reads the deletion vector bitmap for a given deletion vector descriptor and returns it
+   * as a serialized standard bitmap in a HostMemoryBuffer. If the deletion vector descriptor
+   * does not exist, an empty bitmap will be returned.
+   */
+  def loadDeletionVector(conf: Configuration,
+      dvDescriptorOpt: Option[String],
+      filterTypeOpt: Option[RowIndexFilterType],
+      tablePath: String): HostMemoryBuffer = {
+    if (dvDescriptorOpt.isDefined && filterTypeOpt.isDefined) {
+      val dvDesc = DeletionVectorDescriptor.deserializeFromBase64(
+        dvDescriptorOpt.get.asInstanceOf[String])
+
+      val dvStore = RapidsDeletionVectorStore.createInstance(conf)
+      val storedBitmap = RapidsDeletionVectorStoredBitmap(dvDesc, new Path(tablePath))
+      val serializedStandardBitmap = storedBitmap.load(dvStore)
+
+      filterTypeOpt.get match {
+        case RowIndexFilterType.IF_CONTAINED =>
+          serializedStandardBitmap
+        case unexpectedFilterType => throw new IllegalStateException(
+          s"Unexpected row index filter type: ${unexpectedFilterType}")
+      }
+    } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
+      throw new IllegalStateException(
+        "Both dvDescriptorOpt and filterTypeOpt must be defined together or both absent.")
+    } else {
+      RapidsDeletionVectorStoredBitmap.serializedEmptyBitmap()
+    }
+  }
 
   /**
    * Processes a {@link ColumnarBatch} by applying row deletion vectors and returns a new batch
