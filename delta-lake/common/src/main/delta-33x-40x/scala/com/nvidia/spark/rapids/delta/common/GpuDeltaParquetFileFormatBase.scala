@@ -416,13 +416,11 @@ object RapidsDeletionVectorUtils {
       val dvDesc = DeletionVectorDescriptor.deserializeFromBase64(
         dvDescriptorOpt.get.asInstanceOf[String])
 
-      val dvStore = RapidsDeletionVectorStore.createInstance(conf)
-      val storedBitmap = RapidsDeletionVectorStoredBitmap(dvDesc, new Path(tablePath))
-      val serializedStandardBitmap = storedBitmap.load(dvStore)
-
       filterTypeOpt.get match {
         case RowIndexFilterType.IF_CONTAINED =>
-          serializedStandardBitmap
+          val dvStore = RapidsDeletionVectorStore.createInstance(conf)
+          val storedBitmap = RapidsDeletionVectorStoredBitmap(dvDesc, new Path(tablePath))
+          storedBitmap.load(dvStore)
         case unexpectedFilterType => throw new IllegalStateException(
           s"Unexpected row index filter type: ${unexpectedFilterType}")
       }
