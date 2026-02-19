@@ -38,12 +38,7 @@ case class RapidsDeletionVectorStoredBitmap(
     val buffer = if (isEmpty) {
       RapidsDeletionVectorStoredBitmap.serializedEmptyBitmap()
     } else {
-      if (isInline) {
-        throw new UnsupportedOperationException("Inline deletion vectors are not supported")
-      } else {
-        assert(isOnDisk)
-        dvStore.load(onDiskPath, dvDescriptor.offset.getOrElse(0), dvDescriptor.sizeInBytes)
-      }
+      dvStore.load(onDiskPath, dvDescriptor.offset.getOrElse(0), dvDescriptor.sizeInBytes)
     }
 
     buffer
