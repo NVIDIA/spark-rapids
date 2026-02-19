@@ -18,7 +18,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.rapids.shims
 
-import com.nvidia.spark.rapids.GpuPartitioning
+import com.nvidia.spark.rapids.{GpuMetric, GpuPartitioning}
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
@@ -26,6 +26,8 @@ import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.{ShufflePartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.AdaptiveRepartitioningStatus
 import org.apache.spark.sql.execution.exchange.{ShuffleExchangeLike, ShuffleOrigin}
+import org.apache.spark.sql.execution.metric.SQLShuffleWriteMetricsReporter
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.createAdditionalExchangeMetrics
 import org.apache.spark.sql.rapids.execution.ShuffledBatchRDD
 
 case class GpuShuffleExchangeExec(
@@ -36,6 +38,26 @@ case class GpuShuffleExchangeExec(
   extends GpuDatabricksShuffleExchangeExecBase(gpuOutputPartitioning, child, shuffleOrigin)(
     cpuOutputPartitioning) {
 
+  // DB SPECIFIC: ShuffleExchangeLike in DBR 17.3 extends several Databricks-specific traits
+  // (ShuffleSkewnessMetrics, AdaptiveRepartitioningMetrics, EnsureRequirementsDPMetrics,
+  // AdaptiveSpillFallbackMetrics, AutoOptimizedShuffleMetrics) that define metrics accessed
+  // via SparkPlan.metrics. Since GpuExec.metrics is final and backed by allMetrics, we must
+  // include these DB-specific metrics in additionalMetrics so they appear in the metrics map.
+  override lazy val additionalMetrics: Map[String, GpuMetric] = {
+    // Base metrics from GpuShuffleExchangeExecBase.additionalMetrics
+    // (cannot use super on lazy val in Scala)
+    createAdditionalExchangeMetrics(this) ++
+      GpuMetric.wrap(readMetrics) ++
+      GpuMetric.wrap(
+        SQLShuffleWriteMetricsReporter.createShuffleWriteMetrics(sparkContext)) ++
+      // DBR 17.3 specific metrics from ShuffleExchangeLike's parent traits
+      GpuMetric.wrap(skewMetrics) ++
+      GpuMetric.wrap(spillFallbackMetrics) ++
+      GpuMetric.wrap(ensReqDPMetrics) ++
+      GpuMetric.wrap(adpMetrics) ++
+      GpuMetric.wrap(aosMetrics)
+  }
+
   // Databricks 17.3: Added stageShuffleCount parameter
   override def getShuffleRDD(
       partitionSpecs: Array[ShufflePartitionSpec],
@@ -44,23 +66,36 @@ case class GpuShuffleExchangeExec(
     new ShuffledBatchRDD(shuffleDependencyColumnar, metrics ++ readMetrics, partitionSpecs)
   }
 
-  // DB SPECIFIC - throw if called since we don't know how its used
-  override def withNewNumPartitions(numPartitions: Int): ShuffleExchangeLike = {
-    throw new UnsupportedOperationException
-  }
+  // DB SPECIFIC: In Databricks ShuffleExchangeExec, targetOutputPartitioning is the first
+  // constructor parameter (the CPU partitioning). Our GPU version stores this as
+  // cpuOutputPartitioning.
+  override def targetOutputPartitioning: Partitioning = cpuOutputPartitioning
 
-  // DB SPECIFIC - throw if called since we don't know how its used
-  override def targetOutputPartitioning: Partitioning = {
-    throw new UnsupportedOperationException
-  }
-
+  // DB SPECIFIC: In Databricks ShuffleExchangeExec, adaptiveRepartitioningStatus is a case class
+  // parameter defaulting to AdaptiveRepartitioningStatus.DEFAULT_STATUS. AQE calls this to check
+  // the current repartitioning state. Returning DEFAULT_STATUS indicates no repartitioning has
+  // occurred.
   def adaptiveRepartitioningStatus(): AdaptiveRepartitioningStatus = {
-    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
+    AdaptiveRepartitioningStatus.DEFAULT_STATUS
   }
 
-  def repartition(numPartitions: Int,updatedRepartitioningStatus: AdaptiveRepartitioningStatus):
+  // DB SPECIFIC: In Databricks ShuffleExchangeExec, withNewNumPartitions creates a copy with
+  // updated partitioning and copies tags from the original.
+  override def withNewNumPartitions(numPartitions: Int): ShuffleExchangeLike = {
+    val newCpuPartitioning = cpuOutputPartitioning.withNewNumPartitions(numPartitions)
+    val newExec = copy(gpuOutputPartitioning, child, shuffleOrigin)(newCpuPartitioning)
+    newExec.copyTagsFrom(this)
+    newExec
+  }
+
+  // DB SPECIFIC: In Databricks ShuffleExchangeExec, repartition creates a copy with new
+  // partition count and updated AdaptiveRepartitioningStatus. Since our GPU version doesn't
+  // store the status as a field, we create a new instance with the updated partitioning.
+  // The status is not persisted but AQE should still function correctly.
+  def repartition(numPartitions: Int, updatedRepartitioningStatus: AdaptiveRepartitioningStatus):
      ShuffleExchangeLike = {
-    throw new IllegalArgumentException("NOT IMPLEMENTED YET")
+    val newCpuPartitioning = cpuOutputPartitioning.withNewNumPartitions(numPartitions)
+    copy(gpuOutputPartitioning, child, shuffleOrigin)(newCpuPartitioning)
   }
 
   // DB SPECIFIC - not sure how it is used, so try to return one at first.
