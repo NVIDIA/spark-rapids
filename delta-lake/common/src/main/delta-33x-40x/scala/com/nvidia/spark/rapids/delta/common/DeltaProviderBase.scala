@@ -150,7 +150,7 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     // are deletion vector predicates. If the FilterExec is removed, the `is_row_deleted`
     // column is pruned from the subtree below the FilterExec. This can leave two consecutive
     // identical ProjectExecs. We merge them here to simplify the plan.
-    DVPredicatePushdown.mergeIdentialProjects(pushed)
+    DVPredicatePushdown.mergeIdenticalProjects(pushed)
   }
 
   override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
@@ -218,7 +218,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
      * Is the condition a form of "IS_ROW_DELETED_COLUMN_NAME == 0"?
      */
     def isDVCondition(condition: Expression): Boolean = {
-      condition.exists {
+      condition match {
         case GpuEqualTo(left, right) =>
           isRowDeletedColumnRef(left) && isLiteralZero(right) ||
             isRowDeletedColumnRef(right) && isLiteralZero(left)
@@ -290,7 +290,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
   /**
    * Merges consecutive ProjectExecs into one if their project lists are identical.
    */
-  def mergeIdentialProjects(plan: SparkPlan): SparkPlan = {
+  def mergeIdenticalProjects(plan: SparkPlan): SparkPlan = {
     plan.transformUp {
       case p @ GpuProjectExec(projList1,
       GpuProjectExec(projList2, child, enablePreSplit1), enablePreSplit2) =>
