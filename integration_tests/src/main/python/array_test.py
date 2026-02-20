@@ -21,7 +21,7 @@ from marks import incompat, allow_non_gpu, disable_ansi_mode
 from spark_session import *
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, col, element_at, lit, array
+from pyspark.sql.functions import array_contains, array_compact, col, element_at, lit, array
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -703,6 +703,53 @@ def test_array_filter(data_gen):
         return unary_op_df(spark, data_gen).selectExpr(columns)
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
+# Port of Spark DataFrameFunctionsSuite.test("test array_compact") and coverage for array_compact.
+# array_compact removes null values from an array; in Spark 4.0 it is rewritten to
+# KnownNotContainsNull(ArrayFilter(_, x -> x IS NOT NULL)), so result schema has containsNull=false.
+@pytest.mark.skipif(is_before_spark_340(), reason="array_compact is supported from Spark 3.4.0")
+@pytest.mark.parametrize('data_gen', [
+    ArrayGen(string_gen),
+    ArrayGen(int_gen),
+    ArrayGen(ArrayGen(int_gen)),
+    ArrayGen(ArrayGen(StructGen([["A", int_gen], ["B", string_gen]])))], ids=idfn)
+def test_array_compact(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr('array_compact(a)'))
+
+
+# Port of Spark DataFrameFunctionsSuite.test("test array_compact") - literal and corner cases.
+@pytest.mark.skipif(is_before_spark_340(), reason="array_compact is supported from Spark 3.4.0")
+def test_array_compact_corner_cases():
+    # Same data and expectations as Spark test: nulls removed, empty arrays, all-null -> empty.
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(
+            [
+                ([None, 1, 2, None, 3, 4], ["a", None, "b", None, "c", "d"], ["", ""]),
+                ([], ["1.0", "2.2", "3.0"], []),
+                ([None, None, None], None, None),
+            ],
+            "a array<int>, b array<string>, c array<string>"),
+        "array_compact_table",
+        "SELECT array_compact(a) as a, array_compact(b) as b, array_compact(c) as c FROM array_compact_table")
+    # Literal: array_compact(array(1.0D, 2.0D, null)) -> [1.0, 2.0]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("SELECT array_compact(array(1.0D, 2.0D, null))"))
+    # Nested arrays: null elements removed, nested nulls inside retained
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(
+            "SELECT array_compact(array(array(1, null, 3), null, array(null, 2, 3)))"))
+
+
+# Port of Spark DataFrameFunctionsSuite.test("test array_compact") - invalid type raises analysis error.
+@pytest.mark.skipif(is_before_spark_340(), reason="array_compact is supported from Spark 3.4.0")
+def test_array_compact_invalid_type():
+    # array_compact expects ARRAY; passing INT must fail with DATATYPE_MISMATCH.UNEXPECTED_INPUT_TYPE.
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.range(3).select(array_compact(col("id"))).collect(),
+        conf={},
+        error_message="UNEXPECTED_INPUT_TYPE")
 
 
 array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5),
