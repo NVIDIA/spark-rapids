@@ -159,7 +159,7 @@ def _do_test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mod
     )
 
 
-@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
+@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
@@ -173,7 +173,7 @@ def test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode):
     _do_test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode)
 
 
-@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
+@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
@@ -212,7 +212,7 @@ def test_iceberg_merge_full_coverage(spark_tmp_table_factory, partition_col_sql,
     _do_test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode)
 
 
-@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
+@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
@@ -274,7 +274,7 @@ def test_iceberg_merge_additional_patterns(spark_tmp_table_factory, partition_co
         merge_mode=merge_mode
     )
 
-@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec")
+@allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
@@ -641,7 +641,6 @@ def test_merge_aqe(spark_tmp_table_factory, partition_col_sql):
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
-@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
