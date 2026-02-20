@@ -591,10 +591,15 @@ class RowToColumnarIterator(
   private var totalOutputRows: Long = 0
   private lazy val rowCopyProjection: UnsafeProjection = UnsafeProjection.create(localSchema)
 
-  override def hasNext: Boolean = rowIter.hasNext
+  override def hasNext: Boolean = {
+    val start = System.nanoTime()
+    val result = rowIter.hasNext
+    streamTime += System.nanoTime() - start
+    result
+  }
 
   override def next(): ColumnarBatch = {
-    if (!rowIter.hasNext) {
+    if (!hasNext) {
       throw new NoSuchElementException
     }
     buildBatch()
