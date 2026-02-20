@@ -52,7 +52,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import org.apache.spark.TaskContext
-import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReadMetricsReporter, ShuffleReader}
+import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}
 
 /**
  * Shim object to handle version-specific differences in ShuffleManager APIs.

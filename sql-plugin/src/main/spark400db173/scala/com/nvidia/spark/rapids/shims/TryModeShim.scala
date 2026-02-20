@@ -20,11 +20,13 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.{Add, Divide, EvalMode, Expression, Multiply, Remainder, Subtract}
+import org.apache.spark.sql.catalyst.expressions.{Add, Divide, EvalMode,
+  Expression, Multiply, Remainder, Subtract}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{Average, Sum}
 
 /**
- * Spark 4.1.0+ and Databricks 17.3 version where evalMode changed to evalContext.evalMode for arithmetic.
+ * Spark 4.1.0+ and Databricks 17.3 version where evalMode
+ * changed to evalContext.evalMode for arithmetic.
  * See: https://github.com/apache/spark/commit/a96e9ca81518bff31b0089d459fe78804ca1aa38
  */
 object TryModeShim {

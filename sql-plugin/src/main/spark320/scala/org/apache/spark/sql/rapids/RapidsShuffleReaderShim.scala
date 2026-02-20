@@ -52,7 +52,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import org.apache.spark.TaskContext
-import org.apache.spark.shuffle.{ShuffleHandle, ShuffleReadMetricsReporter, ShuffleReader}
+import org.apache.spark.shuffle.{ShuffleHandle, ShuffleReader, ShuffleReadMetricsReporter}
 
 /**
  * Shim trait providing version-specific getReader signature for ShuffleManager.
@@ -69,7 +69,8 @@ trait RapidsShuffleReaderShim {
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
-    getReaderImpl(handle, startMapIndex, endMapIndex, startPartition, endPartition, context, metrics)
+    getReaderImpl(handle, startMapIndex, endMapIndex,
+      startPartition, endPartition, context, metrics)
   }
 }
 

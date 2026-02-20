@@ -73,7 +73,9 @@ case class GpuAtomicCreateTableAsSelectExec(
     val stagedTable = (catalog.stageCreate(
       ident, getV2Columns(schema, catalog.useNullableQuerySchema),
       partitioning.toArray, properties.asJava): @annotation.nowarn(
+        // scalastyle:off line.size.limit
         "cat=deprecation&origin=org.apache.spark.sql.connector.catalog.StagingTableCatalog.stageCreate"))
+        // scalastyle:on line.size.limit
 
     writeToTable(catalog, stagedTable, writeOptions, ident, query)
   }

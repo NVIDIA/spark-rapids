@@ -20,7 +20,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import org.apache.spark.TaskContext
-import org.apache.spark.shuffle.{ShuffleHandle, ShuffleReadMetricsReporter, ShuffleReader}
+import org.apache.spark.shuffle.{ShuffleHandle, ShuffleReader, ShuffleReadMetricsReporter}
 
 /**
  * Databricks 17.3 version with 8-parameter getReader signature.
@@ -39,7 +39,8 @@ trait RapidsShuffleReaderShim {
       metrics: ShuffleReadMetricsReporter,
       prismMapStatusEnabled: Boolean): ShuffleReader[K, C] = {
     // Ignore prismMapStatusEnabled and call common implementation
-    getReaderImpl(handle, startMapIndex, endMapIndex, startPartition, endPartition, context, metrics)
+    getReaderImpl(handle, startMapIndex, endMapIndex,
+      startPartition, endPartition, context, metrics)
   }
 }
 

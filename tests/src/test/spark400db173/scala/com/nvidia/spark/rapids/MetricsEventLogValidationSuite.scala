@@ -209,7 +209,8 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
                 val taskMetrics = (json \ "Task Metrics")
                 // https://github.com/apache/spark/blob/450b415028c3b00f3a002126cd11318d3932e28f/
                 // core/src/main/scala/org/apache/spark/ui/jobs/StagePage.scala#L151
-                val executorRunTime = (taskMetrics \ "Executor Run Time").extractOpt[BigInt].map(_.toLong)
+                val executorRunTime =
+                  (taskMetrics \ "Executor Run Time").extractOpt[BigInt].map(_.toLong)
 
                 (taskId, executorRunTime) match {
                   case (Some(tId), Some(runTime)) =>

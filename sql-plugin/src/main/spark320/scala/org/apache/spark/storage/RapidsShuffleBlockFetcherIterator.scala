@@ -1095,7 +1095,8 @@ final class RapidsShuffleBlockFetcherIterator(
           while (checkedIn.read(buffer) != -1) {}
           val checksum = checkedIn.getChecksum.getValue
           cause = ShuffleClientShims.diagnoseCorruption(shuffleClient,
-            address.host, address.port, address.executorId, shuffleBlock, checksum, checksumAlgorithm)
+            address.host, address.port, address.executorId,
+            shuffleBlock, checksum, checksumAlgorithm)
         } catch {
           case e: Exception =>
             logWarning("Unable to diagnose the corruption cause of the corrupted block", e)

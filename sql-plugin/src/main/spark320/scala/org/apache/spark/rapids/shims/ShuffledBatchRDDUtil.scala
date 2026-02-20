@@ -58,8 +58,8 @@ import org.apache.spark.{MapOutputTrackerMaster, Partition, ShuffleDependency, S
 import org.apache.spark.shuffle.ShuffleReader
 import org.apache.spark.sql.execution.{CoalescedMapperPartitionSpec, CoalescedPartitionSpec, PartialMapperPartitionSpec, PartialReducerPartitionSpec}
 import org.apache.spark.sql.execution.metric.SQLShuffleReadMetricsReporter
-import org.apache.spark.sql.rapids.execution.ShuffledBatchRDDPartition
 import org.apache.spark.sql.rapids.ShuffleManagerShims
+import org.apache.spark.sql.rapids.execution.ShuffledBatchRDDPartition
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockId, BlockManagerId}
 

@@ -31,7 +31,8 @@ object ShimParquetColumnVector {
     missingColumns: java.util.Set[ParquetColumn],
     isTopLevel: Boolean,
     defaultValue: Any): ParquetColumnVector = {
-    // Databricks 17.3: Constructor only takes 7 parameters (removed memory mode parameter compared to DB 14.3)
+    // Databricks 17.3: Constructor only takes 7 parameters
+    // (removed memory mode parameter compared to DB 14.3)
     new ParquetColumnVector(column, vector, capacity, missingColumns, isTopLevel,
       defaultValue, "")
   }

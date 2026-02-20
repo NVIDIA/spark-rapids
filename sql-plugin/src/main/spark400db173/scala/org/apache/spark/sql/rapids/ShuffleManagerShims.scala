@@ -20,7 +20,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import org.apache.spark.TaskContext
-import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReadMetricsReporter, ShuffleReader}
+import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}
 
 /**
  * Databricks 17.3 specific shim to handle the new prismMapStatusEnabled parameter

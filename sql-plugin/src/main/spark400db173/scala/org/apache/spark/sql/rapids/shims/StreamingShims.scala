@@ -25,7 +25,8 @@ package org.apache.spark.sql.rapids.shims
  */
 object StreamingShims {
   type FileStreamSinkType = org.apache.spark.sql.execution.streaming.sinks.FileStreamSink
-  type MetadataLogFileIndexType = org.apache.spark.sql.execution.streaming.runtime.MetadataLogFileIndex
+  type MetadataLogFileIndexType =
+    org.apache.spark.sql.execution.streaming.runtime.MetadataLogFileIndex
   
   val FileStreamSink = org.apache.spark.sql.execution.streaming.sinks.FileStreamSink
 }

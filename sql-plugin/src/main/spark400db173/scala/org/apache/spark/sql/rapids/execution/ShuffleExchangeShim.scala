@@ -19,8 +19,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
-import org.apache.spark.rdd.RDD
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.execution.CoalescedPartitionSpec
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -32,7 +32,8 @@ object ShuffleExchangeShim {
       shuffleExchange: GpuShuffleExchangeExec,
       partitionSpecs: Seq[CoalescedPartitionSpec]): RDD[ColumnarBatch] = {
     // Databricks 17.3: Pass 0 as default for stageShuffleCount (not used)
-    shuffleExchange.getShuffleRDD(partitionSpecs.toArray, lazyFetching = true, stageShuffleCount = 0)
+    shuffleExchange.getShuffleRDD(partitionSpecs.toArray,
+      lazyFetching = true, stageShuffleCount = 0)
       .asInstanceOf[RDD[ColumnarBatch]]
   }
 }

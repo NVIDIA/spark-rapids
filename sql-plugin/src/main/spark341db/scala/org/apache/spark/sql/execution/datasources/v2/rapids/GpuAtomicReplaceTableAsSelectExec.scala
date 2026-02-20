@@ -76,12 +76,16 @@ case class GpuAtomicReplaceTableAsSelectExec(
     val staged = if (orCreate) {
       (catalog.stageCreateOrReplace(
         ident, schema, partitioning.toArray, properties.asJava): @annotation.nowarn(
+        // scalastyle:off line.size.limit
         "cat=deprecation&origin=org.apache.spark.sql.connector.catalog.StagingTableCatalog.stageCreateOrReplace"))
+        // scalastyle:on line.size.limit
     } else if (catalog.tableExists(ident)) {
       try {
         (catalog.stageReplace(
           ident, schema, partitioning.toArray, properties.asJava): @annotation.nowarn(
+        // scalastyle:off line.size.limit
         "cat=deprecation&origin=org.apache.spark.sql.connector.catalog.StagingTableCatalog.stageReplace"))
+        // scalastyle:on line.size.limit
       } catch {
         case e: NoSuchTableException =>
           throw QueryCompilationErrors.cannotReplaceMissingTableError(ident, Some(e))

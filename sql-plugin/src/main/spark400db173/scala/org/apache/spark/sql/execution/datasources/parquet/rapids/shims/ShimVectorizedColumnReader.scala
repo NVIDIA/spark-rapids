@@ -28,7 +28,9 @@ import org.apache.parquet.column.page.PageReadStore
 import org.apache.parquet.schema.{GroupType, Type}
 
 import org.apache.spark.sql.catalyst.util.RebaseDateTime.RebaseSpec
-import org.apache.spark.sql.execution.datasources.parquet.{ParentContainerUpdater, ParquetIdExternalMapping, ParquetRowConverter, ParquetToSparkSchemaConverter, VectorizedColumnReader}
+import org.apache.spark.sql.execution.datasources.parquet.{ParentContainerUpdater,
+  ParquetIdExternalMapping, ParquetRowConverter, ParquetToSparkSchemaConverter,
+  VectorizedColumnReader}
 import org.apache.spark.sql.internal.LegacyBehaviorPolicy
 import org.apache.spark.sql.types.StructType
 
@@ -43,7 +45,8 @@ object IdentityParquetIdMapping extends ParquetIdExternalMapping {
 }
 
 /**
- * Databricks 17.3 version where ParquetRowConverter requires 8 parameters including externalIdMapping.
+ * Databricks 17.3 version where ParquetRowConverter requires
+ * 8 parameters including externalIdMapping.
  */
 class ShimParquetRowConverter(
     schemaConverter: ParquetToSparkSchemaConverter,
