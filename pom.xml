@@ -309,6 +309,7 @@
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.6</slf4j.version>
+                <spark.protobuf.copy.skip>false</spark.protobuf.copy.skip>
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
@@ -329,6 +330,7 @@
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.6</slf4j.version>
+                <spark.protobuf.copy.skip>false</spark.protobuf.copy.skip>
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
@@ -349,6 +351,7 @@
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.6</slf4j.version>
+                <spark.protobuf.copy.skip>false</spark.protobuf.copy.skip>
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
@@ -369,6 +372,7 @@
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.6</slf4j.version>
+                <spark.protobuf.copy.skip>false</spark.protobuf.copy.skip>
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
@@ -389,6 +393,7 @@
                 <parquet.hadoop.version>1.12.3</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-24x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.6</slf4j.version>
+                <spark.protobuf.copy.skip>false</spark.protobuf.copy.skip>
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
@@ -954,6 +959,12 @@
         <pytest.TEST_PARALLEL/>
         <pytest.TEST_TYPE>developer</pytest.TEST_TYPE>
         <rat.consoleOutput>false</rat.consoleOutput>
+        <!--
+          spark-protobuf is an optional external Spark module (Spark 3.4.0+). The plugin must not require it
+          at load time, but some integration tests need it on the Spark JVM classpath.
+        -->
+        <!-- Default to skipping staging spark-protobuf for integration tests unless enabled by a Spark 3.4.x profile -->
+        <spark.protobuf.copy.skip>true</spark.protobuf.copy.skip>
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
