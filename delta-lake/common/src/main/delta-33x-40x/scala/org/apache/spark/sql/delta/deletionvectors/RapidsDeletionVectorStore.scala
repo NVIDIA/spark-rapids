@@ -21,10 +21,10 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.Hash
 import java.io.{DataInputStream, IOException}
 import java.util.zip.CRC32
-
-import org.apache.spark.sql.delta.DeltaErrors
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+
+import org.apache.spark.sql.delta.DeltaErrors
 
 /**
  * RAPIDS version of [[DeletionVectorStore]]. It is simplified to only include the APIs needed
@@ -65,12 +65,15 @@ trait DeltaSerializedBitmapLoader {
 }
 
 object DeltaSerializedBitmapLoader {
+
+  // scalastyle:off line.size.limit
   /**
    * The "Delta" roaring bitmap serialization formats begin with a 4-byte magic number.
    * When converting to the "standard" roaring bitmap serialization format, this magic number
    * should be stripped. See for details:
    * https://github.com/delta-io/delta/blob/ccd3092da05a68027bf9be9ec4273a810b4b9ef3/spark/src/main/scala/org/apache/spark/sql/delta/deletionvectors/RoaringBitmapArray.scala#L512-L515
    */
+  // scalastyle:on line.size.limit
   val DELTA_BITMAP_MAGIC_NUMBER_BYTE_SIZE = 4
 
   /**
