@@ -1783,8 +1783,10 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       fallThroughReasons += "Plugin is in explain only mode"
     }
     if (GpuShuffleEnv.isRowBasedChecksumEnabled) {
-      fallThroughReasons += "Detected spark.shuffle.checksum.enabled=true. " +
-        "This feature is supported in Spark 4.1+, but is not yet supported by Spark-Rapids."
+      fallThroughReasons += "Detected order-independent checksum enabled " +
+        "(spark.sql.shuffle.orderIndependentChecksum.enabled or " +
+        "enableFullRetryOnMismatch). " +
+        "This Spark 4.1+ feature is not yet supported by Spark-Rapids."
     }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
