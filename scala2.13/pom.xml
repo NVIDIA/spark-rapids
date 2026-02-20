@@ -81,26 +81,6 @@
         <module>jdk-profiles</module>
     </modules>
     <profiles>
-<!--        <profile>-->
-<!--            <id>release320</id>-->
-<!--            <activation>-->
-<!--                <activeByDefault>true</activeByDefault>-->
-<!--                <property>-->
-<!--                    <name>buildver</name>-->
-<!--                    <value>320</value>-->
-<!--                </property>-->
-<!--            </activation>-->
-<!--            <properties>-->
-<!--                <buildver>320</buildver>-->
-<!--                <spark.version>${spark320.version}</spark.version>-->
-<!--                <spark.test.version>${spark320.version}</spark.test.version>-->
-<!--                <parquet.hadoop.version>1.12.1</parquet.hadoop.version>-->
-<!--                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>-->
-<!--            </properties>-->
-<!--            <modules>-->
-<!--                <module>delta-lake/delta-20x</module>-->
-<!--            </modules>-->
-<!--        </profile>-->
         <profile>
             <id>release321</id>
             <activation>
@@ -120,63 +100,6 @@
                 <module>delta-lake/delta-20x</module>
             </modules>
         </profile>
-<!--        <profile>-->
-<!--            <id>release322</id>-->
-<!--            <activation>-->
-<!--                <property>-->
-<!--                    <name>buildver</name>-->
-<!--                    <value>322</value>-->
-<!--                </property>-->
-<!--            </activation>-->
-<!--            <properties>-->
-<!--                <buildver>322</buildver>-->
-<!--                <spark.version>${spark322.version}</spark.version>-->
-<!--                <spark.test.version>${spark322.version}</spark.test.version>-->
-<!--                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>-->
-<!--                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>-->
-<!--            </properties>-->
-<!--            <modules>-->
-<!--                <module>delta-lake/delta-20x</module>-->
-<!--            </modules>-->
-<!--        </profile>-->
-<!--        <profile>-->
-<!--            <id>release323</id>-->
-<!--            <activation>-->
-<!--                <property>-->
-<!--                    <name>buildver</name>-->
-<!--                    <value>323</value>-->
-<!--                </property>-->
-<!--            </activation>-->
-<!--            <properties>-->
-<!--                <buildver>323</buildver>-->
-<!--                <spark.version>${spark323.version}</spark.version>-->
-<!--                <spark.test.version>${spark323.version}</spark.test.version>-->
-<!--                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>-->
-<!--                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>-->
-<!--            </properties>-->
-<!--            <modules>-->
-<!--                <module>delta-lake/delta-20x</module>-->
-<!--            </modules>-->
-<!--        </profile>-->
-<!--        <profile>-->
-<!--            <id>release324</id>-->
-<!--            <activation>-->
-<!--                <property>-->
-<!--                    <name>buildver</name>-->
-<!--                    <value>324</value>-->
-<!--                </property>-->
-<!--            </activation>-->
-<!--            <properties>-->
-<!--                <buildver>324</buildver>-->
-<!--                <spark.version>${spark324.version}</spark.version>-->
-<!--                <spark.test.version>${spark324.version}</spark.test.version>-->
-<!--                <parquet.hadoop.version>1.12.2</parquet.hadoop.version>-->
-<!--                <rapids.delta.artifactId1>rapids-4-spark-delta-20x</rapids.delta.artifactId1>-->
-<!--            </properties>-->
-<!--            <modules>-->
-<!--                <module>delta-lake/delta-20x</module>-->
-<!--            </modules>-->
-<!--        </profile>-->
         <!-- #if scala-2.12 --><!--
         <profile>
             <id>release330</id>
@@ -909,9 +832,9 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda12</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <spark-rapids-jni.version>26.04.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>26.04.0-SNAPSHOT</spark-rapids-private.version>
-        <spark-rapids-hybrid.version>26.04.0-SNAPSHOT</spark-rapids-hybrid.version>
+        <spark-rapids-jni.version>26.02.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>26.02.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-hybrid.version>26.02.0-SNAPSHOT</spark-rapids-hybrid.version>
         <scala.binary.version>2.13</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.13.18</scala.version>
@@ -957,11 +880,7 @@
         <!--
          If you update a dependency version so it is no longer a SNAPSHOT
          please update the snapshot-shims profile as well so it is accurate -->
-        <spark320.version>3.2.0</spark320.version>
         <spark321.version>3.2.1</spark321.version>
-        <spark322.version>3.2.2</spark322.version>
-        <spark323.version>3.2.3</spark323.version>
-        <spark324.version>3.2.4</spark324.version>
         <spark330.version>3.3.0</spark330.version>
         <spark331.version>3.3.1</spark331.version>
         <spark332.version>3.3.2</spark332.version>
