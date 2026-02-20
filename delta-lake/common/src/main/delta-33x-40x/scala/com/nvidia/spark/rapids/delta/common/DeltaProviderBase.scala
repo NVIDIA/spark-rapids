@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.shims.InvalidateCacheShims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
@@ -136,6 +136,22 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       InvalidateCacheShims.getInvalidateCache(cpuExec.invalidateCache))
   }
 
+  override def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
+    val pushed = DVPredicatePushdown.pushToScan(plan)
+
+    // Spark often generates a plan that looks like below for deletion vector scans:
+    // ...
+    // ProjectExec <- prune is_row_deleted
+    //   FilterExec <- condition on is_row_deleted
+    //     ProjectExec <- project is_row_deleted
+    //       FileSourceScanExec
+    //
+    // The FilterExec can be removed during the pushdown if the only remaining predicates
+    // are deletion vector predicates. If the FilterExec is removed, the `is_row_deleted`
+    // column is pruned from the subtree below the FilterExec. This can leave two consecutive
+    // identical ProjectExecs. We merge them here to simplify the plan.
+    DVPredicatePushdown.mergeIdenticalProjects(pushed)
+  }
 
   override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
     plan match {
@@ -188,6 +204,105 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     }.getOrElse(false)
   }
 
+}
+
+object DVPredicatePushdown extends ShimPredicateHelper {
+
+  /**
+   * Pushes down deletion vector predicates to scan level by removing them from the FilterExec.
+   * The deletion vector predicates will be processed in the scan instead.
+   */
+  def pushToScan(plan: SparkPlan): SparkPlan = {
+
+    /**
+     * Is the condition a form of "IS_ROW_DELETED_COLUMN_NAME == 0"?
+     */
+    def isDVCondition(condition: Expression): Boolean = {
+      condition match {
+        case GpuEqualTo(left, right) =>
+          isRowDeletedColumnRef(left) && isLiteralZero(right) ||
+            isRowDeletedColumnRef(right) && isLiteralZero(left)
+        case _ => false
+      }
+    }
+
+    def isRowDeletedColumnRef(expr: Expression): Boolean = {
+      expr match {
+        case attr: AttributeReference if attr.name == IS_ROW_DELETED_COLUMN_NAME => true
+        case _ => false
+      }
+    }
+
+    def isLiteralZero(expr: Expression): Boolean = {
+      expr match {
+        case GpuLiteral(value: Number, _) if value.longValue() == 0L => true
+        case _ => false
+      }
+    }
+
+    def pruneIsRowDeletedColumn(plan: SparkPlan): SparkPlan = {
+      plan.transformUp {
+        case project @ GpuProjectExec(projectList, _, _) =>
+          val newProjList = projectList.filterNot(isRowDeletedColumnRef(_))
+          project.copy(projectList = newProjList)
+        case fsse: GpuFileSourceScanExec =>
+          fsse.copy(originalOutput = fsse.originalOutput.filterNot(
+            _.name == IS_ROW_DELETED_COLUMN_NAME),
+            requiredSchema = StructType(
+              fsse.requiredSchema.filterNot(_.name == IS_ROW_DELETED_COLUMN_NAME)
+            ))(fsse.rapidsConf)
+      }
+    }
+
+    plan.transformUp {
+      case filter @ GpuFilterExec(condition, child)
+        if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) =>
+        // Decompose the condition into CNF
+        val conjuncts = splitConjunctivePredicates(condition)
+        // the dv condition should be "IS_ROW_DELETED_COLUMN_NAME == 0"
+        val (dvPredicate, otherPredicates) = conjuncts.partition(p =>
+          p.references.size == 1 &&
+            p.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
+            isDVCondition(p)
+        )
+
+        val otherPredicatesReadingIsRowDeleted = otherPredicates.filter(
+          p => p.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)
+        )
+
+        val newChild = if (dvPredicate.nonEmpty && otherPredicatesReadingIsRowDeleted.isEmpty) {
+          // Since we are going to drop this dvPredicate and isRowDeleted is not used in other
+          // predicates, we can prune isRowDeleted column from the child plan
+          pruneIsRowDeletedColumn(child)
+        } else {
+          child
+        }
+
+        if (otherPredicates.isEmpty) {
+          newChild
+        } else {
+          filter.copy(condition = otherPredicates.reduce(GpuAnd),
+            child = newChild)(filter.coalesceAfter)
+        }
+    }
+  }
+
+  /**
+   * Merges consecutive ProjectExecs into one if their project lists are identical.
+   */
+  def mergeIdenticalProjects(plan: SparkPlan): SparkPlan = {
+    plan.transformUp {
+      case p @ GpuProjectExec(projList1,
+      GpuProjectExec(projList2, child, enablePreSplit1), enablePreSplit2) =>
+        val projSet1 = projList1.map(_.exprId).toSet
+        val projSet2 = projList2.map(_.exprId).toSet
+        if (projSet1 == projSet2) {
+          GpuProjectExec(projList1, child, enablePreSplit1 && enablePreSplit2)
+        } else {
+          p
+        }
+    }
+  }
 }
 
 class DeltaCreatableRelationProviderMeta(

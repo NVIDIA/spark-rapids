@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -92,6 +92,11 @@ trait DeltaProvider {
   def convertToGpu(
       cpuExec: OverwriteByExpressionExecV1,
       meta: OverwriteByExpressionExecV1Meta): GpuExec
+
+  /**
+   * Pushes down deletion vector predicates to the scan if possible
+   */
+  def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = plan
 
   def pruneFileMetadata(plan: SparkPlan): SparkPlan = plan
 
