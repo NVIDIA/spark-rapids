@@ -539,9 +539,19 @@ object SpillableHostBuffer {
     new SpillableHostBuffer(SpillableHostBufferHandle(buffer), length)
   }
 
-  def sliceWithRetry(shb: SpillableHostBuffer, start: Long, len: Long): HostMemoryBuffer = {
+  /**
+   * Materialize and slice a SpillableHostBuffer guarded by retry.
+   */
+  def sliceWithRetry(shb: SpillableHostBuffer,
+      start: Long, len: Long): HostMemoryBuffer = {
     withRetryNoSplit[HostMemoryBuffer] {
-      withResource(shb.getHostBuffer())(_.slice(start, len))
+      withResource(shb.getHostBuffer()) { buf =>
+        // transfer the event handler to the sliced buffer before closing the original buffer
+        val sliced = buf.slice(start, len)
+        sliced.setEventHandler(buf.getEventHandler)
+        buf.setEventHandler(null)
+        sliced
+      }
     }
   }
 }

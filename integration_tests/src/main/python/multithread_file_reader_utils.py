@@ -44,7 +44,7 @@ def resource_bounded_multithreaded_reader_conf(file_type,
     ])
     memory_limit = ('spark.rapids.sql.multiThreadedRead.memoryLimit.size', mem_lmt)
 
-    timeout = _list_conf_helper(timeout_conf, default=[0, 1000, 60000])
+    timeout = _list_conf_helper(timeout_conf, default=[500, 3000, 60000])
     task_timeout = ('spark.rapids.sql.multiThreadedRead.memoryLimit.acquisitionTimeout', timeout)
 
     conf_matrix = [base_conf]
