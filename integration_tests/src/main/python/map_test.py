@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -292,11 +292,12 @@ def test_map_scalars_supported_key_types(data_gen):
             "       (select first(map(key_at_ix_next, 'value'), true) " +
             "        from single_key_tbl_next)[key_at_ix] " +
             "from single_key_tbl")
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         query_map_scalar,
         # check that GpuGetMapValue wasn't optimized out
         exist_classes="GpuGetMapValue",
-        conf = {"spark.rapids.sql.explain": "NONE"})
+        conf = {"spark.rapids.sql.explain": "NONE", 'spark.sql.adaptive.enabled': 'false'})
 
 
 @pytest.mark.parametrize('data_gen',

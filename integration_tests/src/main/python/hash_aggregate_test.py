@@ -1827,13 +1827,15 @@ def test_sorted_groupby_first_last(data_gen, kudo_enabled):
     # sort by more than the group by columns to be sure that first/last don't remove the ordering
     agg_fn = lambda df: df.orderBy('a', 'b').groupBy('a').agg(
         f.first('b'), f.last('b'), f.first('b', True), f.last('b', True))
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
     assert_gpu_and_cpu_are_equal_collect(
         # First and last are not deterministic when they are run in a real distributed setup.
         # We set parallelism and partitions to 1 to prevent nondeterministic results because
         # of distributed setups.
         lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
         conf = {'spark.sql.shuffle.partitions': '1',
-                kudo_enabled_conf_key: kudo_enabled})
+                kudo_enabled_conf_key: kudo_enabled,
+                'spark.sql.adaptive.enabled': 'false'})
 
 # Spark has a sorting bug with decimals, see https://issues.apache.org/jira/browse/SPARK-40129.
 # Have pytest do the sorting rather than Spark as a workaround.
