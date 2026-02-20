@@ -141,7 +141,6 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-core--com.fasterxml.jackson.core__jackson-core__*.jar'),
         Artifact('com.fasterxml.jackson.core', 'jackson-annotations',
                  f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__*.jar'),
-         # spark-avro has different locations depending on Spark version
         Artifact('org.apache.avro', 'avro-mapred',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro-mapred--org.apache.avro__avro-mapred__*.jar'),
         Artifact('org.apache.avro', 'avro',
@@ -158,12 +157,16 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--io.netty--netty-handler--io.netty__netty-handler__*.jar'),
     ]
 
+    # spark-avro has different locations depending on Spark version
     if spark_version.startswith('4.0'):
         deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
-                        f'{spark_prefix}--connector--avro--avro-{spark_suffix}_*.jar')]
+                         f'{spark_prefix}--connector--avro--avro-{spark_suffix}_*.jar')]
+    elif spark_version.startswith('3.5'):
+        deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
+                         f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro--org.apache.avro*.jar')]
     else:
         deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
-                        f'{spark_prefix}--vendor--avro--avro-*.jar')]
+                         f'{spark_prefix}--vendor--avro--avro-*.jar')]
 
     # Parquet
     if spark_version.startswith('3.4') or spark_version.startswith('3.5') or spark_version.startswith('4.0'):
@@ -220,9 +223,12 @@ def define_deps(spark_version, scala_version):
         Artifact('org.apache.avro', f'avro-connector', f'{spark_prefix}--connector--avro--avro-hive-2.3__hadoop-3.2_{scala_version}_shaded--*--avro-unshaded-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar')
         ]
 
+    # Databricks 17.3 (Spark 4.0) requires additional common-utils JARs
     if spark_version.startswith('4.0'):
         deps += [
+        # Logging class is in common-utils-other
         Artifact('org.apache.spark', f'spark-common-utils-other_{scala_version}', f'{spark_prefix}--common--utils--common-utils-other-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar'),
+        # ConfigEntry and related config classes are in common-config
         Artifact('org.apache.spark', f'spark-common-config_{scala_version}', f'{spark_prefix}--common--utils--common-config-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar')
         ]
 
