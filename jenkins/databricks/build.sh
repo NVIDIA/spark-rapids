@@ -252,12 +252,7 @@ $MVN_CMD -B -f $POM_FILE -Ddatabricks -Dbuildver=$BUILDVER $MVN_PHASES -DskipTes
 
 if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
     echo "Building the default Spark shim and creating a two-shim dist jar"
-    if [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
-        # For Scala 2.13, we always use buildver 400 (Scala 2.13 is only used with Spark 4.0+)
-        UPSTREAM_BUILDVER=400
-    else
-        UPSTREAM_BUILDVER=$($MVN_CMD help:evaluate -q -f $POM_FILE -pl dist -Dexpression=buildver -DforceStdout)
-    fi
+    UPSTREAM_BUILDVER=$($MVN_CMD help:evaluate -q -f $POM_FILE -pl dist -Dexpression=buildver -DforceStdout)
     $MVN_CMD -B -f $POM_FILE -Dbuildver=$UPSTREAM_BUILDVER package -pl dist -am -DskipTests -Dmaven.scaladoc.skip $MVN_OPT \
         -Dincluded_buildvers=$UPSTREAM_BUILDVER,$BUILDVER
 fi
