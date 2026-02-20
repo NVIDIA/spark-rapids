@@ -29,7 +29,7 @@ import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg._
 import org.apache.iceberg.io._
-import org.apache.iceberg.spark.{Spark3Util, SparkSchemaUtil}
+import org.apache.iceberg.spark.{GpuTypeToSparkType, Spark3Util, SparkSchemaUtil}
 import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
 import org.apache.iceberg.spark.source.GpuWriteContext.positionDeleteSparkType
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
@@ -104,7 +104,6 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     val outputSpecId = FieldUtils.readField(cpu, "outputSpecId", true).asInstanceOf[Int]
     val targetFileSize = FieldUtils.readField(cpu, "targetFileSize", true).asInstanceOf[Long]
     val writeSchema = FieldUtils.readField(cpu, "writeSchema", true).asInstanceOf[Schema]
-    val dsSchema = FieldUtils.readField(cpu, "dsSchema", true).asInstanceOf[StructType]
     val useFanout = FieldUtils.readField(cpu, "useFanoutWriter", true).asInstanceOf[Boolean]
     val writeProps = FieldUtils.readField(cpu, "writeProperties", true)
       .asInstanceOf[java.util.Map[String, String]]
@@ -122,11 +121,18 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       tmpJob
     }
 
+    // Convert the Iceberg write schema to Spark schema with field IDs embedded in metadata
+    // This is critical for nested types to work correctly with Iceberg's schema evolution
+    // Note: We use GpuTypeToSparkType instead of SparkSchemaUtil.convert because
+    // SparkSchemaUtil.convert does NOT embed field IDs in the Spark schema metadata,
+    // which are required for the GPU Parquet writer to write field IDs to the Parquet file.
+    val dsSchemaWithFieldIds = GpuTypeToSparkType.toSparkType(writeSchema)
+
     val outputWriterFactory = new GpuParquetFileFormat().prepareWrite(
       SparkSession.active,
       job,
       writeProps.asScala.toMap,
-      dsSchema
+      dsSchemaWithFieldIds
     )
 
     val serializedHadoopConf = new SerializableConfiguration(job.getConfiguration)
@@ -141,7 +147,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       outputSpecId,
       targetFileSize,
       writeSchema,
-      dsSchema,
+      dsSchemaWithFieldIds,
       useFanout,
       writeProps.asScala.toMap,
       outputWriterFactory,
@@ -408,7 +414,8 @@ class GpuPartitionedDataWriter(
         targetFileSize)
     }
 
-  private val partitioner = new GpuIcebergSpecPartitioner(spec, dataSchema.asStruct())
+  private val partitioner = new GpuIcebergSpecPartitioner(spec, dataSchema.asStruct(),
+    Some(dataSparkType))
 
   override def write(record: ColumnarBatch): Unit = {
     partitioner.partition(record)

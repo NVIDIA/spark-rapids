@@ -2138,6 +2138,15 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       useFieldId: Boolean): ParquetOptions = {
     val includeColumns = toCudfColumnNames(readDataSchema, clippedSchema,
       isSchemaCaseSensitive, useFieldId)
+
+    // Debug logging for issue #12298
+    logWarning(s"[ICEBERG_DEBUG] getParquetOptions called:")
+    logWarning(s"[ICEBERG_DEBUG]   useFieldId: $useFieldId")
+    logWarning(s"[ICEBERG_DEBUG]   isSchemaCaseSensitive: $isSchemaCaseSensitive")
+    logWarning(s"[ICEBERG_DEBUG]   readDataSchema: ${readDataSchema.treeString}")
+    logWarning(s"[ICEBERG_DEBUG]   clippedSchema: ${clippedSchema.toString}")
+    logWarning(s"[ICEBERG_DEBUG]   includeColumns (${includeColumns.size} columns): ${includeColumns.mkString("[", ", ", "]")}")
+
     ParquetOptions.builder()
         .withTimeUnit(DType.TIMESTAMP_MICROSECONDS)
         .includeColumn(includeColumns : _*)
@@ -3006,20 +3015,25 @@ object MakeParquetTableProducer extends Logging {
       }
     }
     if (useChunkedReader) {
+      logWarning(s"[ICEBERG_DEBUG] Creating ParquetChunkedReader for splits: ${splits.mkString(", ")}")
       ParquetTableReader(conf, chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
         opts, buffers, metrics, dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedParquetSchema,
         splits, debugDumpPrefix, debugDumpAlways)
     } else {
+      logWarning(s"[ICEBERG_DEBUG] Calling Table.readParquet for splits: ${splits.mkString(", ")}")
       val table = withResource(buffers) { _ =>
         try {
           RmmRapidsRetryIterator.withRetryNoSplit[Table] {
             NvtxIdWithMetrics(NvtxRegistry.PARQUET_DECODE, metrics(GPU_DECODE_TIME)) {
-              Table.readParquet(opts, buffers:_*)
+              val result = Table.readParquet(opts, buffers:_*)
+              logWarning(s"[ICEBERG_DEBUG] Table.readParquet succeeded: ${result.getNumberOfColumns} columns, ${result.getRowCount} rows")
+              result
             }
           }
         } catch {
           case e: Exception =>
+            logError(s"[ICEBERG_DEBUG] Table.readParquet failed with exception: ${e.getMessage}", e)
             val dumpMsg = debugDumpPrefix.map { prefix =>
               if (!debugDumpAlways) {
                 val p = DumpUtils.dumpBuffer(conf, buffers, prefix, ".parquet")
@@ -3074,11 +3088,15 @@ case class ParquetTableReader(
   override def hasNext: Boolean = reader.hasNext
 
   override def next: Table = {
+    logWarning(s"[ICEBERG_DEBUG] ParquetTableReader.next() called for splits: $splitsString")
     val table = NvtxIdWithMetrics(NvtxRegistry.PARQUET_DECODE, metrics(GPU_DECODE_TIME)) {
       try {
-        reader.readChunk()
+        val result = reader.readChunk()
+        logWarning(s"[ICEBERG_DEBUG] readChunk() succeeded: ${result.getNumberOfColumns} columns, ${result.getRowCount} rows")
+        result
       } catch {
         case e: Exception =>
+          logError(s"[ICEBERG_DEBUG] readChunk() failed with exception: ${e.getMessage}", e)
           val dumpMsg = debugDumpPrefix.map { prefix =>
             if (!debugDumpAlways) {
               val p = DumpUtils.dumpBuffer(conf, buffers, prefix, ".parquet")

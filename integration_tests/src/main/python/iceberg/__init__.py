@@ -20,7 +20,7 @@ from types import MappingProxyType
 from typing import Callable, List, Dict, Optional
 
 from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.types import FloatType, DoubleType, BinaryType
+from pyspark.sql.types import FloatType, DoubleType, BinaryType, ArrayType, MapType, StructType
 
 from data_gen import *
 from spark_session import with_cpu_session
@@ -39,6 +39,20 @@ iceberg_table_gen = MappingProxyType({
     '_c13': DecimalGen(precision=7, scale=3, special_cases=[]),
     '_c14': DecimalGen(precision=12, scale=2, special_cases=[]),
     '_c15': DecimalGen(precision=20, scale=2, special_cases=[]),
+    # Nested types: struct, array, and map are all supported
+    # Deeply nested struct: struct<child0:string, child1:struct<nested1:int, nested2:struct<deep1:long, deep2:string>>>
+    '_c16': StructGen([
+        ['child0', string_gen],
+        ['child1', StructGen([
+            ['nested1', int_gen],
+            ['nested2', StructGen([
+                ['deep1', long_gen],
+                ['deep2', string_gen]
+            ])]
+        ])]
+    ]),
+    '_c17': ArrayGen(long_gen),
+    '_c18': MapGen(StringGen(pattern='key_[0-9]', nullable=False), long_gen, max_length=10),
 })
 iceberg_base_table_cols = list(iceberg_table_gen.keys())
 iceberg_gens_list = [iceberg_table_gen[col] for col in iceberg_base_table_cols]
@@ -73,6 +87,8 @@ iceberg_write_enabled_conf = {
     # WriteDeltaExec is disabled by default as it's experimental, but we need it enabled
     # for merge-on-read (MOR) DML operations (UPDATE/DELETE/MERGE with write.*.mode='merge-on-read')
     "spark.rapids.sql.exec.WriteDeltaExec": "true",
+    # Enable Parquet field ID writing for Iceberg compatibility
+    "spark.sql.parquet.fieldId.write.enabled": "true",
 }
 
 
@@ -82,7 +98,11 @@ def can_be_eq_delete_col(data_gen: DataGen) -> bool:
             # See https://github.com/NVIDIA/spark-rapids/issues/12469, iceberg spec doesn't prevent
             # binary type as eq delete column, but it seems there are bugs in iceberg equality
             # loader, we should remove this after the bug is fixed.
-            not isinstance(data_gen.data_type, BinaryType))
+            not isinstance(data_gen.data_type, BinaryType) and
+            # Nested types (array, struct, map) cannot be used as equality delete columns
+            not isinstance(data_gen.data_type, ArrayType) and
+            not isinstance(data_gen.data_type, StructType) and
+            not isinstance(data_gen.data_type, MapType))
 
 def _eq_column_combinations(all_columns: List[str],
                            all_types: List[DataGen],

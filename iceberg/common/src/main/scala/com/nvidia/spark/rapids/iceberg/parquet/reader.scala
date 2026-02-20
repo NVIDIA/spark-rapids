@@ -135,6 +135,7 @@ case class GpuIcebergParquetReaderConf(
     threadConf: ThreadConf,
     expectedSchema: Schema,
     nameMapping: Option[NameMapping],
+    useFieldId: Boolean,
 )
 
 trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
@@ -193,8 +194,14 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       conf.caseSensitive)
   }
 
+  /**
+   * Filter parquet blocks based on the required schema and return both the
+   * ParquetFileInfoWithBlockMeta and the shaded file read schema for post-processing.
+   *
+   * @return tuple of (ParquetFileInfoWithBlockMeta, shaded file read schema)
+   */
   def filterParquetBlocks(file: IcebergPartitionedFile,
-      requiredSchema: Schema): ParquetFileInfoWithBlockMeta = {
+      requiredSchema: Schema): (ParquetFileInfoWithBlockMeta, ShadedMessageType) = {
     withResource(file.newReader) { reader =>
       val fileSchema = reader.getFileMetaData.getSchema
 
@@ -210,10 +217,10 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks.map(_._1))
 
       val partReaderSparkSchema = TypeWithSchemaVisitor.visit(requiredSchema.asStruct(),
-          fileReadSchema, new SparkSchemaConverter)
+          typeWithIds, new SparkSchemaConverter)
         .asInstanceOf[StructType]
 
-      ParquetFileInfoWithBlockMeta(file.path,
+      val parquetInfo = ParquetFileInfoWithBlockMeta(file.path,
         blocks,
         InternalRow.empty, // Iceberg handles partition values but itself
         unshade(fileReadSchema),
@@ -223,6 +230,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
         hasInt96Timestamps = true,
         blockFirstRowIndices,
       )
+      (parquetInfo, fileReadSchema)
     }
   }
 }

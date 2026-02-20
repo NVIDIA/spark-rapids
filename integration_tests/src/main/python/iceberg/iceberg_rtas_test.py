@@ -20,7 +20,7 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import (create_iceberg_table, iceberg_base_table_cols,
-                     iceberg_gens_list, iceberg_full_gens_list,
+                     iceberg_gens_list,
                      get_full_table_name, iceberg_write_enabled_conf)
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
@@ -254,63 +254,6 @@ def test_rtas_fallback_when_conf_disabled(spark_tmp_table_factory,
     assert_gpu_fallback_collect(run_rtas,
                                 'AtomicReplaceTableAsSelectExec',
                                 conf=updated_conf)
-
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec',  'ShuffleExchangeExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_rtas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
-    table_prop = {
-        "format-version": "2"
-    }
-
-    def run_rtas(spark):
-        cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        target = get_full_table_name(spark_tmp_table_factory)
-        # Create initial table
-        initial_df_gen = lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list)))
-        create_iceberg_table(target, None, table_prop, initial_df_gen)
-        
-        # Execute RTAS
-        return _execute_rtas(spark,
-                      target,
-                      spark_tmp_table_factory,
-                      lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list))),
-                      table_prop)
-
-    assert_gpu_fallback_collect(run_rtas,
-                                'AtomicReplaceTableAsSelectExec',
-                                conf=iceberg_write_enabled_conf)
-
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_rtas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
-    table_prop = {
-        "format-version": "2"
-    }
-
-    def run_rtas(spark):
-        cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        target = get_full_table_name(spark_tmp_table_factory)
-        # Create initial table
-        initial_df_gen = lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list)))
-        create_iceberg_table(target, "bucket(16, _c2)", table_prop, initial_df_gen)
-        
-        # Execute RTAS
-        return _execute_rtas(spark,
-                      target,
-                      spark_tmp_table_factory,
-                      lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list))),
-                      table_prop,
-                      partition_col_sql="bucket(16, _c2)")
-
-    assert_gpu_fallback_collect(run_rtas,
-                                'AtomicReplaceTableAsSelectExec',
-                                conf=iceberg_write_enabled_conf)
 
 
 @iceberg
