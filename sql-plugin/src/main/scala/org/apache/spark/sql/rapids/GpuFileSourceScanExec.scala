@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -660,6 +660,8 @@ object GpuFileSourceScanExec {
       GpuReadOrcFileFormat.tagSupport(meta)
     } else if (cls == classOf[ParquetFileFormat]) {
       GpuReadParquetFileFormat.tagSupport(meta)
+    } else if (cls == classOf[com.nvidia.spark.rapids.SequenceFileBinaryFileFormat]) {
+      com.nvidia.spark.rapids.GpuReadSequenceFileBinaryFormat.tagSupport(meta)
     } else if (cls == classOf[JsonFileFormat]) {
       GpuReadJsonFileFormat.tagSupport(meta)
     } else if (ExternalSource.isSupportedFormat(cls)) {
@@ -678,6 +680,8 @@ object GpuFileSourceScanExec {
       new GpuReadOrcFileFormat
     } else if (cls == classOf[ParquetFileFormat]) {
       new GpuReadParquetFileFormat
+    } else if (cls == classOf[com.nvidia.spark.rapids.SequenceFileBinaryFileFormat]) {
+      new com.nvidia.spark.rapids.GpuReadSequenceFileBinaryFormat
     } else if (cls == classOf[JsonFileFormat]) {
       new GpuReadJsonFileFormat
     } else if (ExternalSource.isSupportedFormat(cls)) {
