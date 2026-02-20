@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -217,25 +216,6 @@ class GpuSorter(
     }
   }
 
-  private[this] lazy val hasNestedInKeyColumns = cpuOrderingInternal.exists { order =>
-    order.child.dataType match {
-      case _: BinaryType =>
-        // binary is represented in cudf as a LIST column of UINT8
-        true
-      case t => DataTypeUtils.isNestedType(t)
-    }
-  }
-
-  /** (This can be removed once https://github.com/rapidsai/cudf/issues/8050 is addressed) */
-  private[this] lazy val hasUnsupportedNestedInRideColumns = {
-    val keyColumnIndices = cpuOrderingInternal.map(_.child.asInstanceOf[BoundReference].ordinal)
-    val rideColumnIndices = projectedBatchTypes.indices.toSet -- keyColumnIndices
-    rideColumnIndices.exists { idx =>
-      TrampolineUtil.dataTypeExistsRecursively(projectedBatchTypes(idx),
-        t => t.isInstanceOf[ArrayType] || t.isInstanceOf[MapType] || t.isInstanceOf[BinaryType])
-    }
-  }
-
   /**
    * Merge multiple batches together. All of these batches should be the output of
    * `appendProjectedColumns` and the output of this will also be in that same format.
@@ -257,68 +237,44 @@ class GpuSorter(
         // Single batch no need for a merge sort
         spillableBatches.pop()
       } else { // spillableBatches.size > 1
-        // In the current version of cudf merge does not work for lists and maps.
-        // This should be fixed by https://github.com/rapidsai/cudf/issues/8050
-        // Nested types in sort key columns is not supported either.
-        if (hasNestedInKeyColumns || hasUnsupportedNestedInRideColumns) {
-          // so as a work around we concatenate all of the data together and then sort it.
-          // It is slower, but it works
-          val merged = RmmRapidsRetryIterator.withRetryNoSplit(spillableBatches.toSeq) { attempt =>
-            val tablesToMerge = attempt.safeMap { sb =>
-              withResource(sb.getColumnarBatch()) { cb =>
-                GpuColumnVector.from(cb)
+        // Use efficient Table.merge for all types.
+        // cudf::merge now supports nested types for both key and ride-along columns.
+        closeOnExcept(spillableBatches.toSeq) { _ =>
+          val batchesToMerge = new RapidsStack[SpillableColumnarBatch]()
+          closeOnExcept(batchesToMerge.toSeq) { _ =>
+            while (spillableBatches.nonEmpty || batchesToMerge.size > 1) {
+              // pop a spillable batch if there is one, and add it to `batchesToMerge`.
+              if (spillableBatches.nonEmpty) {
+                batchesToMerge.push(spillableBatches.pop())
               }
-            }
-            val concatenated = withResource(tablesToMerge) { _ =>
-              Table.concatenate(tablesToMerge: _*)
-            }
-            withResource(concatenated) { _ =>
-              concatenated.orderBy(cudfOrdering: _*)
-            }
-          }
-          withResource(merged) { _ =>
-            closeOnExcept(GpuColumnVector.from(merged, projectedBatchTypes)) { b =>
-              SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-            }
-          }
-        } else {
-          closeOnExcept(spillableBatches.toSeq) { _ =>
-            val batchesToMerge = new RapidsStack[SpillableColumnarBatch]()
-            closeOnExcept(batchesToMerge.toSeq) { _ =>
-              while (spillableBatches.nonEmpty || batchesToMerge.size > 1) {
-                // pop a spillable batch if there is one, and add it to `batchesToMerge`.
-                if (spillableBatches.nonEmpty) {
-                  batchesToMerge.push(spillableBatches.pop())
+              if (batchesToMerge.size > 1) {
+                val merged = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
+                  val tablesToMerge = batchesToMerge.toSeq.safeMap { sb =>
+                    withResource(sb.getColumnarBatch()) { cb =>
+                      GpuColumnVector.from(cb)
+                    }
+                  }
+                  withResource(tablesToMerge) { _ =>
+                    Table.merge(tablesToMerge.toArray, cudfOrdering: _*)
+                  }
                 }
-                if (batchesToMerge.size > 1) {
-                  val merged = RmmRapidsRetryIterator.withRetryNoSplit[Table] {
-                    val tablesToMerge = batchesToMerge.toSeq.safeMap { sb =>
-                      withResource(sb.getColumnarBatch()) { cb =>
-                        GpuColumnVector.from(cb)
-                      }
-                    }
-                    withResource(tablesToMerge) { _ =>
-                      Table.merge(tablesToMerge.toArray, cudfOrdering: _*)
-                    }
-                  }
 
-                  // we no longer care about the old batches, we closed them
-                  closeOnExcept(merged) { _ =>
-                    batchesToMerge.toSeq.safeClose()
-                    batchesToMerge.clear()
-                  }
+                // we no longer care about the old batches, we closed them
+                closeOnExcept(merged) { _ =>
+                  batchesToMerge.toSeq.safeClose()
+                  batchesToMerge.clear()
+                }
 
-                  // add the result to be merged with the next spillable batch
-                  withResource(merged) { _ =>
-                    closeOnExcept(GpuColumnVector.from(merged, projectedBatchTypes)) { b =>
-                      batchesToMerge.push(
-                        SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
-                    }
+                // add the result to be merged with the next spillable batch
+                withResource(merged) { _ =>
+                  closeOnExcept(GpuColumnVector.from(merged, projectedBatchTypes)) { b =>
+                    batchesToMerge.push(
+                      SpillableColumnarBatch(b, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
                   }
                 }
               }
-              batchesToMerge.pop()
             }
+            batchesToMerge.pop()
           }
         }
       }
