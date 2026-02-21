@@ -17,6 +17,7 @@
 package org.apache.spark.sql.delta.deletionvectors
 
 import ai.rapids.cudf.HostMemoryBuffer
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.delta.actions.DeletionVectorDescriptor
@@ -66,6 +67,5 @@ object RapidsDeletionVectorStoredBitmap {
       buffer.setLong(0, 0L)
       buffer
     }
-  }
   }
 }
