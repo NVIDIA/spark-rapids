@@ -60,4 +60,3 @@ object ShowNamespacesExecShims {
     GpuOverrides.neverReplaceExec[ShowNamespacesExec]("Namespace metadata operation")
   )
 }
-

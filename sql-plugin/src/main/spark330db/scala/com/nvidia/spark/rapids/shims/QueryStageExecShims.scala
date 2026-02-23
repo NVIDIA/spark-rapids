@@ -26,10 +26,6 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.{BroadcastQueryStageExec, ShuffleQueryStageExec}
 
-/**
- * Helpers for creating QueryStageExec instances.
- * Earlier Databricks versions don't need the curried parameter list.
- */
 object QueryStageExecShims {
   def createShuffleQueryStageExec(
       oldStage: ShuffleQueryStageExec,
@@ -37,7 +33,6 @@ object QueryStageExecShims {
       plan: SparkPlan,
       canonicalized: SparkPlan,
       isSparkExchange: Boolean): ShuffleQueryStageExec = {
-    // Earlier versions don't need adaptiveContext
     ShuffleQueryStageExec(id, plan, canonicalized, isSparkExchange)
   }
 
@@ -47,7 +42,6 @@ object QueryStageExecShims {
       plan: SparkPlan,
       canonicalized: SparkPlan,
       isSparkExchange: Boolean): BroadcastQueryStageExec = {
-    // Earlier versions don't need adaptiveContext
     BroadcastQueryStageExec(id, plan, canonicalized, isSparkExchange)
   }
 }

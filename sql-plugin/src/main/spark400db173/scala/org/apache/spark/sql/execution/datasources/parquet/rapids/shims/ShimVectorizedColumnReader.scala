@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,8 +53,8 @@ class ShimParquetRowConverter(
     parquetType: GroupType,
     catalystType: StructType,
     convertTz: Option[ZoneId],
-    datetimeRebaseMode: String,  // always LegacyBehaviorPolicy.CORRECTED
-    int96RebaseMode: String,  // always LegacyBehaviorPolicy.EXCEPTION
+    datetimeRebaseMode: String,
+    int96RebaseMode: String,
     int96CDPHive3Compatibility: Boolean,
     updater: ParentContainerUpdater
 ) extends ParquetRowConverter(
@@ -62,9 +62,7 @@ class ShimParquetRowConverter(
       parquetType,
       catalystType,
       convertTz,
-      // no need to rebase, so set originTimeZone as default
       RebaseSpec(LegacyBehaviorPolicy.withName(datetimeRebaseMode)),
-      // no need to rebase, so set originTimeZone as default
       RebaseSpec(LegacyBehaviorPolicy.withName(int96RebaseMode)),
       updater,
       IdentityParquetIdMapping)
@@ -75,8 +73,8 @@ class ShimVectorizedColumnReader(
     types: java.util.List[Type],
     pageReadStore: PageReadStore,
     convertTz: ZoneId,
-    datetimeRebaseMode: String, // always LegacyBehaviorPolicy.CORRECTED
-    int96RebaseMode: String, // always LegacyBehaviorPolicy.EXCEPTION
+    datetimeRebaseMode: String,
+    int96RebaseMode: String,
     int96CDPHive3Compatibility: Boolean,
     writerVersion: ParsedVersion
 ) extends VectorizedColumnReader(
@@ -86,7 +84,7 @@ class ShimVectorizedColumnReader(
       pageReadStore,
       convertTz,
       datetimeRebaseMode,
-      TimeZone.getDefault.getID, // use default zone because of no rebase
+      TimeZone.getDefault.getID,
       int96RebaseMode,
-      TimeZone.getDefault.getID, // use default zone because of will throw exception if rebase
+      TimeZone.getDefault.getID,
       writerVersion)

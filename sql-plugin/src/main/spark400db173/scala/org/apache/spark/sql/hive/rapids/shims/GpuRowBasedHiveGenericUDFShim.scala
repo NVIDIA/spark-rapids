@@ -23,16 +23,12 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.SpecializedGetters
 import org.apache.spark.sql.hive.DeferredObjectAdapter
 
-/**
- * Databricks 17.3 version where DeferredObject.set() expects by-name parameter.
- */
 object GpuRowBasedHiveGenericUDFShim {
   def setDeferredObject(
       o: DeferredObjectAdapter,
       childRowAccessors: Array[SpecializedGetters => Any],
       idx: Int,
       childrenRow: InternalRow): Unit = {
-    // Databricks 17.3: set() expects by-name parameter (() => Any)
     o.set(() => childRowAccessors(idx)(childrenRow))
   }
 }

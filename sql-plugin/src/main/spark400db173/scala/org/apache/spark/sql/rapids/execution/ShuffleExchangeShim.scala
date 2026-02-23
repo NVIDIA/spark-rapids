@@ -37,4 +37,3 @@ object ShuffleExchangeShim {
       .asInstanceOf[RDD[ColumnarBatch]]
   }
 }
-

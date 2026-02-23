@@ -61,4 +61,3 @@ object QueryStageRowCountShims {
     qse.getRuntimeStatistics.rowCount
   }
 }
-

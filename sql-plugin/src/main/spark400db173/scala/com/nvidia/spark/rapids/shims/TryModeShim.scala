@@ -20,8 +20,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.{Add, Divide, EvalMode,
-  Expression, Multiply, Remainder, Subtract}
+import org.apache.spark.sql.catalyst.expressions.{Add, Divide, EvalMode, Expression, Multiply, Remainder, Subtract}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{Average, Sum}
 
 /**
@@ -44,4 +43,3 @@ object TryModeShim {
     evalMode == EvalMode.TRY
   }
 }
-

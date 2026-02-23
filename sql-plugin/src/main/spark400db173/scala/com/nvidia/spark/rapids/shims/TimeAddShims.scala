@@ -27,9 +27,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 /**
  * Empty TimeAddShims for Spark 4.1.0+ and Databricks 17.3.
  * TimeAdd was renamed to TimestampAddInterval and is handled by DayTimeIntervalShims.
- * See: https://github.com/apache/spark/commit/059b395c8cbfe1b0bdc614e6006939e3ac538b13
  */
 object TimeAddShims {
   val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 }
-

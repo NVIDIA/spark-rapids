@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,15 +22,7 @@ package org.apache.spark.sql.rapids
 import org.apache.spark.TaskContext
 import org.apache.spark.shuffle.{ShuffleHandle, ShuffleManager, ShuffleReader, ShuffleReadMetricsReporter}
 
-/**
- * Databricks 17.3 specific shim to handle the new prismMapStatusEnabled parameter
- * in ShuffleManager.getReader.
- */
 object ShuffleManagerShims {
-  /**
-   * Call ShuffleManager.getReader with the Databricks 17.3 signature that includes
-   * prismMapStatusEnabled parameter. We pass false for backwards compatibility.
-   */
   def getReader[K, C](
       manager: ShuffleManager,
       handle: ShuffleHandle,
@@ -44,4 +36,3 @@ object ShuffleManagerShims {
       endPartition, context, metrics, false)
   }
 }
-

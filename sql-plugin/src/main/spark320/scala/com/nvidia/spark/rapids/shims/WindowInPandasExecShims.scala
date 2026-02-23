@@ -58,8 +58,7 @@ import org.apache.spark.sql.execution.python.WindowInPandasExec
 import org.apache.spark.sql.rapids.execution.python.GpuWindowInPandasExecMetaBase
 
 /**
- * Exec rules for WindowInPandasExec (exists in Spark versions
- * before the rename to ArrowWindowPythonExec).
+ * Exec rules for WindowInPandasExec (Spark versions before ArrowWindowPythonExec rename).
  */
 object WindowInPandasExecShims {
   val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
@@ -91,4 +90,3 @@ object WindowInPandasExecShims {
     ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 }
-

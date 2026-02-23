@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,8 +31,6 @@ object ShimParquetColumnVector {
     missingColumns: java.util.Set[ParquetColumn],
     isTopLevel: Boolean,
     defaultValue: Any): ParquetColumnVector = {
-    // Databricks 17.3: Constructor only takes 7 parameters
-    // (removed memory mode parameter compared to DB 14.3)
     new ParquetColumnVector(column, vector, capacity, missingColumns, isTopLevel,
       defaultValue, "")
   }

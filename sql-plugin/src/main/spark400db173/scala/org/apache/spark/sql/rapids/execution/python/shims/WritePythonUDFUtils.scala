@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,6 @@ import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.sql.execution.python.EvalPythonExec.ArgumentMetadata
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 
-/**
- * Databricks 17.3 version where writeUDFs requires udfLogMaxEntries and udfLogLevel parameters.
- */
 object WritePythonUDFUtils {
   def writeUDFs(
       dataOut: DataOutputStream,
@@ -35,10 +32,8 @@ object WritePythonUDFUtils {
       argOffsets: Array[Array[Int]],
       argNames: Option[Array[Array[Option[String]]]] = None,
       profiler: Option[String] = None): Unit = {
-    // Databricks 17.3 added udfLogMaxEntries and udfLogLevel parameters
-    // Use default values for these new parameters
-    val udfLogMaxEntries = 20  // default value
-    val udfLogLevel = "ERROR"  // default value
+    val udfLogMaxEntries = 20
+    val udfLogLevel = "ERROR"
     
     if (argNames.isDefined) {
       val argMetas = argOffsets.zip(argNames.get).map { case (idxs, names) =>
@@ -54,4 +49,3 @@ object WritePythonUDFUtils {
     }
   }
 }
-

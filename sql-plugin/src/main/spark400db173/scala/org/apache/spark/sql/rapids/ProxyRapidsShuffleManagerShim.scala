@@ -22,10 +22,6 @@ package org.apache.spark.sql.rapids
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.shuffle._
 
-/**
- * Databricks 17.3 version of ProxyRapidsShuffleManagerShim with 8-parameter
- * getReader signature (includes prismMapStatusEnabled).
- */
 class ProxyRapidsShuffleManagerShim(
     conf: SparkConf,
     isDriver: Boolean

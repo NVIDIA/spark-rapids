@@ -22,9 +22,6 @@ package org.apache.spark.sql.rapids
 import org.apache.spark.TaskContext
 import org.apache.spark.shuffle.{ShuffleHandle, ShuffleReader, ShuffleReadMetricsReporter}
 
-/**
- * Databricks 17.3 version with 8-parameter getReader signature.
- */
 trait RapidsShuffleReaderShim {
   self: RapidsShuffleInternalManagerBase =>
 
@@ -43,4 +40,3 @@ trait RapidsShuffleReaderShim {
       startPartition, endPartition, context, metrics)
   }
 }
-
