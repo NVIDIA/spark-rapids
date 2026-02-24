@@ -413,27 +413,45 @@ class AggHelper(
   postStepDataTypes ++=
     groupingExpressions.map(_.dataType)
 
-  private var ix = groupingAttributes.length
+  // Map from canonicalized expression to its column ordinal in preStep.
+  // This enables deduplication: if the same expression appears multiple times
+  // (e.g., child column used by both count(col) and avg(col)), it will only
+  // be computed once, and multiple aggregates can share the same column.
+  // This also ensures cudf can deduplicate identical aggregations on the same column.
+  private val exprToOrdinal = mutable.HashMap[Expression, Int]()
+  private var nextOrdinal = groupingAttributes.length
+
+  // Get existing ordinal for an expression, or assign a new one if not seen before.
+  // Uses canonicalized expression as key to ensure semantically equal expressions
+  // (e.g., same column reference) share the same ordinal.
+  private def getOrAssignOrdinal(expr: Expression): Int = {
+    val key = expr.canonicalized
+    exprToOrdinal.getOrElseUpdate(key, {
+      preStep += expr
+      val ordinal = nextOrdinal
+      nextOrdinal += 1
+      ordinal
+    })
+  }
+
   for (aggExp <- aggregateExpressions) {
     val aggFn = aggExp.aggregateFunction
     if ((aggExp.mode == Partial || aggExp.mode == Complete) && !forceMerge) {
-      val ordinals = (ix until ix + aggFn.updateAggregates.length)
+      // Get ordinals for each inputProjection expression, reusing existing ones if possible
+      val ordinals = aggFn.inputProjection.map(getOrAssignOrdinal)
       aggOrdinals ++= ordinals
-      ix += ordinals.length
       val updateAggs = aggFn.updateAggregates
       postStepDataTypes ++= updateAggs.map(_.dataType)
       cudfAggregates ++= updateAggs
-      preStep ++= aggFn.inputProjection
       postStep ++= aggFn.postUpdate
       postStepAttr ++= aggFn.postUpdateAttr
     } else {
-      val ordinals = (ix until ix + aggFn.mergeAggregates.length)
+      // Get ordinals for each preMerge expression, reusing existing ones if possible
+      val ordinals = aggFn.preMerge.map(getOrAssignOrdinal)
       aggOrdinals ++= ordinals
-      ix += ordinals.length
       val mergeAggs = aggFn.mergeAggregates
       postStepDataTypes ++= mergeAggs.map(_.dataType)
       cudfAggregates ++= mergeAggs
-      preStep ++= aggFn.preMerge
       postStep ++= aggFn.postMerge
       postStepAttr ++= aggFn.postMergeAttr
     }
