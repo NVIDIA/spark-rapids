@@ -78,17 +78,17 @@ Using JarURLConnection URLs we create a Parallel World of the current version wi
 Spark 3.0.2's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-25.12.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-25.12.0.jar!/spark-shared/
-jar:file:/home/spark/rapids-4-spark_2.12-25.12.0.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark302/
 ```
 
-Spark 3.2.0's URLs :
+Spark 3.3.0's URLs :
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-25.12.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-25.12.0.jar!/spark-shared/
-jar:file:/home/spark/rapids-4-spark_2.12-25.12.0.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark330/
 ```
 
 ### Late Inheritance in Public Classes
@@ -169,7 +169,7 @@ to build against the lowest and highest versions of the supported Spark version
 range. As of the time of this writing:
 
 ```bash
-./build/buildall --parallel=4  --profile=320,351 --module=dist
+./build/buildall --parallel=4  --profile=330,351 --module=dist
 ```
 
 However, before submitting the PR execute the full build `--profile=noSnapshots`.
