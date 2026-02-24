@@ -51,6 +51,21 @@ This is the default and recommended mode for most deployments.
 --conf spark.rapids.shuffle.multiThreaded.reader.threads=16
 ```
 
+### Memory Considerations
+
+Standard mode uses a **memory-first** write strategy: shuffle data is initially written to
+host memory buffers, then spilled to disk at commit time. Without `offHeapLimit` configured,
+the memory threshold check is ineffective (always assumes memory is available), which may
+lead to excessive memory usage with many concurrent tasks.
+
+For YARN or Kubernetes deployments, consider setting off-heap limits:
+
+```bash
+--conf spark.rapids.memory.host.offHeapLimit.enabled=true
+--conf spark.rapids.memory.host.offHeapLimit.size=30g
+--conf spark.executor.memoryOverhead=35g
+```
+
 ### Complete Example
 
 ```bash
@@ -58,8 +73,12 @@ spark-submit \
   --master yarn \
   --deploy-mode cluster \
   --conf spark.plugins=com.nvidia.spark.SQLPlugin \
+  --conf spark.executor.memory=20g \
+  --conf spark.executor.memoryOverhead=35g \
   --conf spark.shuffle.manager=com.nvidia.spark.rapids.spark332.RapidsShuffleManager \
   --conf spark.rapids.shuffle.mode=MULTITHREADED \
+  --conf spark.rapids.memory.host.offHeapLimit.enabled=true \
+  --conf spark.rapids.memory.host.offHeapLimit.size=30g \
   your-application.jar
 ```
 
@@ -137,7 +156,7 @@ spark-submit \
   --master yarn \
   --deploy-mode cluster \
   --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-  --conf spark.executor.memory=32g \
+  --conf spark.executor.memory=20g \
   --conf spark.executor.memoryOverhead=55g \
   --conf spark.shuffle.manager=com.nvidia.spark.rapids.spark332.RapidsShuffleManager \
   --conf spark.rapids.shuffle.multithreaded.skipMerge=true \
