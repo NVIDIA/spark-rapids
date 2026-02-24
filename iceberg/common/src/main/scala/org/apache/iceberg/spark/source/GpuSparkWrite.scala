@@ -21,11 +21,11 @@ import scala.util.{Failure, Success}
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.closeOnExcept
-import com.nvidia.spark.rapids.shims.parquet.ParquetFieldIdShims
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.GpuIcebergSpecPartitioner
+import com.nvidia.spark.rapids.shims.parquet.ParquetFieldIdShims
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg._
@@ -36,9 +36,9 @@ import org.apache.iceberg.spark.source.GpuWriteContext.positionDeleteSparkType
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
 import org.apache.spark.api.java.JavaSparkContext
-import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
