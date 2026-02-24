@@ -262,7 +262,8 @@ def test_sortmerge_join_wrong_key_fallback(data_gen, join_type, kudo_enabled):
         left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right, left.a == right.r_a, join_type)
     conf = copy_and_update(_sortmerge_join_conf, {
-        kudo_enabled_conf_key: kudo_enabled
+        kudo_enabled_conf_key: kudo_enabled,
+        'spark.sql.adaptive.enabled': 'false' # disable AQE as it can change the join type
     })
     assert_gpu_fallback_collect(do_join, 'SortMergeJoinExec', conf=conf)
 
@@ -731,7 +732,9 @@ def test_broadcast_nested_loop_join_with_condition_fallback(data_gen, join_type,
         # AST does not support double type which is not split-able into child nodes.
         return broadcast(left).join(right, left.a > f.log(right.r_a), join_type)
     assert_gpu_fallback_collect(do_join, 'BroadcastNestedLoopJoinExec',
-                                conf = {kudo_enabled_conf_key: kudo_enabled})
+                                conf = {kudo_enabled_conf_key: kudo_enabled,
+                                        # disable AQE as it can change the join type
+                                        "spark.sql.adaptive.enabled": "false"})
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,
@@ -1580,7 +1583,9 @@ def test_broadcast_hash_join_fix_fallback_by_inputfile(spark_tmp_path, disable_b
         conf={"spark.sql.autoBroadcastJoinThreshold": "10M",
               "spark.sql.sources.useV1SourceList": "",
               "spark.rapids.sql.input." + scan_name: False,
-              kudo_enabled_conf_key: kudo_enabled})
+              kudo_enabled_conf_key: kudo_enabled,
+              'spark.sql.adaptive.enabled': 'false'} # disable AQE as it can change the join type
+    )
 
 
 @ignore_order(local=True)
@@ -1617,7 +1622,9 @@ def test_broadcast_nested_join_fix_fallback_by_inputfile(spark_tmp_path, disable
         conf={"spark.sql.autoBroadcastJoinThreshold": "-1",
               "spark.sql.sources.useV1SourceList": "",
               "spark.rapids.sql.input." + scan_name: False,
-              kudo_enabled_conf_key: kudo_enabled})
+              kudo_enabled_conf_key: kudo_enabled,
+              'spark.sql.adaptive.enabled': 'false'} # disable AQE as it can change the join type
+    )
 
 @ignore_order(local=True)
 @pytest.mark.parametrize("join_type", ["Inner", "LeftOuter", "RightOuter"], ids=idfn)
