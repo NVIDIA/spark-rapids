@@ -2,7 +2,7 @@
 layout: page
 title: RAPIDS Shuffle Manager
 parent: Additional Functionality
-nav_order: 5
+nav_order: 6
 ---
 # RAPIDS Shuffle Manager
 
