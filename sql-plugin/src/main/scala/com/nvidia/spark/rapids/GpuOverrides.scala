@@ -4082,12 +4082,14 @@ object GpuOverrides extends Logging {
       "Extracts the `ordinal`-th fields of all array elements for the data with the type of" +
         " array of struct",
       ExprChecks.unaryProject(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
+        TypeSig.ARRAY.nested((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY).nested()),
         TypeSig.ARRAY.nested(TypeSig.all),
         // we should allow all supported types for the children types signature of the nested
         // struct, even only a struct child is allowed for the array here. Since TypeSig supports
         // only one level signature for nested type.
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypesWithNested),
+        TypeSig.ARRAY.nested((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP + TypeSig.BINARY).nested()),
         TypeSig.ARRAY.nested(TypeSig.all)),
       (e, conf, p, r) => new GpuGetArrayStructFieldsMeta(e, conf, p, r)
     ),
