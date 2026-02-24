@@ -227,7 +227,6 @@ def test_generate_outer_fallback():
         "GenerateExec",
         # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
         conf={'spark.sql.adaptive.enabled': 'false'})
-    )
 
 # gpu stack not guarantee to produce the same output order as Spark does
 @ignore_order(local=True) 
