@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
 {"spark": "351"}
@@ -28,6 +27,7 @@
 {"spark": "401"}
 {"spark": "411"}
 spark-rapids-shim-json-lines ***/
+
 package com.nvidia.spark.rapids
 
 import org.apache.spark.sql.catalyst.expressions.Attribute
