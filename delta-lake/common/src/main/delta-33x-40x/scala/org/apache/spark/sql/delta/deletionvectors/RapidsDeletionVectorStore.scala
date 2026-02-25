@@ -19,9 +19,10 @@ package org.apache.spark.sql.delta.deletionvectors
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.Hash
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
+import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import java.io.{DataInputStream, IOException}
 import java.util.zip.CRC32
-import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.delta.DeltaErrors
@@ -39,18 +40,23 @@ trait RapidsDeletionVectorStore {
 }
 
 object RapidsDeletionVectorStore {
-  def createInstance(hadoopConf: Configuration): RapidsDeletionVectorStore = {
-    new RapidsHadoopDVStore(hadoopConf)
+  def createInstance(fileIO: RapidsFileIO): RapidsDeletionVectorStore = {
+    fileIO match {
+      case hadoopFileIO: HadoopFileIO =>
+        new RapidsHadoopDVStore(hadoopFileIO)
+    }
   }
 }
 
-class RapidsHadoopDVStore(hadoopConf: Configuration) extends RapidsDeletionVectorStore {
+class RapidsHadoopDVStore(fileIO: HadoopFileIO) extends RapidsDeletionVectorStore {
 
   override def load(path: Path, offset: Int, size: Int): HostMemoryBuffer = {
-    val fs = path.getFileSystem(hadoopConf)
-    withResource(fs.open(path)) { in =>
-      in.seek(offset)
-      DeltaSerializedBitmapLoader.load(in, size)
+    val file = fileIO.newInputFile(path)
+    withResource(file.open()) { fin =>
+      fin.seek(offset)
+      withResource(new DataInputStream(fin)) { in =>
+        DeltaSerializedBitmapLoader.load(in, size)
+      }
     }
   }
 }

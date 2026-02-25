@@ -20,6 +20,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.parquet._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -408,7 +409,7 @@ object RapidsDeletionVectorUtils {
    * as a serialized standard bitmap in a HostMemoryBuffer. If the deletion vector descriptor
    * does not exist, an empty bitmap will be returned.
    */
-  def loadDeletionVector(conf: Configuration,
+  def loadDeletionVector(fileIO: RapidsFileIO,
       dvDescriptorOpt: Option[String],
       filterTypeOpt: Option[RowIndexFilterType],
       tablePath: String): HostMemoryBuffer = {
@@ -420,7 +421,7 @@ object RapidsDeletionVectorUtils {
       // See [[RowIndexFilterType]] for more details.
       filterTypeOpt.get match {
         case RowIndexFilterType.IF_CONTAINED =>
-          val dvStore = RapidsDeletionVectorStore.createInstance(conf)
+          val dvStore = RapidsDeletionVectorStore.createInstance(fileIO)
           val storedBitmap = RapidsDeletionVectorStoredBitmap(dvDesc, new Path(tablePath))
           storedBitmap.load(dvStore)
         case unexpectedFilterType => throw new IllegalStateException(
