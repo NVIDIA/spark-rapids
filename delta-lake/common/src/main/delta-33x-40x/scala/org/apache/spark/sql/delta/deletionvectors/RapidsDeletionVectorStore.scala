@@ -60,7 +60,7 @@ class RapidsHadoopDVStore(hadoopConf: Configuration) extends RapidsDeletionVecto
  * serialization formats for roaring bitmaps: "portable" and "native".
  * See [[RoaringBitmapArraySerializationFormat]] for details.
  */
-trait DeltaSerializedBitmapLoader {
+sealed trait DeltaSerializedBitmapLoader {
   def loadAsStandardFormat(input: DataInputStream, size: Int, crc: CRC32): HostMemoryBuffer
 }
 
@@ -84,6 +84,8 @@ object DeltaSerializedBitmapLoader {
    * "standard" roaring bitmap serialization format, and returned as a HostMemoryBuffer.
    */
   def load(input: DataInputStream, size: Int): HostMemoryBuffer = {
+    // Sanity check for the bitmap size.
+    // Migrated from DeletionVectorStore.readRangeFromStream.
     val sizeAccordingToFile = input.readInt()
     if (size != sizeAccordingToFile) {
       throw DeltaErrors.deletionVectorSizeMismatch()
@@ -141,7 +143,7 @@ object DeltaNativeFormatLoader extends DeltaSerializedBitmapLoader {
     // The Delta native format is not compatible with the standard portable format, so we
     // load the bitmap into a RoaringBitmapArray first, then re-serialize it in the standard
     // portable format. This is sub-optimal since it requires deserializing and re-serializing
-    // the bitmap, but this is the simpliest that works for the legacy native format which
+    // the bitmap, but this is the simplest that works for the legacy native format which
     // is expected to be rare. If this becomes a problem, we can consider implementing a more
     // efficient conversion without fully deserializing the bitmap.
     val originalBytes = readRangeFromStream(input, size, crc)
@@ -158,7 +160,7 @@ object DeltaNativeFormatLoader extends DeltaSerializedBitmapLoader {
   /**
    * Migrated from DeletionVectorStore.readRangeFromStream and slightly modified.
    * This version does not read the bitmap size from the stream since that is already read
-   * by the caller ([[DeltaSerializedBitmapLoader.read]]).
+   * by the caller ([[DeltaSerializedBitmapLoader.load]]).
    */
   private def readRangeFromStream(reader: DataInputStream, size: Int, crc: CRC32): Array[Byte] = {
     val buffer = new Array[Byte](size)
