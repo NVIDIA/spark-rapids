@@ -986,7 +986,7 @@
         </premergeUTF8.buildvers>
         <premergeScala213.buildvers>
             350,
-            402
+            401
         </premergeScala213.buildvers>
         <jdk11.buildvers>
             331,
@@ -997,7 +997,7 @@
         <jdk17.scala213.buildvers>
             350,
             400,
-            402
+            410
         </jdk17.scala213.buildvers>
         <shimplify.shims/>
         <cpd.sourceType>main</cpd.sourceType>
