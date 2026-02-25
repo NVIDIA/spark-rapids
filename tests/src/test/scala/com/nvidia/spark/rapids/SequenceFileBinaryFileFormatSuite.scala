@@ -29,31 +29,17 @@ import org.apache.hadoop.mapred.{JobConf, SequenceFileAsBinaryInputFormat => Old
 import org.apache.hadoop.mapreduce.lib.input.SequenceFileAsBinaryInputFormat
 import org.scalatest.funsuite.AnyFunSuite
 
-import org.apache.spark.SparkException
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.execution.RDDScanExec
 
 /**
- * Unit tests for SequenceFile RDD conversion rule and GPU reader.
+ * Unit tests for SequenceFile RDD read behavior with RAPIDS plugin enabled.
  *
- * The SequenceFile support in spark-rapids works via the SequenceFileRDDConversionRule,
- * which converts RDD-based SequenceFile scans (e.g., sc.newAPIHadoopFile with
- * SequenceFileInputFormat) to FileFormat-based scans that can be GPU-accelerated.
- *
- * This conversion is disabled by default and must be enabled via:
- *   spark.rapids.sql.sequenceFile.rddConversion.enabled=true
- *
- * If the conversion fails or GPU doesn't support the operation, the original RDD scan
- * is preserved (no fallback to CPU FileFormat).
+ * RDD scans are preserved as-is (no logical-plan rewrite to FileFormat scan).
  */
 class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
-  /**
-   * Create a SparkSession with SequenceFile RDD conversion enabled.
-   * Note: We don't use spark.rapids.sql.test.enabled=true here because it would
-   * require ALL operations to be on GPU, but the RDD-to-FileFormat conversion
-   * only affects the scan part of the plan.
-   */
-  private def withConversionEnabledSession(f: SparkSession => Unit): Unit = {
+  private def withRapidsSession(f: SparkSession => Unit): Unit = {
     // Clear any existing sessions to ensure clean state
     SparkSession.clearActiveSession()
     SparkSession.clearDefaultSession()
@@ -67,7 +53,6 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       .config("spark.sql.extensions", "com.nvidia.spark.rapids.SQLExecPlugin")
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.rapids.sql.enabled", "true")
-      .config("spark.rapids.sql.sequenceFile.rddConversion.enabled", "true")
       .getOrCreate()
     try {
       f(spark)
@@ -76,6 +61,42 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       SparkSession.clearActiveSession()
       SparkSession.clearDefaultSession()
     }
+  }
+
+  private def withPhysicalReplaceEnabledSession(f: SparkSession => Unit): Unit = {
+    SparkSession.clearActiveSession()
+    SparkSession.clearDefaultSession()
+    val spark = SparkSession.builder()
+      .appName("SequenceFileBinaryFileFormatSuite-PhysicalReplace")
+      .master("local[1]")
+      .config("spark.ui.enabled", "false")
+      .config("spark.sql.shuffle.partitions", "1")
+      .config("spark.sql.extensions", "com.nvidia.spark.rapids.SQLExecPlugin")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+      .config("spark.rapids.sql.enabled", "true")
+      .config("spark.rapids.sql.format.sequencefile.rddScan.physicalReplace.enabled", "true")
+      .config("spark.rapids.sql.explain", "ALL")
+      .getOrCreate()
+    try {
+      f(spark)
+    } finally {
+      spark.stop()
+      SparkSession.clearActiveSession()
+      SparkSession.clearDefaultSession()
+    }
+  }
+
+  private def hasGpuSequenceFileRDDScan(df: DataFrame): Boolean = {
+    df.queryExecution.executedPlan.collect {
+      case p if p.getClass.getSimpleName == "GpuSequenceFileSerializeFromObjectExec" => 1
+    }.nonEmpty
+  }
+
+  private def hasCpuRDDScan(df: DataFrame): Boolean = {
+    df.queryExecution.executedPlan.collect {
+      case _: RDDScanExec => 1
+      case p if p.getClass.getSimpleName == "ExternalRDDScanExec" => 1
+    }.nonEmpty
   }
 
   private def deleteRecursively(f: File): Unit = {
@@ -101,7 +122,6 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
   /**
    * Read a SequenceFile using the RDD path.
-   * When conversion is enabled, this should be converted to FileFormat-based scan.
    */
   private def readSequenceFileViaRDD(spark: SparkSession, path: String): DataFrame = {
     import spark.implicits._
@@ -112,8 +132,8 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       classOf[BytesWritable],
       classOf[BytesWritable]
     ).map { case (k, v) =>
-      (java.util.Arrays.copyOfRange(k.getBytes, 0, k.getLength),
-       java.util.Arrays.copyOfRange(v.getBytes, 0, v.getLength))
+      (SequenceFileBinaryFileFormatSuite.bytesWritablePayload(k.getBytes, k.getLength),
+       SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength))
     }.toDF("key", "value")
   }
 
@@ -129,7 +149,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       classOf[BytesWritable],
       classOf[BytesWritable]
     ).map { case (_, v) =>
-      java.util.Arrays.copyOfRange(v.getBytes, 0, v.getLength)
+      SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength)
     }.toDF("value")
   }
 
@@ -218,7 +238,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       )
       writeSequenceFile(file, conf, payloads)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         val df = readSequenceFileViaRDD(spark, file.getAbsolutePath)
 
         val got = df.select("key", "value")
@@ -250,7 +270,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       writeSequenceFile(file, conf, payloads)
 
       // Test with conversion enabled and compare against expected payloads
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         val df = readSequenceFileValueOnly(spark, file.getAbsolutePath)
         val convertedResults = df.collect().map(_.getAs[Array[Byte]](0))
 
@@ -277,7 +297,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       val payloads = Array(Array[Byte](10, 20, 30))
       writeSequenceFile(file, conf, payloads)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         val df = readSequenceFileValueOnly(spark, file.getAbsolutePath)
 
         val results = df.collect()
@@ -294,7 +314,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       val conf = new Configuration()
       writeEmptySequenceFile(file, conf)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         val df = readSequenceFileValueOnly(spark, file.getAbsolutePath)
 
         val results = df.collect()
@@ -307,7 +327,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
   // Compression tests
   // ============================================================================
 
-  test("Compressed SequenceFile throws UnsupportedOperationException") {
+  test("Compressed SequenceFile is readable via preserved RDD scan") {
     withTempDir("seqfile-compressed-test") { tmpDir =>
       val file = new File(tmpDir, "compressed.seq")
       val conf = new Configuration()
@@ -317,31 +337,95 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       )
       writeCompressedSequenceFile(file, conf, payloads)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         val df = readSequenceFileValueOnly(spark, file.getAbsolutePath)
+        val got = df.collect().map(_.getAs[Array[Byte]](0)).sortBy(_.length)
+        val expected = payloads.sortBy(_.length)
+        assert(got.length == expected.length)
+        got.zip(expected).foreach { case (actual, exp) =>
+          assert(java.util.Arrays.equals(actual, exp),
+            s"Expected ${java.util.Arrays.toString(exp)}, got ${java.util.Arrays.toString(actual)}")
+        }
+      }
+    }
+  }
 
-        // Spark wraps the UnsupportedOperationException in a SparkException
-        val ex = intercept[SparkException] {
-          df.collect()
+  test("Physical replacement hits GPU SequenceFile RDD scan for simple uncompressed path") {
+    withTempDir("seqfile-physical-hit-test") { tmpDir =>
+      val file = new File(tmpDir, "simple.seq")
+      val conf = new Configuration()
+      val payloads = Array(
+        Array[Byte](1, 2, 3),
+        "simple".getBytes(StandardCharsets.UTF_8))
+      writeSequenceFile(file, conf, payloads)
+
+      withPhysicalReplaceEnabledSession { spark =>
+        val df = readSequenceFileValueOnly(spark, file.getAbsolutePath)
+        assert(hasGpuSequenceFileRDDScan(df),
+          s"Expected GPU SequenceFile exec in plan:\n${df.queryExecution.executedPlan}")
+        val got = df.collect().map(_.getAs[Array[Byte]](0)).sortBy(_.length)
+        val expected = payloads.sortBy(_.length)
+        assert(got.length == expected.length)
+        got.zip(expected).foreach { case (actual, exp) =>
+          assert(java.util.Arrays.equals(actual, exp))
         }
-        // The exception chain may be:
-        // SparkException -> ExecutionException -> UnsupportedOperationException
-        // Find the UnsupportedOperationException in the cause chain
-        def findUnsupportedOpEx(t: Throwable): Option[UnsupportedOperationException] = {
-          if (t == null) None
-          else if (t.isInstanceOf[UnsupportedOperationException]) {
-            Some(t.asInstanceOf[UnsupportedOperationException])
-          } else {
-            findUnsupportedOpEx(t.getCause)
-          }
+      }
+    }
+  }
+
+  test("Physical replacement falls back to CPU for compressed SequenceFile") {
+    withTempDir("seqfile-physical-compressed-fallback-test") { tmpDir =>
+      val file = new File(tmpDir, "compressed.seq")
+      val conf = new Configuration()
+      val payloads = Array(
+        Array[Byte](8, 9, 10),
+        "compressed".getBytes(StandardCharsets.UTF_8))
+      writeCompressedSequenceFile(file, conf, payloads)
+
+      withPhysicalReplaceEnabledSession { spark =>
+        val df = readSequenceFileValueOnly(spark, file.getAbsolutePath)
+        assert(!hasGpuSequenceFileRDDScan(df),
+          s"Compressed input should not use SequenceFile GPU physical replacement exec:\n" +
+            s"${df.queryExecution.executedPlan}")
+        assert(hasCpuRDDScan(df), "Compressed input should remain on CPU scan path")
+        val got = df.collect().map(_.getAs[Array[Byte]](0)).sortBy(_.length)
+        val expected = payloads.sortBy(_.length)
+        assert(got.length == expected.length)
+        got.zip(expected).foreach { case (actual, exp) =>
+          assert(java.util.Arrays.equals(actual, exp))
         }
-        
-        val unsupportedEx = findUnsupportedOpEx(ex)
-        assert(unsupportedEx.isDefined,
-          s"Expected UnsupportedOperationException in cause chain but got: " +
-          s"${ex.getClass.getName}: ${ex.getMessage}")
-        assert(unsupportedEx.get.getMessage.contains("does not support compressed"),
-          s"Unexpected message: ${unsupportedEx.get.getMessage}")
+      }
+    }
+  }
+
+  test("Physical replacement falls back to CPU for complex lineage") {
+    withTempDir("seqfile-physical-complex-lineage-test") { tmpDir =>
+      val file = new File(tmpDir, "complex.seq")
+      val conf = new Configuration()
+      val payloads = Array(
+        "a".getBytes(StandardCharsets.UTF_8),
+        "bb".getBytes(StandardCharsets.UTF_8))
+      writeSequenceFile(file, conf, payloads)
+
+      withPhysicalReplaceEnabledSession { spark =>
+        import spark.implicits._
+        val sc = spark.sparkContext
+        val df = sc.newAPIHadoopFile(
+          file.getAbsolutePath,
+          classOf[SequenceFileAsBinaryInputFormat],
+          classOf[BytesWritable],
+          classOf[BytesWritable]
+        ).map { case (_, v) =>
+          SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength)
+        }.filter(_.length > 0)
+          .union(sc.parallelize(Seq(Array[Byte](7, 7, 7)), 1))
+          .filter(v => !(v.length == 3 && v(0) == 7.toByte && v(1) == 7.toByte && v(2) == 7.toByte))
+          .toDF("value")
+
+        assert(!hasGpuSequenceFileRDDScan(df),
+          s"Complex lineage should remain on CPU:\n${df.queryExecution.executedPlan}")
+        assert(hasCpuRDDScan(df))
+        assert(df.collect().length == payloads.length)
       }
     }
   }
@@ -361,7 +445,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       }.toArray
       writeSequenceFile(file, conf, payloads)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         val df = readSequenceFileViaRDD(spark, file.getAbsolutePath)
 
         val results = df.select("key", "value").collect()
@@ -384,7 +468,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
   // Glob pattern tests
   // ============================================================================
 
-  test("RDD conversion supports glob patterns in paths") {
+  test("RDD path supports glob patterns in paths") {
     withTempDir("seqfile-glob-test") { tmpDir =>
       // Create subdirectories with data files
       val subDir1 = new File(tmpDir, "2024/01")
@@ -405,7 +489,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       writeSequenceFile(new File(subDir2, "part-00000.seq"), conf, payloads2)
       writeSequenceFile(new File(subDir3, "part-00000.seq"), conf, payloads3)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         // Test glob pattern that matches subdirectories: 2024/*
         val globPath = new File(tmpDir, "2024/*").getAbsolutePath
         val df = readSequenceFileViaRDD(spark, globPath)
@@ -426,7 +510,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
     }
   }
 
-  test("RDD conversion supports recursive glob patterns") {
+  test("RDD path supports recursive glob patterns") {
     withTempDir("seqfile-recursive-glob-test") { tmpDir =>
       // Create nested directory structure
       val subDir1 = new File(tmpDir, "data/year=2024/month=01")
@@ -442,7 +526,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       writeSequenceFile(new File(subDir1, "data.seq"), conf, payloads1)
       writeSequenceFile(new File(subDir2, "data.seq"), conf, payloads2)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         // Test recursive glob pattern: data/year=2024/*/
         val globPath = new File(tmpDir, "data/year=2024/*").getAbsolutePath
         val df = readSequenceFileViaRDD(spark, globPath)
@@ -455,7 +539,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
     }
   }
 
-  test("RDD conversion handles glob pattern with no matches gracefully") {
+  test("RDD path handles glob pattern with no matches gracefully") {
     withTempDir("seqfile-glob-nomatch-test") { tmpDir =>
       // Create a single file
       val file = new File(tmpDir, "test.seq")
@@ -463,7 +547,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       val payloads = Array(Array[Byte](1, 2, 3))
       writeSequenceFile(file, conf, payloads)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         // Use a glob pattern that matches nothing
         val globPath = new File(tmpDir, "nonexistent/*").getAbsolutePath
         
@@ -485,7 +569,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
   // Configuration tests
   // ============================================================================
 
-  test("RDD conversion is disabled by default") {
+  test("RDD SequenceFile path works without conversion config") {
     withTempDir("seqfile-config-test") { tmpDir =>
       val file = new File(tmpDir, "test.seq")
       val conf = new Configuration()
@@ -496,31 +580,26 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       SparkSession.clearActiveSession()
       SparkSession.clearDefaultSession()
 
-      // Create session WITHOUT enabling the conversion
-      // Note: NOT using spark.rapids.sql.test.enabled=true because RDD scans don't run on GPU
+      // Create session without any SequenceFile conversion config.
       val spark = SparkSession.builder()
         .appName("SequenceFileBinaryFileFormatSuite-NoConversion")
         .master("local[1]")
         .config("spark.ui.enabled", "false")
-        // Register RAPIDS SQL extensions (but keep conversion disabled)
+        // Register RAPIDS SQL extensions.
         .config("spark.sql.extensions", "com.nvidia.spark.rapids.SQLExecPlugin")
         .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
         .config("spark.rapids.sql.enabled", "true")
-        // Note: NOT setting spark.rapids.sql.sequenceFile.rddConversion.enabled (defaults to false)
         .getOrCreate()
       try {
-        // This should work via the original RDD path (no conversion)
+        // This should work via the original RDD path.
         val df = readSequenceFileValueOnly(spark, file.getAbsolutePath)
         val results = df.collect()
         assert(results.length == 1)
-        
-        // Without conversion, SequenceFileAsBinaryInputFormat returns raw BytesWritable bytes
-        // which include the 4-byte length prefix: [0, 0, 0, 3] + payload [1, 2, 3]
-        // This is the expected behavior of the original RDD path
-        val expectedRaw = Array[Byte](0, 0, 0, 3, 1, 2, 3)
+
+        val expectedPayload = Array[Byte](1, 2, 3)
         val actualBytes = results(0).getAs[Array[Byte]](0)
-        assert(java.util.Arrays.equals(actualBytes, expectedRaw),
-          s"Expected raw BytesWritable bytes ${java.util.Arrays.toString(expectedRaw)}, " +
+        assert(java.util.Arrays.equals(actualBytes, expectedPayload),
+          s"Expected payload bytes ${java.util.Arrays.toString(expectedPayload)}, " +
           s"but got ${java.util.Arrays.toString(actualBytes)}")
       } finally {
         spark.stop()
@@ -550,8 +629,8 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       classOf[BytesWritable],
       classOf[BytesWritable]
     ).map { case (k, v) =>
-      (java.util.Arrays.copyOfRange(k.getBytes, 0, k.getLength),
-       java.util.Arrays.copyOfRange(v.getBytes, 0, v.getLength))
+      (SequenceFileBinaryFileFormatSuite.bytesWritablePayload(k.getBytes, k.getLength),
+       SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength))
     }.toDF("key", "value")
   }
 
@@ -571,7 +650,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       classOf[BytesWritable],
       classOf[BytesWritable]
     ).map { case (_, v) =>
-      java.util.Arrays.copyOfRange(v.getBytes, 0, v.getLength)
+      SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength)
     }.toDF("value")
   }
 
@@ -586,7 +665,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       )
       writeSequenceFile(file, conf, payloads)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         val df = readSequenceFileViaOldApi(spark, file.getAbsolutePath)
 
         val got = df.select("key", "value")
@@ -617,7 +696,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       )
       writeSequenceFile(file, conf, payloads)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         val df = readSequenceFileValueOnlyViaOldApi(spark, file.getAbsolutePath)
 
         // Verify the schema only has "value" column
@@ -656,7 +735,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       writeSequenceFile(new File(subDir1, "data.seq"), conf, payloads1)
       writeSequenceFile(new File(subDir2, "data.seq"), conf, payloads2)
 
-      withConversionEnabledSession { spark =>
+      withRapidsSession { spark =>
         // Test glob pattern: part*
         val globPath = new File(tmpDir, "part*").getAbsolutePath
         val df = readSequenceFileViaOldApi(spark, globPath)
@@ -671,6 +750,28 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
           s"First result should be [1,1,1], got ${sortedResults(0).toSeq}")
         assert(java.util.Arrays.equals(sortedResults(1), payloads2(0)),
           s"Second result should be [2,2,2], got ${sortedResults(1).toSeq}")
+      }
+    }
+  }
+}
+
+object SequenceFileBinaryFileFormatSuite {
+  /**
+   * Extract payload from BytesWritable serialized form:
+   * 4-byte big-endian length prefix + payload bytes.
+   */
+  def bytesWritablePayload(bytes: Array[Byte], len: Int): Array[Byte] = {
+    if (len < 4) {
+      Array.emptyByteArray
+    } else {
+      val payloadLen = ((bytes(0) & 0xFF) << 24) |
+        ((bytes(1) & 0xFF) << 16) |
+        ((bytes(2) & 0xFF) << 8) |
+        (bytes(3) & 0xFF)
+      if (payloadLen > 0 && payloadLen <= len - 4) {
+        java.util.Arrays.copyOfRange(bytes, 4, 4 + payloadLen)
+      } else {
+        Array.emptyByteArray
       }
     }
   }

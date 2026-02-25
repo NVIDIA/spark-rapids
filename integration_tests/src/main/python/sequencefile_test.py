@@ -13,35 +13,21 @@
 # limitations under the License.
 
 """
-Integration tests for SequenceFile RDD conversion and GPU acceleration.
-
-The SequenceFile support in spark-rapids works via the SequenceFileRDDConversionRule,
-which converts RDD-based SequenceFile scans (e.g., sc.newAPIHadoopFile with
-SequenceFileInputFormat) to FileFormat-based scans that can be GPU-accelerated.
-
-This conversion is disabled by default and must be enabled via:
-  spark.rapids.sql.sequenceFile.rddConversion.enabled=true
-
-If the conversion fails or GPU doesn't support the operation, the original RDD scan
-is preserved (no fallback to CPU FileFormat).
+Integration tests for SequenceFile RDD reads with RAPIDS plugin enabled.
 """
 
 import pytest
 import struct
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal
+from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
 from spark_session import with_cpu_session, with_gpu_session
 
 # Reader types supported by SequenceFile (COALESCING is not supported)
-sequencefile_reader_types = ['PERFILE', 'MULTITHREADED']
-
-# Base config to enable SequenceFile RDD conversion
-sequencefile_conversion_conf = {
-    'spark.rapids.sql.sequenceFile.rddConversion.enabled': 'true'
-}
+# AUTO is accepted for compatibility and resolves to MULTITHREADED.
+sequencefile_reader_types = ['AUTO', 'MULTITHREADED']
 
 
 def write_sequencefile_with_rdd(spark, data_path, payloads):
@@ -73,8 +59,7 @@ def write_sequencefile_with_rdd(spark, data_path, payloads):
 def read_sequencefile_via_rdd(spark, data_path):
     """
     Read a SequenceFile using the RDD path.
-    When spark.rapids.sql.sequenceFile.rddConversion.enabled=true,
-    this should be converted to FileFormat-based scan.
+    Reads data through the RDD SequenceFile path.
     """
     sc = spark.sparkContext
     rdd = sc.newAPIHadoopFile(
@@ -143,7 +128,6 @@ def test_basic_read(spark_tmp_path, reader_type):
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
-        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
@@ -161,7 +145,6 @@ def test_read_value_only(spark_tmp_path, reader_type):
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
-        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
@@ -183,7 +166,6 @@ def test_empty_file(spark_tmp_path, reader_type):
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, []))
     
     all_confs = {
-        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
@@ -207,11 +189,10 @@ def test_large_batch(spark_tmp_path, reader_type):
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
-        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
-    assert_gpu_and_cpu_row_counts_equal(
+    assert_gpu_and_cpu_are_equal_collect(
         lambda spark: read_sequencefile_via_rdd(spark, data_path),
         conf=all_confs)
 
@@ -226,12 +207,39 @@ def test_large_records(spark_tmp_path, reader_type):
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
-        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: read_sequencefile_via_rdd(spark, data_path),
+        conf=all_confs)
+
+
+def test_multithreaded_reader_combine_mode_correctness(spark_tmp_path):
+    """Test MULTITHREADED reader combine mode with many small files."""
+    base_path = spark_tmp_path + '/SEQFILE_COMBINE_DATA'
+    payload_sets = [
+        [b'a1', b'a2', b'a3'],
+        [b'b1', b'b2'],
+        [b'c1', b'c2', b'c3', b'c4']
+    ]
+
+    def write_all_files(spark):
+        for idx, payloads in enumerate(payload_sets):
+            write_sequencefile_with_rdd(spark, f'{base_path}/part_{idx}', payloads)
+
+    with_cpu_session(write_all_files)
+
+    all_confs = {
+        'spark.rapids.sql.format.sequencefile.reader.type': 'MULTITHREADED',
+        # Force combine behavior in multithreaded reader.
+        'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '1',
+        'spark.rapids.sql.reader.multithreaded.combine.waitTime': '1',
+        'spark.rapids.sql.files.maxPartitionBytes': str(1 << 20),
+    }
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: read_sequencefile_value_only(spark, base_path + '/*'),
         conf=all_confs)
 
 
@@ -248,9 +256,7 @@ def test_conversion_disabled_by_default(spark_tmp_path):
     
     # Without enabling conversion, this should still work via the original RDD path
     # (no conversion happens, just regular RDD execution)
-    all_confs = {
-        # Note: NOT enabling sequencefile.rddConversion
-    }
+    all_confs = {}
     
     # This should work - the RDD path still functions, just without conversion
     assert_gpu_and_cpu_are_equal_collect(
@@ -276,7 +282,6 @@ def test_binary_data(spark_tmp_path, reader_type):
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
     all_confs = {
-        **sequencefile_conversion_conf,
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type
     }
     

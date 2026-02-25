@@ -30,22 +30,12 @@ case class GpuPostHocResolutionOverrides(spark: SparkSession) extends Rule[Logic
 
   @transient private val rapidsConf = new RapidsConf(spark.sessionState.conf)
 
-  // Sub-rules to apply
-  private val sequenceFileRDDConversionRule = SequenceFileRDDConversionRule(spark)
-
   override def apply(plan: LogicalPlan): LogicalPlan = {
-    var result = plan
-
-    // Apply SequenceFile RDD conversion rule (if enabled)
-    result = sequenceFileRDDConversionRule.apply(result)
-
     // If the hybrid backend is enabled, we need to resolve potential hybrid scan hints
-    result = Option(rapidsConf.loadHybridBackend).filter(identity).map { _ =>
-      HybridExecOverrides.resolveHybridScanHint(result)
+    Option(rapidsConf.loadHybridBackend).filter(identity).map { _ =>
+      HybridExecOverrides.resolveHybridScanHint(plan)
     }.getOrElse {
-      result
+      plan
     }
-
-    result
   }
 }
