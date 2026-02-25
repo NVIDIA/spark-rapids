@@ -693,6 +693,26 @@
             </modules>
         </profile>
         <profile>
+            <id>release402</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>402</value>
+                </property>
+            </activation>
+            <properties>
+                <buildver>402</buildver>
+                <spark.version>${spark402.version}</spark.version>
+                <spark.test.version>${spark402.version}</spark.test.version>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-40x</rapids.delta.artifactId1>
+                <slf4j.version>2.0.7</slf4j.version>
+            </properties>
+            <modules>
+                <module>delta-lake/delta-40x</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release411</id>
             <activation>
                 <property>
@@ -905,6 +925,7 @@
         <spark357.version>3.5.7</spark357.version>
         <spark400.version>4.0.0</spark400.version>
         <spark401.version>4.0.1</spark401.version>
+        <spark402.version>4.0.2</spark402.version>
         <spark411.version>4.1.1</spark411.version>
         <mockito.version>3.12.4</mockito.version>
         <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
@@ -965,7 +986,7 @@
         </premergeUTF8.buildvers>
         <premergeScala213.buildvers>
             350,
-            401
+            402
         </premergeScala213.buildvers>
         <jdk11.buildvers>
             331,
@@ -976,7 +997,7 @@
         <jdk17.scala213.buildvers>
             350,
             400,
-            401
+            402
         </jdk17.scala213.buildvers>
         <shimplify.shims/>
         <cpd.sourceType>main</cpd.sourceType>

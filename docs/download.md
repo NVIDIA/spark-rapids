@@ -41,7 +41,7 @@ The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Ho
 
 	Supported Spark versions:
         Scala 2.12: Spark 3.3.x to Spark 3.5.x
-        Scala 2.13: Spark 3.5.0+, 4.0.0, 4.0.1, 4.1.1
+        Scala 2.13: Spark 3.5.0+, 4.0.0, 4.0.1, 4.0.2, 4.1.1
 	
 	Supported Databricks runtime versions for Azure and AWS:
 		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
