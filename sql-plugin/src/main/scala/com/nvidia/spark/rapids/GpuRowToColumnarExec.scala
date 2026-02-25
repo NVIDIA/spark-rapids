@@ -604,6 +604,7 @@ class RowToColumnarIterator(
   private var totalOutputRows: Long = 0
   private lazy val rowCopyProjection: UnsafeProjection = UnsafeProjection.create(localSchema)
 
+  private val dataTypes: Array[DataType] = localSchema.fields.map(_.dataType)
   private var pendingBatchIter: Iterator[ColumnarBatch] = Iterator.empty
 
   override def hasNext: Boolean = pendingBatchIter.hasNext || rowIter.hasNext
@@ -688,39 +689,39 @@ class RowToColumnarIterator(
         val hostColumns = withRetryNoSplit {
           builders.buildHostColumns()
         }
-        val dataTypes = localSchema.fields.map(_.dataType)
         val hostBatch = withResource(hostColumns) { _ =>
           HostColumnarBatchWithRowRange(hostColumns, rowCount, dataTypes)
         }
 
-        if (localGoal.isInstanceOf[RequireSingleBatchLike]) {
-          // Cannot split when a single batch is required
-          pendingBatchIter = Iterator.empty
-          val ret = withRetryNoSplit(hostBatch) { batch =>
-            NvtxIdWithMetrics(NvtxRegistry.ROW_TO_COLUMNAR, opTime) {
-              batch.copyToGpu()
+        localGoal match {
+          case _: RequireSingleBatchLike =>
+            // Cannot split when a single batch is required
+            pendingBatchIter = Iterator.empty
+            val ret = withRetryNoSplit(hostBatch) { batch =>
+              NvtxIdWithMetrics(NvtxRegistry.ROW_TO_COLUMNAR, opTime) {
+                batch.copyToGpu()
+              }
             }
-          }
-          // Update input rows metric once per successful input build.
-          numInputRows += rowCount
-          ret
-        } else {
-          val it = withRetry(
-            hostBatch,
-            splitHostBatchInHalf
-          ) { batch =>
-            NvtxIdWithMetrics(NvtxRegistry.ROW_TO_COLUMNAR, opTime) {
-              batch.copyToGpu()
-            }
-          }
-          // Return the first batch now and keep the iterator for subsequent output batches.
-          // This ensures we only transfer one split at a time (avoid multiple device allocations).
-          closeOnExcept(it.next()) { first =>
-            pendingBatchIter = if (it.hasNext) it else Iterator.empty
             // Update input rows metric once per successful input build.
             numInputRows += rowCount
-            first
-          }
+            ret
+          case _ =>
+            val it = withRetry(
+              hostBatch,
+              splitHostBatchInHalf
+            ) { batch =>
+              NvtxIdWithMetrics(NvtxRegistry.ROW_TO_COLUMNAR, opTime) {
+                batch.copyToGpu()
+              }
+            }
+            // Return the first batch now and keep the iterator for subsequent output batches.
+            // This ensures we only transfer one split at a time but multiple device allocations.
+            closeOnExcept(it.next()) { first =>
+              pendingBatchIter = it
+              // Update input rows metric once per successful input build.
+              numInputRows += rowCount
+              first
+            }
         }
         // The returned batch will be closed by the consumer of it
         // Output metrics and nextBatchTargetRows refinement are handled in recordOutput().
