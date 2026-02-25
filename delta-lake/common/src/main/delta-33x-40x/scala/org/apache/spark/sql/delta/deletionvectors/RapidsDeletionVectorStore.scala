@@ -18,9 +18,9 @@ package org.apache.spark.sql.delta.deletionvectors
 
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
-import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import java.io.{DataInputStream, IOException}
 import java.util.zip.CRC32
 import org.apache.hadoop.fs.Path
