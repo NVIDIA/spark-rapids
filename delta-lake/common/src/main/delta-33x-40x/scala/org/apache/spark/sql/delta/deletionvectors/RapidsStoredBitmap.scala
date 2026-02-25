@@ -17,6 +17,7 @@
 package org.apache.spark.sql.delta.deletionvectors
 
 import ai.rapids.cudf.HostMemoryBuffer
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.delta.actions.DeletionVectorDescriptor
@@ -62,8 +63,9 @@ object RapidsDeletionVectorStoredBitmap {
    */
   // scalastyle:on line.size.limit
   def serializedEmptyBitmap(): HostMemoryBuffer = {
-    val buffer = HostMemoryBuffer.allocate(8)
-    buffer.setLong(0, 0L)
-    buffer
+    closeOnExcept(HostMemoryBuffer.allocate(8)) { buffer =>
+      buffer.setLong(0, 0L)
+      buffer
+    }
   }
 }
