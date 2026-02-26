@@ -93,6 +93,15 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
   override def convertToCpu(): SparkPlan = wrapped
 }
 
+/**
+ * Utilities for identifying simple SequenceFile RDD scans and extracting their input paths.
+ *
+ * This code uses reflection against `NewHadoopRDD`/`HadoopRDD` internals because the generic RDD
+ * lineage API does not expose enough structured metadata for safe physical replacement.
+ * Those internal fields/methods may change across Spark/Hadoop versions and can also be
+ * restricted by JDK module access settings. Any reflection failure here intentionally falls back
+ * to the CPU path by returning conservative defaults.
+ */
 object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
   private def isNewApiSequenceFileRDD(rdd: NewHadoopRDD[_, _]): Boolean = {
     try {
@@ -108,13 +117,15 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
               vf.setAccessible(true)
               vf.get(other).asInstanceOf[Class[_]]
             } catch {
-              case _: Throwable => null
+              case NonFatal(_) => null
             }
         }
         c != null && c.getName.contains("SequenceFile")
       }
     } catch {
-      case NonFatal(_) => false
+      case NonFatal(e) =>
+        logDebug(s"Failed to inspect NewHadoopRDD input format via reflection: ${e.getMessage}", e)
+        false
     }
   }
 
@@ -125,7 +136,9 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
       val ifc = jc.get("mapred.input.format.class")
       ifc != null && ifc.contains("SequenceFile")
     } catch {
-      case NonFatal(_) => false
+      case NonFatal(e) =>
+        logDebug(s"Failed to inspect HadoopRDD input format via reflection: ${e.getMessage}", e)
+        false
     }
   }
 
@@ -162,14 +175,16 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
                     vf.setAccessible(true)
                     vf.get(other).asInstanceOf[org.apache.hadoop.conf.Configuration]
                   } catch {
-                    case _: Throwable => null
+                    case NonFatal(_) => null
                   }
               }
               val p = if (conf != null) conf.get(NewFileInputFormat.INPUT_DIR) else null
               Option(p).toSeq
             }.flatMap(_.split(",").map(_.trim)).filter(_.nonEmpty)
         } catch {
-          case NonFatal(_) => Seq.empty
+          case NonFatal(e) =>
+            logDebug(s"Failed to collect input paths from NewHadoopRDD: ${e.getMessage}", e)
+            Seq.empty
         }
       case h: HadoopRDD[_, _] =>
         try {
@@ -178,7 +193,9 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
           val paths = OldFileInputFormat.getInputPaths(jc)
           if (paths == null) Seq.empty else paths.map(_.toString).toSeq
         } catch {
-          case NonFatal(_) => Seq.empty
+          case NonFatal(e) =>
+            logDebug(s"Failed to collect input paths from HadoopRDD: ${e.getMessage}", e)
+            Seq.empty
         }
       case other if other.dependencies.size == 1 =>
         collectInputPaths(other.dependencies.head.rdd)

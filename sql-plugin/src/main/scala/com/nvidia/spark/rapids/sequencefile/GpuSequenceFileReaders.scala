@@ -297,7 +297,6 @@ private[sequencefile] final class HostBinaryListBufferer(
   }
 
   override def close(): Unit = {
-    // directOut doesn't own any resources, no need to close
     if (dataBuffer != null) {
       dataBuffer.close()
       dataBuffer = null
@@ -665,6 +664,10 @@ class MultiFileCloudSequenceFilePartitionReader(
       dataBuffer: HostMemoryBuffer,
       offsetsBuffer: HostMemoryBuffer,
       numRows: Int): ColumnVector = {
+    // Chunks will also close these buffers, so keep one reference for chunk ownership.
+    dataBuffer.incRefCount()
+    offsetsBuffer.incRefCount()
+
     // Get the actual data length from the final offset
     val dataLen = offsetsBuffer.getInt(numRows.toLong * DType.INT32.getSizeInBytes)
 

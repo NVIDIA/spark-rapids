@@ -17,13 +17,14 @@ Integration tests for SequenceFile RDD reads with RAPIDS plugin enabled.
 """
 
 import pytest
+import os
 import struct
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import with_cpu_session, is_databricks_runtime
 
 # Reader types supported by SequenceFile (COALESCING is not supported)
 # AUTO is accepted for compatibility and resolves to MULTITHREADED.
@@ -108,6 +109,13 @@ def read_sequencefile_value_only(spark, data_path):
         StructField("value", BinaryType(), True)
     ])
     return spark.createDataFrame(mapped_rdd, schema)
+
+
+def write_corrupt_file(path, payload=b'not-a-sequence-file'):
+    """Write a non-SequenceFile payload to simulate a corrupt input file."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(payload)
 
 
 # ============================================================================
@@ -288,3 +296,47 @@ def test_binary_data(spark_tmp_path, reader_type):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: read_sequencefile_via_rdd(spark, data_path),
         conf=all_confs)
+
+
+@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
+def test_sequencefile_read_with_missing_files(spark_tmp_path, reader_type):
+    """RDD path still throws when an input path is missing."""
+    existing_path = spark_tmp_path + '/SEQFILE_MISSING_DATA/existing'
+    missing_path = spark_tmp_path + '/SEQFILE_MISSING_DATA/missing'
+
+    payloads = [b'x1', b'x2']
+    with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, existing_path, payloads))
+
+    all_confs = {
+        'spark.rapids.sql.format.sequencefile.reader.type': reader_type,
+        'spark.sql.files.ignoreMissingFiles': 'true'
+    }
+
+    assert_gpu_and_cpu_error(
+        lambda spark: read_sequencefile_value_only(
+            spark, f"{existing_path},{missing_path}").collect(),
+        conf=all_confs,
+        error_message="Input path does not exist")
+
+
+@pytest.mark.skipif(is_databricks_runtime(), reason="Databricks does not support ignoreCorruptFiles")
+@pytest.mark.parametrize('reader_type', sequencefile_reader_types)
+def test_sequencefile_read_with_corrupt_files(spark_tmp_path, reader_type):
+    """RDD path still throws when a file is not a valid SequenceFile."""
+    good_path = spark_tmp_path + '/SEQFILE_CORRUPT_DATA/good'
+    corrupt_path = spark_tmp_path + '/SEQFILE_CORRUPT_DATA/corrupt/part-00000'
+
+    payloads = [b'good-a', b'good-b']
+    with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, good_path, payloads))
+    write_corrupt_file(corrupt_path)
+
+    all_confs = {
+        'spark.rapids.sql.format.sequencefile.reader.type': reader_type,
+        'spark.sql.files.ignoreCorruptFiles': 'true'
+    }
+
+    assert_gpu_and_cpu_error(
+        lambda spark: read_sequencefile_value_only(
+            spark, f"{good_path},{corrupt_path}").collect(),
+        conf=all_confs,
+        error_message="not a SequenceFile")

@@ -3583,16 +3583,20 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isSequenceFileMultiThreadReadEnabled: Boolean = {
     val readerType = RapidsReaderType.withName(get(SEQUENCEFILE_READER_TYPE))
-    if (readerType == RapidsReaderType.COALESCING) {
-      throw new IllegalArgumentException(
-        s"COALESCING reader type is not supported for SequenceFile. " +
-        s"SequenceFile decoding happens on CPU, so coalescing provides no benefit. " +
-        s"Use MULTITHREADED or AUTO instead.")
+    readerType match {
+      case RapidsReaderType.COALESCING =>
+        throw new IllegalArgumentException(
+          s"COALESCING reader type is not supported for SequenceFile. " +
+          s"SequenceFile decoding happens on CPU, so coalescing provides no benefit. " +
+          s"Use MULTITHREADED or AUTO instead.")
+      case RapidsReaderType.PERFILE =>
+        logWarning("SequenceFile PERFILE reader has been removed; using MULTITHREADED instead.")
+        true
+      case _ =>
+        // AUTO and MULTITHREADED both use the multithreaded reader implementation.
+        // SequenceFile has no separate per-file reader implementation.
+        true
     }
-    if (readerType == RapidsReaderType.PERFILE) {
-      logWarning("SequenceFile PERFILE reader has been removed; using MULTITHREADED instead.")
-    }
-    true
   }
 
   lazy val maxNumSequenceFilesParallel: Int = get(

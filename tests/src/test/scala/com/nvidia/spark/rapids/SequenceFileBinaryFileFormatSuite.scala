@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.File
+import java.io.{File, FileOutputStream}
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 
@@ -346,6 +346,34 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
           assert(java.util.Arrays.equals(actual, exp),
             s"Expected ${java.util.Arrays.toString(exp)}, got ${java.util.Arrays.toString(actual)}")
         }
+      }
+    }
+  }
+
+  test("Corrupt SequenceFile header is handled gracefully") {
+    withTempDir("seqfile-corrupt-test") { tmpDir =>
+      val goodFile = new File(tmpDir, "good.seq")
+      val corruptFile = new File(tmpDir, "corrupt.seq")
+      val conf = new Configuration()
+      val payloads: Array[Array[Byte]] = Array(
+        Array[Byte](1, 2, 3),
+        "hello".getBytes(StandardCharsets.UTF_8)
+      )
+      writeSequenceFile(goodFile, conf, payloads)
+
+      val fos = new FileOutputStream(corruptFile)
+      try {
+        fos.write(Array[Byte](0x01, 0x02, 0x03, 0x04))
+      } finally {
+        fos.close()
+      }
+
+      withRapidsSession { spark =>
+        val path = s"${goodFile.getAbsolutePath},${corruptFile.getAbsolutePath}"
+        val thrown = intercept[Exception] {
+          readSequenceFileValueOnly(spark, path).collect()
+        }
+        assert(thrown.getMessage != null)
       }
     }
   }
