@@ -14,6 +14,7 @@
 from typing import Callable, Any
 
 import pytest
+from pyspark.sql import functions as F
 
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
@@ -401,6 +402,64 @@ def test_insert_overwrite_static_after_drop_partition_field(spark_tmp_table_fact
                      conf=iceberg_static_overwrite_conf)
     
     # Compare results
+    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
+    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
+    assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu('ShuffleExchangeExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+def test_insert_overwrite_static_df_api_truncate_string(spark_tmp_table_factory):
+    """Test static overwrite via DataFrame writeTo().overwrite() API with truncate(5, string_col)
+    partitioning. Verifies GPU writes produce Parquet files with correct Iceberg field IDs
+    so that file-level statistics are available for overwrite validation.
+    """
+    truncate_width = 5
+    str_length = truncate_width - 2
+    prefix = "T" * str_length
+    partition_col_sql = f"truncate({truncate_width}, _c6)"
+    partition_filter = f"_c6 >= '{prefix}10' AND _c6 < '{prefix}20'"
+
+    table_prop = {"format-version": "2",
+                  "write.format.default": "parquet"}
+
+    conf = copy_and_update(iceberg_static_overwrite_conf, {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.coalescePartitions.enabled": "true",
+    })
+
+    # Use standard iceberg schema but override _c6 with a constrained string gen
+    # to produce predictable truncate partitions for the range filter
+    gen_list = list(zip(iceberg_base_table_cols, iceberg_gens_list))
+    gen_list[6] = ('_c6', StringGen(pattern=f'{prefix}[1-9][0-9][A-Z]{{3}}'))
+
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table_name = f"{base_table_name}_cpu"
+    gpu_table_name = f"{base_table_name}_gpu"
+
+    def create_table_with_ctas(spark, table_name):
+        df = gen_df(spark, gen_list, seed=INITIAL_INSERT_SEED)
+        view_name = spark_tmp_table_factory.get()
+        df.createOrReplaceTempView(view_name)
+        props_sql = ", ".join([f"'{k}' = '{v}'" for k, v in table_prop.items()])
+        spark.sql(f"CREATE TABLE {table_name} USING ICEBERG "
+                  f"PARTITIONED BY ({partition_col_sql}) "
+                  f"TBLPROPERTIES ({props_sql}) "
+                  f"AS SELECT * FROM {view_name}")
+
+    with_cpu_session(lambda spark: create_table_with_ctas(spark, cpu_table_name), conf=conf)
+    with_gpu_session(lambda spark: create_table_with_ctas(spark, gpu_table_name), conf=conf)
+
+    def overwrite_data(spark, table_name):
+        df = gen_df(spark, gen_list, seed=INITIAL_INSERT_SEED + 1)
+        filtered_df = df.filter(partition_filter)
+        filtered_df.writeTo(table_name).overwrite(F.expr(partition_filter))
+
+    with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name), conf=conf)
+    with_gpu_session(lambda spark: overwrite_data(spark, gpu_table_name), conf=conf)
+
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)

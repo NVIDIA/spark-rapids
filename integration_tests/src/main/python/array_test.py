@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -644,7 +644,7 @@ def test_sql_array_scalars(query):
             lambda spark : spark.sql('SELECT {}'.format(query)))
 
 
-@pytest.mark.parametrize('data_gen', all_basic_gens + nested_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', all_basic_gens + nested_gens_sample + [binary_gen], ids=idfn)
 def test_get_array_struct_fields(data_gen):
     array_struct_gen = ArrayGen(
         StructGen([['child0', data_gen], ['child1', int_gen]]),
