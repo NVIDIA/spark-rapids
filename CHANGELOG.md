@@ -1,5 +1,5 @@
 # Change log
-Generated on 2026-02-09
+Generated on 2026-02-26
 
 ## Release 26.02
 
@@ -69,6 +69,8 @@ Generated on 2026-02-09
 ### PRs
 |||
 |:---|:---|
+|[#14328](https://github.com/NVIDIA/spark-rapids/pull/14328)|Writing field id when writing iceberg's data file|
+|[#14255](https://github.com/NVIDIA/spark-rapids/pull/14255)|Update changelog for the v26.02 release [skip ci]|
 |[#14254](https://github.com/NVIDIA/spark-rapids/pull/14254)|Update dependency version JNI, private, hybrid to 26.02.0|
 |[#14271](https://github.com/NVIDIA/spark-rapids/pull/14271)|Fix combining small files when reading Delta tables using multi-threaded reader|
 |[#14241](https://github.com/NVIDIA/spark-rapids/pull/14241)|[DOC] update for download page 2602 release [skip ci]|

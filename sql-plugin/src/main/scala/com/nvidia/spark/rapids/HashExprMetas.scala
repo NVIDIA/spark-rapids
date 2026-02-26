@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.shims.XxHash64Shims
 
 import org.apache.spark.sql.catalyst.expressions.HashExpression
@@ -57,10 +56,10 @@ case class XxHash64ExprMeta[HE <: HashExpression[Long]](
 
   override def tagExprForGpu(): Unit = {
     val maxDepth = expr.children.map(c => XxHash64Utils.computeMaxStackSize(c.dataType)).max
-    if (maxDepth > Hash.MAX_STACK_DEPTH) {
+    if (maxDepth > XxHash64Utils.MAX_STACK_DEPTH) {
       willNotWorkOnGpu(
         s"The data type requires a stack depth of $maxDepth, " +
-          s"which exceeds the GPU limit of ${Hash.MAX_STACK_DEPTH}. " +
+          s"which exceeds the GPU limit of ${XxHash64Utils.MAX_STACK_DEPTH}. " +
           "The algorithm to calculate stack depth: " +
           "1: Primitive type counts 1 depth; " +
           "2: Array of Structure counts:  1  + depthOf(Structure); " +

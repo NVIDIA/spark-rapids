@@ -25,7 +25,6 @@ import scala.util.control.NonFatal
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.RapidsConf.{SUPPRESS_PLANNING_FAILURE, TEST_CONF}
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
-import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.lore.GpuLore
 import com.nvidia.spark.rapids.shims._
 import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuLag, GpuLead, GpuPercentRank, GpuRank, GpuRowNumber, GpuSpecialFrameBoundary, GpuWindowExecMeta, GpuWindowSpecDefinitionMeta}
@@ -3477,7 +3476,7 @@ object GpuOverrides extends Logging {
             }
           }
           val maxDepth = a.children.map(c => getMaxStackDepth(c.dataType)).max
-          val supportedDepth = Hash.MAX_STACK_DEPTH
+          val supportedDepth = XxHash64Utils.MAX_STACK_DEPTH
           if (maxDepth > supportedDepth) {
             willNotWorkOnGpu(s"the data type requires a stack size of $maxDepth, " +
               s"which exceeds the GPU limit of $supportedDepth")
@@ -4113,9 +4112,9 @@ object GpuOverrides extends Logging {
         override def tagExprForGpu(): Unit = {
           val maxDepth = a.children.map(
             c => XxHash64Utils.computeMaxStackSize(c.dataType)).max
-          if (maxDepth > Hash.MAX_STACK_DEPTH) {
+          if (maxDepth > XxHash64Utils.MAX_STACK_DEPTH) {
             willNotWorkOnGpu(s"The data type requires a stack depth of $maxDepth, " +
-                s"which exceeds the GPU limit of ${Hash.MAX_STACK_DEPTH}. " +
+                s"which exceeds the GPU limit of ${XxHash64Utils.MAX_STACK_DEPTH}. " +
                 "The algorithm to calculate stack depth: " +
                 "1: Primitive type counts 1 depth; " +
                 "2: Array of Structure counts:  1  + depthOf(Structure); " +
