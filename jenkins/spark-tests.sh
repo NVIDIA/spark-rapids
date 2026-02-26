@@ -300,6 +300,10 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
           ICEBERG_TEST_REMOTE_CATALOG=1 \
           PYSP_TEST_spark_driver_memory=6G \
           PYSP_TEST_spark_executor_memory=6G \
+          # filecache.enabled is a startup-only config, so it must be set here via
+          # PYSP_TEST_ env var rather than as a session-level Spark config, because
+          # FileCacheManager is initialized at executor startup time.
+          PYSP_TEST_spark_rapids_filecache_enabled=true \
           PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
           PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
           PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
@@ -342,6 +346,10 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
       ICEBERG_TEST_REMOTE_CATALOG=1 \
       PYSP_TEST_spark_driver_memory=6G \
       PYSP_TEST_spark_executor_memory=6G \
+      # filecache.enabled is a startup-only config, so it must be set here via
+      # PYSP_TEST_ env var rather than as a session-level Spark config, because
+      # FileCacheManager is initialized at executor startup time.
+      PYSP_TEST_spark_rapids_filecache_enabled=true \
       PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
       PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \

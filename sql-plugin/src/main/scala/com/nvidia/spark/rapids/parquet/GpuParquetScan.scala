@@ -41,7 +41,7 @@ import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.io.async._
 import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
-import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, SeekableInputStream}
+import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsInputFile, SeekableInputStream}
 import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import com.nvidia.spark.rapids.shims.parquet.{ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
@@ -530,8 +530,8 @@ private case class GpuParquetFileFilterHandler(
       filePath: Path,
       conf: Configuration,
       metrics: Map[String, GpuMetric]): HostMemoryBuffer = {
-    val filePathString = filePath.toString
-    FileCache.get.getFooter(filePathString, conf).map { hmb =>
+    val inputFile = fileIO.newInputFile(filePath)
+    FileCache.get.getFooter(inputFile).map { hmb =>
       withResource(hmb) { _ =>
         metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS, NoopMetric) += 1
         metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS_SIZE, NoopMetric) += hmb.getLength
@@ -545,7 +545,7 @@ private case class GpuParquetFileFilterHandler(
         // footer was not cached, so try to cache it
         // If we get a filecache token then we can complete the caching by providing the data.
         // If we do not get a token then we should not cache this data.
-        val cacheToken = FileCache.get.startFooterCache(filePathString, conf)
+        val cacheToken = FileCache.get.startFooterCache(inputFile)
         cacheToken.foreach { t =>
           t.complete(hmb.slice(0, hmb.getLength))
         }
@@ -658,8 +658,8 @@ private case class GpuParquetFileFilterHandler(
       filePath: Path): ParquetMetadata = {
     //noinspection ScalaDeprecation
     NvtxRegistry.PARQUET_READ_FOOTER {
-      val filePathString = filePath.toString
-      FileCache.get.getFooter(filePathString, conf).map { hmb =>
+      val inputFile = fileIO.newInputFile(filePath)
+      FileCache.get.getFooter(inputFile).map { hmb =>
         withResource(hmb) { _ =>
           metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS, NoopMetric) += 1
           metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS_SIZE, NoopMetric) += hmb.getLength
@@ -672,7 +672,7 @@ private case class GpuParquetFileFilterHandler(
         // If we get a filecache token then we can complete the caching by providing the data.
         // If something goes wrong before completing the caching then the token must be canceled.
         // If we do not get a token then we should not cache this data.
-        val cacheToken = FileCache.get.startFooterCache(filePathString, conf)
+        val cacheToken = FileCache.get.startFooterCache(inputFile)
         cacheToken.map { token =>
           var needTokenCancel = true
           try {
@@ -1611,7 +1611,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       realStartOffset: Long,
       metrics: Map[String, GpuMetric]): Seq[BlockMetaData] = {
     val startPos = out.getPos
-    val filePathString: String = filePath.toString
+    val inputFile = fileIO.newInputFile(filePath)
     val remoteItems = new ArrayBuffer[CopyRange](blocks.length)
     var totalBytesToCopy = 0L
     withResource(new ArrayBuffer[LocalCopy](blocks.length)) { localItems =>
@@ -1619,8 +1619,8 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         block.getColumns.asScala.foreach { column =>
           val columnSize = column.getTotalSize
           val outputOffset = totalBytesToCopy + startPos
-          val channel = FileCache.get.getDataRangeChannel(filePathString,
-            column.getStartingPos, columnSize, conf)
+          val channel = FileCache.get.getDataRangeChannel(inputFile,
+            column.getStartingPos, columnSize)
           if (channel.isDefined) {
             localItems += LocalCopy(channel.get, columnSize, outputOffset)
           } else {
@@ -1635,7 +1635,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       }
     }
     copyRemoteBlocksData(remoteItems.toSeq, filePath,
-      filePathString, out, metrics)
+      inputFile, out, metrics)
     // fixup output pos after blocks were copied possibly out of order
     out.seek(startPos + totalBytesToCopy)
     computeBlockMetaData(blocks, realStartOffset)
@@ -1897,7 +1897,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
   private def copyRemoteBlocksData(
       remoteCopies: Seq[CopyRange],
       filePath: Path,
-      filePathString: String,
+      inputFile: RapidsInputFile,
       out: HostMemoryOutputStream,
       metrics: Map[String, GpuMetric]): Long = {
     if (remoteCopies.isEmpty) {
@@ -1912,7 +1912,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         conf, out.buffer, filePath.toUri,
         coalescedRanges.map(r => IntRangeWithOffset(r.offset, r.length, r.outputOffset))
       ).getOrElse {
-        withResource(fileIO.newInputFile(filePath).open()) { in =>
+        withResource(inputFile.open()) { in =>
           val copyBuffer: Array[Byte] = new Array[Byte](copyBufferSize)
           coalescedRanges.foldLeft(0L) { (acc, blockCopy) =>
             acc + copyDataRange(blockCopy, in, out, copyBuffer)
@@ -1920,7 +1920,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
         }
       }
     } else {
-      withResource(fileIO.newInputFile(filePath).open()) { in =>
+      withResource(inputFile.open()) { in =>
         val copyBuffer: Array[Byte] = new Array[Byte](copyBufferSize)
         coalescedRanges.foldLeft(0L) { (acc, blockCopy) =>
           acc + copyDataRange(blockCopy, in, out, copyBuffer)
@@ -1933,7 +1933,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES, NoopMetric) += 1
       metrics.getOrElse(GpuMetric.FILECACHE_DATA_RANGE_MISSES_SIZE, NoopMetric) += range.length
       val cacheToken = FileCache.get.startDataRangeCache(
-        filePathString, range.offset, range.length, conf)
+        inputFile, range.offset, range.length)
       // If we get a filecache token then we can complete the caching by providing the data.
       // If we do not get a token then we should not cache this data.
       cacheToken.foreach { token =>

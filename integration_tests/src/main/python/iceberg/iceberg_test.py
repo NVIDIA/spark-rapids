@@ -578,6 +578,42 @@ def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_ty
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_read_with_filecache(spark_tmp_table_factory, reader_type):
+    """Create a table on CPU, read it twice on GPU with file cache enabled,
+    and verify both reads match the CPU result."""
+    table = get_full_table_name(spark_tmp_table_factory)
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql(f"CREATE TABLE {table} USING ICEBERG AS SELECT * FROM {tmpview}")
+    with_cpu_session(setup_iceberg_table)
+    query = f"SELECT * FROM {table}"
+    cpu_result = with_cpu_session(lambda spark: spark.sql(query).collect())
+    # Note: spark.rapids.filecache.enabled is a startup-only config, so it must
+    # be set via PYSP_TEST_spark_rapids_filecache_enabled env var, not here.
+    filecache_conf = {
+        'spark.rapids.sql.format.parquet.reader.type': reader_type,
+    }
+    import sys
+    sys.stderr.write(f"CPU result row count: {len(cpu_result)}\n")
+    # First GPU read - populates the file cache
+    gpu_result_1 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
+    sys.stderr.write(f"GPU result 1 row count: {len(gpu_result_1)}\n")
+    # Second GPU read - should hit the file cache
+    gpu_result_2 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
+    sys.stderr.write(f"GPU result 2 row count: {len(gpu_result_2)}\n")
+    # Sort with a key that handles None values
+    def sort_key(row):
+        return tuple((0, v) if v is not None else (1,) for v in row)
+    assert sorted(cpu_result, key=sort_key) == sorted(gpu_result_1, key=sort_key), \
+        "First GPU read with filecache differs from CPU"
+    assert sorted(cpu_result, key=sort_key) == sorted(gpu_result_2, key=sort_key), \
+        "Second GPU read with filecache differs from CPU"
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_parquet_read_from_url_encoded_path(spark_tmp_table_factory, reader_type):
     table = get_full_table_name(spark_tmp_table_factory)
     tmp_view = spark_tmp_table_factory.get()
