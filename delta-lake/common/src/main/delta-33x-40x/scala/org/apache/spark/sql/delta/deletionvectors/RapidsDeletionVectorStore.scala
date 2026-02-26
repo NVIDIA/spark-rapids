@@ -44,6 +44,9 @@ object RapidsDeletionVectorStore {
     fileIO match {
       case hadoopFileIO: HadoopFileIO =>
         new RapidsHadoopDVStore(hadoopFileIO)
+      case other =>
+        throw new UnsupportedOperationException(
+          s"Unsupported RapidsFileIO type for deletion vector store: ${other.getClass.getName}")
     }
   }
 }
