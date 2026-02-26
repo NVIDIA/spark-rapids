@@ -672,6 +672,89 @@ def _build_enum_descriptor_set_bytes(spark):
     return bytes(fds.toByteArray())
 
 
+def _build_nested_enum_descriptor_set_bytes(spark):
+    """
+    Build a FileDescriptorSet for a nested enum message:
+      package test;
+      syntax = "proto2";
+      message WithNestedEnum {
+        optional int32 id = 1;
+        optional Detail detail = 2;
+        optional string name = 3;
+      }
+      message Detail {
+        enum Status {
+          UNKNOWN = 0;
+          OK = 1;
+          BAD = 2;
+        }
+        optional Status status = 1;
+        optional int32 count = 2;
+      }
+    """
+    D, fd = _new_proto2_file(spark, "nested_enum.proto")
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    detail_msg = D.DescriptorProto.newBuilder().setName("Detail")
+    detail_enum = D.EnumDescriptorProto.newBuilder().setName("Status")
+    detail_enum.addValue(
+        D.EnumValueDescriptorProto.newBuilder().setName("UNKNOWN").setNumber(0).build())
+    detail_enum.addValue(
+        D.EnumValueDescriptorProto.newBuilder().setName("OK").setNumber(1).build())
+    detail_enum.addValue(
+        D.EnumValueDescriptorProto.newBuilder().setName("BAD").setNumber(2).build())
+    detail_msg.addEnumType(detail_enum.build())
+    detail_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("status")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
+            .setTypeName(".test.Detail.Status")
+            .build()
+    )
+    detail_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("count")
+            .setNumber(2)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    fd.addMessageType(detail_msg.build())
+
+    top_msg = D.DescriptorProto.newBuilder().setName("WithNestedEnum")
+    top_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("id")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    top_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("detail")
+            .setNumber(2)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.Detail")
+            .build()
+    )
+    top_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("name")
+            .setNumber(3)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
+            .build()
+    )
+    fd.addMessageType(top_msg.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @pytest.mark.parametrize("enum_case", [
     "as_int",
@@ -740,6 +823,49 @@ def test_from_protobuf_enum_cases(spark_tmp_path, from_protobuf_fn, enum_case):
                 decoded.getField("color").alias("color"),
                 decoded.getField("count").alias("count"))
         return df.select(decoded.alias("decoded"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_nested_enum_permissive_invalid_row_null(spark_tmp_path, from_protobuf_fn):
+    """
+    Nested enum decode parity test:
+      - valid nested enum values decode to names in string mode
+      - missing nested enum stays null
+    This protects nested enum metadata propagation in GPU schema flattening.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested_enum.desc", _build_nested_enum_descriptor_set_bytes)
+    message_name = "test.WithNestedEnum"
+
+    fields = [
+        PbScalar("id", 1, IntegerGen()),
+        PbNested("detail", 2, [
+            PbScalar("status", 1, IntegerGen()),
+            PbScalar("count", 2, IntegerGen()),
+        ]),
+        PbScalar("name", 3, StringGen(nullable=True)),
+    ]
+    rows = [
+        (0, encode_pb_message(fields, [1, (1, 10), "ok"])),       # status=OK
+        (1, encode_pb_message(fields, [2, (2, 20), "bad"])),      # status=BAD
+        (2, encode_pb_message(fields, [3, (None, 30), "none"])),  # missing enum
+        (3, None),
+    ]
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(rows, schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            f.col("idx"),
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("id").alias("id"),
+            decoded.getField("detail").getField("status").alias("status"),
+            decoded.getField("name").alias("name")).orderBy("idx")
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 

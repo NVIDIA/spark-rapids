@@ -156,8 +156,11 @@ case class GpuFromProtobuf(
         enumNames,
         failOnErrors)
     } catch {
-      case e: CudfException if failOnErrors =>
-        throw new org.apache.spark.SparkException("Malformed protobuf message", e)
+      case e: CudfException =>
+        if (failOnErrors) {
+          throw new org.apache.spark.SparkException("Malformed protobuf message", e)
+        }
+        throw e
     }
 
     // Expand if needed:
@@ -309,76 +312,4 @@ object GpuFromProtobuf {
    * Check if a Spark DataType is supported by the GPU protobuf decoder.
    */
   def isTypeSupported(dt: DataType): Boolean = sparkTypeToCudfIdOpt(dt).isDefined
-
-  /**
-   * Create an all-null column of the specified Spark DataType.
-   * This is used for fields with unsupported types (nested structs, arrays, etc.)
-   * that are not decoded but need to be present in the output struct.
-   */
-  def createNullColumn(dt: DataType, numRows: Int): cudf.ColumnVector = {
-    // Helper to create null arrays for boxed types
-    def nullBools = Array.fill[java.lang.Boolean](numRows)(null)
-    def nullInts = Array.fill[java.lang.Integer](numRows)(null)
-    def nullLongs = Array.fill[java.lang.Long](numRows)(null)
-    def nullFloats = Array.fill[java.lang.Float](numRows)(null)
-    def nullDoubles = Array.fill[java.lang.Double](numRows)(null)
-
-    dt match {
-      case BooleanType => cudf.ColumnVector.fromBoxedBooleans(nullBools: _*)
-      case IntegerType => cudf.ColumnVector.fromBoxedInts(nullInts: _*)
-      case LongType => cudf.ColumnVector.fromBoxedLongs(nullLongs: _*)
-      case FloatType => cudf.ColumnVector.fromBoxedFloats(nullFloats: _*)
-      case DoubleType => cudf.ColumnVector.fromBoxedDoubles(nullDoubles: _*)
-      case StringType => cudf.ColumnVector.fromStrings(Array.fill[String](numRows)(null): _*)
-      case BinaryType =>
-        // Binary is LIST<INT8> - create all-null list column using Scalar API
-        val elementType = new cudf.HostColumnVector.BasicType(true, DType.INT8)
-        withResource(cudf.Scalar.listFromNull(elementType)) { nullScalar =>
-          cudf.ColumnVector.fromScalar(nullScalar, numRows)
-        }
-      case st: StructType =>
-        // Recursively create null columns for struct fields
-        val children = st.fields.map(f => createNullColumn(f.dataType, numRows))
-        try {
-          withResource(cudf.ColumnVector.makeStruct(numRows, children: _*)) { structCol =>
-            // Set all rows to null - mergeAndSetValidity returns a NEW column
-            withResource(cudf.ColumnVector.fromBoxedBooleans(nullBools: _*)) { nullMask =>
-              structCol.mergeAndSetValidity(BinaryOp.BITWISE_AND, nullMask)
-            }
-          }
-        } finally {
-          children.foreach(_.close())
-        }
-      case ArrayType(elementType, _) =>
-        // Create empty arrays with all nulls using Scalar API
-        val cudfElementDType = sparkTypeToCudfIdOpt(elementType)
-          .map(id => DType.fromNative(id, 0))
-          .getOrElse(DType.INT8)  // fallback for nested complex types
-        val elemType = new cudf.HostColumnVector.BasicType(true, cudfElementDType)
-        withResource(cudf.Scalar.listFromNull(elemType)) { nullScalar =>
-          cudf.ColumnVector.fromScalar(nullScalar, numRows)
-        }
-      case MapType(keyType, valueType, _) =>
-        // Maps are represented as LIST<STRUCT<key, value>> in cuDF
-        // For all-null maps, we create a list column with STRUCT<key, value> element type
-        val cudfKeyDType = sparkTypeToCudfIdOpt(keyType)
-          .map(id => DType.fromNative(id, 0))
-          .getOrElse(DType.INT8)
-        val cudfValueDType = sparkTypeToCudfIdOpt(valueType)
-          .map(id => DType.fromNative(id, 0))
-          .getOrElse(DType.INT8)
-        // Create the struct type for map entries (key, value)
-        val keyFieldType = new cudf.HostColumnVector.BasicType(true, cudfKeyDType)
-        val valueFieldType = new cudf.HostColumnVector.BasicType(true, cudfValueDType)
-        val structType = new cudf.HostColumnVector.StructType(true, keyFieldType, valueFieldType)
-        // Create an all-null map column (list of structs)
-        withResource(cudf.Scalar.listFromNull(structType)) { nullScalar =>
-          cudf.ColumnVector.fromScalar(nullScalar, numRows)
-        }
-      case _ =>
-        // Fallback for any other types - create INT8 nulls as placeholder
-        // This should not happen in practice since unsupported types should be caught earlier
-        cudf.ColumnVector.fromBoxedBytes(Array.fill[java.lang.Byte](numRows)(null): _*)
-    }
-  }
 }

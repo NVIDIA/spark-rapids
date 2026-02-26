@@ -34,6 +34,8 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
+import java.lang.ReflectiveOperationException
+
 import scala.collection.mutable
 import scala.util.Try
 
@@ -203,7 +205,9 @@ object ProtobufExprShims {
             typeName(syntaxObj)
           }.getOrElse("")
           if (protoSyntax == "PROTO3") {
-            willNotWorkOnGpu("proto3 descriptors are not supported; only proto2 is supported")
+            willNotWorkOnGpu(
+              "proto3 syntax is not supported by the GPU protobuf decoder; " +
+                "only proto2 is supported. The query will fall back to CPU.")
             return
           }
 
@@ -373,7 +377,7 @@ object ProtobufExprShims {
               val fd = invoke1[AnyRef](
                 parentMsgDesc, "findFieldByName", classOf[String], fieldName)
               if (fd != null) {
-                Try {
+                try {
                   val childMsgDesc = invoke0[AnyRef](fd, "getMessageType")
                   // Filter children based on nested schema projection requirements.
                   val requiredChildren = nestedFieldRequirements.get(fieldName)
@@ -405,6 +409,29 @@ object ProtobufExprShims {
                       val (_, _, childEncoding) = checkFieldSupport(
                         childSf.dataType, childProtoTypeName, childIsRepeated, enumsAsInts)
 
+                      val (childEnumVals, childEnumNameMap): (Option[Set[Int]],
+                        Option[Map[Int, String]]) =
+                        if (childProtoTypeName == "ENUM") {
+                          Try {
+                            val enumType = invoke0[AnyRef](childFd, "getEnumType")
+                            val values = invoke0[java.util.List[_]](enumType, "getValues")
+                            import scala.collection.JavaConverters._
+                            val pairs = values.asScala.map { v =>
+                              val ev = v.asInstanceOf[AnyRef]
+                              val num = invoke0[java.lang.Integer](ev, "getNumber").intValue()
+                              val name = invoke0[String](ev, "getName")
+                              (num, name)
+                            }
+                            if (enumsAsInts) {
+                              (Some(pairs.map(_._1).toSet), None)
+                            } else {
+                              (Some(pairs.map(_._1).toSet), Some(pairs.toMap))
+                            }
+                          }.getOrElse((None, None))
+                        } else {
+                          (None, None)
+                        }
+
                       val childInfo = ProtobufFieldInfo(
                         fieldNumber = childFieldNumber,
                         protoTypeName = childProtoTypeName,
@@ -415,8 +442,8 @@ object ProtobufExprShims {
                         isRequired = childIsRequired,
                         hasDefaultValue = childHasDefault,
                         defaultValue = None,
-                        enumValues = None,
-                        enumNames = None,
+                        enumValues = childEnumVals,
+                        enumNames = childEnumNameMap,
                         isRepeated = childIsRepeated
                       )
 
@@ -424,6 +451,9 @@ object ProtobufExprShims {
                         childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc)
                     }
                   }
+                } catch {
+                  case _: ReflectiveOperationException =>
+                  // Ignore reflection failures and let remaining fields continue.
                 }
               }
             }
@@ -662,7 +692,9 @@ object ProtobufExprShims {
             case "FIXED32" | "SFIXED32" | "FLOAT" => WT_32BIT
             case "FIXED64" | "SFIXED64" | "DOUBLE" => WT_64BIT
             case "STRING" | "BYTES" | "MESSAGE" => WT_LEN
-            case _ => WT_VARINT  // default
+            case other =>
+              throw new IllegalStateException(
+                s"Unknown protobuf type name '$other' - cannot determine wire type")
           }
         }
 
@@ -862,30 +894,30 @@ object ProtobufExprShims {
           if (expr.getClass.getName.contains("ProtobufDataToCatalyst")) {
             return true
           }
-          
-          // Check if expr is an AttributeReference with the same schema as our protobuf output
-          // This handles the case where GetStructField references a column from a parent Project
+
+          // Prefer exact attribute identity. Avoid matching by schema shape because unrelated
+          // struct columns can share the same field names/types.
+          val protobufOutputExprId: Option[org.apache.spark.sql.catalyst.expressions.ExprId] =
+            parent.flatMap { meta =>
+              meta.wrapped match {
+                case alias: org.apache.spark.sql.catalyst.expressions.Alias
+                    if alias.child eq e =>
+                  Some(alias.exprId)
+                case _ => None
+              }
+            }
+
           expr match {
             case attr: AttributeReference =>
-              // Check if the data type matches our full schema (struct type from protobuf)
-              attr.dataType match {
-                case st: StructType => 
-                  // Compare field names and types only. We intentionally do not compare
-                  // nullable flags because schema transformations (like projections or
-                  // certain optimizations) may change nullability while the underlying
-                  // schema structure remains the same. For schema projection detection,
-                  // matching names and types is sufficient to identify protobuf output.
-                  st.fields.length == fullSchema.fields.length &&
-                    st.fields.zip(fullSchema.fields).forall { case (a, b) =>
-                      a.name == b.name && a.dataType == b.dataType
-                    }
-                case _ => false
-              }
+              protobufOutputExprId.exists(_ == attr.exprId)
             case _ => false
           }
         }
 
         override def convertToGpu(child: Expression): GpuExpression = {
+          // Ensure thread-local ordinal mapping doesn't leak across query conversions.
+          GpuFromProtobuf.clearPrunedFields()
+
           // Build pruned fields map for ALL struct types (both repeated and non-repeated).
           // For repeated message fields (ArrayType(StructType)), pruning is handled via
           // ordinal remapping in GpuGetArrayStructFieldsMeta (Option A) instead of expansion.
