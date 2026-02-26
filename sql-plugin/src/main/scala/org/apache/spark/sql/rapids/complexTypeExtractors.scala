@@ -409,8 +409,12 @@ class GpuGetArrayStructFieldsMeta(
      rule: DataFromReplacementRule)
   extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
 
-  def convertToGpu(child: Expression): GpuExpression =
-    GpuGetArrayStructFields(child, expr.field, expr.ordinal, expr.numFields, expr.containsNull)
+  def convertToGpu(child: Expression): GpuExpression = {
+    // Check the global protobuf pruned field registry to remap ordinal
+    val runtimeOrd = GpuFromProtobuf.getPrunedOrdinal(expr.field.name)
+    GpuGetArrayStructFields(child, expr.field, expr.ordinal, expr.numFields,
+      expr.containsNull, runtimeOrd)
+  }
 }
 
 /**
@@ -424,7 +428,8 @@ case class GpuGetArrayStructFields(
     field: StructField,
     ordinal: Int,
     numFields: Int,
-    containsNull: Boolean) extends GpuUnaryExpression
+    containsNull: Boolean,
+    runtimeOrdinal: Int = -1) extends GpuUnaryExpression
     with ShimGetArrayStructFields
     with NullIntolerantShim {
 
@@ -435,7 +440,16 @@ case class GpuGetArrayStructFields(
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     val base = input.getBase
     val fieldView = withResource(base.getChildColumnView(0)) { structView =>
-      structView.getChildColumnView(ordinal)
+      val actualChildren = structView.getNumChildren
+      // Handle nested schema projection (Option A): the actual struct may have
+      // fewer children than numFields if GpuFromProtobuf pruned the schema.
+      // Use runtimeOrdinal (if set) when the struct was pruned.
+      val effectiveOrdinal = if (runtimeOrdinal >= 0 && actualChildren < numFields) {
+        runtimeOrdinal
+      } else {
+        ordinal
+      }
+      structView.getChildColumnView(effectiveOrdinal)
     }
     val listView = withResource(fieldView) { _ =>
       GpuListUtils.replaceListDataColumnAsView(base, fieldView)

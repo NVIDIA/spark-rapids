@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,6 +45,9 @@
 # Example Usage:
 #   To run all tests, including Avro tests:
 #     INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh
+#
+#   To run tests WITHOUT Protobuf tests (protobuf is included by default):
+#     INCLUDE_SPARK_PROTOBUF_JAR=false ./run_pyspark_from_build.sh
 #
 #   To run a specific test:
 #     TEST=my_test ./run_pyspark_from_build.sh
@@ -141,9 +144,68 @@ else
         AVRO_JARS=""
     fi
 
-    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar if they exist
+    # Protobuf support: Include spark-protobuf jar by default for protobuf_test.py
+    # Set INCLUDE_SPARK_PROTOBUF_JAR=false to disable
+    PROTOBUF_JARS=""
+    if [[ $( echo ${INCLUDE_SPARK_PROTOBUF_JAR} | tr '[:upper:]' '[:lower:]' ) != "false" ]];
+    then
+        export INCLUDE_SPARK_PROTOBUF_JAR=true
+        mkdir -p "${TARGET_DIR}/dependency"
+        
+        # Download spark-protobuf jar if not already in target/dependency
+        PROTOBUF_JAR_NAME="spark-protobuf_${SCALA_VERSION}-${VERSION_STRING}.jar"
+        PROTOBUF_JAR_PATH="${TARGET_DIR}/dependency/${PROTOBUF_JAR_NAME}"
+        
+        if [[ ! -f "$PROTOBUF_JAR_PATH" ]]; then
+            echo "Downloading spark-protobuf jar..."
+            PROTOBUF_MAVEN_URL="https://repo1.maven.org/maven2/org/apache/spark/spark-protobuf_${SCALA_VERSION}/${VERSION_STRING}/${PROTOBUF_JAR_NAME}"
+            if curl -sL -o "$PROTOBUF_JAR_PATH" "$PROTOBUF_MAVEN_URL"; then
+                echo "Downloaded spark-protobuf jar to $PROTOBUF_JAR_PATH"
+            else
+                echo "WARNING: Failed to download spark-protobuf jar from $PROTOBUF_MAVEN_URL"
+                rm -f "$PROTOBUF_JAR_PATH"
+            fi
+        fi
+        
+        # Also download protobuf-java jar (required dependency)
+        # Spark 3.5.x uses protobuf-java 3.25.1
+        PROTOBUF_JAVA_VERSION="3.25.1"
+        PROTOBUF_JAVA_JAR_NAME="protobuf-java-${PROTOBUF_JAVA_VERSION}.jar"
+        PROTOBUF_JAVA_JAR_PATH="${TARGET_DIR}/dependency/${PROTOBUF_JAVA_JAR_NAME}"
+        
+        if [[ ! -f "$PROTOBUF_JAVA_JAR_PATH" ]]; then
+            echo "Downloading protobuf-java jar..."
+            PROTOBUF_JAVA_MAVEN_URL="https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/${PROTOBUF_JAVA_VERSION}/${PROTOBUF_JAVA_JAR_NAME}"
+            if curl -sL -o "$PROTOBUF_JAVA_JAR_PATH" "$PROTOBUF_JAVA_MAVEN_URL"; then
+                echo "Downloaded protobuf-java jar to $PROTOBUF_JAVA_JAR_PATH"
+            else
+                echo "WARNING: Failed to download protobuf-java jar from $PROTOBUF_JAVA_MAVEN_URL"
+                rm -f "$PROTOBUF_JAVA_JAR_PATH"
+            fi
+        fi
+        
+        if [[ -f "$PROTOBUF_JAR_PATH" ]]; then
+            PROTOBUF_JARS="$PROTOBUF_JAR_PATH"
+            echo "Including spark-protobuf jar: $PROTOBUF_JAR_PATH"
+        fi
+        if [[ -f "$PROTOBUF_JAVA_JAR_PATH" ]]; then
+            PROTOBUF_JARS="$PROTOBUF_JARS $PROTOBUF_JAVA_JAR_PATH"
+            echo "Including protobuf-java jar: $PROTOBUF_JAVA_JAR_PATH"
+        fi
+        # Also add protobuf jars to driver classpath for Class.forName() to work
+        # This is needed because --jars only adds to executor classpath
+        if [[ -n "$PROTOBUF_JARS" ]]; then
+            PROTOBUF_DRIVER_CP=$(echo $PROTOBUF_JARS | tr ' ' ':')
+            export PYSP_TEST_spark_driver_extraClassPath="${PYSP_TEST_spark_driver_extraClassPath:+${PYSP_TEST_spark_driver_extraClassPath}:}${PROTOBUF_DRIVER_CP}"
+            echo "Added protobuf jars to driver classpath"
+        fi
+    else
+        export INCLUDE_SPARK_PROTOBUF_JAR=false
+    fi
+
+    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar protobuf.jar if they exist
     # Remove non-existing paths and canonicalize the paths including get rid of links and `..`
-    ALL_JARS=$(readlink -e $PLUGIN_JAR $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
+    ALL_JARS=$(readlink -e $PLUGIN_JAR $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS $PROTOBUF_JARS || true)
     # `:` separated jars
     ALL_JARS="${ALL_JARS//$'\n'/:}"
 
@@ -403,6 +465,7 @@ else
       export PYSP_TEST_spark_memory_offHeap_size=512M
       export PYSP_TEST_spark_gluten_loadLibFromJar=true
     fi
+
 
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
     EXPLAIN_ONLY_CPU_SMOKE_TEST="${EXPLAIN_ONLY_CPU_SMOKE_TEST:-0}"
