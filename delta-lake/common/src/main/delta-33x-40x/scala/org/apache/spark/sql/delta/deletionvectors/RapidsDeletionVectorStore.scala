@@ -22,8 +22,10 @@ import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.jni.Hash
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import java.io.{DataInputStream, IOException}
+import java.nio.{ByteBuffer, ByteOrder}
 import java.util.zip.CRC32
 import org.apache.hadoop.fs.Path
+import org.roaringbitmap.RoaringBitmap
 
 import org.apache.spark.sql.delta.DeltaErrors
 
@@ -156,8 +158,10 @@ object DeltaNativeFormatLoader extends DeltaSerializedBitmapLoader {
     // is expected to be rare. If this becomes a problem, we can consider implementing a more
     // efficient conversion without fully deserializing the bitmap.
     val originalBytes = readRangeFromStream(input, size, crc)
-    val roaringBitmapArray = RoaringBitmapArray.readFrom(originalBytes)
-    val reserialized = roaringBitmapArray.serializeAsByteArray(RoaringBitmapArrayFormat.Portable)
+    val bb = ByteBuffer.wrap(originalBytes)
+    bb.order(ByteOrder.LITTLE_ENDIAN)
+    val roaringBitmapArray = NativeRoaringBitmapArraySerializationFormat.deserialize(bb)
+    val reserialized = serializeAsDeltaPortableFormat(roaringBitmapArray)
     val magicNumberSize = DeltaSerializedBitmapLoader.DELTA_BITMAP_MAGIC_NUMBER_BYTE_SIZE
     val buffer = HostMemoryBuffer.allocate(reserialized.length - magicNumberSize)
     closeOnExcept(buffer) { buf =>
@@ -185,5 +189,16 @@ object DeltaNativeFormatLoader extends DeltaSerializedBitmapLoader {
     }
 
     buffer
+  }
+
+  private def serializeAsDeltaPortableFormat(bitmaps: Array[RoaringBitmap]): Array[Byte] = {
+    val serializedSize =
+      PortableRoaringBitmapArraySerializationFormat.serializedSizeInBytes(bitmaps) +
+        DeltaSerializedBitmapLoader.DELTA_BITMAP_MAGIC_NUMBER_BYTE_SIZE
+    val buffer = ByteBuffer.allocate(serializedSize.toInt)
+    buffer.order(ByteOrder.LITTLE_ENDIAN)
+    buffer.putInt(PortableRoaringBitmapArraySerializationFormat.MAGIC_NUMBER)
+    PortableRoaringBitmapArraySerializationFormat.serialize(bitmaps, buffer)
+    buffer.array()
   }
 }
