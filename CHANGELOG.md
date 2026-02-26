@@ -1,5 +1,5 @@
 # Change log
-Generated on 2026-02-09
+Generated on 2026-02-26
 
 ## Release 26.02
 
@@ -7,6 +7,7 @@ Generated on 2026-02-09
 |||
 |:---|:---|
 |[#13381](https://github.com/NVIDIA/spark-rapids/issues/13381)|[FEA] Add support for iceberg partition calculation.|
+|[#13357](https://github.com/NVIDIA/spark-rapids/issues/13357)|[FEA] Re-enable cudf_udf test CI once we support databricks 15.X+ runtimes|
 |[#14137](https://github.com/NVIDIA/spark-rapids/issues/14137)|[FEA] Switch from Java 17 release to Java 8 target for Spark 411 shim.|
 |[#14083](https://github.com/NVIDIA/spark-rapids/issues/14083)|[FEA][AUDIT][SPARK-52921][SQL] Specify outputPartitioning for UnionExec for same output partitoning as children operators|
 |[#14056](https://github.com/NVIDIA/spark-rapids/issues/14056)|[FEA] Add support for Spark 4.1.1|
@@ -30,6 +31,8 @@ Generated on 2026-02-09
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#14290](https://github.com/NVIDIA/spark-rapids/issues/14290)|[BUG] GPU get_json_object returns None for quoted special character keys in JSON path in dataproc 2.2|
+|[#14289](https://github.com/NVIDIA/spark-rapids/issues/14289)|[BUG] Failed DB test in test_sized_join_high_key_replication intermittently in 12.2 runtime|
 |[#14267](https://github.com/NVIDIA/spark-rapids/issues/14267)|[BUG] Spark 3.5.3 delta reads slower then 3.4.1|
 |[#14262](https://github.com/NVIDIA/spark-rapids/issues/14262)|[BUG] NDS query66 unmatched results error in Spark 4.1.1 + ANSI run|
 |[#14233](https://github.com/NVIDIA/spark-rapids/issues/14233)|[BUG] test_parquet_testing_valid_files for parquet-testing/data/null_list.parquet falls back|
@@ -69,6 +72,9 @@ Generated on 2026-02-09
 ### PRs
 |||
 |:---|:---|
+|[#14328](https://github.com/NVIDIA/spark-rapids/pull/14328)|Writing field id when writing iceberg's data file|
+|[#14275](https://github.com/NVIDIA/spark-rapids/pull/14275)|Fix auto merge conflict 14274 [skip ci]|
+|[#14255](https://github.com/NVIDIA/spark-rapids/pull/14255)|Update changelog for the v26.02 release [skip ci]|
 |[#14254](https://github.com/NVIDIA/spark-rapids/pull/14254)|Update dependency version JNI, private, hybrid to 26.02.0|
 |[#14271](https://github.com/NVIDIA/spark-rapids/pull/14271)|Fix combining small files when reading Delta tables using multi-threaded reader|
 |[#14241](https://github.com/NVIDIA/spark-rapids/pull/14241)|[DOC] update for download page 2602 release [skip ci]|
