@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ object GpuParquetUtils extends Logging {
         oldBlock.getColumns.asScala.filter(c =>
           pathSet.contains(c.getPath.toDotString.toLowerCase(Locale.ROOT)))
       }
-      newBlockMeta(oldBlock.getRowCount, newColumns.toSeq)
+      newBlockMeta(oldBlock.getRowIndexOffset, oldBlock.getRowCount, newColumns.toSeq)
     }
   }
 
@@ -70,6 +70,7 @@ object GpuParquetUtils extends Logging {
    * @return the new BlockMetaData
    */
   def newBlockMeta(
+      rowIndexOffset: Long,
       rowCount: Long,
       columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
     val block = new BlockMetaData
@@ -78,6 +79,7 @@ object GpuParquetUtils extends Logging {
     var totalSize: Long = 0
     columns.foreach { column =>
       block.addColumn(column)
+      block.setRowIndexOffset(rowIndexOffset)
       totalSize += column.getTotalUncompressedSize
     }
     block.setTotalByteSize(totalSize)
