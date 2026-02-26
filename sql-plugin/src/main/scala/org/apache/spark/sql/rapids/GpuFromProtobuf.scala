@@ -89,12 +89,10 @@ case class GpuFromProtobuf(
   override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
 
   /**
-   * Build a partially pruned schema for the output:
-   * - Top-level: matches fullSchema (so GetStructField ordinals stay valid)
-   * - Nested ArrayType(StructType) fields: pruned to only contain decoded children
-   *   (GetArrayStructFields ordinals are remapped in GpuGetArrayStructFieldsMeta)
-   * - Nested StructType (non-repeated) fields: kept at full schema
-   *   (expansion inserts null columns cheaply; GetStructField ordinals stay valid)
+   * Build a pruned schema for nested struct fields:
+   * - Top-level field order still matches fullSchema
+   * - Nested ArrayType(StructType) and StructType are both pruned to decoded children
+   * - Runtime ordinals are remapped by GpuGetStructField/GpuGetArrayStructFields
    */
   private val outputSchema: StructType = {
     val fields = fullSchema.fields.map { field =>
@@ -102,13 +100,14 @@ case class GpuFromProtobuf(
         case Some(childNames) =>
           field.dataType match {
             case ArrayType(st: StructType, containsNull) =>
-              // Pruned repeated message: only keep decoded children (Option A)
               val prunedSt = StructType(
                 st.fields.filter(f => childNames.contains(f.name)))
               field.copy(dataType = ArrayType(prunedSt, containsNull))
-            case _ =>
-              // Non-repeated struct or other: keep full type (expand with null cols)
-              field
+            case st: StructType =>
+              val prunedSt = StructType(
+                st.fields.filter(f => childNames.contains(f.name)))
+              field.copy(dataType = prunedSt)
+            case _ => field
           }
         case None => field
       }
@@ -120,19 +119,9 @@ case class GpuFromProtobuf(
 
   override def nullable: Boolean = true
 
-  // Identify which pruned fields are non-repeated structs (need expansion)
-  // vs repeated messages (pruned in outputSchema, no expansion needed)
-  private val nonRepeatedPrunedFields: Map[String, Seq[String]] =
-    nestedPrunedFields.filter { case (fieldName, _) =>
-      val idx = fullSchema.fieldIndex(fieldName)
-      fullSchema.fields(idx).dataType.isInstanceOf[StructType]
-    }
-
-  // Expansion is needed when not all top-level fields are decoded,
-  // or when non-repeated structs have pruned children
+  // Expansion is needed only when not all top-level fields are decoded.
   private val needsExpansion: Boolean =
-    decodedTopLevelIndices.length != fullSchema.fields.length ||
-    nonRepeatedPrunedFields.nonEmpty
+    decodedTopLevelIndices.length != fullSchema.fields.length
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     val numRows = input.getRowCount.toInt
@@ -156,18 +145,11 @@ case class GpuFromProtobuf(
         enumNames,
         failOnErrors)
     } catch {
-      case e: CudfException =>
-        if (failOnErrors) {
-          throw new org.apache.spark.SparkException("Malformed protobuf message", e)
-        }
-        throw e
+      case e: CudfException if failOnErrors =>
+        throw new org.apache.spark.SparkException("Malformed protobuf message", e)
     }
 
-    // Expand if needed:
-    // - Top-level: insert null columns for non-decoded top-level fields
-    // - Non-repeated structs: expand pruned children with null columns
-    // - Repeated messages (ArrayType(StructType)): already pruned in outputSchema,
-    //   handled by GetArrayStructFields ordinal remapping (no expansion needed)
+    // Expand only at top-level: insert null columns for non-decoded top-level fields.
     val expanded = if (needsExpansion) {
       withResource(jniResult) { decoded =>
         expandSchema(decoded, numRows)
@@ -187,10 +169,8 @@ case class GpuFromProtobuf(
   }
 
   /**
-   * Expand decoded struct to match outputSchema:
-   * - Top-level: insert null columns for non-decoded fields
-   * - Non-repeated structs with pruned children: expand by inserting null child columns
-   * - Repeated messages (ArrayType): no expansion (already pruned in outputSchema)
+   * Expand decoded top-level struct to match outputSchema by inserting null columns for
+   * non-decoded top-level fields.
    */
   private def expandSchema(decoded: cudf.ColumnVector, numRows: Int): cudf.ColumnVector = {
     val children = new Array[cudf.ColumnVector](fullSchema.fields.length)
@@ -200,59 +180,14 @@ case class GpuFromProtobuf(
       for (i <- fullSchema.fields.indices) {
         if (decodedIdx < decodedTopLevelIndices.length &&
             decodedTopLevelIndices(decodedIdx) == i) {
-          val fieldName = fullSchema.fields(i).name
-
-          // Check if this is a non-repeated struct with pruned children
-          nonRepeatedPrunedFields.get(fieldName) match {
-            case Some(decodedNames) =>
-              // Expand non-repeated struct: insert null columns for pruned children
-              val targetSt = fullSchema.fields(i).dataType.asInstanceOf[StructType]
-              withResource(decoded.getChildColumnView(decodedIdx)) { childView =>
-                children(i) = expandStructChildren(childView, targetSt, decodedNames, numRows)
-              }
-            case None =>
-              // No expansion needed (either full schema or ArrayType pruned via Option A)
-              withResource(decoded.getChildColumnView(decodedIdx)) { childView =>
-                children(i) = childView.copyToColumnVector()
-              }
+          withResource(decoded.getChildColumnView(decodedIdx)) { childView =>
+            children(i) = childView.copyToColumnVector()
           }
           decodedIdx += 1
         } else {
           // This field was not decoded — create null column
           children(i) = GpuColumnVector.columnVectorFromNull(
             numRows, outputSchema.fields(i).dataType)
-        }
-      }
-
-      cudf.ColumnVector.makeStruct(numRows, children: _*)
-    } finally {
-      children.foreach(col => if (col != null) col.close())
-    }
-  }
-
-  /**
-   * Expand a non-repeated STRUCT column by inserting null columns for pruned children.
-   * This is cheap because non-repeated structs have only num_rows elements.
-   */
-  private def expandStructChildren(
-      decoded: cudf.ColumnView,
-      targetSchema: StructType,
-      decodedChildNames: Seq[String],
-      numRows: Int): cudf.ColumnVector = {
-    val children = new Array[cudf.ColumnVector](targetSchema.fields.length)
-    var decodedChildIdx = 0
-
-    try {
-      for (i <- targetSchema.fields.indices) {
-        if (decodedChildIdx < decodedChildNames.length &&
-            decodedChildNames(decodedChildIdx) == targetSchema.fields(i).name) {
-          withResource(decoded.getChildColumnView(decodedChildIdx)) { childView =>
-            children(i) = childView.copyToColumnVector()
-          }
-          decodedChildIdx += 1
-        } else {
-          children(i) = GpuColumnVector.columnVectorFromNull(
-            numRows, targetSchema.fields(i).dataType)
         }
       }
 

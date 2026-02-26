@@ -942,12 +942,12 @@ object ProtobufExprShims {
           }
 
           // Register pruned field ordinal mappings for GpuGetArrayStructFieldsMeta.
-          // For each pruned ArrayType(StructType) field, map child field names to their
+          // For each pruned struct field, map child field names to their
           // ordinal in the pruned struct so runtime column access uses correct indices.
           val ordinalMappings = prunedFieldsMap.flatMap { case (parentName, childNames) =>
             val fieldIdx = fullSchema.fieldIndex(parentName)
             fullSchema.fields(fieldIdx).dataType match {
-              case ArrayType(_: StructType, _) =>
+              case ArrayType(_: StructType, _) | _: StructType =>
                 childNames.zipWithIndex.map { case (name, idx) => name -> idx }
               case _ => Seq.empty
             }
