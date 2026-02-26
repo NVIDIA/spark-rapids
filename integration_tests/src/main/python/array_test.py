@@ -21,7 +21,7 @@ from marks import incompat, allow_non_gpu, disable_ansi_mode
 from spark_session import *
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, array_compact, col, element_at, lit, array
+from pyspark.sql.functions import array_contains, col, element_at, lit, array
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -745,6 +745,7 @@ def test_array_compact_corner_cases():
 # Port of Spark DataFrameFunctionsSuite.test("test array_compact") - invalid type raises analysis error.
 @pytest.mark.skipif(is_before_spark_340(), reason="array_compact is supported from Spark 3.4.0")
 def test_array_compact_invalid_type():
+    from pyspark.sql.functions import array_compact
     # array_compact expects ARRAY; passing INT must fail with DATATYPE_MISMATCH.UNEXPECTED_INPUT_TYPE.
     assert_gpu_and_cpu_error(
         lambda spark: spark.range(3).select(array_compact(col("id"))).collect(),
