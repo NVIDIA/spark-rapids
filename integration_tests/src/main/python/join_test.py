@@ -439,7 +439,9 @@ def test_broadcast_nested_loop_join_degen_left_outer_build_no_columns():
     assert_gpu_and_cpu_are_equal_sql(gen_df_func,
         sql="SELECT * FROM left_tbl WHERE EXISTS "
             "(SELECT COUNT(*) FROM right_tbl WHERE left_tbl.a = 1);",
-        table_name='left_tbl')
+        table_name='left_tbl',
+                                     # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+                                     conf={'spark.sql.adaptive.enabled': 'false'})
 
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_330() or is_databricks_runtime(),
