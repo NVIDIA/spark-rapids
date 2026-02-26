@@ -1209,8 +1209,9 @@ def test_sortmerge_join_struct_as_key_fallback(data_gen, join_type, kudo_enabled
         left, right = create_df(spark, data_gen, 500, 500)
         return left.join(right, left.a == right.r_a, join_type)
     conf = copy_and_update(_sortmerge_join_conf,
-                           {kudo_enabled_conf_key: kudo_enabled},
-                           'spark.sql.adaptive.enabled', 'false') # disable AQE as it can change the join type
+                           {kudo_enabled_conf_key: kudo_enabled,
+                            # disable AQE as it can change the join type
+                            'spark.sql.adaptive.enabled': 'false'})
     assert_gpu_fallback_collect(do_join, 'SortMergeJoinExec', conf=conf)
 
 # Regression test for https://github.com/NVIDIA/spark-rapids/issues/3775
