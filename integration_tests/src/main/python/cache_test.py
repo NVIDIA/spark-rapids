@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -67,12 +67,14 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
 def test_cache_join(data_gen, enable_vectorized_conf):
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf=copy_and_update(enable_vectorized_conf, {"spark.sql.adaptive.enabled": "false"})
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         cached = left.join(right, left.a == right.r_a, 'Inner').cache()
         cached.count() # populates cache
         return cached
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=enable_vectorized_conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
@@ -123,13 +125,15 @@ def test_cache_partial_load(data_gen, enable_vectorized_conf):
 @allow_non_gpu('CollectLimitExec')
 @ignore_order
 def test_cache_reverse_order(enable_vectorized_conf):
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf=copy_and_update(enable_vectorized_conf, {"spark.sql.adaptive.enabled": "false"})
     col0 = StructGen([['child0', StructGen([['child1', byte_gen]])]])
     col1 = StructGen([['child0', byte_gen]])
     def partial_return():
         def partial_return_cache(spark):
             return two_col_df(spark, col0, col1).select(f.col("a"), f.col("b")).cache().select(f.col("b"), f.col("a"))
         return partial_return_cache
-    assert_gpu_and_cpu_are_equal_collect(partial_return(), conf=enable_vectorized_conf)
+    assert_gpu_and_cpu_are_equal_collect(partial_return(), conf=conf)
 
 @allow_non_gpu('CollectLimitExec')
 def test_cache_diff_req_order(spark_tmp_path):
