@@ -14,7 +14,7 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
+from asserts import assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
 from data_gen import *
 from iceberg import get_full_table_name
 from marks import allow_non_gpu, iceberg, ignore_order
@@ -595,21 +595,10 @@ def test_iceberg_read_with_filecache(spark_tmp_table_factory, reader_type):
     filecache_conf = {
         'spark.rapids.sql.format.parquet.reader.type': reader_type,
     }
-    import sys
-    sys.stderr.write(f"CPU result row count: {len(cpu_result)}\n")
-    # First GPU read - populates the file cache
     gpu_result_1 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
-    sys.stderr.write(f"GPU result 1 row count: {len(gpu_result_1)}\n")
-    # Second GPU read - should hit the file cache
     gpu_result_2 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
-    sys.stderr.write(f"GPU result 2 row count: {len(gpu_result_2)}\n")
-    # Sort with a key that handles None values
-    def sort_key(row):
-        return tuple((0, v) if v is not None else (1,) for v in row)
-    assert sorted(cpu_result, key=sort_key) == sorted(gpu_result_1, key=sort_key), \
-        "First GPU read with filecache differs from CPU"
-    assert sorted(cpu_result, key=sort_key) == sorted(gpu_result_2, key=sort_key), \
-        "Second GPU read with filecache differs from CPU"
+    assert_equal_with_local_sort(cpu_result, gpu_result_1)
+    assert_equal_with_local_sort(cpu_result, gpu_result_2)
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
