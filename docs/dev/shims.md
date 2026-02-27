@@ -63,7 +63,7 @@ issue as you can see e.g., comparing shim implementations across versions:
 
 The `ShimExpression` and related traits themselves live in a single shared file,
 [TreeNode.scala](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/spark321/scala/com/nvidia/spark/rapids/shims/TreeNode.scala),
-which is built for all supported versions (3.2.1 through 4.x) via the shim-json-lines build.
+which is built for 3.3.x+ (with backward compatibility to 3.2.1 in the build) via the shim-json-lines build.
 
 This resolves compile-time problems, however, now we face the problem at run time.
 
