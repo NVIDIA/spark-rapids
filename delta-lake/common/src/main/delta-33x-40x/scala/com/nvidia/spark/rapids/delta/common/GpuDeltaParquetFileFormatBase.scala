@@ -425,7 +425,8 @@ object RapidsDeletionVectorUtils {
           val storedBitmap = RapidsDeletionVectorStoredBitmap(dvDesc, new Path(tablePath))
           storedBitmap.load(dvStore)
         case unexpectedFilterType => throw new IllegalStateException(
-          s"Unexpected row index filter type: ${unexpectedFilterType}")
+          s"Unexpected row index filter type for Deletion Vectors. " +
+            s"Expected: ${RowIndexFilterType.IF_CONTAINED}; Actual: ${unexpectedFilterType}")
       }
     } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
       throw new IllegalStateException(
