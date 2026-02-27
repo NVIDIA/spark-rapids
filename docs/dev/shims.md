@@ -8,7 +8,7 @@ parent: Developer Overview
 # Shim Development
 
 RAPIDS Accelerator For Apache Spark supports multiple feature version lines of
-Apache Spark such as 3.2.x, 3.3.x, 3.4.x, 3.5.x and a number of vendor releases that contain
+Apache Spark such as 3.3.x, 3.4.x, 3.5.x, 4.x and a number of vendor releases that contain
 a mix of patches from different upstream releases. These artifacts are generally
 incompatible between each other, at both source code level and even more often
 at the binary level. The role of the Shim layer is to hide these issues from the
@@ -53,13 +53,13 @@ across different Spark versions.
 Upstream base classes we derive from might be incompatible in the sense that one version
 requires us to implement/override the method `M` whereas the other prohibits it by marking
 the base implementation `final`, E.g. `org.apache.spark.sql.catalyst.trees.TreeNode` changes
-between Spark 3.1.x and Spark 3.2.x. So instead of deriving from such classes directly we
+between Spark 3.3.x and Spark 3.5.x. So instead of deriving from such classes directly we
 inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.ShimExpression` that
 has a varying source code depending on the Spark version we compile against to overcome this
-issue as you can see e.g., comparing TreeNode:
+issue as you can see e.g., comparing shim implementations across versions:
 
-1. [ShimExpression For 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/6a82213a798a81a5f32f8cf8b4c630e38d112f65/sql-plugin/src/main/spark311/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L28)
-2. [ShimExpression For 3.2.x](https://github.com/NVIDIA/spark-rapids/blob/6a82213a798a81a5f32f8cf8b4c630e38d112f65/sql-plugin/src/main/spark320/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L37)
+1. [ShimExpression for 3.3.x](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/spark330/scala/com/nvidia/spark/rapids/shims/Spark330PlusShims.scala)
+2. [ShimExpression for 3.5.1](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/spark351/scala/com/nvidia/spark/rapids/shims/spark351/SparkShimServiceProvider.scala)
 
 This resolves compile-time problems, however, now we face the problem at run time.
 
@@ -75,20 +75,20 @@ So instead we resort to the idea of JDK's ParallelWorldClassloader in combinatio
 Spark runtime uses mutable classloaders we can alter after detecting the runtime version.
 Using JarURLConnection URLs we create a Parallel World of the current version within the jar, e.g.:
 
-Spark 3.0.2's URLs:
-
-```text
-jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/spark-shared/
-jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/spark302/
-```
-
-Spark 3.3.0's URLs :
+Spark 3.3.0's URLs:
 
 ```text
 jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/
 jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/spark-shared/
 jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/spark330/
+```
+
+Spark 3.5.1's URLs:
+
+```text
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark351/
 ```
 
 ### Late Inheritance in Public Classes
