@@ -295,14 +295,14 @@ run_iceberg_tests() {
     echo "!!! Running iceberg tests with rest catalog"
     ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
 org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
+        # filecache.enabled is a startup-only config, so it must be set here via
+        # PYSP_TEST_ env var rather than as a session-level Spark config, because
+        # FileCacheManager is initialized at executor startup time.
         env \
           ICEBERG_TEST_CATALOG_TYPE="rest" \
           ICEBERG_TEST_REMOTE_CATALOG=1 \
           PYSP_TEST_spark_driver_memory=6G \
           PYSP_TEST_spark_executor_memory=6G \
-          # filecache.enabled is a startup-only config, so it must be set here via
-          # PYSP_TEST_ env var rather than as a session-level Spark config, because
-          # FileCacheManager is initialized at executor startup time.
           PYSP_TEST_spark_rapids_filecache_enabled=true \
           PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
           PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
@@ -342,13 +342,13 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
     # Requires to setup s3 buckets and namespaces to run iceberg s3tables tests.
     # These steps are included in the test pipeline.
     # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
+    # filecache.enabled is a startup-only config, so it must be set here via
+    # PYSP_TEST_ env var rather than as a session-level Spark config, because
+    # FileCacheManager is initialized at executor startup time.
     env \
       ICEBERG_TEST_REMOTE_CATALOG=1 \
       PYSP_TEST_spark_driver_memory=6G \
       PYSP_TEST_spark_executor_memory=6G \
-      # filecache.enabled is a startup-only config, so it must be set here via
-      # PYSP_TEST_ env var rather than as a session-level Spark config, because
-      # FileCacheManager is initialized at executor startup time.
       PYSP_TEST_spark_rapids_filecache_enabled=true \
       PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
       PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
