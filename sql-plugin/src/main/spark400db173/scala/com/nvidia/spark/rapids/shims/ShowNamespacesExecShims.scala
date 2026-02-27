@@ -16,6 +16,7 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "400db173"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -24,11 +25,9 @@ import com.nvidia.spark.rapids._
 import org.apache.spark.sql.execution.SparkPlan
 
 /**
- * Databricks 17.3 version where ShowNamespacesExec was refactored to ShowNamespacesCommand.
- * See: https://github.com/apache/spark/commit/936d4f8b0d1fec05a9a8dd831789b53fe49bee82
+ * ShowNamespacesExec was removed/renamed in Spark 4.1.0 and Databricks 17.3.
  * Return None to skip this exec rule.
  */
 object ShowNamespacesExecShims {
   val neverReplaceExec: Option[ExecRule[_ <: SparkPlan]] = None
 }
-
