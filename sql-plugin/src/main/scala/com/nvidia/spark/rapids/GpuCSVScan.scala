@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -445,9 +445,14 @@ class CSVPartitionReader(
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric]) extends
-  CSVPartitionReaderBase[HostLineBufferer, HostLineBuffererFactory.type](conf, partFile,
+  CSVPartitionReaderBase[HostLineBufferer,
+    LineBuffererFactory[HostLineBufferer]](conf, partFile,
     dataSchema, readDataSchema, parsedOptions, maxRowsPerChunk,
-    maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
+    maxBytesPerChunk, execMetrics,
+    // In multiLine mode, empty lines within quoted fields are
+    // legitimate data and must not be filtered out.
+    if (parsedOptions.multiLine) HostLineBuffererFactory
+    else FilterCsvEmptyHostLineBuffererFactory) {
 
   def buildCsvOptions(
       parsedOptions: CSVOptions,

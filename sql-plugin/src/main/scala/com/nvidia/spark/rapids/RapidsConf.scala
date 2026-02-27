@@ -561,20 +561,22 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
 
-  val PARTIAL_FILE_BUFFER_INITIAL_SIZE = 
+  val PARTIAL_FILE_BUFFER_INITIAL_SIZE =
     conf("spark.rapids.memory.host.partialFileBufferInitialSize")
     .doc("The initial size in bytes for a host memory buffer used by " +
         "SpillablePartialFileHandle during shuffle write. This buffer allows shuffle " +
         "data to be kept in memory instead of writing to disk immediately, reducing " +
         "I/O overhead. The buffer can expand dynamically up to partialFileBufferMaxSize. " +
         "A smaller initial size reduces upfront memory allocation but may require more " +
-        "expansions.")
+        "expansions. When used with " +
+        "RapidsLocalDiskShuffleMapOutputWriter, the buffer expansion uses predictive " +
+        "sizing based on partition write statistics to minimize expansion operations.")
     .startupOnly()
     .internal()
     .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(128L * 1024 * 1024)  // 128MB default
+    .createWithDefault(32L * 1024 * 1024)  // 32MB default, expanded predictively
 
-  val PARTIAL_FILE_BUFFER_MAX_SIZE = 
+  val PARTIAL_FILE_BUFFER_MAX_SIZE =
     conf("spark.rapids.memory.host.partialFileBufferMaxSize")
     .doc("The maximum size in bytes for a single host memory buffer used by " +
         "SpillablePartialFileHandle during shuffle write. When a buffer needs to " +
@@ -1098,6 +1100,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .internal()
       .booleanConf
       .createWithDefault(false)
+
+  val ENABLE_WINDOW_GROUP_LIMIT_OPT = conf("spark.rapids.sql.window.groupLimit.opt.enabled")
+      .doc("When enabled, the plugin will skip redundant Final WindowGroupLimit operators " +
+          "when they are followed by a WindowExec and FilterExec that perform the same " +
+          "rank computation and filtering. This avoids computing the rank twice and " +
+          "improves performance for queries with rank-based window limits.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
@@ -2125,6 +2136,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
     .createWithDefault(RapidsShuffleManagerMode.MULTITHREADED.toString)
 
+  val MULTITHREADED_SHUFFLE_SKIP_MERGE = conf("spark.rapids.shuffle.multithreaded.skipMerge")
+    .doc("When using MULTITHREADED shuffle mode, skip merging partial shuffle files and " +
+      "instead serve data directly from the MultithreadedShuffleBufferCatalog. " +
+      "This avoids I/O overhead from merging but requires: (1) External Shuffle Service (ESS) " +
+      "to be disabled, and (2) spark.rapids.memory.host.offHeapLimit.enabled=true (off-heap " +
+      "memory limits enabled) to prevent OOM from unbounded buffer growth. " +
+      "When set to false (default), partial files will be merged into a single " +
+      "shuffle file per map task as in standard Spark shuffle. " +
+      "Set to true when both requirements are met and shuffle data is not reused across " +
+      "SQL queries (e.g., avoid on Databricks with shuffle reuse enabled).")
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
     .startupOnly()
@@ -3010,7 +3035,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -3378,6 +3403,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isWindowCollectSetEnabled: Boolean = get(ENABLE_WINDOW_COLLECT_SET)
 
   lazy val isWindowUnboundedAggEnabled: Boolean = get(ENABLE_WINDOW_UNBOUNDED_AGG)
+
+  lazy val isWindowGroupLimitOptEnabled: Boolean = get(ENABLE_WINDOW_GROUP_LIMIT_OPT)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
@@ -3773,6 +3800,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def isMultiThreadedShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.MULTITHREADED
+
+  def isMultithreadedShuffleSkipMergeEnabled: Boolean = get(MULTITHREADED_SHUFFLE_SKIP_MERGE)
 
   def isCacheOnlyShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode

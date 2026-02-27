@@ -57,7 +57,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   private val initialBufferSize = rapidsConf.partialFileBufferInitialSize
   private val maxBufferSize = rapidsConf.partialFileBufferMaxSize
   private val memoryThreshold = rapidsConf.partialFileBufferMemoryThreshold
-  
+
   // Read Spark's shuffle sync configuration to maintain compatibility
   private val syncWrites = sparkConf.get("spark.shuffle.sync", "false").toBoolean
 
@@ -65,30 +65,75 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   private var partialFileHandle: Option[SpillablePartialFileHandle] = None
   private var storageInitAttempted: Boolean = false
   private var forceFileOnly: Boolean = false
-  
+
+  // Track completed partition count for predictive buffer sizing
+  private var completedPartitionCount: Int = 0
+  private var completedPartitionBytes: Long = 0L
+
+  /**
+   * Provides capacity hints for buffer expansion based on partition write statistics.
+   *
+   * The prediction logic:
+   * - If we have completed at least one partition, calculate average bytes per partition
+   * - Estimate total bytes needed as: avgBytesPerPartition * numPartitions
+   * - Add a safety margin (1.2x) to account for partition size variance
+   * - If no partitions completed yet, fall back to doubling the required capacity
+   *
+   * @param currentBytesWritten Total bytes written so far (we use completed partition
+   *                            statistics instead for more accurate prediction)
+   * @param requiredCapacity The minimum capacity needed to continue writing
+   * @return Suggested new capacity based on prediction
+   */
+  private def capacityHintProvider(
+      currentBytesWritten: Long,
+      requiredCapacity: Long): Long = {
+    // Note: currentBytesWritten is unused - we use completedPartitionBytes instead
+    // for more accurate prediction based on completed partitions only
+    val _ = currentBytesWritten
+    if (completedPartitionCount > 0) {
+      // Calculate average bytes per completed partition
+      val avgBytesPerPartition = completedPartitionBytes.toDouble / completedPartitionCount
+      // Estimate total needed with 1.2x safety margin for partition size variance
+      val estimatedTotal = (avgBytesPerPartition * numPartitions * 1.2).toLong
+      // Return the larger of estimated total or required capacity
+      val suggested = math.max(estimatedTotal, requiredCapacity)
+      logDebug(s"Capacity hint: completedPartitions=$completedPartitionCount, " +
+        s"completedBytes=$completedPartitionBytes, avgPerPartition=$avgBytesPerPartition, " +
+        s"totalPartitions=$numPartitions, estimated=$estimatedTotal, suggested=$suggested")
+      suggested
+    } else {
+      // No completed partitions yet, use simple doubling strategy
+      // This happens during the first partition write
+      val suggested = requiredCapacity * 2
+      logDebug(s"Capacity hint: no completed partitions yet, " +
+        s"suggesting $suggested (2x required=$requiredCapacity)")
+      suggested
+    }
+  }
+
   /**
    * Force this writer to use file-only mode, bypassing memory-based buffering.
    * This is useful for scenarios where memory buffering is not beneficial,
    * such as final merge operations.
-   * 
+   *
    * This method must be called before any partition writer is requested.
    */
   def setForceFileOnlyMode(): Unit = {
     if (storageInitAttempted) {
       throw new IllegalStateException(
         "Cannot set force file-only mode after storage has been initialized. " +
-        "Storage was initialized when getPartitionWriter() was called. " +
-        "Call setForceFileOnlyMode() before requesting any partition writers.")
+          "Storage was initialized when getPartitionWriter() was called. " +
+          "Call setForceFileOnlyMode() before requesting any partition writers.")
     }
     forceFileOnly = true
   }
-  
+
   // Try to initialize storage on first partition write
   private def ensureStorageInitialized(): Unit = {
     if (!storageInitAttempted) {
       storageInitAttempted = true
       outputTempFile = Utils.tempFileWith(outputFile)
-      
+
       // Check if file-only mode is forced
       if (forceFileOnly) {
         // Force file-only mode (e.g., for final merge operations)
@@ -97,7 +142,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
           outputTempFile, syncWrites)
         partialFileHandle = Some(handle)
       } else if (HostAlloc.isUsageBelowThreshold(memoryThreshold)) {
-        // Memory sufficient: use MEMORY_WITH_SPILL mode
+        // Memory sufficient: use MEMORY_WITH_SPILL mode with predictive sizing
         try {
           val handle = SpillablePartialFileHandle.createMemoryWithSpill(
             initialCapacity = initialBufferSize,
@@ -105,11 +150,12 @@ class RapidsLocalDiskShuffleMapOutputWriter(
             memoryThreshold = memoryThreshold,
             spillFile = outputTempFile,
             priority = Long.MinValue,
-            syncWrites = syncWrites)
+            syncWrites = syncWrites,
+            capacityHintProvider = Some(capacityHintProvider))
           partialFileHandle = Some(handle)
           logDebug(s"Using memory-with-spill mode for shuffle $shuffleId map $mapId " +
-            s"(initial=${initialBufferSize / 1024 / 1024}MB, " +
-            s"max=${maxBufferSize / 1024 / 1024}MB)")
+            s"with predictive sizing (initial=${initialBufferSize / 1024 / 1024}MB, " +
+            s"max=${maxBufferSize / 1024 / 1024}MB, numPartitions=$numPartitions)")
         } catch {
           case e: Exception =>
             logWarning(s"Failed to create memory buffer, " +
@@ -135,7 +181,7 @@ class RapidsLocalDiskShuffleMapOutputWriter(
         "Partitions should be requested in increasing order.")
     }
     lastPartitionId = reducePartitionId
-    
+
     // Initialize storage on first partition
     ensureStorageInitialized()
 
@@ -148,11 +194,10 @@ class RapidsLocalDiskShuffleMapOutputWriter(
     // Finish write phase to enable spilling and finalize data
     partialFileHandle.foreach { handle =>
       handle.finishWrite()
-      
-      // If memory-based, not spilled yet, and has data, force spill to create file
+
+      // If memory-based and not spilled yet, force spill to create file
       // writeMetadataFileAndCommit requires a valid file
-      // Skip spill for empty shuffle to avoid creating unnecessary empty files
-      if (handle.isMemoryBased && !handle.isSpilled && handle.getTotalBytesWritten > 0) {
+      if (handle.isMemoryBased && !handle.isSpilled) {
         handle.spill()
       }
     }
@@ -167,12 +212,12 @@ class RapidsLocalDiskShuffleMapOutputWriter(
       s"${partitionLengths.length}")
     blockResolver.writeMetadataFileAndCommit(
       shuffleId, mapId, partitionLengths, checksums, resolvedTmp)
-    
+
     // Close the partial file handle to release any remaining resources
     // (e.g., host buffer if spill() was not called due to empty partitions)
     partialFileHandle.foreach(_.close())
     partialFileHandle = None
-    
+
     MapOutputCommitMessage.of(partitionLengths)
   }
 
@@ -189,12 +234,12 @@ class RapidsLocalDiskShuffleMapOutputWriter(
    * Get the partial file handle for accessing data.
    */
   def getPartialFileHandle(): Option[SpillablePartialFileHandle] = partialFileHandle
-  
+
   /**
    * Get partition lengths array directly (for extracting without reflection).
    */
   def getPartitionLengths(): Array[Long] = partitionLengths
-  
+
   /**
    * Finish write phase to finalize data (called before extraction).
    */
@@ -254,6 +299,9 @@ class RapidsLocalDiskShuffleMapOutputWriter(
       isClosed = true
       partitionLengths(partitionId) = count
       bytesWrittenToMergedFile += count
+      // Update statistics for predictive buffer sizing
+      completedPartitionCount += 1
+      completedPartitionBytes += count
     }
 
     private def verifyNotClosed(): Unit = {
@@ -265,9 +313,9 @@ class RapidsLocalDiskShuffleMapOutputWriter(
   }
 
   // Unified channel writer using SpillablePartialFileHandle
-  private class PartitionWriterChannel(partitionId: Int) 
+  private class PartitionWriterChannel(partitionId: Int)
     extends WritableByteChannelWrapper {
-    
+
     private val startPosition = currChannelPosition
 
     def getCount: Long = {
@@ -296,8 +344,12 @@ class RapidsLocalDiskShuffleMapOutputWriter(
     }
 
     override def close(): Unit = {
-      partitionLengths(partitionId) = getCount
-      bytesWrittenToMergedFile += partitionLengths(partitionId)
+      val bytesWritten = getCount
+      partitionLengths(partitionId) = bytesWritten
+      bytesWrittenToMergedFile += bytesWritten
+      // Update statistics for predictive buffer sizing
+      completedPartitionCount += 1
+      completedPartitionBytes += bytesWritten
     }
   }
 }

@@ -25,7 +25,7 @@ import ai.rapids.cudf.{ColumnVector, DType, HostColumnVector, Table}
 import ai.rapids.cudf.HostColumnVector.{BasicType, ListType, StructType}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
+import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.types.{ArrayType, DataType, IntegerType, MapType}
@@ -331,7 +331,8 @@ class GpuGenerateSuite
     (1 until 3).foreach { numRows =>
       val (expected, _) = makeBatchFn(numRows, includeNulls)
       val itNoFailures = new GpuGenerateIterator(
-        Seq(SpillableColumnarBatch(expected, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)),
+        Iterator.single(Array(
+          SpillableColumnarBatch(expected, SpillPriorities.ACTIVE_ON_DECK_PRIORITY))),
         generator = generate,
         generatorOffset,
         outer,
@@ -357,7 +358,7 @@ class GpuGenerateSuite
             SpillableColumnarBatch(actual, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
 
           val it = new GpuGenerateIterator(
-            Seq(actualSpillable),
+            Iterator.single(Array(actualSpillable)),
             generator = failingGenerate,
             generatorOffset,
             outer,
@@ -805,5 +806,36 @@ class GpuGenerateSuite
       assertResult(5000)(splits(0))
       checkSplits(splits, batch)
     }
+  }
+
+  /**
+   * Test that getSplitsWithRetryAndClose handles OOM by halving the target size.
+   * This directly exercises the retry logic in the getSplits path.
+   */
+  test("getSplitsWithRetry handles OOM by reducing target size") {
+    val generator = GpuExplode(AttributeReference("foo", ArrayType(IntegerType))())
+    val generatorOffset = 1 // carry-along column is at 0, explode column at 1
+    // Use a large target size that would normally not split each input batch.
+    val largeTargetSize = 1024L * 1024 * 1024 // 1GB
+
+    val (batch, _) = makeBatch(numRows = 100, listSize = 4, carryAlongColumnCount = 1)
+    closeOnExcept(batch) { _ =>
+      // inject a split-retry oom
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+    }
+    // Test getSplitsWithRetryAndClose that should handle the OOM and retry
+    val splits = GpuGenerateUtils.getSplitsWithRetryAndClose(batch, generator,
+      generatorOffset, outer = false, largeTargetSize, NoopMetric)
+
+    var count = 0
+    while(splits.hasNext) {
+      withResource(splits.next()) { scbs =>
+        assert(scbs.length == 1) // Only one batch for each bundle
+        assertResult(50)(scbs.head.numRows()) // each has 100/2 rows
+      }
+      count = count + 1
+    }
+    assert(count == 2) // iterator contains two batches due to split-retry
   }
 }

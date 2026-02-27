@@ -1911,6 +1911,142 @@ object SpillableColumnarBatchHandle {
   }
 }
 
+class SpillableTableHandle private (
+    override val approxSizeInBytes: Long,
+    private[spill] override var dev: Option[Table],
+    private[spill] var host: Option[SpillableHostBufferHandle] = None)
+  extends DeviceSpillableHandle[Table] with Logging {
+
+  override def spillable: Boolean = synchronized {
+    if (super.spillable) {
+      val table = dev.get
+      val colRepetition = mutable.HashMap[ColumnVector, Int]()
+      var i = 0
+      while (i < table.getNumberOfColumns) {
+        val col = table.getColumn(i)
+        colRepetition.put(col, colRepetition.getOrElse(col, 0) + 1)
+        i += 1
+      }
+      colRepetition.forall { case (col, cnt) =>
+        cnt == col.getRefCount
+      }
+    } else {
+      false
+    }
+  }
+
+  private var meta: Option[ByteBuffer] = None
+
+  def materialize(): Table = {
+    var materialized: Table = null
+    var hostHandle: SpillableHostBufferHandle = null
+    synchronized {
+      if (closed) {
+        throw new IllegalStateException("attempting to materialize a closed handle")
+      } else if (host.isDefined) {
+        hostHandle = host.get
+      } else if (dev.isDefined) {
+        materialized = SpillableTableHandle.cloneTable(dev.get)
+      } else {
+        throw new IllegalStateException("open handle has no underlying table")
+      }
+    }
+    if (materialized == null) {
+      // (Similar as SpillableColumnarBatchHandle)
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+      try {
+        val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) {
+          dmb =>
+            hostHandle.materializeToDeviceMemoryBuffer(dmb)
+            dmb
+        }
+        materialized = withResource(devBuffer)(Table.fromPackedTable(meta.get, _))
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
+      }
+    }
+    materialized
+  }
+
+  override def spill(): Long = {
+    if (!spillable) {
+      0L
+    } else {
+      val tblToSpill: Option[Table] = synchronized {
+        if (!closed && host.isEmpty && dev.isDefined && !spilling) {
+          spilling = true
+          Some(SpillableTableHandle.cloneTable(dev.get))
+        } else {
+          None
+        }
+      }
+      if (tblToSpill.isDefined) {
+        executeSpill {
+          // "tblToSpill" will be closed inside "withChunkedPacker".
+          withChunkedPacker(tblToSpill.get) { chunkedPacker =>
+            meta = Some(chunkedPacker.getPackedMeta)
+            var staging: Option[SpillableHostBufferHandle] =
+              Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker,
+                taskPriority))
+            val actualBytes: Long = staging.map(_.sizeInBytes).getOrElse(0L)
+            synchronized {
+              spilling = false
+              if (closed) {
+                staging.foreach(_.close())
+                staging = None
+                doClose()
+              } else {
+                host = staging
+              }
+            }
+            actualBytes // return actual bytes spilled for metrics
+          }
+        }
+        // We return the size we were created with. This is not the actual size
+        // of this table when it is packed, and it is used by the calling code
+        // to figure out more or less how much did we free in the device.
+        approxSizeInBytes
+      } else {
+        0L
+      }
+    }
+  }
+
+  private def withChunkedPacker[T](tableToPack: Table)(body: ChunkedPacker => T): T = {
+    withResource(tableToPack) { _ =>
+      withResource(new ChunkedPacker(tableToPack, SpillFramework.chunkedPackBounceBufferPool)) {
+        packer => body(packer)
+      }
+    }
+  }
+
+  override def doClose(): Unit = {
+    releaseDeviceResource()
+    host.foreach(_.close())
+    host = None
+  }
+}
+
+object SpillableTableHandle {
+  def apply(table: Table): SpillableTableHandle = {
+    val sizeInBytes = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+    val handle = new SpillableTableHandle(sizeInBytes, dev = Some(table))
+    SpillFramework.stores.deviceStore.track(handle)
+    handle
+  }
+
+  private def cloneTable(table: Table): Table = {
+    val numCols = table.getNumberOfColumns
+    val columns = new Array[ColumnVector](numCols)
+    var i = 0
+    while (i < numCols) {
+      columns(i) = table.getColumn(i)
+      i = i + 1
+    }
+    new Table(columns: _*) // The new table increases the columns ref
+  }
+}
+
 object SpillFramework extends Logging {
   // public for tests. Some tests not in the `spill` package require setting this
   // because they need fine control over allocations.
