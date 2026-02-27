@@ -17,7 +17,7 @@
 """A simple changelog generator
 
 This tool takes list of release versions to generate `CHANGELOG.md`.
-The changelog will include all merged PRs w/o `[bot]` postfix,
+The changelog will include all merged PRs w/o `[bot]`, `Fix auto merge conflict` postfix,
 and issues that include the labels `bug`, `feature request`, `SQL`, `performance`, `shuffle`,
 minus any issues with the labels `wontfix`, `invalid` or `duplicate`.
 
@@ -312,7 +312,7 @@ def process_changelog(resource_type: str, changelog: dict, releases: set, projec
         if resource_type == ISSUES and category == INVALID:
             continue
         if resource_type == PULL_REQUESTS:
-            if '[bot]' in item['title']:  # skip auto-gen PR
+            if '[bot]' in item['title'] or 'Fix auto merge conflict' in item['title']:  # skip auto-gen PR
                 continue
             if '[databricks]' in item['title']: # strip ambiguous CI annotation
                 item['title'] = item['title'].replace('[databricks]', '').strip()
