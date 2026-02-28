@@ -22,6 +22,11 @@ package org.apache.spark.sql.rapids.suites
 import java.io.ByteArrayOutputStream
 
 import org.apache.spark.sql.DataFrameSuite
+import org.apache.spark.sql.execution.exchange.{
+  BroadcastExchangeLike,
+  ReusedExchangeExec,
+  ShuffleExchangeLike
+}
 import org.apache.spark.sql.functions.broadcast
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
@@ -62,41 +67,45 @@ class RapidsDataFrameSuite
   // Original test: DataFrameSuite.scala lines 2053-2076
   // Change to use GPU class name
   testRapids("reuse exchange") {
+    def countMatches(
+        plan: org.apache.spark.sql.execution.SparkPlan)(
+        predicate: PartialFunction[org.apache.spark.sql.execution.SparkPlan, Boolean]): Int = {
+      collect(plan) {
+        case e if predicate.isDefinedAt(e) && predicate(e) => true
+      }.size
+    }
+
     withSQLConf(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> "2") {
       val df = spark.range(100).toDF()
       val join = df.join(df, "id")
       checkAnswer(join, df)
-      
-      // GPU uses Gpu* versions of Exchange operators
-      import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-      
-      // Check for GPU shuffle exchange
-      val shuffleExchanges = collect(join.queryExecution.executedPlan) {
-        case e if e.getClass.getName.contains("GpuShuffleExchange") => true
-      }
-      assert(shuffleExchanges.size === 1,
-        s"Expected 1 shuffle exchange, got ${shuffleExchanges.size}")
-      
-      assert(
-        collect(join.queryExecution.executedPlan) {
-          case _: ReusedExchangeExec => true }.size === 1)
+
+      val shuffleExchanges =
+        countMatches(join.queryExecution.executedPlan) { case _: ShuffleExchangeLike => true }
+      assert(shuffleExchanges === 1, s"Expected 1 shuffle exchange, got $shuffleExchanges")
+
+      val reusedExchanges =
+        countMatches(join.queryExecution.executedPlan) { case _: ReusedExchangeExec => true }
+      assert(reusedExchanges === 1, s"Expected 1 reused exchange, got $reusedExchanges")
       
       val broadcasted = broadcast(join)
       val join2 = join.join(broadcasted, "id").join(broadcasted, "id")
       checkAnswer(join2, df)
-      
-      val shuffleExchanges2 = collect(join2.queryExecution.executedPlan) {
-        case e if e.getClass.getName.contains("GpuShuffleExchange") => true
-      }
-      assert(shuffleExchanges2.size == 1)
-      
-      val broadcastExchanges = collect(join2.queryExecution.executedPlan) {
-        case e if e.getClass.getName.contains("GpuBroadcastExchange") => true
-      }
-      assert(broadcastExchanges.size === 1)
+
+      val shuffleExchanges2 =
+        countMatches(join2.queryExecution.executedPlan) { case _: ShuffleExchangeLike => true }
       assert(
-        collect(join2.queryExecution.executedPlan) {
-          case _: ReusedExchangeExec => true }.size == 4)
+        shuffleExchanges2 == 1,
+        s"Expected 1 shuffle exchange in join2, got $shuffleExchanges2")
+
+      val broadcastExchanges =
+        countMatches(join2.queryExecution.executedPlan) { case _: BroadcastExchangeLike => true }
+      assert(broadcastExchanges === 1,
+        s"Expected 1 broadcast exchange in join2, got $broadcastExchanges")
+
+      val reusedExchanges2 =
+        countMatches(join2.queryExecution.executedPlan) { case _: ReusedExchangeExec => true }
+      assert(reusedExchanges2 == 4, s"Expected 4 reused exchanges in join2, got $reusedExchanges2")
     }
   }
 

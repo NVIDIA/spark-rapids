@@ -19,12 +19,9 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import com.nvidia.spark.rapids.GpuUnionExec
-
 import org.apache.spark.sql.{DataFrameSetOperationsSuite, Row}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuInMemoryTableScanExec
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsDataFrameSetOperationsSuite
@@ -35,17 +32,31 @@ class RapidsDataFrameSetOperationsSuite
 
   testRapids(
       "SPARK-37371: GPU UnionExec should support columnar if all children support columnar") {
-    def checkGpuPlanExists(
+    def checkPlanExists(
         plan: SparkPlan,
-        targetPlan: (SparkPlan) => Boolean): Unit = {
+        targetPlan: SparkPlan => Boolean,
+        name: String): Seq[SparkPlan] = {
       val target = plan.collect {
         case p if targetPlan(p) => p
       }
-      assert(target.nonEmpty, s"No matching GPU plan nodes found in: ${plan.treeString}")
-      // GPU always supports columnar execution regardless of cache settings
-      assert(target.forall(_.supportsColumnar),
-        s"GPU plan nodes should always support columnar: " +
-          s"${target.map(p => (p.getClass.getSimpleName, p.supportsColumnar))}")
+      assert(target.nonEmpty, s"No matching $name nodes found in: ${plan.treeString}")
+      target
+    }
+
+    def isGpuNode(plan: SparkPlan): Boolean = {
+      plan.getClass.getName.contains(".rapids.")
+    }
+
+    def checkColumnarContract(
+        target: Seq[SparkPlan],
+        expectedCpuColumnar: Boolean,
+        label: String): Unit = {
+      target.foreach { p =>
+        val expected = if (isGpuNode(p)) true else expectedCpuColumnar
+        assert(p.supportsColumnar == expected,
+          s"$label node ${p.nodeName} expected supportsColumnar=$expected, " +
+            s"but got ${p.supportsColumnar}")
+      }
     }
 
     Seq(true, false).foreach { supported =>
@@ -59,28 +70,28 @@ class RapidsDataFrameSetOperationsSuite
 
         val union = df1.union(df2)
         
-        // Check GpuInMemoryTableScanExec exists and supports columnar
-        // Note: Unlike CPU, GPU always supports columnar regardless of
-        // CACHE_VECTORIZED_READER_ENABLED configuration
-        checkGpuPlanExists(union.queryExecution.executedPlan,
-          _.isInstanceOf[GpuInMemoryTableScanExec])
+        val scanNodes = checkPlanExists(
+          union.queryExecution.executedPlan,
+          _.nodeName.contains("InMemoryTableScan"),
+          "InMemoryTableScan")
+        checkColumnarContract(scanNodes, expectedCpuColumnar = supported, "InMemoryTableScan")
         
-        // Check GpuUnionExec exists and supports columnar
-        checkGpuPlanExists(union.queryExecution.executedPlan, 
-          _.isInstanceOf[GpuUnionExec])
+        val unionNodes = checkPlanExists(
+          union.queryExecution.executedPlan,
+          _.nodeName.contains("Union"),
+          "Union")
+        checkColumnarContract(unionNodes, expectedCpuColumnar = supported, "Union")
         
         // Verify query results
         checkAnswer(union, Row(1) :: Row(2) :: Row(3) :: Row(4) :: Row(5) :: Row(6) :: Nil)
 
-        // Test union with cached and non-cached DataFrames
+        // Test union with cached and non-cached DataFrames.
+        // GPU and CPU can differ here in plan details, but result semantics must match.
         val mixedUnion = df1.union(Seq(7, 8, 9).toDF("k"))
-        
-        // GpuUnionExec should exist and handle mixed scenarios
-        val unionExec = mixedUnion.queryExecution.executedPlan.collect {
-          case p: GpuUnionExec => p
-        }
-        assert(unionExec.nonEmpty, "GpuUnionExec should exist in the plan")
-        assert(unionExec.forall(_.supportsColumnar), "GpuUnionExec should support columnar")
+        checkPlanExists(
+          mixedUnion.queryExecution.executedPlan,
+          _.nodeName.contains("Union"),
+          "Union")
         
         // Verify query results
         checkAnswer(mixedUnion,

@@ -59,41 +59,61 @@ class RapidsJoinSuite
     withTable("t1", "t2") {
       spark.range(10).map(i => (i.toString, i + 1)).toDF("c1", "c2").write.saveAsTable("t1")
       spark.range(10).map(i => ((i % 5).toString, i % 3)).toDF("c1", "c2").write.saveAsTable("t2")
+      spark.range(10).map(i => (i, i + 1)).toDF("c1", "c2").write.saveAsTable("t1a")
+      spark.range(10).map(i => (i % 5, i % 3)).toDF("c1", "c2").write.saveAsTable("t2a")
 
+      val semiExpected1 = Seq(Row("0"), Row("1"), Row("2"), Row("3"), Row("4"))
+      val antiExpected1 = Seq(Row("5"), Row("6"), Row("7"), Row("8"), Row("9"))
+      val semiExpected2 = Seq(Row(0))
+      val antiExpected2 = Seq.tabulate(9) { x => Row(x + 1) }
       val semiJoinQueries = Seq(
         // No join condition, ignore duplicated key.
         (s"SELECT /*+ SHUFFLE_HASH(t2) */ t1.c1 FROM t1 LEFT SEMI JOIN t2 ON t1.c1 = t2.c1",
-          true),
+          semiExpected1, antiExpected1),
         // Have join condition on build join key only, ignore duplicated key.
         (s"""
             |SELECT /*+ SHUFFLE_HASH(t2) */ t1.c1 FROM t1 LEFT SEMI JOIN t2
             |ON t1.c1 = t2.c1 AND CAST(t1.c2 * 2 AS STRING) != t2.c1
           """.stripMargin,
-          true),
+          semiExpected1, antiExpected1),
         // Have join condition on other build attribute beside join key, do not ignore
         // duplicated key.
         (s"""
             |SELECT /*+ SHUFFLE_HASH(t2) */ t1.c1 FROM t1 LEFT SEMI JOIN t2
             |ON t1.c1 = t2.c1 AND t1.c2 * 100 != t2.c2
           """.stripMargin,
-          false)
+          semiExpected1, antiExpected1),
+        // SPARK-52873: join condition references build-side attributes differently from join key.
+        (
+          s"""
+             |SELECT /*+ SHUFFLE_HASH(t2a) */ t1a.c1 FROM t1a LEFT SEMI JOIN t2a
+             |ON CAST((t1a.c2+10000)/1000 AS INT) = CAST((t2a.c2+10000)/1000 AS INT)
+             |AND t2a.c2 >= t1a.c2 + 1
+             |""".stripMargin,
+          semiExpected2, antiExpected2),
+        // SPARK-52873: join condition contains same expression as build-side join key.
+        (
+          s"""
+             |SELECT /*+ SHUFFLE_HASH(t2a) */ t1a.c1 FROM t1a LEFT SEMI JOIN t2a
+             |ON t1a.c1 * 10000 = t2a.c1 * 1000 AND t2a.c1 * 1000 >= t1a.c1
+             |""".stripMargin,
+          semiExpected2, antiExpected2)
       )
       semiJoinQueries.foreach {
-        case (query, ignoreDuplicatedKey) =>
+        case (query, semiExpected, antiExpected) =>
           val semiJoinDF = sql(query)
           val antiJoinDF = sql(query.replaceAll("SEMI", "ANTI"))
-          checkAnswer(semiJoinDF, Seq(Row("0"), Row("1"), Row("2"), Row("3"), Row("4")))
-          checkAnswer(antiJoinDF, Seq(Row("5"), Row("6"), Row("7"), Row("8"), Row("9")))
+          checkAnswer(semiJoinDF, semiExpected)
+          checkAnswer(antiJoinDF, antiExpected)
           
-          // GPU uses GpuShuffledHashJoinExec instead of ShuffledHashJoinExec
+          // Keep this assertion name-stable across CPU/GPU implementations.
+          // We validate hash-join strategy selection without binding to concrete classes.
           Seq(semiJoinDF, antiJoinDF).foreach { df =>
-            val hasGpuHashJoin = collect(df.queryExecution.executedPlan) {
-              case j if j.getClass.getName.contains("GpuShuffledHashJoin") => true
-              case j if j.getClass.getName.contains("ShuffledHashJoin") => true
-            }.size == 1
-            assert(hasGpuHashJoin, 
-              "Expected GpuShuffledHashJoinExec or ShuffledHashJoinExec " +
-              s"for ignoreDuplicatedKey=$ignoreDuplicatedKey")
+            val hashJoinCount = collect(df.queryExecution.executedPlan) {
+              case j if j.nodeName.contains("ShuffledHashJoin") => true
+            }.size
+            assert(hashJoinCount == 1,
+              s"Expected one shuffled hash join, got $hashJoinCount for query: $query")
           }
       }
     }
