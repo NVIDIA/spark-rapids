@@ -75,11 +75,11 @@ object GpuParquetUtils extends Logging {
       columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
     val block = new BlockMetaData
     block.setRowCount(rowCount)
+    block.setRowIndexOffset(rowIndexOffset)
 
     var totalSize: Long = 0
     columns.foreach { column =>
       block.addColumn(column)
-      block.setRowIndexOffset(rowIndexOffset)
       totalSize += column.getTotalUncompressedSize
     }
     block.setTotalByteSize(totalSize)
