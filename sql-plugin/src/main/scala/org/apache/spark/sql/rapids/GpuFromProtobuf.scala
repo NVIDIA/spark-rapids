@@ -20,7 +20,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, CudfException, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.jni.Protobuf
+import com.nvidia.spark.rapids.jni.{Protobuf, ProtobufSchemaDescriptor}
 import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
@@ -123,27 +123,15 @@ case class GpuFromProtobuf(
   private val needsExpansion: Boolean =
     decodedTopLevelIndices.length != fullSchema.fields.length
 
+  @transient private lazy val schema = new ProtobufSchemaDescriptor(
+    fieldNumbers, parentIndices, depthLevels, wireTypes, outputTypeIds, encodings,
+    isRepeated, isRequired, hasDefaultValue, defaultInts, defaultFloats, defaultBools,
+    defaultStrings, enumValidValues, enumNames)
+
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     val numRows = input.getRowCount.toInt
     val jniResult = try {
-      Protobuf.decodeToStruct(
-        input.getBase,
-        fieldNumbers,
-        parentIndices,
-        depthLevels,
-        wireTypes,
-        outputTypeIds,
-        encodings,
-        isRepeated,
-        isRequired,
-        hasDefaultValue,
-        defaultInts,
-        defaultFloats,
-        defaultBools,
-        defaultStrings,
-        enumValidValues,
-        enumNames,
-        failOnErrors)
+      Protobuf.decodeToStruct(input.getBase, schema, failOnErrors)
     } catch {
       case e: CudfException if failOnErrors =>
         throw new org.apache.spark.SparkException("Malformed protobuf message", e)
@@ -199,16 +187,16 @@ case class GpuFromProtobuf(
 }
 
 object GpuFromProtobuf {
-  // Encodings from com.nvidia.spark.rapids.jni.Protobuf
   val ENC_DEFAULT = 0
   val ENC_FIXED   = 1
   val ENC_ZIGZAG  = 2
   val ENC_ENUM_STRING = 3
 
   // Thread-local registry for pruned field ordinal mappings.
-  // When GpuFromProtobuf is created with nested pruning, it registers
-  // the field name -> pruned ordinal mapping. GpuGetArrayStructFieldsMeta
-  // reads this during convertToGpu to remap ordinals.
+  // Set by ProtobufExprShims.convertToGpu during plan conversion (single-threaded per query),
+  // consumed by GpuGetStructFieldMeta / GpuGetArrayStructFieldsMeta during the same conversion.
+  // A ThreadLocal is necessary here because the expression metas are general-purpose overrides
+  // (not protobuf-specific) and their parent meta chain doesn't contain the protobuf meta.
   private val prunedFieldOrdinals = new ThreadLocal[Map[String, Int]]() {
     override def initialValue(): Map[String, Int] = Map.empty
   }

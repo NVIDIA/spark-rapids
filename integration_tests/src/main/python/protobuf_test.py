@@ -2304,6 +2304,152 @@ def _get_field_by_path(expr, path):
     return current
 
 
+def _build_deep_nested_5_level_descriptor_set_bytes(spark):
+    """
+    Build a FileDescriptorSet for 5-level deep nesting:
+      message Level5 { optional int32 val5 = 1; }
+      message Level4 { optional int32 val4 = 1; optional Level5 level5 = 2; }
+      message Level3 { optional int32 val3 = 1; optional Level4 level4 = 2; }
+      message Level2 { optional int32 val2 = 1; optional Level3 level3 = 2; }
+      message Level1 { optional int32 val1 = 1; optional Level2 level2 = 2; }
+    """
+    D, fd = _new_proto2_file(spark, "deep_nested_5_level.proto")
+
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    # Level5 message
+    level5_msg = D.DescriptorProto.newBuilder().setName("Level5")
+    level5_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("val5")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    fd.addMessageType(level5_msg.build())
+
+    # Level4 message
+    level4_msg = D.DescriptorProto.newBuilder().setName("Level4")
+    level4_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("val4")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    level4_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("level5")
+            .setNumber(2)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.Level5")
+            .build()
+    )
+    fd.addMessageType(level4_msg.build())
+
+    # Level3 message
+    level3_msg = D.DescriptorProto.newBuilder().setName("Level3")
+    level3_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("val3")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    level3_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("level4")
+            .setNumber(2)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.Level4")
+            .build()
+    )
+    fd.addMessageType(level3_msg.build())
+
+    # Level2 message
+    level2_msg = D.DescriptorProto.newBuilder().setName("Level2")
+    level2_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("val2")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    level2_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("level3")
+            .setNumber(2)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.Level3")
+            .build()
+    )
+    fd.addMessageType(level2_msg.build())
+
+    # Level1 message
+    level1_msg = D.DescriptorProto.newBuilder().setName("Level1")
+    level1_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("val1")
+            .setNumber(1)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    level1_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("level2")
+            .setNumber(2)
+            .setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.Level2")
+            .build()
+    )
+    fd.addMessageType(level1_msg.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_deep_nesting_5_levels(spark_tmp_path, from_protobuf_fn):
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "deep_nested_5_level.desc",
+        _build_deep_nested_5_level_descriptor_set_bytes)
+    message_name = "test.Level1"
+    data_gen = ProtobufMessageGen([
+        PbScalar("val1", 1, IntegerGen()),
+        PbNested("level2", 2, [
+            PbScalar("val2", 1, IntegerGen()),
+            PbNested("level3", 2, [
+                PbScalar("val3", 1, IntegerGen()),
+                PbNested("level4", 2, [
+                    PbScalar("val4", 1, IntegerGen()),
+                    PbNested("level5", 2, [
+                        PbScalar("val5", 1, IntegerGen()),
+                    ]),
+                ]),
+            ]),
+        ]),
+    ])
+    def run_on_spark(spark):
+        df = gen_df(spark, data_gen)
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("val1").alias("val1"),
+            decoded.getField("level2").alias("level2"),
+        )
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @pytest.mark.parametrize("case_id,select_specs", _schema_proj_cases, ids=lambda c: c[0] if isinstance(c, tuple) else str(c))
 @ignore_order(local=True)
