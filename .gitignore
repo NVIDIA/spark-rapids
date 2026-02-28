@@ -30,6 +30,7 @@
 *#*#
 *~
 dependency-reduced-pom.xml
+docs/adjust-known-unmapped-spark330.md
 hs_err*.log
 scalastyle-on-compile.generated.xml
 scalastyle-output.xml
