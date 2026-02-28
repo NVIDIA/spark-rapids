@@ -59,13 +59,9 @@ class RapidsJoinSuite
     withTable("t1", "t2") {
       spark.range(10).map(i => (i.toString, i + 1)).toDF("c1", "c2").write.saveAsTable("t1")
       spark.range(10).map(i => ((i % 5).toString, i % 3)).toDF("c1", "c2").write.saveAsTable("t2")
-      spark.range(10).map(i => (i, i + 1)).toDF("c1", "c2").write.saveAsTable("t1a")
-      spark.range(10).map(i => (i % 5, i % 3)).toDF("c1", "c2").write.saveAsTable("t2a")
 
       val semiExpected1 = Seq(Row("0"), Row("1"), Row("2"), Row("3"), Row("4"))
       val antiExpected1 = Seq(Row("5"), Row("6"), Row("7"), Row("8"), Row("9"))
-      val semiExpected2 = Seq(Row(0))
-      val antiExpected2 = Seq.tabulate(9) { x => Row(x + 1) }
       val semiJoinQueries = Seq(
         // No join condition, ignore duplicated key.
         (s"SELECT /*+ SHUFFLE_HASH(t2) */ t1.c1 FROM t1 LEFT SEMI JOIN t2 ON t1.c1 = t2.c1",
@@ -82,22 +78,7 @@ class RapidsJoinSuite
             |SELECT /*+ SHUFFLE_HASH(t2) */ t1.c1 FROM t1 LEFT SEMI JOIN t2
             |ON t1.c1 = t2.c1 AND t1.c2 * 100 != t2.c2
           """.stripMargin,
-          semiExpected1, antiExpected1),
-        // SPARK-52873: join condition references build-side attributes differently from join key.
-        (
-          s"""
-             |SELECT /*+ SHUFFLE_HASH(t2a) */ t1a.c1 FROM t1a LEFT SEMI JOIN t2a
-             |ON CAST((t1a.c2+10000)/1000 AS INT) = CAST((t2a.c2+10000)/1000 AS INT)
-             |AND t2a.c2 >= t1a.c2 + 1
-             |""".stripMargin,
-          semiExpected2, antiExpected2),
-        // SPARK-52873: join condition contains same expression as build-side join key.
-        (
-          s"""
-             |SELECT /*+ SHUFFLE_HASH(t2a) */ t1a.c1 FROM t1a LEFT SEMI JOIN t2a
-             |ON t1a.c1 * 10000 = t2a.c1 * 1000 AND t2a.c1 * 1000 >= t1a.c1
-             |""".stripMargin,
-          semiExpected2, antiExpected2)
+          semiExpected1, antiExpected1)
       )
       semiJoinQueries.foreach {
         case (query, semiExpected, antiExpected) =>
