@@ -9,7 +9,7 @@ Generated from `tests/src/test/spark330/scala/org/apache/spark/sql/rapids/utils/
 
 - ADJUST_UT total: 35
 - KNOWN_ISSUE total: 85
-- ADJUST_UT unmapped: 3
+- ADJUST_UT unmapped: 0
 - KNOWN_ISSUE unmapped: 85
 
 ## Audit Notes
@@ -21,19 +21,12 @@ Generated from `tests/src/test/spark330/scala/org/apache/spark/sql/rapids/utils/
 
 ## Tracking Status
 
-- Actionable gap (new test coverage needed): `SPARK-34212 Parquet should read decimals correctly`.
-- Mapping quality gaps (rename/alignment needed):
-  - `SPARK-37371: UnionExec should support columnar if all children support columnar`
-  - `SPARK-26677: negated null-safe equality comparison should not filter matched row groups`
+- ADJUST_UT actionable gap: none in spark330 by current name-mapping audit.
 - KNOWN_ISSUE list is expected to remain largely unmapped until issue recovery starts; treat as recovery backlog, not immediate migration queue.
 
-## ADJUST_UT Unmapped (3)
+## ADJUST_UT Unmapped (0)
 
-1. [RapidsDataFrameSetOperationsSuite] `SPARK-37371: UnionExec should support columnar if all children support columnar` (exclude, line 114)
-   - Fuzzy candidates by SPARK-37371: `SPARK-37371: GPU UnionExec should support columnar if all children support columnar` in `tests/src/test/spark330/scala/org/apache/spark/sql/rapids/suites/RapidsDataFrameSetOperationsSuite.scala`
-2. [RapidsParquetQuerySuite] `SPARK-26677: negated null-safe equality comparison should not filter matched row groups` (exclude, line 173)
-   - Fuzzy candidates by SPARK-26677: `SPARK-26677: negated null-safe equality comparison should not filter matched row groupsn Rapids` in `tests/src/test/spark330/scala/org/apache/spark/sql/rapids/suites/RapidsParquetQuerySuite.scala`
-3. [RapidsParquetQuerySuite] `SPARK-34212 Parquet should read decimals correctly` (exclude, line 174)
+_None_
 
 ## KNOWN_ISSUE Unmapped (85)
 

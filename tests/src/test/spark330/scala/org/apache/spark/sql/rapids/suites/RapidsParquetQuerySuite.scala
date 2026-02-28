@@ -23,13 +23,14 @@ import com.nvidia.spark.rapids.GpuFilterExec
 
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.datasources.parquet.ParquetQuerySuite
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetQuerySuite extends ParquetQuerySuite with RapidsSQLTestsBaseTrait {
   import testImplicits._
 
-  test("SPARK-26677: negated null-safe equality comparison should not filter " +
-    "matched row groupsn Rapids") {
+  testRapids("SPARK-26677: negated null-safe equality comparison should not filter " +
+    "matched row groups") {
     withAllParquetReaders {
       withTempPath { path =>
         // Repeated values for dictionary encoding.
@@ -37,6 +38,33 @@ class RapidsParquetQuerySuite extends ParquetQuerySuite with RapidsSQLTestsBaseT
           .write.parquet(path.getAbsolutePath)
         val df = spark.read.parquet(path.getAbsolutePath)
         checkAnswer(stripSparkFilterRapids(df.where("NOT (value <=> 'A')")), df)
+      }
+    }
+  }
+
+  testRapids("SPARK-34212 Parquet should read decimals correctly") {
+    def readParquet(schema: String, path: String): DataFrame = {
+      spark.read.schema(schema).parquet(path)
+    }
+
+    withAllParquetReaders {
+      withTempPath { path =>
+        val filePath = path.toString
+        val df = sql("SELECT 1.0 a, CAST(1.23 AS DECIMAL(17, 2)) b, CAST(1.23 AS DECIMAL(36, 2)) c")
+        df.write.parquet(filePath)
+
+        Seq("a DECIMAL(3, 0)", "b DECIMAL(18, 1)", "c DECIMAL(37, 1)").foreach { schema =>
+          var expectedRows = Seq.empty[org.apache.spark.sql.Row]
+          withSQLConf(SQLConf.PARQUET_VECTORIZED_READER_ENABLED.key -> "false") {
+            expectedRows = readParquet(schema, filePath).collect().toSeq
+          }
+          var actualRows = Seq.empty[org.apache.spark.sql.Row]
+          withSQLConf(SQLConf.PARQUET_VECTORIZED_READER_ENABLED.key -> "true") {
+            actualRows = readParquet(schema, filePath).collect().toSeq
+          }
+          // GPU path should read narrowed-scale decimal schemas without vectorized-read failures.
+          assert(actualRows == expectedRows, s"Unexpected result for schema: $schema")
+        }
       }
     }
   }
