@@ -268,42 +268,44 @@ class GpuDeltaParquetFileFormatBase2(
             .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
           val maybeSerializedDV = tablePath.map(tp =>
             RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
-          val (rowGroupOffsets, rowGroupNumRows) =
-            RapidsDeletionVectors.getRowGroupMetadata(chunkedBlocks)
-          val maybeDvInfo = maybeSerializedDV.map(serializedDV =>
-            new DeletionVector.DeletionVectorInfo(serializedDV, rowGroupOffsets, rowGroupNumRows))
+          closeOnExcept(maybeSerializedDV) { _ =>
+            val (rowGroupOffsets, rowGroupNumRows) =
+              RapidsDeletionVectors.getRowGroupMetadata(chunkedBlocks)
+            val maybeDvInfo = maybeSerializedDV.map(serializedDV =>
+              new DeletionVector.DeletionVectorInfo(serializedDV, rowGroupOffsets, rowGroupNumRows))
 
-          val hostBuf = dataBuffer.getDataHostBuffer()
-          // Duplicate request is ok, and start to use the GPU just after the host
-          // buffer is ready to not block CPU things.
-          GpuSemaphore.acquireIfNecessary(TaskContext.get())
-          val producer = if (maybeDvInfo.isDefined) {
-            // MakeParquetTableWithDVProducer will try to close the hostBuf and dvInfo
-            MakeParquetTableWithDVProducer(useChunkedReader,
-              maxChunkedReaderMemoryUsageSizeBytes, conf,
-              targetBatchSizeBytes, parquetOpts,
-              Array(hostBuf), metrics,
-              dateRebaseMode, timestampRebaseMode,
-              isSchemaCaseSensitive,
-              useFieldId, readDataSchema,
-              clippedParquetSchema, Array(split),
-              debugDumpPrefix, debugDumpAlways,
-              deletionVectorInfos = Array(maybeDvInfo.get)
-            )
-          } else {
-            // MakeParquetTableProducer will try to close the hostBuf
-            MakeParquetTableProducer(useChunkedReader,
-              maxChunkedReaderMemoryUsageSizeBytes, conf,
-              targetBatchSizeBytes, parquetOpts,
-              Array(hostBuf), metrics,
-              dateRebaseMode, timestampRebaseMode,
-              hasInt96Timestamps, isSchemaCaseSensitive,
-              useFieldId, readDataSchema,
-              clippedParquetSchema, Array(split),
-              debugDumpPrefix, debugDumpAlways
-            )
+            val hostBuf = dataBuffer.getDataHostBuffer()
+            // Duplicate request is ok, and start to use the GPU just after the host
+            // buffer is ready to not block CPU things.
+            GpuSemaphore.acquireIfNecessary(TaskContext.get())
+            val producer = if (maybeDvInfo.isDefined) {
+              // MakeParquetTableWithDVProducer will try to close the hostBuf and dvInfo
+              MakeParquetTableWithDVProducer(useChunkedReader,
+                maxChunkedReaderMemoryUsageSizeBytes, conf,
+                targetBatchSizeBytes, parquetOpts,
+                Array(hostBuf), metrics,
+                dateRebaseMode, timestampRebaseMode,
+                isSchemaCaseSensitive,
+                useFieldId, readDataSchema,
+                clippedParquetSchema, Array(split),
+                debugDumpPrefix, debugDumpAlways,
+                deletionVectorInfos = Array(maybeDvInfo.get)
+              )
+            } else {
+              // MakeParquetTableProducer will try to close the hostBuf
+              MakeParquetTableProducer(useChunkedReader,
+                maxChunkedReaderMemoryUsageSizeBytes, conf,
+                targetBatchSizeBytes, parquetOpts,
+                Array(hostBuf), metrics,
+                dateRebaseMode, timestampRebaseMode,
+                hasInt96Timestamps, isSchemaCaseSensitive,
+                useFieldId, readDataSchema,
+                clippedParquetSchema, Array(split),
+                debugDumpPrefix, debugDumpAlways
+              )
+            }
+            CachedGpuBatchIterator(producer, colTypes)
           }
-          CachedGpuBatchIterator(producer, colTypes)
         }
       }
     }

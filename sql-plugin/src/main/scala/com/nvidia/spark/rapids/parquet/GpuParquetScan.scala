@@ -3101,10 +3101,7 @@ abstract class AbstractParquetTableReader(
     debugDumpPrefix: Option[String],
     debugDumpAlways: Boolean) extends GpuDataProducer[Table] with Logging {
 
-  protected val reader: ChunkedReader = ParquetChunkedReader(
-    new JniParquetChunkedReader(chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
-      opts, buffers:_*)
-  )
+  protected val reader: ChunkedReader
 
   private[this] lazy val splitsString = splits.mkString("; ")
 
@@ -3172,6 +3169,12 @@ case class ParquetTableReader(
 ) extends AbstractParquetTableReader(conf, chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
   opts, buffers, metrics, dateRebaseMode, timestampRebaseMode, isSchemaCaseSensitive, useFieldId,
   readDataSchema, clippedParquetSchema, splits, debugDumpPrefix, debugDumpAlways) {
+
+  override protected val reader: ChunkedReader = ParquetChunkedReader(
+    new JniParquetChunkedReader(chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
+      opts, buffers:_*)
+  )
+
   override protected def postProcessChunk(chunk: Table): Table = chunk
 }
 
