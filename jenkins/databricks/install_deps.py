@@ -109,8 +109,7 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.orc--orc-shims--org.apache.orc__orc-shims__*.jar'),
         Artifact('org.apache.orc', 'orc-mapreduce',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.orc--orc-mapreduce--org.apache.orc__orc-mapreduce__*.jar'),
-        Artifact('org.apache.orc', 'orc-format',
-                 f'{prefix_ws_sp_mvn_hadoop}--org.apache.orc--orc-format--org.apache.orc__orc-format__*-shaded-protobuf.jar'),
+
         # Arrow
         Artifact('org.apache.arrow', 'arrow-format',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.arrow--arrow-format--org.apache.arrow__arrow-format__*.jar'),
@@ -229,7 +228,9 @@ def define_deps(spark_version, scala_version):
         # Logging class is in common-utils-other
         Artifact('org.apache.spark', f'spark-common-utils-other_{scala_version}', f'{spark_prefix}--common--utils--common-utils-other-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar'),
         # ConfigEntry and related config classes are in common-config
-        Artifact('org.apache.spark', f'spark-common-config_{scala_version}', f'{spark_prefix}--common--utils--common-config-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar')
+        Artifact('org.apache.spark', f'spark-common-config_{scala_version}', f'{spark_prefix}--common--utils--common-config-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar'),
+        Artifact('org.apache.orc', 'orc-format',
+                 f'{prefix_ws_sp_mvn_hadoop}--org.apache.orc--orc-format--org.apache.orc__orc-format__*-shaded-protobuf.jar')
         ]
 
     return deps
