@@ -21,6 +21,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
+import scala.annotation.nowarn
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.GpuExec
@@ -72,10 +73,9 @@ case class GpuAtomicCreateTableAsSelectExec(
     val schema = CharVarcharUtils.getRawSchema(query.schema, conf).asNullable
     val stagedTable = (catalog.stageCreate(
       ident, getV2Columns(schema, catalog.useNullableQuerySchema),
-      partitioning.toArray, properties.asJava): @annotation.nowarn(
-        // scalastyle:off line.size.limit
-        "cat=deprecation&origin=org.apache.spark.sql.connector.catalog.StagingTableCatalog.stageCreate"))
-        // scalastyle:on line.size.limit
+      partitioning.toArray,
+      properties.asJava): @nowarn(
+      "msg=stageCreate in trait StagingTableCatalog is deprecated"))
 
     writeToTable(catalog, stagedTable, writeOptions, ident, query)
   }

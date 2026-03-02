@@ -46,6 +46,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
+import scala.annotation.nowarn
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 
@@ -138,8 +140,8 @@ trait Spark320PlusShims extends SparkShims with RebaseShims
   override def shouldFailDivOverflow: Boolean = SQLConf.get.ansiEnabled
 
   override def getPartitionFiles(partition: FilePartition): Seq[PartitionedFile] = {
-    (partition.files: @annotation.nowarn(
-      "cat=deprecation&origin=org.apache.spark.sql.execution.datasources.FilePartitionBase.files"))
+    (partition.files: @nowarn(
+      "msg=files in trait FilePartitionBase is deprecated"))
   }
 
   def leafNodeDefaultParallelism(ss: SparkSession): Int = {

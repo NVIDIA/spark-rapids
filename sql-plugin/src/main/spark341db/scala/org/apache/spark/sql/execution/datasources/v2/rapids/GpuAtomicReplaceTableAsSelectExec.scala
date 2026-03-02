@@ -21,6 +21,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2.rapids
 
+import scala.annotation.nowarn
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.GpuExec
@@ -75,17 +76,17 @@ case class GpuAtomicReplaceTableAsSelectExec(
     }
     val staged = if (orCreate) {
       (catalog.stageCreateOrReplace(
-        ident, schema, partitioning.toArray, properties.asJava): @annotation.nowarn(
-        // scalastyle:off line.size.limit
-        "cat=deprecation&origin=org.apache.spark.sql.connector.catalog.StagingTableCatalog.stageCreateOrReplace"))
-        // scalastyle:on line.size.limit
+        ident, schema, partitioning.toArray,
+        properties.asJava
+      ): @nowarn(
+        "msg=stageCreateOrReplace in trait StagingTableCatalog is deprecated"))
     } else if (catalog.tableExists(ident)) {
       try {
         (catalog.stageReplace(
-          ident, schema, partitioning.toArray, properties.asJava): @annotation.nowarn(
-        // scalastyle:off line.size.limit
-        "cat=deprecation&origin=org.apache.spark.sql.connector.catalog.StagingTableCatalog.stageReplace"))
-        // scalastyle:on line.size.limit
+          ident, schema, partitioning.toArray,
+          properties.asJava
+        ): @nowarn(
+          "msg=stageReplace in trait StagingTableCatalog is deprecated"))
       } catch {
         case e: NoSuchTableException =>
           throw QueryCompilationErrors.cannotReplaceMissingTableError(ident, Some(e))
