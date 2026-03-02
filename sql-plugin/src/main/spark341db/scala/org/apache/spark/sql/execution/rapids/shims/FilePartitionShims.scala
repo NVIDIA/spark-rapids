@@ -29,8 +29,7 @@ object FilePartitionShims extends SplitFiles {
   def getPartitions(selectedPartitions: Array[PartitionDirectory]): Array[PartitionedFile] = {
     selectedPartitions.flatMap { p =>
       p.files.map { f =>
-        PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values, 0, f.getLen,
-          Some(SparkPath.fromPath(f.getPath)))
+        PartitionedFileUtil.getPartitionedFile(f, p.values, Some(SparkPath.fromPath(f.getPath)))
       }
     }
   }
