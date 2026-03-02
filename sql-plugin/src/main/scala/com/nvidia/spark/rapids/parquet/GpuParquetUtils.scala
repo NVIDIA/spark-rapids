@@ -58,24 +58,23 @@ object GpuParquetUtils extends Logging {
         oldBlock.getColumns.asScala.filter(c =>
           pathSet.contains(c.getPath.toDotString.toLowerCase(Locale.ROOT)))
       }
-      newBlockMeta(oldBlock.getRowIndexOffset, oldBlock.getRowCount, newColumns.toSeq)
+      newBlockMeta(oldBlock, newColumns.toSeq)
     }
   }
 
   /**
-   * Build a new BlockMetaData
+   * Build a new BlockMetaData from an existing one, but with a new set of column chunks metadata.
    *
-   * @param rowCount the number of rows in this block
+   * @param existingMetadata the existing BlockMetaData to copy row count and row index offset from
    * @param columns the new column chunks to reference in the new BlockMetaData
    * @return the new BlockMetaData
    */
   def newBlockMeta(
-      rowIndexOffset: Long,
-      rowCount: Long,
+      existingMetadata: BlockMetaData,
       columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
     val block = new BlockMetaData
-    block.setRowCount(rowCount)
-    block.setRowIndexOffset(rowIndexOffset)
+    block.setRowCount(existingMetadata.getRowCount)
+    block.setRowIndexOffset(existingMetadata.getRowIndexOffset)
 
     var totalSize: Long = 0
     columns.foreach { column =>

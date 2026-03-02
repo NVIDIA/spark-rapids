@@ -1605,8 +1605,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
           column.getTotalUncompressedSize)
         totalBytesToCopy += columnSize
       }
-      outputBlocks += GpuParquetUtils.newBlockMeta(
-        block.getRowIndexOffset, block.getRowCount, outputColumns.toSeq)
+      outputBlocks += GpuParquetUtils.newBlockMeta(block, outputColumns.toSeq)
     }
     outputBlocks.toSeq
   }
@@ -1843,7 +1842,7 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
             columnTotalSize,
             columnTotalSize)
         }
-        GpuParquetUtils.newBlockMeta(block.getRowIndexOffset, block.getRowCount, newColumns.toSeq)
+        GpuParquetUtils.newBlockMeta(block, newColumns.toSeq)
       }
       newBlocks
     }
