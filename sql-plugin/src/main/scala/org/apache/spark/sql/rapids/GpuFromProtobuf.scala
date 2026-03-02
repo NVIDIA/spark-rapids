@@ -65,7 +65,7 @@ import org.apache.spark.sql.types._
  */
 case class GpuFromProtobuf(
     fullSchema: StructType,
-    decodedTopLevelIndices: Array[Int],
+    decodedSchema: StructType,
     fieldNumbers: Array[Int],
     parentIndices: Array[Int],
     depthLevels: Array[Int],
@@ -81,47 +81,15 @@ case class GpuFromProtobuf(
     defaultStrings: Array[Array[Byte]],
     enumValidValues: Array[Array[Int]],
     enumNames: Array[Array[Array[Byte]]],
-    nestedPrunedFields: Map[String, Seq[String]],
     failOnErrors: Boolean,
     child: Expression)
   extends GpuUnaryExpression with ExpectsInputTypes with NullIntolerantShim {
 
   override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
 
-  /**
-   * Build a pruned schema for nested struct fields:
-   * - Top-level field order still matches fullSchema
-   * - Nested ArrayType(StructType) and StructType are both pruned to decoded children
-   * - Runtime ordinals are remapped by GpuGetStructField/GpuGetArrayStructFields
-   */
-  private val outputSchema: StructType = {
-    val fields = fullSchema.fields.map { field =>
-      nestedPrunedFields.get(field.name) match {
-        case Some(childNames) =>
-          field.dataType match {
-            case ArrayType(st: StructType, containsNull) =>
-              val prunedSt = StructType(
-                st.fields.filter(f => childNames.contains(f.name)))
-              field.copy(dataType = ArrayType(prunedSt, containsNull))
-            case st: StructType =>
-              val prunedSt = StructType(
-                st.fields.filter(f => childNames.contains(f.name)))
-              field.copy(dataType = prunedSt)
-            case _ => field
-          }
-        case None => field
-      }
-    }
-    StructType(fields).asNullable
-  }
-
-  override def dataType: DataType = outputSchema
+  override def dataType: DataType = decodedSchema
 
   override def nullable: Boolean = true
-
-  // Expansion is needed only when not all top-level fields are decoded.
-  private val needsExpansion: Boolean =
-    decodedTopLevelIndices.length != fullSchema.fields.length
 
   @transient private lazy val schema = new ProtobufSchemaDescriptor(
     fieldNumbers, parentIndices, depthLevels, wireTypes, outputTypeIds, encodings,
@@ -129,7 +97,6 @@ case class GpuFromProtobuf(
     defaultStrings, enumValidValues, enumNames)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    val numRows = input.getRowCount.toInt
     val jniResult = try {
       Protobuf.decodeToStruct(input.getBase, schema, failOnErrors)
     } catch {
@@ -137,51 +104,13 @@ case class GpuFromProtobuf(
         throw new org.apache.spark.SparkException("Malformed protobuf message", e)
     }
 
-    // Expand only at top-level: insert null columns for non-decoded top-level fields.
-    val expanded = if (needsExpansion) {
-      withResource(jniResult) { decoded =>
-        expandSchema(decoded, numRows)
+    // Apply input nulls to output
+    if (input.getBase.hasNulls) {
+      withResource(jniResult) { _ =>
+        jniResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase)
       }
     } else {
       jniResult
-    }
-
-    // Apply input nulls to output
-    if (input.getBase.hasNulls) {
-      withResource(expanded) { _ =>
-        expanded.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase)
-      }
-    } else {
-      expanded
-    }
-  }
-
-  /**
-   * Expand decoded top-level struct to match outputSchema by inserting null columns for
-   * non-decoded top-level fields.
-   */
-  private def expandSchema(decoded: cudf.ColumnVector, numRows: Int): cudf.ColumnVector = {
-    val children = new Array[cudf.ColumnVector](fullSchema.fields.length)
-    var decodedIdx = 0
-
-    try {
-      for (i <- fullSchema.fields.indices) {
-        if (decodedIdx < decodedTopLevelIndices.length &&
-            decodedTopLevelIndices(decodedIdx) == i) {
-          withResource(decoded.getChildColumnView(decodedIdx)) { childView =>
-            children(i) = childView.copyToColumnVector()
-          }
-          decodedIdx += 1
-        } else {
-          // This field was not decoded — create null column
-          children(i) = GpuColumnVector.columnVectorFromNull(
-            numRows, outputSchema.fields(i).dataType)
-        }
-      }
-
-      cudf.ColumnVector.makeStruct(numRows, children: _*)
-    } finally {
-      children.foreach(col => if (col != null) col.close())
     }
   }
 }
@@ -191,27 +120,6 @@ object GpuFromProtobuf {
   val ENC_FIXED   = 1
   val ENC_ZIGZAG  = 2
   val ENC_ENUM_STRING = 3
-
-  // Thread-local registry for pruned field ordinal mappings.
-  // Set by ProtobufExprShims.convertToGpu during plan conversion (single-threaded per query),
-  // consumed by GpuGetStructFieldMeta / GpuGetArrayStructFieldsMeta during the same conversion.
-  // A ThreadLocal is necessary here because the expression metas are general-purpose overrides
-  // (not protobuf-specific) and their parent meta chain doesn't contain the protobuf meta.
-  private val prunedFieldOrdinals = new ThreadLocal[Map[String, Int]]() {
-    override def initialValue(): Map[String, Int] = Map.empty
-  }
-
-  def registerPrunedFields(mappings: Map[String, Int]): Unit = {
-    prunedFieldOrdinals.set(prunedFieldOrdinals.get() ++ mappings)
-  }
-
-  def getPrunedOrdinal(fieldName: String): Int = {
-    prunedFieldOrdinals.get().getOrElse(fieldName, -1)
-  }
-
-  def clearPrunedFields(): Unit = {
-    prunedFieldOrdinals.set(Map.empty)
-  }
 
   /**
    * Maps a Spark DataType to the corresponding cuDF native type ID.

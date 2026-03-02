@@ -104,6 +104,9 @@ object ProtobufExprShims {
   private[this] val sparkProtobufUtilsObjectClassName =
     "org.apache.spark.sql.protobuf.utils.ProtobufUtils$"
 
+  val PRUNED_ORDINAL_TAG =
+    new org.apache.spark.sql.catalyst.trees.TreeNodeTag[Int]("GPU_PRUNED_ORDINAL")
+
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     try {
       val clazz = ShimReflectionUtils.loadClass(protobufDataToCatalystClassName)
@@ -270,6 +273,11 @@ object ProtobufExprShims {
                 nestedMsgDesc: AnyRef): Unit = {
 
               val currentIdx = flatFields.size
+
+              if (depth >= 10) {
+                willNotWorkOnGpu("Protobuf nesting depth exceeds maximum supported depth of 10")
+                return
+              }
 
               val outputType = sf.dataType match {
                 case ArrayType(elemType, _) =>
@@ -653,26 +661,43 @@ object ProtobufExprShims {
          * @param allFieldNames All field names in the full schema
          * @return Set of field names that are actually required
          */
-        private def analyzeRequiredFields(allFieldNames: Set[String]): Set[String] = {
-          val parentPlanOpt = findParentPlanMeta()
+        private var targetExprsToRemap: Seq[Expression] = Seq.empty
 
-          parentPlanOpt match {
-            case Some(planMeta) =>
-              analyzeDownstreamProject(planMeta) match {
-                case Some(fields) if fields.nonEmpty =>
-                  fields
-                case _ =>
-                  planMeta.parent match {
-                    case Some(grandParentMeta: SparkPlanMeta[_]) =>
-                      analyzeDownstreamProject(grandParentMeta) match {
-                        case Some(fields) if fields.nonEmpty => fields
-                        case _ => allFieldNames
-                      }
-                    case _ => allFieldNames
-                  }
-              }
-            case None =>
-              allFieldNames
+        private def analyzeRequiredFields(allFieldNames: Set[String]): Set[String] = {
+          val fieldReqs = mutable.Map[String, Option[Set[String]]]()
+          var hasDirectStructRef = false
+          val holder = () => { hasDirectStructRef = true }
+
+          var currentMeta: Option[SparkPlanMeta[_]] = findParentPlanMeta()
+          var foundProject = false
+          var safeToPrune = true
+          val collectedExprs = mutable.ArrayBuffer[Expression]()
+
+          while (currentMeta.isDefined && !foundProject && safeToPrune) {
+            currentMeta.get.wrapped match {
+              case p: ProjectExec =>
+                collectedExprs ++= p.projectList
+                p.projectList.foreach(collectStructFieldReferences(_, fieldReqs, holder))
+                foundProject = true
+              case f: org.apache.spark.sql.execution.FilterExec =>
+                collectedExprs += f.condition
+                collectStructFieldReferences(f.condition, fieldReqs, holder)
+                currentMeta = currentMeta.get.parent match {
+                  case Some(pm: SparkPlanMeta[_]) => Some(pm)
+                  case _ => None
+                }
+              case _ =>
+                safeToPrune = false
+            }
+          }
+
+          if (!safeToPrune || !foundProject || hasDirectStructRef || fieldReqs.isEmpty) {
+            targetExprsToRemap = Seq.empty
+            allFieldNames
+          } else {
+            nestedFieldRequirements = fieldReqs.toMap
+            targetExprsToRemap = collectedExprs.toSeq
+            fieldReqs.keySet.toSet
           }
         }
 
@@ -698,39 +723,6 @@ object ProtobufExprShims {
         // Populated during analyzeDownstreamProject, used by addChildFieldsFromStruct
         private var nestedFieldRequirements: Map[String, Option[Set[String]]] = Map.empty
 
-        /**
-         * Analyze a Project plan to find which struct fields are actually used.
-         * This looks for GetStructField expressions that reference our protobuf output.
-         * Also detects nested field access (e.g., decoded.ad_info.winfoid) for nested
-         * schema projection.
-         */
-        private def analyzeDownstreamProject(planMeta: SparkPlanMeta[_]): Option[Set[String]] = {
-          planMeta.wrapped match {
-            case p: ProjectExec =>
-              // Collect field references with nested child tracking
-              // Key = top-level field name
-              // Value = None (need whole field) or Some(Set(...)) (only need specific children)
-              val fieldReqs = mutable.Map[String, Option[Set[String]]]()
-              var hasDirectStructRef = false
-
-              p.projectList.foreach { expr =>
-                collectStructFieldReferences(expr, fieldReqs, hasDirectStructRefHolder = () => {
-                  hasDirectStructRef = true
-                })
-              }
-
-              if (hasDirectStructRef) {
-                None
-              } else if (fieldReqs.nonEmpty) {
-                nestedFieldRequirements = fieldReqs.toMap
-                Some(fieldReqs.keySet.toSet)
-              } else {
-                None
-              }
-            case _ =>
-              None
-          }
-        }
 
         /**
          * Get the field name from a GetStructField expression using its ordinal and schema.
@@ -838,18 +830,30 @@ object ProtobufExprShims {
          *    (when accessing from a downstream ProjectExec)
          */
         private def isProtobufStructReference(expr: Expression): Boolean = {
-          // Check if expr is a ProtobufDataToCatalyst expression
-          if (expr.getClass.getName.contains("ProtobufDataToCatalyst")) {
+          if (expr eq e) {
             return true
           }
 
-          // Prefer exact attribute identity. Avoid matching by schema shape because unrelated
-          // struct columns can share the same field names/types.
-          val protobufOutputExprId: Option[org.apache.spark.sql.catalyst.expressions.ExprId] =
+          // Catalyst may create duplicate ProtobufDataToCatalyst
+          // instances for each GetStructField access. Match copies
+          // by class + identical input child so that
+          // analyzeRequiredFields detects all field accesses in one
+          // pass, keeping schema projection correct.
+          if (expr.getClass == e.getClass &&
+              expr.children.nonEmpty &&
+              e.children.nonEmpty &&
+              ((expr.children.head eq e.children.head) ||
+                expr.children.head.semanticEquals(
+                  e.children.head))) {
+            return true
+          }
+
+          val protobufOutputExprId
+            : Option[org.apache.spark.sql.catalyst.expressions.ExprId] =
             parent.flatMap { meta =>
               meta.wrapped match {
-                case alias: org.apache.spark.sql.catalyst.expressions.Alias
-                    if alias.child eq e =>
+                case alias: org.apache.spark.sql.catalyst.expressions
+                      .Alias if alias.child eq e =>
                   Some(alias.exprId)
                 case _ => None
               }
@@ -863,11 +867,6 @@ object ProtobufExprShims {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = {
-          GpuFromProtobuf.clearPrunedFields()
-
-          // Build pruned fields map for ALL struct types (both repeated and non-repeated).
-          // Pruning is handled via ordinal remapping in GpuGetStructFieldMeta /
-          // GpuGetArrayStructFieldsMeta.
           val prunedFieldsMap: Map[String, Seq[String]] = nestedFieldRequirements.collect {
             case (fieldName, Some(childNames)) =>
               val fieldIdx = fullSchema.fieldIndex(fieldName)
@@ -887,25 +886,90 @@ object ProtobufExprShims {
               }
           }
 
-          val ordinalMappings = prunedFieldsMap.flatMap { case (parentName, childNames) =>
-            val fieldIdx = fullSchema.fieldIndex(parentName)
-            fullSchema.fields(fieldIdx).dataType match {
-              case ArrayType(_: StructType, _) | _: StructType =>
-                childNames.zipWithIndex.map { case (name, idx) => name -> idx }
-              case _ => Seq.empty
+          def registerExprs(expr: Expression): Unit = {
+            expr match {
+              case gsf @ GetStructField(childExpr, ordinal, nameOpt) =>
+                childExpr match {
+                  case GetStructField(innerChild, innerOrdinal, innerNameOpt)
+                      if isProtobufStructReference(innerChild) =>
+                    val parentName = getFieldName(innerOrdinal, innerNameOpt, fullSchema)
+                    val parentType = fullSchema.fields(innerOrdinal).dataType
+                    val childSchema = parentType match {
+                      case st: StructType => st
+                      case ArrayType(st: StructType, _) => st
+                      case _ => null
+                    }
+                    if (childSchema != null) {
+                      val childName = getFieldName(ordinal, nameOpt, childSchema)
+                      prunedFieldsMap.get(parentName).foreach { orderedChildren =>
+                        val runtimeOrd = orderedChildren.indexOf(childName)
+                        if (runtimeOrd >= 0) {
+                          gsf.setTagValue(ProtobufExprShims.PRUNED_ORDINAL_TAG, runtimeOrd)
+                        }
+                      }
+                    }
+                  case _ if isProtobufStructReference(childExpr) =>
+                    val runtimeOrd = decodedTopLevelIndices.indexOf(ordinal)
+                    if (runtimeOrd >= 0) {
+                      gsf.setTagValue(ProtobufExprShims.PRUNED_ORDINAL_TAG, runtimeOrd)
+                    }
+                  case _ =>
+                }
+
+              case gasf @ GetArrayStructFields(childExpr, field, _, _,
+                _) =>
+                childExpr match {
+                  case GetStructField(innerChild, innerOrdinal, innerNameOpt)
+                      if isProtobufStructReference(innerChild) =>
+                    val parentName = getFieldName(innerOrdinal, innerNameOpt, fullSchema)
+                    val childName = field.name
+                    prunedFieldsMap.get(parentName).foreach { orderedChildren =>
+                      val runtimeOrd = orderedChildren.indexOf(childName)
+                      if (runtimeOrd >= 0) {
+                        gasf.setTagValue(ProtobufExprShims.PRUNED_ORDINAL_TAG, runtimeOrd)
+                      }
+                    }
+                  case _ =>
+                }
+              case _ =>
             }
+            expr.children.foreach(registerExprs)
           }
-          if (ordinalMappings.nonEmpty) {
-            GpuFromProtobuf.registerPrunedFields(ordinalMappings)
+
+          targetExprsToRemap.foreach(registerExprs)
+
+          val decodedSchema = {
+            val decodedFields = decodedTopLevelIndices.map { idx =>
+              val field = fullSchema.fields(idx)
+              prunedFieldsMap.get(field.name) match {
+                case Some(childNames) =>
+                  field.dataType match {
+                    case ArrayType(st: StructType, cn) =>
+                      val pruned = StructType(
+                        st.fields.filter(f =>
+                          childNames.contains(f.name)))
+                      field.copy(dataType = ArrayType(pruned, cn))
+                    case st: StructType =>
+                      val pruned = StructType(
+                        st.fields.filter(f =>
+                          childNames.contains(f.name)))
+                      field.copy(dataType = pruned)
+                    case _ => field
+                  }
+                case None => field
+              }
+            }
+            StructType(decodedFields.map(f =>
+              f.copy(nullable = true)))
           }
 
           GpuFromProtobuf(
-            fullSchema, decodedTopLevelIndices, flatFieldNumbers, flatParentIndices,
+            fullSchema, decodedSchema,
+            flatFieldNumbers, flatParentIndices,
             flatDepthLevels, flatWireTypes, flatOutputTypeIds, flatEncodings,
             flatIsRepeated, flatIsRequired, flatHasDefaultValue, flatDefaultInts,
             flatDefaultFloats, flatDefaultBools, flatDefaultStrings, flatEnumValidValues,
-            flatEnumNames,
-            prunedFieldsMap, failOnErrors, child)
+            flatEnumNames, failOnErrors, child)
         }
       }
     )
