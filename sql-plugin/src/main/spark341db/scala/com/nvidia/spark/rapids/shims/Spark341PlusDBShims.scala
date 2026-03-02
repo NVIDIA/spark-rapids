@@ -204,11 +204,15 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
   override def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan,
       parent: Option[SparkPlan]): Boolean = {
     p match {
-      case ColumnarToRowExec(aqe: AQEShuffleReadExec)
-        if aqe.child.isInstanceOf[ShuffleQueryStageExec] =>
-        parent match {
-          case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast => true
-          case Some(bhnlj: BroadcastNestedLoopJoinExec) if bhnlj.isExecutorBroadcast => true
+      case ColumnarToRowExec(aqe: AQEShuffleReadExec) =>
+        aqe.child match {
+          case _: ShuffleQueryStageExec =>
+            parent match {
+              case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast => true
+              case Some(bhnlj: BroadcastNestedLoopJoinExec)
+                if bhnlj.isExecutorBroadcast => true
+              case _ => false
+            }
           case _ => false
         }
       case _ => false
@@ -223,9 +227,11 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
    */
   override def getShuffleFromCToRWithExecBroadcastAQECoalPart(p: SparkPlan): Option[SparkPlan] = {
     p match {
-      case ColumnarToRowExec(aqe: AQEShuffleReadExec)
-        if aqe.child.isInstanceOf[ShuffleQueryStageExec] =>
-        Some(aqe.child.asInstanceOf[ShuffleQueryStageExec])
+      case ColumnarToRowExec(aqe: AQEShuffleReadExec) =>
+        aqe.child match {
+          case s: ShuffleQueryStageExec => Some(s)
+          case _ => None
+        }
       case _ => None
     }
   }
