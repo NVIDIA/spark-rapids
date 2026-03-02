@@ -136,14 +136,18 @@ object GpuShuffleEnv extends Logging {
     conf.getBoolean("spark.authenticate", false)
   }
 
-  // Returns true if row-based checksum is enabled, which is not supported
-  // by the RAPIDS Shuffle Manager
+  // Returns true if the order-independent (row-based) checksum feature is enabled.
+  // This Spark 4.1+ feature (SPARK-51756, SPARK-53575) computes row-based checksums
+  // in shuffle writers to detect non-deterministic output across task retries.
+  // Not yet supported by the RAPIDS Shuffle Manager (would require GPU-side checksum).
+  // Note: this is different from the older spark.shuffle.checksum.enabled (since Spark 3.2)
+  // which is for IO-level corruption diagnosis and IS supported by RAPIDS shuffle.
   def isRowBasedChecksumEnabled: Boolean = {
     val conf = SparkEnv.get.conf
-    // Row-based checksum feature was added in Spark 4.1.x (SPARK-51756).
-    // Fully supporting this feature would require kernel development to compute
-    // checksums on the GPU side.
-    conf.getBoolean("spark.shuffle.checksum.enabled", false)
+    conf.getBoolean(
+      "spark.sql.shuffle.orderIndependentChecksum.enabled", false) ||
+    conf.getBoolean(
+      "spark.sql.shuffle.orderIndependentChecksum.enableFullRetryOnMismatch", false)
   }
 
   //
