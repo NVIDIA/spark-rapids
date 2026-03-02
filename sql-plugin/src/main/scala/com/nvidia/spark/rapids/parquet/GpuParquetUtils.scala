@@ -16,11 +16,11 @@
 
 package com.nvidia.spark.rapids.parquet
 
-
 import java.util.Locale
 
 import scala.collection.JavaConverters._
 
+import com.nvidia.spark.rapids.shims.parquet.GpuParquetUtilsShims
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData, ColumnPath}
 import org.apache.parquet.schema.MessageType
 
@@ -72,17 +72,6 @@ object GpuParquetUtils extends Logging {
   def newBlockMeta(
       existingMetadata: BlockMetaData,
       columns: Seq[ColumnChunkMetaData]): BlockMetaData = {
-    val block = new BlockMetaData
-    block.setRowCount(existingMetadata.getRowCount)
-    block.setRowIndexOffset(existingMetadata.getRowIndexOffset)
-
-    var totalSize: Long = 0
-    columns.foreach { column =>
-      block.addColumn(column)
-      totalSize += column.getTotalUncompressedSize
-    }
-    block.setTotalByteSize(totalSize)
-
-    block
+    GpuParquetUtilsShims.newBlockMeta(existingMetadata, columns)
   }
 }
