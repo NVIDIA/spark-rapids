@@ -32,8 +32,10 @@ object WritePythonUDFUtils {
       argOffsets: Array[Array[Int]],
       argNames: Option[Array[Array[Option[String]]]] = None,
       profiler: Option[String] = None): Unit = {
-    val udfLogMaxEntries = 20
-    val udfLogLevel = "ERROR"
+    // spark.sql.pyspark.udf.logging.maxEntries (default 0 = no logs collected)
+    // spark.sql.pyspark.udf.logging.logLevel (default "WARNING")
+    val udfLogMaxEntries = 0
+    val udfLogLevel = "WARNING"
     
     if (argNames.isDefined) {
       val argMetas = argOffsets.zip(argNames.get).map { case (idxs, names) =>
