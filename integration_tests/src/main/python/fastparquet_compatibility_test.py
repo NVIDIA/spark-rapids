@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2025, NVIDIA CORPORATION.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -232,16 +232,20 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
     gen = StructGen([('a', column_gen),
                      ('part', IntegerGen(nullable=False))
                      ], nullable=False)
+
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf = copy_and_update(rebase_write_corrected_conf, {'spark.sql.adaptive.enabled': 'false'})
+
     # Write data out with Spark RAPIDS plugin.
     with_gpu_session(
         lambda spark: gen_df(spark, gen, 2048).repartition(1).write.mode('overwrite').parquet(data_path),
-        conf=rebase_write_corrected_conf
+        conf=conf
     )
 
     try:
         # For now, this compares the results of reading back the GPU-written data, via fastparquet and GPU.
         assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path=data_path, local_data_path=local_data_path),
-                                             conf=rebase_write_corrected_conf)
+                                             conf=conf)
     finally:
         # Clean up local copy of data.
         delete_local_directory(local_base_path)

@@ -249,29 +249,37 @@ def test_make_array_empty_input(empty_type):
 
 @pytest.mark.parametrize('data_gen', single_level_array_gens, ids=idfn)
 def test_orderby_array_unique(data_gen):
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf = {'spark.sql.adaptive.enabled': 'false'}
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int',
+        conf=conf)
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(ArrayGen(short_gen, max_length=10), max_length=10),
                                       ArrayGen(ArrayGen(string_gen, max_length=10), max_length=10)], ids=idfn)
 def test_orderby_array_of_arrays(data_gen):
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
     assert_gpu_and_cpu_are_equal_sql(
     lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int',
+        conf={'spark.sql.adaptive.enabled': 'false'})
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([['child0', byte_gen],
                                                           ['child1', string_gen],
                                                           ['child2', float_gen]]))], ids=idfn)
 def test_orderby_array_of_structs(data_gen):
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf = {'spark.sql.adaptive.enabled': 'false'}
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : append_unique_int_col_to_df(spark, unary_op_df(spark, data_gen)),
         'array_table',
-        'select array_table.a, array_table.uniq_int from array_table order by uniq_int')
+        'select array_table.a, array_table.uniq_int from array_table order by uniq_int',
+        conf=conf)
 
 
 @pytest.mark.parametrize('data_gen', [byte_gen, short_gen, int_gen, long_gen,

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -459,7 +459,9 @@ def test_concurrent_writer(spark_tmp_path):
         data_path,
         copy_and_update(
             # 26 > 25, will not fall back to single writer
-            {"spark.sql.maxConcurrentOutputFileWriters": 26}
+            # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+            {"spark.sql.maxConcurrentOutputFileWriters": 26,
+             'spark.sql.adaptive.enabled': 'false'}
         ))
 
 
@@ -475,7 +477,9 @@ def test_fallback_to_single_writer_from_concurrent_writer(spark_tmp_path):
         data_path,
         copy_and_update(
             # 10 < 25, will fall back to single writer
-            {"spark.sql.maxConcurrentOutputFileWriters": 10},
+            # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+            {"spark.sql.maxConcurrentOutputFileWriters": 10,
+             'spark.sql.adaptive.enabled': 'false'},
             {"spark.rapids.sql.concurrentWriterPartitionFlushSize": 64 * 1024 * 1024}
         ))
 
