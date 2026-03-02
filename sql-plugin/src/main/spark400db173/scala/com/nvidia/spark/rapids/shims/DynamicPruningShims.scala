@@ -25,16 +25,12 @@ import org.apache.spark.sql.catalyst.expressions.{DynamicPruningExpression, Expr
  * Databricks 17.3 version where DynamicPruningExpression added dynamicPruningInfo parameter.
  */
 object DynamicPruningShims {
-  // Extractor for pattern matching - works for all versions since .child exists in all
   def unapply(expr: Expression): Option[Expression] = expr match {
     case dpe: DynamicPruningExpression => Some(dpe.child)
     case _ => None
   }
 
-  // Constructor for creating new instances
   def apply(child: Expression): DynamicPruningExpression = {
-    // Databricks 17.3: Pass None for dynamicPruningInfo (second parameter)
     DynamicPruningExpression(child, None)
   }
 }
-
