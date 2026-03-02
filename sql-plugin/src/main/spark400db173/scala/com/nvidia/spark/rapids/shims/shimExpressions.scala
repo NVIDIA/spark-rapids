@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
-{"spark": "332db"}
-{"spark": "341db"}
-{"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -26,15 +23,15 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.trees.TreePattern._
 
 trait ShimGetArrayStructFields extends ExtractValue {
-  override def nodePatternsInternal(): Seq[TreePattern] = Seq(EXTRACT_ARRAY_SUBFIELDS)
+  override def nodePatternsInternal: Seq[TreePattern] = Seq(EXTRACT_ARRAY_SUBFIELDS)
 }
 
 trait ShimGetArrayItem extends ExtractValue {
-  override def nodePatternsInternal(): Seq[TreePattern] = Seq(GET_ARRAY_ITEM)
+  override def nodePatternsInternal: Seq[TreePattern] = Seq(GET_ARRAY_ITEM)
 }
 
 trait ShimGetStructField extends ExtractValue {
-  override def nodePatternsInternal(): Seq[TreePattern] = Seq(GET_STRUCT_FIELD)
+  override def nodePatternsInternal: Seq[TreePattern] = Seq(GET_STRUCT_FIELD)
 }
 
 // Fallback to the default definition of `deterministic`
