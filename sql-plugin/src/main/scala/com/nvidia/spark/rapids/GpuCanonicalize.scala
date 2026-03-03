@@ -51,8 +51,7 @@ object GpuCanonicalize {
     case a: AttributeReference =>
       AttributeReference("none", TrampolineUtil.asNullable(a.dataType))(exprId = a.exprId)
     case GetStructField(child, ordinal, Some(_)) => GetStructField(child, ordinal, None)
-    case GpuGetStructField(child, ordinal, Some(_)) =>
-      GpuGetStructField(child, ordinal, None)
+    case GpuGetStructField(child, ordinal, Some(_)) => GpuGetStructField(child, ordinal, None)
     case _ => e
   }
 
