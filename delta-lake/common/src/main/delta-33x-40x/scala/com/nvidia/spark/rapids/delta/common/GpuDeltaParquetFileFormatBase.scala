@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@
 package com.nvidia.spark.rapids.delta.common
 
 import ai.rapids.cudf._
-import ai.rapids.cudf.HostColumnVector._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.parquet._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -35,7 +35,7 @@ import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, Par
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
 import org.apache.spark.sql.delta.actions._
-import org.apache.spark.sql.delta.deletionvectors.StoredBitmap
+import org.apache.spark.sql.delta.deletionvectors.{RapidsDeletionVectorStore, RapidsDeletionVectorStoredBitmap, StoredBitmap}
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
@@ -237,7 +237,12 @@ class GpuDeltaParquetFileFormatBase(
       fileScan.rapidsConf,
       fileScan.allMetrics,
       useMetadataRowIndex = false,
-      tablePath)
+      tablePath,
+      // queryUsesInputFile is used to disable combining small files in the multi-threaded reader.
+      // When it is true, combining small files is disabled. Since we don't currently support
+      // combining small files with deletion vectors, we need to disable it when deletion vectors
+      // exist (which is when tablePath is defined).
+      queryUsesInputFile = hasTablePath || fileScan.queryUsesInputFile)
   }
 
   /**
@@ -315,13 +320,14 @@ class DeltaMultiFileReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
     useMetadataRowIndex: Boolean,
-    tablePath: Option[String]
+    tablePath: Option[String],
+    queryUsesInputFile: Boolean
     ) extends GpuParquetMultiFilePartitionReaderFactory(sqlConf, broadcastedConf,
       dataSchema, readDataSchema, partitionSchema,
       filters, rapidsConf,
       poolConfBuilder = ThreadPoolConfBuilder(rapidsConf),
       metrics = metrics,
-      queryUsesInputFile = true) {
+      queryUsesInputFile = queryUsesInputFile) {
 
   private val schemaWithIndices = readDataSchema.fields.zipWithIndex
   def findColumn(name: String): Option[ColumnMetadata] = {
@@ -397,6 +403,38 @@ class DeltaMultiFileParquetPartitionReader(
 }
 
 object RapidsDeletionVectorUtils {
+
+  /**
+   * Reads the deletion vector bitmap for a given deletion vector descriptor and returns it
+   * as a serialized standard bitmap in a HostMemoryBuffer. If the deletion vector descriptor
+   * does not exist, an empty bitmap will be returned.
+   */
+  def loadDeletionVector(fileIO: RapidsFileIO,
+      dvDescriptorOpt: Option[String],
+      filterTypeOpt: Option[RowIndexFilterType],
+      tablePath: String): HostMemoryBuffer = {
+    if (dvDescriptorOpt.isDefined && filterTypeOpt.isDefined) {
+      val dvDesc = DeletionVectorDescriptor.deserializeFromBase64(dvDescriptorOpt.get)
+
+      // The filter type should always be IF_CONTAINED for deletion vectors
+      // as the bitmap represents the rows to be deleted.
+      // See [[RowIndexFilterType]] for more details.
+      filterTypeOpt.get match {
+        case RowIndexFilterType.IF_CONTAINED =>
+          val dvStore = RapidsDeletionVectorStore.createInstance(fileIO)
+          val storedBitmap = RapidsDeletionVectorStoredBitmap(dvDesc, new Path(tablePath))
+          storedBitmap.load(dvStore)
+        case unexpectedFilterType => throw new IllegalStateException(
+          s"Unexpected row index filter type for Deletion Vectors. " +
+            s"Expected: ${RowIndexFilterType.IF_CONTAINED}; Actual: ${unexpectedFilterType}")
+      }
+    } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
+      throw new IllegalStateException(
+        "Both dvDescriptorOpt and filterTypeOpt must be defined together or both absent.")
+    } else {
+      RapidsDeletionVectorStoredBitmap.serializedEmptyBitmap()
+    }
+  }
 
   /**
    * Processes a {@link ColumnarBatch} by applying row deletion vectors and returns a new batch

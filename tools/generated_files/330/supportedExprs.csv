@@ -523,6 +523,9 @@ Sequence,S,`sequence`,None,project,step,NA,S,S,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NS,NA
 Sequence,S,`sequence`,None,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,PS,NA,NA,NA,NA,NA
 Sha1,S,`sha1`; `sha`,None,project,input,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA
 Sha1,S,`sha1`; `sha`,None,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+Sha2,S,`sha2`,None,project,input,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA
+Sha2,S,`sha2`,None,project,bitLength,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+Sha2,S,`sha2`,None,project,result,NA,NA,NA,NA,NA,NA,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 ShiftLeft,S,`shiftleft`,None,project,value,NA,NA,NA,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 ShiftLeft,S,`shiftleft`,None,project,amount,NA,NA,NA,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
 ShiftLeft,S,`shiftleft`,None,project,result,NA,NA,NA,S,S,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA

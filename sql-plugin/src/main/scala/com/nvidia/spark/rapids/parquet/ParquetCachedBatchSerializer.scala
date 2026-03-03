@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetVariantShims, SparkShimImpl}
 import com.nvidia.spark.rapids.shims.parquet.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
@@ -1218,7 +1218,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
       override def next(): CachedBatch = myIter.next()
 
-      override def hasNext(): Boolean = myIter.hasNext
+      override def hasNext: Boolean = myIter.hasNext
 
       val myIter = iter.asInstanceOf[Iterator[ColumnarBatch]].flatMap { batch =>
         val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
@@ -1304,6 +1304,9 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
     // From 3.3.2, Spark schema converter needs this conf
     ParquetLegacyNanoAsLongShims.setupLegacyParquetNanosAsLongForPCBS(hadoopConf)
 
+    // From 4.1.1, Spark will check this variant config
+    ParquetVariantShims.setupParquetVariantConfig(hadoopConf, sqlConf)
+
     hadoopConf
   }
 
@@ -1375,7 +1378,9 @@ private[rapids] class ParquetOutputFileFormat {
     val validating = getValidation(conf)
 
     val writeSupport = new ParquetWriteSupport().asInstanceOf[WriteSupport[InternalRow]]
-    val init = writeSupport.init(conf)
+    val init = writeSupport.init(conf): @scala.annotation.nowarn(
+      "cat=deprecation&msg=method init in class WriteSupport is deprecated"
+    )
     val writer = new ParquetFileWriter(output, init.getSchema,
       Mode.CREATE, blockSize, maxPaddingSize)
     writer.start()

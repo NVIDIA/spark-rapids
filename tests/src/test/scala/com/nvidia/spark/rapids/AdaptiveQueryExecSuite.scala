@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -669,15 +669,14 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "800")
 
     withGpuSparkSession(spark => {
-      import spark.implicits._
 
       spark
           .range(0, 1000, 1, 10)
           .select(
-            when('id < 250, 249)
-                .when('id >= 750, 1000)
-                .otherwise('id).as("key1"),
-            'id as "value1")
+            when(col("id") < 250, 249)
+                .when(col("id") >= 750, 1000)
+                .otherwise(col("id")).as("key1"),
+            col("id") as "value1")
           .createOrReplaceTempView("skewData1")
 
       // note that the skew amount here has been modified compared to the original Spark test to
@@ -686,9 +685,9 @@ class AdaptiveQueryExecSuite
       spark
           .range(0, 1000, 1, 10)
           .select(
-            when('id < 500, 249)
-                .otherwise('id).as("key2"),
-            'id as "value2")
+            when(col("id") < 500, 249)
+                .otherwise(col("id")).as("key2"),
+            col("id") as "value2")
           .createOrReplaceTempView("skewData2")
 
       // invoke the test function

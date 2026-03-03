@@ -44,9 +44,9 @@ and the the
 
 #### Running Unit Tests Against Specific Apache Spark Versions
 You can run the unit tests against different versions of Spark using the different profiles. The
-default version runs against Spark 3.2.0, to run against a specific version use a buildver property:
+default version runs against Spark 3.3.0, to run against a specific version use a buildver property:
 
-- `-Dbuildver=320` (Spark 3.2.0)
+- `-Dbuildver=330` (Spark 3.3.0)
 - `-Dbuildver=350` (Spark 3.5.0)
 
 etc

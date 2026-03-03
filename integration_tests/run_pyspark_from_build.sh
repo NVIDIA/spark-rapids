@@ -82,7 +82,7 @@ else
     # PySpark uses ".dev0" for "-SNAPSHOT" and either ".dev" for "preview" or ".devN" for "previewN"
     # https://github.com/apache/spark/blob/66f25e314032d562567620806057fcecc8b71f08/dev/create-release/release-build.sh#L267
     VERSION_STRING=$(PYTHONPATH=${SPARK_HOME}/python:${PY4J_FILE} python -c \
-        "import pyspark, re; print(re.sub('\.dev[012]?$', '', pyspark.__version__))"
+        "import pyspark, re; print(re.sub(r'\.dev[012]?$', '', pyspark.__version__))"
     )
     SCALA_VERSION=`$SPARK_HOME/bin/pyspark --version 2>&1| grep Scala | awk '{split($4,v,"."); printf "%s.%s", v[1], v[2]}'`
 
@@ -452,6 +452,13 @@ else
     fi
     export PYSP_TEST_spark_rapids_memory_gpu_allocSize=${PYSP_TEST_spark_rapids_memory_gpu_allocSize:-'1536m'}
 
+    # Retry coverage tracking - detect memory allocations not covered by withRetry.
+    # Enable by setting SPARK_RAPIDS_RETRY_COVERAGE_TRACKING=true before running tests.
+    # See AllocationRetryCoverageTracker.scala and https://github.com/NVIDIA/spark-rapids/issues/13672
+    if [[ -n "${SPARK_RAPIDS_RETRY_COVERAGE_TRACKING}" ]]; then
+        export PYSP_TEST_spark_executorEnv_SPARK_RAPIDS_RETRY_COVERAGE_TRACKING="${SPARK_RAPIDS_RETRY_COVERAGE_TRACKING}"
+    fi
+
     # Turns on $LOAD_HYBRID_BACKEND and setup the filepath of hybrid backend jars, to activate the
     # hybrid backend while running subsequent integration tests.
     if [[ "$LOAD_HYBRID_BACKEND" -eq 1 ]]; then
@@ -689,6 +696,11 @@ PY
         unset PYSP_TEST_spark_jars_packages
         unset PYSP_TEST_spark_jars_repositories
         unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
+
+
+        # Comment this out if you want to run remote debug this local mode spark process
+        # Don't forget to set TEST_PARALLEL=1 to ensure local mode spark 
+        # export SPARK_SUBMIT_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"
 
         exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
             --driver-java-options "$driverJavaOpts" \

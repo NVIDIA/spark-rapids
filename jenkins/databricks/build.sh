@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -59,9 +59,21 @@ initialize()
         echo "No /databricks/BUILDINFO file found"
     fi
 
-    # install rsync to be used for copying onto the databricks nodes
-    sudo apt install -y rsync
+    # ubuntu22
+    sudo sed -i -e 's|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+      -e 's|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' \
+      /etc/apt/sources.list
+    # ubuntu24
+    sudo find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i \
+      -e "s|http://archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g" \
+      -e "s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g" {} +
 
+    # force cache refresh
+    sudo apt-get clean
+    sudo rm -rf /var/lib/apt/lists/*
+    sudo apt-get update
+    # install rsync to be used for copying onto the databricks nodes
+    sudo apt install -y rsync openjdk-17-jdk
     if [[ ! -d $HOME/apache-maven-3.6.3 ]]; then
         # DBFS cache for Maven
         DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/cached_jars"}
@@ -89,6 +101,11 @@ initialize()
         rm -f "/tmp/$JAR_FILE_NAME"
         sudo ln -s $HOME/apache-maven-3.6.3/bin/mvn /usr/local/bin/mvn
     fi
+
+    # Set JDK 17 as the default for nightly builds across both:
+    # scala2.12 and scala2.13 (with maven.compiler.source as 1.8)
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    mvn -version
 
     # Archive file location of the plugin repository
     SPARKSRCTGZ=${SPARKSRCTGZ:-''}

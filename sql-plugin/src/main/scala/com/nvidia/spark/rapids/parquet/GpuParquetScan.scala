@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -2261,6 +2261,8 @@ class MultiFileParquetPartitionReader(
 
     override def callImpl(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
+      // Mark the async thread as a pool thread within the RetryFramework
+      RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {
         val startBytesRead = fileSystemBytesRead()
         val outputBlocks = withResource(outhmb) { _ =>
@@ -2287,6 +2289,7 @@ class MultiFileParquetPartitionReader(
           // the corrupted file. But it should be ok since there is no meta pointing to that "hole"
           (Seq.empty, 0)
       } finally {
+        RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
         TrampolineUtil.unsetTaskContext()
       }
     }
@@ -2337,7 +2340,7 @@ class MultiFileParquetPartitionReader(
 
   private var currentTargetBatchSize = targetBatchSizeBytes
 
-  override final def startNewBufferRetry(): Unit = {
+  override final def startNewBufferRetry: Unit = {
     currentTargetBatchSize = targetBatchSizeBytes
   }
 

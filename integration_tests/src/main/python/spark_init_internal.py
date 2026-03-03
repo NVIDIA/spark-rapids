@@ -150,7 +150,7 @@ def pytest_sessionstart(session):
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
     _sb = pyspark.sql.SparkSession.builder
     _sb.config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
-            .config("spark.sql.adaptive.enabled", "false") \
+            .config("spark.sql.adaptive.enabled", "true") \
             .config('spark.sql.queryExecutionListeners', 'org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback')
 
     for key, value in os.environ.items():

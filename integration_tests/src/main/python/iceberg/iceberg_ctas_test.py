@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -126,7 +126,6 @@ def test_ctas_partitioned_table(spark_tmp_table_factory, partition_col_sql):
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("bucket(8, _c2)", id="bucket(8, int_column)"),
     pytest.param("year(_c8)", id="year(date_col)"),
     pytest.param("month(_c8)", id="month(date_col)"),
     pytest.param("day(_c8)", id="day(date_col)"),
@@ -139,6 +138,20 @@ def test_ctas_partitioned_table(spark_tmp_table_factory, partition_col_sql):
     pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
     pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
     pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
+    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
+    pytest.param("bucket(16, _c3)", id="bucket(16, long_col)"),
+    pytest.param("bucket(16, _c8)", id="bucket(16, date_col)"),
+    pytest.param("bucket(16, _c9)", id="bucket(16, timestamp_col)"),
+    pytest.param("bucket(16, _c6)", id="bucket(16, string_col)"),
+    pytest.param("bucket(16, _c13)", id="bucket(16, decimal32_col)"),
+    pytest.param("bucket(16, _c14)", id="bucket(16, decimal64_col)"),
+    pytest.param("bucket(16, _c15)", id="bucket(16, decimal128_col)"),
+    pytest.param("_c0", id="identity(byte)"),
+    pytest.param("_c2", id="identity(int)"),
+    pytest.param("_c3", id="identity(long)"),
+    pytest.param("_c6", id="identity(string)"),
+    pytest.param("_c8", id="identity(date)"),
+    pytest.param("_c10", id="identity(decimal)"),
 ])
 def test_ctas_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
@@ -238,35 +251,6 @@ def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
                       lambda sp: gen_df(sp, list(zip(cols, iceberg_full_gens_list))),
                       table_prop,
                       partition_col_sql="bucket(16, _c2)")
-
-    assert_gpu_fallback_collect(run_ctas,
-                                'AtomicCreateTableAsSelectExec',
-                                conf=iceberg_write_enabled_conf)
-
-
-@iceberg
-@ignore_order(local=True)
-@allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("_c2", id="identity"),
-    pytest.param("bucket(8, _c6)", id="bucket_unsupported_type"),
-])
-def test_ctas_partitioned_table_unsupported_partition_fallback(
-        spark_tmp_table_factory,
-        partition_col_sql):
-    table_prop = {
-        "format-version": "2"
-    }
-
-    def run_ctas(spark):
-        target = get_full_table_name(spark_tmp_table_factory)
-        return _execute_ctas(spark,
-                      target,
-                      spark_tmp_table_factory,
-                      lambda sp: gen_df(sp, list(zip(iceberg_base_table_cols, iceberg_gens_list))),
-                      table_prop,
-                      partition_col_sql=partition_col_sql)
 
     assert_gpu_fallback_collect(run_ctas,
                                 'AtomicCreateTableAsSelectExec',

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -253,7 +253,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     val inputs = Seq("", "abc", "\r\n", "12\u001b3", "a[b\t\n \rc]d", "[\r+\n-\t[]")
     assertCpuGpuMatchesRegexpFind(Seq(raw"[\r\n\t]", raw"[\t-\r]", raw"[\n-\\]", raw"[\a-\e]"),
       inputs)
-    assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", raw"[\\u002d-\u007a]"),
+    assertCpuGpuMatchesRegexpReplace(Seq("[\t-\r]", "[\b-\t123\n]", "[\\\\u002d-z]"),
       inputs)
   }
 

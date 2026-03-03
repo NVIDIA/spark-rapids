@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,9 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
-{"spark": "330cdh"}
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
-{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "334"}
@@ -41,6 +39,8 @@
 {"spark": "357"}
 {"spark": "400"}
 {"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -364,7 +364,7 @@ case class GpuMultiplyYMInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }
@@ -438,7 +438,7 @@ case class GpuMultiplyDTInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }
@@ -502,7 +502,7 @@ case class GpuDivideYMInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }
@@ -584,7 +584,7 @@ case class GpuDivideDTInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }

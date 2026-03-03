@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,13 +60,13 @@ case class SizeInBytes(value: jl.Long) {
       unitVal = nextUnitVal
       unitIndex += 1
     }
-    val finalVal = (unitVal + (remainVal.toDouble / 1024)).formatted("%.2f")
+    val finalVal = "%.2f".format(unitVal + (remainVal.toDouble / 1024))
     s"$finalVal${SizeInBytes.SizeUnitNames(unitIndex)} ($value bytes)"
   }
 }
 
 private object SizeInBytes {
-  private val SizeUnitNames: Array[String] = Array("B", "KB", "MB", "GB", "TB")
+  private val SizeUnitNames: Array[String] = Array("B", "KB", "MB", "GB", "TB", "PB", "EB")
 }
 
 class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
@@ -278,6 +278,9 @@ class GpuTaskMetrics extends Serializable with Logging {
 
   private val maxGpuFootprint = new SizeInBytesAccumulator
 
+  // Disk write savings from SpillablePartialFileHandle
+  private val diskWriteSavedBytes = new LongAccumulator
+
   private var maxHostBytesAllocated: Long = 0
   private var maxPageableBytesAllocated: Long = 0
   private var maxPinnedBytesAllocated: Long = 0
@@ -339,7 +342,8 @@ class GpuTaskMetrics extends Serializable with Logging {
     "gpuOnGpuTasksWaitingGPUMaxCount" -> onGpuTasksInWaitingQueueMaxCount,
     "gpuMaxTaskFootprint" -> maxGpuFootprint,
     "multithreadReaderMaxParallelism" -> multithreadReaderMaxParallelism,
-    "gpuMaxConcurrentGpuTasks" -> maxConcurrentGpuTasks
+    "gpuMaxConcurrentGpuTasks" -> maxConcurrentGpuTasks,
+    "gpuDiskWriteSavedBytes" -> diskWriteSavedBytes
   )
 
   def register(sc: SparkContext): Unit = {
@@ -488,6 +492,10 @@ class GpuTaskMetrics extends Serializable with Logging {
 
   def updateMultithreadReaderMaxParallelism(parallelism: Long): Unit = {
     multithreadReaderMaxParallelism.add(parallelism)
+  }
+
+  def addDiskWriteSaved(bytes: Long): Unit = {
+    diskWriteSavedBytes.add(bytes)
   }
 }
 

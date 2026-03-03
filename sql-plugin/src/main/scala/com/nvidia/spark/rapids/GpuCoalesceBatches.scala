@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -887,7 +887,7 @@ class GpuCompressionAwareCoalesceIterator(
     }
   }
 
-  override def getCoalesceRetryIterator(): Iterator[ColumnarBatch] = {
+  override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
     val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
     withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>

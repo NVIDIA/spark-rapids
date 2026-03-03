@@ -8,7 +8,7 @@ parent: Developer Overview
 # Shim Development
 
 RAPIDS Accelerator For Apache Spark supports multiple feature version lines of
-Apache Spark such as 3.2.x, 3.3.x, 3.4.x, 3.5.x and a number of vendor releases that contain
+Apache Spark such as 3.3.x, 3.4.x, 3.5.x, 4.x and a number of vendor releases that contain
 a mix of patches from different upstream releases. These artifacts are generally
 incompatible between each other, at both source code level and even more often
 at the binary level. The role of the Shim layer is to hide these issues from the
@@ -53,13 +53,17 @@ across different Spark versions.
 Upstream base classes we derive from might be incompatible in the sense that one version
 requires us to implement/override the method `M` whereas the other prohibits it by marking
 the base implementation `final`, E.g. `org.apache.spark.sql.catalyst.trees.TreeNode` changes
-between Spark 3.1.x and Spark 3.2.x. So instead of deriving from such classes directly we
+between Spark 3.3.x and Spark 3.5.x. So instead of deriving from such classes directly we
 inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.ShimExpression` that
 has a varying source code depending on the Spark version we compile against to overcome this
-issue as you can see e.g., comparing TreeNode:
+issue as you can see e.g., comparing shim implementations across versions:
 
-1. [ShimExpression For 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/6a82213a798a81a5f32f8cf8b4c630e38d112f65/sql-plugin/src/main/spark311/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L28)
-2. [ShimExpression For 3.2.x](https://github.com/NVIDIA/spark-rapids/blob/6a82213a798a81a5f32f8cf8b4c630e38d112f65/sql-plugin/src/main/spark320/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L37)
+1. [Shim implementation for 3.3.0](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/spark330/scala/com/nvidia/spark/rapids/shims/Spark330PlusShims.scala)
+2. [Shim service provider for 3.5.1](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/spark351/scala/com/nvidia/spark/rapids/shims/spark351/SparkShimServiceProvider.scala)
+
+The `ShimExpression` and related traits themselves live in a single shared file,
+[TreeNode.scala](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/spark321/scala/com/nvidia/spark/rapids/shims/TreeNode.scala),
+which is built for 3.3.x+ (with backward compatibility to 3.2.1 in the build) via the shim-json-lines build.
 
 This resolves compile-time problems, however, now we face the problem at run time.
 
@@ -75,20 +79,20 @@ So instead we resort to the idea of JDK's ParallelWorldClassloader in combinatio
 Spark runtime uses mutable classloaders we can alter after detecting the runtime version.
 Using JarURLConnection URLs we create a Parallel World of the current version within the jar, e.g.:
 
-Spark 3.0.2's URLs:
+Spark 3.3.0's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/spark-shared/
-jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark330/
 ```
 
-Spark 3.2.0's URLs :
+Spark 3.5.1's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/spark-shared/
-jar:file:/home/spark/rapids-4-spark_2.12-26.02.0.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark351/
 ```
 
 ### Late Inheritance in Public Classes
@@ -106,7 +110,7 @@ by having the documented facade classes with a shim specifier in their package n
 The second issue that every parent class/trait in the inheritance graph is loaded using the classloader outside
 Plugin's control. Therefore, all this bytecode must reside in the conventional jar location, and it must
 be bitwise-identical across *all* shims. The only way to keep the source code for shared functionality unduplicated,
-(i.e., in `sql-plugin/src/main/scala` as opposed to be duplicated in `sql-plugin/src/main/spark3*/scala` source code roots)
+(i.e., in `sql-plugin/src/main/scala` as opposed to being duplicated in versioned shim source roots such as `sql-plugin/src/main/spark3*/scala` and `sql-plugin/src/main/spark4*/scala`)
 is to delay inheriting `ShuffleManager` until as late as possible, as close as possible to the facade class where we
 have to split the source code anyway. Use traits as much as possible for flexibility.
 
@@ -165,11 +169,11 @@ the `[Graphviz tool](https://graphviz.org/)` used here.
 
 To figure out the transitive closure of a class we first need to build
 the `dist` module. While iterating on the PR, it should be sufficient
-to build against the lowest and highest versions of the supported Spark version
-range. As of the time of this writing:
+to build against two representative versions of the supported Spark version
+range (e.g. 330 and 351):
 
 ```bash
-./build/buildall --parallel=4  --profile=320,351 --module=dist
+./build/buildall --parallel=4  --profile=330,351 --module=dist
 ```
 
 However, before submitting the PR execute the full build `--profile=noSnapshots`.
@@ -280,7 +284,7 @@ connected components using `sccmap`
 
 ```bash
 $ sccmap -d -s merged.dot
-2440 nodes, 11897 edges, 637 strong components
+2440 nodes, 11897 edges, 637 strong components  # example output; actual numbers vary
 ```
 
 Review the clusters in the output of `sccmap -d merged.dot`. Find the cluster containing

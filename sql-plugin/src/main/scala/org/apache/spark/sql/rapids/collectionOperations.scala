@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -127,7 +127,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
     if (!startS.isValid || !lengthS.isValid) {
       GpuColumnVector.columnVectorFromNull(numRows, dataType)
     } else {
-      withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
+      withResource(GpuColumnVector.from(listS, numRows)) { listCol =>
         doColumnar(listCol, startS, lengthS)
       }
     }
@@ -140,7 +140,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
     if (!startS.isValid) {
       GpuColumnVector.columnVectorFromNull(numRows, dataType)
     } else {
-      withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
+      withResource(GpuColumnVector.from(listS, numRows)) { listCol =>
         doColumnar(listCol, startS, lengthCol)
       }
     }
@@ -153,7 +153,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
     if (!lengthS.isValid) {
       GpuColumnVector.columnVectorFromNull(numRows, dataType)
     } else {
-      withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
+      withResource(GpuColumnVector.from(listS, numRows)) { listCol =>
         doColumnar(listCol, startCol, lengthS)
       }
     }
@@ -162,7 +162,7 @@ case class GpuSlice(x: Expression, start: Expression, length: Expression)
   override def doColumnar(listS: GpuScalar, startCol: GpuColumnVector,
       lengthCol: GpuColumnVector): ColumnVector = {
     val numRows = startCol.getRowCount.toInt
-    withResource(GpuColumnVector.from(listS, numRows, dataType)) { listCol =>
+    withResource(GpuColumnVector.from(listS, numRows)) { listCol =>
       doColumnar(listCol, startCol, lengthCol)
     }
   }
@@ -782,8 +782,9 @@ case class GpuMapFromEntries(child: Expression) extends GpuUnaryExpression with 
     // Check for null keys
     GpuMapUtils.assertNoNullKeys(inputBase)
     
-    // Handle duplicate keys based on the policy
-    mapKeyDedupPolicy.toUpperCase match {
+    // Handle duplicate keys based on the policy.
+    // Spark 4.1+ returns an enum value instead of String, so use toString first.
+    mapKeyDedupPolicy.toString.toUpperCase match {
       case "EXCEPTION" =>
         // Check if there are any duplicate keys
         withResource(inputBase.dropListDuplicatesWithKeysValues()) { deduped =>
@@ -842,7 +843,7 @@ case class GpuSortArray(base: Expression, ascendingOrder: Expression)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): cudf.ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { cv =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { cv =>
       doColumnar(cv, rhs)
     }
   }
@@ -1082,7 +1083,7 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { left =>
       doColumnar(left, rhs)
     }
   }
@@ -1114,7 +1115,7 @@ case class GpuArrayRepeat(left: Expression, right: Expression) extends GpuBinary
     if (!rhs.isValid) {
       GpuColumnVector.fromNull(numRows, dataType).getBase
     } else {
-      withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
+      withResource(GpuColumnVector.from(lhs, numRows)) { left =>
         doColumnar(left, rhs)
       }
     }
@@ -1359,20 +1360,20 @@ case class GpuArrayExcept(left: Expression, right: Expression)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { left =>
       doColumnar(left, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt)) { right =>
       doColumnar(lhs, right)
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
-      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows)) { right =>
         doColumnar(left, right)
       }
     }
@@ -1404,20 +1405,20 @@ case class GpuArrayIntersect(left: Expression, right: Expression)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { left =>
       doColumnar(left, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt)) { right =>
       doColumnar(lhs, right)
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
-      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows)) { right =>
         doColumnar(left, right)
       }
     }
@@ -1449,20 +1450,20 @@ case class GpuArrayUnion(left: Expression, right: Expression)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { left =>
       doColumnar(left, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt)) { right =>
       doColumnar(lhs, right)
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
-      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows)) { right =>
         doColumnar(left, right)
       }
     }
@@ -1496,20 +1497,20 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { left =>
       doColumnar(left, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt)) { right =>
       doColumnar(lhs, right)
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
-      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows)) { right =>
         doColumnar(left, right)
       }
     }
@@ -1621,7 +1622,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
     withResource(sanitizedLhsBase) { sanitizedLhsBase =>
       withResource(sanitizedRhsBase) { sanitizedRhsBase =>
 
-        if(mapKeyDedupPolicy == "EXCEPTION") {
+        if(mapKeyDedupPolicy.toString == "EXCEPTION") {
           val containsDuplicates = rowContainsDuplicates(sanitizedLhsBase)
           require(!containsDuplicates,
             "[DUPLICATED_MAP_KEY] Duplicate map key was found")
@@ -1641,7 +1642,7 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
         val mapCol = constructMapColumn(sanitizedLhsBase, sanitizedRhsBase)
 
         val result = withResource(mapCol) { mapCol =>
-          mapKeyDedupPolicy match {
+          mapKeyDedupPolicy.toString match {
             case "LAST_WIN" if rowContainsDuplicates(sanitizedLhsBase) =>
                 mapCol.dropListDuplicatesWithKeysValues
             case _ =>
@@ -1655,20 +1656,20 @@ case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBina
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { left =>
       doColumnar(left, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt)) { right =>
       doColumnar(lhs, right)
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
-      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows)) { right =>
         doColumnar(left, right)
       }
     }
@@ -1758,7 +1759,7 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { left =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { left =>
       doColumnar(left, rhs)
     }
   }
@@ -1781,8 +1782,8 @@ case class GpuArrayRemove(left: Expression, right: Expression) extends GpuBinary
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { left =>
-      withResource(GpuColumnVector.from(rhs, numRows, rhs.dataType)) { right =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { left =>
+      withResource(GpuColumnVector.from(rhs, numRows)) { right =>
         doColumnar(left, right)
       }
     }

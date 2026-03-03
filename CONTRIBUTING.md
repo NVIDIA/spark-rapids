@@ -50,11 +50,11 @@ mvn verify
 
 After a successful build, the RAPIDS Accelerator jar will be in the `dist/target/` directory.
 This will build the plugin for a single version of Spark.  By default, this is Apache Spark
-3.2.0. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
-to Maven. For instance to build Spark 3.2.0 you would use:
+3.3.0. To build against other versions of Spark you use the `-Dbuildver=XXX` command line option
+to Maven. For instance to build Spark 3.3.0 you would use:
 
 ```shell script
-mvn -Dbuildver=320 verify
+mvn -Dbuildver=330 verify
 ```
 You can find all available build versions in the top level pom.xml file. If you are building
 for Databricks then you should use the `jenkins/databricks/build.sh` script and modify it for
@@ -110,7 +110,7 @@ If you want to create a jar with multiple versions we have the following options
 3. Build for all Apache Spark versions, CDH and Databricks with no SNAPSHOT versions of Spark, only released. Use `-PnoSnaphsotsWithDatabricks`.
 4. Build for all Apache Spark versions, CDH and Databricks including SNAPSHOT versions of Spark we have supported for. Use `-PsnapshotsWithDatabricks`
 5. Build for an arbitrary combination of comma-separated build versions using `-Dincluded_buildvers=<CSV list of build versions>`.
-   E.g., `-Dincluded_buildvers=320,330`
+   E.g., `-Dincluded_buildvers=330,331`
 
 You must first build each of the versions of Spark and then build one final time using the profile for the option you want.
 
@@ -118,24 +118,24 @@ You can also install some manually and build a combined jar. For instance to bui
 
 ```shell script
 mvn clean
-mvn -Dbuildver=320 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=321 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=321cdh install -Drat.skip=true -DskipTests
+mvn -Dbuildver=330 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=331 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=332 install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
 
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar spark320.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar(/spark320/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark320.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar spark330.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar(/spark330/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark330.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -147,9 +147,9 @@ There is a build script `build/buildall` that automates the local build process.
 
 By default, it builds everything that is needed to create a distribution jar for all released (noSnapshots) Spark versions except for Databricks. Other profiles that you can pass using `--profile=<distribution profile>` include
 - `snapshots` that includes all released (noSnapshots) and snapshots Spark versions except for Databricks
-- `minimumFeatureVersionMix` that currently includes 321cdh, 320, 330 is recommended for catching incompatibilities already in the local development cycle
+- `minimumFeatureVersionMix` that currently includes 330 is recommended for catching incompatibilities already in the local development cycle
 
-For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=320` for Spark 3.2.0.
+For initial quick iterations we can use `--profile=<buildver>` to build a single-shim version. e.g., `--profile=330` for Spark 3.3.0.
 
 The option `--module=<module>` allows to limit the number of build steps. When iterating, we often don't have the need for the entire build. We may be interested in building everything necessary just to run integration tests (`--module=integration_tests`), or we may want to just rebuild the distribution jar (`--module=dist`)
 
@@ -177,7 +177,7 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -197,7 +197,7 @@ NOTE: Build process does not require an ARM machine, so if you want to build the
 on X86 machine, please also add `-DskipTests` in commands.
 
 ```bash
-mvn clean verify -Dbuildver=320 -Parm64
+mvn clean verify -Dbuildver=330 -Parm64
 ```
 
 ### Iterative development during local testing
@@ -253,7 +253,7 @@ The following acronyms may appear in directory names:
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
 |db     |Databricks  |332db  |Databricks Spark based on Spark 3.3.2         |
-|cdh    |Cloudera CDH|321cdh |Cloudera CDH Spark based on Apache Spark 3.2.1|
+|cdh    |Cloudera CDH|(removed)|Cloudera CDH shims have been removed         |
 
 The version-specific directory names have one of the following forms / use cases:
 
@@ -306,7 +306,7 @@ In order to make sure that IDEA handles profile-specific source code roots withi
 
 If you develop a feature that has to interact with the Shim layer or simply need to test the Plugin with a different
 Spark version, open [Maven tool window](https://www.jetbrains.com/help/idea/2022.3/maven-projects-tool-window.html) and
-select one of the `release3xx` profiles (e.g, `release320`) for Apache Spark 3.2.0.
+select one of the `release3xx` profiles (e.g, `release330`) for Apache Spark 3.3.0.
 Make sure [Manual Maven Install](#manual-maven-install-for-a-target-spark-build) for that profile
 has been executed.
 
@@ -351,14 +351,14 @@ If you see Scala symbols unresolved (highlighted red) in IDEA please try the fol
 [Bloop](https://scalacenter.github.io/bloop/) is a build server and a set of tools around Build
 Server Protocol (BSP) for Scala providing an integration path with IDEs that support it. In fact,
 you can generate a Bloop project from Maven just for the Maven modules and profiles you are
-interested in. For example, to generate the Bloop projects for the Spark 3.2.0 dependency
+interested in. For example, to generate the Bloop projects for the Spark 3.3.0 dependency
 just for the production code run:
 
 ```shell script
 mvn -B clean install \
     -DbloopInstall \
     -DdownloadSources=true \
-    -Dbuildver=320
+    -Dbuildver=330
 ```
 
 With `--generate-bloop` we integrated Bloop project generation into `buildall`. It makes it easier
@@ -373,7 +373,7 @@ the symlink `.bloop` to point to the corresponding directory `.bloop-spark3XY`
 
 Example usage:
 ```Bash
-./build/buildall --generate-bloop --profile=320,330
+./build/buildall --generate-bloop --profile=330
 rm -vf .bloop
 ln -s .bloop-spark330 .bloop
 ```
@@ -403,14 +403,14 @@ Here we document the integration with VS code. It makes development on a remote 
 as easy as local development, which comes very handy when working in Cloud environments.
 
 Run `./build/buildall --generate-bloop --profile=<profile>` to generate Bloop projects
-for required Spark dependencies, e.g. `--profile=320` for Spark 3.2.0. When developing
+for required Spark dependencies, e.g. `--profile=330` for Spark 3.3.0. When developing
 remotely this is done on the remote node.
 
 Install [Scala Metals extension](https://scalameta.org/metals/docs/editors/vscode) in VS Code,
 either locally or into a Remote-SSH extension destination depending on your target environment.
 When your project folder is open in VS Code, it may prompt you to import Maven project.
 IMPORTANT: always decline with "Don't ask again", otherwise it will overwrite the Bloop projects
-generated with the default `320` profile. If you need to use a different profile, always rerun the
+generated with the default `330` profile. If you need to use a different profile, always rerun the
 command above manually. When regenerating projects it's recommended to proceed to Metals
 "Build commands" View, and click:
 1. "Restart build server"

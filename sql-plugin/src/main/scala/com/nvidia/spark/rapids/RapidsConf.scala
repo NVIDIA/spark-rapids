@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RapidsPrivateUtil
-import org.apache.spark.sql.rapids.execution.{JoinOptions, JoinStrategy}
+import org.apache.spark.sql.rapids.execution.{JoinBuildSideSelection, JoinOptions, JoinStrategy}
 
 object ConfHelper {
   def toBoolean(s: String, key: String): Boolean = {
@@ -461,6 +461,21 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(false)
 
+  val ENABLE_CPU_BRIDGE = conf("spark.rapids.sql.expression.cpuBridge.enabled")
+    .doc("Enable CPU-GPU bridge expressions that allow CPU expression subtrees " +
+      "to run while keeping the overall plan on GPU. When enabled, expressions that have no " +
+      "GPU implementation will automatically be wrapped in bridge expressions instead of " +
+      "causing plan fallbacks.")
+    .booleanConf
+    .createWithDefault(false)
+
+  val BRIDGE_DISALLOW_LIST = conf("spark.rapids.sql.expression.cpuBridge.disallowList")
+    .doc("Comma separated list of expression class names that should not use CPU bridge " +
+      "expressions even when bridge is enabled.")
+    .internal()
+    .stringConf
+    .createWithDefault("")
+
   val GPU_COREDUMP_COMPRESSION_CODEC = conf("spark.rapids.gpu.coreDump.compression.codec")
     .doc("The codec used to compress GPU core dumps. Spark provides the codecs " +
       "lz4, lzf, snappy, and zstd.")
@@ -545,6 +560,52 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .commonlyUsed()
     .bytesConf(ByteUnit.BYTE)
     .createWithDefault(-1)
+
+  val PARTIAL_FILE_BUFFER_INITIAL_SIZE =
+    conf("spark.rapids.memory.host.partialFileBufferInitialSize")
+    .doc("The initial size in bytes for a host memory buffer used by " +
+        "SpillablePartialFileHandle during shuffle write. This buffer allows shuffle " +
+        "data to be kept in memory instead of writing to disk immediately, reducing " +
+        "I/O overhead. The buffer can expand dynamically up to partialFileBufferMaxSize. " +
+        "A smaller initial size reduces upfront memory allocation but may require more " +
+        "expansions. When used with " +
+        "RapidsLocalDiskShuffleMapOutputWriter, the buffer expansion uses predictive " +
+        "sizing based on partition write statistics to minimize expansion operations.")
+    .startupOnly()
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(32L * 1024 * 1024)  // 32MB default, expanded predictively
+
+  val PARTIAL_FILE_BUFFER_MAX_SIZE =
+    conf("spark.rapids.memory.host.partialFileBufferMaxSize")
+    .doc("The maximum size in bytes for a single host memory buffer used by " +
+        "SpillablePartialFileHandle during shuffle write. When a buffer needs to " +
+        "expand beyond this limit, it will be spilled to disk instead. This prevents " +
+        "excessive memory usage for large shuffle partitions. Note: Due to ByteBuffer " +
+        "constraints, the effective maximum is Int.MaxValue (~2GB).")
+    .startupOnly()
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(Int.MaxValue.toLong)  // ~2GB, limited by ByteBuffer
+
+  val PARTIAL_FILE_BUFFER_MEMORY_THRESHOLD =
+    conf("spark.rapids.memory.host.partialFileBufferMemoryThreshold")
+    .doc("The host memory usage threshold (as a fraction from 0.0 to 1.0) for deciding " +
+        "whether to use memory-based buffering for partial files during shuffle write. " +
+        "When host memory usage exceeds this threshold, file-based storage will be used " +
+        "directly. This threshold also applies when expanding buffers dynamically. " +
+        "Setting this too high may cause threads holding the GPU semaphore to block on " +
+        "spilling, which wastes valuable GPU resources. Setting it too low reduces the " +
+        "shuffle write optimization benefit. A value around 0.5-0.6 typically provides " +
+        "optimal performance. As a guideline, ensure that (1 - threshold) * total_host_mem " +
+        "is greater than num_threads * gpu_batch_size to leave enough memory for other " +
+        "threads to operate without forcing spills.")
+    .startupOnly()
+    .internal()
+    .doubleConf
+    .checkValue(v => v > 0.0 && v <= 1.0,
+      "The memory threshold must be in the range (0.0, 1.0]")
+    .createWithDefault(0.5)
 
   val UNSPILL = conf("spark.rapids.memory.gpu.unspill.enabled")
     .doc("When a spilled GPU buffer is needed again, should it be unspilled, or only copied " +
@@ -704,6 +765,23 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .transform(_.toUpperCase(java.util.Locale.ROOT))
     .checkValues(JoinStrategy.values.map(_.toString))
     .createWithDefault(JoinStrategy.AUTO.toString)
+
+  val JOIN_BUILD_SIDE = conf("spark.rapids.sql.join.buildSide")
+    .doc("Specifies the physical build side selection strategy for GPU join algorithms. " +
+      "This controls which side the join algorithm uses as its internal build table, " +
+      "which is distinct from the data movement build side (which side is materialized/" +
+      "buffered/broadcast, determined by the query plan). Options are: " +
+      "AUTO (default) - automatically determine the best physical build side using heuristics, " +
+      "currently behaves the same as SMALLEST but may evolve to use additional factors; " +
+      "FIXED - use the build side as suggested by the query plan without dynamic selection; " +
+      "SMALLEST - always select the side with the smallest row count as the physical build side, " +
+      "determined on a batch-by-batch basis at join time. When AUTO or SMALLEST is used, " +
+      "the physical build side may differ from the data movement build side.")
+    .internal()
+    .stringConf
+    .transform(_.toUpperCase(java.util.Locale.ROOT))
+    .checkValues(JoinBuildSideSelection.values.map(_.toString))
+    .createWithDefault(JoinBuildSideSelection.AUTO.toString)
 
   val LOG_JOIN_CARDINALITY = conf("spark.rapids.sql.join.logCardinality")
     .doc("Enable logging of join cardinality statistics to help diagnose performance issues. " +
@@ -1022,6 +1100,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .internal()
       .booleanConf
       .createWithDefault(false)
+
+  val ENABLE_WINDOW_GROUP_LIMIT_OPT = conf("spark.rapids.sql.window.groupLimit.opt.enabled")
+      .doc("When enabled, the plugin will skip redundant Final WindowGroupLimit operators " +
+          "when they are followed by a WindowExec and FilterExec that perform the same " +
+          "rank computation and filtering. This avoids computing the rank twice and " +
+          "improves performance for queries with rank-based window limits.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   val ENABLE_FLOAT_AGG = conf("spark.rapids.sql.variableFloatAgg.enabled")
     .doc("Spark assumes that all operations produce the exact same result each time. " +
@@ -2049,6 +2136,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValues(RapidsShuffleManagerMode.values.map(_.toString))
     .createWithDefault(RapidsShuffleManagerMode.MULTITHREADED.toString)
 
+  val MULTITHREADED_SHUFFLE_SKIP_MERGE = conf("spark.rapids.shuffle.multithreaded.skipMerge")
+    .doc("When using MULTITHREADED shuffle mode, skip merging partial shuffle files and " +
+      "instead serve data directly from the MultithreadedShuffleBufferCatalog. " +
+      "This avoids I/O overhead from merging but requires: (1) External Shuffle Service (ESS) " +
+      "to be disabled, and (2) spark.rapids.memory.host.offHeapLimit.enabled=true (off-heap " +
+      "memory limits enabled) to prevent OOM from unbounded buffer growth. " +
+      "When set to false (default), partial files will be merged into a single " +
+      "shuffle file per map task as in standard Spark shuffle. " +
+      "Set to true when both requirements are met and shuffle data is not reused across " +
+      "SQL queries (e.g., avoid on Databricks with shuffle reuse enabled).")
+    .startupOnly()
+    .booleanConf
+    .createWithDefault(false)
+
   val SHUFFLE_TRANSPORT_EARLY_START = conf("spark.rapids.shuffle.transport.earlyStart")
     .doc("Enable early connection establishment for RAPIDS Shuffle")
     .startupOnly()
@@ -2297,7 +2398,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .internal()
     .startupOnly()
     .stringConf
-    .createWithDefault(ShuffleKudoMode.CPU.toString)
+    .createWithDefault(ShuffleKudoMode.GPU.toString)
 
   val SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED =
     conf("spark.rapids.shuffle.kudo.serializer.measure.buffer.copy.enabled")
@@ -2926,7 +3027,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       println("title: Configuration")
       println("nav_order: 4")
       println("---")
-      println(s"<!-- Generated by RapidsConf.help. DO NOT EDIT! -->")
+      MarkdownUtils.printApacheSparkVersion("RapidsConf.helpCommon")
       // scalastyle:off line.size.limit
       println("""# RAPIDS Accelerator for Apache Spark Configuration
         |The following is the list of options that `rapids-plugin-4-spark` supports.
@@ -2934,7 +3035,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.02.0-SNAPSHOT-cuda12.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -2979,7 +3080,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       println("parent: Additional Functionality")
       println("nav_order: 10")
       println("---")
-      println(s"<!-- Generated by RapidsConf.help. DO NOT EDIT! -->")
+      MarkdownUtils.printApacheSparkVersion("RapidsConf.helpAdvanced")
       // scalastyle:off line.size.limit
       println("""# RAPIDS Accelerator for Apache Spark Advanced Configuration
         |Most users will not need to modify the configuration options listed below.
@@ -3075,9 +3176,11 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       targetSize: Long): JoinOptions = {
     val strategyStr = JOIN_STRATEGY.get(conf)
     val strategy = JoinStrategy.withName(strategyStr)
+    val buildSideStr = JOIN_BUILD_SIDE.get(conf)
+    val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
     val logCardinality = LOG_JOIN_CARDINALITY.get(conf)
     val sizeEstimateThreshold = JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
-    JoinOptions(strategy, targetSize, logCardinality, sizeEstimateThreshold)
+    JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
   }
 }
 
@@ -3172,9 +3275,11 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def getJoinOptions(targetSize: Long): JoinOptions = {
     val strategyStr = get(JOIN_STRATEGY)
     val strategy = JoinStrategy.withName(strategyStr)
+    val buildSideStr = get(JOIN_BUILD_SIDE)
+    val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
     val logCardinality = get(LOG_JOIN_CARDINALITY)
     val sizeEstimateThreshold = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
-    JoinOptions(strategy, targetSize, logCardinality, sizeEstimateThreshold)
+    JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
   }
 
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)
@@ -3281,6 +3386,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val hostSpillStorageSize: Long = get(HOST_SPILL_STORAGE_SIZE)
 
+  lazy val partialFileBufferInitialSize: Long = get(PARTIAL_FILE_BUFFER_INITIAL_SIZE)
+
+  lazy val partialFileBufferMaxSize: Long = get(PARTIAL_FILE_BUFFER_MAX_SIZE)
+
+  lazy val partialFileBufferMemoryThreshold: Double = get(PARTIAL_FILE_BUFFER_MEMORY_THRESHOLD)
+
   lazy val isUnspillEnabled: Boolean = get(UNSPILL)
 
   lazy val needDecimalGuarantees: Boolean = get(NEED_DECIMAL_OVERFLOW_GUARANTEES)
@@ -3292,6 +3403,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isWindowCollectSetEnabled: Boolean = get(ENABLE_WINDOW_COLLECT_SET)
 
   lazy val isWindowUnboundedAggEnabled: Boolean = get(ENABLE_WINDOW_UNBOUNDED_AGG)
+
+  lazy val isWindowGroupLimitOptEnabled: Boolean = get(ENABLE_WINDOW_GROUP_LIMIT_OPT)
 
   lazy val isFloatAggEnabled: Boolean = get(ENABLE_FLOAT_AGG)
 
@@ -3688,6 +3801,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     RapidsShuffleManagerMode
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.MULTITHREADED
 
+  def isMultithreadedShuffleSkipMergeEnabled: Boolean = get(MULTITHREADED_SHUFFLE_SKIP_MERGE)
+
   def isCacheOnlyShuffleManagerMode: Boolean =
     RapidsShuffleManagerMode
       .withName(get(SHUFFLE_MANAGER_MODE)) == RapidsShuffleManagerMode.CACHE_ONLY
@@ -3904,6 +4019,19 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
    */
   def isConfExplicitlySet(key: String): Boolean = {
     conf.contains(key)
+  }
+
+  // CPU-GPU Bridge Configuration accessors
+
+  lazy val isCpuBridgeEnabled: Boolean = get(ENABLE_CPU_BRIDGE)
+
+  lazy val bridgeDisallowList: Set[String] = {
+    val listString = get(BRIDGE_DISALLOW_LIST)
+    if (listString.nonEmpty) {
+      listString.split(",").map(_.trim).filter(_.nonEmpty).toSet
+    } else {
+      Set.empty
+    }
   }
 }
 

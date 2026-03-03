@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -660,7 +660,6 @@ abstract class MultiFileCloudPartitionReaderBase(
         fileHostBuffers.close()
       }
       if (addTaskIfNeeded) addNextTaskIfNeeded()
-      next()
     } else {
       val file = fileHostBuffers.partitionedFile.filePath
       batchIter = try {
@@ -832,86 +831,88 @@ abstract class MultiFileCloudPartitionReaderBase(
       // submit async tasks if it is not done
       initAndStartReaders()
 
-      if (batchIter.hasNext) {
-        // leave early we have something more to be read
-        return true
-      }
+      // Execute the loop at least one time.
+      var continue = true
+      while (continue) {
+        if (batchIter.hasNext) {
+          // leave early we have something more to be read
+          return true
+        }
 
-      // Temporary until we get more to read
-      batchIter = EmptyGpuColumnarBatchIterator
-      // if we have batch left from the last file read return it
-      if (currentFileHostBuffers.isDefined) {
-        readBuffersToBatch(currentFileHostBuffers.get, false)
-      } else if (combineLeftOverFiles.isDefined) {
-        // this means we already grabbed some while combining but something between
-        // files was incompatible and couldn't be combined.
-        val fileBufsAndMeta = handleLeftOverCombineFiles()
-        readBuffersToBatch(fileBufsAndMeta, true)
-      } else {
-        if (filesToRead > 0 && !isDone) {
-          // Filter time here includes the buffer time as well since those
-          // happen in the same background threads. This is as close to wall
-          // clock as we can get right now without further work.
-          val bufTime = metrics.getOrElse(BUFFER_TIME, NoopMetric)
-          val filterTime = metrics.getOrElse(FILTER_TIME, NoopMetric)
-          val scheduleTime = metrics.getOrElse(SCHEDULE_TIME, NoopMetric)
-          val bufGpuIdleTime = metrics.getOrElse(BUFFER_TIME_BUBBLE, NoopMetric)
-          val filterGpuIdleTime = metrics.getOrElse(FILTER_TIME_BUBBLE, NoopMetric)
-          val scheduleGpuIdleTime = metrics.getOrElse(SCHEDULE_TIME_BUBBLE, NoopMetric)
+        // Temporary until we get more to read
+        batchIter = EmptyGpuColumnarBatchIterator
+        // if we have batch left from the last file read return it
+        if (currentFileHostBuffers.isDefined) {
+          readBuffersToBatch(currentFileHostBuffers.get, false)
+        } else if (combineLeftOverFiles.isDefined) {
+          // this means we already grabbed some while combining but something between
+          // files was incompatible and couldn't be combined.
+          val fileBufsAndMeta = handleLeftOverCombineFiles()
+          readBuffersToBatch(fileBufsAndMeta, true)
+        } else {
+          if (filesToRead > 0 && !isDone) {
+            // Filter time here includes the buffer time as well since those
+            // happen in the same background threads. This is as close to wall
+            // clock as we can get right now without further work.
+            val bufTime = metrics.getOrElse(BUFFER_TIME, NoopMetric)
+            val filterTime = metrics.getOrElse(FILTER_TIME, NoopMetric)
+            val scheduleTime = metrics.getOrElse(SCHEDULE_TIME, NoopMetric)
+            val bufGpuIdleTime = metrics.getOrElse(BUFFER_TIME_BUBBLE, NoopMetric)
+            val filterGpuIdleTime = metrics.getOrElse(FILTER_TIME_BUBBLE, NoopMetric)
+            val scheduleGpuIdleTime = metrics.getOrElse(SCHEDULE_TIME_BUBBLE, NoopMetric)
 
-          val fileBufsAndMeta = {
-            if (GpuMetric.isTimeMetric(bufTime) &&
+            val fileBufsAndMeta = {
+              if (GpuMetric.isTimeMetric(bufTime) &&
                 GpuMetric.isTimeMetric(filterTime) &&
                 GpuMetric.isTimeMetric(bufGpuIdleTime) &&
                 GpuMetric.isTimeMetric(filterGpuIdleTime)) {
-              // Collect wall clock time and semaphore time
-              val taskContext = TaskContext.get()
-              require(taskContext != null, "TaskContext should not be null")
+                // Collect wall clock time and semaphore time
+                val taskContext = TaskContext.get()
+                require(taskContext != null, "TaskContext should not be null")
 
-              val wallClockInc = new LocalGpuMetric()
-              val gpuIdleTimeInc = new LocalGpuMetric()
-              val ret = GpuMetric.gpuBubbleTime(gpuIdleTimeInc, Some(wallClockInc)) {
-                getNextBuffersAndMeta()
+                val wallClockInc = new LocalGpuMetric()
+                val gpuIdleTimeInc = new LocalGpuMetric()
+                val ret = GpuMetric.gpuBubbleTime(gpuIdleTimeInc, Some(wallClockInc)) {
+                  getNextBuffersAndMeta()
+                }
+                val filterPct = ret.getFilterTimePct
+                val bufferPct = ret.getBufferTimePct
+                val schedulePct = ret.getScheduleTimePct
+                filterTime += (wallClockInc.value * filterPct).toLong
+                bufTime += (wallClockInc.value * bufferPct).toLong
+                scheduleTime += (wallClockInc.value * schedulePct).toLong
+                filterGpuIdleTime += (gpuIdleTimeInc.value * filterPct).toLong
+                bufGpuIdleTime += (gpuIdleTimeInc.value * bufferPct).toLong
+                scheduleGpuIdleTime += (gpuIdleTimeInc.value * schedulePct).toLong
+                ret
+              } else {
+                // Collect wall clock time only
+                val startTime = System.nanoTime()
+                val ret = getNextBuffersAndMeta()
+                val blockedTime = System.nanoTime() - startTime
+                filterTime += (blockedTime * ret.getFilterTimePct).toLong
+                bufTime += (blockedTime * ret.getBufferTimePct).toLong
+                scheduleTime += (blockedTime * ret.getScheduleTimePct).toLong
+                ret
               }
-              val filterPct = ret.getFilterTimePct
-              val bufferPct = ret.getBufferTimePct
-              val schedulePct = ret.getScheduleTimePct
-              filterTime += (wallClockInc.value * filterPct).toLong
-              bufTime += (wallClockInc.value * bufferPct).toLong
-              scheduleTime += (wallClockInc.value * schedulePct).toLong
-              filterGpuIdleTime += (gpuIdleTimeInc.value * filterPct).toLong
-              bufGpuIdleTime += (gpuIdleTimeInc.value * bufferPct).toLong
-              scheduleGpuIdleTime += (gpuIdleTimeInc.value * schedulePct).toLong
-              ret
-            } else {
-              // Collect wall clock time only
-              val startTime = System.nanoTime()
-              val ret = getNextBuffersAndMeta()
-              val blockedTime = System.nanoTime() - startTime
-              filterTime += (blockedTime * ret.getFilterTimePct).toLong
-              bufTime += (blockedTime * ret.getBufferTimePct).toLong
-              scheduleTime += (blockedTime * ret.getScheduleTimePct).toLong
-              ret
             }
-          }
 
-          TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
-          val inputFileToSet = fileBufsAndMeta.partitionedFile
-          InputFileUtils.setInputFileBlock(
-            inputFileToSet.filePath.toString(),
-            inputFileToSet.start,
-            inputFileToSet.length)
-          readBuffersToBatch(fileBufsAndMeta, true)
-        } else {
-          isDone = true
+            TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
+            val inputFileToSet = fileBufsAndMeta.partitionedFile
+            InputFileUtils.setInputFileBlock(
+              inputFileToSet.filePath.toString(),
+              inputFileToSet.start,
+              inputFileToSet.length)
+            readBuffersToBatch(fileBufsAndMeta, true)
+          } else {
+            isDone = true
+          }
+        }
+
+        if (batchIter.hasNext || filesToRead == 0 || isDone) {
+          continue = false
         }
       }
-    }
-
-    // this shouldn't happen but if somehow the batch is None and we still
-    // have work left skip to the next file
-    if (batchIter.isEmpty && filesToRead > 0 && !isDone) {
-      next()
     }
 
     // NOTE: At this point, the task may not have yet acquired the semaphore if `batchReader` is

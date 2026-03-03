@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1239,14 +1239,36 @@ class DiskHandle private(
     SpillFramework.stores.diskStore.deleteFile(blockId)
   }
 
+  /**
+   * Materialize the data from disk to the given host memory buffer.
+   *
+   * @param mb the host memory buffer to copy data into. The buffer's capacity
+   *           must be exactly equal to the decompressed data length. Note that this
+   *           may differ from `sizeInBytes` since data on disk may be compressed.
+   * @throws IllegalStateException if the actual bytes read from disk does not match
+   *                               the buffer's length
+   */
   def materializeToHostMemoryBuffer(mb: HostMemoryBuffer): Unit = {
     withInputWrappedStream { in =>
       withResource(new HostMemoryOutputStream(mb)) { out =>
-        IOUtils.copy(in, out)
+        val len = IOUtils.copy(in, out)
+        if (len != mb.getLength) {
+          throw new IllegalStateException(
+            s"Expected to read ${mb.getLength} bytes, but got $len bytes from disk")
+        }
       }
     }
   }
 
+  /**
+   * Materialize the data from disk to the given device memory buffer.
+   *
+   * @param dmb the device memory buffer to copy data into. The buffer's capacity
+   *            must be exactly equal to the decompressed data length. Note that this
+   *            may differ from `sizeInBytes` since data on disk may be compressed.
+   * @throws IllegalStateException if the actual bytes read from disk does not match
+   *                               the buffer's length
+   */
   def materializeToDeviceMemoryBuffer(dmb: DeviceMemoryBuffer): Unit = {
     var copyOffset = 0L
     withInputWrappedStream { in =>
@@ -1268,6 +1290,10 @@ class DiskHandle private(
           }
         }
       }
+    }
+    if (copyOffset != dmb.getLength) {
+      throw new IllegalStateException(
+        s"Expected to read ${dmb.getLength} bytes, but got $copyOffset bytes from disk")
     }
   }
 }
@@ -1311,11 +1337,23 @@ trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
     handles.remove(handle)
   }
 
-  override def close(): Unit = synchronized {
-    handles.forEach(handle => {
-      handle.close()
-    })
-    handles.clear()
+  /**
+   * Close all handles in the store.
+   *
+   * Lock ordering: To avoid AB-BA deadlock between store lock and handle lock,
+   * we copy the handles list under the store lock, then close handles outside
+   * the lock. This ensures we always acquire handle locks without holding the
+   * store lock, matching the lock order in handle.spill() which acquires
+   * handle lock first, then store lock via removeFromXxxStore().
+   */
+  override def close(): Unit = {
+    val handlesToClose = synchronized {
+      val list = new util.ArrayList[T](handles)
+      handles.clear()
+      list
+    }
+    // Close handles outside the store lock to avoid deadlock
+    handlesToClose.forEach(_.close())
   }
 }
 
@@ -1410,19 +1448,29 @@ trait SpillableStore[T <: SpillableHandle]
     }
   }
 
+  /**
+   * Get a summary of spillable handles in the store.
+   *
+   * Lock ordering: To avoid AB-BA deadlock between store lock and handle lock,
+   * we copy the handles list under the store lock, then check spillable status
+   * outside the lock. The handle.spillable check acquires the handle lock,
+   * so we must not hold the store lock while calling it.
+   */
   def spillableSummary(): String = {
+    val handlesCopy = synchronized {
+      new util.ArrayList[T](handles)
+    }
     var spillableHandleCount = 0L
     var spillableHandleBytes = 0L
     var totalHandleBytes = 0L
-    synchronized {
-      handles.forEach(handle => {
-        totalHandleBytes += handle.approxSizeInBytes
-        if (handle.spillable) {
-          spillableHandleCount += 1
-          spillableHandleBytes += handle.approxSizeInBytes
-        }
-      })
-    }
+    // Iterate outside the store lock to avoid deadlock
+    handlesCopy.forEach(handle => {
+      totalHandleBytes += handle.approxSizeInBytes
+      if (handle.spillable) {
+        spillableHandleCount += 1
+        spillableHandleBytes += handle.approxSizeInBytes
+      }
+    })
     s"SpillableStore: ${this.getClass.getSimpleName}, " +
       s"Total Handles: $numHandles, " +
       s"Spillable Handles: $spillableHandleCount, " +
@@ -1863,11 +1911,147 @@ object SpillableColumnarBatchHandle {
   }
 }
 
+class SpillableTableHandle private (
+    override val approxSizeInBytes: Long,
+    private[spill] override var dev: Option[Table],
+    private[spill] var host: Option[SpillableHostBufferHandle] = None)
+  extends DeviceSpillableHandle[Table] with Logging {
+
+  override def spillable: Boolean = synchronized {
+    if (super.spillable) {
+      val table = dev.get
+      val colRepetition = mutable.HashMap[ColumnVector, Int]()
+      var i = 0
+      while (i < table.getNumberOfColumns) {
+        val col = table.getColumn(i)
+        colRepetition.put(col, colRepetition.getOrElse(col, 0) + 1)
+        i += 1
+      }
+      colRepetition.forall { case (col, cnt) =>
+        cnt == col.getRefCount
+      }
+    } else {
+      false
+    }
+  }
+
+  private var meta: Option[ByteBuffer] = None
+
+  def materialize(): Table = {
+    var materialized: Table = null
+    var hostHandle: SpillableHostBufferHandle = null
+    synchronized {
+      if (closed) {
+        throw new IllegalStateException("attempting to materialize a closed handle")
+      } else if (host.isDefined) {
+        hostHandle = host.get
+      } else if (dev.isDefined) {
+        materialized = SpillableTableHandle.cloneTable(dev.get)
+      } else {
+        throw new IllegalStateException("open handle has no underlying table")
+      }
+    }
+    if (materialized == null) {
+      // (Similar as SpillableColumnarBatchHandle)
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+      try {
+        val devBuffer = closeOnExcept(DeviceMemoryBuffer.allocate(hostHandle.sizeInBytes)) {
+          dmb =>
+            hostHandle.materializeToDeviceMemoryBuffer(dmb)
+            dmb
+        }
+        materialized = withResource(devBuffer)(Table.fromPackedTable(meta.get, _))
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
+      }
+    }
+    materialized
+  }
+
+  override def spill(): Long = {
+    if (!spillable) {
+      0L
+    } else {
+      val tblToSpill: Option[Table] = synchronized {
+        if (!closed && host.isEmpty && dev.isDefined && !spilling) {
+          spilling = true
+          Some(SpillableTableHandle.cloneTable(dev.get))
+        } else {
+          None
+        }
+      }
+      if (tblToSpill.isDefined) {
+        executeSpill {
+          // "tblToSpill" will be closed inside "withChunkedPacker".
+          withChunkedPacker(tblToSpill.get) { chunkedPacker =>
+            meta = Some(chunkedPacker.getPackedMeta)
+            var staging: Option[SpillableHostBufferHandle] =
+              Some(SpillableHostBufferHandle.createHostHandleWithPacker(chunkedPacker,
+                taskPriority))
+            val actualBytes: Long = staging.map(_.sizeInBytes).getOrElse(0L)
+            synchronized {
+              spilling = false
+              if (closed) {
+                staging.foreach(_.close())
+                staging = None
+                doClose()
+              } else {
+                host = staging
+              }
+            }
+            actualBytes // return actual bytes spilled for metrics
+          }
+        }
+        // We return the size we were created with. This is not the actual size
+        // of this table when it is packed, and it is used by the calling code
+        // to figure out more or less how much did we free in the device.
+        approxSizeInBytes
+      } else {
+        0L
+      }
+    }
+  }
+
+  private def withChunkedPacker[T](tableToPack: Table)(body: ChunkedPacker => T): T = {
+    withResource(tableToPack) { _ =>
+      withResource(new ChunkedPacker(tableToPack, SpillFramework.chunkedPackBounceBufferPool)) {
+        packer => body(packer)
+      }
+    }
+  }
+
+  override def doClose(): Unit = {
+    releaseDeviceResource()
+    host.foreach(_.close())
+    host = None
+  }
+}
+
+object SpillableTableHandle {
+  def apply(table: Table): SpillableTableHandle = {
+    val sizeInBytes = GpuColumnVector.getTotalDeviceMemoryUsed(table)
+    val handle = new SpillableTableHandle(sizeInBytes, dev = Some(table))
+    SpillFramework.stores.deviceStore.track(handle)
+    handle
+  }
+
+  private def cloneTable(table: Table): Table = {
+    val numCols = table.getNumberOfColumns
+    val columns = new Array[ColumnVector](numCols)
+    var i = 0
+    while (i < numCols) {
+      columns(i) = table.getColumn(i)
+      i = i + 1
+    }
+    new Table(columns: _*) // The new table increases the columns ref
+  }
+}
+
 object SpillFramework extends Logging {
   // public for tests. Some tests not in the `spill` package require setting this
   // because they need fine control over allocations.
   var storesInternal: SpillableStores = _
-  
+
   def stores: SpillableStores = {
     if (storesInternal == null) {
       throw new IllegalStateException(

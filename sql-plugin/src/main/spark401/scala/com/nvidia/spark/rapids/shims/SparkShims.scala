@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "401"}
+{"spark": "402"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -23,7 +24,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.{HashExprChecks, Murmur3HashExprMeta, XxHash64ExprMeta}
 
 import org.apache.spark.sql.catalyst.expressions.{CollationAwareMurmur3Hash, CollationAwareXxHash64, Expression}
-import org.apache.spark.sql.rapids.{GpuMurmur3Hash, GpuXxHash64}
 
 object SparkShimImpl extends Spark400PlusCommonShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
@@ -31,12 +31,12 @@ object SparkShimImpl extends Spark400PlusCommonShims {
       GpuOverrides.expr[CollationAwareMurmur3Hash](
         "Collation-aware murmur3 hash operator",
         HashExprChecks.murmur3ProjectChecks,
-        Murmur3HashExprMeta
+        Murmur3HashExprMeta.apply
       ),
       GpuOverrides.expr[CollationAwareXxHash64](
         "Collation-aware xxhash64 operator",
         HashExprChecks.xxhash64ProjectChecks,
-        XxHash64ExprMeta
+        XxHash64ExprMeta.apply
       )
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs

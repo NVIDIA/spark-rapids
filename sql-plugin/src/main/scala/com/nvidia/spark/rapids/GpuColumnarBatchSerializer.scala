@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import scala.reflect.ClassTag
 import ai.rapids.cudf.{Cuda, HostColumnVector, HostMemoryBuffer, JCudfSerialization}
 import ai.rapids.cudf.JCudfSerialization.SerializedTableHeader
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.KudoSerializedTableColumn.SER_CHECK_SCHEMA
 import com.nvidia.spark.rapids.RapidsConf.ShuffleKudoMode
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetryNoSplit, SizeProvider}
@@ -170,20 +171,12 @@ class GpuColumnarBatchSerializer(metrics: Map[String, GpuMetric], dataTypes: Arr
                                  kudoMeasureBufferCopy: Boolean)
   extends Serializer with Serializable {
 
-  private lazy val kudo = {
-    if (useKudo && dataTypes.nonEmpty) {
-      Some(new KudoSerializer(GpuColumnVector.from(dataTypes)))
-    } else {
-      None
-    }
-  }
-
   override def newInstance(): SerializerInstance = {
     if (useKudo) {
       if (kudoMode == ShuffleKudoMode.GPU) {
         new KudoGpuSerializerInstance(metrics, dataTypes)
       } else {
-        new KudoSerializerInstance(metrics, dataTypes, kudo, kudoMeasureBufferCopy)
+        new KudoSerializerInstance(metrics, dataTypes, kudoMeasureBufferCopy)
       }
     } else {
       new GpuColumnarBatchSerializerInstance(metrics)
@@ -385,15 +378,14 @@ object SerializedTableColumn {
 /**
  * Serializer instance for serializing `ColumnarBatch`s for use during shuffle with
  * [[KudoSerializer]]
- *
- * @param dataSize  metric to track the size of the serialized data
+ * @param metrics map of GpuMetric contains serializer specific metrics
  * @param dataTypes data types of the columns in the batch
+ * @param measureBufferCopyTime whether to measure the buffer copy time
  */
 private class KudoSerializerInstance(
     val metrics: Map[String, GpuMetric],
     val dataTypes: Array[DataType],
-    val kudo: Option[KudoSerializer],
-    val measureBufferCopyTime: Boolean,
+    val measureBufferCopyTime: Boolean
 ) extends SerializerInstance {
   private val dataSize = metrics(METRIC_DATA_SIZE)
   private val serTime = metrics(METRIC_SHUFFLE_SER_STREAM_TIME)
@@ -401,10 +393,28 @@ private class KudoSerializerInstance(
   private val deserTime = metrics(METRIC_SHUFFLE_DESER_STREAM_TIME)
   private val stalledByInputStream = metrics(METRIC_SHUFFLE_STALLED_BY_INPUT_STREAM)
 
+  private lazy val kudo = if (dataTypes.nonEmpty) {
+    Some(new KudoSerializer(GpuColumnVector.from(dataTypes)))
+  } else {
+    None
+  }
+
   override def serializeStream(out: OutputStream): SerializationStream = new SerializationStream {
 
     override def writeValue[T: ClassTag](value: T): SerializationStream = serTime.ns {
       val batch = value.asInstanceOf[ColumnarBatch]
+      if (SER_CHECK_SCHEMA) {
+        // The written batch should always has the same schema with the one used to create
+        // the kudo serializer. But if they become different in some cases unintentionally,
+        // the kudo shuffle can easily run into errors. e.g. the negative "numRows" error.
+        // Then enable this to figure out if the error is caused by mismatched batches.
+        val actualTypes = GpuColumnVector.extractTypes(batch)
+        if (!dataTypes.sameElements(actualTypes)) {
+          throw new IllegalStateException(s"Kudo writer got a mismatched batch, types: " +
+            s"[${actualTypes.mkString("; ")}], but expected types: " +
+            s"[${dataTypes.mkString("; ")}].")
+        }
+      }
       val numColumns = batch.numCols()
       val columns: Array[HostColumnVector] = new Array(numColumns)
       withResource(new ArrayBuffer[AutoCloseable](numColumns)) { toClose =>
@@ -533,9 +543,6 @@ private class KudoSerializerInstance(
   override def deserialize[T: ClassTag](bytes: ByteBuffer, loader: ClassLoader): T =
     throw new UnsupportedOperationException
 }
-
-
-
 
 private class KudoGpuSerializerInstance(
     val metrics: Map[String, GpuMetric],
@@ -691,6 +698,13 @@ object KudoSerializedTableColumn {
     val column = new KudoSerializedTableColumn(kudoTable)
     new ColumnarBatch(Array(column), kudoTable.header.getNumRows)
   }
+
+  /**
+   * This is for debugging kudo Shuffle errors, e.g. numRows < 0 in kudo Shuffle read.
+   * It is disabled by default for performance.
+   */
+  val SER_CHECK_SCHEMA: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.kudo.debug.ser.checkSchema")
 }
 
 class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
@@ -702,12 +716,15 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
   // to use a shared HostMemoryBuffer to avoid the overhead of allocating and deallocating, check
   // SparkResourceAdaptor.cpuDeallocate to understand the overhead.
 
-  // Used to track the first 10 batch sizes
-  // and decide if to use a shared HostMemoryBuffer or not.
-  private[this] val firstTenBatchesSizes = new ArrayBuffer[Long](10)
+  // Used to track the first 5 batch sizes and decide if to use a shared HostMemoryBuffer.
+  // After seeing 5 batches, we estimate the shared buffer size based on average batch size.
+  private[this] val firstBatchesSizes = new ArrayBuffer[Long](5)
+  private[this] val sharedBufferSampleCount: Int = 5
   private[this] var sharedBuffer: Option[HostMemoryBuffer] = None
   private[this] val sharedBufferTriggerSize: Int = 1 << 20 // 1MB
-  private[this] val sharedBufferTotalSize: Int = 20 << 20 // 20MB
+  private[this] val sharedBufferMinSize: Int = 1 << 20 // 1MB minimum
+  private[this] val sharedBufferMaxSize: Int = 20 << 20 // 20MB maximum
+  private[this] var sharedBufferAllocatedSize: Int = 0 // actual allocated size (dynamic)
   private[this] var sharedBufferCurrentUse: Int = 0
 
   // Don't install the callback if in a unit test
@@ -764,15 +781,18 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
           if (sharedBuffer.isEmpty) {
             closeOnExcept(allocateHostWithRetry(header.getTotalDataLen)) { allocated =>
 
-              if (firstTenBatchesSizes.length < 10) {
-                firstTenBatchesSizes += header.getTotalDataLen
-                if (firstTenBatchesSizes.length == 10) {
-                  // If we have 10 batches, we can decide if to use a shared buffer or not.
-                  val maxSize = firstTenBatchesSizes.max
+              if (firstBatchesSizes.length < sharedBufferSampleCount) {
+                firstBatchesSizes += header.getTotalDataLen
+                if (firstBatchesSizes.length == sharedBufferSampleCount) {
+                  // After seeing enough samples, decide if to use a shared buffer.
+                  val maxSize = firstBatchesSizes.max
                   if (maxSize < sharedBufferTriggerSize) {
-                    // If the max size of the first 10 batches is less than the threshold,
-                    // we can use a shared buffer.
-                    sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
+                    // All sampled batches are small, use shared buffer with dynamic size.
+                    // Estimate buffer size: 10 * average batch size, clamped to [1MB, 20MB].
+                    val avgSize = firstBatchesSizes.sum / firstBatchesSizes.length
+                    sharedBufferAllocatedSize = math.min(sharedBufferMaxSize,
+                      math.max(sharedBufferMinSize, (avgSize * 10).toInt))
+                    sharedBuffer = Some(allocateHostWithRetry(sharedBufferAllocatedSize))
                     sharedBufferCurrentUse = 0
                   }
                 }
@@ -781,16 +801,16 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
               allocated
             }
           } else {
-            if (header.getTotalDataLen > sharedBufferTotalSize / 2) {
+            if (header.getTotalDataLen > sharedBufferAllocatedSize / 2) {
               // Too big to use shared buffer, this should rarely happen since
-              // first ten batches all much smaller.
+              // sampled batches were all much smaller.
               allocateHostWithRetry(header.getTotalDataLen)
             } else {
-              if (sharedBufferCurrentUse + header.getTotalDataLen > sharedBufferTotalSize) {
+              if (sharedBufferCurrentUse + header.getTotalDataLen > sharedBufferAllocatedSize) {
                 // If not enough room left, we need to allocate a new shared buffer.
                 sharedBuffer.get.close()
                 sharedBufferCurrentUse = 0
-                sharedBuffer = Some(allocateHostWithRetry(sharedBufferTotalSize))
+                sharedBuffer = Some(allocateHostWithRetry(sharedBufferAllocatedSize))
               }
               val ret = sharedBuffer.get.slice(sharedBufferCurrentUse,
                 header.getTotalDataLen)

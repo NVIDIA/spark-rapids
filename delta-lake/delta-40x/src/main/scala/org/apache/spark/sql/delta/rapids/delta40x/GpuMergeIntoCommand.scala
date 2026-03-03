@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * This file was derived from MergeIntoCommand.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -30,11 +30,11 @@ import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta._
 
 import org.apache.spark.SparkContext
-import org.apache.spark.sql.{DataFrame, Row, SparkSession => SqlSparkSession}
+import org.apache.spark.sql.{Row, SparkSession => SqlSparkSession}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, Literal, Or}
 import org.apache.spark.sql.catalyst.plans.logical._
-import org.apache.spark.sql.classic.{ColumnNodeToExpressionConverter, ExpressionUtils, SparkSession => ClassicSparkSession}
+import org.apache.spark.sql.classic.{SparkSession => ClassicSparkSession}
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions.{AddFile, FileAction}
 import org.apache.spark.sql.delta.commands.MergeIntoCommandBase
@@ -384,7 +384,7 @@ case class GpuMergeIntoCommand(
           }
         }
         commitAndRecordStats(
-          org.apache.spark.sql.classic.SparkSession.active,
+          ClassicSparkSession.active,
           gpuDeltaTxn,
           mergeActions,
           startTime,
@@ -583,7 +583,6 @@ case class GpuMergeIntoCommand(
     val matchedRowCounts = collectTouchedFiles.groupBy(ROW_ID_COL).agg(sum("one").as("count"))
 
     // Get multiple matches and simultaneously collect (using touchedFilesAccum) the file names
-    import org.apache.spark.sql.delta.implicits._
     val mmRow = matchedRowCounts
       .filter(col("count") > lit(1))
       .select(

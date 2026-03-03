@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -153,7 +153,7 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
       val2: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(val1, numRows, col.dataType)) { val1Col =>
+    withResource(GpuColumnVector.from(val1, numRows)) { val1Col =>
       doColumnar(val0, val1Col, val2)
     }
   }
@@ -180,7 +180,7 @@ case class GpuStartsWith(left: Expression, right: Expression)
     lhs.getBase.startsWith(rhs.getBase)
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -206,7 +206,7 @@ case class GpuEndsWith(left: Expression, right: Expression)
     lhs.getBase.endsWith(rhs.getBase)
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -347,10 +347,10 @@ case class GpuConcatWs(children: Seq[Expression])
         s.dataType match {
           case ArrayType(StringType, _) =>
             // we have to first concatenate any array types
-            withResource(GpuColumnVector.from(s, numRows, s.dataType).getBase) { cv =>
+            withResource(GpuColumnVector.from(s, numRows).getBase) { cv =>
               concatArrayCol(colOrScalarSep, cv)
             }
-          case _ => GpuColumnVector.from(s, numRows, s.dataType)
+          case _ => GpuColumnVector.from(s, numRows)
         }
       case other =>
         throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value:" +
@@ -363,7 +363,7 @@ case class GpuConcatWs(children: Seq[Expression])
     colOrScalarSep match {
       case sepScalar: GpuScalar if (!sepScalar.getBase.isValid()) =>
         // if null scalar separator just return a column of all nulls
-        Some(GpuColumnVector.from(sepScalar, numRows, dataType))
+        Some(GpuColumnVector.from(sepScalar, numRows))
       case _ =>
         None
     }
@@ -414,7 +414,7 @@ case class GpuContains(left: Expression, right: Expression)
     lhs.getBase.stringContains(rhs.getBase)
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -623,7 +623,7 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
   override def doColumnar(strS: GpuScalar, posCol: GpuColumnVector,
       lenCol: GpuColumnVector): ColumnVector = {
     val numRows = posCol.getRowCount.toInt
-    withResource(GpuColumnVector.from(strS, numRows, strS.dataType)) { strCol =>
+    withResource(GpuColumnVector.from(strS, numRows)) { strCol =>
       doColumnar(strCol, posCol, lenCol)
     }
   }
@@ -700,7 +700,7 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
   override def doColumnar(strS: GpuScalar, posCol: GpuColumnVector,
       lenS: GpuScalar): ColumnVector = {
     val numRows = posCol.getRowCount.toInt
-    withResource(GpuColumnVector.from(strS, numRows, strS.dataType)) { strCol =>
+    withResource(GpuColumnVector.from(strS, numRows)) { strCol =>
       doColumnar(strCol, posCol, lenS)
     }
   }
@@ -738,7 +738,7 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
 
   override def doColumnar(numRows: Int, strS: GpuScalar, posS: GpuScalar,
       lenS: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(strS, numRows, strS.dataType)) { strCol =>
+    withResource(GpuColumnVector.from(strS, numRows)) { strCol =>
       doColumnar(strCol, posS, lenS)
     }
   }
@@ -764,8 +764,7 @@ case class GpuStringRepeat(input: Expression, repeatTimes: Expression)
   def doColumnar(input: GpuScalar, repeatTimes: GpuColumnVector): ColumnVector = {
     assert(input.dataType == StringType)
 
-    withResource(GpuColumnVector.from(input, repeatTimes.getRowCount.asInstanceOf[Int],
-                 input.dataType)) {
+    withResource(GpuColumnVector.from(input, repeatTimes.getRowCount.asInstanceOf[Int])) {
       replicatedInput => doColumnar(replicatedInput, repeatTimes)
     }
   }
@@ -878,7 +877,7 @@ case class GpuStringReplace(
       strExpr: GpuScalar,
       searchExpr: GpuScalar,
       replaceExpr: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(strExpr, numRows, srcExpr.dataType)) { strExprCol =>
+    withResource(GpuColumnVector.from(strExpr, numRows)) { strExprCol =>
       doColumnar(strExprCol, searchExpr, replaceExpr)
     }
   }
@@ -946,7 +945,7 @@ case class GpuStringTranslate(
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
       val2: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(val0, numRows, srcExpr.dataType)) { val0Col =>
+    withResource(GpuColumnVector.from(val0, numRows)) { val0Col =>
       doColumnar(val0Col, val1, val2)
     }
   }
@@ -989,7 +988,7 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -1227,7 +1226,7 @@ case class GpuRLike(left: Expression, right: Expression, pattern: String)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -1282,7 +1281,7 @@ case class GpuLiteralRangePattern(left: Expression, right: Expression,
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -1295,7 +1294,7 @@ abstract class GpuRegExpTernaryBase
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
       val2: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(val0, numRows, first.dataType)) { val0Col =>
+    withResource(GpuColumnVector.from(val0, numRows)) { val0Col =>
       doColumnar(val0Col, val1, val2)
     }
   }
@@ -1737,7 +1736,7 @@ case class GpuSubstringIndex(strExpr: Expression,
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
       val2: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(val0, numRows, strExpr.dataType)) { val0Col =>
+    withResource(GpuColumnVector.from(val0, numRows)) { val0Col =>
       doColumnar(val0Col, val1, val2)
     }
   }
@@ -1777,7 +1776,7 @@ trait BasePad
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
       val2: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(val0, numRows, str.dataType)) { val0Col =>
+    withResource(GpuColumnVector.from(val0, numRows)) { val0Col =>
       doColumnar(val0Col, val1, val2)
     }
   }
@@ -1938,7 +1937,7 @@ case class GpuStringSplit(str: Expression, regex: Expression, limit: Expression,
 
   override def doColumnar(numRows: Int, val0: GpuScalar, val1: GpuScalar,
       val2: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(val0, numRows, str.dataType)) { val0Col =>
+    withResource(GpuColumnVector.from(val0, numRows)) { val0Col =>
       doColumnar(val0Col, val1, val2)
     }
   }
@@ -2030,7 +2029,7 @@ case class GpuStringToMap(strExpr: Expression,
     withResourceIfAllowed(strExpr.columnarEvalAny(batch)) {
       case strsCol: GpuColumnVector => toMap(strsCol)
       case str: GpuScalar =>
-        withResource(GpuColumnVector.from(str, batch.numRows, str.dataType)) {
+        withResource(GpuColumnVector.from(str, batch.numRows)) {
           strsCol => toMap(strsCol)
         }
       case v =>
@@ -2134,7 +2133,7 @@ case class GpuStringInstr(str: Expression, substr: Expression)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, str.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -2232,7 +2231,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
     fromS: GpuScalar,
     toS: GpuScalar
   ): ColumnVector = {
-    withResource(GpuColumnVector.from(toS, numRows, toBase.dataType)) { expandedToS =>
+    withResource(GpuColumnVector.from(toS, numRows)) { expandedToS =>
       doColumnar(strSr, fromS, expandedToS)
     }
   }
@@ -2512,7 +2511,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, lhs.dataType)) { col =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { col =>
       doColumnar(col, rhs)
     }
   }
