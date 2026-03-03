@@ -264,13 +264,15 @@ object ProtobufExprShims {
           {
             val flatFields = mutable.ArrayBuffer[FlattenedFieldDescriptor]()
 
-            // Helper to add a field and its children recursively
+            // Helper to add a field and its children recursively.
+            // pathPrefix is the dot-path of ancestor fields (empty for top-level).
             def addFieldWithChildren(
                 sf: StructField,
                 info: ProtobufFieldInfo,
                 parentIdx: Int,
                 depth: Int,
-                nestedMsgDesc: AnyRef): Unit = {
+                nestedMsgDesc: AnyRef,
+                pathPrefix: String = ""): Unit = {
 
               val currentIdx = flatFields.size
 
@@ -356,32 +358,33 @@ object ProtobufExprShims {
               // add child fields
               sf.dataType match {
                 case st: StructType if nestedMsgDesc != null =>
-                  // Non-repeated nested message
-                  addChildFieldsFromStruct(st, nestedMsgDesc, sf.name, currentIdx, depth)
+                  addChildFieldsFromStruct(
+                    st, nestedMsgDesc, sf.name, currentIdx, depth, pathPrefix)
                   
                 case ArrayType(st: StructType, _) if nestedMsgDesc != null =>
-                  // Repeated message field (pruned via ordinal remapping)
-                  addChildFieldsFromStruct(st, nestedMsgDesc, sf.name, currentIdx, depth)
+                  addChildFieldsFromStruct(
+                    st, nestedMsgDesc, sf.name, currentIdx, depth, pathPrefix)
                   
                 case _ => // Not a struct, no children to add
               }
             }
             
             // Helper to add child fields from a struct type.
-            // Applies nested schema pruning for ALL struct types (both repeated and non-repeated).
-            // Pruned output is handled by ordinal remapping in GpuGetStructFieldMeta /
-            // GpuGetArrayStructFieldsMeta, not by null column expansion.
+            // Applies nested schema pruning at arbitrary depth using path-based
+            // lookup into nestedFieldRequirements.
             def addChildFieldsFromStruct(
                 st: StructType,
                 parentMsgDesc: AnyRef,
                 fieldName: String,
                 parentIdx: Int,
-                parentDepth: Int): Unit = {
+                parentDepth: Int,
+                pathPrefix: String): Unit = {
+              val path = if (pathPrefix.isEmpty) fieldName else s"$pathPrefix.$fieldName"
               val fd = PbReflect.findFieldByName(parentMsgDesc, fieldName)
               if (fd != null) {
                 try {
                   val childMsgDesc = PbReflect.getMessageType(fd)
-                  val requiredChildren = nestedFieldRequirements.get(fieldName)
+                  val requiredChildren = nestedFieldRequirements.get(path)
                   val filteredFields = requiredChildren match {
                     case Some(Some(childNames)) =>
                       st.fields.filter(f => childNames.contains(f.name))
@@ -415,6 +418,9 @@ object ProtobufExprShims {
                           (None, None)
                         }
 
+                      val childDefaultVal =
+                        if (childHasDefault) PbReflect.getDefaultValue(childFd) else None
+
                       val childInfo = ProtobufFieldInfo(
                         fieldNumber = childFieldNumber,
                         protoTypeName = childProtoTypeName,
@@ -424,14 +430,14 @@ object ProtobufExprShims {
                         unsupportedReason = None,
                         isRequired = childIsRequired,
                         hasDefaultValue = childHasDefault,
-                        defaultValue = None,
+                        defaultValue = childDefaultVal,
                         enumValues = childEnumVals,
                         enumNames = childEnumNameMap,
                         isRepeated = childIsRepeated
                       )
 
                       addFieldWithChildren(
-                        childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc)
+                        childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc, path)
                     }
                   }
                 } catch {
@@ -716,17 +722,16 @@ object ProtobufExprShims {
         }
 
         /**
-         * Nested field requirements: for each top-level field, what children are needed?
-         * - None means the whole field is needed (all children)
-         * - Some(Set("a","b")) means only children a and b are needed
+         * Nested field requirements: maps a field path to child requirements.
+         * Keys are dot-separated paths from the protobuf root:
+         *   - "level1" -> Some(Set("level2"))          (top-level struct pruning)
+         *   - "level1.level2" -> Some(Set("level3"))   (deep nested pruning)
+         *   - "field" -> None                           (whole field needed)
+         *
+         * Top-level names (keys without dots) also determine which fields are decoded.
          */
-        // Populated during analyzeDownstreamProject, used by addChildFieldsFromStruct
         private var nestedFieldRequirements: Map[String, Option[Set[String]]] = Map.empty
 
-
-        /**
-         * Get the field name from a GetStructField expression using its ordinal and schema.
-         */
         private def getFieldName(ordinal: Int, nameOpt: Option[String],
             schema: StructType): String = {
           nameOpt.getOrElse {
@@ -736,28 +741,84 @@ object ProtobufExprShims {
         }
 
         /**
-         * Recursively collect field names and nested child requirements from
-         * GetStructField expressions. Detects patterns like:
-         *   - decoded.field_name         -> field_name: None (whole field)
-         *   - decoded.ad_info.winfoid    -> ad_info: Some({winfoid})
-         *   - decoded.ad_info            -> ad_info: None (whole field)
-         *
-         * When both whole-field and sub-field access exist, whole-field wins (None).
+         * Navigate the Spark schema tree by following a dot-separated path of
+         * field names. Returns the StructType at the end of the path, unwrapping
+         * ArrayType(StructType) along the way, or null if the path is invalid.
          */
+        private def resolveSchemaAtPath(root: StructType, path: Seq[String]): StructType = {
+          var current: StructType = root
+          for (name <- path) {
+            val field = current.fields.find(_.name == name).orNull
+            if (field == null) return null
+            field.dataType match {
+              case st: StructType => current = st
+              case ArrayType(st: StructType, _) => current = st
+              case _ => return null
+            }
+          }
+          current
+        }
+
         /**
-         * Helper: record a nested child field requirement for a parent field.
-         * Merges with existing requirements (whole-field wins over sub-field).
+         * Walk a GetStructField chain upward until it reaches the protobuf
+         * reference expression, returning the sequence of field names forming
+         * the access path. Returns None if the chain does not terminate at a
+         * protobuf reference.
+         *
+         * Example: for `GetStructField(GetStructField(decoded, a_ord), b_ord)`
+         *   → Some(Seq("a", "b"))
          */
+        private def resolveFieldAccessChain(
+            expr: Expression): Option[Seq[String]] = {
+          expr match {
+            case GetStructField(child, ordinal, nameOpt) =>
+              if (isProtobufStructReference(child)) {
+                Some(Seq(getFieldName(ordinal, nameOpt, fullSchema)))
+              } else {
+                resolveFieldAccessChain(child).flatMap { parentPath =>
+                  val parentSchema = if (parentPath.isEmpty) fullSchema
+                                     else resolveSchemaAtPath(fullSchema, parentPath)
+                  if (parentSchema != null) {
+                    Some(parentPath :+ getFieldName(ordinal, nameOpt, parentSchema))
+                  } else {
+                    None
+                  }
+                }
+              }
+            case _ if isProtobufStructReference(expr) =>
+              Some(Seq.empty)
+            case _ =>
+              None
+          }
+        }
+
         private def addNestedFieldReq(
             fieldReqs: mutable.Map[String, Option[Set[String]]],
-            parentName: String,
+            parentKey: String,
             childName: String): Unit = {
-          fieldReqs.get(parentName) match {
+          fieldReqs.get(parentKey) match {
             case Some(None) => // Already need whole field, keep it
             case Some(Some(existing)) =>
-              fieldReqs(parentName) = Some(existing + childName)
+              fieldReqs(parentKey) = Some(existing + childName)
             case None =>
-              fieldReqs(parentName) = Some(Set(childName))
+              fieldReqs(parentKey) = Some(Set(childName))
+          }
+        }
+
+        /**
+         * Register pruning requirements at every level of a field access path.
+         * For path = ["a", "b"] with leafName = "c":
+         *   "a" -> needs child "b"
+         *   "a.b" -> needs child "c"
+         */
+        private def registerPathRequirements(
+            fieldReqs: mutable.Map[String, Option[Set[String]]],
+            path: Seq[String],
+            leafName: String): Unit = {
+          for (i <- path.indices) {
+            val pathKey = path.take(i + 1).mkString(".")
+            val childName = if (i < path.length - 1) path(i + 1) else leafName
+            addNestedFieldReq(fieldReqs, pathKey, childName)
           }
         }
 
@@ -766,47 +827,31 @@ object ProtobufExprShims {
             fieldReqs: mutable.Map[String, Option[Set[String]]],
             hasDirectStructRefHolder: () => Unit): Unit = {
           expr match {
-            // Pattern: decoded.parent_struct.child_field (non-array struct)
             case GetStructField(child, ordinal, nameOpt) =>
-              child match {
-                case GetStructField(innerChild, innerOrdinal, innerNameOpt)
-                    if isProtobufStructReference(innerChild) =>
-                  val parentName = getFieldName(innerOrdinal, innerNameOpt, fullSchema)
-                  val parentType = fullSchema.fields(innerOrdinal).dataType
-                  val childSchema = parentType match {
-                    case st: StructType => st
-                    case ArrayType(st: StructType, _) => st
-                    case _ => null
-                  }
-                  if (childSchema != null) {
-                    val childName = getFieldName(ordinal, nameOpt, childSchema)
-                    addNestedFieldReq(fieldReqs, parentName, childName)
+              resolveFieldAccessChain(child) match {
+                case Some(parentPath) =>
+                  val parentSchema = if (parentPath.isEmpty) fullSchema
+                                     else resolveSchemaAtPath(fullSchema, parentPath)
+                  if (parentSchema != null) {
+                    val fieldName = getFieldName(ordinal, nameOpt, parentSchema)
+                    if (parentPath.isEmpty) {
+                      // Direct top-level access: decoded.field_name (whole field)
+                      fieldReqs(fieldName) = None
+                    } else {
+                      registerPathRequirements(fieldReqs, parentPath, fieldName)
+                    }
                   } else {
-                    fieldReqs(parentName) = None
+                    collectStructFieldReferences(child, fieldReqs, hasDirectStructRefHolder)
                   }
-
-                case _ if isProtobufStructReference(child) =>
-                  // Direct top-level access: decoded.field_name (whole field)
-                  val fieldName = getFieldName(ordinal, nameOpt, fullSchema)
-                  fieldReqs(fieldName) = None
-
-                case _ =>
+                case None =>
                   collectStructFieldReferences(child, fieldReqs, hasDirectStructRefHolder)
               }
 
-            // Pattern: decoded.ad_info.winfoid where ad_info is ArrayType(StructType)
-            // Spark generates: GetArrayStructFields(GetStructField(decoded, ad_info_ord), field)
             case gasf: GetArrayStructFields =>
-              gasf.child match {
-                case GetStructField(innerChild, innerOrdinal, innerNameOpt)
-                    if isProtobufStructReference(innerChild) =>
-                  // Nested array-struct access: decoded.array_field.child_field
-                  val parentName = getFieldName(innerOrdinal, innerNameOpt, fullSchema)
-                  val childName = gasf.field.name
-                  addNestedFieldReq(fieldReqs, parentName, childName)
-
+              resolveFieldAccessChain(gasf.child) match {
+                case Some(parentPath) if parentPath.nonEmpty =>
+                  registerPathRequirements(fieldReqs, parentPath, gasf.field.name)
                 case _ =>
-                  // Not a direct protobuf reference, recurse into children
                   gasf.children.foreach { child =>
                     collectStructFieldReferences(child, fieldReqs, hasDirectStructRefHolder)
                   }
@@ -868,47 +913,37 @@ object ProtobufExprShims {
 
         override def convertToGpu(child: Expression): GpuExpression = {
           val prunedFieldsMap: Map[String, Seq[String]] = nestedFieldRequirements.collect {
-            case (fieldName, Some(childNames)) =>
-              val fieldIdx = fullSchema.fieldIndex(fieldName)
-              val childSchema = fullSchema.fields(fieldIdx).dataType match {
-                case st: StructType => st
-                case ArrayType(st: StructType, _) => st
-                case _ => null
-              }
+            case (pathKey, Some(childNames)) =>
+              val pathParts = pathKey.split("\\.").toSeq
+              val childSchema = resolveSchemaAtPath(fullSchema, pathParts)
               if (childSchema != null) {
                 val orderedNames = childSchema.fields
                   .map(_.name)
                   .filter(childNames.contains)
                   .toSeq
-                fieldName -> orderedNames
+                pathKey -> orderedNames
               } else {
-                fieldName -> childNames.toSeq
+                pathKey -> childNames.toSeq
               }
           }
 
           def registerExprs(expr: Expression): Unit = {
             expr match {
               case gsf @ GetStructField(childExpr, ordinal, nameOpt) =>
-                childExpr match {
-                  case GetStructField(innerChild, innerOrdinal, innerNameOpt)
-                      if isProtobufStructReference(innerChild) =>
-                    val parentName = getFieldName(innerOrdinal, innerNameOpt, fullSchema)
-                    val parentType = fullSchema.fields(innerOrdinal).dataType
-                    val childSchema = parentType match {
-                      case st: StructType => st
-                      case ArrayType(st: StructType, _) => st
-                      case _ => null
-                    }
-                    if (childSchema != null) {
-                      val childName = getFieldName(ordinal, nameOpt, childSchema)
-                      prunedFieldsMap.get(parentName).foreach { orderedChildren =>
+                resolveFieldAccessChain(childExpr) match {
+                  case Some(parentPath) if parentPath.nonEmpty =>
+                    val parentSchema = resolveSchemaAtPath(fullSchema, parentPath)
+                    if (parentSchema != null) {
+                      val pathKey = parentPath.mkString(".")
+                      val childName = getFieldName(ordinal, nameOpt, parentSchema)
+                      prunedFieldsMap.get(pathKey).foreach { orderedChildren =>
                         val runtimeOrd = orderedChildren.indexOf(childName)
                         if (runtimeOrd >= 0) {
                           gsf.setTagValue(ProtobufExprShims.PRUNED_ORDINAL_TAG, runtimeOrd)
                         }
                       }
                     }
-                  case _ if isProtobufStructReference(childExpr) =>
+                  case Some(parentPath) if parentPath.isEmpty =>
                     val runtimeOrd = decodedTopLevelIndices.indexOf(ordinal)
                     if (runtimeOrd >= 0) {
                       gsf.setTagValue(ProtobufExprShims.PRUNED_ORDINAL_TAG, runtimeOrd)
@@ -916,15 +951,12 @@ object ProtobufExprShims {
                   case _ =>
                 }
 
-              case gasf @ GetArrayStructFields(childExpr, field, _, _,
-                _) =>
-                childExpr match {
-                  case GetStructField(innerChild, innerOrdinal, innerNameOpt)
-                      if isProtobufStructReference(innerChild) =>
-                    val parentName = getFieldName(innerOrdinal, innerNameOpt, fullSchema)
-                    val childName = field.name
-                    prunedFieldsMap.get(parentName).foreach { orderedChildren =>
-                      val runtimeOrd = orderedChildren.indexOf(childName)
+              case gasf @ GetArrayStructFields(childExpr, field, _, _, _) =>
+                resolveFieldAccessChain(childExpr) match {
+                  case Some(parentPath) if parentPath.nonEmpty =>
+                    val pathKey = parentPath.mkString(".")
+                    prunedFieldsMap.get(pathKey).foreach { orderedChildren =>
+                      val runtimeOrd = orderedChildren.indexOf(field.name)
                       if (runtimeOrd >= 0) {
                         gasf.setTagValue(ProtobufExprShims.PRUNED_ORDINAL_TAG, runtimeOrd)
                       }
@@ -939,25 +971,40 @@ object ProtobufExprShims {
           targetExprsToRemap.foreach(registerExprs)
 
           val decodedSchema = {
-            val decodedFields = decodedTopLevelIndices.map { idx =>
-              val field = fullSchema.fields(idx)
-              prunedFieldsMap.get(field.name) match {
+            def applyPruning(field: StructField, prefix: String): StructField = {
+              val path = if (prefix.isEmpty) field.name else s"$prefix.${field.name}"
+              prunedFieldsMap.get(path) match {
                 case Some(childNames) =>
                   field.dataType match {
                     case ArrayType(st: StructType, cn) =>
                       val pruned = StructType(
-                        st.fields.filter(f =>
-                          childNames.contains(f.name)))
+                        st.fields.filter(f => childNames.contains(f.name))
+                          .map(f => applyPruning(f, path)))
                       field.copy(dataType = ArrayType(pruned, cn))
                     case st: StructType =>
                       val pruned = StructType(
-                        st.fields.filter(f =>
-                          childNames.contains(f.name)))
+                        st.fields.filter(f => childNames.contains(f.name))
+                          .map(f => applyPruning(f, path)))
                       field.copy(dataType = pruned)
                     case _ => field
                   }
-                case None => field
+                case None =>
+                  field.dataType match {
+                    case ArrayType(st: StructType, cn) =>
+                      val recursed = StructType(st.fields.map(f => applyPruning(f, path)))
+                      if (recursed != st) field.copy(dataType = ArrayType(recursed, cn))
+                      else field
+                    case st: StructType =>
+                      val recursed = StructType(st.fields.map(f => applyPruning(f, path)))
+                      if (recursed != st) field.copy(dataType = recursed)
+                      else field
+                    case _ => field
+                  }
               }
+            }
+
+            val decodedFields = decodedTopLevelIndices.map { idx =>
+              applyPruning(fullSchema.fields(idx), "")
             }
             StructType(decodedFields.map(f =>
               f.copy(nullable = true)))

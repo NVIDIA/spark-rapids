@@ -2673,3 +2673,372 @@ def test_from_protobuf_bug4_max_depth(spark_tmp_path, from_protobuf_fn):
     from spark_session import with_cpu_session
     cpu_result = with_cpu_session(lambda spark: run_on_spark(spark).collect())
     assert len(cpu_result) > 0
+
+
+# ===========================================================================
+# Regression tests for known bugs found by code review
+# ===========================================================================
+
+def _encode_varint(value):
+    """Encode a non-negative integer as a protobuf varint (for hand-crafting test bytes)."""
+    out = bytearray()
+    v = int(value)
+    while True:
+        b = v & 0x7F
+        v >>= 7
+        if v:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            break
+    return bytes(out)
+
+
+def _encode_tag(field_number, wire_type):
+    return _encode_varint((field_number << 3) | wire_type)
+
+
+# ---------------------------------------------------------------------------
+# Bug 1: BOOL8 truncation — non-canonical bool varint values >= 256
+#
+# Protobuf spec: bool is a varint; any non-zero value means true.
+# CPU decoder (protobuf-java): CodedInputStream.readBool() = readRawVarint64() != 0  →  true
+# GPU decoder: extract_varint_kernel writes static_cast<uint8_t>(v).
+#   For v = 256, static_cast<uint8_t>(256) == 0  →  false.  BUG.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_bool_noncanonical_varint_scalar(spark_tmp_path, from_protobuf_fn):
+    """Scalar bool field encoded as varint 256 should decode as true, not false."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "simple_bool_bug.desc", _build_simple_descriptor_set_bytes)
+    message_name = "test.Simple"
+
+    # Hand-craft protobuf wire bytes:
+    #   field 1 (bool b): tag = (1<<3)|0 = 0x08, value = varint(256) = 0x80 0x02
+    #   field 2 (int32 i32): tag = (2<<3)|0 = 0x10, value = varint(99) = 0x63
+    # Varint 256 is a perfectly valid encoding; CPU reads it as true.
+    # GPU truncates uint8_t(256) = 0 → false.
+    row_bool_256 = _encode_tag(1, 0) + _encode_varint(256) + \
+                   _encode_tag(2, 0) + _encode_varint(99)
+
+    # Control row: canonical bool true (varint 1) — should work on both
+    row_bool_1 = _encode_tag(1, 0) + _encode_varint(1) + \
+                 _encode_tag(2, 0) + _encode_varint(100)
+
+    # Another problematic value: 512 → uint8_t(0) → false
+    row_bool_512 = _encode_tag(1, 0) + _encode_varint(512) + \
+                   _encode_tag(2, 0) + _encode_varint(101)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(row_bool_256,), (row_bool_1,), (row_bool_512,)],
+            schema="bin binary",
+        )
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("b").alias("b"),
+            decoded.getField("i32").alias("i32"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_repeated_bool_descriptor_set_bytes(spark):
+    """
+    message WithRepeatedBool {
+        optional int32 id = 1;
+        repeated bool flags = 2;
+    }
+    """
+    D, fd = _new_proto2_file(spark, "repeated_bool.proto")
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
+    msg = D.DescriptorProto.newBuilder().setName("WithRepeatedBool")
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("id").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("flags").setNumber(2).setLabel(label_rep)
+            .setType(D.FieldDescriptorProto.Type.TYPE_BOOL).build())
+    fd.addMessageType(msg.build())
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_bool_noncanonical_varint_repeated(spark_tmp_path, from_protobuf_fn):
+    """Repeated bool with non-canonical varint values (256, 512) should all decode as true."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "repeated_bool_bug.desc", _build_repeated_bool_descriptor_set_bytes)
+    message_name = "test.WithRepeatedBool"
+
+    # Repeated bool field 2 (wire type 0 = varint), unpacked.
+    # Three elements: varint(256), varint(1), varint(512)
+    # CPU: [true, true, true]
+    # GPU (buggy): [false, true, false]  — because uint8(256)=0, uint8(512)=0
+    row = (_encode_tag(1, 0) + _encode_varint(42) +
+           _encode_tag(2, 0) + _encode_varint(256) +
+           _encode_tag(2, 0) + _encode_varint(1) +
+           _encode_tag(2, 0) + _encode_varint(512))
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("id").alias("id"),
+            decoded.getField("flags").alias("flags"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+# ---------------------------------------------------------------------------
+# Bug 2: Nested message child field default values are lost
+#
+# In ProtobufExprShims.scala, addChildFieldsFromStruct always sets
+# defaultValue = None for nested children, even when hasDefaultValue = true.
+# This means proto2 defaults for fields inside nested messages are never
+# passed to the GPU decoder.
+#
+# CPU: missing child field → proto2 default value
+# GPU: missing child field → null
+# ---------------------------------------------------------------------------
+
+def _build_nested_with_defaults_descriptor_set_bytes(spark):
+    """
+    message Inner {
+        optional int32  count = 1 [default = 42];
+        optional string label = 2 [default = "hello"];
+        optional bool   flag  = 3 [default = true];
+    }
+    message OuterWithNestedDefaults {
+        optional int32 id    = 1;
+        optional Inner inner = 2;
+    }
+    """
+    D, fd = _new_proto2_file(spark, "nested_defaults.proto")
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    inner = D.DescriptorProto.newBuilder().setName("Inner")
+    inner.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("count").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .setDefaultValue("42").build())
+    inner.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("label").setNumber(2).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
+            .setDefaultValue("hello").build())
+    inner.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("flag").setNumber(3).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_BOOL)
+            .setDefaultValue("true").build())
+    fd.addMessageType(inner.build())
+
+    outer = D.DescriptorProto.newBuilder().setName("OuterWithNestedDefaults")
+    outer.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("id").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    outer.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("inner").setNumber(2).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.Inner").build())
+    fd.addMessageType(outer.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_nested_child_default_values(spark_tmp_path, from_protobuf_fn):
+    """Proto2 default values for fields inside nested messages must be honored.
+
+    When `inner` is present but its child fields are absent, the CPU decoder
+    returns the proto2 defaults (count=42, label="hello", flag=true).
+    The GPU decoder currently returns null for all three because
+    defaultValue is never populated for nested children.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested_defaults.desc",
+        _build_nested_with_defaults_descriptor_set_bytes)
+    message_name = "test.OuterWithNestedDefaults"
+
+    # Row 1: outer.id = 10, inner is present but EMPTY (0-length nested message).
+    #   Wire: field 1 varint(10), field 2 length-delimited with length 0.
+    #   CPU should fill inner.count=42, inner.label="hello", inner.flag=true.
+    row_empty_inner = (_encode_tag(1, 0) + _encode_varint(10) +
+                       _encode_tag(2, 2) + _encode_varint(0))
+
+    # Row 2: outer.id = 20, inner has only count=7 (label and flag should get defaults).
+    inner_partial = _encode_tag(1, 0) + _encode_varint(7)
+    row_partial_inner = (_encode_tag(1, 0) + _encode_varint(20) +
+                         _encode_tag(2, 2) + _encode_varint(len(inner_partial)) +
+                         inner_partial)
+
+    # Row 3: outer.id = 30, inner is fully absent → inner itself is null.
+    row_no_inner = _encode_tag(1, 0) + _encode_varint(30)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(row_empty_inner,), (row_partial_inner,), (row_no_inner,)],
+            schema="bin binary",
+        )
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("id").alias("id"),
+            decoded.getField("inner").getField("count").alias("inner_count"),
+            decoded.getField("inner").getField("label").alias("inner_label"),
+            decoded.getField("inner").getField("flag").alias("inner_flag"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+# ===========================================================================
+# Deep nested schema pruning tests
+#
+# These verify that the GPU path correctly prunes nested fields at depth > 2.
+# Previously, collectStructFieldReferences only recognized 2-level
+# GetStructField chains, so accessing decoded.level2.level3.val3 would
+# decode ALL of level3's children instead of only val3.
+# ===========================================================================
+
+def _deep_5_level_data_gen():
+    return ProtobufMessageGen([
+        PbScalar("val1", 1, IntegerGen()),
+        PbNested("level2", 2, [
+            PbScalar("val2", 1, IntegerGen()),
+            PbNested("level3", 2, [
+                PbScalar("val3", 1, IntegerGen()),
+                PbNested("level4", 2, [
+                    PbScalar("val4", 1, IntegerGen()),
+                    PbNested("level5", 2, [
+                        PbScalar("val5", 1, IntegerGen()),
+                    ]),
+                ]),
+            ]),
+        ]),
+    ])
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_deep_pruning_3_level_leaf(spark_tmp_path, from_protobuf_fn):
+    """Access decoded.level2.level3.val3 -- triggers 3-level deep pruning."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "dp3.desc", _build_deep_nested_5_level_descriptor_set_bytes)
+    message_name = "test.Level1"
+    data_gen = _deep_5_level_data_gen()
+
+    def run_on_spark(spark):
+        df = gen_df(spark, data_gen)
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("val1").alias("val1"),
+            decoded.getField("level2").getField("level3").getField("val3").alias("deep_val3"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_deep_pruning_5_level_leaf(spark_tmp_path, from_protobuf_fn):
+    """Access decoded.level2.level3.level4.level5.val5 -- deepest leaf."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "dp5.desc", _build_deep_nested_5_level_descriptor_set_bytes)
+    message_name = "test.Level1"
+    data_gen = _deep_5_level_data_gen()
+
+    def run_on_spark(spark):
+        df = gen_df(spark, data_gen)
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            _get_field_by_path(decoded, ["level2", "level3", "level4", "level5", "val5"])
+                .alias("val5"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_deep_pruning_mixed_depths(spark_tmp_path, from_protobuf_fn):
+    """Access leaves at different depths in the same query.
+
+    Select val1 (depth 1), val2 (depth 2), val3 (depth 3), and val5 (depth 5)
+    to exercise pruning at every intermediate level simultaneously.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "dp_mix.desc", _build_deep_nested_5_level_descriptor_set_bytes)
+    message_name = "test.Level1"
+    data_gen = _deep_5_level_data_gen()
+
+    def run_on_spark(spark):
+        df = gen_df(spark, data_gen)
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("val1").alias("val1"),
+            decoded.getField("level2").getField("val2").alias("val2"),
+            _get_field_by_path(decoded, ["level2", "level3", "val3"]).alias("val3"),
+            _get_field_by_path(decoded, ["level2", "level3", "level4", "level5", "val5"])
+                .alias("val5"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_deep_pruning_sibling_at_depth_3(spark_tmp_path, from_protobuf_fn):
+    """At depth 3, access val3 but NOT level4 -- level4 subtree should be pruned."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "dp_sib3.desc", _build_deep_nested_5_level_descriptor_set_bytes)
+    message_name = "test.Level1"
+    data_gen = _deep_5_level_data_gen()
+
+    def run_on_spark(spark):
+        df = gen_df(spark, data_gen)
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            _get_field_by_path(decoded, ["level2", "level3", "val3"]).alias("val3"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_deep_pruning_whole_struct_at_depth_3(spark_tmp_path, from_protobuf_fn):
+    """Select the whole level3 struct -- no deep pruning inside level3."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "dp_whole3.desc", _build_deep_nested_5_level_descriptor_set_bytes)
+    message_name = "test.Level1"
+    data_gen = _deep_5_level_data_gen()
+
+    def run_on_spark(spark):
+        df = gen_df(spark, data_gen)
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("level2").getField("level3").alias("level3"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
