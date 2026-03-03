@@ -247,7 +247,7 @@ def test_group_agg(enable_cudf_udf):
         df = _create_df(spark)
         return df.groupby("id").agg(_sum_gpu_func(df.v)).collect()
 
-    conf=copy_and_update(_conf, {
+    conf = copy_and_update(_conf, {
         # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
         'spark.sql.adaptive.enabled': 'false'
     })
@@ -277,7 +277,7 @@ def test_sql_group(enable_cudf_udf):
         q = "SELECT sum_gpu_udf(v1) FROM VALUES (3, 0), (2, 0), (1, 1) tbl(v1, v2) GROUP BY v2"
         return spark.sql(q).collect()
 
-    conf=copy_and_update(_conf, {
+    conf = copy_and_update(_conf, {
         # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
         'spark.sql.adaptive.enabled': 'false'
     })
@@ -308,7 +308,7 @@ def test_window(enable_cudf_udf):
         w = Window.partitionBy('id').rowsBetween(Window.unboundedPreceding, Window.unboundedFollowing)
         return df.withColumn('sum_v', _sum_gpu_func('v').over(w)).collect()
 
-    conf=copy_and_update(_conf, {
+    conf = copy_and_update(_conf, {
         # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
         'spark.sql.adaptive.enabled': 'false'
     })
