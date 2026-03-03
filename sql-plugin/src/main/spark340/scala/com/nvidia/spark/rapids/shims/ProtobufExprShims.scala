@@ -105,7 +105,7 @@ object ProtobufExprShims {
     "org.apache.spark.sql.protobuf.utils.ProtobufUtils$"
 
   val PRUNED_ORDINAL_TAG =
-    new org.apache.spark.sql.catalyst.trees.TreeNodeTag[Int]("GPU_PRUNED_ORDINAL")
+    org.apache.spark.sql.rapids.GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG
 
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     try {

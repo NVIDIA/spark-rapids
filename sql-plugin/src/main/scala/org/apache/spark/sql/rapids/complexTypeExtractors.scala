@@ -412,6 +412,11 @@ case class GpuArrayPosition(left: Expression, right: Expression)
   }
 }
 
+object GpuStructFieldOrdinalTag {
+  val PRUNED_ORDINAL_TAG =
+    new org.apache.spark.sql.catalyst.trees.TreeNodeTag[Int]("GPU_PRUNED_ORDINAL")
+}
+
 class GpuGetStructFieldMeta(
     expr: GetStructField,
     conf: RapidsConf,
@@ -421,7 +426,7 @@ class GpuGetStructFieldMeta(
 
   def convertToGpu(child: Expression): GpuExpression = {
     val runtimeOrd = expr.getTagValue(
-      ProtobufExprShims.PRUNED_ORDINAL_TAG).getOrElse(-1)
+      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
     val effectiveOrd =
       if (runtimeOrd >= 0) runtimeOrd else expr.ordinal
     GpuGetStructField(child, effectiveOrd, expr.name)
@@ -437,7 +442,7 @@ class GpuGetArrayStructFieldsMeta(
 
   def convertToGpu(child: Expression): GpuExpression = {
     val runtimeOrd = expr.getTagValue(
-      ProtobufExprShims.PRUNED_ORDINAL_TAG).getOrElse(-1)
+      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
     val effectiveOrd =
       if (runtimeOrd >= 0) runtimeOrd else expr.ordinal
     GpuGetArrayStructFields(child, expr.field,
