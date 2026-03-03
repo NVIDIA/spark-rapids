@@ -19,5 +19,21 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-object SparkShimImpl extends Spark400PlusDBShims
+import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.execution.{OneRowRelationExec, SparkPlan}
+
+object SparkShimImpl extends Spark400PlusDBShims {
+
+  override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
+      // OneRowRelationExec is a new class in Spark 4.1.0 for single-row queries (e.g. SELECT 1)
+      // GPU version produces a single ColumnarBatch with one row and zero columns
+      GpuOverrides.exec[OneRowRelationExec](
+        "Single row relation for literal queries without FROM clause",
+        ExecChecks(TypeSig.all, TypeSig.all),
+        (exec, conf, parent, rule) => new GpuOneRowRelationExecMeta(exec, conf, parent, rule))
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
+    super.getExecs ++ shimExecs
+  }
+}
