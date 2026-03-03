@@ -405,8 +405,15 @@ object ProtobufExprShims {
                       val childIsRepeated = PbReflect.isRepeated(childFd)
                       val childIsRequired = PbReflect.isRequired(childFd)
                       val childHasDefault = PbReflect.hasDefaultValue(childFd)
-                      val (_, _, childEncoding) = checkFieldSupport(
-                        childSf.dataType, childProtoTypeName, childIsRepeated, enumsAsInts)
+                      val (childIsSupported, childUnsupportedReason, childEncoding) =
+                        checkFieldSupport(
+                          childSf.dataType, childProtoTypeName, childIsRepeated, enumsAsInts)
+
+                      if (!childIsSupported) {
+                        willNotWorkOnGpu(
+                          s"Nested field '${childSf.name}' at '$path': " +
+                            childUnsupportedReason.getOrElse("unsupported type"))
+                      }
 
                       val (childEnumVals, childEnumNameMap): (Option[Set[Int]],
                         Option[Map[Int, String]]) =
@@ -890,6 +897,14 @@ object ProtobufExprShims {
           // by class + identical input child so that
           // analyzeRequiredFields detects all field accesses in one
           // pass, keeping schema projection correct.
+          //
+          // Known limitation: if two different from_protobuf calls
+          // (different messageName / descriptor) share the same binary
+          // input column within one ProjectExec, this check will
+          // incorrectly treat them as the same expression, potentially
+          // mixing up field requirements and ordinal remapping. This is
+          // acceptable because decoding the same bytes as two different
+          // message types is not a meaningful query.
           if (expr.getClass == e.getClass &&
               expr.children.nonEmpty &&
               e.children.nonEmpty &&
