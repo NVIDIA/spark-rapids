@@ -146,7 +146,7 @@ object RapidsDeletionVectors extends Logging {
    */
   def dropFirstColumn(table: Table): Table = {
     if (table.getNumberOfColumns == 0) {
-      table
+      throw new IllegalStateException("Table has no columns to drop")
     } else {
       val columnIndices = (1 until table.getNumberOfColumns).toArray
       withResource(table) { _ =>
