@@ -36,13 +36,15 @@ import org.apache.spark.sql.types._
  * indices pointing to their containing message field. For pure scalar schemas, all fields
  * are top-level (parentIndices == -1, depthLevels == 0, isRepeated == false).
  *
- * Schema projection is supported: only fields in `decodedTopLevelIndices` are decoded by
- * the GPU. Fields not in this array will be filled with null columns in post-processing
- * to ensure the output matches `fullSchema`.
+ * Schema projection is supported: `decodedSchema` contains only the top-level fields and
+ * nested children that are actually referenced by downstream operators. Fields present in
+ * the original expression's output type but absent from `decodedSchema` will be filled with
+ * null columns by `expandSchema` in the shim layer.
  *
- * @param fullSchema The complete output schema (must match the original expression's dataType)
- * @param decodedTopLevelIndices Indices in fullSchema for top-level fields decoded by GPU.
- *                               Must be sorted in ascending order.
+ * @param decodedSchema The pruned schema containing only the fields decoded by the GPU.
+ *                      Top-level fields not in this schema get null columns; nested structs
+ *                      may have fewer children than the full schema (ordinal remapping handles
+ *                      the difference).
  * @param fieldNumbers Protobuf field numbers for all fields in flattened schema
  * @param parentIndices Parent indices for all fields (-1 for top-level)
  * @param depthLevels Nesting depth for all fields (0 for top-level)
@@ -58,13 +60,9 @@ import org.apache.spark.sql.types._
  * @param defaultStrings Default string/bytes values
  * @param enumValidValues Valid enum values for each field
  * @param enumNames Enum value names for enum-as-string fields. Parallel to enumValidValues.
- * @param nestedPrunedFields For nested schema projection: maps top-level field name to the
- *                           ordered list of decoded child field names. Only present for fields
- *                           where children were pruned. If empty map, no nested pruning.
  * @param failOnErrors If true, throw exception on malformed data
  */
 case class GpuFromProtobuf(
-    fullSchema: StructType,
     decodedSchema: StructType,
     fieldNumbers: Array[Int],
     parentIndices: Array[Int],

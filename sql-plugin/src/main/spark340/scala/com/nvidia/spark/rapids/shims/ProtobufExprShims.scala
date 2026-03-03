@@ -160,7 +160,13 @@ object ProtobufExprShims {
               return
           }
 
-          val options = getOptionsMap(e)
+          val options = getOptionsMap(e) match {
+            case Some(m) => m
+            case None =>
+              willNotWorkOnGpu(
+                "Cannot read from_protobuf options via reflection; falling back to CPU")
+              return
+          }
           val supportedOptions = Set("enums.as.ints", "mode")
           val unsupportedOptions = options.keys.filterNot(supportedOptions.contains)
           if (unsupportedOptions.nonEmpty) {
@@ -171,7 +177,7 @@ object ProtobufExprShims {
           }
 
           val enumsAsInts = options.getOrElse("enums.as.ints", "false").toBoolean
-          failOnErrors = options.getOrElse("mode", "PERMISSIVE").equalsIgnoreCase("FAILFAST")
+          failOnErrors = options.getOrElse("mode", "FAILFAST").equalsIgnoreCase("FAILFAST")
           val messageName = getMessageName(e)
 
           // Try to get descriptor: either file path (Spark 3.4.x) or binary bytes (Spark 3.5+)
@@ -1011,7 +1017,7 @@ object ProtobufExprShims {
           }
 
           GpuFromProtobuf(
-            fullSchema, decodedSchema,
+            decodedSchema,
             flatFieldNumbers, flatParentIndices,
             flatDepthLevels, flatWireTypes, flatOutputTypeIds, flatEncodings,
             flatIsRepeated, flatIsRequired, flatHasDefaultValue, flatDefaultInts,
@@ -1073,9 +1079,10 @@ object ProtobufExprShims {
     }
   }
 
-  private def getOptionsMap(e: Expression): Map[String, String] = {
-    val opt = Try(PbReflect.invoke0[scala.collection.Map[String, String]](e, "options")).toOption
-    opt.map(_.toMap).getOrElse(Map.empty)
+  private def getOptionsMap(e: Expression): Option[Map[String, String]] = {
+    Try(PbReflect.invoke0[scala.collection.Map[String, String]](e, "options"))
+      .map(_.toMap)
+      .toOption
   }
 
   /**

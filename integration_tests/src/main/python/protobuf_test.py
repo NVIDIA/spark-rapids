@@ -18,7 +18,7 @@ import struct
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import (
     BooleanGen, IntegerGen, LongGen, FloatGen, DoubleGen, StringGen, BinaryGen,
     ProtobufMessageGen, PbScalar, PbNested, PbRepeated, PbRepeatedMessage,
@@ -3039,6 +3039,90 @@ def test_deep_pruning_whole_struct_at_depth_3(spark_tmp_path, from_protobuf_fn):
             from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
         return df.select(
             decoded.getField("level2").getField("level3").alias("level3"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+# ===========================================================================
+# FAILFAST mode tests
+# ===========================================================================
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+def test_from_protobuf_failfast_malformed_data(spark_tmp_path, from_protobuf_fn):
+    """FAILFAST mode should throw on malformed protobuf data (both CPU and GPU)."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "failfast.desc", _build_simple_descriptor_set_bytes)
+    message_name = "test.Simple"
+
+    # Craft a valid row and a malformed row (truncated varint with continuation bit)
+    valid_row = _encode_tag(1, 0) + _encode_varint(1) + \
+                _encode_tag(2, 0) + _encode_varint(42)
+    malformed_row = bytes([0x08, 0x80])  # field 1, varint, but only continuation byte -- no end
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(valid_row,), (malformed_row,)],
+            schema="bin binary",
+        )
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "FAILFAST"})
+        # Must call .collect() so the exception surfaces inside with_*_session
+        return df.select(decoded.getField("b").alias("b")).collect()
+
+    assert_gpu_and_cpu_error(run_on_spark, {}, "Malformed")
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_permissive_malformed_returns_null(spark_tmp_path, from_protobuf_fn):
+    """PERMISSIVE mode should return null for malformed rows, not throw.
+
+    Note: Spark's from_protobuf defaults to FAILFAST (unlike JSON/CSV which
+    default to PERMISSIVE), so mode must be set explicitly.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "permissive.desc", _build_simple_descriptor_set_bytes)
+    message_name = "test.Simple"
+
+    valid_row = _encode_tag(2, 0) + _encode_varint(99)
+    malformed_row = bytes([0x08, 0x80])  # truncated varint
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(valid_row,), (malformed_row,)],
+            schema="bin binary",
+        )
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            decoded.getField("i32").alias("i32"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_all_null_input(spark_tmp_path, from_protobuf_fn):
+    """All rows in the input binary column are null (not empty bytes, actual nulls).
+    GPU should produce all-null struct rows matching CPU behavior."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "allnull.desc", _build_simple_descriptor_set_bytes)
+    message_name = "test.Simple"
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(None,), (None,), (None,)],
+            schema="bin binary",
+        )
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("i32").alias("i32"),
+            decoded.getField("s").alias("s"),
         )
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
