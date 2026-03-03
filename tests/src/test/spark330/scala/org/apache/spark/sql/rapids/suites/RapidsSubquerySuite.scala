@@ -92,6 +92,25 @@ class RapidsSubquerySuite
     }
   }
 
+  // GPU-specific test for "runtime error when the number of rows
+  // is greater than 1"
+  // Original test: SubquerySuite.scala lines 148-154
+  // Adaptation: GPU throws RuntimeException instead of
+  // IllegalStateException. Use broader intercept[Exception] and
+  // assert the same error message.
+  testRapids(
+    "runtime error when the number of rows is greater than 1") {
+    val e = intercept[Exception] {
+      sql(
+        "select (select a from " +
+          "(select 1 as a union all select 2 as a) t) as b"
+      ).collect()
+    }
+    assert(e.getMessage.contains(
+      "more than one row returned by a subquery" +
+        " used as an expression"))
+  }
+
   // GPU-specific test for "SPARK-36280"
   // Original test: SubquerySuite.scala lines 1883-1905
   testRapids("SPARK-36280: Remove redundant aliases after RewritePredicateSubquery") {
