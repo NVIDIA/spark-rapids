@@ -16,7 +16,14 @@
 
 package com.nvidia.spark.rapids.parquet
 
-import java.io.{Closeable, EOFException, FileNotFoundException, InputStream, IOException, OutputStream}
+import java.io.{
+  Closeable,
+  EOFException,
+  FileNotFoundException,
+  InputStream,
+  IOException,
+  OutputStream
+}
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
@@ -42,9 +49,23 @@ import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.io.async._
 import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, SeekableInputStream}
-import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
-import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ShimFilePartitionReaderFactory, SparkShimImpl}
-import com.nvidia.spark.rapids.shims.parquet.{ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
+import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{
+  CopyRange,
+  LocalCopy,
+  PARQUET_MAGIC
+}
+import com.nvidia.spark.rapids.shims.{
+  ColumnDefaultValuesShims,
+  GpuParquetCrypto,
+  GpuTypeShims,
+  ShimFilePartitionReaderFactory,
+  SparkShimImpl
+}
+import com.nvidia.spark.rapids.shims.parquet.{
+  ParquetLegacyNanoAsLongShims,
+  ParquetSchemaClipShims,
+  ParquetStringPredShims
+}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -59,8 +80,19 @@ import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.ParquetFileWriter.MAGIC
 import org.apache.parquet.hadoop.metadata._
 import org.apache.parquet.io.{InputFile, SeekableInputStream => ParquetSeekableInputStream}
-import org.apache.parquet.schema.{DecimalMetadata, GroupType, LogicalTypeAnnotation, MessageType, PrimitiveType, Type}
-import org.apache.parquet.schema.LogicalTypeAnnotation.{DateLogicalTypeAnnotation, IntLogicalTypeAnnotation, TimestampLogicalTypeAnnotation}
+import org.apache.parquet.schema.{
+  DecimalMetadata,
+  GroupType,
+  LogicalTypeAnnotation,
+  MessageType,
+  PrimitiveType,
+  Type
+}
+import org.apache.parquet.schema.LogicalTypeAnnotation.{
+  DateLogicalTypeAnnotation,
+  IntLogicalTypeAnnotation,
+  TimestampLogicalTypeAnnotation
+}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 import org.xerial.snappy.Snappy
 
@@ -73,7 +105,12 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
-import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedFile, PartitioningAwareFileIndex, SchemaColumnConvertNotSupportedException}
+import org.apache.spark.sql.execution.datasources.{
+  DataSourceUtils,
+  PartitionedFile,
+  PartitioningAwareFileIndex,
+  SchemaColumnConvertNotSupportedException
+}
 import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
@@ -874,8 +911,14 @@ private case class GpuParquetFileFilterHandler(
           if (fileGroupType.getFieldCount > 1 &&
               fileGroupType.isRepetition(Type.Repetition.REPEATED)) {
             // legacy array format where struct child is directly repeated under array type group
-            checkSchemaCompat(fileGroupType, array.elementType, errorCallback, isCaseSensitive,
-              useFieldId, rootFileType, rootReadType)
+            checkSchemaCompat(
+              fileGroupType,
+              array.elementType,
+              errorCallback,
+              isCaseSensitive,
+              useFieldId,
+              rootFileType,
+              rootReadType)
           } else {
             val repeatedType = fileGroupType.getType(0)
             val childType =
@@ -912,9 +955,13 @@ private case class GpuParquetFileFilterHandler(
 
   // scalastyle:off
   // Implement Parquet LIST backwards-compatibility rules.
-  // See: https://github.com/apache/parquet-format/blob/master/LogicalTypes.md#backward-compatibility-rules
+  // See:
+  //   https://github.com/apache/parquet-format/blob/master/
+  //   LogicalTypes.md#backward-compatibility-rules
   // Inspired by Apache Spark's ParquetSchemaConverter.isElementType():
-  // https://github.com/apache/spark/blob/3a0e6bde2aaa11e1165f4fde040ff02e1743795e/sql/core/src/main/scala/org/apache/spark/sql/execution/datasources/parquet/ParquetSchemaConverter.scala#L413
+  //   https://github.com/apache/spark/blob/3a0e6bde2aaa11e1165f4fde040ff02e1743795e/
+  //   sql/core/src/main/scala/org/apache/spark/sql/execution/datasources/parquet/
+  //   ParquetSchemaConverter.scala#L413
   // scalastyle:on
   private def isElementType(repeatedType: Type, parentName: String): Boolean = {
     {
