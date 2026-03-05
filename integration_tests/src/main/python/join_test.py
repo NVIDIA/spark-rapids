@@ -761,6 +761,7 @@ def test_broadcast_nested_loop_join_with_array_contains(data_gen, join_type, kud
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('join_type', ['Left', 'LeftSemi', 'LeftAnti'], ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
 def test_right_broadcast_nested_loop_join_condition_missing(data_gen, join_type, kudo_enabled):
     def do_join(spark):
         left, right = create_df(spark, data_gen, 50, 25)
