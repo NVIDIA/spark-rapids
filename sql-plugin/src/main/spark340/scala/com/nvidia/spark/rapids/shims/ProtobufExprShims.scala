@@ -478,8 +478,8 @@ object ProtobufExprShims {
 
             // Only add top-level fields that are actually required (schema projection).
             // This significantly reduces GPU memory and computation for schemas with many
-            // fields when only a few are needed. The Scala layer will post-process the
-            // output to insert null columns for non-decoded fields.
+            // fields when only a few are needed. Downstream GetStructField ordinals are
+            // remapped via PRUNED_ORDINAL_TAG to index into the pruned output.
             decodedTopLevelIndices = indicesToDecode
             indicesToDecode.foreach { schemaIdx =>
               val sf = fullSchema.fields(schemaIdx)
@@ -693,7 +693,8 @@ object ProtobufExprShims {
 
         /**
          * Analyze which fields are actually required by downstream operations.
-         * Currently supports analyzing parent Project expressions.
+         * Traverses parent FilterExec and ProjectExec nodes to collect
+         * struct field references, then returns the set of required top-level field names.
          *
          * @param allFieldNames All field names in the full schema
          * @return Set of field names that are actually required
