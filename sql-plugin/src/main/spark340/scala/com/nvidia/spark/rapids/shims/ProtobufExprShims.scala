@@ -178,7 +178,13 @@ object ProtobufExprShims {
             return
           }
 
-          val enumsAsInts = options.getOrElse("enums.as.ints", "false").toBoolean
+          val enumsAsInts = Try(options.getOrElse("enums.as.ints", "false").toBoolean) match {
+            case scala.util.Success(v) => v
+            case scala.util.Failure(_) =>
+              willNotWorkOnGpu("Invalid value for from_protobuf option 'enums.as.ints': " +
+                s"'${options.getOrElse("enums.as.ints", "")}' (expected true/false)")
+              return
+          }
           failOnErrors = options.getOrElse("mode", "FAILFAST").equalsIgnoreCase("FAILFAST")
           val messageName = getMessageName(e)
 
@@ -462,8 +468,10 @@ object ProtobufExprShims {
                     }
                   }
                 } catch {
-                  case _: ReflectiveOperationException =>
-                  // Ignore reflection failures and let remaining fields continue.
+                  case ex: ReflectiveOperationException =>
+                    willNotWorkOnGpu(
+                      s"Failed to reflect message type for nested field '$fieldName': " +
+                        ex.getMessage)
                 }
               }
             }
