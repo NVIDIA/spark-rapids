@@ -208,7 +208,7 @@ object ProtobufExprShims {
           // Reject proto3 descriptors — GPU decoder only supports proto2 semantics.
           // proto3 has different null/default-value behavior that the GPU path doesn't handle.
           val protoSyntax = PbReflect.getFileSyntax(msgDesc)
-          if (protoSyntax == "PROTO3") {
+          if (protoSyntax == "PROTO3" || protoSyntax.isEmpty) {
             willNotWorkOnGpu(
               "proto3 syntax is not supported by the GPU protobuf decoder; " +
                 "only proto2 is supported. The query will fall back to CPU.")
@@ -413,44 +413,44 @@ object ProtobufExprShims {
                         willNotWorkOnGpu(
                           s"Nested field '${childSf.name}' at '$path': " +
                             childUnsupportedReason.getOrElse("unsupported type"))
+                      } else {
+                        val (childEnumVals, childEnumNameMap): (Option[Set[Int]],
+                          Option[Map[Int, String]]) =
+                          if (childProtoTypeName == "ENUM") {
+                            Try {
+                              val pairs = PbReflect.getEnumValues(
+                                PbReflect.getEnumType(childFd))
+                              if (enumsAsInts) {
+                                (Some(pairs.map(_._1).toSet), None)
+                              } else {
+                                (Some(pairs.map(_._1).toSet), Some(pairs.toMap))
+                              }
+                            }.getOrElse((None, None))
+                          } else {
+                            (None, None)
+                          }
+
+                        val childDefaultVal =
+                          if (childHasDefault) PbReflect.getDefaultValue(childFd) else None
+
+                        val childInfo = ProtobufFieldInfo(
+                          fieldNumber = childFieldNumber,
+                          protoTypeName = childProtoTypeName,
+                          sparkType = childSf.dataType,
+                          encoding = childEncoding,
+                          isSupported = true,
+                          unsupportedReason = None,
+                          isRequired = childIsRequired,
+                          hasDefaultValue = childHasDefault,
+                          defaultValue = childDefaultVal,
+                          enumValues = childEnumVals,
+                          enumNames = childEnumNameMap,
+                          isRepeated = childIsRepeated
+                        )
+
+                        addFieldWithChildren(
+                          childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc, path)
                       }
-
-                      val (childEnumVals, childEnumNameMap): (Option[Set[Int]],
-                        Option[Map[Int, String]]) =
-                        if (childProtoTypeName == "ENUM") {
-                          Try {
-                            val pairs = PbReflect.getEnumValues(
-                              PbReflect.getEnumType(childFd))
-                            if (enumsAsInts) {
-                              (Some(pairs.map(_._1).toSet), None)
-                            } else {
-                              (Some(pairs.map(_._1).toSet), Some(pairs.toMap))
-                            }
-                          }.getOrElse((None, None))
-                        } else {
-                          (None, None)
-                        }
-
-                      val childDefaultVal =
-                        if (childHasDefault) PbReflect.getDefaultValue(childFd) else None
-
-                      val childInfo = ProtobufFieldInfo(
-                        fieldNumber = childFieldNumber,
-                        protoTypeName = childProtoTypeName,
-                        sparkType = childSf.dataType,
-                        encoding = childEncoding,
-                        isSupported = true,
-                        unsupportedReason = None,
-                        isRequired = childIsRequired,
-                        hasDefaultValue = childHasDefault,
-                        defaultValue = childDefaultVal,
-                        enumValues = childEnumVals,
-                        enumNames = childEnumNameMap,
-                        isRepeated = childIsRepeated
-                      )
-
-                      addFieldWithChildren(
-                        childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc, path)
                     }
                   }
                 } catch {

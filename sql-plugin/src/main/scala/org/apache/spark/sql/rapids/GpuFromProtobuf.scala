@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{Protobuf, ProtobufSchemaDescriptor}
 import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.types._
 
@@ -81,7 +82,7 @@ case class GpuFromProtobuf(
     enumNames: Array[Array[Array[Byte]]],
     failOnErrors: Boolean,
     child: Expression)
-  extends GpuUnaryExpression with ExpectsInputTypes with NullIntolerantShim {
+  extends GpuUnaryExpression with ExpectsInputTypes with NullIntolerantShim with Logging {
 
   override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
 
@@ -100,6 +101,9 @@ case class GpuFromProtobuf(
     } catch {
       case e: CudfException if failOnErrors =>
         throw new org.apache.spark.SparkException("Malformed protobuf message", e)
+      case e: CudfException =>
+        logWarning(s"Unexpected CudfException in PERMISSIVE mode: ${e.getMessage}", e)
+        throw e
     }
 
     // Apply input nulls to output
