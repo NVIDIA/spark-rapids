@@ -95,7 +95,11 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
 
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
-    assert_equal_with_local_sort(cpu_data, gpu_data)
+    assert_equal_with_local_sort(
+        cpu_data,
+        gpu_data,
+        # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+        conf={'spark.sql.adaptive.enabled': 'false'})
 
 
 @iceberg
