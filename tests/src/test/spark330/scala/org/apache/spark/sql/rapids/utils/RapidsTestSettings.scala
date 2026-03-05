@@ -56,7 +56,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsColumnExpressionSuite]
     .exclude("input_file_name, input_file_block_start, input_file_block_length - HadoopRDD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14153"))
     .exclude("input_file_name, input_file_block_start, input_file_block_length - NewHadoopRDD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14153"))
-    .exclude("assert_true", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14154"))
     .exclude("SPARK-34868: divide year-month interval by numeric", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14155"))
   enableSuite[RapidsDataFrameFunctionsSuite]
     .exclude("map_from_entries function", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14128"))
@@ -69,7 +68,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-28323: PythonUDF should be able to use in join condition", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
     .exclude("SPARK-28345: PythonUDF predicate should be able to pushdown to join", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
   enableSuite[RapidsSubquerySuite]
-    .exclude("runtime error when the number of rows is greater than 1", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14158"))
     .exclude("SPARK-26893: Allow pushdown of partition pruning subquery filters to file source", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14172 - partition pruning with subquery not working on GPU"))
     .exclude("SPARK-27279: Reuse Subquery", ADJUST_UT("Replaced by testRapids version for GPU execution"))
     .exclude("SPARK-36280: Remove redundant aliases after RewritePredicateSubquery", ADJUST_UT("Replaced by testRapids version that checks GPU or CPU shuffle exchange"))
