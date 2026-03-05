@@ -38,14 +38,14 @@ import org.apache.spark.sql.types._
  * are top-level (parentIndices == -1, depthLevels == 0, isRepeated == false).
  *
  * Schema projection is supported: `decodedSchema` contains only the top-level fields and
- * nested children that are actually referenced by downstream operators. Fields present in
- * the original expression's output type but absent from `decodedSchema` will be filled with
- * null columns by `expandSchema` in the shim layer.
+ * nested children that are actually referenced by downstream operators. Downstream
+ * `GetStructField` and `GetArrayStructFields` nodes have their ordinals rewritten via
+ * `PRUNED_ORDINAL_TAG` to index into the pruned schema. Unreferenced fields are never
+ * accessed, so no null-column filling is needed.
  *
  * @param decodedSchema The pruned schema containing only the fields decoded by the GPU.
- *                      Top-level fields not in this schema get null columns; nested structs
- *                      may have fewer children than the full schema (ordinal remapping handles
- *                      the difference).
+ *                      Only fields referenced by downstream operators are included;
+ *                      ordinal remapping ensures correct field access into the pruned output.
  * @param fieldNumbers Protobuf field numbers for all fields in flattened schema
  * @param parentIndices Parent indices for all fields (-1 for top-level)
  * @param depthLevels Nesting depth for all fields (0 for top-level)

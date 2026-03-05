@@ -676,8 +676,10 @@ object ProtobufExprShims {
             case "FIXED64" | "SFIXED64" | "DOUBLE" => WT_64BIT
             case "STRING" | "BYTES" | "MESSAGE" => WT_LEN
             case other =>
-              throw new IllegalStateException(
-                s"Unknown protobuf type name '$other' - cannot determine wire type")
+              willNotWorkOnGpu(
+                s"Unknown protobuf type name '$other' - cannot determine wire type; " +
+                  "falling back to CPU")
+              WT_VARINT
           }
         }
 

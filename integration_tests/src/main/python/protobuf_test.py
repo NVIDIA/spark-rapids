@@ -870,6 +870,74 @@ def test_from_protobuf_nested_enum_permissive_invalid_row_null(spark_tmp_path, f
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
+def _build_repeated_enum_descriptor_set_bytes(spark):
+    """
+    message WithRepeatedEnum {
+        optional int32 id = 1;
+        repeated Priority priority = 2;
+        enum Priority { UNKNOWN = 0; FOO = 1; BAR = 2; }
+    }
+    """
+    D, fd = _new_proto2_file(spark, "repeated_enum.proto")
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
+
+    msg = D.DescriptorProto.newBuilder().setName("WithRepeatedEnum")
+
+    enum_type = D.EnumDescriptorProto.newBuilder().setName("Priority")
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("UNKNOWN").setNumber(0).build())
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("FOO").setNumber(1).build())
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("BAR").setNumber(2).build())
+    msg.addEnumType(enum_type.build())
+
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("id").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("priority").setNumber(2).setLabel(label_rep)
+            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
+            .setTypeName(".test.WithRepeatedEnum.Priority").build())
+
+    fd.addMessageType(msg.build())
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_repeated_enum_invalid_permissive(spark_tmp_path, from_protobuf_fn):
+    """Repeated enum with invalid values in PERMISSIVE mode.
+
+    Row with any invalid enum value should become null (entire struct row),
+    while rows with all-valid enum values decode normally.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "repeated_enum.desc", _build_repeated_enum_descriptor_set_bytes)
+    message_name = "test.WithRepeatedEnum"
+
+    row1 = (_encode_tag(1, 0) + _encode_varint(1) +
+            _encode_tag(2, 0) + _encode_varint(0) +
+            _encode_tag(2, 0) + _encode_varint(1) +
+            _encode_tag(2, 0) + _encode_varint(2))
+    row2 = (_encode_tag(1, 0) + _encode_varint(2) +
+            _encode_tag(2, 0) + _encode_varint(1) +
+            _encode_tag(2, 0) + _encode_varint(99))
+    row3 = (_encode_tag(1, 0) + _encode_varint(3) +
+            _encode_tag(2, 0) + _encode_varint(0))
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(row1,), (row2,), (row3,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(decoded.alias("decoded"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
 def _build_required_field_descriptor_set_bytes(spark):
     """
     Build a FileDescriptorSet for a message with required fields (proto2):
