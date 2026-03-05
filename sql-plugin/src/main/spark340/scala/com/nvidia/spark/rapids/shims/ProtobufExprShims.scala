@@ -359,7 +359,7 @@ object ProtobufExprShims {
                 encoding = info.encoding,
                 isRepeated = info.isRepeated,
                 isRequired = info.isRequired,
-                hasDefaultValue = info.hasDefaultValue,
+                hasDefaultValue = hasDefault,
                 defaultInt = defInt,
                 defaultFloat = defFloat,
                 defaultBool = defBool,

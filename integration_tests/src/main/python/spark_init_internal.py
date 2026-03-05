@@ -91,7 +91,7 @@ def _add_driver_classpath(jars):
             merged_cp = existing_cp + os.pathsep + new_cp
             current_args = re.sub(
                 r'--driver-class-path\s+\S+',
-                f'--driver-class-path {merged_cp}',
+                lambda m: f'--driver-class-path {merged_cp}',
                 current_args)
         else:
             current_args += f' --driver-class-path {new_cp}'
