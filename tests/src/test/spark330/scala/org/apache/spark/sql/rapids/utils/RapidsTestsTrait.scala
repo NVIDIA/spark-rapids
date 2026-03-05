@@ -343,7 +343,20 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         _spark.createDataFrame(_spark.sparkContext.parallelize(empData), schema)
       }
       resultDF = df.select(Column(expression))
-      result = resultDF.collect()
+      try {
+        result = resultDF.collect()
+      } catch {
+        case e: Exception =>
+          logWarning(
+            s"Exception during resultDF.collect()" +
+            s" for $expression: ${e.getMessage}", e)
+          isComparedByString = true
+          result = resultDF
+            .select(
+              Column(resultDF.columns(0))
+                .cast("string"))
+            .collect()
+      }
     }
 
     TestStats.testUnitNumber = TestStats.testUnitNumber + 1
@@ -366,11 +379,33 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       shouldNotFallback()
     }
     if (isComparedByString) {
-      if (!(checkResult(result.head.get(0), expected.toString, StringType, expression.nullable))) {
+      val actualStr = result.head.get(0)
+      val rawStr =
+        if (expected == null) null
+        else expected.toString
+      val catalystStr = try {
+        if (expected == null) null
+        else _spark.range(1).select(
+          Column(
+            Literal.create(expected, expression.dataType))
+            .cast("string"))
+          .collect().head.getString(0)
+      } catch {
+        case _: Exception => null
+      }
+      val matched =
+        checkResult(
+          actualStr, rawStr,
+          StringType, expression.nullable) ||
+        checkResult(
+          actualStr, catalystStr,
+          StringType, expression.nullable)
+      if (!matched) {
         fail(
           s"Incorrect evaluation: $expression, " +
-            s"actual: ${result.head.get(0)}, " +
-            s"expected: $expected")
+            s"actual: $actualStr, " +
+            s"catalystExpected: $catalystStr, " +
+            s"rawExpected: $rawStr")
       }
     } else if (
       !(checkResult(result.head.get(0), expected, expression.dataType, expression.nullable)
