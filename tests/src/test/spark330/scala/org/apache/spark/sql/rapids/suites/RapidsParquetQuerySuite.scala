@@ -80,7 +80,8 @@ class RapidsParquetQuerySuite extends ParquetQuerySuite with RapidsSQLTestsBaseT
         case (Right(_), Left(e)) =>
           assert(hasSchemaConvertError(e), s"Unexpected vectorized failure for schema: $schema")
         case (Left(nonVecErr), Left(vecErr)) =>
-          assert(nonVecErr.getMessage.contains("FAILED_READ_FILE") || hasSchemaConvertError(nonVecErr),
+          assert(nonVecErr.getMessage.contains("FAILED_READ_FILE") ||
+            hasSchemaConvertError(nonVecErr),
             s"Unexpected non-vectorized failure for schema: $schema")
           assert(vecErr.getMessage.contains("FAILED_READ_FILE") || hasSchemaConvertError(vecErr),
             s"Unexpected vectorized failure type for schema: $schema")
@@ -128,7 +129,8 @@ class RapidsParquetQuerySuite extends ParquetQuerySuite with RapidsSQLTestsBaseT
     withAllParquetReaders {
       withTempPath { path =>
         val filePath = path.toString
-        val df = sql(s"SELECT 1 a, 123456 b, ${Int.MaxValue.toLong * 10} c, CAST('1.2' AS BINARY) d")
+        val df = sql(s"SELECT 1 a, 123456 b, " +
+          s"${Int.MaxValue.toLong * 10} c, CAST('1.2' AS BINARY) d")
         df.write.parquet(filePath)
 
         Seq(
