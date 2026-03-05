@@ -159,7 +159,7 @@ else
         if [[ ! -f "$PROTOBUF_JAR_PATH" ]]; then
             echo "Downloading spark-protobuf jar..."
             PROTOBUF_MAVEN_URL="https://repo1.maven.org/maven2/org/apache/spark/spark-protobuf_${SCALA_VERSION}/${VERSION_STRING}/${PROTOBUF_JAR_NAME}"
-            if curl -sL -o "$PROTOBUF_JAR_PATH" "$PROTOBUF_MAVEN_URL"; then
+            if curl -fsL -o "$PROTOBUF_JAR_PATH" "$PROTOBUF_MAVEN_URL"; then
                 echo "Downloaded spark-protobuf jar to $PROTOBUF_JAR_PATH"
             else
                 echo "WARNING: Failed to download spark-protobuf jar from $PROTOBUF_MAVEN_URL"
@@ -190,7 +190,7 @@ else
         if [[ ! -f "$PROTOBUF_JAVA_JAR_PATH" ]]; then
             echo "Downloading protobuf-java jar..."
             PROTOBUF_JAVA_MAVEN_URL="https://repo1.maven.org/maven2/com/google/protobuf/protobuf-java/${PROTOBUF_JAVA_VERSION}/${PROTOBUF_JAVA_JAR_NAME}"
-            if curl -sL -o "$PROTOBUF_JAVA_JAR_PATH" "$PROTOBUF_JAVA_MAVEN_URL"; then
+            if curl -fsL -o "$PROTOBUF_JAVA_JAR_PATH" "$PROTOBUF_JAVA_MAVEN_URL"; then
                 echo "Downloaded protobuf-java jar to $PROTOBUF_JAVA_JAR_PATH"
             else
                 echo "WARNING: Failed to download protobuf-java jar from $PROTOBUF_JAVA_MAVEN_URL"
@@ -203,7 +203,7 @@ else
             echo "Including spark-protobuf jar: $PROTOBUF_JAR_PATH"
         fi
         if [[ -f "$PROTOBUF_JAVA_JAR_PATH" ]]; then
-            PROTOBUF_JARS="$PROTOBUF_JARS $PROTOBUF_JAVA_JAR_PATH"
+            PROTOBUF_JARS="${PROTOBUF_JARS:+$PROTOBUF_JARS }$PROTOBUF_JAVA_JAR_PATH"
             echo "Including protobuf-java jar: $PROTOBUF_JAVA_JAR_PATH"
         fi
         # Also add protobuf jars to driver classpath for Class.forName() to work

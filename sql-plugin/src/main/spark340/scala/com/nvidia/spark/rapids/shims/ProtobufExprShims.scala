@@ -210,9 +210,9 @@ object ProtobufExprShims {
           // Reject proto3 descriptors — GPU decoder only supports proto2 semantics.
           // proto3 has different null/default-value behavior that the GPU path doesn't handle.
           val protoSyntax = PbReflect.getFileSyntax(msgDesc)
-          if (protoSyntax == "PROTO3" || protoSyntax.isEmpty) {
+          if (protoSyntax == "PROTO3" || protoSyntax == "EDITIONS" || protoSyntax.isEmpty) {
             willNotWorkOnGpu(
-              "proto3 syntax is not supported by the GPU protobuf decoder; " +
+              "proto3/editions syntax is not supported by the GPU protobuf decoder; " +
                 "only proto2 is supported. The query will fall back to CPU.")
             return
           }
