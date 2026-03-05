@@ -2710,16 +2710,16 @@ def _encode_tag(field_number, wire_type):
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
 def test_from_protobuf_bool_noncanonical_varint_scalar(spark_tmp_path, from_protobuf_fn):
-    """Scalar bool field encoded as varint 256 should decode as true, not false."""
+    """Regression test: scalar bool encoded as non-canonical varint (e.g. 256) must decode as true.
+
+    Protobuf allows any non-zero varint for bool true. The GPU decoder previously
+    truncated to uint8_t, causing values >= 256 to wrap to 0 (false).
+    """
     desc_path, desc_bytes = _setup_protobuf_desc(
         spark_tmp_path, "simple_bool_bug.desc", _build_simple_descriptor_set_bytes)
     message_name = "test.Simple"
 
-    # Hand-craft protobuf wire bytes:
-    #   field 1 (bool b): tag = (1<<3)|0 = 0x08, value = varint(256) = 0x80 0x02
-    #   field 2 (int32 i32): tag = (2<<3)|0 = 0x10, value = varint(99) = 0x63
-    # Varint 256 is a perfectly valid encoding; CPU reads it as true.
-    # GPU truncates uint8_t(256) = 0 → false.
+    # varint(256) = 0x80 0x02, varint(512) = 0x80 0x04 — valid non-canonical bool true
     row_bool_256 = _encode_tag(1, 0) + _encode_varint(256) + \
                    _encode_tag(2, 0) + _encode_varint(99)
 
@@ -2727,7 +2727,7 @@ def test_from_protobuf_bool_noncanonical_varint_scalar(spark_tmp_path, from_prot
     row_bool_1 = _encode_tag(1, 0) + _encode_varint(1) + \
                  _encode_tag(2, 0) + _encode_varint(100)
 
-    # Another problematic value: 512 → uint8_t(0) → false
+    # Another non-canonical value: varint(512)
     row_bool_512 = _encode_tag(1, 0) + _encode_varint(512) + \
                    _encode_tag(2, 0) + _encode_varint(101)
 
@@ -2773,15 +2773,16 @@ def _build_repeated_bool_descriptor_set_bytes(spark):
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
 def test_from_protobuf_bool_noncanonical_varint_repeated(spark_tmp_path, from_protobuf_fn):
-    """Repeated bool with non-canonical varint values (256, 512) should all decode as true."""
+    """Regression test: repeated bool with non-canonical varint values must all decode as true.
+
+    Same uint8_t truncation issue as the scalar case, exercised with repeated fields.
+    """
     desc_path, desc_bytes = _setup_protobuf_desc(
         spark_tmp_path, "repeated_bool_bug.desc", _build_repeated_bool_descriptor_set_bytes)
     message_name = "test.WithRepeatedBool"
 
     # Repeated bool field 2 (wire type 0 = varint), unpacked.
-    # Three elements: varint(256), varint(1), varint(512)
-    # CPU: [true, true, true]
-    # GPU (buggy): [false, true, false]  — because uint8(256)=0, uint8(512)=0
+    # Three elements: varint(256), varint(1), varint(512) — all should decode as true.
     row = (_encode_tag(1, 0) + _encode_varint(42) +
            _encode_tag(2, 0) + _encode_varint(256) +
            _encode_tag(2, 0) + _encode_varint(1) +
@@ -2800,15 +2801,7 @@ def test_from_protobuf_bool_noncanonical_varint_repeated(spark_tmp_path, from_pr
 
 
 # ---------------------------------------------------------------------------
-# Bug 2: Nested message child field default values are lost
-#
-# In ProtobufExprShims.scala, addChildFieldsFromStruct always sets
-# defaultValue = None for nested children, even when hasDefaultValue = true.
-# This means proto2 defaults for fields inside nested messages are never
-# passed to the GPU decoder.
-#
-# CPU: missing child field → proto2 default value
-# GPU: missing child field → null
+# Regression guard: nested message child field default values
 # ---------------------------------------------------------------------------
 
 def _build_nested_with_defaults_descriptor_set_bytes(spark):
@@ -2863,12 +2856,10 @@ def _build_nested_with_defaults_descriptor_set_bytes(spark):
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
 def test_from_protobuf_nested_child_default_values(spark_tmp_path, from_protobuf_fn):
-    """Proto2 default values for fields inside nested messages must be honored.
+    """Regression test: proto2 default values for fields inside nested messages must be honored.
 
-    When `inner` is present but its child fields are absent, the CPU decoder
-    returns the proto2 defaults (count=42, label="hello", flag=true).
-    The GPU decoder currently returns null for all three because
-    defaultValue is never populated for nested children.
+    When `inner` is present but its child fields are absent, the decoder must
+    return the proto2 defaults (count=42, label="hello", flag=true), not null.
     """
     desc_path, desc_bytes = _setup_protobuf_desc(
         spark_tmp_path, "nested_defaults.desc",

@@ -167,9 +167,23 @@ else
             fi
         fi
         
-        # Also download protobuf-java jar (required dependency)
-        # Spark 3.5.x uses protobuf-java 3.25.1
-        PROTOBUF_JAVA_VERSION="3.25.1"
+        # Also download protobuf-java jar (required dependency).
+        # Detect version from the jar bundled with Spark, fall back to version mapping.
+        PROTOBUF_JAVA_VERSION=""
+        BUNDLED_PB_JAR=$(ls "$SPARK_HOME"/jars/protobuf-java-[0-9]*.jar 2>/dev/null | head -1)
+        if [[ -n "$BUNDLED_PB_JAR" ]]; then
+            PROTOBUF_JAVA_VERSION=$(basename "$BUNDLED_PB_JAR" | sed 's/protobuf-java-\(.*\)\.jar/\1/')
+            echo "Detected protobuf-java version $PROTOBUF_JAVA_VERSION from SPARK_HOME"
+        fi
+        if [[ -z "$PROTOBUF_JAVA_VERSION" ]]; then
+            case "$VERSION_STRING" in
+                3.4.*) PROTOBUF_JAVA_VERSION="3.25.1" ;;
+                3.5.*) PROTOBUF_JAVA_VERSION="3.25.1" ;;
+                4.0.*) PROTOBUF_JAVA_VERSION="4.29.3" ;;
+                *)     PROTOBUF_JAVA_VERSION="3.25.1" ;;
+            esac
+            echo "Using protobuf-java version $PROTOBUF_JAVA_VERSION based on Spark $VERSION_STRING"
+        fi
         PROTOBUF_JAVA_JAR_NAME="protobuf-java-${PROTOBUF_JAVA_VERSION}.jar"
         PROTOBUF_JAVA_JAR_PATH="${TARGET_DIR}/dependency/${PROTOBUF_JAVA_JAR_NAME}"
         
