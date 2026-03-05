@@ -78,8 +78,8 @@ def test_single_orderby_on_array(data_gen, order):
                                    f.col('a').desc(), f.col('a').desc_nulls_first(), f.col('a').desc_nulls_last()], ids=idfn)
 def test_single_orderby_fallback_for_multilevel_array(data_gen, order):
     assert_gpu_fallback_collect(
-            lambda spark : unary_op_df(spark, data_gen).orderBy(order),
-            "SortExec",
+        lambda spark : unary_op_df(spark, data_gen).orderBy(order),
+        "SortExec",
         # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
         conf={'spark.sql.adaptive.enabled': 'false'})
 
