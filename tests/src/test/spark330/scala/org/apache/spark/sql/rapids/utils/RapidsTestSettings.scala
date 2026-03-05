@@ -69,7 +69,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-28323: PythonUDF should be able to use in join condition", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
     .exclude("SPARK-28345: PythonUDF predicate should be able to pushdown to join", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
   enableSuite[RapidsSubquerySuite]
-    .exclude("runtime error when the number of rows is greater than 1", ADJUST_UT("Replaced by testRapids version: GPU throws RuntimeException instead of IllegalStateException, same message. See https://github.com/NVIDIA/spark-rapids/issues/14158"))
     .exclude("SPARK-26893: Allow pushdown of partition pruning subquery filters to file source", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14172 - partition pruning with subquery not working on GPU"))
     .exclude("SPARK-27279: Reuse Subquery", ADJUST_UT("Replaced by testRapids version for GPU execution"))
     .exclude("SPARK-36280: Remove redundant aliases after RewritePredicateSubquery", ADJUST_UT("Replaced by testRapids version that checks GPU or CPU shuffle exchange"))
