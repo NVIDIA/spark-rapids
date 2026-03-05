@@ -330,6 +330,12 @@ object ProtobufExprShims {
                     val str = defVal.asInstanceOf[String]
                     val bytes = if (str != null) str.getBytes("UTF-8") else null
                     (0L, 0.0, false, bytes)
+                  case BinaryType =>
+                    val bytes = Try {
+                      val toByteArray = defVal.getClass.getMethod("toByteArray")
+                      toByteArray.invoke(defVal).asInstanceOf[Array[Byte]]
+                    }.getOrElse(null: Array[Byte])
+                    (0L, 0.0, false, bytes)
                   case _ => (0L, 0.0, false, null: Array[Byte])
                 }
               } else {
