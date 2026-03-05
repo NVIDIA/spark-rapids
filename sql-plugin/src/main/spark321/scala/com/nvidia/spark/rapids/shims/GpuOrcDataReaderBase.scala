@@ -52,6 +52,8 @@ import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.{GpuMetric, HostMemoryOutputStream, NoopMetric}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.filecache.FileCache
+import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
+import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FSDataInputStream
 import org.apache.hadoop.hive.common.io.DiskRangeList
@@ -64,6 +66,8 @@ abstract class GpuOrcDataReaderBase(
     metrics: Map[String, GpuMetric]) extends DataReader {
   protected val filePathString = props.getPath.toString
   protected var file: Option[FSDataInputStream] = None
+  protected lazy val fileIO = new HadoopFileIO(conf)
+  protected lazy val inputFile: RapidsInputFile = fileIO.newInputFile(filePathString)
   protected val compression = props.getCompression
   private val hitMetric = getMetric(GpuMetric.FILECACHE_DATA_RANGE_HITS)
   private val hitSizeMetric = getMetric(GpuMetric.FILECACHE_DATA_RANGE_HITS_SIZE)
@@ -98,8 +102,8 @@ abstract class GpuOrcDataReaderBase(
       // see if the filecache wants any of this data
       var current = first
       while (current ne last.next) {
-        val cacheToken = FileCache.get.startDataRangeCache(filePathString,
-          baseOffset + current.getOffset, current.getLength, conf)
+        val cacheToken = FileCache.get.startDataRangeCache(inputFile,
+          baseOffset + current.getOffset, current.getLength)
         cacheToken.foreach { token =>
           token.complete(out.buffer.slice(bufferPos, current.getLength))
         }
@@ -130,7 +134,7 @@ abstract class GpuOrcDataReaderBase(
     val offset = stripe.getOffset + stripe.getIndexLength + stripe.getDataLength
     val tailLength = stripe.getFooterLength.toInt
     val tailBuf = ByteBuffer.allocate(tailLength)
-    val cacheChannel = FileCache.get.getDataRangeChannel(filePathString, offset, tailLength, conf)
+    val cacheChannel = FileCache.get.getDataRangeChannel(inputFile, offset, tailLength)
     if (cacheChannel.isDefined) {
       withResource(cacheChannel.get) { channel =>
         hitMetric += 1
@@ -149,7 +153,7 @@ abstract class GpuOrcDataReaderBase(
       missSizeMetric += tailLength
       ensureFile()
       file.get.readFully(offset, tailBuf.array(), tailBuf.arrayOffset(), tailLength)
-      val cacheToken = FileCache.get.startDataRangeCache(filePathString, offset, tailLength, conf)
+      val cacheToken = FileCache.get.startDataRangeCache(inputFile, offset, tailLength)
       cacheToken.foreach { token =>
         closeOnExcept(HostMemoryBuffer.allocate(tailLength, false)) { hmb =>
           hmb.setBytes(0, tailBuf.array(), tailBuf.arrayOffset(), tailLength)
@@ -195,7 +199,7 @@ abstract class GpuOrcDataReaderBase(
     while (current != null) {
       val offset = current.getOffset + baseOffset
       val size = current.getLength
-      val cacheChannel = FileCache.get.getDataRangeChannel(filePathString, offset, size, conf)
+      val cacheChannel = FileCache.get.getDataRangeChannel(inputFile, offset, size)
       if (cacheChannel.isDefined) {
         withResource(cacheChannel.get) { channel =>
           hitMetric += 1
@@ -233,8 +237,8 @@ abstract class GpuOrcDataReaderBase(
           last.next.getOffset == currentEnd &&
           last.next.getEnd - first.getOffset <= Int.MaxValue) {
         val offset = baseOffset + last.next.getOffset
-        cachedChannel = FileCache.get.getDataRangeChannel(filePathString, offset,
-          last.next.getLength, conf)
+        cachedChannel = FileCache.get.getDataRangeChannel(inputFile, offset,
+          last.next.getLength)
         if (cachedChannel.isEmpty) {
           last = last.next
           currentEnd = currentEnd.max(last.getEnd)
