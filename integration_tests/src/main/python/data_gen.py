@@ -1000,7 +1000,7 @@ def _encode_protobuf_packed_repeated(field_number, spark_element_type, values, e
             packed_data += _encode_protobuf_uvarint(1 if v else 0)
         elif isinstance(spark_element_type, IntegerType):
             if encoding == 'fixed':
-                packed_data += struct.pack("<i", int(v))
+                packed_data += struct.pack("<I", int(v) & 0xFFFFFFFF)
             elif encoding == 'zigzag':
                 packed_data += _encode_protobuf_uvarint(_encode_protobuf_zigzag32(int(v)))
             else:
@@ -1008,7 +1008,7 @@ def _encode_protobuf_packed_repeated(field_number, spark_element_type, values, e
                 packed_data += _encode_protobuf_uvarint(u64)
         elif isinstance(spark_element_type, LongType):
             if encoding == 'fixed':
-                packed_data += struct.pack("<q", int(v))
+                packed_data += struct.pack("<Q", int(v) & 0xFFFFFFFFFFFFFFFF)
             elif encoding == 'zigzag':
                 packed_data += _encode_protobuf_uvarint(_encode_protobuf_zigzag64(int(v)))
             else:

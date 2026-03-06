@@ -404,7 +404,10 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 pathPrefix: String): Unit = {
               val path = if (pathPrefix.isEmpty) fieldName else s"$pathPrefix.$fieldName"
               val fd = PbReflect.findFieldByName(parentMsgDesc, fieldName)
-              if (fd != null) {
+              if (fd == null) {
+                willNotWorkOnGpu(
+                  s"Nested field '$fieldName' not found in protobuf descriptor at '$path'")
+              } else {
                 try {
                   val childMsgDesc = PbReflect.getMessageType(fd)
                   val requiredChildren = nestedFieldRequirements.get(path)
@@ -716,7 +719,6 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           val holder = () => { hasDirectStructRef = true }
 
           var currentMeta: Option[SparkPlanMeta[_]] = findParentPlanMeta()
-          var foundProject = false
           var safeToPrune = true
           val collectedExprs = mutable.ArrayBuffer[Expression]()
 
@@ -727,12 +729,12 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             }
           }
 
-          while (currentMeta.isDefined && !foundProject && safeToPrune) {
+          while (currentMeta.isDefined && safeToPrune) {
             currentMeta.get.wrapped match {
               case p: ProjectExec =>
                 collectedExprs ++= p.projectList
                 p.projectList.foreach(collectStructFieldReferences(_, fieldReqs, holder))
-                foundProject = true
+                currentMeta = None
               case f: org.apache.spark.sql.execution.FilterExec =>
                 collectedExprs += f.condition
                 collectStructFieldReferences(f.condition, fieldReqs, holder)
@@ -757,7 +759,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             }
           }
 
-          if (!safeToPrune || !foundProject || hasDirectStructRef || fieldReqs.isEmpty) {
+          if (!safeToPrune || collectedExprs.isEmpty || hasDirectStructRef || fieldReqs.isEmpty) {
             targetExprsToRemap = Seq.empty
             allFieldNames
           } else {
@@ -937,7 +939,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
          *    (when accessing from a downstream ProjectExec)
          */
         private def isProtobufStructReference(expr: Expression): Boolean = {
-          if (expr eq e) {
+          if ((expr eq e) || expr.semanticEquals(e)) {
             return true
           }
 
