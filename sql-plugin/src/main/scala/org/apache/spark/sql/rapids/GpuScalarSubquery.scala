@@ -49,7 +49,9 @@ case class GpuScalarSubquery(
   override def updateResult(): Unit = {
     val rows = plan.executeCollect()
     if (rows.length > 1) {
-      sys.error(s"more than one row returned by a subquery used as an expression:\n$plan")
+      throw new IllegalStateException(
+        s"more than one row returned by a subquery" +
+          s" used as an expression:\n$plan")
     } else if (rows.length == 1) {
       assert(rows.head.numFields == 1,
         s"Expects 1 field, but got ${rows.head.numFields}; something went wrong in analysis")

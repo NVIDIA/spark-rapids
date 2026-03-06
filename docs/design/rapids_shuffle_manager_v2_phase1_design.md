@@ -1,3 +1,9 @@
+---
+layout: page
+title: RapidsShuffleManager V2 Phase 1 Design
+nav_order: 16
+parent: Developer Overview
+---
 # RapidsShuffleManager V2 Phase 1 Design
 
 ## 1. Background & Motivation

@@ -30,10 +30,12 @@ import org.apache.spark.sql.delta.DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_N
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.metric.IncrementMetric
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
+import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.sql.types._
@@ -102,10 +104,10 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
 
   override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
     val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    toGpuParquetFileFormat(fmt)
+    toGpuParquetFileFormat(relation.sparkSession.sessionState.conf, fmt)
   }
 
-  protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat): FileFormat
+  protected def toGpuParquetFileFormat(conf: SQLConf, fmt: DeltaParquetFileFormat): FileFormat
 
   override def convertToGpu(
     cpuExec: AtomicCreateTableAsSelectExec,
@@ -134,6 +136,18 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       cpuExec.writeOptions,
       cpuExec.orCreate,
       InvalidateCacheShims.getInvalidateCache(cpuExec.invalidateCache))
+  }
+
+  override def canPushDVPredicateDownToScan(conf: SQLConf): Boolean = {
+    val useMetadataRowIndex = conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
+    // Creating a RapidsConf might be expensive in some cases, but this is temporary
+    // until we support the non-useMetadataRowIndex code path for the cuDF-based DV-aware reader.
+    // Once we support both code paths, we can remove the conf check and just rely on the RapidsConf
+    // checks.
+    val rapidsConf = new RapidsConf(conf)
+    useMetadataRowIndex &&
+      rapidsConf.isDeltaDeletionVectorPredicatePushdownEnabled &&
+      rapidsConf.isParquetPerFileReadEnabled
   }
 
   override def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {

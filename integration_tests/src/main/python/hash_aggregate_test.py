@@ -662,7 +662,9 @@ def test_exceptAll(data_gen, kudo_enabled):
                         .filter('a != b'))),
         conf = {kudo_enabled_conf_key: kudo_enabled,
             # disable ansi because a != b can insert a cast that can fail in ANSI mode
-            'spark.sql.ansi.enabled': False})
+            'spark.sql.ansi.enabled': False,
+                # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+                'spark.sql.adaptive.enabled': False})
 
 # Spark fails to sort some decimal values due to overflow when calculating the sorting prefix.
 # See https://issues.apache.org/jira/browse/SPARK-40129
@@ -742,9 +744,13 @@ def test_hash_pivot_groupby_duplicates_fallback(data_gen, kudo_enabled):
             .pivot('b', ['10.0', '10.0'])
             .agg(f.min('c')),
         "PivotFirst",
-        conf=copy_and_update(_float_conf, {kudo_enabled_conf_key: kudo_enabled,
-            # The CPU fails in ANSI mode for this test with an array index access
-            'spark.sql.ansi.enabled': False}) )
+        conf=copy_and_update(
+            _float_conf,
+            {kudo_enabled_conf_key: kudo_enabled,
+             # The CPU fails in ANSI mode for this test with an array index access
+             'spark.sql.ansi.enabled': False,
+             # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+             'spark.sql.adaptive.enabled': False}) )
 
 _repeat_agg_column_for_collect_op = [
     RepeatSeqGen(BooleanGen(), length=15),
@@ -1827,13 +1833,15 @@ def test_sorted_groupby_first_last(data_gen, kudo_enabled):
     # sort by more than the group by columns to be sure that first/last don't remove the ordering
     agg_fn = lambda df: df.orderBy('a', 'b').groupBy('a').agg(
         f.first('b'), f.last('b'), f.first('b', True), f.last('b', True))
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
     assert_gpu_and_cpu_are_equal_collect(
         # First and last are not deterministic when they are run in a real distributed setup.
         # We set parallelism and partitions to 1 to prevent nondeterministic results because
         # of distributed setups.
         lambda spark: agg_fn(gen_df(spark, gen_fn, num_slices=1)),
         conf = {'spark.sql.shuffle.partitions': '1',
-                kudo_enabled_conf_key: kudo_enabled})
+                kudo_enabled_conf_key: kudo_enabled,
+                'spark.sql.adaptive.enabled': 'false'})
 
 # Spark has a sorting bug with decimals, see https://issues.apache.org/jira/browse/SPARK-40129.
 # Have pytest do the sorting rather than Spark as a workaround.
@@ -1863,7 +1871,9 @@ def test_groupby_list_types_fallback(data_gen, count_func, kudo_enabled):
         lambda spark : gen_df(spark, [('a', data_gen), ('b', data_gen)],
                               length=1024).groupBy('a').agg(count_func("b")),
         "HashAggregateExec",
-    conf = {kudo_enabled_conf_key: kudo_enabled})
+    conf = {kudo_enabled_conf_key: kudo_enabled,
+            # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+            'spark.sql.adaptive.enabled': 'false'})
 
 def subquery_create_temp_views(spark, expr):
     t1 = "select * from values (1,2) as t1(a,b)"
@@ -2077,7 +2087,9 @@ def test_try_sum_fallback_to_cpu(data_gen):
         # Use single partition (num_slices=1) to avoid non-deterministic
         # results from order-dependent overflow detection.
         lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100, num_slices=1)
-                     .selectExpr("try_sum(b) as result"),'HashAggregateExec')
+                     .selectExpr("try_sum(b) as result"),'HashAggregateExec',
+        # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+        conf={'spark.sql.adaptive.enabled': 'false'})
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_sum is not supported before Spark 3.3.0")
 @ignore_order(local=True)
@@ -2089,7 +2101,9 @@ def test_try_sum_groupby_fallback_to_cpu(data_gen):
         # results from order-dependent overflow detection.
         lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100, num_slices=1)
                      .groupBy('a').agg(f.expr("try_sum(b)").alias("result")),
-        'HashAggregateExec')
+        'HashAggregateExec',
+        # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+        conf={'spark.sql.adaptive.enabled': 'false'})
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_avg is not supported before Spark 3.3.0")
 @approximate_float
@@ -2102,7 +2116,9 @@ def test_try_avg_fallback_to_cpu(data_gen):
         # results from order-dependent overflow detection.
         lambda spark: gen_df(spark, [('a', data_gen), ('b', data_gen)], length=100, num_slices=1)
                      .groupBy('a').agg(f.expr("try_avg(b)").alias("result")),
-        'HashAggregateExec')
+        'HashAggregateExec',
+        # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+        conf={'spark.sql.adaptive.enabled': 'false'})
 
 @incompat
 @pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")

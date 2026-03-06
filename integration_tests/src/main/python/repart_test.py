@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -244,11 +244,12 @@ def test_repartition_df_for_round_robin(data_gen, num_parts, length, kudo_enable
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
 def test_round_robin_sort_fallback(data_gen, kudo_enabled):
     from pyspark.sql.functions import lit
+    # Disable AQE as it can change the shuffle type
     assert_gpu_fallback_collect(
             # Add a computed column to avoid shuffle being optimized back to a CPU shuffle like in test_repartition_df
             lambda spark : gen_df(spark, data_gen).withColumn('extra', lit(1)).repartition(13),
             'ShuffleExchangeExec',
-        conf = {kudo_enabled_conf_key: kudo_enabled})
+        conf = {kudo_enabled_conf_key: kudo_enabled, 'spark.sql.adaptive.enabled': 'false'})
 
 @allow_non_gpu("ProjectExec", "ShuffleExchangeExec")
 @ignore_order(local=True) # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
@@ -258,6 +259,7 @@ def test_round_robin_sort_fallback(data_gen, kudo_enabled):
 def test_hash_repartition_exact_fallback(gen, num_parts, kudo_enabled):
     data_gen = gen[0]
     part_on = gen[1]
+    # Disable AQE as it can change the shuffle type
     assert_gpu_fallback_collect(
         lambda spark : gen_df(spark, data_gen, length=1024) \
             .repartition(num_parts, *part_on) \
@@ -265,7 +267,8 @@ def test_hash_repartition_exact_fallback(gen, num_parts, kudo_enabled):
             .selectExpr('*'), "ShuffleExchangeExec",
         # Force to use murmur3
         conf = {'spark.rapids.sql.partitioning.hashFunction.enabled': False,
-                kudo_enabled_conf_key: kudo_enabled})
+                kudo_enabled_conf_key: kudo_enabled,
+                'spark.sql.adaptive.enabled': 'false'})
 
 @allow_non_gpu("ProjectExec")
 @pytest.mark.parametrize('data_gen', [ArrayGen(StructGen([('b1', long_gen)]))], ids=idfn)
@@ -315,13 +318,14 @@ def test_hash_fallback(data_gen, kudo_enabled):
 def test_hash_repartition_exact(gen, num_parts, kudo_enabled):
     data_gen = gen[0]
     part_on = gen[1]
+    # Disable AQE as it can change the shuffle type
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : gen_df(spark, data_gen, length=1024)\
                     .repartition(num_parts, *part_on)\
                     .withColumn('id', f.spark_partition_id())\
                     .withColumn('hashed', f.hash(*part_on))\
                     .selectExpr('*', 'pmod(hashed, {})'.format(num_parts)),
-        conf = {kudo_enabled_conf_key: kudo_enabled})
+        conf = {kudo_enabled_conf_key: kudo_enabled, 'spark.sql.adaptive.enabled': 'false'})
 
 
 @ignore_order(local=True)  # To avoid extra data shuffle by 'sort on Spark' for this repartition test.
@@ -332,7 +336,8 @@ def test_hash_repartition_exact_longs_no_overflow(num_parts, is_ansi_mode):
     gen = LongGen(min_val=-1000, max_val=1000, special_cases=[]) if is_ansi_mode else long_gen
     data_gen = [('a', gen)]
     part_on = [f.col('a') + 15]
-    conf = {'spark.sql.ansi.enabled': is_ansi_mode}
+    # Disable AQE as it can change the shuffle type
+    conf = {'spark.sql.ansi.enabled': is_ansi_mode, 'spark.sql.adaptive.enabled': 'false'}
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: gen_df(spark, data_gen, length=1024)
