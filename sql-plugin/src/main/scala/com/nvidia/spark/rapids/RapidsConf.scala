@@ -443,6 +443,7 @@ object RapidsConf extends Logging {
       "retry logic so that host OOM during conversion can be recovered. This adds a small " +
       "per-row overhead. Set to false to disable the retry and eliminate that overhead, " +
       "at the risk of failing the task on host OOM during R2C conversion.")
+    .internal()
     .booleanConf
     .createWithDefault(true)
 
