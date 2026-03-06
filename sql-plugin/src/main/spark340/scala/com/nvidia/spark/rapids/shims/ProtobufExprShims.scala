@@ -416,7 +416,11 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                   }
                   filteredFields.foreach { childSf =>
                     val childFd = PbReflect.findFieldByName(childMsgDesc, childSf.name)
-                    if (childFd != null) {
+                    if (childFd == null) {
+                      willNotWorkOnGpu(
+                        s"Nested field '${childSf.name}' not found in protobuf " +
+                          s"descriptor for message at '$path'")
+                    } else {
                       val childProtoTypeName = typeName(PbReflect.getFieldType(childFd))
                       val childFieldNumber = PbReflect.getFieldNumber(childFd)
                       val childIsRepeated = PbReflect.isRepeated(childFd)
@@ -907,6 +911,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               resolveFieldAccessChain(gasf.child) match {
                 case Some(parentPath) if parentPath.nonEmpty =>
                   registerPathRequirements(fieldReqs, parentPath, gasf.field.name)
+                case Some(parentPath) if parentPath.isEmpty =>
+                  fieldReqs(gasf.field.name) = None
                 case _ =>
                   gasf.children.foreach { child =>
                     collectStructFieldReferences(child, fieldReqs, hasDirectStructRefHolder)
