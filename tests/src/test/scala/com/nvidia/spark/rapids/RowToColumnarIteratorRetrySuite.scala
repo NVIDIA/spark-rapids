@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,6 +48,29 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     Arm.withResource(row2ColIter.next()) { batch =>
       assertResult(10)(batch.numRows())
     }
+  }
+
+  test("test CPU OOM ends batch early for non-RequireSingleBatch") {
+    val totalRows = 10
+    val rowIter: Iterator[InternalRow] = (1 to totalRows).map(InternalRow(_)).toIterator
+    val goal = TargetSize(batchSize)
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, schema, goal, batchSize, new GpuRowToColumnConverter(schema))
+    // Inject a CPU OOM after some rows have been converted.
+    // The iterator should produce a smaller first batch and then a second batch
+    // containing the remaining rows.
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.CPU.ordinal, 3)
+    var totalRowsSeen = 0
+    var batchCount = 0
+    while (row2ColIter.hasNext) {
+      Arm.withResource(row2ColIter.next()) { batch =>
+        totalRowsSeen += batch.numRows()
+        batchCount += 1
+      }
+    }
+    assertResult(totalRows)(totalRowsSeen)
+    assert(batchCount >= 1, "Should produce at least one batch")
   }
 
   test("test simple OOM split and retry") {

@@ -20,6 +20,7 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
+import com.nvidia.spark.rapids.jni.{CpuRetryOOM, CpuSplitAndRetryOOM, GpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark}
 import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -591,13 +592,21 @@ class RowToColumnarIterator(
   private var totalOutputRows: Long = 0
   private lazy val rowCopyProjection: UnsafeProjection = UnsafeProjection.create(localSchema)
 
-  override def hasNext: Boolean = rowIter.hasNext
+  // Row that couldn't be converted due to OOM, saved for the next batch
+  private var pendingRow: InternalRow = _
+
+  override def hasNext: Boolean = pendingRow != null || rowIter.hasNext
 
   override def next(): ColumnarBatch = {
-    if (!rowIter.hasNext) {
+    if (!hasNext) {
       throw new NoSuchElementException
     }
     buildBatch()
+  }
+
+  private def copyRow(row: InternalRow): InternalRow = row match {
+    case unsafe: UnsafeRow => unsafe.copy()
+    case other => rowCopyProjection.apply(other).copy()
   }
 
   private def buildBatch(): ColumnarBatch = {
@@ -608,7 +617,6 @@ class RowToColumnarIterator(
         if (localSchema.fields.isEmpty) {
           // if there are no columns then we just default to a small number
           // of rows for the first batch
-          // TODO do we even need to allocate anything here?
           targetRows = 1024
           initialRows = targetRows
         } else {
@@ -621,24 +629,63 @@ class RowToColumnarIterator(
 
       withResource(new GpuColumnarBatchBuilder(localSchema, initialRows)) { builders =>
         var rowCount = 0
-        // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
-        val converter = new RetryableRowConverter(builders, rowCopyProjection)
-        // read at least one row
-        while (rowIter.hasNext &&
-            (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
-          converter.attempt(rowIter.next())
-          val bytesWritten = withRetryNoSplit {
-            withRestoreOnRetry(converter) {
-              converters.convert(converter.currentRow, builders)
+        var batchDone = false
+
+        // Enter the RMM retry block once for the entire conversion loop so that
+        // host memory allocations throw retryable OOM exceptions (CpuRetryOOM)
+        // instead of fatal OutOfMemoryError.
+        RmmSpark.currentThreadStartRetryBlock()
+        try {
+          while (!batchDone &&
+              (pendingRow != null || rowIter.hasNext) &&
+              (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
+
+            val row = if (pendingRow != null) {
+              val r = pendingRow
+              pendingRow = null
+              r
+            } else {
+              rowIter.next()
+            }
+
+            val snapshots = builders.captureState()
+            try {
+              byteCount += converters.convert(row, builders)
+              rowCount += 1
+            } catch {
+              case _: CpuRetryOOM | _: CpuSplitAndRetryOOM |
+                   _: GpuRetryOOM | _: GpuSplitAndRetryOOM =>
+                builders.restoreState(snapshots)
+                pendingRow = copyRow(row)
+                if (rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike]) {
+                  // We already have converted rows. End this batch early and let
+                  // the saved pendingRow be picked up by the next batch.
+                  batchDone = true
+                } else {
+                  // Either this is the very first row or we must fit all rows in one batch
+                  // (RequireSingleBatch). Fall back to the full retry framework which will
+                  // block the thread until memory is freed, then retry.
+                  val converter = new RetryableRowConverter(builders, rowCopyProjection)
+                  converter.attempt(pendingRow)
+                  val bytesWritten = withRetryNoSplit {
+                    withRestoreOnRetry(converter) {
+                      converters.convert(converter.currentRow, builders)
+                    }
+                  }
+                  byteCount += bytesWritten
+                  rowCount += 1
+                  pendingRow = null
+                }
             }
           }
-          byteCount += bytesWritten
-          rowCount += 1
+        } finally {
+          RmmSpark.currentThreadEndRetryBlock()
         }
 
         // enforce RequireSingleBatch limit
-        if (rowIter.hasNext && localGoal.isInstanceOf[RequireSingleBatchLike]) {
+        if ((pendingRow != null || rowIter.hasNext) &&
+            localGoal.isInstanceOf[RequireSingleBatchLike]) {
           throw new IllegalStateException("A single batch is required for this operation." +
               " Please try increasing your partition count.")
         }
