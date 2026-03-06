@@ -56,7 +56,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsColumnExpressionSuite]
     .exclude("input_file_name, input_file_block_start, input_file_block_length - HadoopRDD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14153"))
     .exclude("input_file_name, input_file_block_start, input_file_block_length - NewHadoopRDD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14153"))
-    .exclude("SPARK-34868: divide year-month interval by numeric", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14155"))
   enableSuite[RapidsDataFrameFunctionsSuite]
     .exclude("map_from_entries function", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14128"))
     .exclude("array_intersect functions", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
