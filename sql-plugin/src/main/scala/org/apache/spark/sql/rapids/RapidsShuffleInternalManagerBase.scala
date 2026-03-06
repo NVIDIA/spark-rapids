@@ -1713,7 +1713,7 @@ class RapidsCachingWriter[K, V](
  */
 class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging
-  with RapidsShuffleReaderShim {
+  with RapidsShuffleReaderShim with ProxyShuffleReaderDelegate {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
 
