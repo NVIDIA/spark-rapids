@@ -4,19 +4,20 @@ title: Download
 nav_order: 3
 ---
 
-[RAPIDS Accelerator For Apache Spark](https://github.com/NVIDIA/spark-rapids) provides a set of
+The [RAPIDS Accelerator for Apache Spark](https://github.com/NVIDIA/spark-rapids) provides a set of
 plugins for Apache Spark that leverage GPUs to accelerate Dataframe and SQL processing.
 
 The accelerator is built upon the [RAPIDS cuDF project](https://github.com/rapidsai/cudf) and
 [UCX](https://github.com/openucx/ucx/).
 
-The RAPIDS Accelerator For Apache Spark requires each worker node in the cluster to have
-[CUDA](https://developer.nvidia.com/cuda-toolkit) installed.
+RAPIDS Spark requires each worker node in the cluster to have an NVIDIA GPU and the [NVIDIA
+driver](https://www.nvidia.com/en-us/drivers/) installed.
 
-The RAPIDS Accelerator For Apache Spark consists of two jars: a plugin jar along with the RAPIDS
-cuDF jar, that is either preinstalled in the Spark classpath on all nodes or submitted with each job
-that uses the RAPIDS Accelerator For Apache Spark. See the [getting-started
-guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/overview.html) for more details.
+RAPIDS Spark consists of the rapids-4-spark plugin jar.  The jar is either preinstalled in the Spark
+classpath on all nodes or submitted with each job that uses the RAPIDS Spark. See the
+[getting-started
+guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/overview.html) for
+more details.
 
 ## Release v26.02.2
 ### Hardware Requirements:
