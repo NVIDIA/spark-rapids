@@ -258,8 +258,14 @@ if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
 fi
 
 # "Delete the unused object files to reduce the size of the Spark Rapids built tar."
-rm -rf dist/target/jni-deps/
-find dist/target/parallel-world/ -mindepth 1 -maxdepth 1 ! -name META-INF -exec rm -rf {} +
+# Determine the correct dist target directory based on which POM was used
+if [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
+    DIST_TARGET="scala2.13/dist/target"
+else
+    DIST_TARGET="dist/target"
+fi
+rm -rf $DIST_TARGET/jni-deps/
+find $DIST_TARGET/parallel-world/ -mindepth 1 -maxdepth 1 ! -name META-INF -exec rm -rf {} +
 
 cd /home/ubuntu
 tar -zcf spark-rapids-built.tgz spark-rapids
