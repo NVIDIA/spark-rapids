@@ -438,6 +438,14 @@ object RapidsConf extends Logging {
       .integerConf
       .createWithDefault(2)
 
+  val ENABLE_R2C_RETRY = conf("spark.rapids.sql.rowToColumnar.retry.enabled")
+    .doc("When true, the row-to-columnar conversion wraps each row's conversion with " +
+      "retry logic so that host OOM during conversion can be recovered. This adds a small " +
+      "per-row overhead. Set to false to disable the retry and eliminate that overhead, " +
+      "at the risk of failing the task on host OOM during R2C conversion.")
+    .booleanConf
+    .createWithDefault(true)
+
   val GPU_COREDUMP_DIR = conf("spark.rapids.gpu.coreDump.dir")
     .doc("The URI to a directory where a GPU core dump will be created if the GPU encounters " +
       "an exception. The URI can reference a distributed filesystem. The filename will be of the " +
@@ -3339,6 +3347,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
 
   lazy val gpuOomMaxRetries: Int = get(GPU_OOM_MAX_RETRIES)
+
+  lazy val isR2cRetryEnabled: Boolean = get(ENABLE_R2C_RETRY)
 
   lazy val gpuCoreDumpDir: Option[String] = get(GPU_COREDUMP_DIR)
 
