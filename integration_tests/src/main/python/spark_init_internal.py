@@ -82,7 +82,7 @@ def _add_driver_classpath(jars):
     # Remove trailing 'pyspark-shell' if present
     if current_args.endswith('pyspark-shell'):
         current_args = current_args[:-len('pyspark-shell')].strip()
-    jar_list = jars.replace(',', ' ').split()
+    jar_list = [j.strip() for j in jars.split(',') if j.strip()]
     new_cp = os.pathsep.join(jar_list)
     if '--driver-class-path' in current_args:
         match = re.search(r'--driver-class-path\s+(\S+)', current_args)

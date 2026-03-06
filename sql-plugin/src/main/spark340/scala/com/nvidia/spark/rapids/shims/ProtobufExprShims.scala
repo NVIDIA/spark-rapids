@@ -99,7 +99,7 @@ private[shims] case class FlattenedFieldDescriptor(
  *
  * spark-protobuf is an external module, so these rules must be registered by reflection.
  */
-object ProtobufExprShims {
+object ProtobufExprShims extends org.apache.spark.internal.Logging {
   private[this] val protobufDataToCatalystClassName =
     "org.apache.spark.sql.protobuf.ProtobufDataToCatalyst"
 
@@ -116,6 +116,9 @@ object ProtobufExprShims {
       Map(clazz.asInstanceOf[Class[_ <: Expression]] -> fromProtobufRule)
     } catch {
       case _: ClassNotFoundException => Map.empty
+      case e: Exception =>
+        logWarning(s"Failed to load $protobufDataToCatalystClassName: ${e.getMessage}")
+        Map.empty
     }
   }
 
@@ -693,8 +696,10 @@ object ProtobufExprShims {
 
         /**
          * Analyze which fields are actually required by downstream operations.
-         * Traverses parent FilterExec and ProjectExec nodes to collect
-         * struct field references, then returns the set of required top-level field names.
+         * Traverses parent plan nodes upward, collecting struct field references from
+         * ProjectExec, FilterExec, and transparent pass-through nodes (AggregateExec,
+         * SortExec, WindowExec, etc.), then returns the set of required top-level
+         * field names.
          *
          * @param allFieldNames All field names in the full schema
          * @return Set of field names that are actually required
@@ -711,6 +716,13 @@ object ProtobufExprShims {
           var safeToPrune = true
           val collectedExprs = mutable.ArrayBuffer[Expression]()
 
+          def advanceToParent(): Unit = {
+            currentMeta = currentMeta.get.parent match {
+              case Some(pm: SparkPlanMeta[_]) => Some(pm)
+              case _ => None
+            }
+          }
+
           while (currentMeta.isDefined && !foundProject && safeToPrune) {
             currentMeta.get.wrapped match {
               case p: ProjectExec =>
@@ -720,10 +732,22 @@ object ProtobufExprShims {
               case f: org.apache.spark.sql.execution.FilterExec =>
                 collectedExprs += f.condition
                 collectStructFieldReferences(f.condition, fieldReqs, holder)
-                currentMeta = currentMeta.get.parent match {
-                  case Some(pm: SparkPlanMeta[_]) => Some(pm)
-                  case _ => None
-                }
+                advanceToParent()
+              case a: org.apache.spark.sql.execution.aggregate.BaseAggregateExec =>
+                val exprs = a.aggregateExpressions ++ a.groupingExpressions
+                collectedExprs ++= exprs
+                exprs.foreach(collectStructFieldReferences(_, fieldReqs, holder))
+                advanceToParent()
+              case s: org.apache.spark.sql.execution.SortExec =>
+                val exprs = s.sortOrder
+                collectedExprs ++= exprs
+                exprs.foreach(collectStructFieldReferences(_, fieldReqs, holder))
+                advanceToParent()
+              case w: org.apache.spark.sql.execution.window.WindowExec =>
+                val exprs = w.windowExpression
+                collectedExprs ++= exprs
+                exprs.foreach(collectStructFieldReferences(_, fieldReqs, holder))
+                advanceToParent()
               case _ =>
                 safeToPrune = false
             }
@@ -938,7 +962,7 @@ object ProtobufExprShims {
             parent.flatMap { meta =>
               meta.wrapped match {
                 case alias: org.apache.spark.sql.catalyst.expressions
-                      .Alias if alias.child eq e =>
+                      .Alias if alias.child.semanticEquals(e) =>
                   Some(alias.exprId)
                 case _ => None
               }
