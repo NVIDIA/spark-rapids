@@ -321,10 +321,15 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       try {
         result = resultDF.collect()
       } catch {
-        case e : Exception =>
-          logWarning(s"Exception during resultDF.collect() for $expression: ${e.getMessage}", e)
+        case e: Exception if hasArithmeticCause(e) =>
+          logWarning(
+            "Exception during resultDF.collect()" +
+              s" for $expression: ${e.getMessage}", e)
           isComparedByString = true
-          result = resultDF.select(Column(resultDF.columns(0)).cast("string")).collect()
+          result = resultDF
+            .select(
+              Column(resultDF.columns(0)).cast("string"))
+            .collect()
       }
     } else {
       logInfo(s"$expression is being evaluated with Vectorized Parameter")
@@ -346,15 +351,14 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       try {
         result = resultDF.collect()
       } catch {
-        case e: Exception =>
+        case e: Exception if hasArithmeticCause(e) =>
           logWarning(
-            s"Exception during resultDF.collect()" +
-            s" for $expression: ${e.getMessage}", e)
+            "Exception during resultDF.collect()" +
+              s" for $expression: ${e.getMessage}", e)
           isComparedByString = true
           result = resultDF
             .select(
-              Column(resultDF.columns(0))
-                .cast("string"))
+              Column(resultDF.columns(0)).cast("string"))
             .collect()
       }
     }
@@ -384,12 +388,20 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
         if (expected == null) null
         else expected.toString
       val catalystStr = try {
-        if (expected == null) null
-        else _spark.range(1).select(
-          Column(
-            Literal.create(expected, expression.dataType))
-            .cast("string"))
-          .collect().head.getString(0)
+        if (expected == null) {
+          null
+        } else {
+          val tz =
+            Option(SQLConf.get.sessionLocalTimeZone)
+          val castExpr = Cast(
+            Literal.create(expected, expression.dataType),
+            StringType,
+            tz)
+          val evaluated =
+            castExpr.eval(InternalRow.empty)
+          if (evaluated == null) null
+          else evaluated.toString
+        }
       } catch {
         case _: Exception => null
       }
@@ -424,6 +436,15 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
           s"actual: ${result.head.get(0)}, " +
           s"expected: $expected$input")
     }
+  }
+
+  private def hasArithmeticCause(e: Throwable): Boolean = {
+    var cur: Throwable = e
+    while (cur != null) {
+      if (cur.isInstanceOf[ArithmeticException]) return true
+      cur = cur.getCause
+    }
+    false
   }
 
   def shouldNotFallback(): Unit = {
