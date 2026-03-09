@@ -64,27 +64,23 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     }
   }
 
-  test("test CPU OOM ends batch early for non-RequireSingleBatch") {
+  test("test CPU OOM retry preserves all rows for non-RequireSingleBatch") {
     val totalRows = 10
     val rowIter: Iterator[InternalRow] = (1 to totalRows).map(InternalRow(_)).toIterator
     val goal = TargetSize(batchSize)
     val row2ColIter = new RowToColumnarIterator(
       rowIter, schema, goal, batchSize, new GpuRowToColumnConverter(schema))
-    // Inject a CPU OOM after some rows have been converted.
-    // The iterator should produce a smaller first batch and then a second batch
-    // containing the remaining rows.
+    // Inject a CPU OOM during conversion and verify that retry still produces
+    // the complete set of rows when the iterator is allowed to emit multiple batches.
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.CPU.ordinal, 3)
     var totalRowsSeen = 0
-    var batchCount = 0
     while (row2ColIter.hasNext) {
       Arm.withResource(row2ColIter.next()) { batch =>
         totalRowsSeen += batch.numRows()
-        batchCount += 1
       }
     }
     assertResult(totalRows)(totalRowsSeen)
-    assert(batchCount >= 1, "Should produce at least one batch")
   }
 
   test("test simple CPU OOM without retry fails") {
