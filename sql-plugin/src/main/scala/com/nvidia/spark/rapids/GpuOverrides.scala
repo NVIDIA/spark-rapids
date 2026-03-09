@@ -3501,6 +3501,24 @@ object GpuOverrides extends Logging {
         ("src", TypeSig.STRING, TypeSig.STRING),
         ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[Like](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          import org.apache.spark.sql.catalyst.util.StringUtils
+          try {
+            a.right match {
+              case l: Literal
+                  if l.value != null &&
+                    l.dataType == StringType =>
+                StringUtils.escapeLikeRegex(
+                  l.value.asInstanceOf[UTF8String].toString,
+                  a.escapeChar)
+              case _ =>
+            }
+          } catch {
+            case _: Exception =>
+              willNotWorkOnGpu(
+                "invalid LIKE escape pattern")
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLike(lhs, rhs, a.escapeChar)
       }),
