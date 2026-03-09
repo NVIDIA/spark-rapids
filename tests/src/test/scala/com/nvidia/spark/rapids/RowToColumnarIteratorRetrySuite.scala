@@ -89,9 +89,9 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     val row2ColIter = new RowToColumnarIterator(
       rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema),
       enableRetry = false)
-    // Use a row that throws CpuRetryOOM from getInt() on first access so we can
-    // precisely exercise the row-conversion retry path instead of accidentally
-    // injecting an OOM in builders.tryBuild().
+    // Use a row that throws CpuRetryOOM from getInt() on first access to verify
+    // that without retry, the exception propagates directly to the caller instead
+    // of being silently injected in builders.tryBuild().
     assertThrows[CpuRetryOOM] {
       row2ColIter.next()
     }
