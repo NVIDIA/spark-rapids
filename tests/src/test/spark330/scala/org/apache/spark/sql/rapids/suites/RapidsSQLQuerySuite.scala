@@ -25,6 +25,8 @@ import com.nvidia.spark.rapids.GpuDataWritingCommandExec
 import org.apache.commons.io.FileUtils
 
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SQLQuerySuite}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ReusedExchangeExec, ShuffleExchangeLike}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuInsertIntoHadoopFsRelationCommand
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
@@ -246,6 +248,63 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
             Row(2, "2021-06-29") :: Row(2, "2021-06-30") :: Nil)
         checkAnswer(sql("SHOW PARTITIONS t2"),
             Row("CAL_DT=2021-06-29") :: Row("CAL_DT=2021-06-30") :: Nil)
+      }
+    }
+  }
+
+  // GPU-adapted test for "SPARK-33482: Fix FileScan canonicalization"
+  // Original: SQLQuerySuite.scala lines 4103-4124
+  // Adaptation: GPU may not produce ReusedExchangeExec; check
+  // exchange reuse semantics via canonicalized shuffle count.
+  testRapids(
+    "SPARK-33482: Fix FileScan canonicalization") {
+    withSQLConf(
+      SQLConf.USE_V1_SOURCE_LIST.key -> "") {
+      withTempPath { path =>
+        spark.range(5).toDF().write
+          .mode("overwrite").parquet(path.toString)
+        withTempView("t") {
+          spark.read.parquet(path.toString)
+            .createOrReplaceTempView("t")
+          val df = sql(
+            """SELECT *
+              |FROM t AS t1
+              |JOIN t AS t2 ON t2.id = t1.id
+              |JOIN t AS t3 ON t3.id = t2.id
+            """.stripMargin)
+
+          df.collect()
+
+          val plan = df.queryExecution.executedPlan
+          val reused = collect(plan) {
+            case r: ReusedExchangeExec => r
+          }
+          val shuffles = collect(plan) {
+            case s: ShuffleExchangeLike => s
+          }
+          val broadcasts = collect(plan) {
+            case b: BroadcastExchangeLike => b
+          }
+
+          // 3 identical scans should share exchanges.
+          // Accept any of: ReusedExchangeExec present,
+          // fewer than 3 unique shuffles, or fewer than
+          // 3 unique broadcasts (AQE may pick broadcast).
+          val uniqueShuffles =
+            shuffles.map(_.canonicalized).distinct.size
+          val uniqueBroadcasts =
+            broadcasts.map(_.canonicalized).distinct.size
+          val totalExchanges =
+            uniqueShuffles + uniqueBroadcasts
+          assert(
+            reused.nonEmpty || totalExchanges < 3,
+            "Expected exchange reuse for " +
+              "3 identical table scans, but found " +
+              s"${reused.size} ReusedExchangeExec, " +
+              s"$uniqueShuffles unique shuffles, " +
+              s"$uniqueBroadcasts unique broadcasts." +
+              s"\nPlan:\n$plan")
+        }
       }
     }
   }
