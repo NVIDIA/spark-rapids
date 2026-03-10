@@ -987,7 +987,7 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     if (!escapeValidated && rhs.isValid) {
       StringUtils.escapeLikeRegex(
-        rhs.getValue.asInstanceOf[UTF8String].toString, escapeChar)
+        rhs.getValue.toString, escapeChar)
       escapeValidated = true
     }
     withResource(Scalar.fromString(Character.toString(escapeChar))) { escapeScalar =>

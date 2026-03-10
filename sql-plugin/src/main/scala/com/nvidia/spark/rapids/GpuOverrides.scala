@@ -3506,17 +3506,16 @@ object GpuOverrides extends Logging {
           try {
             a.right match {
               case l: Literal
-                  if l.value != null &&
-                    l.dataType == StringType =>
+                  if l.value.isInstanceOf[UTF8String] =>
                 StringUtils.escapeLikeRegex(
-                  l.value.asInstanceOf[UTF8String].toString,
-                  a.escapeChar)
+                  l.value.toString, a.escapeChar)
               case _ =>
             }
           } catch {
-            case _: Exception =>
+            case NonFatal(e) =>
               willNotWorkOnGpu(
-                "invalid LIKE escape pattern")
+                s"invalid LIKE escape pattern: " +
+                  s"${e.getMessage}")
           }
         }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
