@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
-          java-version: 8
+          java-version: 17
       - name: Generate daily cache key
         id: generateCacheKey
         run: |
@@ -120,7 +120,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: adopt
-          java-version: 8
+          java-version: 17
 
       - name: Cache local Maven repository
         continue-on-error: true
@@ -138,7 +138,7 @@ jobs:
         run: |
           # https://github.com/NVIDIA/spark-rapids/issues/8847
           # specify expected versions
-          export JAVA_HOME=${JAVA_HOME_8_X64}
+          export JAVA_HOME=${JAVA_HOME_17_X64}
           export PATH=${JAVA_HOME}/bin:${PATH}
           java -version && mvn --version && echo "ENV JAVA_HOME: $JAVA_HOME, PATH: $PATH"
           # test command, will retry for 3 times if failed.
