@@ -441,11 +441,11 @@ object RapidsConf extends Logging {
   val ENABLE_R2C_RETRY = conf("spark.rapids.sql.rowToColumnar.retry.enabled")
     .doc("When true, the row-to-columnar conversion wraps each row's conversion with " +
       "retry logic so that host OOM during conversion can be recovered. This adds a small " +
-      "per-row overhead. Set to false to disable the retry and eliminate that overhead, " +
+      "per-row overhead. When false (default), the retry is disabled to avoid that overhead, " +
       "at the risk of failing the task on host OOM during R2C conversion.")
     .internal()
     .booleanConf
-    .createWithDefault(true)
+    .createWithDefault(false)
 
   val GPU_COREDUMP_DIR = conf("spark.rapids.gpu.coreDump.dir")
     .doc("The URI to a directory where a GPU core dump will be created if the GPU encounters " +
