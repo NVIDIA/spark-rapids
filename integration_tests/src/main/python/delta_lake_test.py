@@ -84,13 +84,37 @@ def test_delta_scan_read(spark_tmp_path):
 
 
 def do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_table_sqls=[]):
+    num_rows_per_slice = 2048
+    num_slices = 2
+    min_num_row_groups = 3
+    # num_rows_per_slice * 4 bytes per int / min_num_row_groups
+    row_group_size = int(num_rows_per_slice * 4 / (min_num_row_groups))
+    write_conf = copy_and_update(conf, {'parquet.block.size': str(row_group_size)})
     def setup_tables(spark):
+        num_rows = num_rows_per_slice * num_slices
         setup_delta_dest_table(spark, data_path,
-                               dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                               dest_table_func=lambda spark: unary_op_df(spark, int_gen, length=num_rows, num_slices=num_slices),
                                use_cdf=use_cdf, enable_deletion_vectors=True)
         for sql in post_setup_table_sqls:
             spark.sql(sql)
-    with_cpu_session(setup_tables, conf=conf)
+    with_cpu_session(setup_tables, conf=write_conf)
+
+    def verify_files_and_row_groups():
+        import pyarrow.parquet as pq
+
+        # list files in data_path
+        files = [f for f in os.listdir(data_path) if f.endswith(".parquet")]
+        files = [f"{data_path}/{f}" for f in files]
+        # iterate files to find at least one with more row groups than the min_num_row_groups.
+        parquet_file = None
+        for f in files:
+            metadata = pq.read_metadata(f)
+            if metadata.num_row_groups >= min_num_row_groups:
+                parquet_file = f
+                break
+        assert parquet_file is not None, f"Expected at least one parquet file with {min_num_row_groups} row groups in the parquet"
+    verify_files_and_row_groups()
+
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)),
         conf=conf)
@@ -100,18 +124,19 @@ def do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_tabl
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("use_chunked_reader", [True, False], ids=idfn)
+@pytest.mark.parametrize("chunk_size", ["0", "4096", None], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING"], ids=idfn)
 @pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
-def test_delta_deletion_vector_read(spark_tmp_path, use_chunked_reader, use_cdf, dv_predicate_pushdown, parquet_reader_type, use_metadata_row_index):
+def test_delta_deletion_vector_read(spark_tmp_path, chunk_size, use_cdf, dv_predicate_pushdown, parquet_reader_type, use_metadata_row_index):
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true",
-            "spark.rapids.sql.reader.chunked": f"{use_chunked_reader}",
+            "spark.rapids.sql.reader.chunked": f"{chunk_size is not None}",
             "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
             "spark.rapids.sql.format.parquet.reader.type": f"{parquet_reader_type}",
+            "spark.rapids.sql.reader.batchSizeBytes": f"{chunk_size if chunk_size is not None else '0'}",
             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}"}
 
     do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_table_sqls=[
@@ -124,21 +149,22 @@ def test_delta_deletion_vector_read(spark_tmp_path, use_chunked_reader, use_cdf,
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("use_chunked_reader", [True, False], ids=idfn)
+@pytest.mark.parametrize("chunk_size", ["0", "4096", None], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 @pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
 @pytest.mark.parametrize("combine_size", ["0", "1M"], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
-def test_delta_deletion_vector_multithreaded_read(spark_tmp_path, use_chunked_reader, use_cdf,
+def test_delta_deletion_vector_multithreaded_read(spark_tmp_path, chunk_size, use_cdf,
                                                   dv_predicate_pushdown, use_metadata_row_index,
                                                   combine_size):
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true",
-            "spark.rapids.sql.reader.chunked": f"{use_chunked_reader}",
+            "spark.rapids.sql.reader.chunked": f"{chunk_size is not None}",
             "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
             "spark.rapids.sql.format.parquet.reader.type": "MULTITHREADED",
             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
+            "spark.rapids.sql.reader.batchSizeBytes": f"{chunk_size if chunk_size is not None else '0'}",
             "spark.rapids.sql.reader.multithreaded.combine.sizeBytes": f"{combine_size}"}
 
     do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_table_sqls=[
@@ -153,7 +179,7 @@ def test_delta_deletion_vector_multithreaded_read(spark_tmp_path, use_chunked_re
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("use_chunked_reader", [True, False], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
-@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING"], ids=idfn)
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"], ids=idfn)
 @pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
@@ -164,30 +190,6 @@ def test_delta_empty_deletion_vector_read(spark_tmp_path, use_chunked_reader, us
             "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
             "spark.rapids.sql.format.parquet.reader.type": f"{parquet_reader_type}",
             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}"}
-    do_test_delta_deletion_vector_read(data_path, use_cdf, conf)
-
-
-@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
-@delta_lake
-@ignore_order(local=True)
-@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("use_chunked_reader", [True, False], ids=idfn)
-@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
-@pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
-@pytest.mark.parametrize("combine_size", ["0", "1M"], ids=idfn)
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
-                    reason="Delta Lake deletion vector support is required")
-def test_delta_empty_deletion_vector_multithreaded_read(spark_tmp_path, use_chunked_reader, use_cdf,
-                                                        dv_predicate_pushdown, use_metadata_row_index,
-                                                        combine_size):
-    data_path = spark_tmp_path + "/DELTA_DATA"
-    conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true",
-            "spark.rapids.sql.reader.chunked": f"{use_chunked_reader}",
-            "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
-            "spark.rapids.sql.format.parquet.reader.type": "MULTITHREADED",
-            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
-            "spark.rapids.sql.reader.multithreaded.combine.sizeBytes": f"{combine_size}"}
-
     do_test_delta_deletion_vector_read(data_path, use_cdf, conf)
 
 

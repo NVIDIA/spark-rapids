@@ -655,7 +655,6 @@ class GpuDeltaParquetFileFormatBase2(
         bytesRead: Long,
         fileBlockMeta: ParquetFileInfoWithBlockMeta
     ): HostMemoryBuffersWithMetaData = {
-      require(memBuffersAndSize.length == 1)
       val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
       val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
@@ -666,6 +665,8 @@ class GpuDeltaParquetFileFormatBase2(
         .getRowGroupMetadata(dataBlock)
       val dvMetadata = DeletionVectorMetadata
         .forSingleBuffer(dvDescriptorOpt, filterTypeOpt, rowGroupOffsets, rowGroupNumRows)
+      // There should be one dvMetadata per SingleHMBAndMeta
+      val dvMetadataArray = memBuffersAndSize.map(_ => dvMetadata).toArray
 
       DeltaParquetHostMemoryBuffersWithMetaData(
         partitionedFile,
@@ -677,7 +678,7 @@ class GpuDeltaParquetFileFormatBase2(
         fileBlockMeta.schema,
         fileBlockMeta.readSchema,
         None,
-        Array(dvMetadata)
+        dvMetadataArray
       )
     }
 
@@ -688,7 +689,7 @@ class GpuDeltaParquetFileFormatBase2(
     ): HostMemoryBuffersWithMetaData = {
       val metaToUse = combinedMeta.firstNonEmpty
       val toCombine = combinedMeta.toCombine
-        .asInstanceOf[Array[DeltaParquetHostMemoryBuffersWithMetaData]]
+        .map(_.asInstanceOf[DeltaParquetHostMemoryBuffersWithMetaData])
       val combinedDVMeta = DeletionVectorMetadata.combine(toCombine.flatMap(_.dvMetadata))
 
       DeltaParquetHostMemoryBuffersWithMetaData(
@@ -725,8 +726,7 @@ class GpuDeltaParquetFileFormatBase2(
         .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
 
       val numDeletedRows = if (dvDescriptorOpt.isDefined && filterTypeOpt.isDefined) {
-        val dvDesc = DeletionVectorDescriptor.deserializeFromBase64(
-          dvDescriptorOpt.get.asInstanceOf[String])
+        val dvDesc = DeletionVectorDescriptor.deserializeFromBase64(dvDescriptorOpt.get)
         val tp = tablePath.getOrElse(throw new IllegalStateException(
           "Table path is required for non-empty deletion vectors"))
         val dvStore = new HadoopFileSystemDVStore(conf)
@@ -744,7 +744,10 @@ class GpuDeltaParquetFileFormatBase2(
         0
       }
 
-      fileBlockMeta.blocks.map(_.getRowCount).sum.toInt - numDeletedRows
+      val totalRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
+      require(numDeletedRows <= totalRows,
+        s"Deletion vector cardinality ($numDeletedRows) exceeds file row count ($totalRows)")
+      totalRows - numDeletedRows
     }
   }
 }
@@ -843,8 +846,7 @@ object MakeParquetTableWithDVProducer extends Logging {
           try {
             RmmRapidsRetryIterator.withRetryNoSplit[Table] {
               NvtxIdWithMetrics(NvtxRegistry.PARQUET_DECODE, metrics(GPU_DECODE_TIME)) {
-                DeletionVector.readParquet(
-                  opts, buffers, deletionVectorInfos)
+                DeletionVector.readParquet(opts, buffers, deletionVectorInfos)
               }
             }
           } catch {
