@@ -578,7 +578,7 @@ class RowToColumnarIterator(
     localGoal: CoalesceSizeGoal,
     batchSizeBytes: Long,
     converters: GpuRowToColumnConverter,
-    enableRetry: Boolean = true,
+    enableRetry: Boolean = false,
     numInputRows: GpuMetric = NoopMetric,
     numOutputRows: GpuMetric = NoopMetric,
     numOutputBatches: GpuMetric = NoopMetric,
