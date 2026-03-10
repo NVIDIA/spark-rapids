@@ -162,13 +162,17 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all),
         (collectLimit, conf, p, r) => new GpuCollectLimitMeta(collectLimit, conf, p, r) {
-          override def convertToGpu(): GpuExec =
+          override def convertToGpu(): GpuExec = {
+            val gpuChild = childPlans.head.convertIfNeeded()
+            val childWithRowLimit =
+              LocalLimitExec(collectLimit.limit, gpuChild)
             GpuGlobalLimitExec(collectLimit.limit,
               GpuShuffleExchangeExec(
                 GpuSinglePartitioning,
-                GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
+                GpuLocalLimitExec(collectLimit.limit, childWithRowLimit),
                 ENSURE_REQUIREMENTS
               )(SinglePartition), collectLimit.offset)
+          }
         }
       ).disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
         "of rows in a batch it could help by limiting the number of rows transferred from " +
