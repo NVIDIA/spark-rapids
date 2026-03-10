@@ -19,17 +19,31 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
+import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.execution.adaptive.QueryStageExec
 
 /**
  * Databricks 17.3 version where getRuntimeStatistics has compile-time access restrictions.
- * Return None to skip this optimization for query stages in DB 17.3.
+ * The method exists and is public at runtime, but compile-time metadata shows it as protected,
+ * so we use reflection to access it.
  */
 object QueryStageRowCountShims {
+  private lazy val getRuntimeStatisticsMethod = {
+    try {
+      Some(classOf[QueryStageExec].getMethod("getRuntimeStatistics"))
+    } catch {
+      case _: NoSuchMethodException => None
+    }
+  }
+
   def getRowCount(qse: QueryStageExec): Option[BigInt] = {
-    // Skip row count optimization for QueryStageExec in DB 17.3
-    // The method exists and is public at runtime, but compile-time metadata shows it as protected
-    None
+    try {
+      getRuntimeStatisticsMethod.flatMap { method =>
+        method.invoke(qse).asInstanceOf[Statistics].rowCount
+      }
+    } catch {
+      case _: Exception => None
+    }
   }
 }
 
