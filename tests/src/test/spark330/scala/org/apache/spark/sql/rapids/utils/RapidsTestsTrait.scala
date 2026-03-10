@@ -323,13 +323,9 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       } catch {
         case e: Exception if hasArithmeticCause(e) =>
           logWarning(
-            "Exception during resultDF.collect()" +
-              s" for $expression: ${e.getMessage}", e)
+            s"Exception during resultDF.collect() for $expression: ${e.getMessage}", e)
           isComparedByString = true
-          result = resultDF
-            .select(
-              Column(resultDF.columns(0)).cast("string"))
-            .collect()
+          result = resultDF.select(Column(resultDF.columns(0)).cast("string")).collect()
       }
     } else {
       logInfo(s"$expression is being evaluated with Vectorized Parameter")
@@ -353,13 +349,9 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       } catch {
         case e: Exception if hasArithmeticCause(e) =>
           logWarning(
-            "Exception during resultDF.collect()" +
-              s" for $expression: ${e.getMessage}", e)
+            s"Exception during resultDF.collect() for $expression: ${e.getMessage}", e)
           isComparedByString = true
-          result = resultDF
-            .select(
-              Column(resultDF.columns(0)).cast("string"))
-            .collect()
+          result = resultDF.select(Column(resultDF.columns(0)).cast("string")).collect()
       }
     }
 
@@ -384,34 +376,23 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
     }
     if (isComparedByString) {
       val actualStr = result.head.get(0)
-      val rawStr =
-        if (expected == null) null
-        else expected.toString
+      val rawStr = if (expected == null) null else expected.toString
       val catalystStr = try {
         if (expected == null) {
           null
         } else {
-          val tz =
-            Option(SQLConf.get.sessionLocalTimeZone)
+          val tz = Option(SQLConf.get.sessionLocalTimeZone)
           val castExpr = Cast(
-            Literal.create(expected, expression.dataType),
-            StringType,
-            tz)
-          val evaluated =
-            castExpr.eval(InternalRow.empty)
-          if (evaluated == null) null
-          else evaluated.toString
+            Literal.create(expected, expression.dataType), StringType, tz)
+          val evaluated = castExpr.eval(InternalRow.empty)
+          if (evaluated == null) null else evaluated.toString
         }
       } catch {
         case _: Exception => null
       }
       val matched =
-        checkResult(
-          actualStr, rawStr,
-          StringType, expression.nullable) ||
-        checkResult(
-          actualStr, catalystStr,
-          StringType, expression.nullable)
+        checkResult(actualStr, rawStr, StringType, expression.nullable) ||
+        checkResult(actualStr, catalystStr, StringType, expression.nullable)
       if (!matched) {
         fail(
           s"Incorrect evaluation: $expression, " +
