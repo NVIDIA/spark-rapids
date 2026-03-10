@@ -639,6 +639,8 @@ class RowToColumnarIterator(
             rowCount += 1
           }
         } else {
+          // Disabling R2C retry only removes the per-row retry wrapper around convert().
+          // The final builders.tryBuild(rowCount) call below still uses withRetryNoSplit.
           while (rowIter.hasNext &&
               (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
             val row = rowIter.next()

@@ -93,8 +93,8 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema),
       enableRetry = false)
     // Use a row that throws CpuRetryOOM from getInt() on first access to verify
-    // that without retry, the exception propagates directly to the caller instead
-    // of being silently injected in builders.tryBuild().
+    // that a conversion-time CpuRetryOOM propagates directly to the caller when
+    // per-row retry is disabled, instead of accidentally testing builders.tryBuild().
     assertThrows[CpuRetryOOM] {
       row2ColIter.next()
     }
