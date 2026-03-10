@@ -925,6 +925,9 @@
         <rapids.delta.artifactId3>${rapids.delta.artifactId1}</rapids.delta.artifactId3>
         <test.include.tags/>
         <rapids.shuffle.manager.override>true</rapids.shuffle.manager.override>
+        <rapids.test.gpu.allocFraction>1</rapids.test.gpu.allocFraction>
+        <rapids.test.gpu.maxAllocFraction>1</rapids.test.gpu.maxAllocFraction>
+        <rapids.test.gpu.minAllocFraction>0.25</rapids.test.gpu.minAllocFraction>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.sourceEncoding>UTF-8</project.reporting.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -1516,6 +1519,9 @@ This will force full Scala code rebuild in downstream modules.
                             <spark.ui.enabled>false</spark.ui.enabled>
                             <spark.ui.showConsoleProgress>false</spark.ui.showConsoleProgress>
                             <spark.unsafe.exceptionOnMemoryLeak>true</spark.unsafe.exceptionOnMemoryLeak>
+                            <rapids.test.gpu.allocFraction>${rapids.test.gpu.allocFraction}</rapids.test.gpu.allocFraction>
+                            <rapids.test.gpu.maxAllocFraction>${rapids.test.gpu.maxAllocFraction}</rapids.test.gpu.maxAllocFraction>
+                            <rapids.test.gpu.minAllocFraction>${rapids.test.gpu.minAllocFraction}</rapids.test.gpu.minAllocFraction>
                         </systemProperties>
                         <tagsToExclude>${test.exclude.tags}</tagsToExclude>
                         <tagsToInclude>${test.include.tags}</tagsToInclude>
