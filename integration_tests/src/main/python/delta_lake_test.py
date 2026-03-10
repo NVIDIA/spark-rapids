@@ -124,7 +124,7 @@ def do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_tabl
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("chunk_size", ["0", "4096", None], ids=idfn)
+@pytest.mark.parametrize("chunk_size", ["0", "2000", "4000", None], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING"], ids=idfn)
 @pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
@@ -149,7 +149,7 @@ def test_delta_deletion_vector_read(spark_tmp_path, chunk_size, use_cdf, dv_pred
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("chunk_size", ["0", "4096", None], ids=idfn)
+@pytest.mark.parametrize("chunk_size", ["0", "2000", "4000", None], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 @pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
 @pytest.mark.parametrize("combine_size", ["0", "1M"], ids=idfn)

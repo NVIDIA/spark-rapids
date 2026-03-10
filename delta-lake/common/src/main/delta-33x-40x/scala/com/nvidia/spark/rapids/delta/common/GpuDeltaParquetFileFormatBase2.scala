@@ -467,9 +467,7 @@ class GpuDeltaParquetFileFormatBase2(
       val partedFile: PartitionedFile = deltaBuffer.partitionedFile
       val hostBuffers = hmbAndInfo.hmbs
       val allPartValues: Option[Array[(Long, InternalRow)]] = deltaBuffer.allPartValues
-      val dvMetadata = deltaBuffer.dvMetadata.head
-      val dvDescOpts = dvMetadata.dvDescriptorOpts
-      val filterTypeOpts = dvMetadata.filterTypeOpts
+      val dvMetadata: DeletionVectorMetadata = deltaBuffer.dvMetadata.head
 
       val parseOpts = closeOnExcept(hostBuffers) { _ =>
         getParquetOptions(readDataSchema, clippedSchema, useFieldId)
@@ -480,12 +478,12 @@ class GpuDeltaParquetFileFormatBase2(
         RmmRapidsRetryIterator.withRetryNoSplit {
           val hostBufs = hostBuffers.safeMap(_.getDataHostBuffer())
           val maybeDVInfo = tablePath.map(tp =>
-            dvDescOpts.zip(filterTypeOpts).map {
-              case (desc, filterType) =>
+            dvMetadata.metadatas.map {
+              singleDVMeta =>
                 val serializedDV = RapidsDeletionVectors.loadDeletionVector(
-                  fileIO, desc, filterType, tp)
+                  fileIO, singleDVMeta.dvDescriptorOpt, singleDVMeta.filterTypeOpt, tp)
                 new DeletionVector.DeletionVectorInfo(serializedDV,
-                  dvMetadata.rowGroupOffsets, dvMetadata.rowGroupNumRows)
+                  singleDVMeta.rowGroupOffsets, singleDVMeta.rowGroupNumRows)
             })
 
           // Duplicate request is ok, and start to use the GPU just after the host
@@ -539,13 +537,18 @@ class GpuDeltaParquetFileFormatBase2(
       }
     }
 
+    /**
+     * Deletion vector metadata for a single host memory buffer containing a part of data.
+     */
+    private case class SingleBufferDVMetadata(
+        dvDescriptorOpt: Option[String],
+        filterTypeOpt: Option[RowIndexFilterType],
+        rowGroupOffsets: Array[Long],
+        rowGroupNumRows: Array[Int]
+    )
+
     private case class DeletionVectorMetadata(
-        // dvDescriptorOpts and filterTypeOpts should be aligned with each other
-        dvDescriptorOpts: Array[Option[String]],
-        filterTypeOpts: Array[Option[RowIndexFilterType]],
-        // rowGroupOffsets and rowGroupNumRows should be aligned with each other
-        rowGroupOffsets: Array[Long], // row group offsets for each buffer
-        rowGroupNumRows: Array[Int] // number of rows in each row group for each buffer
+        metadatas: Array[SingleBufferDVMetadata]
     )
 
     private object DeletionVectorMetadata {
@@ -554,15 +557,14 @@ class GpuDeltaParquetFileFormatBase2(
           filterTypeOpt: Option[RowIndexFilterType],
           rowGroupOffsets: Array[Long],
           rowGroupNumRows: Array[Int]
-      ) = DeletionVectorMetadata(Array(dvDescriptorOpt), Array(filterTypeOpt),
-        rowGroupOffsets, rowGroupNumRows)
+      ) = {
+        DeletionVectorMetadata(
+          Array(SingleBufferDVMetadata(dvDescriptorOpt, filterTypeOpt, rowGroupOffsets, rowGroupNumRows))
+        )
+      }
 
       def combine(metadatas: Array[DeletionVectorMetadata]): DeletionVectorMetadata = {
-        val dvDescriptorOpts = metadatas.flatMap(_.dvDescriptorOpts).toArray
-        val filterTypeOpts = metadatas.flatMap(_.filterTypeOpts).toArray
-        val rowGroupOffsets = metadatas.flatMap(_.rowGroupOffsets).toArray
-        val rowGroupNumRows = metadatas.flatMap(_.rowGroupNumRows).toArray
-        DeletionVectorMetadata(dvDescriptorOpts, filterTypeOpts, rowGroupOffsets, rowGroupNumRows)
+        DeletionVectorMetadata(metadatas.flatMap(_.metadatas))
       }
     }
 
@@ -608,6 +610,7 @@ class GpuDeltaParquetFileFormatBase2(
       }
     }
 
+    // TODO: forSingleFile
     override protected def newHMEmptyMetadataForChunks(
         partitionedFile: PartitionedFile,
         bufferSize: Long,
@@ -659,14 +662,13 @@ class GpuDeltaParquetFileFormatBase2(
         .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
       val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
-      val hmbAndInfo = memBuffersAndSize.head
-      val dataBlock = hmbAndInfo.blockMeta.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
-      val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
-        .getRowGroupMetadata(dataBlock)
-      val dvMetadata = DeletionVectorMetadata
-        .forSingleBuffer(dvDescriptorOpt, filterTypeOpt, rowGroupOffsets, rowGroupNumRows)
-      // There should be one dvMetadata per SingleHMBAndMeta
-      val dvMetadataArray = memBuffersAndSize.map(_ => dvMetadata).toArray
+      val dvMetadataArray = memBuffersAndSize.map { singleHMBAndMeta =>
+        val dataBlock = singleHMBAndMeta.blockMeta.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
+        val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
+          .getRowGroupMetadata(dataBlock)
+        DeletionVectorMetadata.forSingleBuffer(
+          dvDescriptorOpt, filterTypeOpt, rowGroupOffsets, rowGroupNumRows)
+      }
 
       DeltaParquetHostMemoryBuffersWithMetaData(
         partitionedFile,
