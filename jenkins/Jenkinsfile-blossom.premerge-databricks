@@ -215,7 +215,7 @@ void checkoutCode(String url, String sha) {
                                     credentialsId: 'github-token',
                                     url          : url,
                                     refspec      : '+refs/pull/*/merge:refs/remotes/origin/pr/*']],
-             extensions      : [[$class: 'CloneOption', shallow: true]]
+             extensions      : [[$class: 'CloneOption', shallow: true, depth: 10]]
         ]
     )
     sh "git submodule update --init"
