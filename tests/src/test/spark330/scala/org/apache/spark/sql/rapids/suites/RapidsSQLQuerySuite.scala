@@ -250,33 +250,4 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
     }
   }
 
-  // GPU-adapted test for "SPARK-33677: LikeSimplification
-  // should be skipped if pattern contains any escapeChar"
-  // Original: SQLQuerySuite.scala lines 3758-3773
-  // (Spark 3.3.0: uses intercept[AnalysisException])
-  // Adaptation: GPU handles LIKE with escape chars correctly
-  // without throwing AnalysisException. The pattern
-  // 'm%@ca' ESCAPE '%' means literal "m@ca" — GPU returns
-  // correct result true instead of rejecting the pattern.
-  testRapids("SPARK-33677: LikeSimplification should " +
-    "be skipped if pattern contains any escapeChar") {
-    withTempView("df") {
-      import testImplicits._
-      Seq("m@ca").toDF("s")
-        .createOrReplaceTempView("df")
-
-      // GPU evaluates the escaped pattern correctly:
-      // '%' as escape char, '%@' = literal '@'
-      checkAnswer(
-        sql("SELECT s LIKE 'm%@ca' ESCAPE '%' " +
-          "FROM df"),
-        Row(true))
-
-      checkAnswer(
-        sql("SELECT s LIKE 'm@@ca' ESCAPE '@' " +
-          "FROM df"),
-        Row(true))
-    }
-  }
-
 }

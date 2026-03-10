@@ -36,6 +36,7 @@ import com.nvidia.spark.rapids.jni.RegexRewriteUtils
 import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.util.StringUtils
 import org.apache.spark.sql.errors.ConvUtils
 import org.apache.spark.sql.rapids.catalyst.expressions._
 import org.apache.spark.sql.types._
@@ -976,12 +977,19 @@ case class GpuLike(left: Expression, right: Expression, escapeChar: Char)
 
   def this(left: Expression, right: Expression) = this(left, right, '\\')
 
+  @transient private var escapeValidated = false
+
   override def toString: String = escapeChar match {
     case '\\' => s"$left gpulike $right"
     case c => s"$left gpulike $right ESCAPE '$c'"
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    if (!escapeValidated && rhs.isValid) {
+      StringUtils.escapeLikeRegex(
+        rhs.getValue.toString, escapeChar)
+      escapeValidated = true
+    }
     withResource(Scalar.fromString(Character.toString(escapeChar))) { escapeScalar =>
       lhs.getBase.like(rhs.getBase, escapeScalar)
     }
