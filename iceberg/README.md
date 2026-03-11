@@ -9,12 +9,19 @@ version it supports.
 The following table shows the mapping of Iceberg versions to their supported Spark version
 and the directory that contains the corresponding support code.
 
-| Iceberg Version | Spark Version   | Directory        |
-|-----------------|-----------------|------------------|
-| 1.6.x           | Spark 3.5.0-3.5.3 | `iceberg-1-6-x` |
-| 1.9.x           | Spark 3.5.4-3.5.7 | `iceberg-1-9-x` |
+| Iceberg Version | Spark Version      | Directory         |
+|-----------------|--------------------|-------------------|
+| 1.6.x           | Spark 3.5.0-3.5.3  | `iceberg-1-6-x`  |
+| 1.9.x           | Spark 3.5.4-3.5.8  | `iceberg-1-9-x`  |
+| 1.10.x          | Spark 3.5.4-3.5.8  | `iceberg-1-10-x` |
 
 Iceberg GPU acceleration is currently only supported on Spark 3.5.x.
+
+For Spark 3.5.4+, both `iceberg-1-9-x` and `iceberg-1-10-x` modules are compiled into the
+build. The correct version-specific implementation is selected at runtime by probing the
+`iceberg-spark-runtime` jar on the classpath. Version-specific code lives in distinct
+sub-packages (`iceberg19x`, `iceberg110x`) to avoid class conflicts, and the common
+`ShimUtils` dispatcher delegates to the appropriate implementation.
 
 ## Code Shared Between Modules
 

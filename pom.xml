@@ -528,11 +528,13 @@
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>1.9.2</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
+                <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-33x</module>
                 <module>iceberg/iceberg-1-9-x</module>
+                <module>iceberg/iceberg-1-10-x</module>
             </modules>
         </profile>
         <profile>
@@ -552,11 +554,13 @@
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>1.9.2</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
+                <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-33x</module>
                 <module>iceberg/iceberg-1-9-x</module>
+                <module>iceberg/iceberg-1-10-x</module>
             </modules>
         </profile>
         <profile>
@@ -576,11 +580,13 @@
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>1.9.2</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
+                <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-33x</module>
                 <module>iceberg/iceberg-1-9-x</module>
+                <module>iceberg/iceberg-1-10-x</module>
             </modules>
         </profile>
         <profile>
@@ -600,11 +606,13 @@
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>1.9.2</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
+                <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-33x</module>
                 <module>iceberg/iceberg-1-9-x</module>
+                <module>iceberg/iceberg-1-10-x</module>
             </modules>
         </profile>
         <profile>
@@ -624,11 +632,13 @@
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.version>1.9.2</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
+                <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-33x</module>
                 <module>iceberg/iceberg-1-9-x</module>
+                <module>iceberg/iceberg-1-10-x</module>
             </modules>
         </profile>
 	<!-- #if scala-2.13 --><!--
@@ -935,6 +945,7 @@
         includes rapids-4-spark-sql, otherwise it includes actual iceberg integration artifact.
         -->
         <rapids.iceberg.artifactId>rapids-4-spark-sql</rapids.iceberg.artifactId>
+        <rapids.iceberg.artifactId2>${rapids.iceberg.artifactId}</rapids.iceberg.artifactId2>
         <spark33x.iceberg.artifact.suffix>3.3</spark33x.iceberg.artifact.suffix>
         <spark33x.iceberg.version>1.6.1</spark33x.iceberg.version>
         <spark34x.iceberg.artifact.suffix>3.4</spark34x.iceberg.artifact.suffix>
