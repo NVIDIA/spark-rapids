@@ -162,6 +162,10 @@ ci_2() {
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
 
+    # Switch to JDK 17 for building Spark 3.5.4+ shims that depend on Iceberg 1.9.2+
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+
     # put some mvn tests here to balance durations of parallel stages
     echo "Run mvn package..."
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
