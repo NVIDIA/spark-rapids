@@ -50,6 +50,8 @@ import org.json4s._
 import org.json4s.jackson.JsonMethods._
 
 object EventLogJsonShims {
+  private implicit val formats: Formats = org.json4s.DefaultFormats
+
   def parseJson(line: String): JValue = parse(line)
 
   def extractLong(jval: JValue): Option[Long] = jval.extractOpt[Long]
