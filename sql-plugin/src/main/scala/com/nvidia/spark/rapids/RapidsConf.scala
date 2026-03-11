@@ -1591,6 +1591,15 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_PROTOBUF_BATCH_MERGE_AFTER_PROJECT =
+    conf("spark.rapids.sql.protobuf.batchMergeAfterProject.enabled")
+      .doc("When set to true, allows a GPU Project containing a schema-pruned " +
+        "`from_protobuf` decode to request a post-project batch coalesce. This is intended " +
+        "to reduce tiny batches produced after protobuf schema projection.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_ORC_FLOAT_TYPES_TO_STRING =
     conf("spark.rapids.sql.format.orc.floatTypesToString.enable")
     .doc("When reading an ORC file, the source data schemas(schemas of ORC file) may differ " +
@@ -3515,6 +3524,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isExpandPreprojectEnabled: Boolean = get(ENABLE_EXPAND_PREPROJECT)
 
   lazy val isCoalesceAfterExpandEnabled: Boolean = get(ENABLE_COALESCE_AFTER_EXPAND)
+
+  lazy val isProtobufBatchMergeAfterProjectEnabled: Boolean =
+    get(ENABLE_PROTOBUF_BATCH_MERGE_AFTER_PROJECT)
 
   lazy val multiThreadReadNumThreads: Int = {
     // Use the largest value set among all the options.

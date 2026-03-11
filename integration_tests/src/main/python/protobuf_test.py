@@ -1542,6 +1542,39 @@ def test_from_protobuf_nested_message_field_access(spark_tmp_path, from_protobuf
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_nested_message_field_access_with_batch_merge(
+        spark_tmp_path, from_protobuf_fn):
+    """
+    Same as nested field access, but with protobuf post-project batch merge enabled.
+    This protects correctness when schema-projected protobuf output is coalesced.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested.desc", _build_nested_descriptor_set_bytes)
+    message_name = "test.WithNested"
+
+    data_gen = ProtobufMessageGen([
+        PbScalar("simple_int", 1, IntegerGen()),
+        PbScalar("simple_str", 2, StringGen(nullable=True)),
+        PbNested("nested_msg", 3, [PbScalar("x", 1, IntegerGen())]),
+        PbScalar("simple_long", 4, LongGen()),
+    ])
+
+    def run_on_spark(spark):
+        df = gen_df(spark, data_gen)
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("simple_int").alias("simple_int"),
+            decoded.getField("nested_msg").getField("x").alias("nested_x"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(
+        run_on_spark,
+        conf={"spark.rapids.sql.protobuf.batchMergeAfterProject.enabled": "true"})
+
+
 def _build_deep_nested_descriptor_set_bytes(spark):
     """
     Build a FileDescriptorSet for deeply nested message:
