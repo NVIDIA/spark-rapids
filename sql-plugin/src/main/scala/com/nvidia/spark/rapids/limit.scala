@@ -194,10 +194,11 @@ class GpuCollectLimitMeta(
     Seq(GpuOverrides.wrapPart(collectLimit.outputPartitioning, conf, Some(this)))
 
   override def tagPlanForGpu(): Unit = {
+    // String matching avoids compile errors on Spark versions
+    // where CommandResultExec (added in 3.2) does not exist.
     val childName = collectLimit.child.getClass.getSimpleName
     if (childName == "CommandResultExec" ||
-        childName == "ExecutedCommandExec" ||
-        childName == "LocalTableScanExec") {
+        childName == "ExecutedCommandExec") {
       willNotWorkOnGpu(
         s"child $childName already provides pre-computed " +
         "results; replacing CollectLimit would trigger " +
