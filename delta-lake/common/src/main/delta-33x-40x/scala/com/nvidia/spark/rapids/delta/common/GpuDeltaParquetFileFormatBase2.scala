@@ -696,7 +696,7 @@ class GpuDeltaParquetFileFormatBase2(
     ): HostMemoryBuffersWithMetaData = {
       val metaToUse = combinedMeta.firstNonEmpty
       val toCombine = combinedMeta.toCombine
-        .map(_.asInstanceOf[DeltaParquetHostMemoryBuffersWithMetaData])
+        .collect { case hmb: DeltaParquetHostMemoryBuffersWithMetaData => hmb }
       val combinedDVMeta = DeletionVectorMetadata.combine(toCombine.flatMap(_.dvMetadata))
 
       DeltaParquetHostMemoryBuffersWithMetaData(
