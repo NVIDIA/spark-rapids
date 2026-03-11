@@ -33,7 +33,9 @@ import org.apache.spark.sql.rapids.execution.ShuffledBatchRDD
 case class GpuShuffleExchangeExec(
     gpuOutputPartitioning: GpuPartitioning,
     child: SparkPlan,
-    shuffleOrigin: ShuffleOrigin)(
+    shuffleOrigin: ShuffleOrigin,
+    adaptiveRepartitioningStatus: AdaptiveRepartitioningStatus =
+      AdaptiveRepartitioningStatus.DEFAULT_STATUS)(
     cpuOutputPartitioning: Partitioning)
   extends GpuDatabricksShuffleExchangeExecBase(gpuOutputPartitioning, child, shuffleOrigin)(
     cpuOutputPartitioning) {
@@ -64,21 +66,20 @@ case class GpuShuffleExchangeExec(
   // cpuOutputPartitioning.
   override def targetOutputPartitioning: Partitioning = cpuOutputPartitioning
 
-  def adaptiveRepartitioningStatus(): AdaptiveRepartitioningStatus = {
-    AdaptiveRepartitioningStatus.DEFAULT_STATUS
-  }
-
   override def withNewNumPartitions(numPartitions: Int): ShuffleExchangeLike = {
     val newCpuPartitioning = cpuOutputPartitioning.withNewNumPartitions(numPartitions)
-    val newExec = copy(gpuOutputPartitioning, child, shuffleOrigin)(newCpuPartitioning)
+    val newExec = copy(gpuOutputPartitioning, child, shuffleOrigin,
+      adaptiveRepartitioningStatus)(newCpuPartitioning)
     newExec.copyTagsFrom(this)
     newExec
   }
 
-  def repartition(numPartitions: Int, updatedRepartitioningStatus: AdaptiveRepartitioningStatus):
-     ShuffleExchangeLike = {
+  def repartition(numPartitions: Int,
+      updatedRepartitioningStatus: AdaptiveRepartitioningStatus):
+      ShuffleExchangeLike = {
     val newCpuPartitioning = cpuOutputPartitioning.withNewNumPartitions(numPartitions)
-    copy(gpuOutputPartitioning, child, shuffleOrigin)(newCpuPartitioning)
+    copy(gpuOutputPartitioning, child, shuffleOrigin,
+      updatedRepartitioningStatus)(newCpuPartitioning)
   }
 
   // not sure how it is used, so try to return one at first.
