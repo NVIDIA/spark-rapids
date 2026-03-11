@@ -25,7 +25,10 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
 
  /** CollectLimitExec is off by default, turn it on for tests */
   def enableCollectLimitExec(conf: SparkConf = new SparkConf()): SparkConf = {
-    enableCsvConf(conf).set("spark.rapids.sql.exec.CollectLimitExec", "true")
+    enableCsvConf(conf)
+      .set("spark.rapids.sql.exec.CollectLimitExec", "true")
+      // GpuCollectLimitMeta inserts CPU LocalLimitExec for row-level per-partition limits
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "LocalLimitExec")
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("limit more than rows", intCsvDf,
