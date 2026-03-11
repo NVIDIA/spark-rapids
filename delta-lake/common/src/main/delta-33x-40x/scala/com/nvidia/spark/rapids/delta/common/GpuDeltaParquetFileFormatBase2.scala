@@ -474,62 +474,67 @@ class GpuDeltaParquetFileFormatBase2(
 
       withResource(hostBuffers) { _ =>
         RmmRapidsRetryIterator.withRetryNoSplit {
-          val hostBufs = hostBuffers.safeMap(_.getDataHostBuffer())
-          val maybeDVInfo = tablePath.map(tp =>
-            dvMetadata.metadatas.map {
-              singleDVMeta =>
-                val serializedDV = RapidsDeletionVectors.loadDeletionVector(
-                  fileIO, singleDVMeta.dvDescriptorOpt, singleDVMeta.filterTypeOpt, tp)
-                new DeletionVector.DeletionVectorInfo(serializedDV,
-                  singleDVMeta.rowGroupOffsets, singleDVMeta.rowGroupNumRows)
-            })
+          closeOnExcept(hostBuffers.safeMap(_.getDataHostBuffer())) { hostBufs =>
+            val dvInfo: Array[DeletionVector.DeletionVectorInfo] = if (hasTablePath) {
+              dvMetadata.metadatas.map {
+                singleDVMeta =>
+                  val serializedDV = RapidsDeletionVectors.loadDeletionVector(
+                    fileIO, singleDVMeta.dvDescriptorOpt, singleDVMeta.filterTypeOpt, tablePath.get)
+                  new DeletionVector.DeletionVectorInfo(serializedDV,
+                    singleDVMeta.rowGroupOffsets, singleDVMeta.rowGroupNumRows)
+              }
+            } else {
+              Array()
+            }
+            closeOnExcept(dvInfo.map(_.serializedBitmap)) { _ =>
+              // Duplicate request is ok, and start to use the GPU just after the host
+              // buffer is ready to not block CPU things.
+              GpuSemaphore.acquireIfNecessary(TaskContext.get())
 
-          // Duplicate request is ok, and start to use the GPU just after the host
-          // buffer is ready to not block CPU things.
-          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+              val tableReader = if (hasTablePath) {
+                // The MakeParquetTableWithDVProducer will close the input buffers
+                MakeParquetTableWithDVProducer(
+                  useChunkedReader,
+                  maxChunkedReaderMemoryUsageSizeBytes,
+                  conf, targetBatchSizeBytes,
+                  parseOpts,
+                  hostBufs, metrics,
+                  dateRebaseMode, timestampRebaseMode,
+                  isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, files,
+                  debugDumpPrefix, debugDumpAlways,
+                  dvInfo)
+              } else {
+                // The MakeParquetTableProducer will close the input buffers
+                MakeParquetTableProducer(
+                  useChunkedReader,
+                  maxChunkedReaderMemoryUsageSizeBytes,
+                  conf, targetBatchSizeBytes,
+                  parseOpts, hostBufs, metrics,
+                  dateRebaseMode, timestampRebaseMode,
+                  hasInt96Timestamps, isSchemaCaseSensitive,
+                  useFieldId, readDataSchema, clippedSchema,
+                  files, debugDumpPrefix, debugDumpAlways
+                )
+              }
 
-          val tableReader = if (maybeDVInfo.isDefined) {
-            // The MakeParquetTableWithDVProducer will close the input buffers
-            MakeParquetTableWithDVProducer(
-              useChunkedReader,
-              maxChunkedReaderMemoryUsageSizeBytes,
-              conf, targetBatchSizeBytes,
-              parseOpts,
-              hostBufs, metrics,
-              dateRebaseMode, timestampRebaseMode,
-              isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, files,
-              debugDumpPrefix, debugDumpAlways,
-              maybeDVInfo.get)
-          } else {
-            // The MakeParquetTableProducer will close the input buffers
-            MakeParquetTableProducer(
-              useChunkedReader,
-              maxChunkedReaderMemoryUsageSizeBytes,
-              conf, targetBatchSizeBytes,
-              parseOpts, hostBufs, metrics,
-              dateRebaseMode, timestampRebaseMode,
-              hasInt96Timestamps, isSchemaCaseSensitive,
-              useFieldId, readDataSchema, clippedSchema,
-              files, debugDumpPrefix, debugDumpAlways
-            )
-          }
+              val batchIter = CachedGpuBatchIterator(tableReader, colTypes)
 
-          val batchIter = CachedGpuBatchIterator(tableReader, colTypes)
-
-          if (allPartValues.isDefined) {
-            val allPartInternalRows = allPartValues.get.map(_._2)
-            // rowsPerPartition has been adjusted already to account only the alive rows.
-            val rowsPerPartition = allPartValues.get.map(_._1)
-            new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
-              rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes)
-          } else {
-            // this is a bit weird, we don't have number of rows when allPartValues isn't
-            // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
-            batchIter.flatMap { batch =>
-              // we have to add partition values here for this batch, we already verified that
-              // its not different for all the blocks in this batch
-              BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
-                partedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+              if (allPartValues.isDefined) {
+                val allPartInternalRows = allPartValues.get.map(_._2)
+                // rowsPerPartition has been adjusted already to account only the alive rows.
+                val rowsPerPartition = allPartValues.get.map(_._1)
+                new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
+                  rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes)
+              } else {
+                // this is a bit weird, we don't have number of rows when allPartValues isn't
+                // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
+                batchIter.flatMap { batch =>
+                  // we have to add partition values here for this batch, we already verified that
+                  // its not different for all the blocks in this batch
+                  BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+                    partedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+                }
+              }
             }
           }
         }
