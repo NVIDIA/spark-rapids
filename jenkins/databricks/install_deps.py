@@ -85,16 +85,16 @@ def define_deps(spark_version, scala_version):
                          f'{spark_prefix}--sql--hive--hive-{spark_suffix}_*.jar'),
         Artifact('org.apache.hive', 'hive-exec',
                          f'{spark_prefix}--patched-hive-with-glue--hive-exec*.jar'),
-    ]                     
+    ]
     # hive-metastore-client-patched has different naming pattern in Spark 4.0
     if spark_version.startswith('4.0'):
-       # Spark 4.0: the patch jar uses scala 2.13
-       deps += [Artifact('org.apache.hive', 'hive-metastore-client-patched',
-                    f'{spark_prefix}--patched-hive-with-glue--hive-*-patch-hive-2.3__hadoop-3.2_2.*.jar')]
-    else:
-       # Spark 3.x versions
+        # Spark 4.0: the patch jar uses scala 2.13
         deps += [Artifact('org.apache.hive', 'hive-metastore-client-patched',
-                    f'{spark_prefix}--patched-hive-with-glue--hive-*-patch-{spark_suffix}_deploy.jar')]
+                 f'{spark_prefix}--patched-hive-with-glue--hive-*-patch-hive-2.3__hadoop-3.2_2.*.jar')]
+    else:
+        # Spark 3.x versions
+        deps += [Artifact('org.apache.hive', 'hive-metastore-client-patched',
+                 f'{spark_prefix}--patched-hive-with-glue--hive-*-patch-{spark_suffix}_deploy.jar')]
     deps += [
         # Hive
         Artifact('org.apache.hive', 'hive-serde',
@@ -159,13 +159,13 @@ def define_deps(spark_version, scala_version):
     # spark-avro has different locations depending on Spark version
     if spark_version.startswith('4.0'):
         deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
-                         f'{spark_prefix}--connector--avro--avro-{spark_suffix}_*.jar')]
+                 f'{spark_prefix}--connector--avro--avro-{spark_suffix}_*.jar')]
     elif spark_version.startswith('3.5'):
         deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
-                         f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro--org.apache.avro*.jar')]
+                 f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro--org.apache.avro*.jar')]
     else:
         deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
-                         f'{spark_prefix}--vendor--avro--avro-*.jar')]
+                 f'{spark_prefix}--vendor--avro--avro-*.jar')]
 
     # Parquet
     if spark_version.startswith('3.4') or spark_version.startswith('3.5') or spark_version.startswith('4.0'):

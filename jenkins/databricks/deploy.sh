@@ -24,7 +24,12 @@ cd spark-rapids
 echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
 SERVER_URL="$URM_URL-local"
-SCALA_VERSION=`mvn help:evaluate -q -f $POM_FILE -pl dist -Dexpression=scala.binary.version -DforceStdout`
+# Determine Scala version from Spark version: Spark 4.x uses Scala 2.13, earlier uses 2.12
+if [[ "$BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS" == 4.* ]]; then
+    SCALA_VERSION="2.13"
+else
+    SCALA_VERSION="2.12"
+fi
 # remove the periods so change something like 3.2.1 to 321
 VERSION_NUM=${BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS//.}
 SPARK_VERSION_STR=spark$VERSION_NUM
