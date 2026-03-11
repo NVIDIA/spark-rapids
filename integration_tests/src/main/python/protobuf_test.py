@@ -896,6 +896,132 @@ def test_from_protobuf_nested_enum_permissive_invalid_row_null(spark_tmp_path, f
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
+def _build_nested_enum_default_struct_descriptor_set_bytes(spark):
+    """
+    Build a FileDescriptorSet for:
+      package test;
+      syntax = "proto2";
+      enum Language {
+        UNKNOWN_LANGUAGE = 0;
+        EN = 1;
+        ZH = 2;
+      }
+      enum CodeType {
+        UNKNOWN_CODE = 0;
+        UTF8 = 1;
+        GBK = 2;
+      }
+      message CommonWithEnumDefaults {
+        optional string logid = 1;
+        optional Language language = 2 [default = EN];
+        optional CodeType code_type = 3 [default = UTF8];
+      }
+      message OuterWithCommonEnumDefaults {
+        optional int32 id = 1;
+        optional CommonWithEnumDefaults common = 2;
+      }
+
+    Regression target:
+      In string mode, spark-protobuf surfaces enum defaults as EnumValueDescriptor.
+      GPU planning must not cast those defaults to Python/Scala String blindly.
+    """
+    D, fd = _new_proto2_file(spark, "nested_enum_defaults.proto")
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    language_enum = D.EnumDescriptorProto.newBuilder().setName("Language")
+    language_enum.addValue(
+        D.EnumValueDescriptorProto.newBuilder()
+            .setName("UNKNOWN_LANGUAGE").setNumber(0).build())
+    language_enum.addValue(
+        D.EnumValueDescriptorProto.newBuilder()
+            .setName("EN").setNumber(1).build())
+    language_enum.addValue(
+        D.EnumValueDescriptorProto.newBuilder()
+            .setName("ZH").setNumber(2).build())
+    fd.addEnumType(language_enum.build())
+
+    code_enum = D.EnumDescriptorProto.newBuilder().setName("CodeType")
+    code_enum.addValue(
+        D.EnumValueDescriptorProto.newBuilder()
+            .setName("UNKNOWN_CODE").setNumber(0).build())
+    code_enum.addValue(
+        D.EnumValueDescriptorProto.newBuilder()
+            .setName("UTF8").setNumber(1).build())
+    code_enum.addValue(
+        D.EnumValueDescriptorProto.newBuilder()
+            .setName("GBK").setNumber(2).build())
+    fd.addEnumType(code_enum.build())
+
+    common_msg = D.DescriptorProto.newBuilder().setName("CommonWithEnumDefaults")
+    common_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("logid").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
+    common_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("language").setNumber(2).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
+            .setTypeName(".test.Language")
+            .setDefaultValue("EN").build())
+    common_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("code_type").setNumber(3).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
+            .setTypeName(".test.CodeType")
+            .setDefaultValue("UTF8").build())
+    fd.addMessageType(common_msg.build())
+
+    outer_msg = D.DescriptorProto.newBuilder().setName("OuterWithCommonEnumDefaults")
+    outer_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("id").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    outer_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("common").setNumber(2).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.CommonWithEnumDefaults").build())
+    fd.addMessageType(outer_msg.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_nested_enum_defaults_string_mode(spark_tmp_path, from_protobuf_fn):
+    """Regression test: nested enum defaults in string mode must not crash GPU planning.
+
+    Selecting the whole nested struct forces GPU planning to visit all of its children,
+    including enum fields whose proto2 defaults are represented as EnumValueDescriptor
+    objects by spark-protobuf.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested_enum_defaults.desc",
+        _build_nested_enum_default_struct_descriptor_set_bytes)
+    message_name = "test.OuterWithCommonEnumDefaults"
+
+    common_with_logid = (_encode_tag(1, 2) + _encode_varint(5) + b"log-1")
+    row_logid_only = (_encode_tag(1, 0) + _encode_varint(1) +
+                      _encode_tag(2, 2) + _encode_varint(len(common_with_logid)) +
+                      common_with_logid)
+    row_empty_common = (_encode_tag(1, 0) + _encode_varint(2) +
+                        _encode_tag(2, 2) + _encode_varint(0))
+    row_no_common = _encode_tag(1, 0) + _encode_varint(3)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(row_logid_only,), (row_empty_common,), (row_no_common,)],
+            schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("id").alias("id"),
+            decoded.getField("common").alias("common"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
 def _build_repeated_enum_descriptor_set_bytes(spark):
     """
     message WithRepeatedEnum {

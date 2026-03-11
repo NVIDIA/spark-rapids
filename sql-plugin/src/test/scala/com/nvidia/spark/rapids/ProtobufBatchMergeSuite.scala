@@ -52,11 +52,14 @@ class ProtobufBatchMergeSuite extends AnyFunSuite {
   test("project meta detects extractor project over protobuf child project") {
     val binAttr = AttributeReference("bin", BinaryType)()
     val childScan = DummyColumnarLeaf(Seq(binAttr))
-    val innerProject = ProjectExec(Seq(Alias(FakeProtobufDataToCatalyst(binAttr), "decoded")()), childScan)
+    val innerProject = ProjectExec(
+      Seq(Alias(FakeProtobufDataToCatalyst(binAttr), "decoded")()),
+      childScan)
     val decodedAttr = innerProject.output.head.toAttribute
     val outerProject = ProjectExec(Seq(
       Alias(GetStructField(decodedAttr, 0, None), "search_id")(),
-      Alias(GetStructField(GetStructField(decodedAttr, 1, None), 0, None), "value")()), innerProject)
+      Alias(GetStructField(GetStructField(decodedAttr, 1, None), 0, None), "value")()),
+      innerProject)
 
     assert(GpuProjectExecMeta.shouldCoalesceAfterProject(outerProject))
     assert(!GpuProjectExecMeta.shouldCoalesceAfterProject(innerProject))

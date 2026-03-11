@@ -328,6 +328,14 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                     val intVal = defVal match {
                       case i: java.lang.Integer => i.longValue()
                       case l: java.lang.Long => l.longValue()
+                      case n: java.lang.Number => n.longValue()
+                      case ref: AnyRef =>
+                        // spark-protobuf may return enum defaults as EnumValueDescriptor.
+                        // In int mode, extract the numeric enum value reflectively.
+                        Try {
+                          ref.getClass.getMethod("getNumber")
+                            .invoke(ref).asInstanceOf[java.lang.Number].longValue()
+                        }.getOrElse(0L)
                       case _ => 0L
                     }
                     (intVal, 0.0, false, null: Array[Byte])
@@ -338,9 +346,19 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                     val d = defVal.asInstanceOf[java.lang.Double].doubleValue()
                     (0L, d, false, null: Array[Byte])
                   case StringType =>
-                    val str = defVal.asInstanceOf[String]
+                    val enumDefaultInt = defVal match {
+                      case ref: AnyRef =>
+                        Try {
+                          ref.getClass.getMethod("getNumber")
+                            .invoke(ref).asInstanceOf[java.lang.Number].longValue()
+                        }.getOrElse(0L)
+                      case _ => 0L
+                    }
+                    // spark-protobuf may surface enum defaults as EnumValueDescriptor
+                    // rather than String. `toString` yields the enum name in both cases.
+                    val str = if (defVal == null) null else defVal.toString
                     val bytes = if (str != null) str.getBytes("UTF-8") else null
-                    (0L, 0.0, false, bytes)
+                    (enumDefaultInt, 0.0, false, bytes)
                   case BinaryType =>
                     val bytes = Try {
                       val toByteArray = defVal.getClass.getMethod("toByteArray")
