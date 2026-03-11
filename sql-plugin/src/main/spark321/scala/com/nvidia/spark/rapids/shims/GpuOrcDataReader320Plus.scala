@@ -37,6 +37,7 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "358"}
 {"spark": "400"}
 {"spark": "401"}
 {"spark": "402"}
@@ -76,8 +77,8 @@ abstract class GpuOrcDataReader320Plus(
         buffer.limit((current.getEnd - offset).toInt)
         current.asInstanceOf[BufferChunk].setChunk(buffer)
         // see if the filecache wants any of this data
-        val cacheToken = FileCache.get.startDataRangeCache(filePathString,
-          baseOffset + current.getOffset, current.getLength, conf)
+        val cacheToken = FileCache.get.startDataRangeCache(inputFile,
+          baseOffset + current.getOffset, current.getLength)
         cacheToken.foreach { token =>
           val hmb = closeOnExcept(HostMemoryBuffer.allocate(current.getLength, false)) { hmb =>
             hmb.setBytes(0, buffer.array(),

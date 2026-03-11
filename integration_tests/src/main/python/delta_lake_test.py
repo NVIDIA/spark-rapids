@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -87,17 +87,52 @@ def test_delta_scan_read(spark_tmp_path):
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+@pytest.mark.parametrize("use_chunked_reader", [True, False], ids=idfn)
+@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
+@pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
-def test_delta_deletion_vector_read(spark_tmp_path, use_cdf):
+def test_delta_deletion_vector_read(spark_tmp_path, use_chunked_reader, use_cdf, dv_predicate_pushdown, parquet_reader_type, use_metadata_row_index):
     data_path = spark_tmp_path + "/DELTA_DATA"
-    conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true"}
+    conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true",
+            "spark.rapids.sql.reader.chunked": f"{use_chunked_reader}",
+            "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
+            "spark.rapids.sql.format.parquet.reader.type": f"{parquet_reader_type}",
+            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}"}
     def setup_tables(spark):
         setup_delta_dest_table(spark, data_path,
                                dest_table_func=lambda spark: unary_op_df(spark, int_gen),
                                use_cdf=use_cdf, enable_deletion_vectors=True)
         spark.sql("INSERT INTO delta.`{}` VALUES(1)".format(data_path))
         spark.sql("DELETE FROM delta.`{}` WHERE a = 1".format(data_path))
+    with_cpu_session(setup_tables, conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)),
+        conf=conf)
+
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+@pytest.mark.parametrize("use_chunked_reader", [True, False], ids=idfn)
+@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
+@pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_empty_deletion_vector_read(spark_tmp_path, use_chunked_reader, use_cdf, dv_predicate_pushdown, parquet_reader_type, use_metadata_row_index):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true",
+            "spark.rapids.sql.reader.chunked": f"{use_chunked_reader}",
+            "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
+            "spark.rapids.sql.format.parquet.reader.type": f"{parquet_reader_type}",
+            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}"}
+    def setup_tables(spark):
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: unary_op_df(spark, int_gen),
+                               use_cdf=use_cdf, enable_deletion_vectors=True)
     with_cpu_session(setup_tables, conf=conf)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)),

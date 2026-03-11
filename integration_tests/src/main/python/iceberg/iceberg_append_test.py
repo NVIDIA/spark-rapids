@@ -88,10 +88,13 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
     def insert_data(spark, table_name: str):
         spark.sql(f"INSERT INTO {table_name} VALUES (1, 'a'), (2, 'b'), (3, 'c')")
 
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf = copy_and_update(iceberg_write_enabled_conf, {'spark.sql.adaptive.enabled': 'false'})
+
     with_gpu_session(lambda spark: insert_data(spark, gpu_table_name),
-                     conf = iceberg_write_enabled_conf)
+                     conf=conf)
     with_cpu_session(lambda spark: insert_data(spark, cpu_table_name),
-                     conf = iceberg_write_enabled_conf)
+                     conf=conf)
 
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())

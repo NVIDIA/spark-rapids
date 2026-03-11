@@ -438,6 +438,15 @@ object RapidsConf extends Logging {
       .integerConf
       .createWithDefault(2)
 
+  val ENABLE_R2C_RETRY = conf("spark.rapids.sql.rowToColumnar.retry.enabled")
+    .doc("When true, the row-to-columnar conversion wraps each row's conversion with " +
+      "retry logic so that host OOM during conversion can be recovered. This adds a small " +
+      "per-row overhead. When false (default), the retry is disabled to avoid that overhead, " +
+      "at the risk of failing the task on host OOM during R2C conversion.")
+    .internal()
+    .booleanConf
+    .createWithDefault(false)
+
   val GPU_COREDUMP_DIR = conf("spark.rapids.gpu.coreDump.dir")
     .doc("The URI to a directory where a GPU core dump will be created if the GPU encounters " +
       "an exception. The URI can reference a distributed filesystem. The filename will be of the " +
@@ -2802,6 +2811,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .booleanConf
     .createWithDefault(false)
 
+    val DELTA_DELETION_VECTOR_PREDICATE_PUSHDOWN =
+    conf("spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled")
+      .doc("When true, the deletion vector processing will be pushed down to " +
+        "the GPU Delta Lake scans. The result of the scan will contain only the rows " +
+        "that are not deleted according to the deletion vector. When false, " +
+        "the deletion vectors will be materialized as a boolean column and " +
+        "the GPU filter operator will process it together with other filters. " +
+        "Currently only the PERFILE reader is supported.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_HASH_FUNCTION_IN_PARTITIONING =
     conf("spark.rapids.sql.partitioning.hashFunction.enabled")
       .doc("When false, Only Murmur3Hash is used for GPU hash partitioning to " +
@@ -3348,6 +3369,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuOomDumpDir: Option[String] = get(GPU_OOM_DUMP_DIR)
 
   lazy val gpuOomMaxRetries: Int = get(GPU_OOM_MAX_RETRIES)
+
+  lazy val isR2cRetryEnabled: Boolean = get(ENABLE_R2C_RETRY)
 
   lazy val gpuCoreDumpDir: Option[String] = get(GPU_COREDUMP_DIR)
 
@@ -3948,6 +3971,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
+
+  lazy val isDeltaDeletionVectorPredicatePushdownEnabled: Boolean =
+    get(DELTA_DELETION_VECTOR_PREDICATE_PUSHDOWN)
 
   lazy val isHashFuncPartitioningEnabled: Boolean = get(ENABLE_HASH_FUNCTION_IN_PARTITIONING)
 

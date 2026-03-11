@@ -37,6 +37,7 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "358"}
 {"spark": "400"}
 {"spark": "401"}
 {"spark": "402"}
@@ -509,11 +510,21 @@ case class GpuDivideYMInterval(
 
   private def doColumnar(interval: BinaryOperable, numOperable: BinaryOperable,
       numType: DataType): ColumnVector = {
+    numOperable match {
+      case s: Scalar =>
+        withResource(makeZeroScalar(s.getType)) { zero =>
+          if (s.equals(zero)) throw RapidsErrorUtils.intervalDivByZeroError(origin)
+        }
+      case cv: ColumnVector =>
+        withResource(makeZeroScalar(cv.getType)) { zero =>
+          if (cv.contains(zero)) throw RapidsErrorUtils.intervalDivByZeroError(origin)
+        }
+    }
 
     numType match {
       case ByteType | ShortType | IntegerType | LongType =>
-        // interval is long; num is byte, short, int or long
-        // For overflow check: num is 0; interval == Long.Min && num == -1
+        // interval is int; num is byte, short, int or long
+        // For overflow check: num is 0; interval == Int.Min && num == -1
         withResource(IntervalUtils.divWithHalfUpModeWithOverflowCheck(interval, numOperable)) {
           // overflow already checked, directly cast without overflow check
           decimalRet => decimalRet.castTo(DType.INT32)
