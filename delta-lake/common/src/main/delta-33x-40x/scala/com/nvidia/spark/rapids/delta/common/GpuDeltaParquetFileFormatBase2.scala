@@ -40,10 +40,8 @@ import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFact
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
 import org.apache.spark.sql.delta.actions.{DeletionVectorDescriptor, Metadata, Protocol}
-import org.apache.spark.sql.delta.deletionvectors.StoredBitmap
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
-import org.apache.spark.sql.delta.storage.dv.HadoopFileSystemDVStore
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.internal.SQLConf
@@ -520,6 +518,7 @@ class GpuDeltaParquetFileFormatBase2(
 
           if (allPartValues.isDefined) {
             val allPartInternalRows = allPartValues.get.map(_._2)
+            // rowsPerPartition has been adjusted already to account only the alive rows.
             val rowsPerPartition = allPartValues.get.map(_._1)
             new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
               rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes)
@@ -559,7 +558,9 @@ class GpuDeltaParquetFileFormatBase2(
           rowGroupNumRows: Array[Int]
       ) = {
         DeletionVectorMetadata(
-          Array(SingleBufferDVMetadata(dvDescriptorOpt, filterTypeOpt, rowGroupOffsets, rowGroupNumRows))
+          Array(
+            SingleBufferDVMetadata(dvDescriptorOpt, filterTypeOpt, rowGroupOffsets, rowGroupNumRows)
+          )
         )
       }
 
@@ -610,7 +611,6 @@ class GpuDeltaParquetFileFormatBase2(
       }
     }
 
-    // TODO: forSingleFile
     override protected def newHMEmptyMetadataForChunks(
         partitionedFile: PartitionedFile,
         bufferSize: Long,
@@ -708,19 +708,9 @@ class GpuDeltaParquetFileFormatBase2(
       )
     }
 
-    /**
-     * This implementation of computeNumRowsInFile handles the case where deletion vectors are
-     * present for the given file.
-     *
-     * Note: if deletion vectors are present, this will read the deletion vector files to load
-     * the bitmaps and compute the number of deleted rows. This will involve file I/O and
-     * deserializing the bitmaps on CPU, which can be expensive. As such, this function should
-     * be used only when it is necessary to get the exact number of rows after applying deletion
-     * vectors, such as when no columns are read but we want to know the number of rows.
-     */
-    override protected def computeNumRowsInFile(
-        file: PartitionedFile,
-        fileBlockMeta: ParquetFileInfoWithBlockMeta
+    override protected def computeNumRowsAlive(
+        totalNumRows: Long,
+        file: PartitionedFile
     ): Int = {
       val dvDescriptorOpt = file.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
@@ -729,16 +719,7 @@ class GpuDeltaParquetFileFormatBase2(
 
       val numDeletedRows = if (dvDescriptorOpt.isDefined && filterTypeOpt.isDefined) {
         val dvDesc = DeletionVectorDescriptor.deserializeFromBase64(dvDescriptorOpt.get)
-        val tp = tablePath.getOrElse(throw new IllegalStateException(
-          "Table path is required for non-empty deletion vectors"))
-        val dvStore = new HadoopFileSystemDVStore(conf)
-        val bitmap = StoredBitmap.create(dvDesc, new Path(tp)).load(dvStore)
-        filterTypeOpt.get match {
-          case RowIndexFilterType.IF_CONTAINED => bitmap.cardinality.toInt
-          case unexpectedFilterType => throw new IllegalStateException(
-            s"Unexpected row index filter type for Deletion Vectors. " +
-              s"Expected: ${RowIndexFilterType.IF_CONTAINED}; Actual: ${unexpectedFilterType}")
-        }
+        dvDesc.cardinality
       } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
         throw new IllegalStateException(
           "Both dvDescriptorOpt and filterTypeOpt must be defined together or both absent.")
@@ -746,10 +727,9 @@ class GpuDeltaParquetFileFormatBase2(
         0
       }
 
-      val totalRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
-      require(numDeletedRows <= totalRows,
-        s"Deletion vector cardinality ($numDeletedRows) exceeds file row count ($totalRows)")
-      totalRows - numDeletedRows
+      require(numDeletedRows <= totalNumRows,
+        s"Deletion vector cardinality ($numDeletedRows) exceeds file row count ($totalNumRows)")
+      Math.toIntExact(totalNumRows - numDeletedRows)
     }
   }
 }

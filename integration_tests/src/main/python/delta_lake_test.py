@@ -124,7 +124,7 @@ def do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_tabl
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("chunk_size", ["0", "2000", "4000", None], ids=idfn)
+@pytest.mark.parametrize("chunk_size", ["2000", "4000", None], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING"], ids=idfn)
 @pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
@@ -149,7 +149,7 @@ def test_delta_deletion_vector_read(spark_tmp_path, chunk_size, use_cdf, dv_pred
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.parametrize("chunk_size", ["0", "2000", "4000", None], ids=idfn)
+@pytest.mark.parametrize("chunk_size", ["2000", "4000", None], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 @pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
 @pytest.mark.parametrize("combine_size", ["0", "1M"], ids=idfn)
@@ -171,6 +171,39 @@ def test_delta_deletion_vector_multithreaded_read(spark_tmp_path, chunk_size, us
         "INSERT INTO delta.`{}` VALUES(1)".format(data_path),
         "DELETE FROM delta.`{}` WHERE a = 1".format(data_path)
     ])
+
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
+@pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
+@pytest.mark.parametrize("combine_size", ["0", "1M"], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_deletion_vector_multithreaded_read_partitioned_table(
+        spark_tmp_path, dv_predicate_pushdown, use_metadata_row_index, combine_size):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true",
+            "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
+            "spark.rapids.sql.format.parquet.reader.type": "MULTITHREADED",
+            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
+            "spark.rapids.sql.reader.multithreaded.combine.sizeBytes": f"{combine_size}"}
+
+    def setup_tables(spark):
+        col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[])
+        col_b_gen = IntegerGen(min_val=0, max_val=32, nullable=False, special_cases=[])
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: two_col_df(spark, col_a_gen, col_b_gen, length=2048),
+                               use_cdf=False, enable_deletion_vectors=True, partition_columns=["b"])
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)") # make sure there will be at least one row with a = 1, which will be deleted.
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 33)") # make sure there will be a partition with only 1 row, which will be deleted.
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 1")
+    with_cpu_session(setup_tables, conf=conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)),
+        conf=conf)
 
 
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)

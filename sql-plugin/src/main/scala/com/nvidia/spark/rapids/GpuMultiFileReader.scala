@@ -55,6 +55,12 @@ import org.apache.spark.util.SerializableConfiguration
 /**
  * This contains a single HostMemoryBuffer along with other metadata needed
  * for combining the buffers before sending to GPU.
+ *
+ * @param hmbs buffers read from a file
+ * @param bytes total bytes read in the buffers
+ * @param numRows total number of rows in the buffers
+ * @param blockMeta the metadata of the data blocks read.
+ *                  It can be empty after multiple [[SingleHMBAndMeta]]s are combined
  */
 case class SingleHMBAndMeta(hmbs: Array[SpillableHostBuffer], bytes: Long, numRows: Long,
     blockMeta: Seq[DataBlockBase]) extends AutoCloseable {
@@ -94,8 +100,15 @@ trait HostMemoryBuffersWithMetaDataBase extends AutoCloseable {
   // Time spent on waiting for (virtual) resource
   private var _scheduleTime: Long = 0L
 
-  // The partition values which are needed if combining host memory buffers
-  // after read by the multithreaded reader but before sending to GPU.
+  /**
+   * When it is present, it indicates the partition values stored as an array of
+   * pairs of (number of rows _alive_ in partition, partition value). Note that
+   * the first value of the pair is not necessarily the total number of rows in
+   * the partition, but the number of rows that are not deleted but alive.
+   *
+   * These partition values are needed if combining host memory buffers after
+   * read by the multithreaded reader but before sending to GPU.
+   */
   def allPartValues: Option[Array[(Long, InternalRow)]] = None
 
   // Called by parquet/orc/avro scanners to set the amount of time (in nanoseconds)

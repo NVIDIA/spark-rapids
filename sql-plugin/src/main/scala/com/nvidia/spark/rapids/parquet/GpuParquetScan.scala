@@ -2744,7 +2744,8 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
             // the ones from ignoring missing files has less information with it.
             metaForEmpty = emptyHMData
           }
-          val totalNumRows = result.memBuffersAndSizes.map(_.numRows).sum
+          val totalNumRows = computeNumRowsAlive(result.memBuffersAndSizes.map(_.numRows).sum,
+             result.partitionedFile)
           val partValues = result.partitionedFile.partitionValues
           allPartValues.append((totalNumRows, partValues))
           emptyBufferSize += emptyHMData.bufferSize
@@ -2770,7 +2771,8 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
             numCombined += 1
             toCombine += hmWithData
             val partValues = hmWithData.partitionedFile.partitionValues
-            val totalNumRows = hmWithData.memBuffersAndSizes.map(_.numRows).sum
+            val totalNumRows = computeNumRowsAlive(hmWithData.memBuffersAndSizes.map(_.numRows).sum,
+              hmWithData.partitionedFile)
             allPartValues.append((totalNumRows, partValues))
           }
         case _ => throw new RuntimeException("Unknown HostMemoryBuffersWithMetaDataBase")
@@ -2804,6 +2806,13 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
   protected case class CombinedEmptyMeta(emptyNumRows: Long, emptyBufferSize: Long,
       emptyTotalBytesRead: Long, allEmpty: Boolean, metaForEmpty: HostMemoryEmptyMetaData)
 
+  /**
+   * Metadata combined from an array of HostMemoryBuffersWithMetaDataBase
+   *
+   * @param allPartValues array of pairs of the number of rows and the partition value
+   * @param toCombine the HostMemoryBuffersWithMetaDataBase to combine
+   * @param firstNonEmpty the first HostMemoryBuffersWithMetaData with data
+   */
   protected case class CombinedMeta(allPartValues: Array[(Long, InternalRow)],
       toCombine: Array[HostMemoryBuffersWithMetaDataBase],
       firstNonEmpty: HostMemoryBuffersWithMetaData)
@@ -2837,14 +2846,13 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
       nonEmptyMeta: CombinedMeta): HostMemoryEmptyMetaData
 
   /**
-   * Computes the total number of rows in the given file. Some implementations can involve
-   * I/O to read metadata missing in the fileBlockMeta. For example when a Delta table has
-   * deletion vectors, the number of rows in the file can only be obtained after applying
-   * the deletion vectors.
+   * Computes the number of rows alive in the output table. This should be always the same as
+   * the given totalNumRows for Parquet files. But for some formats like Delta Lake, they can
+   * have deletion vectors that represent the deleted rows in the table.
    */
-  protected def computeNumRowsInFile(
+  protected def computeNumRowsAlive(
+      totalNumRows: Long,
       file: PartitionedFile,
-      fileBlockMeta: ParquetFileInfoWithBlockMeta
   ): Int
 
   private class ReadBatchRunner(
@@ -2936,10 +2944,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
           } else {
             if (fileBlockMeta.schema.getFieldCount == 0) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
-              // computeNumRowsInFile() can be expensive for some tables like Delta Lake tables with
-              // deletion vectors, so we only call it when there is no column to read but we still
-              // need to return the row count.
-              val numRows = computeNumRowsInFile(file, fileBlockMeta)
+              val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
               newHMEmptyMetadataForChunks(file, 0, bytesRead,
                 fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
@@ -3017,7 +3022,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
   Iterator[ColumnarBatch] = fileBufsAndMeta match {
     case meta: HostMemoryEmptyMetaData =>
       // Not reading any data, but add in partition data if needed
-      val rows = meta.numRows.toInt
+      val rows = computeNumRowsAlive(meta.numRows, fileBufsAndMeta.partitionedFile)
       val origBatch = if (meta.readSchema.isEmpty) {
         new ColumnarBatch(Array.empty, rows)
       } else {
@@ -3033,6 +3038,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
       meta.allPartValues match {
         case Some(partRowsAndValues) =>
           val (rowsPerPart, partValues) = partRowsAndValues.unzip
+          // rowsPerPart has been adjusted already to account only the alive rows.
           BatchWithPartitionDataUtils.addPartitionValuesToBatch(origBatch, rowsPerPart,
             partValues, partitionSchema, maxGpuColumnSizeBytes)
         case None =>
@@ -3251,11 +3257,8 @@ class MultiFileCloudParquetPartitionReader(
     )
   }
 
-  override protected def computeNumRowsInFile(
-      file: PartitionedFile,
-      fileBlockMeta: ParquetFileInfoWithBlockMeta
-  ): Int = {
-    fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
+  override protected def computeNumRowsAlive(totalNumRows: Long, file: PartitionedFile): Int = {
+    Math.toIntExact(totalNumRows)
   }
 }
 
