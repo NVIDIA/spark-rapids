@@ -280,8 +280,16 @@ object GpuScalar extends Logging {
         s" for LongType, expecting Long, or Int.")
     }
     case DoubleType => v match {
-        case d: Double => Scalar.fromDouble(d)
-        case f: Float => Scalar.fromDouble(f.toDouble)
+        case d: Double =>
+          // cuDF Scalar.fromDouble normalizes -0.0 to 0.0 (see #14116).
+          // Create via a 1-element column to preserve the exact bit pattern.
+          withResource(ColumnVector.fromDoubles(d)) { cv =>
+            cv.getScalarElement(0)
+          }
+        case f: Float =>
+          withResource(ColumnVector.fromDoubles(f.toDouble)) { cv =>
+            cv.getScalarElement(0)
+          }
         case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
           s" for DoubleType, expecting Double or Float.")
     }
@@ -314,7 +322,12 @@ object GpuScalar extends Logging {
         s" for DateType, expecting Int or LocalDate")
     }
     case FloatType => v match {
-      case f: Float => Scalar.fromFloat(f)
+      case f: Float =>
+        // cuDF Scalar.fromFloat normalizes -0.0f to 0.0f (see #14116).
+        // Create via a 1-element column to preserve the exact bit pattern.
+        withResource(ColumnVector.fromFloats(f)) { cv =>
+          cv.getScalarElement(0)
+        }
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for FloatType, expecting Float.")
     }
