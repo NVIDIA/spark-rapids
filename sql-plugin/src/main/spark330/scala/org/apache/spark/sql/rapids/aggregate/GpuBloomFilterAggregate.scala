@@ -59,7 +59,9 @@ import org.apache.spark.sql.types.{BinaryType, DataType}
 case class GpuBloomFilterAggregate(
     child: Expression,
     estimatedNumItemsRequested: Long,
-    numBitsRequested: Long) extends GpuAggregateFunction {
+    numBitsRequested: Long,
+    version: Int = BloomFilter.VERSION_2,
+    seed: Int = BloomFilter.DEFAULT_SEED) extends GpuAggregateFunction {
 
   override def nullable: Boolean = true
 
@@ -81,7 +83,8 @@ case class GpuBloomFilterAggregate(
 
   override val inputProjection: Seq[Expression] = Seq(child)
 
-  override val updateAggregates: Seq[CudfAggregate] = Seq(GpuBloomFilterUpdate(numHashes, numBits))
+  override val updateAggregates: Seq[CudfAggregate] =
+    Seq(GpuBloomFilterUpdate(numHashes, numBits, version, seed))
 
   override val mergeAggregates: Seq[CudfAggregate] = Seq(GpuBloomFilterMerge())
 
@@ -110,9 +113,13 @@ object GpuBloomFilterAggregate {
   }
 }
 
-case class GpuBloomFilterUpdate(numHashes: Int, numBits: Long) extends CudfAggregate {
+case class GpuBloomFilterUpdate(
+    numHashes: Int,
+    numBits: Long,
+    version: Int,
+    seed: Int) extends CudfAggregate {
   override val reductionAggregate: ColumnVector => Scalar = (col: ColumnVector) => {
-    closeOnExcept(BloomFilter.create(numHashes, numBits)) { bloomFilter =>
+    closeOnExcept(BloomFilter.create(version, numHashes, numBits, seed)) { bloomFilter =>
       BloomFilter.put(bloomFilter, col)
       bloomFilter
     }

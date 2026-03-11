@@ -177,8 +177,9 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  // V1 literal: version=1, numHashes=5, numLongs=3, followed by 3 longs of bit data
   testSparkResultsAreEqual(
-    "might_contain with literal bloom filter buffer",
+    "might_contain with V1 literal bloom filter buffer",
     spark => spark.range(1, 1).asInstanceOf[DataFrame],
     conf=bloomFilterEnabledConf.clone()) {
     df =>
@@ -186,6 +187,20 @@ class BloomFilterAggregateQuerySuite extends SparkQueryCompareTestSuite {
         spark.sql(
           """SELECT might_contain(
             |X'00000001000000050000000343A2EC6EA8C117E2D3CDB767296B144FC5BFBCED9737F267',
+            |cast(201 as long))""".stripMargin)
+      }
+  }
+
+  // V2 literal: version=2, numHashes=5, seed=0, numLongs=3, followed by 3 longs of bit data
+  testSparkResultsAreEqual(
+    "might_contain with V2 literal bloom filter buffer",
+    spark => spark.range(1, 1).asInstanceOf[DataFrame],
+    conf=bloomFilterEnabledConf.clone()) {
+    df =>
+      withExposedSqlFuncs(df.sparkSession) { spark =>
+        spark.sql(
+          """SELECT might_contain(
+            |X'0000000200000005000000000000000343A2EC6EA8C117E2D3CDB767296B144FC5BFBCED9737F267',
             |cast(201 as long))""".stripMargin)
       }
   }
