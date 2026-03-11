@@ -17,17 +17,17 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package com.nvidia.spark.rapids.shims;
 
-import org.apache.spark.sql.execution.adaptive.QueryStageExec
+import org.apache.spark.sql.catalyst.plans.logical.Statistics;
+import org.apache.spark.sql.execution.adaptive.QueryStageExec;
 
 /**
- * Databricks 17.3 version where getRuntimeStatistics is Scala protected.
- * Since Scala protected compiles to JVM public, we use a Java helper
- * (QueryStageRowCountHelper) to call it directly.
+ * Java helper to access getRuntimeStatistics on Databricks 17.3.
+ * The method is Scala protected (compiles to JVM public).
  */
-object QueryStageRowCountShims {
-  def getRowCount(qse: QueryStageExec): Option[BigInt] = {
-    QueryStageRowCountHelper.getRuntimeStatistics(qse).rowCount
-  }
+public class QueryStageRowCountHelper {
+    public static Statistics getRuntimeStatistics(QueryStageExec qse) {
+        return qse.getRuntimeStatistics();
+    }
 }
