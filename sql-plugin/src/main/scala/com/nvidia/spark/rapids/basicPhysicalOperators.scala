@@ -59,14 +59,16 @@ object GpuProjectExecMeta {
     case _ => Set.empty
   }
 
-  private def isRootedAtProtobufAlias(expr: Expression, protobufExprIds: Set[ExprId]): Boolean =
+  private def isRootedAtProtobufDecode(expr: Expression, protobufExprIds: Set[ExprId]): Boolean =
     expr match {
       case attr: AttributeReference =>
         protobufExprIds.contains(attr.exprId)
+      case decode if isProtobufDecodeExpr(decode) =>
+        true
       case GetStructField(child, _, _) =>
-        isRootedAtProtobufAlias(child, protobufExprIds)
+        isRootedAtProtobufDecode(child, protobufExprIds)
       case gasf: GetArrayStructFields =>
-        isRootedAtProtobufAlias(gasf.child, protobufExprIds)
+        isRootedAtProtobufDecode(gasf.child, protobufExprIds)
       case _ =>
         false
     }
@@ -75,17 +77,16 @@ object GpuProjectExecMeta {
       expr: Expression,
       protobufExprIds: Set[ExprId]): Boolean = expr match {
     case GetStructField(child, _, _) =>
-      isRootedAtProtobufAlias(child, protobufExprIds)
+      isRootedAtProtobufDecode(child, protobufExprIds)
     case gasf: GetArrayStructFields =>
-      isRootedAtProtobufAlias(gasf.child, protobufExprIds)
+      isRootedAtProtobufDecode(gasf.child, protobufExprIds)
     case other =>
       other.children.exists(child => extractsFromProtobufAlias(child, protobufExprIds))
   }
 
   private[rapids] def shouldCoalesceAfterProject(plan: ProjectExec): Boolean = {
     val protobufExprIds = protobufAliasExprIds(plan.child)
-    protobufExprIds.nonEmpty &&
-      plan.projectList.exists(expr => extractsFromProtobufAlias(expr, protobufExprIds))
+    plan.projectList.exists(expr => extractsFromProtobufAlias(expr, protobufExprIds))
   }
 }
 

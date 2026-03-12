@@ -107,8 +107,15 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       isRepeated: Boolean = false,
       isRequired: Boolean = false,
       defaultValue: Option[ProtobufDefaultValue] = None,
+      defaultValueError: Option[String] = None,
       enumMetadata: Option[ProtobufEnumMetadata] = None,
-      messageDescriptor: Option[ProtobufMessageDescriptor] = None) extends ProtobufFieldDescriptor
+      messageDescriptor: Option[ProtobufMessageDescriptor] = None) extends ProtobufFieldDescriptor {
+    override lazy val defaultValueResult: Either[String, Option[ProtobufDefaultValue]] =
+      defaultValueError match {
+        case Some(reason) => Left(reason)
+        case None => Right(defaultValue)
+      }
+  }
 
   test("compat extracts descriptor path and options from legacy expression") {
     val exprInfo = SparkProtobufCompat.extractExprInfo(FakePathProtobufExpr(FakeExprChild()))
@@ -187,6 +194,25 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       ProtobufDefaultValue.EnumValue(1, "EN")))
   }
 
+  test("extractor reports default value reflection failures as cpu fallback reason") {
+    val msgDesc = FakeMessageDescriptor(
+      syntax = "PROTO2",
+      fields = Map(
+        "id" -> FakeFieldDescriptor(
+          name = "id",
+          fieldNumber = 1,
+          protoTypeName = "INT32",
+          defaultValueError =
+            Some("Failed to read protobuf default value for field 'id': unsupported type"))))
+    val schema = StructType(Seq(StructField("id", IntegerType, nullable = true)))
+
+    val infos = ProtobufSchemaExtractor.analyzeAllFields(
+      schema, msgDesc, enumsAsInts = true, "test.Message")
+
+    assert(infos.left.toOption.exists(
+      _.contains("Failed to read protobuf default value for field 'id'")))
+  }
+
   test("validator encodes enum-string defaults into both numeric and string payloads") {
     val enumMeta = ProtobufEnumMetadata(Seq(
       ProtobufEnumValue(0, "UNKNOWN"),
@@ -242,6 +268,31 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       outputTypeId = 6)
 
     assert(flat.left.toOption.exists(_.contains("missing enum metadata")))
+  }
+
+  test("validator returns Left for incompatible default type instead of throwing") {
+    val info = ProtobufFieldInfo(
+      fieldNumber = 3,
+      protoTypeName = "FLOAT",
+      sparkType = DoubleType,
+      encoding = GpuFromProtobuf.ENC_DEFAULT,
+      isSupported = true,
+      unsupportedReason = None,
+      isRequired = false,
+      defaultValue = Some(ProtobufDefaultValue.FloatValue(1.5f)),
+      enumMetadata = None,
+      isRepeated = false)
+
+    val flat = ProtobufSchemaValidator.toFlattenedFieldDescriptor(
+      path = "common.score",
+      field = StructField("score", DoubleType, nullable = true),
+      fieldInfo = info,
+      parentIdx = 0,
+      depth = 1,
+      outputTypeId = 6)
+
+    assert(flat.left.toOption.exists(
+      _.contains("Incompatible default value for protobuf field 'common.score'")))
   }
 
   test("GpuFromProtobuf semantic equality is content-based for schema arrays") {

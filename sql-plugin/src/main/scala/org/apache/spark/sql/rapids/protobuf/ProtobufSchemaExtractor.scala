@@ -35,7 +35,12 @@ object ProtobufSchemaExtractor {
       val fd = msgDesc.findField(sf.name).getOrElse {
         return Left(s"Protobuf field '${sf.name}' not found in message '$messageName'")
       }
-      result(sf.name) = extractFieldInfo(sf, fd, enumsAsInts)
+      extractFieldInfo(sf, fd, enumsAsInts) match {
+        case Right(fieldInfo) =>
+          result(sf.name) = fieldInfo
+        case Left(reason) =>
+          return Left(reason)
+      }
     }
 
     Right(result.toMap)
@@ -44,7 +49,7 @@ object ProtobufSchemaExtractor {
   def extractFieldInfo(
       sparkField: StructField,
       fieldDescriptor: ProtobufFieldDescriptor,
-      enumsAsInts: Boolean): ProtobufFieldInfo = {
+      enumsAsInts: Boolean): Either[String, ProtobufFieldInfo] = {
     val (isSupported, unsupportedReason, encoding) =
       checkFieldSupport(
         sparkField.dataType,
@@ -52,18 +57,20 @@ object ProtobufSchemaExtractor {
         fieldDescriptor.isRepeated,
         enumsAsInts)
 
-    ProtobufFieldInfo(
-      fieldNumber = fieldDescriptor.fieldNumber,
-      protoTypeName = fieldDescriptor.protoTypeName,
-      sparkType = sparkField.dataType,
-      encoding = encoding,
-      isSupported = isSupported,
-      unsupportedReason = unsupportedReason,
-      isRequired = fieldDescriptor.isRequired,
-      defaultValue = fieldDescriptor.defaultValue,
-      enumMetadata = fieldDescriptor.enumMetadata,
-      isRepeated = fieldDescriptor.isRepeated
-    )
+    fieldDescriptor.defaultValueResult.map { defaultValue =>
+      ProtobufFieldInfo(
+        fieldNumber = fieldDescriptor.fieldNumber,
+        protoTypeName = fieldDescriptor.protoTypeName,
+        sparkType = sparkField.dataType,
+        encoding = encoding,
+        isSupported = isSupported,
+        unsupportedReason = unsupportedReason,
+        isRequired = fieldDescriptor.isRequired,
+        defaultValue = defaultValue,
+        enumMetadata = fieldDescriptor.enumMetadata,
+        isRepeated = fieldDescriptor.isRepeated
+      )
+    }
   }
 
   def checkFieldSupport(

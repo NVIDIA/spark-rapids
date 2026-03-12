@@ -137,6 +137,8 @@ case class GpuFromProtobuf(
     result
   }
 
+  // ProtobufSchemaDescriptor is a pure-Java immutable holder for validated schema arrays.
+  // It does not own native resources, so task-scoped close hooks are not required here.
   @transient private lazy val protobufSchema = new ProtobufSchemaDescriptor(
     fieldNumbers, parentIndices, depthLevels, wireTypes, outputTypeIds, encodings,
     isRepeated, isRequired, hasDefaultValue, defaultInts, defaultFloats, defaultBools,

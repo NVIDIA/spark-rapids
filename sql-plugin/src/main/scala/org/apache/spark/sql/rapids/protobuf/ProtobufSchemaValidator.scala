@@ -36,34 +36,35 @@ object ProtobufSchemaValidator {
     validateFieldInfo(path, field, fieldInfo).flatMap { _ =>
       ProtobufSchemaExtractor
         .getWireType(fieldInfo.protoTypeName, fieldInfo.encoding)
-        .map { wireType =>
-        val defaults = encodeDefaultValue(path, field.dataType, fieldInfo)
-        val enumValidValues = fieldInfo.enumMetadata.map(_.validValues).orNull
-        val enumNames =
-          if (fieldInfo.encoding == GpuFromProtobuf.ENC_ENUM_STRING) {
-            fieldInfo.enumMetadata.map(_.orderedNames).orNull
-          } else {
-            null
-          }
+        .flatMap { wireType =>
+          encodeDefaultValue(path, field.dataType, fieldInfo).map { defaults =>
+            val enumValidValues = fieldInfo.enumMetadata.map(_.validValues).orNull
+            val enumNames =
+              if (fieldInfo.encoding == GpuFromProtobuf.ENC_ENUM_STRING) {
+                fieldInfo.enumMetadata.map(_.orderedNames).orNull
+              } else {
+                null
+              }
 
-        FlattenedFieldDescriptor(
-          fieldNumber = fieldInfo.fieldNumber,
-          parentIdx = parentIdx,
-          depth = depth,
-          wireType = wireType,
-          outputTypeId = outputTypeId,
-          encoding = fieldInfo.encoding,
-          isRepeated = fieldInfo.isRepeated,
-          isRequired = fieldInfo.isRequired,
-          hasDefaultValue = fieldInfo.hasDefaultValue,
-          defaultInt = defaults.defaultInt,
-          defaultFloat = defaults.defaultFloat,
-          defaultBool = defaults.defaultBool,
-          defaultString = defaults.defaultString,
-          enumValidValues = enumValidValues,
-          enumNames = enumNames
-        )
-      }
+            FlattenedFieldDescriptor(
+              fieldNumber = fieldInfo.fieldNumber,
+              parentIdx = parentIdx,
+              depth = depth,
+              wireType = wireType,
+              outputTypeId = outputTypeId,
+              encoding = fieldInfo.encoding,
+              isRepeated = fieldInfo.isRepeated,
+              isRequired = fieldInfo.isRequired,
+              hasDefaultValue = fieldInfo.hasDefaultValue,
+              defaultInt = defaults.defaultInt,
+              defaultFloat = defaults.defaultFloat,
+              defaultBool = defaults.defaultBool,
+              defaultString = defaults.defaultString,
+              enumValidValues = enumValidValues,
+              enumNames = enumNames
+            )
+          }
+        }
     }
   }
 
@@ -140,10 +141,10 @@ object ProtobufSchemaValidator {
   private def encodeDefaultValue(
       path: String,
       dataType: DataType,
-      fieldInfo: ProtobufFieldInfo): JniDefaultValues = {
+      fieldInfo: ProtobufFieldInfo): Either[String, JniDefaultValues] = {
     val empty = JniDefaultValues(0L, 0.0, defaultBool = false, null)
     fieldInfo.defaultValue match {
-      case None => empty
+      case None => Right(empty)
       case Some(defaultValue) =>
         val targetType = dataType match {
           case ArrayType(elementType, _) => elementType
@@ -151,24 +152,25 @@ object ProtobufSchemaValidator {
         }
         (targetType, defaultValue) match {
           case (BooleanType, ProtobufDefaultValue.BoolValue(value)) =>
-            empty.copy(defaultBool = value)
+            Right(empty.copy(defaultBool = value))
           case (IntegerType | LongType, ProtobufDefaultValue.IntValue(value)) =>
-            empty.copy(defaultInt = value)
+            Right(empty.copy(defaultInt = value))
           case (IntegerType | LongType, ProtobufDefaultValue.EnumValue(number, _)) =>
-            empty.copy(defaultInt = number.toLong)
+            Right(empty.copy(defaultInt = number.toLong))
           case (FloatType, ProtobufDefaultValue.FloatValue(value)) =>
-            empty.copy(defaultFloat = value.toDouble)
+            Right(empty.copy(defaultFloat = value.toDouble))
           case (DoubleType, ProtobufDefaultValue.DoubleValue(value)) =>
-            empty.copy(defaultFloat = value)
+            Right(empty.copy(defaultFloat = value))
           case (StringType, ProtobufDefaultValue.StringValue(value)) =>
-            empty.copy(defaultString = value.getBytes("UTF-8"))
+            Right(empty.copy(defaultString = value.getBytes("UTF-8")))
           case (StringType, ProtobufDefaultValue.EnumValue(number, name)) =>
-            empty.copy(defaultInt = number.toLong, defaultString = name.getBytes("UTF-8"))
+            Right(empty.copy(
+              defaultInt = number.toLong,
+              defaultString = name.getBytes("UTF-8")))
           case (BinaryType, ProtobufDefaultValue.BinaryValue(value)) =>
-            empty.copy(defaultString = value)
+            Right(empty.copy(defaultString = value))
           case _ =>
-            throw new IllegalStateException(
-              s"Incompatible default value for protobuf field '$path': $defaultValue")
+            Left(s"Incompatible default value for protobuf field '$path': $defaultValue")
         }
     }
   }

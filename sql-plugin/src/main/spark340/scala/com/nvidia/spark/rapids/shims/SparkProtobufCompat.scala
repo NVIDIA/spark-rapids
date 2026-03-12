@@ -170,11 +170,15 @@ private[shims] object SparkProtobufCompat extends Logging {
       } else {
         None
       }
-    override lazy val defaultValue: Option[ProtobufDefaultValue] =
-      if (PbReflect.hasDefaultValue(raw)) {
-        PbReflect.getDefaultValue(raw).map(toDefaultValue(_, protoTypeName, enumMetadata))
-      } else {
-        None
+    override lazy val defaultValueResult: Either[String, Option[ProtobufDefaultValue]] =
+      Try {
+        if (PbReflect.hasDefaultValue(raw)) {
+          PbReflect.getDefaultValue(raw).map(toDefaultValue(_, protoTypeName, enumMetadata))
+        } else {
+          None
+        }
+      }.toEither.left.map { t =>
+        s"Failed to read protobuf default value for field '$name': ${t.getMessage}"
       }
     override lazy val messageDescriptor: Option[ProtobufMessageDescriptor] =
       if (protoTypeName == "MESSAGE") {

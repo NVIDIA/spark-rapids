@@ -65,6 +65,23 @@ class ProtobufBatchMergeSuite extends AnyFunSuite {
     assert(!GpuProjectExecMeta.shouldCoalesceAfterProject(innerProject))
   }
 
+  test("project meta detects direct protobuf extraction in same project") {
+    val binAttr = AttributeReference("bin", BinaryType)()
+    val childScan = DummyColumnarLeaf(Seq(binAttr))
+    val directProject = ProjectExec(
+      Seq(
+        Alias(GetStructField(FakeProtobufDataToCatalyst(binAttr), 0, None), "search_id")(),
+        Alias(
+          GetStructField(
+            GetStructField(FakeProtobufDataToCatalyst(binAttr), 1, None),
+            0,
+            None),
+          "value")()),
+      childScan)
+
+    assert(GpuProjectExecMeta.shouldCoalesceAfterProject(directProject))
+  }
+
   test("protobuf batch merge config defaults off and can be enabled") {
     val enabledConf = new RapidsConf(Map(
       RapidsConf.ENABLE_PROTOBUF_BATCH_MERGE_AFTER_PROJECT.key -> "true"))

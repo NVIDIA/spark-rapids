@@ -312,15 +312,20 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                             s"Nested field '${childSf.name}' not found in protobuf " +
                               s"descriptor for message at '$path'")
                         case Some(childFd) =>
-                          val childInfo =
-                            ProtobufSchemaExtractor.extractFieldInfo(childSf, childFd, enumsAsInts)
-                          if (!childInfo.isSupported) {
-                            willNotWorkOnGpu(
-                              s"Nested field '${childSf.name}' at '$path': " +
-                                childInfo.unsupportedReason.getOrElse("unsupported type"))
-                          } else {
-                            addFieldWithChildren(
-                              childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc, path)
+                          ProtobufSchemaExtractor
+                            .extractFieldInfo(childSf, childFd, enumsAsInts) match {
+                            case Left(reason) =>
+                              willNotWorkOnGpu(reason)
+                            case Right(childInfo) =>
+                              if (!childInfo.isSupported) {
+                                willNotWorkOnGpu(
+                                  s"Nested field '${childSf.name}' at '$path': " +
+                                    childInfo.unsupportedReason.getOrElse("unsupported type"))
+                              } else {
+                                addFieldWithChildren(
+                                  childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc,
+                                  path)
+                              }
                           }
                       }
                     }
