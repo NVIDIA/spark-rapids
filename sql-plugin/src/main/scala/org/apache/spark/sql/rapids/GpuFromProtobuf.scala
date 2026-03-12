@@ -90,14 +90,14 @@ case class GpuFromProtobuf(
 
   override def nullable: Boolean = true
 
-  @transient private lazy val schema = new ProtobufSchemaDescriptor(
+  @transient private lazy val protobufSchema = new ProtobufSchemaDescriptor(
     fieldNumbers, parentIndices, depthLevels, wireTypes, outputTypeIds, encodings,
     isRepeated, isRequired, hasDefaultValue, defaultInts, defaultFloats, defaultBools,
     defaultStrings, enumValidValues, enumNames)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     val jniResult = try {
-      Protobuf.decodeToStruct(input.getBase, schema, failOnErrors)
+      Protobuf.decodeToStruct(input.getBase, protobufSchema, failOnErrors)
     } catch {
       case e: CudfException if failOnErrors =>
         throw new org.apache.spark.SparkException("Malformed protobuf message", e)

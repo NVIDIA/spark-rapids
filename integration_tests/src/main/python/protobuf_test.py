@@ -896,6 +896,41 @@ def test_from_protobuf_nested_enum_permissive_invalid_row_null(spark_tmp_path, f
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_nested_enum_invalid_permissive_nulls_sibling_fields(
+        spark_tmp_path, from_protobuf_fn):
+    """Invalid nested enums must null the full row, including sibling fields."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested_enum.desc", _build_nested_enum_descriptor_set_bytes)
+    message_name = "test.WithNestedEnum"
+
+    row_valid = (_encode_tag(1, 0) + _encode_varint(1) +
+                 _encode_tag(2, 2) + _encode_varint(4) +
+                 _encode_tag(1, 0) + _encode_varint(1) +
+                 _encode_tag(2, 0) + _encode_varint(10) +
+                 _encode_tag(3, 2) + _encode_varint(2) + b"ok")
+    row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
+                   _encode_tag(2, 2) + _encode_varint(4) +
+                   _encode_tag(1, 0) + _encode_varint(999) +
+                   _encode_tag(2, 0) + _encode_varint(20) +
+                   _encode_tag(3, 2) + _encode_varint(3) + b"bad")
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(0, row_valid), (1, row_invalid)], schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            f.col("idx"),
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("id").alias("id"),
+            decoded.getField("detail").getField("status").alias("status"),
+            decoded.getField("name").alias("name")).orderBy("idx")
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
 def _build_nested_enum_default_struct_descriptor_set_bytes(spark):
     """
     Build a FileDescriptorSet for:
@@ -1090,6 +1125,36 @@ def test_from_protobuf_repeated_enum_invalid_permissive(spark_tmp_path, from_pro
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_repeated_enum_string_invalid_permissive_nulls_sibling_fields(
+        spark_tmp_path, from_protobuf_fn):
+    """Repeated enum string mode must null sibling fields when any enum value is invalid."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "repeated_enum.desc", _build_repeated_enum_descriptor_set_bytes)
+    message_name = "test.WithRepeatedEnum"
+
+    row_valid = (_encode_tag(1, 0) + _encode_varint(1) +
+                 _encode_tag(2, 0) + _encode_varint(0) +
+                 _encode_tag(2, 0) + _encode_varint(2))
+    row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
+                   _encode_tag(2, 0) + _encode_varint(1) +
+                   _encode_tag(2, 0) + _encode_varint(99))
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(0, row_valid), (1, row_invalid)], schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            f.col("idx"),
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("id").alias("id"),
+            decoded.getField("priority").alias("priority")).orderBy("idx")
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
 def _build_required_field_descriptor_set_bytes(spark):
     """
     Build a FileDescriptorSet for a message with required fields (proto2):
@@ -1177,6 +1242,25 @@ def test_from_protobuf_required_field_present(spark_tmp_path, from_protobuf_fn):
         )
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_required_field_missing_failfast(spark_tmp_path, from_protobuf_fn):
+    """Required-field violations should fail consistently on CPU and GPU in FAILFAST mode."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "required.desc", _build_required_field_descriptor_set_bytes)
+    message_name = "test.WithRequired"
+
+    missing_required_row = _encode_tag(2, 2) + _encode_varint(4) + b"oops"
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(missing_required_row,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(decoded.alias("decoded")).collect()
+
+    assert_gpu_and_cpu_error(run_on_spark, conf={}, error_message="Malformed")
 
 
 def _build_default_value_descriptor_set_bytes(spark):

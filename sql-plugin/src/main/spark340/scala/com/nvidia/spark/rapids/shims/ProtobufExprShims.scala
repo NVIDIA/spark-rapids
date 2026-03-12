@@ -36,63 +36,24 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
-import java.lang.ReflectiveOperationException
-
 import scala.collection.mutable
-import scala.util.Try
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.jni.Protobuf.{WT_32BIT, WT_64BIT, WT_LEN, WT_VARINT}
 
 import org.apache.spark.sql.catalyst.expressions.{
   AttributeReference, Expression, GetArrayStructFields, GetStructField, UnaryExpression
 }
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.rapids.GpuFromProtobuf
+import org.apache.spark.sql.rapids.protobuf.{
+  FlattenedFieldDescriptor,
+  ProtobufFieldInfo,
+  ProtobufMessageDescriptor,
+  ProtobufSchemaExtractor,
+  ProtobufSchemaValidator
+}
 import org.apache.spark.sql.types._
-
-/**
- * Information about a protobuf field for schema projection support.
- */
-private[shims] case class ProtobufFieldInfo(
-    fieldNumber: Int,
-    protoTypeName: String,
-    sparkType: DataType,
-    encoding: Int,
-    isSupported: Boolean,
-    unsupportedReason: Option[String],
-    isRequired: Boolean,
-    hasDefaultValue: Boolean,
-    defaultValue: Option[Any],  // Stored as protobuf-java type, will be converted for JNI
-    // Valid enum values for ENUM fields (used for validation)
-    enumValues: Option[Set[Int]] = None,
-    // Enum value-name mapping for ENUM -> STRING decoding (enumsAsInts=false)
-    enumNames: Option[Map[Int, String]] = None,
-    isRepeated: Boolean = false  // Whether this is a repeated field
-)
-
-/**
- * Flattened field descriptor for nested protobuf schemas.
- * Used to represent a hierarchical schema as a linear array for GPU processing.
- */
-private[shims] case class FlattenedFieldDescriptor(
-    fieldNumber: Int,
-    parentIdx: Int,          // Index of parent field in flattened array (-1 for top-level)
-    depth: Int,              // Nesting depth (0 for top-level)
-    wireType: Int,           // Protobuf wire type
-    outputTypeId: Int,       // cudf type id for the output (element type for repeated)
-    encoding: Int,           // Encoding (default/fixed/zigzag)
-    isRepeated: Boolean,     // Whether this is a repeated field
-    isRequired: Boolean,     // Whether this field is required (proto2)
-    hasDefaultValue: Boolean,
-    defaultInt: Long,
-    defaultFloat: Double,
-    defaultBool: Boolean,
-    defaultString: Array[Byte],
-    enumValidValues: Array[Int],
-    enumNames: Array[Array[Byte]]
-)
 
 /**
  * Spark 3.4+ optional integration for spark-protobuf expressions.
@@ -102,9 +63,6 @@ private[shims] case class FlattenedFieldDescriptor(
 object ProtobufExprShims extends org.apache.spark.internal.Logging {
   private[this] val protobufDataToCatalystClassName =
     "org.apache.spark.sql.protobuf.ProtobufDataToCatalyst"
-
-  private[this] val sparkProtobufUtilsObjectClassName =
-    "org.apache.spark.sql.protobuf.utils.ProtobufUtils$"
 
   val PRUNED_ORDINAL_TAG =
     org.apache.spark.sql.rapids.GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG
@@ -165,15 +123,13 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               return
           }
 
-          val options = getOptionsMap(e) match {
-            case Some(m) => m
-            case None =>
-              willNotWorkOnGpu(
-                "Cannot read from_protobuf options via reflection; falling back to CPU")
+          val exprInfo = SparkProtobufCompat.extractExprInfo(e) match {
+            case Right(info) => info
+            case Left(reason) =>
+              willNotWorkOnGpu(reason)
               return
           }
-          val supportedOptions = Set("enums.as.ints", "mode")
-          val unsupportedOptions = options.keys.filterNot(supportedOptions.contains)
+          val unsupportedOptions = SparkProtobufCompat.unsupportedOptions(exprInfo.options)
           if (unsupportedOptions.nonEmpty) {
             val keys = unsupportedOptions.mkString(",")
             willNotWorkOnGpu(
@@ -181,45 +137,27 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             return
           }
 
-          val enumsAsInts = Try(options.getOrElse("enums.as.ints", "false").toBoolean) match {
-            case scala.util.Success(v) => v
-            case scala.util.Failure(_) =>
-              willNotWorkOnGpu("Invalid value for from_protobuf option 'enums.as.ints': " +
-                s"'${options.getOrElse("enums.as.ints", "")}' (expected true/false)")
+          val plannerOptions = SparkProtobufCompat.parsePlannerOptions(exprInfo.options) match {
+            case Right(opts) => opts
+            case Left(reason) =>
+              willNotWorkOnGpu(reason)
               return
           }
-          failOnErrors = options.getOrElse("mode", "FAILFAST").equalsIgnoreCase("FAILFAST")
-          val messageName = getMessageName(e)
+          val enumsAsInts = plannerOptions.enumsAsInts
+          failOnErrors = plannerOptions.failOnErrors
+          val messageName = exprInfo.messageName
 
-          // Try to get descriptor: either file path (Spark 3.4.x) or binary bytes (Spark 3.5+)
-          val descFilePathOrBytes: Option[Either[String, Array[Byte]]] =
-            getDescFilePath(e).map(Left(_)).orElse {
-              getDescriptorBytes(e).map(Right(_))
-            }
-
-          if (descFilePathOrBytes.isEmpty) {
-            willNotWorkOnGpu(
-              "from_protobuf requires a descriptor set " +
-                "(descFilePath or binaryFileDescriptorSet)")
-            return
-          }
-
-          val msgDesc = try {
-            // Spark 3.4.x: buildDescriptor(messageName, descFilePath: Option[String])
-            // Spark 3.5+:  buildDescriptor(messageName, binaryFileDescriptorSet)
-            buildMessageDescriptorWithSparkProtobuf(messageName, descFilePathOrBytes.get)
-          } catch {
-            case t: Throwable =>
-              willNotWorkOnGpu(
-                s"Failed to resolve protobuf descriptor for message '$messageName': " +
-                  s"${t.getMessage}")
+          val msgDesc = SparkProtobufCompat.resolveMessageDescriptor(exprInfo) match {
+            case Right(desc) => desc
+            case Left(reason) =>
+              willNotWorkOnGpu(reason)
               return
           }
 
           // Reject proto3 descriptors — GPU decoder only supports proto2 semantics.
           // proto3 has different null/default-value behavior that the GPU path doesn't handle.
-          val protoSyntax = PbReflect.getFileSyntax(msgDesc)
-          if (protoSyntax == "PROTO3" || protoSyntax == "EDITIONS" || protoSyntax.isEmpty) {
+          val protoSyntax = msgDesc.syntax
+          if (!SparkProtobufCompat.isGpuSupportedProtoSyntax(protoSyntax)) {
             willNotWorkOnGpu(
               "proto3/editions syntax is not supported by the GPU protobuf decoder; " +
                 "only proto2 is supported. The query will fall back to CPU.")
@@ -227,12 +165,12 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
 
           // Step 1: Analyze all fields and build field info map
-          val allFieldsInfo = analyzeAllFields(fullSchema, msgDesc, enumsAsInts, messageName)
-          if (allFieldsInfo.isEmpty) {
-            // Error was already reported in analyzeAllFields
-            return
-          }
-          val fieldsInfoMap = allFieldsInfo.get
+          val fieldsInfoMap =
+            ProtobufSchemaExtractor.analyzeAllFields(fullSchema, msgDesc, enumsAsInts, messageName)
+              .fold({ reason =>
+                willNotWorkOnGpu(reason)
+                return
+              }, identity)
 
           // Step 2: Determine which fields are actually required by downstream operations
           val requiredFieldNames = analyzeRequiredFields(fieldsInfoMap.keySet)
@@ -288,7 +226,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 info: ProtobufFieldInfo,
                 parentIdx: Int,
                 depth: Int,
-                nestedMsgDesc: AnyRef,
+                nestedMsgDesc: ProtobufMessageDescriptor,
                 pathPrefix: String = ""): Unit = {
 
               val currentIdx = flatFields.size
@@ -315,85 +253,17 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                     .getOrElse(DType.INT8.getTypeId.getNativeId)
               }
 
-              val wireType = getWireType(info.protoTypeName, info.encoding)
-
-              val hasDefault = info.hasDefaultValue && info.defaultValue.isDefined
-              val (defInt, defFloat, defBool, defString) = if (hasDefault) {
-                val defVal = info.defaultValue.get
-                sf.dataType match {
-                  case BooleanType =>
-                    val b = defVal.asInstanceOf[java.lang.Boolean].booleanValue()
-                    (0L, 0.0, b, null: Array[Byte])
-                  case IntegerType | LongType =>
-                    val intVal = defVal match {
-                      case i: java.lang.Integer => i.longValue()
-                      case l: java.lang.Long => l.longValue()
-                      case n: java.lang.Number => n.longValue()
-                      case ref: AnyRef =>
-                        // spark-protobuf may return enum defaults as EnumValueDescriptor.
-                        // In int mode, extract the numeric enum value reflectively.
-                        Try {
-                          ref.getClass.getMethod("getNumber")
-                            .invoke(ref).asInstanceOf[java.lang.Number].longValue()
-                        }.getOrElse(0L)
-                      case _ => 0L
-                    }
-                    (intVal, 0.0, false, null: Array[Byte])
-                  case FloatType =>
-                    val f = defVal.asInstanceOf[java.lang.Float].doubleValue()
-                    (0L, f, false, null: Array[Byte])
-                  case DoubleType =>
-                    val d = defVal.asInstanceOf[java.lang.Double].doubleValue()
-                    (0L, d, false, null: Array[Byte])
-                  case StringType =>
-                    val enumDefaultInt = defVal match {
-                      case ref: AnyRef =>
-                        Try {
-                          ref.getClass.getMethod("getNumber")
-                            .invoke(ref).asInstanceOf[java.lang.Number].longValue()
-                        }.getOrElse(0L)
-                      case _ => 0L
-                    }
-                    // spark-protobuf may surface enum defaults as EnumValueDescriptor
-                    // rather than String. `toString` yields the enum name in both cases.
-                    val str = if (defVal == null) null else defVal.toString
-                    val bytes = if (str != null) str.getBytes("UTF-8") else null
-                    (enumDefaultInt, 0.0, false, bytes)
-                  case BinaryType =>
-                    val bytes = Try {
-                      val toByteArray = defVal.getClass.getMethod("toByteArray")
-                      toByteArray.invoke(defVal).asInstanceOf[Array[Byte]]
-                    }.getOrElse(null: Array[Byte])
-                    (0L, 0.0, false, bytes)
-                  case _ => (0L, 0.0, false, null: Array[Byte])
-                }
-              } else {
-                (0L, 0.0, false, null: Array[Byte])
-              }
-
-              val enumValsArr = info.enumValues.map(_.toArray.sorted).orNull
-              val enumNamesArr = info.enumNames.map { nameMap =>
-                val sorted = nameMap.toSeq.sortBy(_._1)
-                sorted.map { case (_, enumName) => enumName.getBytes("UTF-8") }.toArray
-              }.orNull
-
-              flatFields += FlattenedFieldDescriptor(
-                fieldNumber = info.fieldNumber,
-                parentIdx = parentIdx,
-                depth = depth,
-                wireType = wireType,
-                outputTypeId = outputType,
-                encoding = info.encoding,
-                isRepeated = info.isRepeated,
-                isRequired = info.isRequired,
-                hasDefaultValue = hasDefault,
-                defaultInt = defInt,
-                defaultFloat = defFloat,
-                defaultBool = defBool,
-                defaultString = defString,
-                enumValidValues = enumValsArr,
-                enumNames = enumNamesArr
-              )
+              val path = if (pathPrefix.isEmpty) sf.name else s"$pathPrefix.${sf.name}"
+              ProtobufSchemaValidator.toFlattenedFieldDescriptor(
+                path,
+                sf,
+                info,
+                parentIdx,
+                depth,
+                outputType).fold({ reason =>
+                willNotWorkOnGpu(reason)
+                return
+              }, flatFields += _)
 
               // For nested struct types (including repeated message = ArrayType(StructType)), 
               // add child fields
@@ -415,91 +285,48 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             // lookup into nestedFieldRequirements.
             def addChildFieldsFromStruct(
                 st: StructType,
-                parentMsgDesc: AnyRef,
+                parentMsgDesc: ProtobufMessageDescriptor,
                 fieldName: String,
                 parentIdx: Int,
                 parentDepth: Int,
                 pathPrefix: String): Unit = {
               val path = if (pathPrefix.isEmpty) fieldName else s"$pathPrefix.$fieldName"
-              val fd = PbReflect.findFieldByName(parentMsgDesc, fieldName)
-              if (fd == null) {
+              val parentField = parentMsgDesc.findField(fieldName)
+              if (parentField.isEmpty) {
                 willNotWorkOnGpu(
                   s"Nested field '$fieldName' not found in protobuf descriptor at '$path'")
               } else {
-                try {
-                  val childMsgDesc = PbReflect.getMessageType(fd)
-                  val requiredChildren = nestedFieldRequirements.get(path)
-                  val filteredFields = requiredChildren match {
-                    case Some(Some(childNames)) =>
-                      st.fields.filter(f => childNames.contains(f.name))
-                    case _ =>
-                      st.fields
-                  }
-                  filteredFields.foreach { childSf =>
-                    val childFd = PbReflect.findFieldByName(childMsgDesc, childSf.name)
-                    if (childFd == null) {
-                      willNotWorkOnGpu(
-                        s"Nested field '${childSf.name}' not found in protobuf " +
-                          s"descriptor for message at '$path'")
-                    } else {
-                      val childProtoTypeName = typeName(PbReflect.getFieldType(childFd))
-                      val childFieldNumber = PbReflect.getFieldNumber(childFd)
-                      val childIsRepeated = PbReflect.isRepeated(childFd)
-                      val childIsRequired = PbReflect.isRequired(childFd)
-                      val childHasDefault = PbReflect.hasDefaultValue(childFd)
-                      val (childIsSupported, childUnsupportedReason, childEncoding) =
-                        checkFieldSupport(
-                          childSf.dataType, childProtoTypeName, childIsRepeated, enumsAsInts)
-
-                      if (!childIsSupported) {
-                        willNotWorkOnGpu(
-                          s"Nested field '${childSf.name}' at '$path': " +
-                            childUnsupportedReason.getOrElse("unsupported type"))
-                      } else {
-                        val (childEnumVals, childEnumNameMap): (Option[Set[Int]],
-                          Option[Map[Int, String]]) =
-                          if (childProtoTypeName == "ENUM") {
-                            Try {
-                              val pairs = PbReflect.getEnumValues(
-                                PbReflect.getEnumType(childFd))
-                              if (enumsAsInts) {
-                                (Some(pairs.map(_._1).toSet), None)
-                              } else {
-                                (Some(pairs.map(_._1).toSet), Some(pairs.toMap))
-                              }
-                            }.getOrElse((None, None))
+                parentField.get.messageDescriptor match {
+                  case Some(childMsgDesc) =>
+                    val requiredChildren = nestedFieldRequirements.get(path)
+                    val filteredFields = requiredChildren match {
+                      case Some(Some(childNames)) =>
+                        st.fields.filter(f => childNames.contains(f.name))
+                      case _ =>
+                        st.fields
+                    }
+                    filteredFields.foreach { childSf =>
+                      childMsgDesc.findField(childSf.name) match {
+                        case None =>
+                          willNotWorkOnGpu(
+                            s"Nested field '${childSf.name}' not found in protobuf " +
+                              s"descriptor for message at '$path'")
+                        case Some(childFd) =>
+                          val childInfo =
+                            ProtobufSchemaExtractor.extractFieldInfo(childSf, childFd, enumsAsInts)
+                          if (!childInfo.isSupported) {
+                            willNotWorkOnGpu(
+                              s"Nested field '${childSf.name}' at '$path': " +
+                                childInfo.unsupportedReason.getOrElse("unsupported type"))
                           } else {
-                            (None, None)
+                            addFieldWithChildren(
+                              childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc, path)
                           }
-
-                        val childDefaultVal =
-                          if (childHasDefault) PbReflect.getDefaultValue(childFd) else None
-
-                        val childInfo = ProtobufFieldInfo(
-                          fieldNumber = childFieldNumber,
-                          protoTypeName = childProtoTypeName,
-                          sparkType = childSf.dataType,
-                          encoding = childEncoding,
-                          isSupported = true,
-                          unsupportedReason = None,
-                          isRequired = childIsRequired,
-                          hasDefaultValue = childHasDefault,
-                          defaultValue = childDefaultVal,
-                          enumValues = childEnumVals,
-                          enumNames = childEnumNameMap,
-                          isRepeated = childIsRepeated
-                        )
-
-                        addFieldWithChildren(
-                          childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc, path)
                       }
                     }
-                  }
-                } catch {
-                  case ex: ReflectiveOperationException =>
+                  case None =>
                     willNotWorkOnGpu(
-                      s"Failed to reflect message type for nested field '$fieldName': " +
-                        ex.getMessage)
+                      s"Nested field '$fieldName' at '$path' did not resolve to a message type")
                 }
               }
             }
@@ -517,205 +344,26 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
 
             // Populate flattened schema variables
             val flat = flatFields.toArray
-            flatFieldNumbers = flat.map(_.fieldNumber)
-            flatParentIndices = flat.map(_.parentIdx)
-            flatDepthLevels = flat.map(_.depth)
-            flatWireTypes = flat.map(_.wireType)
-            flatOutputTypeIds = flat.map(_.outputTypeId)
-            flatEncodings = flat.map(_.encoding)
-            flatIsRepeated = flat.map(_.isRepeated)
-            flatIsRequired = flat.map(_.isRequired)
-            flatHasDefaultValue = flat.map(_.hasDefaultValue)
-            flatDefaultInts = flat.map(_.defaultInt)
-            flatDefaultFloats = flat.map(_.defaultFloat)
-            flatDefaultBools = flat.map(_.defaultBool)
-            flatDefaultStrings = flat.map(_.defaultString)
-            flatEnumValidValues = flat.map(_.enumValidValues)
-            flatEnumNames = flat.map(_.enumNames)
-          }
-        }
-
-        /**
-         * Analyze all fields in the schema and build a map of field name to ProtobufFieldInfo.
-         * Returns None if there's an error that should abort processing.
-         */
-        private def analyzeAllFields(
-            schema: StructType,
-            msgDesc: AnyRef,
-            enumsAsInts: Boolean,
-            messageName: String): Option[Map[String, ProtobufFieldInfo]] = {
-          val result = mutable.Map[String, ProtobufFieldInfo]()
-
-          for (sf <- schema.fields) {
-            val fd = PbReflect.findFieldByName(msgDesc, sf.name)
-            if (fd == null) {
-              willNotWorkOnGpu(
-                s"Protobuf field '${sf.name}' not found in message '$messageName'")
-              return None
-            }
-
-            val isRepeated = PbReflect.isRepeated(fd)
-            val isFieldRequired = PbReflect.isRequired(fd)
-            val hasDefault = PbReflect.hasDefaultValue(fd)
-            val defaultVal = if (hasDefault) PbReflect.getDefaultValue(fd) else None
-
-            val protoTypeName = typeName(PbReflect.getFieldType(fd))
-            val fieldNumber = PbReflect.getFieldNumber(fd)
-
-            val (isSupported, unsupportedReason, encoding) =
-              checkFieldSupport(sf.dataType, protoTypeName, isRepeated, enumsAsInts)
-
-            val (enumVals, enumNameMap): (Option[Set[Int]], Option[Map[Int, String]]) =
-              if (protoTypeName == "ENUM") {
-                Try {
-                  val pairs = PbReflect.getEnumValues(PbReflect.getEnumType(fd))
-                  if (enumsAsInts) {
-                    (Some(pairs.map(_._1).toSet), None)
-                  } else {
-                    (Some(pairs.map(_._1).toSet), Some(pairs.toMap))
-                  }
-                }.getOrElse((None, None))
-              } else {
-                (None, None)
-              }
-
-            result(sf.name) = ProtobufFieldInfo(
-              fieldNumber = fieldNumber,
-              protoTypeName = protoTypeName,
-              sparkType = sf.dataType,
-              encoding = encoding,
-              isSupported = isSupported,
-              unsupportedReason = unsupportedReason,
-              isRequired = isFieldRequired,
-              hasDefaultValue = hasDefault,
-              defaultValue = defaultVal,
-              enumValues = enumVals,
-              enumNames = enumNameMap,
-              isRepeated = isRepeated
-            )
-          }
-
-          Some(result.toMap)
-        }
-
-        /**
-         * Check if a field type is supported and return encoding information.
-         * @return (isSupported, unsupportedReason, encoding)
-         */
-        private def checkFieldSupport(
-            sparkType: DataType,
-            protoTypeName: String,
-            isRepeated: Boolean,
-            enumsAsInts: Boolean): (Boolean, Option[String], Int) = {
-
-          // Handle repeated fields (arrays)
-          if (isRepeated) {
-            sparkType match {
-              case ArrayType(elementType, _) =>
-                // Check if element type is supported
-                elementType match {
-                  case BooleanType | IntegerType | LongType | FloatType | DoubleType |
-                       StringType | BinaryType =>
-                    // Supported repeated scalar - determine encoding from proto type
-                    return checkScalarEncoding(elementType, protoTypeName, enumsAsInts)
-                  case _: StructType =>
-                    // Repeated nested message (array of structs) - supported on GPU
-                    return (true, None, GpuFromProtobuf.ENC_DEFAULT)
-                  case _ =>
-                    return (false, Some(s"unsupported repeated element type: $elementType"),
-                      GpuFromProtobuf.ENC_DEFAULT)
-                }
-              case _ =>
-                return (false, Some(s"repeated field should map to ArrayType, got: $sparkType"),
-                  GpuFromProtobuf.ENC_DEFAULT)
-            }
-          }
-
-          // Handle nested messages (non-repeated)
-          if (protoTypeName == "MESSAGE") {
-            sparkType match {
-              case _: StructType =>
-                return (true, None, GpuFromProtobuf.ENC_DEFAULT)
-              case _ =>
-                return (false, Some(s"nested message should map to StructType, got: $sparkType"),
-                  GpuFromProtobuf.ENC_DEFAULT)
-            }
-          }
-
-          // Check Spark type is one of the supported simple types
-          sparkType match {
-            case BooleanType | IntegerType | LongType | FloatType | DoubleType |
-                 StringType | BinaryType =>
-              // Supported Spark type, continue to check encoding
-            case other =>
-              return (false, Some(s"unsupported Spark type: $other"), GpuFromProtobuf.ENC_DEFAULT)
-          }
-
-          checkScalarEncoding(sparkType, protoTypeName, enumsAsInts)
-        }
-
-        /**
-         * Determine encoding for scalar types.
-         */
-        private def checkScalarEncoding(
-            sparkType: DataType,
-            protoTypeName: String,
-            enumsAsInts: Boolean): (Boolean, Option[String], Int) = {
-
-          // Determine encoding based on Spark type and proto type combination
-          val encoding = (sparkType, protoTypeName) match {
-            case (BooleanType, "BOOL") => Some(GpuFromProtobuf.ENC_DEFAULT)
-            case (IntegerType, "INT32" | "UINT32") => Some(GpuFromProtobuf.ENC_DEFAULT)
-            case (IntegerType, "SINT32") => Some(GpuFromProtobuf.ENC_ZIGZAG)
-            case (IntegerType, "FIXED32" | "SFIXED32") => Some(GpuFromProtobuf.ENC_FIXED)
-            case (LongType, "INT64" | "UINT64") => Some(GpuFromProtobuf.ENC_DEFAULT)
-            case (LongType, "SINT64") => Some(GpuFromProtobuf.ENC_ZIGZAG)
-            case (LongType, "FIXED64" | "SFIXED64") => Some(GpuFromProtobuf.ENC_FIXED)
-            // Spark may upcast smaller integers to LongType
-            case (LongType, "INT32" | "UINT32" | "SINT32" | "FIXED32" | "SFIXED32") =>
-              val enc = protoTypeName match {
-                case "SINT32" => GpuFromProtobuf.ENC_ZIGZAG
-                case "FIXED32" | "SFIXED32" => GpuFromProtobuf.ENC_FIXED
-                case _ => GpuFromProtobuf.ENC_DEFAULT
-              }
-              Some(enc)
-            case (FloatType, "FLOAT") => Some(GpuFromProtobuf.ENC_DEFAULT)
-            case (DoubleType, "DOUBLE") => Some(GpuFromProtobuf.ENC_DEFAULT)
-            case (StringType, "STRING") => Some(GpuFromProtobuf.ENC_DEFAULT)
-            case (BinaryType, "BYTES") => Some(GpuFromProtobuf.ENC_DEFAULT)
-            case (IntegerType, "ENUM") if enumsAsInts => Some(GpuFromProtobuf.ENC_DEFAULT)
-            case (StringType, "ENUM") if !enumsAsInts => Some(GpuFromProtobuf.ENC_ENUM_STRING)
-            case _ => None
-          }
-
-          encoding match {
-            case Some(enc) => (true, None, enc)
-            case None =>
-              (false,
-                Some(s"type mismatch: Spark $sparkType vs Protobuf $protoTypeName"),
-                GpuFromProtobuf.ENC_DEFAULT)
-          }
-        }
-
-        /**
-         * Get wire type constant for a given protobuf type name and encoding.
-         */
-        private def getWireType(protoTypeName: String, encoding: Int): Int = {
-          protoTypeName match {
-            case "BOOL" | "INT32" | "UINT32" | "SINT32" | "INT64" | "UINT64" | "SINT64" | "ENUM" =>
-              if (encoding == GpuFromProtobuf.ENC_FIXED) {
-                if (protoTypeName.contains("64")) WT_64BIT else WT_32BIT
-              } else {
-                WT_VARINT
-              }
-            case "FIXED32" | "SFIXED32" | "FLOAT" => WT_32BIT
-            case "FIXED64" | "SFIXED64" | "DOUBLE" => WT_64BIT
-            case "STRING" | "BYTES" | "MESSAGE" => WT_LEN
-            case other =>
-              willNotWorkOnGpu(
-                s"Unknown protobuf type name '$other' - cannot determine wire type; " +
-                  "falling back to CPU")
-              WT_VARINT
+            ProtobufSchemaValidator.validateFlattenedSchema(flat).fold({ reason =>
+              willNotWorkOnGpu(reason)
+              return
+            }, identity)
+            val arrays = ProtobufSchemaValidator.toFlattenedSchemaArrays(flat)
+            flatFieldNumbers = arrays.fieldNumbers
+            flatParentIndices = arrays.parentIndices
+            flatDepthLevels = arrays.depthLevels
+            flatWireTypes = arrays.wireTypes
+            flatOutputTypeIds = arrays.outputTypeIds
+            flatEncodings = arrays.encodings
+            flatIsRepeated = arrays.isRepeated
+            flatIsRequired = arrays.isRequired
+            flatHasDefaultValue = arrays.hasDefaultValue
+            flatDefaultInts = arrays.defaultInts
+            flatDefaultFloats = arrays.defaultFloats
+            flatDefaultBools = arrays.defaultBools
+            flatDefaultStrings = arrays.defaultStrings
+            flatEnumValidValues = arrays.enumValidValues
+            flatEnumNames = arrays.enumNames
           }
         }
 
@@ -1112,148 +760,4 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
     )
   }
 
-  private def getMessageName(e: Expression): String =
-    PbReflect.invoke0[String](e, "messageName")
-
-  private def getDescriptorBytes(e: Expression): Option[Array[Byte]] = {
-    val spark35Result = Try(PbReflect.invoke0[Option[Array[Byte]]](e, "binaryFileDescriptorSet"))
-      .toOption.flatten
-    spark35Result.orElse {
-      val direct = Try(PbReflect.invoke0[Array[Byte]](e, "binaryDescriptorSet")).toOption
-      direct.orElse {
-        Try(PbReflect.invoke0[Option[Array[Byte]]](e, "binaryDescriptorSet")).toOption.flatten
-      }
-    }
-  }
-
-  private def getDescFilePath(e: Expression): Option[String] =
-    Try(PbReflect.invoke0[Option[String]](e, "descFilePath")).toOption.flatten
-
-  /**
-   * Build message descriptor using Spark's ProtobufUtils.
-   * Supports both Spark 3.4.x (descFilePath: Option[String]) and
-   * Spark 3.5+ (binaryFileDescriptorSet: Option[Array[Byte]]).
-   *
-   * @param messageName The protobuf message name
-   * @param descFilePathOrBytes Either a file path (String) or binary descriptor bytes (Array[Byte])
-   */
-  private def buildMessageDescriptorWithSparkProtobuf(
-      messageName: String,
-      descFilePathOrBytes: Either[String, Array[Byte]]): AnyRef = {
-    val cls = ShimReflectionUtils.loadClass(sparkProtobufUtilsObjectClassName)
-    val module = cls.getField("MODULE$").get(null)
-
-    descFilePathOrBytes match {
-      case Left(filePath) =>
-        // Spark 3.4.x: buildDescriptor(messageName: String, descFilePath: Option[String])
-        val m = cls.getMethod("buildDescriptor", classOf[String], classOf[scala.Option[_]])
-        m.invoke(module, messageName, Some(filePath)).asInstanceOf[AnyRef]
-      case Right(bytes) =>
-        // Spark 3.5+: buildDescriptor(messageName, binaryFileDescriptorSet)
-        val m = cls.getMethod("buildDescriptor", classOf[String], classOf[scala.Option[_]])
-        m.invoke(module, messageName, Some(bytes)).asInstanceOf[AnyRef]
-    }
-  }
-
-  private def typeName(t: AnyRef): String = {
-    if (t == null) {
-      "null"
-    } else {
-      Try(PbReflect.invoke0[String](t, "name")).getOrElse(t.toString)
-    }
-  }
-
-  private def getOptionsMap(e: Expression): Option[Map[String, String]] = {
-    Try(PbReflect.invoke0[scala.collection.Map[String, String]](e, "options"))
-      .map(_.toMap)
-      .toOption
-  }
-
-  /**
-   * Cached reflection helper for protobuf-java descriptor APIs.
-   *
-   * All protobuf descriptor method calls go through this object so that:
-   *  1. java.lang.reflect.Method objects are cached (ConcurrentHashMap)
-   *  2. Missing methods produce a clear UnsupportedOperationException with the
-   *     class name and loaded protobuf-java version, instead of a raw
-   *     NoSuchMethodException.
-   */
-  private[shims] object PbReflect {
-    import java.lang.reflect.Method
-    private val cache = new java.util.concurrent.ConcurrentHashMap[String, Method]()
-
-    private def protobufJavaVersion: String = Try {
-      val rtCls = Class.forName("com.google.protobuf.RuntimeVersion")
-      val domain = rtCls.getField("DOMAIN").get(null)
-      val major = rtCls.getField("MAJOR").get(null)
-      val minor = rtCls.getField("MINOR").get(null)
-      val patch = rtCls.getField("PATCH").get(null)
-      s"$domain-$major.$minor.$patch"
-    }.getOrElse("unknown")
-
-    private def cached(cls: Class[_], name: String, paramTypes: Class[_]*): Method = {
-      val key = s"${cls.getName}#$name(${paramTypes.map(_.getName).mkString(",")})"
-      cache.computeIfAbsent(key, _ => {
-        try {
-          cls.getMethod(name, paramTypes: _*)
-        } catch {
-          case ex: NoSuchMethodException =>
-            throw new UnsupportedOperationException(
-              s"protobuf-java method not found: ${cls.getSimpleName}.$name " +
-                s"(protobuf-java version: $protobufJavaVersion). " +
-                s"This may indicate an incompatible protobuf-java library version.",
-              ex)
-        }
-      })
-    }
-
-    def invoke0[T](obj: AnyRef, method: String): T =
-      cached(obj.getClass, method).invoke(obj).asInstanceOf[T]
-
-    def invoke1[T](obj: AnyRef, method: String, arg0Cls: Class[_], arg0: AnyRef): T =
-      cached(obj.getClass, method, arg0Cls).invoke(obj, arg0).asInstanceOf[T]
-
-    // ---- Typed helpers for common Descriptor operations ----
-
-    def findFieldByName(msgDesc: AnyRef, name: String): AnyRef =
-      invoke1[AnyRef](msgDesc, "findFieldByName", classOf[String], name)
-
-    def getFieldNumber(fd: AnyRef): Int =
-      invoke0[java.lang.Integer](fd, "getNumber").intValue()
-
-    def getFieldType(fd: AnyRef): AnyRef = invoke0[AnyRef](fd, "getType")
-
-    def isRepeated(fd: AnyRef): Boolean =
-      Try(invoke0[java.lang.Boolean](fd, "isRepeated").booleanValue()).getOrElse(false)
-
-    def isRequired(fd: AnyRef): Boolean =
-      Try(invoke0[java.lang.Boolean](fd, "isRequired").booleanValue()).getOrElse(false)
-
-    def hasDefaultValue(fd: AnyRef): Boolean =
-      Try(invoke0[java.lang.Boolean](fd, "hasDefaultValue").booleanValue()).getOrElse(false)
-
-    def getDefaultValue(fd: AnyRef): Option[AnyRef] =
-      Try(Some(invoke0[AnyRef](fd, "getDefaultValue"))).getOrElse(None)
-
-    def getMessageType(fd: AnyRef): AnyRef = invoke0[AnyRef](fd, "getMessageType")
-
-    def getEnumType(fd: AnyRef): AnyRef = invoke0[AnyRef](fd, "getEnumType")
-
-    def getEnumValues(enumType: AnyRef): Seq[(Int, String)] = {
-      import scala.collection.JavaConverters._
-      val values = invoke0[java.util.List[_]](enumType, "getValues")
-      values.asScala.map { v =>
-        val ev = v.asInstanceOf[AnyRef]
-        val num = invoke0[java.lang.Integer](ev, "getNumber").intValue()
-        val name = invoke0[String](ev, "getName")
-        (num, name)
-      }.toSeq
-    }
-
-    def getFileSyntax(msgDesc: AnyRef): String = Try {
-      val fileDesc = invoke0[AnyRef](msgDesc, "getFile")
-      val syntaxObj = invoke0[AnyRef](fileDesc, "getSyntax")
-      typeName(syntaxObj)
-    }.getOrElse("")
-  }
 }
