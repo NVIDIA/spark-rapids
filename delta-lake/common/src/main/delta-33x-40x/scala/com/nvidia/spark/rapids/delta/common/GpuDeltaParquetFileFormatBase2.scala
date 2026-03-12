@@ -505,10 +505,9 @@ class GpuDeltaParquetFileFormatBase2(
           .filter(_.maybeDvInfo.isDefined)
           .map(_.maybeDvInfo.get)
 
-        if (filteredDvInfos.length != dvMetadata.metadatas.length) {
-          closeOnExcept(filteredDvInfos.map(_.serializedBitmap)) { _ =>
-            throw new IOException(s"Every DeletionVectorInfo must exist if tablePath is defined")
-          }
+        closeOnExcept(filteredDvInfos.map(_.serializedBitmap)) { _ =>
+          require(filteredDvInfos.length == dvMetadata.metadatas.length,
+            "Every DeletionVectorInfo must exist if tablePath is defined")
         }
         filteredDvInfos
       } else {
