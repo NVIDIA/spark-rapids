@@ -2842,7 +2842,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
       clippedSchema: MessageType,
       readSchema: StructType,
       numRows: Long,
-      blocks: Seq[BlockMetaData]
+      blocks: collection.Seq[BlockMetaData]
   ): HostMemoryEmptyMetaData
 
   protected def newCombinedHMEmptyMetadata(emptyMeta: CombinedEmptyMeta,
@@ -3240,7 +3240,7 @@ class MultiFileCloudParquetPartitionReader(
       clippedSchema: MessageType,
       readSchema: StructType,
       numRows: Long,
-      blocks: Seq[BlockMetaData]
+      blocks: collection.Seq[BlockMetaData]
   ): HostMemoryEmptyMetaData = {
     ParquetHostMemoryEmptyMetaData(partitionedFile, bufferSize, bytesRead,
       dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,

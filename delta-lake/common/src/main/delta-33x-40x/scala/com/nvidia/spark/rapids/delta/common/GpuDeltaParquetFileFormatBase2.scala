@@ -657,7 +657,7 @@ class GpuDeltaParquetFileFormatBase2(
         clippedSchema: MessageType,
         readSchema: StructType,
         numRows: Long,
-        blocks: Seq[BlockMetaData]
+        blocks: collection.Seq[BlockMetaData]
     ): HostMemoryEmptyMetaData = {
       val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]

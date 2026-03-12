@@ -128,7 +128,7 @@ object RapidsDeletionVectors extends Logging {
     }
   }
 
-  def getRowGroupMetadata(blocks: Seq[BlockMetaData]): (Array[Long], Array[Int]) = {
+  def getRowGroupMetadata(blocks: collection.Seq[BlockMetaData]): (Array[Long], Array[Int]) = {
     val rowGroupOffsets = blocks.map(_.getRowIndexOffset)
     if (rowGroupOffsets.find(offset => offset < 0).isDefined) {
       throw new IllegalStateException("Found invalid row group offset")
