@@ -47,7 +47,8 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
   // wrapping child plans to avoid "not all children can be replaced" cascading failures.
   override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Seq.empty
 
-  private var sourceScan: ExternalRDDScanExec[_] = null
+  private var scanAnalysis: Option[GpuSequenceFileSerializeFromObjectExecMeta.SequenceFileScanAnalysis] =
+    None
 
   override def tagPlanForGpu(): Unit = {
     if (!conf.isSequenceFileRDDPhysicalReplaceEnabled) {
@@ -65,29 +66,33 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
     }
     wrapped.child match {
       case e: ExternalRDDScanExec[_] =>
-        sourceScan = e
+        if (!GpuSequenceFileSerializeFromObjectExecMeta.isSimpleSequenceFileRDD(e.rdd)) {
+          willNotWorkOnGpu("RDD lineage is not a simple SequenceFile scan")
+          return
+        }
+        val analysis = GpuSequenceFileSerializeFromObjectExecMeta.analyzeSequenceFileScan(
+          e, e.rdd.context.hadoopConfiguration)
+        scanAnalysis = Some(analysis)
+        if (analysis.hasCompressedInput) {
+          willNotWorkOnGpu("Compressed SequenceFile input falls back to CPU")
+        }
       case _ =>
         willNotWorkOnGpu("SerializeFromObject child is not ExternalRDDScanExec")
         return
     }
-    if (!GpuSequenceFileSerializeFromObjectExecMeta.isSimpleSequenceFileRDD(sourceScan.rdd)) {
-      willNotWorkOnGpu("RDD lineage is not a simple SequenceFile scan")
-      return
-    }
-    if (GpuSequenceFileSerializeFromObjectExecMeta.hasCompressedInput(
-        sourceScan.rdd, sourceScan.rdd.context.hadoopConfiguration)) {
-      willNotWorkOnGpu("Compressed SequenceFile input falls back to CPU")
-    }
   }
 
   override def convertToGpu(): GpuExec = {
-    val paths = GpuSequenceFileSerializeFromObjectExecMeta
-      .collectInputPaths(sourceScan.rdd)
+    val analysis = scanAnalysis.getOrElse {
+      val sourceScan = wrapped.child.asInstanceOf[ExternalRDDScanExec[_]]
+      GpuSequenceFileSerializeFromObjectExecMeta.analyzeSequenceFileScan(
+        sourceScan, sourceScan.rdd.context.hadoopConfiguration)
+    }
     GpuSequenceFileSerializeFromObjectExec(
       wrapped.output,
       wrapped.child,
       TargetSize(conf.gpuTargetBatchSizeBytes),
-      paths)(conf)
+      analysis.inputPaths)(conf)
   }
 
   override def convertToCpu(): SparkPlan = wrapped
@@ -103,6 +108,21 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
  * to the CPU path by returning conservative defaults.
  */
 object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
+  private case class SequenceFileScanAnalysis(
+      sourceScan: ExternalRDDScanExec[_],
+      inputPaths: Seq[String],
+      hasCompressedInput: Boolean)
+
+  private def analyzeSequenceFileScan(
+      sourceScan: ExternalRDDScanExec[_],
+      conf: org.apache.hadoop.conf.Configuration): SequenceFileScanAnalysis = {
+    val inputPaths = collectInputPaths(sourceScan.rdd)
+    SequenceFileScanAnalysis(
+      sourceScan = sourceScan,
+      inputPaths = inputPaths,
+      hasCompressedInput = hasCompressedInput(inputPaths, conf))
+  }
+
   private def isNewApiSequenceFileRDD(rdd: NewHadoopRDD[_, _]): Boolean = {
     try {
       val cls = classOf[NewHadoopRDD[_, _]]
@@ -242,8 +262,10 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
     }
   }
 
-  def hasCompressedInput(rdd: RDD[_], conf: org.apache.hadoop.conf.Configuration): Boolean = {
-    collectInputPaths(rdd).exists { p =>
+  private def hasCompressedInput(
+      inputPaths: Seq[String],
+      conf: org.apache.hadoop.conf.Configuration): Boolean = {
+    inputPaths.exists { p =>
       try {
         findAnyFile(new Path(p), conf).exists(f => isCompressedSequenceFile(f, conf))
       } catch {

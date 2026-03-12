@@ -44,14 +44,29 @@ import org.apache.spark.sql.types.{BinaryType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkVector}
 import org.apache.spark.util.SerializableConfiguration
 
-private[sequencefile] final case class PendingRecord(
-    key: Option[Array[Byte]],
-    value: Option[Array[Byte]],
-    bytes: Long)
-
 private[sequencefile] object GpuSequenceFileReaders {
   final val KEY_FIELD: String = "key"
   final val VALUE_FIELD: String = "value"
+
+  def addBytesWritablePayload(
+      bufferer: HostBinaryListBufferer,
+      bytes: Array[Byte],
+      offset: Int,
+      totalLen: Int): Unit = {
+    if (totalLen < 4) {
+      bufferer.addBytes(bytes, offset, 0)
+    } else {
+      val payloadLen = ((bytes(offset) & 0xFF) << 24) |
+        ((bytes(offset + 1) & 0xFF) << 16) |
+        ((bytes(offset + 2) & 0xFF) << 8) |
+        (bytes(offset + 3) & 0xFF)
+      if (payloadLen > 0 && payloadLen <= totalLen - 4) {
+        bufferer.addBytes(bytes, offset + 4, payloadLen)
+      } else {
+        bufferer.addBytes(bytes, offset, 0)
+      }
+    }
+  }
 }
 
 /**
@@ -125,96 +140,6 @@ private[sequencefile] final class HostBinaryListBufferer(
     // Write offset only after successful data write
     offsetsBuffer.setInt(offsetPosition, startDataLocation.toInt)
     numRows += 1
-  }
-
-  /**
-   * Add bytes from a BytesWritable serialized format, extracting only the payload.
-   * BytesWritable serialization: 4-byte big-endian length prefix + payload bytes
-   * This method skips the length prefix and only stores the actual payload.
-   *
-   * @param bytes the raw BytesWritable serialized bytes
-   * @param offset the starting offset in the array
-   * @param totalLen the total length of the serialized data (including length prefix)
-   */
-  def addBytesWritablePayload(bytes: Array[Byte], offset: Int, totalLen: Int): Unit = {
-    if (totalLen < 4) {
-      // Invalid or empty BytesWritable - add empty bytes
-      addBytes(bytes, offset, 0)
-    } else {
-      // Read the 4-byte big-endian length prefix
-      val payloadLen = ((bytes(offset) & 0xFF) << 24) |
-                      ((bytes(offset + 1) & 0xFF) << 16) |
-                      ((bytes(offset + 2) & 0xFF) << 8) |
-                      (bytes(offset + 3) & 0xFF)
-      // Extract the payload (skip the 4-byte length prefix)
-      if (payloadLen > 0 && payloadLen <= totalLen - 4) {
-        addBytes(bytes, offset + 4, payloadLen)
-      } else {
-        addBytes(bytes, offset, 0) // Empty payload
-      }
-    }
-  }
-
-  /**
-   * Builds a cuDF LIST<UINT8> device column (Spark BinaryType equivalent) and releases host
-   * buffers.
-   * The returned ColumnVector owns its device memory and must be closed by the caller.
-   *
-   * This method builds a proper nested HostColumnVector (LIST containing UINT8 child) and
-   * uses a single copyToDevice() call, which is more efficient than the alternative approach
-   * of copying child and offsets separately then calling makeListFromOffsets().
-   *
-   * The makeListFromOffsets() approach has a performance issue: it internally creates new
-   * cudf::column objects from column_view, which copies GPU memory. This results in:
-   *   - 2 H2D transfers (child + offsets)
-   *   - 2 extra GPU memory copies inside makeListFromOffsets()
-   *
-   * By using a proper nested HostColumnVector structure and single copyToDevice(), we get:
-   *   - 1 logical H2D transfer (the nested structure handles all buffers)
-   *   - 0 extra GPU memory copies
-   */
-  def getDeviceListColumnAndRelease(): ColumnVector = {
-    if (dataLocation > Int.MaxValue) {
-      throw new IllegalStateException(
-        s"Binary column child size $dataLocation exceeds INT32 offset limit")
-    }
-    // Write the final offset
-    offsetsBuffer.setInt(numRows.toLong * DType.INT32.getSizeInBytes, dataLocation.toInt)
-
-    val childRowCount = dataLocation.toInt
-
-    // Create the child HostColumnVectorCore (UINT8 data) - this will be nested inside the LIST
-    val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
-    val childCore = closeOnExcept(dataBuffer) { _ =>
-      closeOnExcept(offsetsBuffer) { _ =>
-        new HostColumnVectorCore(DType.UINT8, childRowCount,
-          Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
-      }
-    }
-    dataBuffer = null
-
-    // Create the children list for the LIST column
-    val listChildren = new util.ArrayList[HostColumnVectorCore]()
-    listChildren.add(childCore)
-
-    // Create the LIST HostColumnVector with proper nested structure
-    // For LIST type: data buffer is null, offsets buffer contains the list offsets,
-    // and the child column (UINT8) is in the nestedChildren list
-    val listHost = closeOnExcept(childCore) { _ =>
-      closeOnExcept(offsetsBuffer) { _ =>
-        new HostColumnVector(DType.LIST, numRows,
-          Optional.of[java.lang.Long](0L), // nullCount = 0
-          null, // no data buffer for LIST type
-          null, // no validity buffer (no nulls)
-          offsetsBuffer, // offsets buffer
-          listChildren) // nested children containing the UINT8 child
-      }
-    }
-    offsetsBuffer = null
-
-    // Single copyToDevice() call handles the entire nested structure efficiently
-    // This avoids the extra GPU memory copies that makeListFromOffsets() would cause
-    withResource(listHost)(_.copyToDevice())
   }
 
   /**
@@ -428,6 +353,44 @@ class MultiFileCloudSequenceFilePartitionReader(
     }
   }
 
+  private def collectCombinedPartitionValues(
+      input: Array[HostMemoryBuffersWithMetaDataBase]): Array[(Long, InternalRow)] = {
+    val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
+    input.foreach { buf =>
+      val partValues = buf.partitionedFile.partitionValues
+      buf match {
+        case empty: SequenceFileEmptyMetaData if empty.numRows > 0 =>
+          allPartValues.append((empty.numRows, partValues))
+        case meta: SequenceFileHostBuffersWithMetaData =>
+          allPartValues.append((meta.totalRows.toLong, partValues))
+        case _ =>
+      }
+    }
+    allPartValues.toArray
+  }
+
+  private def addPartitionValuesToBatch(
+      batch: ColumnarBatch,
+      singlePartValues: InternalRow,
+      combinedPartValues: Option[Array[(Long, InternalRow)]]): Iterator[ColumnarBatch] = {
+    combinedPartValues match {
+      case Some(partRowsAndValues) =>
+        val (rowsPerPart, partValues) = partRowsAndValues.unzip
+        BatchWithPartitionDataUtils.addPartitionValuesToBatch(
+          batch,
+          rowsPerPart,
+          partValues,
+          partitionSchema,
+          maxGpuColumnSizeBytes)
+      case None =>
+        BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
+          batch,
+          singlePartValues,
+          partitionSchema,
+          maxGpuColumnSizeBytes)
+    }
+  }
+
   /**
    * Combines multiple SequenceFile host memory buffers into a single buffer.
    * This reduces the number of batches sent to the GPU, improving performance.
@@ -462,20 +425,7 @@ class MultiFileCloudSequenceFilePartitionReader(
       case _ => false
     }
 
-    // Collect partition values from all buffers (including empty ones)
-    val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
-    input.foreach { buf =>
-      val partValues = buf.partitionedFile.partitionValues
-      buf match {
-        case empty: SequenceFileEmptyMetaData =>
-          if (empty.numRows > 0) {
-            allPartValues.append((empty.numRows, partValues))
-          }
-        case meta: SequenceFileHostBuffersWithMetaData =>
-          allPartValues.append((meta.totalRows.toLong, partValues))
-        case _ =>
-      }
-    }
+    val allPartValues = collectCombinedPartitionValues(input)
 
     // If all buffers are empty, return an empty combined result
     if (nonEmptyBuffers.isEmpty) {
@@ -486,7 +436,7 @@ class MultiFileCloudSequenceFilePartitionReader(
         firstPart,
         totalBytesRead,
         numRows = allPartValues.map(_._1).sum,
-        allPartValues = if (allPartValues.nonEmpty) Some(allPartValues.toArray) else None)
+        allPartValues = if (allPartValues.nonEmpty) Some(allPartValues) else None)
     }
 
     // Close empty buffers since we don't need them
@@ -515,7 +465,7 @@ class MultiFileCloudSequenceFilePartitionReader(
       totalRows = totalRows,
       wantsKey = wantsKey,
       wantsValue = wantsValue,
-      allPartValues = if (allPartValues.nonEmpty) Some(allPartValues.toArray) else None)
+      allPartValues = if (allPartValues.nonEmpty) Some(allPartValues) else None)
 
     logDebug(s"Zero-copy combine took ${System.currentTimeMillis() - startCombineTime} ms, " +
       s"collected ${toCombine.length} files with ${allKeyChunks.length} key chunks, " +
@@ -540,47 +490,19 @@ class MultiFileCloudSequenceFilePartitionReader(
         // No data, but we might need to emit partition values
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val emptyBatch = new ColumnarBatch(Array.empty, empty.numRows.toInt)
-        empty.allPartValues match {
-          case Some(partRowsAndValues) =>
-            // Combined empty result with multiple partition values
-            val (rowsPerPart, partValues) = partRowsAndValues.unzip
-            BatchWithPartitionDataUtils.addPartitionValuesToBatch(
-              emptyBatch,
-              rowsPerPart,
-              partValues,
-              partitionSchema,
-              maxGpuColumnSizeBytes)
-          case None =>
-            // Single file empty result
-            BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
-              emptyBatch,
-              empty.partitionedFile.partitionValues,
-              partitionSchema,
-              maxGpuColumnSizeBytes)
-        }
+        addPartitionValuesToBatch(
+          emptyBatch,
+          empty.partitionedFile.partitionValues,
+          empty.allPartValues)
 
       case meta: SequenceFileHostBuffersWithMetaData =>
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val batch = buildColumnarBatchFromHostBuffers(meta)
         closeOnExcept(batch) { _ =>
-          meta.allPartValues match {
-            case Some(partRowsAndValues) =>
-              // Combined result with multiple partition values
-              val (rowsPerPart, partValues) = partRowsAndValues.unzip
-              BatchWithPartitionDataUtils.addPartitionValuesToBatch(
-                batch,
-                rowsPerPart,
-                partValues,
-                partitionSchema,
-                maxGpuColumnSizeBytes)
-            case None =>
-              // Single file result
-              BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
-                batch,
-                meta.partitionedFile.partitionValues,
-                partitionSchema,
-                maxGpuColumnSizeBytes)
-          }
+          addPartitionValuesToBatch(
+            batch,
+            meta.partitionedFile.partitionValues,
+            meta.allPartValues)
         }
 
       case other =>
@@ -798,7 +720,10 @@ class MultiFileCloudSequenceFilePartitionReader(
               } else {
                 if (wantsKey) {
                   val keyLen = keyDataOut.getLength
-                  keyBuf.foreach(_.addBytesWritablePayload(keyDataOut.getData, 0, keyLen))
+                  keyBuf.foreach { buf =>
+                    GpuSequenceFileReaders.addBytesWritablePayload(
+                      buf, keyDataOut.getData, 0, keyLen)
+                  }
                 }
                 if (wantsValue) {
                   // Use reusable DataOutputBuffer instead of per-record ByteArrayOutputStream.
@@ -806,8 +731,10 @@ class MultiFileCloudSequenceFilePartitionReader(
                   // addBytesWritablePayload does a single copy to the host buffer.
                   valueDataOut.reset()
                   valueBytes.writeUncompressedBytes(valueDataOut)
-                  valBuf.foreach(_.addBytesWritablePayload(
-                    valueDataOut.getData, 0, valueDataOut.getLength))
+                  valBuf.foreach { buf =>
+                    GpuSequenceFileReaders.addBytesWritablePayload(
+                      buf, valueDataOut.getData, 0, valueDataOut.getLength)
+                  }
                 }
                 numRows += 1
               }

@@ -149,7 +149,6 @@ case class GpuSequenceFileSerializeFromObjectExec(
   override def doExecute(): RDD[InternalRow] = {
     val localOutput = output
     val childObjType = child.output.head.dataType
-    val numOutCols = localOutput.length
     val outSchema = StructType(localOutput.map(a =>
       StructField(a.name, a.dataType, a.nullable)))
     child.execute().mapPartitionsWithIndexInternal { (index, it) =>
@@ -157,16 +156,8 @@ case class GpuSequenceFileSerializeFromObjectExec(
       unsafeProj.initialize(index)
       it.map { row =>
         val obj = row.get(0, childObjType)
-        val outRow = new GenericInternalRow(numOutCols)
-        if (numOutCols == 1) {
-          outRow.update(0, obj.asInstanceOf[Array[Byte]])
-        } else {
-          val tuple = obj.asInstanceOf[Product]
-          outRow.update(0,
-            tuple.productElement(0).asInstanceOf[Array[Byte]])
-          outRow.update(1,
-            tuple.productElement(1).asInstanceOf[Array[Byte]])
-        }
+        val outRow = GpuSequenceFileSerializeFromObjectExec.projectObjectToOutputRow(
+          obj, localOutput)
         unsafeProj(outRow).copy()
       }
     }
@@ -196,5 +187,39 @@ case class GpuSequenceFileSerializeFromObjectExec(
   override protected def withNewChildInternal(
       newChild: SparkPlan): SparkPlan = {
     copy(child = newChild)(rapidsConf)
+  }
+}
+
+object GpuSequenceFileSerializeFromObjectExec {
+  private def sequenceFileFieldBytes(obj: Any, fieldName: String): Array[Byte] = {
+    obj match {
+      case bytes: Array[Byte] =>
+        bytes
+      case tuple: Product =>
+        if (fieldName.equalsIgnoreCase("key")) {
+          tuple.productElement(0).asInstanceOf[Array[Byte]]
+        } else {
+          tuple.productElement(1).asInstanceOf[Array[Byte]]
+        }
+      case other =>
+        throw new IllegalStateException(
+          s"Unexpected SequenceFile object type: ${other.getClass.getName}")
+    }
+  }
+
+  private[rapids] def projectObjectToOutputRow(
+      obj: Any,
+      outputAttrs: Seq[Attribute]): GenericInternalRow = {
+    val outRow = new GenericInternalRow(outputAttrs.length)
+    outputAttrs.zipWithIndex.foreach { case (attr, idx) =>
+      val bytes =
+        if (attr.name.equalsIgnoreCase("key") || attr.name.equalsIgnoreCase("value")) {
+          sequenceFileFieldBytes(obj, attr.name)
+        } else {
+          null
+        }
+      outRow.update(idx, bytes)
+    }
+    outRow
   }
 }
