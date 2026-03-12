@@ -127,15 +127,11 @@ initialize()
     fi
 
     DBR_VER=$(cat /databricks/DBR_VERSION)
-    if [ $DBR_VER == '14.3' ]; then 
+    if [ $DBR_VER == '14.3' ] || [ $DBR_VER == '17.3' ]; then
         DBR_VER=$(echo $DBR_VER | sed 's/\.//g')
         # We are appending 143 in addition to the base spark version because Databricks 14.3
-        # and Databricks 15.4 are both based on spark version 3.5.0
-        BUILDVER="$BUILDVER$DBR_VER"
-        SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS="$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS-$DBR_VER"
-    elif [ $DBR_VER == '17.3' ]; then
-        DBR_VER=$(echo $DBR_VER | sed 's/\.//g')
-        # Appending 173 for Databricks 17.3 based on Spark 4.0.0
+        # and Databricks 15.4 are both based on spark version 3.5.0. Similarly, we are appending 173
+        # for Databricks 17.3 based on Spark 4.0.0.
         BUILDVER="$BUILDVER$DBR_VER"
         SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS="$SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS-$DBR_VER"
     fi
