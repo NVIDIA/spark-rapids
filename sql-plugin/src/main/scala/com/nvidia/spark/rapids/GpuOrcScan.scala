@@ -38,6 +38,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.filecache.FileCache
+import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.io.async._
 import com.nvidia.spark.rapids.jni.{CastStrings, RmmSpark}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuOrcDataReader, NullOutputStreamShim, OrcCastingShims, OrcReadingShims, OrcShims, ShimFilePartitionReaderFactory}
@@ -1789,8 +1790,9 @@ private object GpuOrcFileFilterHandler {
       fs: FileSystem,
       conf: Configuration,
       metrics: Map[String, GpuMetric]): OrcTail = {
-    val filePathStr = filePath.toString
-    val cachedFooter = FileCache.get.getFooter(filePathStr, conf)
+    val fileIO = new HadoopFileIO(conf)
+    val inputFile = fileIO.newInputFile(filePath)
+    val cachedFooter = FileCache.get.getFooter(inputFile)
     val bb = cachedFooter.map { hmb =>
       // ORC can only deal with on-heap buffers
       val bb = withResource(hmb) { _ =>
@@ -1809,7 +1811,7 @@ private object GpuOrcFileFilterHandler {
       // footer was not cached, so try to cache it
       // If we get a filecache token then we can complete the caching by providing the data.
       // If we do not get a token then we should not cache this data.
-      val cacheToken = FileCache.get.startFooterCache(filePathStr, conf)
+      val cacheToken = FileCache.get.startFooterCache(inputFile)
       cacheToken.foreach { t =>
         val hmb = closeOnExcept(HostMemoryBuffer.allocate(bbSize, false)) { hmb =>
           hmb.setBytes(0, bb.array(), 0, bbSize)
@@ -2640,9 +2642,12 @@ class MultiFileOrcPartitionReader(
 
     override def callImpl(): (Seq[DataBlockBase], Long) = {
       TrampolineUtil.setTaskContext(taskContext)
+      // Mark the async thread as a pool thread within the RetryFramework
+      RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {
         doRead()
       } finally {
+        RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
         TrampolineUtil.unsetTaskContext()
       }
     }

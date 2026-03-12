@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.io.async.TrafficController
-import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, RmmSpark, TaskPriority}
+import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, Hash, JSONUtils, RmmSpark, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
@@ -46,7 +46,7 @@ import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.internal.StaticSQLConf
-import org.apache.spark.sql.rapids.GpuShuffleEnv
+import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleCleanupListener, XxHash64Utils}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class PluginException(msg: String) extends RuntimeException(msg)
@@ -137,11 +137,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-26.02.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-26.04.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-26.02.0-cuda12.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-26.04.0-cuda12.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-26.02.0-cuda12.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-26.04.0-cuda12.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -443,6 +443,7 @@ object RapidsPluginUtils extends Logging {
  */
 class RapidsDriverPlugin extends DriverPlugin with Logging {
   var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
+  var shuffleCleanupListener: ShuffleCleanupListener = null
   private lazy val extraDriverPlugins =
     RapidsPluginUtils.extraPlugins.map(_.driverPlugin()).filterNot(_ == null)
 
@@ -465,6 +466,20 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
         rapidsShuffleHeartbeatManager.executorHeartbeat(id)
       case m: GpuCoreDumpMsg => GpuCoreDumpHandler.handleMsg(m)
       case m: ProfileMsg => ProfilerOnDriver.handleMsg(m)
+      // Shuffle cleanup RPC messages
+      case RapidsShuffleCleanupPollMsg(executorId) =>
+        val manager = ShuffleCleanupManager.get
+        if (manager != null) {
+          manager.handlePoll(executorId)
+        } else {
+          RapidsShuffleCleanupResponseMsg(Array.empty)
+        }
+      case RapidsShuffleCleanupStatsMsg(executorId, stats) =>
+        val manager = ShuffleCleanupManager.get
+        if (manager != null) {
+          manager.handleStats(executorId, stats)
+        }
+        null // No response needed for stats report
       case m => throw new IllegalStateException(s"Unknown message $m")
     }
   }
@@ -478,6 +493,32 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     RapidsPluginUtils.logPluginMode(conf)
     GpuCoreDumpHandler.driverInit(sc, conf)
     ProfilerOnDriver.init(sc, conf)
+
+    // Initialize ShuffleCleanupManager and listener for MULTITHREADED mode when:
+    // 1. skipMerge is enabled
+    // 2. ESS is disabled
+    // 3. Off-heap memory limits are enabled
+    //
+    // Spark 4.x can call DriverPlugin.init before SparkEnv/shuffleManager are fully initialized,
+    // so we must avoid SparkEnv-based checks here and use SparkConf instead.
+    val isEssEnabledByConf =
+      sparkConf.getBoolean(TrampolineUtil.shuffleServiceEnabledKey, false)
+    if (conf.isMultiThreadedShuffleManagerMode && conf.isMultithreadedShuffleSkipMergeEnabled &&
+        !isEssEnabledByConf && conf.offHeapLimitEnabled) {
+      ShuffleCleanupManager.init(sc)
+      shuffleCleanupListener = new ShuffleCleanupListener()
+      sc.addSparkListener(shuffleCleanupListener)
+      logInfo("ShuffleCleanupManager and listener initialized for MULTITHREADED shuffle mode " +
+        "(skipMerge enabled, ESS disabled, off-heap limits on)")
+    } else if (conf.isMultiThreadedShuffleManagerMode &&
+        conf.isMultithreadedShuffleSkipMergeEnabled && isEssEnabledByConf) {
+      logWarning("ShuffleCleanupManager disabled - External Shuffle Service (ESS) is enabled. " +
+        "Disable ESS (spark.shuffle.service.enabled=false) to use skipMerge feature.")
+    } else if (conf.isMultiThreadedShuffleManagerMode &&
+        conf.isMultithreadedShuffleSkipMergeEnabled && !conf.offHeapLimitEnabled) {
+      logWarning("ShuffleCleanupManager disabled - off-heap memory limits are disabled. " +
+        "Set spark.rapids.memory.host.offHeapLimit.enabled=true to use skipMerge feature.")
+    }
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
@@ -505,6 +546,9 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def shutdown(): Unit = {
     extraDriverPlugins.foreach(_.shutdown())
     FileCacheLocalityManager.shutdown()
+    // Shutdown listener first to trigger cleanup for any remaining jobs
+    Option(shuffleCleanupListener).foreach(_.shutdown())
+    ShuffleCleanupManager.shutdown()
   }
 }
 
@@ -539,6 +583,7 @@ case class ActiveTaskMetrics(
  */
 class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
+  var shuffleCleanupEndpoint: ShuffleCleanupEndpoint = null
   private lazy val extraExecutorPlugins =
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
 
@@ -582,6 +627,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
       // by setting this config spark.rapids.cudfVersionOverride=true
       checkCudfVersion(conf)
+      checkJniConstants()
 
       // Validate driver and executor time zone are same if the driver time zone is supported by
       // the plugin.
@@ -613,6 +659,22 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
             logInfo("Initializing shuffle manager heartbeats")
             rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
             rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
+          }
+          // Initialize ShuffleCleanupEndpoint for MULTITHREADED mode when
+          // MultithreadedShuffleBufferCatalog is enabled (skipMerge=true, ESS disabled,
+          // off-heap limits on). Uses same condition as GpuShuffleEnv.init.
+          if (conf.isMultiThreadedShuffleManagerMode && conf.isMultithreadedShuffleSkipMergeEnabled
+              && !GpuShuffleEnv.isExternalShuffleEnabled && conf.offHeapLimitEnabled) {
+            logInfo("Initializing shuffle cleanup endpoint for MULTITHREADED mode")
+            shuffleCleanupEndpoint = new ShuffleCleanupEndpoint(pluginContext)
+            shuffleCleanupEndpoint.start()
+          } else if (conf.isMultiThreadedShuffleManagerMode &&
+              conf.isMultithreadedShuffleSkipMergeEnabled &&
+              GpuShuffleEnv.isExternalShuffleEnabled) {
+            logWarning("ShuffleCleanupEndpoint disabled - ESS is enabled")
+          } else if (conf.isMultiThreadedShuffleManagerMode &&
+              conf.isMultithreadedShuffleSkipMergeEnabled && !conf.offHeapLimitEnabled) {
+            logWarning("ShuffleCleanupEndpoint disabled - off-heap memory limits are disabled")
           }
         }
       }
@@ -685,6 +747,15 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     }
   }
 
+  private def checkJniConstants(): Unit = {
+    require(XxHash64Utils.MAX_STACK_DEPTH == Hash.MAX_STACK_DEPTH,
+      s"XxHash64Utils.MAX_STACK_DEPTH (${XxHash64Utils.MAX_STACK_DEPTH}) != " +
+        s"Hash.MAX_STACK_DEPTH (${Hash.MAX_STACK_DEPTH})")
+    require(JsonPathParser.MAX_PATH_DEPTH == JSONUtils.MAX_PATH_DEPTH,
+      s"JsonPathParser.MAX_PATH_DEPTH (${JsonPathParser.MAX_PATH_DEPTH}) != " +
+        s"JSONUtils.MAX_PATH_DEPTH (${JSONUtils.MAX_PATH_DEPTH})")
+  }
+
   // Wait for command spawned via Process
   private def waitForProcess(cmd: Process, durationMs: Long): Option[Int] = {
     val endTime = System.currentTimeMillis() + durationMs
@@ -732,6 +803,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       AsyncProfilerOnExecutor.shutdown()
     }
     Option(rapidsShuffleHeartbeatEndpoint).foreach(_.close())
+    Option(shuffleCleanupEndpoint).foreach(_.close())
     extraExecutorPlugins.foreach(_.shutdown())
     FileCache.shutdown()
     GpuCoreDumpHandler.shutdown()

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2019-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2019-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,11 @@ set -ex
 nvidia-smi
 
 . jenkins/version-def.sh
+. jenkins/shuffle-common.sh
+
+# Get the shuffle shim for the current Spark version
+SHUFFLE_SPARK_SHIM=$(get_shuffle_shim)
+
 # if run in jenkins WORKSPACE refers to rapids root path; if not run in jenkins just use current pwd(contains jenkins dirs)
 WORKSPACE=${WORKSPACE:-`pwd`}
 
@@ -47,7 +52,7 @@ fi
 $WGET_CMD $PROJECT_TEST_REPO/com/nvidia/rapids-4-spark-integration-tests_$SCALA_BINARY_VER/$PROJECT_TEST_VER/rapids-4-spark-integration-tests_$SCALA_BINARY_VER-$PROJECT_TEST_VER-pytest.tar.gz
 
 RAPIDS_INT_TESTS_HOME="$ARTF_ROOT/integration_tests/"
-# The version of pytest.tar.gz that is uploaded is the one built against spark320 but its being pushed without classifier for now
+# The version of pytest.tar.gz that is uploaded is the one built against spark330 but its being pushed without classifier for now
 RAPIDS_INT_TESTS_TGZ="$ARTF_ROOT/rapids-4-spark-integration-tests_${SCALA_BINARY_VER}-$PROJECT_TEST_VER-pytest.tar.gz"
 
 tmp_info=${TMP_INFO_FILE:-'/tmp/artifacts-build.info'}
@@ -244,18 +249,33 @@ run_delta_lake_tests() {
 }
 
 run_iceberg_tests() {
-  # Currently we only support Iceberg 1.6.1 for Spark 3.5.x
-  ICEBERG_VERSION=1.6.1
   # get the major/minor version of Spark
   ICEBERG_SPARK_VER=$(echo "$SPARK_VER" | cut -d. -f1,2)
-  IS_SPARK_35X=0
-  # If $SPARK_VER starts with 3.5, then set $IS_SPARK_35X to 1
-  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
-    IS_SPARK_35X=1
-  fi
+  # get the patch version of Spark
+  SPARK_PATCH_VER=$(echo "$SPARK_VER" | cut -d. -f3)
 
-  # RAPIDS-iceberg only supports Spark 3.5.x yet
-  if [[ "$IS_SPARK_35X" -ne "1" ]]; then
+  # Determine Iceberg version based on Spark version and Scala version
+  # Scala 2.12 + Spark 3.5.x -> Iceberg 1.6.1
+  # Scala 2.13 + Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
+  # Scala 2.13 + Spark 3.5.4-3.5.7 -> Iceberg 1.9.2
+  # Otherwise -> skip
+  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
+    if [[ "$SCALA_BINARY_VER" == "2.12" ]]; then
+      ICEBERG_VERSION=1.6.1
+    elif [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
+      if [[ "$SPARK_PATCH_VER" -ge 0 && "$SPARK_PATCH_VER" -le 3 ]]; then
+        ICEBERG_VERSION=1.6.1
+      elif [[ "$SPARK_PATCH_VER" -ge 4 && "$SPARK_PATCH_VER" -le 7 ]]; then
+        ICEBERG_VERSION=1.9.2
+      else
+        echo "!!!! Skipping Iceberg tests. Spark patch version $SPARK_PATCH_VER is not supported for Scala $SCALA_BINARY_VER"
+        return 0
+      fi
+    else
+      echo "!!!! Skipping Iceberg tests. Scala version $SCALA_BINARY_VER is not supported"
+      return 0
+    fi
+  else
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
     return 0
   fi
@@ -263,7 +283,8 @@ run_iceberg_tests() {
   local test_type=${1:-'default'}
   if [[ "$test_type" == "default" ]]; then
     echo "!!! Running iceberg tests"
-    PYSP_TEST_spark_driver_memory="6G" \
+    PYSP_TEST_spark_driver_memory=6G \
+    PYSP_TEST_spark_executor_memory=6G \
     PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
@@ -274,17 +295,23 @@ run_iceberg_tests() {
     echo "!!! Running iceberg tests with rest catalog"
     ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
 org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
+        # filecache.enabled is a startup-only config, so it must be set here via
+        # PYSP_TEST_ env var rather than as a session-level Spark config, because
+        # FileCacheManager is initialized at executor startup time.
         env \
+          ICEBERG_TEST_CATALOG_TYPE="rest" \
           ICEBERG_TEST_REMOTE_CATALOG=1 \
           PYSP_TEST_spark_driver_memory=6G \
+          PYSP_TEST_spark_executor_memory=6G \
+          PYSP_TEST_spark_rapids_filecache_enabled=true \
           PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
           PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
           PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
           PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="org.apache.iceberg.rest.RESTCatalog" \
+          "PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl=org.apache.iceberg.rest.RESTCatalog" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_uri="${ICEBERG_REST_CATALOG_URI:-http://localhost:8181/catalog/}" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_credential="${ICEBERG_REST_CREDENTIAL}" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri="${ICEBERG_REST_OAUTH2_SERVER_URI:-http://localhost:8080/realms/iceberg/protocol/openid-connect/token}" \
+          "PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri=${ICEBERG_REST_OAUTH2_SERVER_URI:-http://localhost:8080/realms/iceberg/protocol/openid-connect/token}" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_scope="${ICEBERG_REST_SCOPE:-lakekeeper}" \
           PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${ICEBERG_REST_WAREHOUSE:-demo}" \
           ./run_pyspark_from_build.sh -m iceberg --iceberg
@@ -315,14 +342,19 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
     # Requires to setup s3 buckets and namespaces to run iceberg s3tables tests.
     # These steps are included in the test pipeline.
     # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
+    # filecache.enabled is a startup-only config, so it must be set here via
+    # PYSP_TEST_ env var rather than as a session-level Spark config, because
+    # FileCacheManager is initialized at executor startup time.
     env \
       ICEBERG_TEST_REMOTE_CATALOG=1 \
       PYSP_TEST_spark_driver_memory=6G \
+      PYSP_TEST_spark_executor_memory=6G \
+      PYSP_TEST_spark_rapids_filecache_enabled=true \
       PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
       PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
       PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
       PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-      PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
+      "PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl=software.amazon.s3tables.iceberg.S3TablesCatalog" \
       PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${S3TABLES_BUCKET_ARN}" \
       ./run_pyspark_from_build.sh -s -m iceberg --iceberg
   fi
@@ -338,18 +370,6 @@ run_avro_tests() {
   PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_${SCALA_BINARY_VER}:${SPARK_VER}" \
     PYSP_TEST_spark_jars_repositories="https://repository.apache.org/snapshots" \
     ./run_pyspark_from_build.sh -k avro
-}
-
-rapids_shuffle_smoke_test() {
-    echo "Run rapids_shuffle_smoke_test..."
-
-    # using MULTITHREADED shuffle
-    PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
-    PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-    SPARK_SUBMIT_FLAGS="$SPARK_CONF" \
-    ./run_pyspark_from_build.sh -m shuffle_test
 }
 
 run_pyarrow_tests() {
@@ -391,7 +411,8 @@ run_non_utc_time_zone_tests() {
 # - ICEBERG_REST_CATALOG_ONLY: iceberg rest catalog tests only
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
-# - MULTITHREADED_SHUFFLE: shuffle tests only
+# - MULTITHREADED_SHUFFLE: shuffle tests only using MULTITHREADED shuffle mode
+# - UCX_SHUFFLE: shuffle tests only using UCX shuffle mode
 # - NON_UTC_TZ: test all tests in a non-UTC time zone which is selected according to current day of week.
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 if [[ $TEST_MODE == "DEFAULT" ]]; then
@@ -412,13 +433,18 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
 
   # As '--packages' only works on the default cuda12 jar, it does not support classifiers
   # refer to issue : https://issues.apache.org/jira/browse/SPARK-20075
-  # "$CLASSIFIER" == ''" is usally for the case running by developers,
+  # "$CLASSIFIER" == ''" is usually for the case run by developers,
   # while "$CLASSIFIER" == "cuda12" is for the case running on CI.
   # We expect to run packages test for both cases
-  if [[ "$CLASSIFIER" == "" || "$CLASSIFIER" == "cuda12" ]]; then
-    SPARK_SHELL_SMOKE_TEST=1 \
+  SKIP_PACKAGES_TESTS=${SKIP_PACKAGES_TESTS:-"false"}
+  if { [[ "$CLASSIFIER" == "" || "$CLASSIFIER" == "cuda12" ]]; } && [[ "$SKIP_PACKAGES_TESTS" == "false" ]]; then
+    # Add the ivysettings.xml file to support --packages downloads from Artifactory using credentials
+    # Get the HOST_NAME variable for ivysettings.xml (e.g., from https://usr:psw@HOST_NAME/path/to/repo)
+    HOST_NAME=$(sed -E 's#^(.*://)?([^/@]*@)?([^/:]+).*#\3#' <<< "$PROJECT_REPO")
+    SPARK_SHELL_SMOKE_TEST=1 HOST_NAME=$HOST_NAME \
     PYSP_TEST_spark_jars_packages=com.nvidia:rapids-4-spark_${SCALA_BINARY_VER}:${PROJECT_VER} \
     PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
+    PYSP_TEST_spark_jars_ivySettings=${WORKSPACE}/jenkins/ivysettings.xml \
       ./run_pyspark_from_build.sh
   fi
 
@@ -453,13 +479,42 @@ if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "AVRO_ONLY" ]]; then
   run_avro_tests
 fi
 
-# Mutithreaded Shuffle test
+# Rapids Shuffle Manager smoke test.
+# Note the TEST_MODE is either DEFAULT or MULTITHREADED_SHUFFLE. The later is
+# a misleading, it actually tests the Rapids Shuffle Manager with both UCX and
+# MULTITHREADED shuffle modes, but was kept to not break possible CI that is
+# using it.
 if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
-  rapids_shuffle_smoke_test
+  invoke_shuffle_integration_test MULTITHREADED ./run_pyspark_from_build.sh
+fi
+
+if [[ "$TEST_MODE" == "UCX_SHUFFLE" ]]; then
+  invoke_shuffle_integration_test UCX ./run_pyspark_from_build.sh
 fi
 
 # cudf_udf test: this mostly depends on cudf-py, so we run it into an independent CI
 if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
+  # Create a separate conda env for cudf-udf tests to avoid affecting the base env (python 3.10)
+  CUDF_UDF_ENV="cudf_udf_$(date +"%Y%m%d")"
+  CUDF_UDF_PYTHON_VER="3.12"  # since 26.04, python 3.12+ is required for cudf-py
+  CUDF_VER=$(echo "${PROJECT_VER}" | cut -d '.' -f 1,2)
+  CUDA_VER_FOR_CUDF=${CUDA_VER_FOR_CUDF:-'12.9'}
+
+  conda create -y -n ${CUDF_UDF_ENV} -c rapidsai-nightly -c nvidia -c conda-forge -c defaults \
+    python=${CUDF_UDF_PYTHON_VER} cudf=${CUDF_VER} cuda-version=${CUDA_VER_FOR_CUDF}
+
+  # Activate the cudf_udf env and reset PYTHONPATH to use the new env's site-packages
+  source activate ${CUDF_UDF_ENV}
+  CUDF_UDF_PYTHON="${CONDA_ROOT}/envs/${CUDF_UDF_ENV}/bin/python"
+  # Save original PYTHONPATH and reset for cudf_udf env
+  ORIG_PYTHONPATH=${PYTHONPATH}
+  CUDF_UDF_SITE_PACKAGES="${CONDA_ROOT}/envs/${CUDF_UDF_ENV}/lib/python${CUDF_UDF_PYTHON_VER}/site-packages"
+  export PYTHONPATH="${CUDF_UDF_SITE_PACKAGES}:${TMP_PYTHON}/python:${TMP_PYTHON}/python/pyspark/:${PY4J_FILE}"
+  # Set PySpark to use the cudf_udf Python for both driver and workers
+  export PYSPARK_PYTHON=${CUDF_UDF_PYTHON}
+  export PYSPARK_DRIVER_PYTHON=${CUDF_UDF_PYTHON}
+  python -m pip install -r ./requirements.txt
+
   # hardcode config
   [[ ${TEST_PARALLEL} -gt 2 ]] && export TEST_PARALLEL=2
   PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
@@ -467,8 +522,12 @@ if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
     PYSP_TEST_spark_rapids_python_memory_gpu_allocFraction=0.1 \
     PYSP_TEST_spark_rapids_python_concurrentPythonWorkers=2 \
     PYSP_TEST_spark_executorEnv_PYTHONPATH=${RAPIDS_PLUGIN_JAR} \
-    PYSP_TEST_spark_python=${CONDA_ROOT}/bin/python \
     ./run_pyspark_from_build.sh -m cudf_udf --cudf_udf
+
+  # Deactivate and restore original environment
+  conda deactivate
+  export PYTHONPATH=${ORIG_PYTHONPATH}
+  unset PYSPARK_PYTHON PYSPARK_DRIVER_PYTHON
 fi
 
 # Pyarrow tests

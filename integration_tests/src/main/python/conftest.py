@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -118,6 +118,10 @@ def is_not_utc():
 def is_iceberg_remote_catalog():
     v = os.environ.get('ICEBERG_TEST_REMOTE_CATALOG')
     return v == "1"
+
+def is_iceberg_rest_catalog():
+    v = os.environ.get('ICEBERG_TEST_CATALOG_TYPE')
+    return v == "rest"
 
 # key is time zone, value is recorded boolean value
 _support_info_cache_for_time_zone = {}

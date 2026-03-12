@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -281,6 +281,37 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     public RapidsHostColumnBuilder builder(int i) {
       return builders[i];
+    }
+
+    /**
+     * Capture the current state of all column builders for rollback on OOM.
+     * @return array of snapshots, one per builder
+     */
+    public RapidsHostColumnBuilder.BuilderSnapshot[] captureState() {
+      RapidsHostColumnBuilder.BuilderSnapshot[] snapshots =
+          new RapidsHostColumnBuilder.BuilderSnapshot[builders.length];
+      for (int i = 0; i < builders.length; i++) {
+        if (builders[i] != null) {
+          snapshots[i] = builders[i].captureState();
+        }
+      }
+      return snapshots;
+    }
+
+    /**
+     * Restore all column builders to a previously captured state.
+     * @param snapshots the snapshots captured via {@link #captureState()}
+     */
+    public void restoreState(RapidsHostColumnBuilder.BuilderSnapshot[] snapshots) {
+      if (snapshots == null || snapshots.length != builders.length) {
+        throw new IllegalArgumentException(
+            "Snapshot array must match builders length");
+      }
+      for (int i = 0; i < builders.length; i++) {
+        if (snapshots[i] != null && builders[i] != null) {
+          builders[i].restoreState(snapshots[i]);
+        }
+      }
     }
 
     @Override
@@ -851,11 +882,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    *
    * @param scalar the input GpuScalar
    * @param count the row number of the output column
-   * @param sparkType the type of the output column
    * @return a GpuColumnVector. It should be closed to avoid memory leak.
    */
-  public static GpuColumnVector from(GpuScalar scalar, int count, DataType sparkType) {
-    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count), sparkType);
+  public static GpuColumnVector from(GpuScalar scalar, int count) {
+    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count),
+        scalar.dataType());
   }
 
   /**

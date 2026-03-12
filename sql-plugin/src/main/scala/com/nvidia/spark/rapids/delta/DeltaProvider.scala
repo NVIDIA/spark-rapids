@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@ import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan, SparkStrat
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
 /** Probe interface to determine which Delta Lake provider to use. */
@@ -92,6 +93,16 @@ trait DeltaProvider {
   def convertToGpu(
       cpuExec: OverwriteByExpressionExecV1,
       meta: OverwriteByExpressionExecV1Meta): GpuExec
+
+  /**
+   * Returns true if deletion vector predicates can be pushed down to the scan.
+   */
+  def canPushDVPredicateDownToScan(conf: SQLConf): Boolean = false
+
+  /**
+   * Pushes down deletion vector predicates to the scan if possible
+   */
+  def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = plan
 
   def pruneFileMetadata(plan: SparkPlan): SparkPlan = plan
 

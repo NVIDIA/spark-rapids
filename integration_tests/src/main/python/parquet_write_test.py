@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -728,7 +728,9 @@ def test_concurrent_writer(spark_tmp_path):
         data_path,
         copy_and_update(
             # 26 > 25, will not fall back to single writer
-            {"spark.sql.maxConcurrentOutputFileWriters": 26}
+            # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+            {"spark.sql.maxConcurrentOutputFileWriters": 26,
+             'spark.sql.adaptive.enabled': 'false'}
         ))
 
 
@@ -909,7 +911,8 @@ def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase
 @pytest.mark.parametrize('max_concurrent_writers', [0, 100, 20])
 def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled, max_concurrent_writers):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    conf = {}
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf = {'spark.sql.adaptive.enabled': 'false'}
     if planned_write_enabled != "":
         conf = copy_and_update(conf, {"spark.sql.optimizer.plannedWrite.enabled": planned_write_enabled})
     if max_concurrent_writers != 0:

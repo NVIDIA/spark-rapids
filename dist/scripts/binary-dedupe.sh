@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -85,9 +85,6 @@ function retain_single_copy() {
 
   package_class_parts=("${path_parts[@]:2}")
 
-  package_len=$((${#package_class_parts[@]} - 1))
-  package_parts=("${package_class_parts[@]::$package_len}")
-
   package_class_with_spaces="${package_class_parts[*]}"
   # com/nvidia/spark/udf/Repr\$UnknownCapturedArg\$.class
   package_class="${package_class_with_spaces// //}"
@@ -164,12 +161,16 @@ function verify_same_sha_for_unshimmed() {
   # sha1 look up if there is an entry with the unshimmed class as a suffix
 
   class_file_quoted=$(printf '%q' "$class_file")
-
   # TODO currently RapidsShuffleManager is "removed" from /spark* by construction in
   # dist pom.xml via ant. We could delegate this logic to this script
   # and make both simmpler
-  if [[ ! "$class_file_quoted" =~ com/nvidia/spark/rapids/spark[34].*/.*ShuffleManager.class ]]; then
-
+  #
+  # TODO ParquetCachedBatchSerializer is not bitwise-identical after 411, 
+  # but it is compatible with previous versions because it merely adds a new method.
+  # we might need to replace this strict check with MiMa
+  # https://github.com/apache/spark/blob/7011706a0a8dbec6adb5b5b121921b29b314335f/sql/core/src/main/scala/org/apache/spark/sql/columnar/CachedBatchSerializer.scala#L75-L95
+  if [[ ! "$class_file_quoted" =~ com/nvidia/spark/rapids/spark[34].*/.*ShuffleManager.class && \
+          "$class_file_quoted" != "com/nvidia/spark/ParquetCachedBatchSerializer.class" ]]; then
       if ! grep -q "/spark.\+/$class_file_quoted" "$SPARK_SHARED_TXT"; then
         echo >&2 "$class_file is not bitwise-identical across shims"
         exit 255

@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -93,7 +93,9 @@ def test_collate_count_fallback(collate_type):
         lambda spark: gen_df(spark, data_gen),
         cpu_fallback_class_name="SortOrder",
         table_name="tab",
-        sql="select c1, count(*) from tab group by c1")
+        sql="select c1, count(*) from tab group by c1",
+        # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+        conf={'spark.sql.adaptive.enabled': False})
 
 
 @pytest.mark.skipif(is_before_spark_400(), reason="Spark versions before 400 do not support collate")

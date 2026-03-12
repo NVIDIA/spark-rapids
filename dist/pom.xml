@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2025, NVIDIA CORPORATION.
+  Copyright (c) 2020-2026, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-jdk-profiles_2.12</artifactId>
-        <version>26.02.0-SNAPSHOT</version>
+        <version>26.04.0-SNAPSHOT</version>
         <relativePath>../jdk-profiles/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Distribution</name>
     <description>Creates the distribution package of the RAPIDS plugin for Apache Spark</description>
-    <version>26.02.0-SNAPSHOT</version>
+    <version>26.04.0-SNAPSHOT</version>
     <dependencies>
         <dependency>
             <groupId>com.nvidia</groupId>
@@ -161,10 +161,7 @@
             <id>minimumFeatureVersionMix</id>
             <properties>
                 <included_buildvers>
-                    320,
-                    321cdh,
-                    330,
-                    330cdh
+                    330
                 </included_buildvers>
             </properties>
         </profile>
@@ -339,48 +336,6 @@ self.log("... OK")
                                     <url url="${dist.jar.pom.url}"/>
                                 </loadresource>
                                 <validateReducedPom/>
-                            </target>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>update_config_docs</id>
-                        <phase>verify</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <taskdef resource="net/sf/antcontrib/antcontrib.properties"/>
-                                <ac:if xmlns:ac="antlib:net.sf.antcontrib">
-                                    <equals arg1="spark320" arg2="${spark.version.classifier}"/>
-                                    <ac:then>
-                                        <java classname="com.nvidia.spark.rapids.RapidsConf" failonerror="true">
-                                            <arg value="${project.basedir}/../docs/configs.md"/>
-                                            <arg value="${project.basedir}/../docs/additional-functionality/advanced_configs.md"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.NvtxRangeDocs" failonerror="true">
-                                            <arg value="${project.basedir}/../docs/dev/nvtx_ranges.md"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsDocs" failonerror="true">
-                                            <arg value="${project.basedir}/../docs/supported_ops.md"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/generated_files/supportedDataSource.csv"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/generated_files/operatorsScore.csv"/>
-                                            <arg value="operatorScore"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/generated_files/supportedExecs.csv"/>
-                                            <arg value="execs"/>
-                                        </java>
-                                        <java classname="com.nvidia.spark.rapids.SupportedOpsForTools" failonerror="true">
-                                            <arg value="${project.basedir}/../tools/generated_files/supportedExprs.csv"/>
-                                            <arg value="exprs"/>
-                                        </java>
-                                    </ac:then>
-                                </ac:if>
                             </target>
                         </configuration>
                     </execution>

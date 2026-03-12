@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,9 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
-{"spark": "330cdh"}
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
-{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "334"}
@@ -39,8 +37,11 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "358"}
 {"spark": "400"}
 {"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -364,7 +365,7 @@ case class GpuMultiplyYMInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }
@@ -438,7 +439,7 @@ case class GpuMultiplyDTInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }
@@ -502,18 +503,28 @@ case class GpuDivideYMInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }
 
   private def doColumnar(interval: BinaryOperable, numOperable: BinaryOperable,
       numType: DataType): ColumnVector = {
+    numOperable match {
+      case s: Scalar =>
+        withResource(makeZeroScalar(s.getType)) { zero =>
+          if (s.equals(zero)) throw RapidsErrorUtils.intervalDivByZeroError(origin)
+        }
+      case cv: ColumnVector =>
+        withResource(makeZeroScalar(cv.getType)) { zero =>
+          if (cv.contains(zero)) throw RapidsErrorUtils.intervalDivByZeroError(origin)
+        }
+    }
 
     numType match {
       case ByteType | ShortType | IntegerType | LongType =>
-        // interval is long; num is byte, short, int or long
-        // For overflow check: num is 0; interval == Long.Min && num == -1
+        // interval is int; num is byte, short, int or long
+        // For overflow check: num is 0; interval == Int.Min && num == -1
         withResource(IntervalUtils.divWithHalfUpModeWithOverflowCheck(interval, numOperable)) {
           // overflow already checked, directly cast without overflow check
           decimalRet => decimalRet.castTo(DType.INT32)
@@ -584,7 +595,7 @@ case class GpuDivideDTInterval(
 
   override def doColumnar(numRows: Int, intervalScalar: GpuScalar,
       numScalar: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(intervalScalar, numRows, interval.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(intervalScalar, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, numScalar)
     }
   }

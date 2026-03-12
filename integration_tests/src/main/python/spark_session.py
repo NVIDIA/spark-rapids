@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -254,6 +254,9 @@ def is_spark_400_or_later():
 
 def is_spark_401_or_later():
     return spark_version() >= "4.0.1"
+
+def is_spark_411_or_later():
+    return spark_version() >= "4.1.1"
 
 def is_spark_330():
     return spark_version() == "3.3.0"

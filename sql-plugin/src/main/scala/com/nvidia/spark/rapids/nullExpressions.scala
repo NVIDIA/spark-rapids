@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -302,7 +302,7 @@ case class GpuNaNvl(left: Expression, right: Expression) extends GpuBinaryExpres
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "358"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.iceberg
 
@@ -49,13 +50,13 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 class GpuIcebergPartitionerSuite extends AnyFunSuite with BeforeAndAfterAll {
   private var seed = 0L
 
-  override def beforeAll: Unit = {
+  override def beforeAll(): Unit = {
     SpillFramework.initialize(new RapidsConf(new SparkConf))
     seed = System.currentTimeMillis()
     println(s"Random seed set to $seed")
   }
 
-  override def afterAll: Unit = {
+  override def afterAll(): Unit = {
     SpillFramework.shutdown()
   }
 
