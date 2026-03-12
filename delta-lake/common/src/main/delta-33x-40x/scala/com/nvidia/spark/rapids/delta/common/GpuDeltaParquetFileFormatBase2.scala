@@ -717,12 +717,20 @@ class GpuDeltaParquetFileFormatBase2(
         totalNumRows: Long,
         file: PartitionedFile
     ): Int = {
+      // totalNumRows can be 0 if the file is not found but ignoreMissingFiles is true,
+      // or the file is empty.
+      if (totalNumRows == 0) {
+        return 0
+      }
       val dvDescriptorOpt = file.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
       val filterTypeOpt = file.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
 
       val numDeletedRows = if (dvDescriptorOpt.isDefined && filterTypeOpt.isDefined) {
+        require(filterTypeOpt.get == RowIndexFilterType.IF_CONTAINED,
+          s"Only ${RowIndexFilterType.IF_CONTAINED} filter type is supported, " +
+            s"but got ${filterTypeOpt.get}")
         val dvDesc = DeletionVectorDescriptor.deserializeFromBase64(dvDescriptorOpt.get)
         dvDesc.cardinality
       } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
