@@ -653,6 +653,28 @@
             </modules>
         </profile>
         <profile>
+            <id>release400db173</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>400db173</value>
+                </property>
+            </activation>
+            <properties>
+                <spark.version.classifier>spark400db173</spark.version.classifier>
+                <spark.version>${spark400db173.version}</spark.version>
+                <spark.test.version>${spark400db173.version}</spark.test.version>
+                <hadoop.client.version>3.3.1</hadoop.client.version>
+                <rat.consoleOutput>true</rat.consoleOutput>
+                <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+            </properties>
+            <modules>
+                <module>shim-deps/databricks</module>
+                <module>delta-lake/delta-stub</module>
+            </modules>
+        </profile>
+        <profile>
             <id>release401</id>
             <activation>
                 <property>
@@ -908,6 +930,7 @@
         <spark357.version>3.5.7</spark357.version>
         <spark358.version>3.5.8</spark358.version>
         <spark400.version>4.0.0</spark400.version>
+        <spark400db173.version>4.0.0-databricks-173</spark400db173.version>
         <spark401.version>4.0.1</spark401.version>
         <spark402.version>4.0.2</spark402.version>
         <spark411.version>4.1.1</spark411.version>
@@ -1621,9 +1644,9 @@ This will force full Scala code rebuild in downstream modules.
                             <version>[17,)</version>
                         </requireJavaVersion>
                         <requireProperty>
-                            <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported, no vendor builds such as 330db</regexMessage>
+                            <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported</regexMessage>
                             <property>buildver</property>
-                            <regex>(?:[3-9][3-9]|[4-9][0-9])[0-9]</regex>
+                            <regex>(?:[3-9][3-9]|[4-9][0-9])[0-9](?:db\d*)?</regex>
                         </requireProperty>
                         <!-- #endif scala-2.13 -->
                       </rules>
