@@ -445,8 +445,26 @@ class GpuGetArrayStructFieldsMeta(
       GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
     val effectiveOrd =
       if (runtimeOrd >= 0) runtimeOrd else expr.ordinal
+    val effectiveNumFields =
+      GpuGetArrayStructFieldsMeta.effectiveNumFields(child, expr, runtimeOrd)
     GpuGetArrayStructFields(child, expr.field,
-      effectiveOrd, expr.numFields, expr.containsNull)
+      effectiveOrd, effectiveNumFields, expr.containsNull)
+  }
+}
+
+object GpuGetArrayStructFieldsMeta {
+  def effectiveNumFields(
+      child: Expression,
+      expr: GetArrayStructFields,
+      runtimeOrd: Int): Int = {
+    if (runtimeOrd >= 0) {
+      child.dataType match {
+        case ArrayType(st: StructType, _) => st.fields.length
+        case _ => expr.numFields
+      }
+    } else {
+      expr.numFields
+    }
   }
 }
 

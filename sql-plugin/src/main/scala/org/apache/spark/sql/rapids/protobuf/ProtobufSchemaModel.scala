@@ -16,13 +16,22 @@
 
 package org.apache.spark.sql.rapids.protobuf
 
+import java.util.Arrays
+
 import org.apache.spark.sql.types.DataType
 
 sealed trait ProtobufDescriptorSource
 
 object ProtobufDescriptorSource {
   final case class DescriptorPath(path: String) extends ProtobufDescriptorSource
-  final case class DescriptorBytes(bytes: Array[Byte]) extends ProtobufDescriptorSource
+  final case class DescriptorBytes(bytes: Array[Byte]) extends ProtobufDescriptorSource {
+    override def equals(other: Any): Boolean = other match {
+      case DescriptorBytes(otherBytes) => Arrays.equals(bytes, otherBytes)
+      case _ => false
+    }
+
+    override def hashCode(): Int = Arrays.hashCode(bytes)
+  }
 }
 
 final case class ProtobufExprInfo(

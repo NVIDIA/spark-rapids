@@ -20,7 +20,12 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
-import org.apache.spark.sql.rapids.GpuFromProtobuf
+import org.apache.spark.sql.catalyst.expressions.GetArrayStructFields
+import org.apache.spark.sql.rapids.{
+  GpuFromProtobuf,
+  GpuGetArrayStructFieldsMeta,
+  GpuStructFieldOrdinalTag
+}
 import org.apache.spark.sql.rapids.protobuf._
 import org.apache.spark.sql.types._
 
@@ -94,6 +99,17 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     def options: scala.collection.Map[String, String] = Map("mode" -> "PERMISSIVE")
   }
 
+  private case class FakeTypedUnaryExpr(
+      dt: DataType,
+      override val child: Expression = FakeExprChild()) extends UnaryExpression {
+    override def nullable: Boolean = true
+    override def dataType: DataType = dt
+    override protected def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode =
+      throw new UnsupportedOperationException("not needed")
+    override protected def withNewChildInternal(newChild: Expression): Expression = copy(child =
+      newChild)
+  }
+
   private case class FakeMessageDescriptor(
       syntax: String,
       fields: Map[String, ProtobufFieldDescriptor]) extends ProtobufMessageDescriptor {
@@ -147,6 +163,8 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
 
     assert(SparkProtobufCompat.sameDecodeSemantics(
       FakePathProtobufExpr(child), FakePathProtobufExpr(child)))
+    assert(SparkProtobufCompat.sameDecodeSemantics(
+      FakeBytesProtobufExpr(child), FakeBytesProtobufExpr(child)))
     assert(!SparkProtobufCompat.sameDecodeSemantics(
       FakePathProtobufExpr(child), FakeDifferentMessageExpr(child)))
     assert(!SparkProtobufCompat.sameDecodeSemantics(
@@ -293,6 +311,29 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
 
     assert(flat.left.toOption.exists(
       _.contains("Incompatible default value for protobuf field 'common.score'")))
+  }
+
+  test("array struct field meta uses pruned child field count after ordinal remap") {
+    val originalStruct = StructType(Seq(
+      StructField("a", IntegerType, nullable = true),
+      StructField("b", IntegerType, nullable = true),
+      StructField("c", IntegerType, nullable = true)))
+    val prunedStruct = StructType(Seq(StructField("b", IntegerType, nullable = true)))
+    val originalChild = FakeTypedUnaryExpr(ArrayType(originalStruct, containsNull = true))
+    val sparkExpr = GetArrayStructFields(
+      child = originalChild,
+      field = originalStruct.fields(1),
+      ordinal = 1,
+      numFields = originalStruct.fields.length,
+      containsNull = true)
+    sparkExpr.setTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG, 0)
+
+    val prunedChild = FakeTypedUnaryExpr(ArrayType(prunedStruct, containsNull = true))
+    val runtimeOrd = sparkExpr.getTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).get
+
+    assert(runtimeOrd == 0)
+    assert(
+      GpuGetArrayStructFieldsMeta.effectiveNumFields(prunedChild, sparkExpr, runtimeOrd) == 1)
   }
 
   test("GpuFromProtobuf semantic equality is content-based for schema arrays") {
