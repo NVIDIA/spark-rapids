@@ -73,6 +73,27 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     def descFilePath: Option[String] = Some("/tmp/test.desc")
   }
 
+  private case class FakeDifferentMessageExpr(override val child: Expression)
+      extends FakeBaseProtobufExpr(child) {
+    def messageName: String = "test.OtherMessage"
+    def descFilePath: Option[String] = Some("/tmp/test.desc")
+    def options: scala.collection.Map[String, String] = Map("mode" -> "FAILFAST")
+  }
+
+  private case class FakeDifferentDescriptorExpr(override val child: Expression)
+      extends FakeBaseProtobufExpr(child) {
+    def messageName: String = "test.Message"
+    def descFilePath: Option[String] = Some("/tmp/other.desc")
+    def options: scala.collection.Map[String, String] = Map("mode" -> "FAILFAST")
+  }
+
+  private case class FakeDifferentOptionsExpr(override val child: Expression)
+      extends FakeBaseProtobufExpr(child) {
+    def messageName: String = "test.Message"
+    def descFilePath: Option[String] = Some("/tmp/test.desc")
+    def options: scala.collection.Map[String, String] = Map("mode" -> "PERMISSIVE")
+  }
+
   private case class FakeMessageDescriptor(
       syntax: String,
       fields: Map[String, ProtobufFieldDescriptor]) extends ProtobufMessageDescriptor {
@@ -112,6 +133,19 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     val plannerOptions = SparkProtobufCompat.parsePlannerOptions(info.options)
     assert(plannerOptions ==
       Right(ProtobufPlannerOptions(enumsAsInts = true, failOnErrors = false)))
+  }
+
+  test("compat distinguishes decode semantics across message descriptor and options") {
+    val child = FakeExprChild()
+
+    assert(SparkProtobufCompat.sameDecodeSemantics(
+      FakePathProtobufExpr(child), FakePathProtobufExpr(child)))
+    assert(!SparkProtobufCompat.sameDecodeSemantics(
+      FakePathProtobufExpr(child), FakeDifferentMessageExpr(child)))
+    assert(!SparkProtobufCompat.sameDecodeSemantics(
+      FakePathProtobufExpr(child), FakeDifferentDescriptorExpr(child)))
+    assert(!SparkProtobufCompat.sameDecodeSemantics(
+      FakePathProtobufExpr(child), FakeDifferentOptionsExpr(child)))
   }
 
   test("compat reports missing options accessor as cpu fallback reason") {

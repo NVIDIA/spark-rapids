@@ -1155,6 +1155,256 @@ def test_from_protobuf_repeated_enum_string_invalid_permissive_nulls_sibling_fie
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
+def _build_repeated_message_enum_descriptor_set_bytes(spark):
+    """
+    message ContainerWithPriorityItems {
+        optional int32 id = 1;
+        repeated ItemWithPriority items = 2;
+        optional string title = 3;
+    }
+    message ItemWithPriority {
+        optional Priority priority = 1;
+        optional int32 count = 2;
+    }
+    enum Priority { UNKNOWN = 0; FOO = 1; BAR = 2; }
+    """
+    D, fd = _new_proto2_file(spark, "repeated_message_enum.proto")
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
+
+    item_msg = D.DescriptorProto.newBuilder().setName("ItemWithPriority")
+    enum_type = D.EnumDescriptorProto.newBuilder().setName("Priority")
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("UNKNOWN").setNumber(0).build())
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("FOO").setNumber(1).build())
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("BAR").setNumber(2).build())
+    item_msg.addEnumType(enum_type.build())
+    item_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("priority").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
+            .setTypeName(".test.ItemWithPriority.Priority").build())
+    item_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("count").setNumber(2).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    fd.addMessageType(item_msg.build())
+
+    container_msg = D.DescriptorProto.newBuilder().setName("ContainerWithPriorityItems")
+    container_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("id").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    container_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("items").setNumber(2).setLabel(label_rep)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.ItemWithPriority").build())
+    container_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("title").setNumber(3).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
+    fd.addMessageType(container_msg.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_repeated_message_child_enum_string(
+        spark_tmp_path, from_protobuf_fn):
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "repeated_message_enum.desc",
+        _build_repeated_message_enum_descriptor_set_bytes)
+    message_name = "test.ContainerWithPriorityItems"
+
+    item_foo = (_encode_tag(1, 0) + _encode_varint(1) +
+                _encode_tag(2, 0) + _encode_varint(10))
+    item_bar = (_encode_tag(1, 0) + _encode_varint(2) +
+                _encode_tag(2, 0) + _encode_varint(20))
+    row_with_items = (_encode_tag(1, 0) + _encode_varint(1) +
+                      _encode_tag(2, 2) + _encode_varint(len(item_foo)) + item_foo +
+                      _encode_tag(2, 2) + _encode_varint(len(item_bar)) + item_bar +
+                      _encode_tag(3, 2) + _encode_varint(5) + b"hello")
+    row_no_items = (_encode_tag(1, 0) + _encode_varint(2) +
+                    _encode_tag(3, 2) + _encode_varint(5) + b"empty")
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(row_with_items,), (row_no_items,), (None,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("id").alias("id"),
+            decoded.getField("title").alias("title"),
+            decoded.getField("items").getField("priority").alias("priorities"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_repeated_message_child_enum_string_invalid_permissive(
+        spark_tmp_path, from_protobuf_fn):
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "repeated_message_enum.desc",
+        _build_repeated_message_enum_descriptor_set_bytes)
+    message_name = "test.ContainerWithPriorityItems"
+
+    item_valid = (_encode_tag(1, 0) + _encode_varint(1) +
+                  _encode_tag(2, 0) + _encode_varint(10))
+    item_invalid = (_encode_tag(1, 0) + _encode_varint(99) +
+                    _encode_tag(2, 0) + _encode_varint(20))
+    row_valid = (_encode_tag(1, 0) + _encode_varint(1) +
+                 _encode_tag(2, 2) + _encode_varint(len(item_valid)) + item_valid +
+                 _encode_tag(3, 2) + _encode_varint(2) + b"ok")
+    row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
+                   _encode_tag(2, 2) + _encode_varint(len(item_invalid)) + item_invalid +
+                   _encode_tag(3, 2) + _encode_varint(3) + b"bad")
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(0, row_valid), (1, row_invalid)], schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            f.col("idx"),
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("id").alias("id"),
+            decoded.getField("title").alias("title"),
+            decoded.getField("items").getField("priority").getItem(0).alias("priority0")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_nested_repeated_enum_descriptor_set_bytes(spark):
+    """
+    message OuterWithNestedRepeatedEnum {
+        optional int32 id = 1;
+        optional InnerWithRepeatedPriority inner = 2;
+        optional string name = 3;
+    }
+    message InnerWithRepeatedPriority {
+        repeated Priority priority = 1;
+        optional int32 count = 2;
+    }
+    enum Priority { UNKNOWN = 0; FOO = 1; BAR = 2; }
+    """
+    D, fd = _new_proto2_file(spark, "nested_repeated_enum.proto")
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
+
+    inner_msg = D.DescriptorProto.newBuilder().setName("InnerWithRepeatedPriority")
+    enum_type = D.EnumDescriptorProto.newBuilder().setName("Priority")
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("UNKNOWN").setNumber(0).build())
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("FOO").setNumber(1).build())
+    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("BAR").setNumber(2).build())
+    inner_msg.addEnumType(enum_type.build())
+    inner_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("priority").setNumber(1).setLabel(label_rep)
+            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
+            .setTypeName(".test.InnerWithRepeatedPriority.Priority").build())
+    inner_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("count").setNumber(2).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    fd.addMessageType(inner_msg.build())
+
+    outer_msg = D.DescriptorProto.newBuilder().setName("OuterWithNestedRepeatedEnum")
+    outer_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("id").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    outer_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("inner").setNumber(2).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.InnerWithRepeatedPriority").build())
+    outer_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("name").setNumber(3).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
+    fd.addMessageType(outer_msg.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_nested_repeated_enum_string(
+        spark_tmp_path, from_protobuf_fn):
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested_repeated_enum.desc",
+        _build_nested_repeated_enum_descriptor_set_bytes)
+    message_name = "test.OuterWithNestedRepeatedEnum"
+
+    inner = (_encode_tag(1, 0) + _encode_varint(0) +
+             _encode_tag(1, 0) + _encode_varint(2) +
+             _encode_tag(1, 0) + _encode_varint(1) +
+             _encode_tag(2, 0) + _encode_varint(7))
+    row_with_inner = (_encode_tag(1, 0) + _encode_varint(1) +
+                      _encode_tag(2, 2) + _encode_varint(len(inner)) + inner +
+                      _encode_tag(3, 2) + _encode_varint(5) + b"hello")
+    row_no_inner = (_encode_tag(1, 0) + _encode_varint(2) +
+                    _encode_tag(3, 2) + _encode_varint(4) + b"none")
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(row_with_inner,), (row_no_inner,), (None,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("id").alias("id"),
+            decoded.getField("name").alias("name"),
+            decoded.getField("inner").getField("priority").alias("priorities"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_nested_repeated_enum_string_invalid_permissive(
+        spark_tmp_path, from_protobuf_fn):
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested_repeated_enum.desc",
+        _build_nested_repeated_enum_descriptor_set_bytes)
+    message_name = "test.OuterWithNestedRepeatedEnum"
+
+    inner_valid = (_encode_tag(1, 0) + _encode_varint(1) +
+                   _encode_tag(1, 0) + _encode_varint(2) +
+                   _encode_tag(2, 0) + _encode_varint(7))
+    inner_invalid = (_encode_tag(1, 0) + _encode_varint(1) +
+                     _encode_tag(1, 0) + _encode_varint(99) +
+                     _encode_tag(2, 0) + _encode_varint(9))
+    row_valid = (_encode_tag(1, 0) + _encode_varint(1) +
+                 _encode_tag(2, 2) + _encode_varint(len(inner_valid)) + inner_valid +
+                 _encode_tag(3, 2) + _encode_varint(2) + b"ok")
+    row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
+                   _encode_tag(2, 2) + _encode_varint(len(inner_invalid)) + inner_invalid +
+                   _encode_tag(3, 2) + _encode_varint(3) + b"bad")
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(0, row_valid), (1, row_invalid)], schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            f.col("idx"),
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("id").alias("id"),
+            decoded.getField("name").alias("name"),
+            decoded.getField("inner").getField("priority").getItem(0).alias("priority0"),
+            decoded.getField("inner").getField("priority").getItem(1).alias("priority1")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
 def _build_required_field_descriptor_set_bytes(spark):
     """
     Build a FileDescriptorSet for a message with required fields (proto2):
@@ -2639,6 +2889,126 @@ def _get_field_by_path(expr, path):
     for name in path:
         current = current.getField(name)
     return current
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_projection_across_alias_project_boundary(
+        spark_tmp_path, from_protobuf_fn):
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "schema_proj_alias.desc",
+        _build_schema_projection_descriptor_set_bytes)
+    message_name = "test.SchemaProj"
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row,) for row in _schema_proj_test_data], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        aliased = df.select(decoded.alias("decoded"))
+        return aliased.select(
+            f.col("decoded").getField("detail").getField("a").alias("detail_a"),
+            f.col("decoded").getField("id").alias("id"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_projection_across_withcolumn_boundary(
+        spark_tmp_path, from_protobuf_fn):
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "schema_proj_withcolumn.desc",
+        _build_schema_projection_descriptor_set_bytes)
+    message_name = "test.SchemaProj"
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row,) for row in _schema_proj_test_data], schema="bin binary")
+        with_decoded = df.withColumn(
+            "decoded",
+            _call_from_protobuf(from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes))
+        return with_decoded.select(
+            f.col("decoded").getField("items").getField("a").alias("items_a"),
+            f.col("decoded").getField("id").alias("id"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_dual_message_projection_descriptor_set_bytes(spark):
+    """
+    message BytesView {
+        optional int32 status = 1;
+        optional bytes payload = 2;
+    }
+    message NestedPayload {
+        optional int32 count = 1;
+    }
+    message NestedView {
+        optional int32 status = 1;
+        optional NestedPayload payload = 2;
+    }
+    """
+    D, fd = _new_proto2_file(spark, "dual_projection.proto")
+    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    nested_msg = D.DescriptorProto.newBuilder().setName("NestedPayload")
+    nested_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("count").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    fd.addMessageType(nested_msg.build())
+
+    bytes_view = D.DescriptorProto.newBuilder().setName("BytesView")
+    bytes_view.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("status").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    bytes_view.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("payload").setNumber(2).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_BYTES).build())
+    fd.addMessageType(bytes_view.build())
+
+    nested_view = D.DescriptorProto.newBuilder().setName("NestedView")
+    nested_view.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("status").setNumber(1).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+    nested_view.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("payload").setNumber(2).setLabel(label_opt)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.NestedPayload").build())
+    fd.addMessageType(nested_view.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_different_messages_same_binary_column_do_not_interfere(
+        spark_tmp_path, from_protobuf_fn):
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "dual_projection.desc",
+        _build_dual_message_projection_descriptor_set_bytes)
+
+    payload_keep = _encode_tag(1, 0) + _encode_varint(7)
+    payload_drop = _encode_tag(1, 0) + _encode_varint(9)
+    row_keep = (_encode_tag(1, 0) + _encode_varint(1) +
+                _encode_tag(2, 2) + _encode_varint(len(payload_keep)) + payload_keep)
+    row_drop = (_encode_tag(1, 0) + _encode_varint(0) +
+                _encode_tag(2, 2) + _encode_varint(len(payload_drop)) + payload_drop)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row_keep,), (row_drop,)], schema="bin binary")
+        bytes_view = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), "test.BytesView", desc_path, desc_bytes)
+        nested_view = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), "test.NestedView", desc_path, desc_bytes)
+        return df.filter(bytes_view.getField("status") == 1).select(
+            nested_view.getField("payload").getField("count").alias("payload_count"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
 def _build_deep_nested_5_level_descriptor_set_bytes(spark):

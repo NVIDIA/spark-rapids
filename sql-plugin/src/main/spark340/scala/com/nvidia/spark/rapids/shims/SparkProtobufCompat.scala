@@ -60,6 +60,13 @@ private[shims] object SparkProtobufCompat extends Logging {
     } yield ProtobufExprInfo(messageName, descriptorSource, options)
   }
 
+  def sameDecodeSemantics(left: Expression, right: Expression): Boolean = {
+    (extractExprInfo(left), extractExprInfo(right)) match {
+      case (Right(leftInfo), Right(rightInfo)) => leftInfo == rightInfo
+      case _ => false
+    }
+  }
+
   def parsePlannerOptions(
       options: Map[String, String]): Either[String, ProtobufPlannerOptions] = {
     val enumsAsInts = Try(options.getOrElse("enums.as.ints", "false").toBoolean)
