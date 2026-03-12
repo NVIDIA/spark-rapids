@@ -646,7 +646,7 @@ class MultiFileCloudSequenceFilePartitionReader(
             chunk.dataBuffer, chunk.offsetsBuffer, chunk.numRows)
         }
         // Use cudf concatenate - this is highly optimized and uses GPU memory bandwidth
-        ColumnVector.concatenate(gpuCols: _*)
+        ColumnVector.concatenate(gpuCols.toArray: _*)
       } finally {
         gpuCols.foreach(_.close())
       }
