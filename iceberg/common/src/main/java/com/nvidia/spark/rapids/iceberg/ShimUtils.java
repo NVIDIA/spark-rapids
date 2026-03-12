@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.iceberg;
 
+import com.nvidia.spark.rapids.ShimLoader;
+
 import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
@@ -35,8 +37,8 @@ public class ShimUtils {
     private static IcebergShimUtils loadImpl() {
         String implClass = IcebergProvider.shimPackage() + ".ShimUtilsImpl";
         try {
-            return (IcebergShimUtils) Class.forName(implClass)
-                    .getConstructor().newInstance();
+            return (IcebergShimUtils) ShimLoader.getShimClassLoader()
+                    .loadClass(implClass).getConstructor().newInstance();
         } catch (Exception e) {
             throw new RuntimeException("Failed to load Iceberg ShimUtils: " + implClass, e);
         }

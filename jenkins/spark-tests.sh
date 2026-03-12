@@ -266,9 +266,6 @@ run_iceberg_tests() {
       ICEBERG_VERSIONS="1.9.2"
     elif [[ "$SPARK_PATCH_VER" -ge 7 ]]; then
       ICEBERG_VERSIONS="1.10.1"
-    else
-      echo "!!!! Skipping Iceberg tests. Spark patch version $SPARK_PATCH_VER is not supported"
-      return 0
     fi
   else
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
