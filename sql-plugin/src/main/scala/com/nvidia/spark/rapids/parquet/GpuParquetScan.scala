@@ -2720,7 +2720,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
       input: Array[HostMemoryBuffersWithMetaDataBase]): (CombinedMeta, CombinedEmptyMeta) = {
     val allPartValues = new ArrayBuffer[(Long, InternalRow)]()
     var allEmpty = true
-    var metaForEmpty: HostMemoryEmptyMetaData = null
+    val emptyMetas: ArrayBuffer[HostMemoryEmptyMetaData] = ArrayBuffer.empty
     var emptyNumRows = 0L
     var emptyBufferSize = 0L
     var emptyTotalBytesRead = 0L
@@ -2737,13 +2737,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
       val result = input(iterLoc)
       result match {
         case emptyHMData: HostMemoryEmptyMetaData =>
-          if (metaForEmpty == null || emptyHMData.numRows > 0) {
-            // we might have multiple EmptyMetaData results. If some are due to ignoring
-            // missing files and others are row counts, we want to make sure we
-            // take the metadata information from the ones with row counts because
-            // the ones from ignoring missing files has less information with it.
-            metaForEmpty = emptyHMData
-          }
+          emptyMetas += emptyHMData
           val totalNumRows = computeNumRowsAlive(result.memBuffersAndSizes.map(_.numRows).sum,
              result.partitionedFile)
           val partValues = result.partitionedFile.partitionValues
@@ -2784,7 +2778,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
     }
     val combinedMeta = CombinedMeta(allPartValues.toArray, toCombine.toArray, firstNonEmpty)
     val combinedEmptyMeta = CombinedEmptyMeta(emptyNumRows, emptyBufferSize,
-      emptyTotalBytesRead, allEmpty, metaForEmpty)
+      emptyTotalBytesRead, allEmpty, emptyMetas.toArray)
     (combinedMeta, combinedEmptyMeta)
   }
 
@@ -2804,7 +2798,15 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
   }
 
   protected case class CombinedEmptyMeta(emptyNumRows: Long, emptyBufferSize: Long,
-      emptyTotalBytesRead: Long, allEmpty: Boolean, metaForEmpty: HostMemoryEmptyMetaData)
+      emptyTotalBytesRead: Long, allEmpty: Boolean, emptyMetas: Array[HostMemoryEmptyMetaData]) {
+    def metaForEmpty: HostMemoryEmptyMetaData = {
+      // we might have multiple EmptyMetaData results. If some are due to ignoring
+      // missing files and others are row counts, we want to make sure we
+      // take the metadata information from the ones with row counts because
+      // the ones from ignoring missing files has less information with it.
+      emptyMetas.find(_.numRows > 0).orNull
+    }
+  }
 
   /**
    * Metadata combined from an array of HostMemoryBuffersWithMetaDataBase
@@ -2839,7 +2841,8 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
       hasInt96Timestamps: Boolean,
       clippedSchema: MessageType,
       readSchema: StructType,
-      numRows: Long
+      numRows: Long,
+      blocks: Seq[BlockMetaData]
   ): HostMemoryEmptyMetaData
 
   protected def newCombinedHMEmptyMetadata(emptyMeta: CombinedEmptyMeta,
@@ -2902,7 +2905,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
           logWarning(s"Skipped missing file: ${file.filePath}", e)
           newHMEmptyMetadataForChunks(file, 0, 0,
             DateTimeRebaseLegacy, DateTimeRebaseLegacy,
-            hasInt96Timestamps = false, null, null, 0)
+            hasInt96Timestamps = false, null, null, 0, Seq.empty)
         // Throw FileNotFoundException even if `ignoreCorruptFiles` is true
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e @ (_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
@@ -2910,7 +2913,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
             s"Skipped the rest of the content in the corrupted file: ${file.filePath}", e)
           newHMEmptyMetadataForChunks(file, 0, 0,
             DateTimeRebaseLegacy, DateTimeRebaseLegacy,
-            hasInt96Timestamps = false, null, null, 0)
+            hasInt96Timestamps = false, null, null, 0, Seq.empty)
       } finally {
         RmmSpark.poolThreadFinishedForTask(taskContext.taskAttemptId())
         TrampolineUtil.unsetTaskContext()
@@ -2932,7 +2935,8 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
           // no blocks so return null buffer and size 0
           newHMEmptyMetadataForChunks(file, 0, bytesRead,
             fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
-            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0)
+            fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0,
+            Seq.empty)
         } else {
           blockChunkIter = fileBlockMeta.blocks.iterator.buffered
           if (isDone) {
@@ -2940,7 +2944,8 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
             // got close before finishing
             newHMEmptyMetadataForChunks(file, 0, bytesRead,
               fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
-              fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0)
+              fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema, 0,
+              Seq.empty)
           } else {
             if (fileBlockMeta.schema.getFieldCount == 0) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
@@ -2948,7 +2953,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
               newHMEmptyMetadataForChunks(file, 0, bytesRead,
                 fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
-                numRows)
+                numRows, fileBlockMeta.blocks)
             } else {
               val filePath = new Path(new URI(file.filePath.toString()))
               while (blockChunkIter.hasNext) {
@@ -2967,7 +2972,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
                 newHMEmptyMetadataForChunks(file, 0, bytesRead,
                   fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
                   fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema,
-                  fileBlockMeta.readSchema, 0)
+                  fileBlockMeta.readSchema, 0, Seq.empty)
               } else {
                 newHMBWithMetaDataForChunks(file, hostBuffers.toArray,
                   bytesRead, fileBlockMeta)
@@ -3234,7 +3239,8 @@ class MultiFileCloudParquetPartitionReader(
       hasInt96Timestamps: Boolean,
       clippedSchema: MessageType,
       readSchema: StructType,
-      numRows: Long
+      numRows: Long,
+      blocks: Seq[BlockMetaData]
   ): HostMemoryEmptyMetaData = {
     ParquetHostMemoryEmptyMetaData(partitionedFile, bufferSize, bytesRead,
       dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,
