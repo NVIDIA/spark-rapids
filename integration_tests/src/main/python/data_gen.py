@@ -953,23 +953,6 @@ def _encode_protobuf_field(field_number, spark_type, value, encoding='default'):
     else:
         raise ValueError("Unsupported type for protobuf simple generator: {}".format(spark_type))
 
-def _encode_protobuf_nested_message(field_number, child_fields, child_values):
-    """
-    Encode a nested protobuf message.
-    
-    child_fields: list of (field_name, field_number, spark_type, encoding)
-    child_values: dict mapping field_name to value
-    """
-    # First encode all child fields
-    child_encoded = b""
-    for (name, num, spark_type, enc) in child_fields:
-        if name in child_values and child_values[name] is not None:
-            child_encoded += _encode_protobuf_field(num, spark_type, child_values[name], enc)
-    
-    # Then wrap in length-delimited format
-    return (_encode_protobuf_key(field_number, _PROTOBUF_WIRE_LEN_DELIM) +
-            _encode_protobuf_uvarint(len(child_encoded)) + child_encoded)
-
 def _encode_protobuf_repeated_field(field_number, spark_element_type, values, encoding='default'):
     """
     Encode a repeated (non-packed) protobuf field.

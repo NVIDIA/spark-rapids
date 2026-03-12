@@ -269,22 +269,31 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       ProtobufDefaultValue.EnumValue(1, "EN")))
   }
 
-  test("extractor reports default value reflection failures as cpu fallback reason") {
+  test("extractor records reflection failures as unsupported field info") {
     val msgDesc = FakeMessageDescriptor(
       syntax = "PROTO2",
       fields = Map(
+        "ok" -> FakeFieldDescriptor(
+          name = "ok",
+          fieldNumber = 1,
+          protoTypeName = "INT32"),
         "id" -> FakeFieldDescriptor(
           name = "id",
-          fieldNumber = 1,
+          fieldNumber = 2,
           protoTypeName = "INT32",
           defaultValueError =
             Some("Failed to read protobuf default value for field 'id': unsupported type"))))
-    val schema = StructType(Seq(StructField("id", IntegerType, nullable = true)))
+    val schema = StructType(Seq(
+      StructField("ok", IntegerType, nullable = true),
+      StructField("id", IntegerType, nullable = true)))
 
     val infos = ProtobufSchemaExtractor.analyzeAllFields(
       schema, msgDesc, enumsAsInts = true, "test.Message")
 
-    assert(infos.left.toOption.exists(
+    assert(infos.isRight)
+    assert(infos.toOption.get("ok").isSupported)
+    assert(!infos.toOption.get("id").isSupported)
+    assert(infos.toOption.get("id").unsupportedReason.exists(
       _.contains("Failed to read protobuf default value for field 'id'")))
   }
 

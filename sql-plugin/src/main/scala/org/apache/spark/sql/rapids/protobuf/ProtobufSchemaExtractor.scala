@@ -32,15 +32,21 @@ object ProtobufSchemaExtractor {
     val result = mutable.Map[String, ProtobufFieldInfo]()
 
     schema.fields.foreach { sf =>
-      val fd = msgDesc.findField(sf.name).getOrElse {
-        return Left(s"Protobuf field '${sf.name}' not found in message '$messageName'")
+      val fieldInfo = msgDesc.findField(sf.name) match {
+        case None =>
+          unsupportedFieldInfo(
+            sf,
+            None,
+            s"Protobuf field '${sf.name}' not found in message '$messageName'")
+        case Some(fd) =>
+          extractFieldInfo(sf, fd, enumsAsInts) match {
+            case Right(info) =>
+              info
+            case Left(reason) =>
+              unsupportedFieldInfo(sf, Some(fd), reason)
+          }
       }
-      extractFieldInfo(sf, fd, enumsAsInts) match {
-        case Right(fieldInfo) =>
-          result(sf.name) = fieldInfo
-        case Left(reason) =>
-          return Left(reason)
-      }
+      result(sf.name) = fieldInfo
     }
 
     Right(result.toMap)
@@ -71,6 +77,24 @@ object ProtobufSchemaExtractor {
         isRepeated = fieldDescriptor.isRepeated
       )
     }
+  }
+
+  private def unsupportedFieldInfo(
+      sparkField: StructField,
+      fieldDescriptor: Option[ProtobufFieldDescriptor],
+      reason: String): ProtobufFieldInfo = {
+    ProtobufFieldInfo(
+      fieldNumber = fieldDescriptor.map(_.fieldNumber).getOrElse(-1),
+      protoTypeName = fieldDescriptor.map(_.protoTypeName).getOrElse("UNKNOWN"),
+      sparkType = sparkField.dataType,
+      encoding = GpuFromProtobuf.ENC_DEFAULT,
+      isSupported = false,
+      unsupportedReason = Some(reason),
+      isRequired = fieldDescriptor.exists(_.isRequired),
+      defaultValue = None,
+      enumMetadata = fieldDescriptor.flatMap(_.enumMetadata),
+      isRepeated = fieldDescriptor.exists(_.isRepeated)
+    )
   }
 
   def checkFieldSupport(
