@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids.shims
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
 import org.apache.spark.sql.catalyst.expressions.{Expression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
 import org.apache.spark.sql.rapids.GpuFromProtobuf
 import org.apache.spark.sql.rapids.protobuf._
 import org.apache.spark.sql.types._
@@ -36,7 +36,8 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     override def eval(input: org.apache.spark.sql.catalyst.InternalRow): Any = null
     override protected def doGenCode(ctx: CodegenContext, ev: ExprCode): ExprCode =
       throw new UnsupportedOperationException("not needed")
-    override protected def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression = {
+    override protected def withNewChildrenInternal(
+        newChildren: IndexedSeq[Expression]): Expression = {
       assert(newChildren.isEmpty)
       this
     }
@@ -109,12 +110,14 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
         fail(s"Unexpected descriptor source: $other")
     }
     val plannerOptions = SparkProtobufCompat.parsePlannerOptions(info.options)
-    assert(plannerOptions == Right(ProtobufPlannerOptions(enumsAsInts = true, failOnErrors = false)))
+    assert(plannerOptions ==
+      Right(ProtobufPlannerOptions(enumsAsInts = true, failOnErrors = false)))
   }
 
   test("compat reports missing options accessor as cpu fallback reason") {
     val exprInfo = SparkProtobufCompat.extractExprInfo(FakeMissingOptionsExpr(FakeExprChild()))
-    assert(exprInfo.left.toOption.exists(_.contains("Cannot read from_protobuf options via reflection")))
+    assert(exprInfo.left.toOption.exists(
+      _.contains("Cannot read from_protobuf options via reflection")))
   }
 
   test("compat detects unsupported options and proto3 syntax") {
@@ -178,7 +181,9 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     assert(flat.toOption.get.defaultInt == 1L)
     assert(new String(flat.toOption.get.defaultString, "UTF-8") == "EN")
     assert(flat.toOption.get.enumValidValues.sameElements(Array(0, 1)))
-    assert(flat.toOption.get.enumNames.map(new String(_, "UTF-8")).sameElements(Array("UNKNOWN", "EN")))
+    assert(flat.toOption.get.enumNames
+      .map(new String(_, "UTF-8"))
+      .sameElements(Array("UNKNOWN", "EN")))
   }
 
   test("validator rejects enum-string field without enum metadata") {
@@ -203,5 +208,52 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       outputTypeId = 6)
 
     assert(flat.left.toOption.exists(_.contains("missing enum metadata")))
+  }
+
+  test("GpuFromProtobuf semantic equality is content-based for schema arrays") {
+    def emptyEnumNames: Array[Array[Byte]] = Array.empty[Array[Byte]]
+
+    val expr1 = GpuFromProtobuf(
+      decodedSchema = outputSchema,
+      fieldNumbers = Array(1, 2),
+      parentIndices = Array(-1, -1),
+      depthLevels = Array(0, 0),
+      wireTypes = Array(0, 2),
+      outputTypeIds = Array(3, 6),
+      encodings = Array(0, 0),
+      isRepeated = Array(false, false),
+      isRequired = Array(false, false),
+      hasDefaultValue = Array(false, false),
+      defaultInts = Array(0L, 0L),
+      defaultFloats = Array(0.0, 0.0),
+      defaultBools = Array(false, false),
+      defaultStrings = Array(Array.emptyByteArray, Array.emptyByteArray),
+      enumValidValues = Array(Array.emptyIntArray, Array.emptyIntArray),
+      enumNames = Array(emptyEnumNames, emptyEnumNames),
+      failOnErrors = true,
+      child = FakeExprChild())
+
+    val expr2 = GpuFromProtobuf(
+      decodedSchema = outputSchema,
+      fieldNumbers = Array(1, 2),
+      parentIndices = Array(-1, -1),
+      depthLevels = Array(0, 0),
+      wireTypes = Array(0, 2),
+      outputTypeIds = Array(3, 6),
+      encodings = Array(0, 0),
+      isRepeated = Array(false, false),
+      isRequired = Array(false, false),
+      hasDefaultValue = Array(false, false),
+      defaultInts = Array(0L, 0L),
+      defaultFloats = Array(0.0, 0.0),
+      defaultBools = Array(false, false),
+      defaultStrings = Array(Array.emptyByteArray, Array.emptyByteArray),
+      enumValidValues = Array(Array.emptyIntArray, Array.emptyIntArray),
+      enumNames = Array(emptyEnumNames.map(identity), emptyEnumNames.map(identity)),
+      failOnErrors = true,
+      child = FakeExprChild())
+
+    assert(expr1.semanticEquals(expr2))
+    assert(expr1.semanticHash() == expr2.semanticHash())
   }
 }

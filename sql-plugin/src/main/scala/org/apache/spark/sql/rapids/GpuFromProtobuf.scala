@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
+import java.util.Arrays
+
 import ai.rapids.cudf
 import ai.rapids.cudf.{BinaryOp, CudfException, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
@@ -90,6 +92,51 @@ case class GpuFromProtobuf(
 
   override def nullable: Boolean = true
 
+  override def equals(other: Any): Boolean = other match {
+    case that: GpuFromProtobuf =>
+      decodedSchema == that.decodedSchema &&
+        Arrays.equals(fieldNumbers, that.fieldNumbers) &&
+        Arrays.equals(parentIndices, that.parentIndices) &&
+        Arrays.equals(depthLevels, that.depthLevels) &&
+        Arrays.equals(wireTypes, that.wireTypes) &&
+        Arrays.equals(outputTypeIds, that.outputTypeIds) &&
+        Arrays.equals(encodings, that.encodings) &&
+        Arrays.equals(isRepeated, that.isRepeated) &&
+        Arrays.equals(isRequired, that.isRequired) &&
+        Arrays.equals(hasDefaultValue, that.hasDefaultValue) &&
+        Arrays.equals(defaultInts, that.defaultInts) &&
+        Arrays.equals(defaultFloats, that.defaultFloats) &&
+        Arrays.equals(defaultBools, that.defaultBools) &&
+        GpuFromProtobuf.deepEquals(defaultStrings, that.defaultStrings) &&
+        GpuFromProtobuf.deepEquals(enumValidValues, that.enumValidValues) &&
+        GpuFromProtobuf.deepEquals(enumNames, that.enumNames) &&
+        failOnErrors == that.failOnErrors &&
+        child == that.child
+    case _ => false
+  }
+
+  override def hashCode(): Int = {
+    var result = decodedSchema.hashCode()
+    result = 31 * result + Arrays.hashCode(fieldNumbers)
+    result = 31 * result + Arrays.hashCode(parentIndices)
+    result = 31 * result + Arrays.hashCode(depthLevels)
+    result = 31 * result + Arrays.hashCode(wireTypes)
+    result = 31 * result + Arrays.hashCode(outputTypeIds)
+    result = 31 * result + Arrays.hashCode(encodings)
+    result = 31 * result + Arrays.hashCode(isRepeated)
+    result = 31 * result + Arrays.hashCode(isRequired)
+    result = 31 * result + Arrays.hashCode(hasDefaultValue)
+    result = 31 * result + Arrays.hashCode(defaultInts)
+    result = 31 * result + Arrays.hashCode(defaultFloats)
+    result = 31 * result + Arrays.hashCode(defaultBools)
+    result = 31 * result + GpuFromProtobuf.deepHashCode(defaultStrings)
+    result = 31 * result + GpuFromProtobuf.deepHashCode(enumValidValues)
+    result = 31 * result + GpuFromProtobuf.deepHashCode(enumNames)
+    result = 31 * result + failOnErrors.hashCode()
+    result = 31 * result + child.hashCode()
+    result
+  }
+
   @transient private lazy val protobufSchema = new ProtobufSchemaDescriptor(
     fieldNumbers, parentIndices, depthLevels, wireTypes, outputTypeIds, encodings,
     isRepeated, isRequired, hasDefaultValue, defaultInts, defaultFloats, defaultBools,
@@ -145,4 +192,10 @@ object GpuFromProtobuf {
    * Check if a Spark DataType is supported by the GPU protobuf decoder.
    */
   def isTypeSupported(dt: DataType): Boolean = sparkTypeToCudfIdOpt(dt).isDefined
+
+  private def deepEquals[T](left: Array[T], right: Array[T]): Boolean =
+    Arrays.deepEquals(left.asInstanceOf[Array[Object]], right.asInstanceOf[Array[Object]])
+
+  private def deepHashCode[T](arr: Array[T]): Int =
+    Arrays.deepHashCode(arr.asInstanceOf[Array[Object]])
 }

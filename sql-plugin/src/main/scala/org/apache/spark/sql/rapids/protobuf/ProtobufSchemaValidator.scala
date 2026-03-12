@@ -34,7 +34,9 @@ object ProtobufSchemaValidator {
       depth: Int,
       outputTypeId: Int): Either[String, FlattenedFieldDescriptor] = {
     validateFieldInfo(path, field, fieldInfo).flatMap { _ =>
-      ProtobufSchemaExtractor.getWireType(fieldInfo.protoTypeName, fieldInfo.encoding).map { wireType =>
+      ProtobufSchemaExtractor
+        .getWireType(fieldInfo.protoTypeName, fieldInfo.encoding)
+        .map { wireType =>
         val defaults = encodeDefaultValue(path, field.dataType, fieldInfo)
         val enumValidValues = fieldInfo.enumMetadata.map(_.validValues).orNull
         val enumNames =
@@ -88,7 +90,8 @@ object ProtobufSchemaValidator {
     Right(())
   }
 
-  def toFlattenedSchemaArrays(flatFields: Array[FlattenedFieldDescriptor]): FlattenedSchemaArrays = {
+  def toFlattenedSchemaArrays(
+      flatFields: Array[FlattenedFieldDescriptor]): FlattenedSchemaArrays = {
     FlattenedSchemaArrays(
       fieldNumbers = flatFields.map(_.fieldNumber),
       parentIndices = flatFields.map(_.parentIdx),

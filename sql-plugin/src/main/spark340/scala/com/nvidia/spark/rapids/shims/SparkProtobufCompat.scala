@@ -60,11 +60,15 @@ private[shims] object SparkProtobufCompat extends Logging {
     } yield ProtobufExprInfo(messageName, descriptorSource, options)
   }
 
-  def parsePlannerOptions(options: Map[String, String]): Either[String, ProtobufPlannerOptions] = {
-    val enumsAsInts = Try(options.getOrElse("enums.as.ints", "false").toBoolean).toEither.left.map { _ =>
-      "Invalid value for from_protobuf option 'enums.as.ints': " +
-        s"'${options.getOrElse("enums.as.ints", "")}' (expected true/false)"
-    }
+  def parsePlannerOptions(
+      options: Map[String, String]): Either[String, ProtobufPlannerOptions] = {
+    val enumsAsInts = Try(options.getOrElse("enums.as.ints", "false").toBoolean)
+      .toEither
+      .left
+      .map { _ =>
+        "Invalid value for from_protobuf option 'enums.as.ints': " +
+          s"'${options.getOrElse("enums.as.ints", "")}' (expected true/false)"
+      }
     enumsAsInts.map(v =>
       ProtobufPlannerOptions(
         enumsAsInts = v,
@@ -77,10 +81,16 @@ private[shims] object SparkProtobufCompat extends Logging {
   def isGpuSupportedProtoSyntax(syntax: String): Boolean =
     syntax.nonEmpty && syntax != "PROTO3" && syntax != "EDITIONS"
 
-  def resolveMessageDescriptor(exprInfo: ProtobufExprInfo): Either[String, ProtobufMessageDescriptor] = {
-    Try(buildMessageDescriptor(exprInfo.messageName, exprInfo.descriptorSource)).toEither.left.map { t =>
-      s"Failed to resolve protobuf descriptor for message '${exprInfo.messageName}': ${t.getMessage}"
-    }.map(new ReflectiveMessageDescriptor(_))
+  def resolveMessageDescriptor(
+      exprInfo: ProtobufExprInfo): Either[String, ProtobufMessageDescriptor] = {
+    Try(buildMessageDescriptor(exprInfo.messageName, exprInfo.descriptorSource))
+      .toEither
+      .left
+      .map { t =>
+        s"Failed to resolve protobuf descriptor for message '${exprInfo.messageName}': " +
+          s"${t.getMessage}"
+      }
+      .map(new ReflectiveMessageDescriptor(_))
   }
 
   private def reflectMessageName(e: Expression): Either[String, String] =
