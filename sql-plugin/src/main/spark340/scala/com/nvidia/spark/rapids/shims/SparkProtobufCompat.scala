@@ -37,6 +37,7 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import java.lang.reflect.Method
+import java.nio.file.{Files, Paths}
 
 import scala.util.Try
 
@@ -140,11 +141,36 @@ private[shims] object SparkProtobufCompat extends Logging {
     val module = cls.getField("MODULE$").get(null)
     val buildMethod = cls.getMethod("buildDescriptor", classOf[String], classOf[scala.Option[_]])
 
+    invokeBuildDescriptor(
+      buildMethod,
+      module,
+      messageName,
+      descriptorSource,
+      filePath => Files.readAllBytes(Paths.get(filePath)))
+  }
+
+  private[shims] def invokeBuildDescriptor(
+      buildMethod: Method,
+      module: AnyRef,
+      messageName: String,
+      descriptorSource: ProtobufDescriptorSource,
+      readDescriptorFile: String => Array[Byte]): AnyRef = {
     descriptorSource match {
-      case ProtobufDescriptorSource.DescriptorPath(filePath) =>
-        buildMethod.invoke(module, messageName, Some(filePath)).asInstanceOf[AnyRef]
       case ProtobufDescriptorSource.DescriptorBytes(bytes) =>
         buildMethod.invoke(module, messageName, Some(bytes)).asInstanceOf[AnyRef]
+      case ProtobufDescriptorSource.DescriptorPath(filePath) =>
+        try {
+          buildMethod.invoke(module, messageName, Some(filePath)).asInstanceOf[AnyRef]
+        } catch {
+          // Spark 3.5+ changed the descriptor payload from Option[String] to Option[Array[Byte]]
+          // while keeping the same erased JVM signature. Retry with file contents when the
+          // path-based invocation clearly hit that binary-descriptor variant.
+          case ex: java.lang.reflect.InvocationTargetException
+              if ex.getCause.isInstanceOf[ClassCastException] ||
+                  ex.getCause.isInstanceOf[MatchError] =>
+            buildMethod.invoke(
+              module, messageName, Some(readDescriptorFile(filePath))).asInstanceOf[AnyRef]
+        }
     }
   }
 

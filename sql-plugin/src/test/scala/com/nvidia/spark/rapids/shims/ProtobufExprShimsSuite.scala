@@ -110,6 +110,16 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       newChild)
   }
 
+  private object FakeSpark34ProtobufUtils {
+    def buildDescriptor(messageName: String, descFilePath: Option[String]): String =
+      s"$messageName:${descFilePath.getOrElse("none")}"
+  }
+
+  private object FakeSpark35ProtobufUtils {
+    def buildDescriptor(messageName: String, binaryFileDescriptorSet: Option[Array[Byte]]): String =
+      s"$messageName:${binaryFileDescriptorSet.map(_.mkString(",")).getOrElse("none")}"
+  }
+
   private case class FakeMessageDescriptor(
       syntax: String,
       fields: Map[String, ProtobufFieldDescriptor]) extends ProtobufMessageDescriptor {
@@ -156,6 +166,53 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     val plannerOptions = SparkProtobufCompat.parsePlannerOptions(info.options)
     assert(plannerOptions ==
       Right(ProtobufPlannerOptions(enumsAsInts = true, failOnErrors = false)))
+  }
+
+  test("compat invokes Spark 3.4 descriptor builder with descriptor path") {
+    val buildMethod = FakeSpark34ProtobufUtils.getClass.getMethod(
+      "buildDescriptor", classOf[String], classOf[scala.Option[_]])
+
+    val result = SparkProtobufCompat.invokeBuildDescriptor(
+      buildMethod,
+      FakeSpark34ProtobufUtils,
+      "test.Message",
+      ProtobufDescriptorSource.DescriptorPath("/tmp/test.desc"),
+      _ => fail("path-to-bytes fallback should not be needed for Spark 3.4"))
+
+    assert(result == "test.Message:/tmp/test.desc")
+  }
+
+  test("compat retries descriptor path as bytes for Spark 3.5 descriptor builder") {
+    val buildMethod = FakeSpark35ProtobufUtils.getClass.getMethod(
+      "buildDescriptor", classOf[String], classOf[scala.Option[_]])
+    var readCalls = 0
+
+    val result = SparkProtobufCompat.invokeBuildDescriptor(
+      buildMethod,
+      FakeSpark35ProtobufUtils,
+      "test.Message",
+      ProtobufDescriptorSource.DescriptorPath("/tmp/test.desc"),
+      _ => {
+        readCalls += 1
+        Array[Byte](1, 2, 3)
+      })
+
+    assert(readCalls == 1)
+    assert(result == "test.Message:1,2,3")
+  }
+
+  test("compat passes bytes directly to Spark 3.5 descriptor builder") {
+    val buildMethod = FakeSpark35ProtobufUtils.getClass.getMethod(
+      "buildDescriptor", classOf[String], classOf[scala.Option[_]])
+
+    val result = SparkProtobufCompat.invokeBuildDescriptor(
+      buildMethod,
+      FakeSpark35ProtobufUtils,
+      "test.Message",
+      ProtobufDescriptorSource.DescriptorBytes(Array[Byte](4, 5, 6)),
+      _ => fail("binary descriptor source should not read a file"))
+
+    assert(result == "test.Message:4,5,6")
   }
 
   test("compat distinguishes decode semantics across message descriptor and options") {
