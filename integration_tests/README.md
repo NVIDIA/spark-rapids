@@ -16,7 +16,7 @@ in the cluster but it is not required.
 
 ### Prerequisites
 
-The build requires `OpenJDK 8`, `maven`, and `python`.
+The build requires `OpenJDK 17`, `maven`, and `python`.
 Skip to the next section if you have already installed them.
 
 #### Java Environment
