@@ -666,9 +666,8 @@ class GpuDeltaParquetFileFormatBase2(
         RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
 
       closeOnExcept(maybeSerializedDV) { _ =>
-        val dataBlocks = blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
         val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
-          .getRowGroupMetadata(dataBlocks)
+          .getRowGroupMetadata(blocks)
         val dvMetadata = DeletionVectorMetadata.forSingleBuffer(
           maybeSerializedDV.map(serializedDV =>
             SpillableDeletionVectorInfo(serializedDV, rowGroupOffsets, rowGroupNumRows))

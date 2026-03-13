@@ -83,13 +83,15 @@ def test_delta_scan_read(spark_tmp_path):
         lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)))
 
 
-def do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_table_sqls=[]):
+def do_test_delta_deletion_vector_read(data_path, use_cdf, conf, test_sql, post_setup_table_sqls=[]):
     num_rows_per_slice = 2048
-    num_slices = 2
-    min_num_row_groups = 3
-    # num_rows_per_slice * 4 bytes per int / min_num_row_groups
-    row_group_size = int(num_rows_per_slice * 4 / (min_num_row_groups))
-    write_conf = copy_and_update(conf, {'parquet.block.size': str(row_group_size)})
+    num_slices = 3
+    target_num_row_groups = 3
+    # num_rows_per_slice * 4 bytes per int / target_num_row_groups
+    row_group_size = int(num_rows_per_slice * 4 / (target_num_row_groups))
+    write_conf = copy_and_update(conf, {
+        "parquet.block.size": str(row_group_size)
+    })
     def setup_tables(spark):
         num_rows = num_rows_per_slice * num_slices
         setup_delta_dest_table(spark, data_path,
@@ -105,18 +107,18 @@ def do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_tabl
         # list files in data_path
         files = [f for f in os.listdir(data_path) if f.endswith(".parquet")]
         files = [f"{data_path}/{f}" for f in files]
-        # iterate files to find at least one with more row groups than the min_num_row_groups.
+        # iterate files to find at least one with more row groups than the target_num_row_groups.
         parquet_file = None
         for f in files:
             metadata = pq.read_metadata(f)
-            if metadata.num_row_groups >= min_num_row_groups:
+            if metadata.num_row_groups >= target_num_row_groups:
                 parquet_file = f
                 break
-        assert parquet_file is not None, f"Expected at least one parquet file with {min_num_row_groups} row groups in the parquet"
+        assert parquet_file is not None, f"Expected at least one parquet file with {target_num_row_groups} row groups in the parquet"
     verify_files_and_row_groups()
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql("SELECT * FROM delta.`{}`".format(data_path)),
+        lambda spark: spark.sql(test_sql),
         conf=conf)
 
 
@@ -139,10 +141,13 @@ def test_delta_deletion_vector_read(spark_tmp_path, chunk_size, use_cdf, dv_pred
             "spark.rapids.sql.reader.batchSizeBytes": f"{chunk_size if chunk_size is not None else '0'}",
             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}"}
 
-    do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_table_sqls=[
-        "INSERT INTO delta.`{}` VALUES(1)".format(data_path),
-        "DELETE FROM delta.`{}` WHERE a = 1".format(data_path)
-    ])
+    do_test_delta_deletion_vector_read(
+        data_path, use_cdf, conf,
+        f"SELECT * FROM delta.`{data_path}`",
+        post_setup_table_sqls=[
+            "INSERT INTO delta.`{}` VALUES(1)".format(data_path),
+            "DELETE FROM delta.`{}` WHERE a = 1".format(data_path)
+        ])
 
 
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
@@ -167,10 +172,58 @@ def test_delta_deletion_vector_multithreaded_read(spark_tmp_path, chunk_size, us
             "spark.rapids.sql.reader.batchSizeBytes": f"{chunk_size if chunk_size is not None else '0'}",
             "spark.rapids.sql.reader.multithreaded.combine.sizeBytes": f"{combine_size}"}
 
-    do_test_delta_deletion_vector_read(data_path, use_cdf, conf, post_setup_table_sqls=[
-        "INSERT INTO delta.`{}` VALUES(1)".format(data_path),
-        "DELETE FROM delta.`{}` WHERE a = 1".format(data_path)
-    ])
+    do_test_delta_deletion_vector_read(
+        data_path, use_cdf, conf,
+        f"SELECT * FROM delta.`{data_path}`",
+        post_setup_table_sqls=[
+            "INSERT INTO delta.`{}` VALUES(1)".format(data_path),
+            "DELETE FROM delta.`{}` WHERE a = 1".format(data_path)
+        ])
+
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
+@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
+@pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_deletion_vector_multithreaded_combine_count_star(
+        spark_tmp_path, use_cdf,  dv_predicate_pushdown, use_metadata_row_index):
+    """
+    This test verifies the case when reading no columns from a Delta table with deletion vectors.
+    In this case, the plugin will create a ColumnarBatch with 0 columns but with a valid row count.
+    We should still take the deleted row count into account to make sure the row count in the
+    ColumnarBatch is correct.
+    """
+
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {"spark.databricks.delta.delete.deletionVectors.persistent": "true",
+            "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
+            "spark.rapids.sql.format.parquet.reader.type": "MULTITHREADED",
+            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
+            "spark.rapids.sql.reader.multithreaded.combine.sizeBytes": "1M",
+            "spark.sql.files.maxRecordsPerFile": "200" # set a small maxRecordsPerFile to create more than 1 file in each partition
+            }
+
+    def setup_tables(spark):
+        col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[1, 2, 3])
+        col_b_gen = IntegerGen(min_val=0, max_val=32, nullable=False, special_cases=[0])
+        num_rows = 20480 # make sure we have enough rows to create multiple files in each partition
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: two_col_df(spark, col_a_gen, col_b_gen, length=num_rows),
+                               use_cdf=False, enable_deletion_vectors=True, partition_columns=["b"])
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)") # make sure there will be a file with one row with a = 1, which will be deleted.
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 33)") # make sure there will be a partition with only 1 row, which will be deleted.
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 1")
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 2")
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 3")
+    with_cpu_session(setup_tables, conf=conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT count(*) FROM delta.`{data_path}` WHERE b = 0"),
+        conf=conf)
 
 
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
@@ -188,15 +241,17 @@ def test_delta_deletion_vector_multithreaded_read_partitioned_table(
             "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
             "spark.rapids.sql.format.parquet.reader.type": "MULTITHREADED",
             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
-            "spark.rapids.sql.reader.multithreaded.combine.sizeBytes": f"{combine_size}"}
+            "spark.rapids.sql.reader.multithreaded.combine.sizeBytes": f"{combine_size}",
+            "spark.sql.files.maxRecordsPerFile": "200" # set a small maxRecordsPerFile to create more than 1 file in each partition
+            }
 
     def setup_tables(spark):
-        col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[])
-        col_b_gen = IntegerGen(min_val=0, max_val=32, nullable=False, special_cases=[])
+        col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[1])
+        col_b_gen = IntegerGen(min_val=0, max_val=32, nullable=False, special_cases=[0])
         setup_delta_dest_table(spark, data_path,
-                               dest_table_func=lambda spark: two_col_df(spark, col_a_gen, col_b_gen, length=2048),
+                               dest_table_func=lambda spark: two_col_df(spark, col_a_gen, col_b_gen, length=20480),
                                use_cdf=False, enable_deletion_vectors=True, partition_columns=["b"])
-        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)") # make sure there will be at least one row with a = 1, which will be deleted.
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)") # make sure there will be a file with one row with a = 1, which will be deleted.
         spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 33)") # make sure there will be a partition with only 1 row, which will be deleted.
         spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 1")
     with_cpu_session(setup_tables, conf=conf)
@@ -223,7 +278,7 @@ def test_delta_empty_deletion_vector_read(spark_tmp_path, use_chunked_reader, us
             "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
             "spark.rapids.sql.format.parquet.reader.type": f"{parquet_reader_type}",
             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}"}
-    do_test_delta_deletion_vector_read(data_path, use_cdf, conf)
+    do_test_delta_deletion_vector_read(data_path, use_cdf, conf, f"SELECT * FROM delta.`{data_path}`")
 
 
 def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions, post_setup_table_func=None):
