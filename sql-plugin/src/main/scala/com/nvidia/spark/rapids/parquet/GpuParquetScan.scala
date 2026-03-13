@@ -2804,7 +2804,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
       // missing files and others are row counts, we want to make sure we
       // take the metadata information from the ones with row counts because
       // the ones from ignoring missing files has less information with it.
-      emptyMetas.find(_.numRows > 0).orElse(emptyMetas.headOption).orNull
+      emptyMetas.find(_.numRows > 0).orNull
     }
   }
 
