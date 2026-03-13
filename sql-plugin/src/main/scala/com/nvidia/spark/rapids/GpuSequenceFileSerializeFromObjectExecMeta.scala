@@ -37,6 +37,8 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
     rule: DataFromReplacementRule)
   extends SparkPlanMeta[SerializeFromObjectExec](plan, conf, parent, rule) with Logging {
 
+  import GpuSequenceFileSerializeFromObjectExecMeta._
+
   // Override childExprs to empty: we replace the entire SerializeFromObjectExec including its
   // serializer expressions, so we don't need them to be individually GPU-compatible.
   // Without this, the framework's canExprTreeBeReplaced check rejects us because the
@@ -48,7 +50,7 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
   // wrapping child plans to avoid "not all children can be replaced" cascading failures.
   override val childPlans: Seq[SparkPlanMeta[SparkPlan]] = Seq.empty
 
-  private var scanAnalysis: Option[GpuSequenceFileSerializeFromObjectExecMeta.SequenceFileScanAnalysis] =
+  private var scanAnalysis: Option[SequenceFileScanAnalysis] =
     None
 
   override def tagPlanForGpu(): Unit = {
@@ -67,11 +69,11 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
     }
     wrapped.child match {
       case e: ExternalRDDScanExec[_] =>
-        if (!GpuSequenceFileSerializeFromObjectExecMeta.isSimpleSequenceFileRDD(e.rdd)) {
+        if (!isSimpleSequenceFileRDD(e.rdd)) {
           willNotWorkOnGpu("RDD lineage is not a simple SequenceFile scan")
           return
         }
-        val analysis = GpuSequenceFileSerializeFromObjectExecMeta.analyzeSequenceFileScan(
+        val analysis = analyzeSequenceFileScan(
           e, e.rdd.context.hadoopConfiguration)
         scanAnalysis = Some(analysis)
         if (analysis.hasCompressedInput) {
@@ -86,7 +88,7 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
   override def convertToGpu(): GpuExec = {
     val analysis = scanAnalysis.getOrElse {
       val sourceScan = wrapped.child.asInstanceOf[ExternalRDDScanExec[_]]
-      GpuSequenceFileSerializeFromObjectExecMeta.analyzeSequenceFileScan(
+      analyzeSequenceFileScan(
         sourceScan, sourceScan.rdd.context.hadoopConfiguration)
     }
     GpuSequenceFileSerializeFromObjectExec(
