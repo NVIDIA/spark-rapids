@@ -297,7 +297,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 parentDepth: Int,
                 pathPrefix: String): Unit = {
               val path = if (pathPrefix.isEmpty) fieldName else s"$pathPrefix.$fieldName"
-              // containingMsgDesc is the descriptor of the message that directly contains fieldName.
+              // containingMsgDesc is the descriptor of the message that directly contains
+              // fieldName.
               val parentField = containingMsgDesc.findField(fieldName)
               if (parentField.isEmpty) {
                 willNotWorkOnGpu(
@@ -730,7 +731,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
 
           expr match {
             case attr: AttributeReference =>
-              protobufOutputExprIds.contains(attr.exprId) || protobufOutputExprId.exists(_ == attr.exprId)
+              protobufOutputExprIds.contains(attr.exprId) ||
+                protobufOutputExprId.exists(_ == attr.exprId)
             case _ => false
           }
         }

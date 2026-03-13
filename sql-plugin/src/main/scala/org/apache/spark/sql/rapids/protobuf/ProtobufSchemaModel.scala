@@ -51,7 +51,14 @@ object ProtobufDefaultValue {
   final case class FloatValue(value: Float) extends ProtobufDefaultValue
   final case class DoubleValue(value: Double) extends ProtobufDefaultValue
   final case class StringValue(value: String) extends ProtobufDefaultValue
-  final case class BinaryValue(value: Array[Byte]) extends ProtobufDefaultValue
+  final case class BinaryValue(value: Array[Byte]) extends ProtobufDefaultValue {
+    override def equals(other: Any): Boolean = other match {
+      case BinaryValue(otherBytes) => Arrays.equals(value, otherBytes)
+      case _ => false
+    }
+
+    override def hashCode(): Int = Arrays.hashCode(value)
+  }
   final case class EnumValue(number: Int, name: String) extends ProtobufDefaultValue
 }
 
@@ -113,8 +120,48 @@ final case class FlattenedFieldDescriptor(
     defaultBool: Boolean,
     defaultString: Array[Byte],
     enumValidValues: Array[Int],
-    enumNames: Array[Array[Byte]]
-)
+    enumNames: Array[Array[Byte]]) {
+  override def equals(other: Any): Boolean = other match {
+    case that: FlattenedFieldDescriptor =>
+      fieldNumber == that.fieldNumber &&
+        parentIdx == that.parentIdx &&
+        depth == that.depth &&
+        wireType == that.wireType &&
+        outputTypeId == that.outputTypeId &&
+        encoding == that.encoding &&
+        isRepeated == that.isRepeated &&
+        isRequired == that.isRequired &&
+        hasDefaultValue == that.hasDefaultValue &&
+        defaultInt == that.defaultInt &&
+        java.lang.Double.compare(defaultFloat, that.defaultFloat) == 0 &&
+        defaultBool == that.defaultBool &&
+        Arrays.equals(defaultString, that.defaultString) &&
+        Arrays.equals(enumValidValues, that.enumValidValues) &&
+        Arrays.deepEquals(
+          enumNames.asInstanceOf[Array[Object]],
+          that.enumNames.asInstanceOf[Array[Object]])
+    case _ => false
+  }
+
+  override def hashCode(): Int = {
+    var result = fieldNumber
+    result = 31 * result + parentIdx
+    result = 31 * result + depth
+    result = 31 * result + wireType
+    result = 31 * result + outputTypeId
+    result = 31 * result + encoding
+    result = 31 * result + isRepeated.hashCode()
+    result = 31 * result + isRequired.hashCode()
+    result = 31 * result + hasDefaultValue.hashCode()
+    result = 31 * result + defaultInt.hashCode()
+    result = 31 * result + defaultFloat.hashCode()
+    result = 31 * result + defaultBool.hashCode()
+    result = 31 * result + Arrays.hashCode(defaultString)
+    result = 31 * result + Arrays.hashCode(enumValidValues)
+    result = 31 * result + Arrays.deepHashCode(enumNames.asInstanceOf[Array[Object]])
+    result
+  }
+}
 
 final case class FlattenedSchemaArrays(
     fieldNumbers: Array[Int],

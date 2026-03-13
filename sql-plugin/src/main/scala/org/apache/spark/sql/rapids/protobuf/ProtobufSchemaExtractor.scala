@@ -193,8 +193,18 @@ object ProtobufSchemaExtractor {
     encoding match {
       case Some(enc) => (true, None, enc)
       case None =>
+        val reason = (sparkType, protoTypeName) match {
+          case (DoubleType, "FLOAT") =>
+            "Spark DoubleType mapped to Protobuf FLOAT is not yet supported on GPU; " +
+              "use FloatType or fall back to CPU"
+          case (FloatType, "DOUBLE") =>
+            "Spark FloatType mapped to Protobuf DOUBLE is not yet supported on GPU; " +
+              "use DoubleType or fall back to CPU"
+          case _ =>
+            s"type mismatch: Spark $sparkType vs Protobuf $protoTypeName"
+        }
         (false,
-          Some(s"type mismatch: Spark $sparkType vs Protobuf $protoTypeName"),
+          Some(reason),
           GpuFromProtobuf.ENC_DEFAULT)
     }
   }

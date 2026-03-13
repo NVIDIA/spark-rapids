@@ -18,9 +18,8 @@ package com.nvidia.spark.rapids.shims
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import org.apache.spark.sql.catalyst.expressions.{Expression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{Expression, GetArrayStructFields, UnaryExpression}
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
-import org.apache.spark.sql.catalyst.expressions.GetArrayStructFields
 import org.apache.spark.sql.rapids.{
   GpuFromProtobuf,
   GpuGetArrayStructFieldsMeta,
@@ -315,6 +314,34 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       "type mismatch: Spark StringType vs Protobuf INT32"))
   }
 
+  test("extractor gives explicit reason for unsupported FLOAT/DOUBLE widening mismatches") {
+    val doubleFromFloat = ProtobufSchemaExtractor.extractFieldInfo(
+      StructField("score", DoubleType, nullable = true),
+      FakeFieldDescriptor(
+        name = "score",
+        fieldNumber = 1,
+        protoTypeName = "FLOAT"),
+      enumsAsInts = true)
+    val floatFromDouble = ProtobufSchemaExtractor.extractFieldInfo(
+      StructField("score", FloatType, nullable = true),
+      FakeFieldDescriptor(
+        name = "score",
+        fieldNumber = 1,
+        protoTypeName = "DOUBLE"),
+      enumsAsInts = true)
+
+    assert(doubleFromFloat.isRight)
+    assert(!doubleFromFloat.toOption.get.isSupported)
+    assert(doubleFromFloat.toOption.get.unsupportedReason.contains(
+      "Spark DoubleType mapped to Protobuf FLOAT is not yet supported on GPU; " +
+        "use FloatType or fall back to CPU"))
+    assert(floatFromDouble.isRight)
+    assert(!floatFromDouble.toOption.get.isSupported)
+    assert(floatFromDouble.toOption.get.unsupportedReason.contains(
+      "Spark FloatType mapped to Protobuf DOUBLE is not yet supported on GPU; " +
+        "use DoubleType or fall back to CPU"))
+  }
+
   test("validator encodes enum-string defaults into both numeric and string payloads") {
     val enumMeta = ProtobufEnumMetadata(Seq(
       ProtobufEnumValue(0, "UNKNOWN"),
@@ -465,5 +492,51 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
 
     assert(expr1.semanticEquals(expr2))
     assert(expr1.semanticHash() == expr2.semanticHash())
+  }
+
+  test("protobuf binary defaults use content-based equality") {
+    val left = ProtobufDefaultValue.BinaryValue(Array[Byte](1, 2, 3))
+    val right = ProtobufDefaultValue.BinaryValue(Array[Byte](1, 2, 3))
+
+    assert(left == right)
+    assert(left.hashCode() == right.hashCode())
+  }
+
+  test("flattened field descriptor uses content-based equality for array fields") {
+    val left = FlattenedFieldDescriptor(
+      fieldNumber = 1,
+      parentIdx = -1,
+      depth = 0,
+      wireType = 2,
+      outputTypeId = 6,
+      encoding = 0,
+      isRepeated = false,
+      isRequired = false,
+      hasDefaultValue = true,
+      defaultInt = 0L,
+      defaultFloat = 0.0,
+      defaultBool = false,
+      defaultString = Array[Byte](1, 2),
+      enumValidValues = Array(0, 1),
+      enumNames = Array("A".getBytes("UTF-8"), "B".getBytes("UTF-8")))
+    val right = FlattenedFieldDescriptor(
+      fieldNumber = 1,
+      parentIdx = -1,
+      depth = 0,
+      wireType = 2,
+      outputTypeId = 6,
+      encoding = 0,
+      isRepeated = false,
+      isRequired = false,
+      hasDefaultValue = true,
+      defaultInt = 0L,
+      defaultFloat = 0.0,
+      defaultBool = false,
+      defaultString = Array[Byte](1, 2),
+      enumValidValues = Array(0, 1),
+      enumNames = Array("A".getBytes("UTF-8"), "B".getBytes("UTF-8")))
+
+    assert(left == right)
+    assert(left.hashCode() == right.hashCode())
   }
 }
