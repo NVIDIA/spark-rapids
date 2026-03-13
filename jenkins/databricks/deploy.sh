@@ -24,10 +24,12 @@ cd spark-rapids
 echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
 SERVER_URL="$URM_URL-local"
+MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3"
 # Determine Scala version and POM file from Spark version
 if [[ "$BASE_SPARK_VERSION" == 4.* ]]; then
     SCALA_VERSION="2.13"
     POM_FILE="scala2.13/pom.xml"
+    MVN="$MVN -f scala2.13/"
 else
     SCALA_VERSION="2.12"
     POM_FILE="pom.xml"
@@ -49,7 +51,6 @@ else
 fi
 DBJARFPATH=./aggregator/target/${DB_SHIM_NAME}/rapids-4-spark-aggregator_$SCALA_VERSION-$SPARK_PLUGIN_JAR_VERSION-${DB_SHIM_NAME}.jar
 echo "Databricks jar is: $DBJARFPATH"
-MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3"
 $MVN -B deploy:deploy-file $MVN_URM_MIRROR -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID \
     -Dfile=$DBJARFPATH -DpomFile=aggregator/pom.xml -Dclassifier=$DB_SHIM_NAME
 # Deploy the sql-plugin-api jar
