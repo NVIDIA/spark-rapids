@@ -842,6 +842,9 @@ abstract class MultiFileCloudPartitionReaderBase(
 
         // Temporary until we get more to read
         batchIter = EmptyGpuColumnarBatchIterator
+        // Release the GPU semaphore before waiting for async IO or host work,
+        // allowing other tasks to use the GPU while we wait for data.
+        GpuSemaphore.releaseIfNecessary(TaskContext.get())
         // if we have batch left from the last file read return it
         if (currentFileHostBuffers.isDefined) {
           readBuffersToBatch(currentFileHostBuffers.get, false)
@@ -1232,6 +1235,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       return true
     }
     batchIter = EmptyGpuColumnarBatchIterator
+    // Release the GPU semaphore before host IO for the next batch,
+    // allowing other tasks to use the GPU while we read from disk.
+    GpuSemaphore.releaseIfNecessary(TaskContext.get())
     if (!isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
