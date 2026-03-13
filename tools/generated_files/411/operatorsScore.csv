@@ -11,6 +11,7 @@ OneRowRelationExec,3.0
 ProjectExec,3.0
 RangeExec,3.0
 SampleExec,3.0
+SerializeFromObjectExec,3.0
 SortExec,8.0
 SubqueryBroadcastExec,3.0
 TakeOrderedAndProjectExec,3.0
