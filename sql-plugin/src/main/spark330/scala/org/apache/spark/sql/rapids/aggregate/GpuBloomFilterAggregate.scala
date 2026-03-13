@@ -49,6 +49,7 @@ import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, HostColumnVector
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuLiteral
 import com.nvidia.spark.rapids.jni.BloomFilter
+import com.nvidia.spark.rapids.shims.BloomFilterConstantsShims
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.internal.SQLConf.{RUNTIME_BLOOM_FILTER_MAX_NUM_BITS, RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS}
@@ -60,7 +61,7 @@ case class GpuBloomFilterAggregate(
     child: Expression,
     estimatedNumItemsRequested: Long,
     numBitsRequested: Long,
-    version: Int = BloomFilter.VERSION_2,
+    version: Int = BloomFilterConstantsShims.BLOOM_FILTER_FORMAT_VERSION,
     seed: Int = BloomFilter.DEFAULT_SEED) extends GpuAggregateFunction {
 
   override def nullable: Boolean = true
