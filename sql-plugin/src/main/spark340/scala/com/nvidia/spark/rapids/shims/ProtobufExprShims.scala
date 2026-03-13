@@ -448,12 +448,6 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           } else {
             nestedFieldRequirements = fieldReqs.toMap
             targetExprsToRemap = collectedExprs.toSeq
-            val prunedFieldsMap = buildPrunedFieldsMap()
-            val topLevelIndices = fullSchema.fields.zipWithIndex.collect {
-              case (sf, idx) if fieldReqs.keySet.contains(sf.name) => idx
-            }
-            targetExprsToRemap.foreach(
-              registerPrunedOrdinals(_, prunedFieldsMap, topLevelIndices))
             fieldReqs.keySet.toSet
           }
         }
@@ -639,7 +633,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                   .toSeq
                 pathKey -> orderedNames
               } else {
-                pathKey -> childNames.toSeq
+                // This path should be unreachable for valid schema paths, but keep the fallback
+                // deterministic rather than relying on Set iteration order.
+                pathKey -> childNames.toSeq.sorted
               }
           }
         }
