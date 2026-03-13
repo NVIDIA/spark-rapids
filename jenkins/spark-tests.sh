@@ -261,8 +261,7 @@ run_iceberg_tests() {
 
   # Supported Iceberg versions per Spark patch version:
   # Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
-  # Spark 3.5.4-3.5.6 -> Iceberg 1.9.2, 1.10.1
-  # Spark 3.5.7+       -> Iceberg 1.9.2, 1.10.1
+  # Spark 3.5.4+       -> Iceberg 1.9.2, 1.10.1
   local supported_versions
   if [[ "$SPARK_PATCH_VER" -le 3 ]]; then
     supported_versions="1.6.1"

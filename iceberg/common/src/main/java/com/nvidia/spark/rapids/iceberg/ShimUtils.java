@@ -39,7 +39,7 @@ public class ShimUtils {
         try {
             return (IcebergShimUtils) ShimLoader.getShimClassLoader()
                     .loadClass(implClass).getConstructor().newInstance();
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
             throw new RuntimeException("Failed to load Iceberg ShimUtils: " + implClass, e);
         }
     }
