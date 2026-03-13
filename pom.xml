@@ -1587,7 +1587,7 @@ This will force full Scala code rebuild in downstream modules.
                             <regex>^rapids-4-spark-delta-.*</regex>
                         </requireProperty>
                         <requireJavaVersion>
-                            <message>To compile, use Java 17 or above (at runtime you can use Java 8+)</message>
+                            <message>To compile, use Java 17 or above (at runtime you can use Java 8+, however, other optional dependencies in your setup such as Iceberg may impose higher lower bound on the JDK runtime version )</message>
                             <version>[17,)</version>
                         </requireJavaVersion>
                         <!-- #if scala-2.12 -->
