@@ -57,7 +57,7 @@ object IcebergProvider {
           "org.apache.iceberg.data.IdentityPartitionConverters")
         "com.nvidia.spark.rapids.iceberg.iceberg19x"
       } catch {
-        case _: ClassNotFoundException =>
+        case _: ClassNotFoundException | _: LinkageError =>
           "com.nvidia.spark.rapids.iceberg.iceberg110x"
       }
     } else {
