@@ -34,6 +34,9 @@ MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=tr
 
 mvn_verify() {
     echo "Run mvn verify..."
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+    java -version
 
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
@@ -149,6 +152,10 @@ rapids_shuffle_smoke_test() {
 
 ci_2() {
     echo "Run premerge ci 2 testings..."
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+    java -version
+
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
@@ -162,10 +169,6 @@ ci_2() {
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
 
-    # Switch to JDK 17 for building Spark 3.5.4+ shims that depend on Iceberg 1.9.2+
-    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
-    update-java-alternatives --set $JAVA_HOME
-
     # put some mvn tests here to balance durations of parallel stages
     echo "Run mvn package..."
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_2[@]}"
@@ -177,7 +180,6 @@ ci_2() {
 
 ci_scala213() {
     echo "Run premerge ci (Scala 2.13) testing..."
-    # Run scala2.13 build and test against JDK17
     export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
     update-java-alternatives --set $JAVA_HOME
     java -version
