@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{GpuExec, GpuExpression, ScanRule, ShimLoader, ShimLoaderTemp, SparkPlanMeta, SparkShimVersion, StaticInvokeMeta, VersionUtils}
+import com.nvidia.spark.rapids.{GpuExec, GpuExpression, ScanRule, ShimLoader, ShimLoaderTemp, ShimReflectionUtils, SparkPlanMeta, SparkShimVersion, StaticInvokeMeta, VersionUtils}
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
@@ -53,7 +53,8 @@ object IcebergProvider {
       // Probe the iceberg-spark-runtime jar: IdentityPartitionConverters
       // exists in iceberg <= 1.9 and was removed in 1.10.
       try {
-        Class.forName("org.apache.iceberg.data.IdentityPartitionConverters")
+        ShimReflectionUtils.loadClass(
+          "org.apache.iceberg.data.IdentityPartitionConverters")
         "com.nvidia.spark.rapids.iceberg.iceberg19x"
       } catch {
         case _: ClassNotFoundException =>

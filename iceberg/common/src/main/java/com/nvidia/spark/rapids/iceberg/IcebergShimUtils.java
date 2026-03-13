@@ -23,8 +23,22 @@ import org.apache.iceberg.Table;
 
 import java.util.Map;
 
-/** Version-specific Iceberg API adapter. */
+/**
+ * Version-specific Iceberg API adapter.
+ *
+ * <p>Iceberg has breaking API changes across major versions (1.6.x, 1.9.x, 1.10.x).
+ * Each version provides a {@code ShimUtilsImpl} in its own sub-package that implements
+ * this interface. The correct implementation is selected at runtime by
+ * {@link ShimUtils} based on the detected Iceberg version.
+ */
 public interface IcebergShimUtils {
+    /** Returns the file location string from an Iceberg {@link ContentFile}. */
     String locationOf(ContentFile<?> f);
+
+    /**
+     * Builds the constants map for a file scan task, mapping field IDs to constant values
+     * converted to Spark's internal representation. Constants include partition values,
+     * metadata columns, and any other fields that are constant for the entire scan task.
+     */
     Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema, Table table);
 }

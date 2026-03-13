@@ -254,22 +254,39 @@ run_iceberg_tests() {
   # get the patch version of Spark
   SPARK_PATCH_VER=$(echo "$SPARK_VER" | cut -d. -f3)
 
-  # Determine Iceberg versions based on Spark version
-  # Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
-  # Spark 3.5.4-3.5.6 -> Iceberg 1.9.2
-  # Spark 3.5.7-3.5.8 -> Iceberg 1.10.1
-  # Otherwise -> skip
-  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
-    if [[ "$SPARK_PATCH_VER" -ge 0 && "$SPARK_PATCH_VER" -le 3 ]]; then
-      ICEBERG_VERSIONS="1.6.1"
-    elif [[ "$SPARK_PATCH_VER" -ge 4 && "$SPARK_PATCH_VER" -le 6 ]]; then
-      ICEBERG_VERSIONS="1.9.2"
-    elif [[ "$SPARK_PATCH_VER" -ge 7 ]]; then
-      ICEBERG_VERSIONS="1.10.1"
-    fi
-  else
+  if [[ "$ICEBERG_SPARK_VER" != "3.5" ]]; then
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
     return 0
+  fi
+
+  # Supported Iceberg versions per Spark patch version:
+  # Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
+  # Spark 3.5.4-3.5.6 -> Iceberg 1.9.2, 1.10.1
+  # Spark 3.5.7+       -> Iceberg 1.9.2, 1.10.1
+  local supported_versions
+  if [[ "$SPARK_PATCH_VER" -le 3 ]]; then
+    supported_versions="1.6.1"
+  else
+    supported_versions="1.9.2 1.10.1"
+  fi
+
+  if [[ -n "$ICEBERG_VERSIONS" ]]; then
+    for ver in $ICEBERG_VERSIONS; do
+      if ! echo "$supported_versions" | grep -qw "$ver"; then
+        echo "!!!! Error: Iceberg version $ver is not supported on Spark $SPARK_VER (supported: $supported_versions)"
+        return 1
+      fi
+    done
+    echo "Using user-specified ICEBERG_VERSIONS=$ICEBERG_VERSIONS"
+  else
+    # Default: test one representative version per Spark patch range
+    if [[ "$SPARK_PATCH_VER" -le 3 ]]; then
+      ICEBERG_VERSIONS="1.6.1"
+    elif [[ "$SPARK_PATCH_VER" -le 6 ]]; then
+      ICEBERG_VERSIONS="1.9.2"
+    else
+      ICEBERG_VERSIONS="1.10.1"
+    fi
   fi
 
   local test_type=${1:-'default'}
