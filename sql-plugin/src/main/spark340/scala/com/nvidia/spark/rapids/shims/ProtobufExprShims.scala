@@ -269,6 +269,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               // add child fields
               sf.dataType match {
                 case st: StructType if containingMsgDesc != null =>
+                  // Repeated message parents and plain struct parents share the same child
+                  // expansion path; the flat parent entry's isRepeated flag distinguishes them.
                   addChildFieldsFromStruct(
                     st, containingMsgDesc, sf.name, currentIdx, depth, pathPrefix)
                   
@@ -416,7 +418,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                   case _ =>
                 }
                 p.projectList.foreach(collectStructFieldReferences(_, fieldReqs, holder))
-                currentMeta = None
+                advanceToParent()
               case f: org.apache.spark.sql.execution.FilterExec =>
                 collectedExprs += f.condition
                 collectStructFieldReferences(f.condition, fieldReqs, holder)
