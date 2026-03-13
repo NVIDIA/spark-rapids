@@ -959,6 +959,9 @@
             340
         </jdk11.buildvers>
         <jdk17.buildvers>
+            330,
+            331,
+            340
         </jdk17.buildvers>
         <jdk17.scala213.buildvers>
             350,
