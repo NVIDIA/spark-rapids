@@ -836,10 +836,8 @@
         <!--  TODO: Will remove 330db from the excluding list after the issue is fixed: https://github.com/NVIDIA/spark-rapids/issues/12694 -->
         <!--  TODO: Will remove 321 from the excluding list after no need to support some legacy scenario -->
         <dyn.shim.excluded.releases>
-            <!-- #if scala-2.12 -->
             330db,
             321
-            <!-- #endif scala-2.12 -->
         </dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
 
