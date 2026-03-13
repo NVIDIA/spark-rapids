@@ -1,5 +1,5 @@
 # Change log
-Generated on 2026-02-26
+Generated on 2026-03-10
 
 ## Release 26.02
 
@@ -69,6 +69,8 @@ Generated on 2026-02-26
 ### PRs
 |||
 |:---|:---|
+|[#14385](https://github.com/NVIDIA/spark-rapids/pull/14385)|hotfix release 2602.1 [skip ci]|
+|[#14336](https://github.com/NVIDIA/spark-rapids/pull/14336)|Update changelog for the v26.02 release [skip ci]|
 |[#14328](https://github.com/NVIDIA/spark-rapids/pull/14328)|Writing field id when writing iceberg's data file|
 |[#14255](https://github.com/NVIDIA/spark-rapids/pull/14255)|Update changelog for the v26.02 release [skip ci]|
 |[#14254](https://github.com/NVIDIA/spark-rapids/pull/14254)|Update dependency version JNI, private, hybrid to 26.02.0|
