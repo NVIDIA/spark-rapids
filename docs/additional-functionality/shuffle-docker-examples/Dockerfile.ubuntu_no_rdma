@@ -52,5 +52,6 @@ RUN apt-get install -y wget bzip2 libgomp1
 RUN mkdir /tmp/ucx_install && cd /tmp/ucx_install && \
   wget https://github.com/openucx/ucx/releases/download/v$UCX_VER/ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \
   tar -xvf ucx-$UCX_VER-ubuntu$UBUNTU_VER-mofed5-cuda$UCX_CUDA_VER-$UCX_ARCH.tar.bz2 && \
-  apt install -y /tmp/ucx_install/*.deb && \
+  apt install -y --no-install-recommends $(ls /tmp/ucx_install/*.deb | grep -v ucx-cuda) && \
+  dpkg -i --force-depends /tmp/ucx_install/ucx-cuda-*.deb && \
   rm -rf /tmp/ucx_install

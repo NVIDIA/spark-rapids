@@ -77,7 +77,8 @@ RUN UCX_CUDA_VER=`echo ${CUDA_VER} | cut -d '.' -f1` && \
     cd /tmp/ucx && \
     wget https://github.com/openucx/ucx/releases/download/v${UCX_VER}/ucx-${UCX_VER}-ubuntu${UBUNTU_VER}-mofed5-cuda${UCX_CUDA_VER}-${UCX_ARCH}.tar.bz2 && \
     tar -xvf *.bz2 && \
-    apt install -y /tmp/ucx/*.deb && \
+    apt install -y --no-install-recommends $(ls /tmp/ucx/*.deb | grep -v ucx-cuda) && \
+    dpkg -i --force-depends /tmp/ucx/ucx-cuda-*.deb && \
     rm -rf /tmp/ucx
 
 # export JAVA_HOME for mvn option 'source-javadoc'
