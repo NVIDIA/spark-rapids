@@ -150,10 +150,6 @@ private[sequencefile] final class HostBinaryListBufferer(
    * The caller is responsible for closing the returned buffers.
    * This is used by the multi-file reader which needs host buffers for later GPU transfer.
    *
-   * IMPORTANT: This method returns buffers sized exactly to the actual data, not the allocated
-   * size. This is critical because HostAlloc.alloc doesn't zero-initialize memory, and passing
-   * oversized buffers to cuDF can result in garbage data being included in the output.
-   *
    * @return a tuple of (Some(dataBuffer), Some(offsetsBuffer)) if there is data,
    *         or (None, None) if empty
    */
@@ -169,59 +165,15 @@ private[sequencefile] final class HostBinaryListBufferer(
     // Write the final offset
     offsetsBuffer.setInt(numRows.toLong * DType.INT32.getSizeInBytes, dataLocation.toInt)
 
-    // Calculate exact sizes needed
-    val exactDataSize = dataLocation
-    val exactOffsetsSize = (numRows + 1).toLong * DType.INT32.getSizeInBytes
-
-    // Copy to exactly-sized buffers only if the over-allocation is significant.
-    // cuDF's HostColumnVector.copyToDevice() for flat types (like the UINT8 child) uses
-    // numRows * dtype.getSizeInBytes() to determine the copy size, not the buffer's
-    // allocated length. So small over-allocation is safe. However, large over-allocation
-    // wastes pinned memory and H2D bandwidth, so we copy when the buffer is >25% oversized.
-    val exactDataBuffer = if (exactDataSize > 0) {
-      if (dataBuffer.getLength <= exactDataSize * 5 / 4) {
-        // Buffer is close to the exact size - reuse directly (no copy)
-        val buf = dataBuffer
-        dataBuffer = null
-        buf
-      } else {
-        // Buffer is significantly over-allocated - copy to exact size
-        closeOnExcept(dataBuffer) { _ =>
-          val newBuf = HostAlloc.alloc(exactDataSize, preferPinned = true)
-          newBuf.copyFromHostBuffer(0, dataBuffer, 0, exactDataSize)
-          dataBuffer.close()
-          dataBuffer = null
-          newBuf
-        }
-      }
-    } else {
-      // For empty data, still need a valid (but minimal) buffer
-      dataBuffer.close()
-      dataBuffer = null
-      HostAlloc.alloc(1L, preferPinned = true)
-    }
-
-    val exactOffsetsBuffer = closeOnExcept(exactDataBuffer) { _ =>
-      if (offsetsBuffer.getLength <= exactOffsetsSize * 5 / 4) {
-        // Buffer is close to the exact size - reuse directly
-        val buf = offsetsBuffer
-        offsetsBuffer = null
-        buf
-      } else {
-        closeOnExcept(offsetsBuffer) { _ =>
-          val newBuf = HostAlloc.alloc(exactOffsetsSize, preferPinned = true)
-          newBuf.copyFromHostBuffer(0, offsetsBuffer, 0, exactOffsetsSize)
-          offsetsBuffer.close()
-          offsetsBuffer = null
-          newBuf
-        }
-      }
-    }
-
+    // Transfer ownership of the existing host buffers to the caller. The downstream
+    // H2D path uses numRows and the final offset value to determine the valid data range,
+    // so these buffers do not need to be resized to the exact payload length here.
+    val outDataBuffer = dataBuffer
+    val outOffsetsBuffer = offsetsBuffer
     dataBuffer = null
     offsetsBuffer = null
 
-    (Some(exactDataBuffer), Some(exactOffsetsBuffer))
+    (Some(outDataBuffer), Some(outOffsetsBuffer))
   }
 
   override def close(): Unit = {
@@ -244,13 +196,22 @@ private[sequencefile] final class HostBinaryListBufferer(
  * @param offsetsBuffer host memory buffer containing INT32 offsets
  * @param numRows number of rows in this chunk
  */
-private[sequencefile] case class SequenceFileChunk(
-    dataBuffer: HostMemoryBuffer,
-    offsetsBuffer: HostMemoryBuffer,
-    numRows: Int) extends AutoCloseable {
+private[sequencefile] final class SequenceFileChunk(
+    private var dataBuffer: HostMemoryBuffer,
+    private var offsetsBuffer: HostMemoryBuffer,
+    val numRows: Int) extends AutoCloseable {
+  def data: HostMemoryBuffer = dataBuffer
+  def offsets: HostMemoryBuffer = offsetsBuffer
+
   override def close(): Unit = {
-    dataBuffer.close()
-    offsetsBuffer.close()
+    if (dataBuffer != null) {
+      dataBuffer.close()
+      dataBuffer = null
+    }
+    if (offsetsBuffer != null) {
+      offsetsBuffer.close()
+      offsetsBuffer = null
+    }
   }
 }
 
@@ -499,14 +460,23 @@ class MultiFileCloudSequenceFilePartitionReader(
           empty.allPartValues)
 
       case meta: SequenceFileHostBuffersWithMetaData =>
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        val batch = buildColumnarBatchFromHostBuffers(meta)
-        closeOnExcept(batch) { _ =>
-          addPartitionValuesToBatch(
-            batch,
-            meta.partitionedFile.partitionValues,
-            meta.allPartValues)
+        val batchIter = try {
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+          val batch = buildColumnarBatchFromHostBuffers(meta)
+          closeOnExcept(batch) { _ =>
+            addPartitionValuesToBatch(
+              batch,
+              meta.partitionedFile.partitionValues,
+              meta.allPartValues)
+          }
+        } finally {
+          // SequenceFile copies the full host buffers into device columns up front,
+          // so the host-side chunks can be released immediately after the batch iterator
+          // has been created.
+          meta.close()
         }
+        currentFileHostBuffers = None
+        batchIter
 
       case other =>
         throw new RuntimeException(s"Unknown buffer type: ${other.getClass.getSimpleName}")
@@ -560,64 +530,57 @@ class MultiFileCloudSequenceFilePartitionReader(
     if (chunks.length == 1) {
       // Single chunk: use the original fast path
       val chunk = chunks.head
-      buildDeviceColumnFromHostBuffers(chunk.dataBuffer, chunk.offsetsBuffer, chunk.numRows)
+      buildDeviceColumnFromHostBuffers(chunk.data, chunk.offsets, chunk.numRows)
     } else {
       // Multiple chunks: transfer each to GPU and concatenate
       // GPU concat is much faster than CPU copy + offset adjustment
-      val gpuCols = new ArrayBuffer[ColumnVector]()
-      try {
+      val gpuCols = closeOnExcept(new ArrayBuffer[ColumnVector]()) { cols =>
         chunks.foreach { chunk =>
-          gpuCols += buildDeviceColumnFromHostBuffers(
-            chunk.dataBuffer, chunk.offsetsBuffer, chunk.numRows)
+          cols += buildDeviceColumnFromHostBuffers(chunk.data, chunk.offsets, chunk.numRows)
         }
+        cols
+      }
+      withResource(gpuCols) { _ =>
         // Use cudf concatenate - this is highly optimized and uses GPU memory bandwidth
         ColumnVector.concatenate(gpuCols.toArray: _*)
-      } finally {
-        gpuCols.foreach(_.close())
       }
     }
   }
 
   /**
    * Build a device column (LIST<UINT8>) from host memory buffers.
-   * Uses proper nested HostColumnVector structure for efficient single copyToDevice().
+   * Uses a temporary nested HostColumnVector structure for a single copyToDevice() call.
    *
-   * Note: The input buffers are expected to be exactly-sized (from getHostBuffersAndRelease).
-   * This method transfers ownership of the buffers to the HostColumnVector.
+   * The input buffers remain owned by the caller/chunk metadata. This method creates
+   * temporary copied slices first. Once the LIST HostColumnVector is created, it becomes
+   * the sole owner of the child core plus both copied slices, so the success path closes
+   * only that top-level owner.
    */
   private def buildDeviceColumnFromHostBuffers(
       dataBuffer: HostMemoryBuffer,
       offsetsBuffer: HostMemoryBuffer,
       numRows: Int): ColumnVector = {
-    // Chunks will also close these buffers, so keep one reference for chunk ownership.
-    dataBuffer.incRefCount()
-    offsetsBuffer.incRefCount()
-
     // Get the actual data length from the final offset
     val dataLen = offsetsBuffer.getInt(numRows.toLong * DType.INT32.getSizeInBytes)
-
-    // Create the child HostColumnVectorCore (UINT8 data)
-    val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
-    val childCore = new HostColumnVectorCore(DType.UINT8, dataLen,
-      Optional.of[java.lang.Long](0L), dataBuffer, null, null, emptyChildren)
-
-    // Create the children list for the LIST column
-    val listChildren = new util.ArrayList[HostColumnVectorCore]()
-    listChildren.add(childCore)
-
-    // Create the LIST HostColumnVector with proper nested structure
-    // The HostColumnVector takes ownership of the buffers
-    val listHost = closeOnExcept(childCore) { _ =>
-      new HostColumnVector(DType.LIST, numRows,
-        Optional.of[java.lang.Long](0L), // nullCount = 0
-        null, // no data buffer for LIST type
-        null, // no validity buffer (no nulls)
-        offsetsBuffer, // offsets buffer
-        listChildren) // nested children containing the UINT8 child
+    val dataSlice = dataBuffer.sliceWithCopy(0, dataBuffer.getLength)
+    closeOnExcept(dataSlice) { _ =>
+      val offsetsSlice = offsetsBuffer.sliceWithCopy(0, offsetsBuffer.getLength)
+      closeOnExcept(offsetsSlice) { _ =>
+        val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
+        val childCore = new HostColumnVectorCore(DType.UINT8, dataLen,
+          Optional.of[java.lang.Long](0L), dataSlice, null, null, emptyChildren)
+        closeOnExcept(childCore) { _ =>
+          val listChildren = new util.ArrayList[HostColumnVectorCore]()
+          listChildren.add(childCore)
+          withResource(new HostColumnVector(DType.LIST, numRows,
+            Optional.of[java.lang.Long](0L), // nullCount = 0
+            null, // no data buffer for LIST type
+            null, // no validity buffer (no nulls)
+            offsetsSlice, // offsets buffer
+            listChildren))(_.copyToDevice())
+        }
+      }
     }
-
-    // Single copyToDevice() handles the entire nested structure efficiently
-    withResource(listHost)(_.copyToDevice())
   }
 
   /**
@@ -753,7 +716,7 @@ class MultiFileCloudSequenceFilePartitionReader(
                 val (dataOpt, offsetsOpt) = kb.getHostBuffersAndRelease()
                 (dataOpt, offsetsOpt) match {
                   case (Some(data), Some(offsets)) =>
-                    Array(SequenceFileChunk(data, offsets, numRows))
+                    Array(new SequenceFileChunk(data, offsets, numRows))
                   case _ => Array.empty[SequenceFileChunk]
                 }
               }.getOrElse(Array.empty)
@@ -763,7 +726,7 @@ class MultiFileCloudSequenceFilePartitionReader(
                   val (dataOpt, offsetsOpt) = vb.getHostBuffersAndRelease()
                   (dataOpt, offsetsOpt) match {
                     case (Some(data), Some(offsets)) =>
-                      Array(SequenceFileChunk(data, offsets, numRows))
+                      Array(new SequenceFileChunk(data, offsets, numRows))
                     case _ => Array.empty[SequenceFileChunk]
                   }
                 }.getOrElse(Array.empty)

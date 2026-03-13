@@ -300,7 +300,7 @@ def test_binary_data(spark_tmp_path, reader_type):
 
 @pytest.mark.parametrize('reader_type', sequencefile_reader_types)
 def test_sequencefile_read_with_missing_files(spark_tmp_path, reader_type):
-    """RDD path still throws when an input path is missing."""
+    """GPU replacement preserves the CPU error for missing input paths."""
     existing_path = spark_tmp_path + '/SEQFILE_MISSING_DATA/existing'
     missing_path = spark_tmp_path + '/SEQFILE_MISSING_DATA/missing'
 
@@ -309,6 +309,7 @@ def test_sequencefile_read_with_missing_files(spark_tmp_path, reader_type):
 
     all_confs = {
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type,
+        'spark.rapids.sql.format.sequencefile.rddScan.physicalReplace.enabled': 'true',
         'spark.sql.files.ignoreMissingFiles': 'true'
     }
 

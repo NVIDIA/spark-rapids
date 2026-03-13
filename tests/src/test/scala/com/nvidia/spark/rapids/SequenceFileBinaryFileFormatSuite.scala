@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids
 
 import java.io.{File, FileOutputStream}
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -40,50 +39,12 @@ import org.apache.spark.sql.execution.RDDScanExec
 class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
 
   private def withRapidsSession(f: SparkSession => Unit): Unit = {
-    // Clear any existing sessions to ensure clean state
-    SparkSession.clearActiveSession()
-    SparkSession.clearDefaultSession()
-    
-    val spark = SparkSession.builder()
-      .appName("SequenceFileBinaryFileFormatSuite")
-      .master("local[1]")
-      .config("spark.ui.enabled", "false")
-      .config("spark.sql.shuffle.partitions", "1")
-      // Register RAPIDS SQL extensions for logical plan rules
-      .config("spark.sql.extensions", "com.nvidia.spark.rapids.SQLExecPlugin")
-      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
-      .config("spark.rapids.sql.enabled", "true")
-      .getOrCreate()
-    try {
-      f(spark)
-    } finally {
-      spark.stop()
-      SparkSession.clearActiveSession()
-      SparkSession.clearDefaultSession()
-    }
+    SequenceFileTestUtils.withSequenceFileSession("SequenceFileBinaryFileFormatSuite")(f)
   }
 
   private def withPhysicalReplaceEnabledSession(f: SparkSession => Unit): Unit = {
-    SparkSession.clearActiveSession()
-    SparkSession.clearDefaultSession()
-    val spark = SparkSession.builder()
-      .appName("SequenceFileBinaryFileFormatSuite-PhysicalReplace")
-      .master("local[1]")
-      .config("spark.ui.enabled", "false")
-      .config("spark.sql.shuffle.partitions", "1")
-      .config("spark.sql.extensions", "com.nvidia.spark.rapids.SQLExecPlugin")
-      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
-      .config("spark.rapids.sql.enabled", "true")
-      .config("spark.rapids.sql.format.sequencefile.rddScan.physicalReplace.enabled", "true")
-      .config("spark.rapids.sql.explain", "ALL")
-      .getOrCreate()
-    try {
-      f(spark)
-    } finally {
-      spark.stop()
-      SparkSession.clearActiveSession()
-      SparkSession.clearDefaultSession()
-    }
+    SequenceFileTestUtils.withSequenceFileSession(
+      "SequenceFileBinaryFileFormatSuite-PhysicalReplace", physicalReplaceEnabled = true)(f)
   }
 
   private def hasGpuSequenceFileRDDScan(df: DataFrame): Boolean = {
@@ -99,25 +60,8 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
     }.nonEmpty
   }
 
-  private def deleteRecursively(f: File): Unit = {
-    if (f.isDirectory) {
-      val children = f.listFiles()
-      if (children != null) {
-        children.foreach(deleteRecursively)
-      }
-    }
-    if (f.exists()) {
-      f.delete()
-    }
-  }
-
   private def withTempDir(prefix: String)(f: File => Unit): Unit = {
-    val tmpDir = Files.createTempDirectory(prefix).toFile
-    try {
-      f(tmpDir)
-    } finally {
-      deleteRecursively(tmpDir)
-    }
+    SequenceFileTestUtils.withTempDir(prefix)(f)
   }
 
   /**
@@ -132,8 +76,8 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       classOf[BytesWritable],
       classOf[BytesWritable]
     ).map { case (k, v) =>
-      (SequenceFileBinaryFileFormatSuite.bytesWritablePayload(k.getBytes, k.getLength),
-       SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength))
+      (SequenceFileTestUtils.bytesWritablePayload(k.getBytes, k.getLength),
+       SequenceFileTestUtils.bytesWritablePayload(v.getBytes, v.getLength))
     }.toDF("key", "value")
   }
 
@@ -141,16 +85,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
    * Read only the value column from a SequenceFile (common pattern for protobuf payloads).
    */
   private def readSequenceFileValueOnly(spark: SparkSession, path: String): DataFrame = {
-    import spark.implicits._
-    val sc = spark.sparkContext
-    sc.newAPIHadoopFile(
-      path,
-      classOf[SequenceFileAsBinaryInputFormat],
-      classOf[BytesWritable],
-      classOf[BytesWritable]
-    ).map { case (_, v) =>
-      SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength)
-    }.toDF("value")
+    SequenceFileTestUtils.readSequenceFileValueOnly(spark, path)
   }
 
   /**
@@ -167,8 +102,8 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       classOf[BytesWritable],
       classOf[BytesWritable]
     ).map { case (k, v) =>
-      (SequenceFileBinaryFileFormatSuite.bytesWritablePayload(k.getBytes, k.getLength),
-       SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength))
+      (SequenceFileTestUtils.bytesWritablePayload(k.getBytes, k.getLength),
+       SequenceFileTestUtils.bytesWritablePayload(v.getBytes, v.getLength))
     }.toDF("value", "key")
   }
 
@@ -179,22 +114,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       file: File,
       conf: Configuration,
       payloads: Array[Array[Byte]]): Unit = {
-    val path = new Path(file.toURI)
-    val writer = SequenceFile.createWriter(
-      conf,
-      SequenceFile.Writer.file(path),
-      SequenceFile.Writer.keyClass(classOf[BytesWritable]),
-      SequenceFile.Writer.valueClass(classOf[BytesWritable]),
-      SequenceFile.Writer.compression(CompressionType.NONE))
-    try {
-      payloads.zipWithIndex.foreach { case (p, idx) =>
-        val key = new BytesWritable(intToBytes(idx))
-        val value = new BytesWritable(p)
-        writer.append(key, value)
-      }
-    } finally {
-      writer.close()
-    }
+    SequenceFileTestUtils.writeSequenceFile(file, conf, payloads)
   }
 
   private def writeCompressedSequenceFile(
@@ -358,7 +278,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
           classOf[BytesWritable],
           classOf[BytesWritable]
         ).map { case (_, v) =>
-          SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength)
+          SequenceFileTestUtils.bytesWritablePayload(v.getBytes, v.getLength)
         }.filter(_.length > 0)
           .union(sc.parallelize(Seq(Array[Byte](7, 7, 7)), 1))
           .filter(v => !(v.length == 3 && v(0) == 7.toByte && v(1) == 7.toByte && v(2) == 7.toByte))
@@ -537,8 +457,8 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       classOf[BytesWritable],
       classOf[BytesWritable]
     ).map { case (k, v) =>
-      (SequenceFileBinaryFileFormatSuite.bytesWritablePayload(k.getBytes, k.getLength),
-       SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength))
+      (SequenceFileTestUtils.bytesWritablePayload(k.getBytes, k.getLength),
+       SequenceFileTestUtils.bytesWritablePayload(v.getBytes, v.getLength))
     }.toDF("key", "value")
   }
 
@@ -558,7 +478,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       classOf[BytesWritable],
       classOf[BytesWritable]
     ).map { case (_, v) =>
-      SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength)
+      SequenceFileTestUtils.bytesWritablePayload(v.getBytes, v.getLength)
     }.toDF("value")
   }
 
@@ -663,24 +583,4 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
   }
 }
 
-object SequenceFileBinaryFileFormatSuite {
-  /**
-   * Extract payload from BytesWritable serialized form:
-   * 4-byte big-endian length prefix + payload bytes.
-   */
-  def bytesWritablePayload(bytes: Array[Byte], len: Int): Array[Byte] = {
-    if (len < 4) {
-      Array.emptyByteArray
-    } else {
-      val payloadLen = ((bytes(0) & 0xFF) << 24) |
-        ((bytes(1) & 0xFF) << 16) |
-        ((bytes(2) & 0xFF) << 8) |
-        (bytes(3) & 0xFF)
-      if (payloadLen > 0 && payloadLen <= len - 4) {
-        java.util.Arrays.copyOfRange(bytes, 4, 4 + payloadLen)
-      } else {
-        Array.emptyByteArray
-      }
-    }
-  }
-}
+object SequenceFileBinaryFileFormatSuite

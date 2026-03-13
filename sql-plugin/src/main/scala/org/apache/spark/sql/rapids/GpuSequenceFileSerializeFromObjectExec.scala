@@ -16,6 +16,10 @@
 
 package org.apache.spark.sql.rapids
 
+import java.io.FileNotFoundException
+import java.io.IOException
+import java.util
+
 import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
@@ -23,6 +27,7 @@ import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.sequencefile.GpuSequenceFileMultiFilePartitionReaderFactory
 import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, PartitionedFileUtilsShim}
 import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.mapreduce.lib.input.InvalidInputException
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
@@ -98,15 +103,13 @@ case class GpuSequenceFileSerializeFromObjectExec(
     inputPaths.foreach { pathStr =>
       val path = new Path(pathStr)
       val fs = path.getFileSystem(hadoopConf)
-      val statuses = fs.globStatus(path)
-      if (statuses != null) {
-        statuses.foreach { s =>
-          if (s.isFile) {
-            allFiles += s
-          } else {
-            val iter = fs.listFiles(s.getPath, true)
-            while (iter.hasNext) allFiles += iter.next()
-          }
+      val statuses = GpuSequenceFileSerializeFromObjectExec.resolveInputStatuses(path, hadoopConf)
+      statuses.foreach { s =>
+        if (s.isFile) {
+          allFiles += s
+        } else {
+          val iter = fs.listFiles(s.getPath, true)
+          while (iter.hasNext) allFiles += iter.next()
         }
       }
     }
@@ -167,6 +170,7 @@ case class GpuSequenceFileSerializeFromObjectExec(
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val scanTime = gpuLongMetric(SCAN_TIME)
     GpuDataSourceRDD(
       SparkSession.active.sparkContext, filePartitions, readerFactory
@@ -178,6 +182,7 @@ case class GpuSequenceFileSerializeFromObjectExec(
         override def next(): ColumnarBatch = {
           val batch = batches.next()
           numOutputRows += batch.numRows()
+          numOutputBatches += 1
           batch
         }
       }
@@ -191,6 +196,28 @@ case class GpuSequenceFileSerializeFromObjectExec(
 }
 
 object GpuSequenceFileSerializeFromObjectExec {
+  private def noMatchesError(path: Path): InvalidInputException = {
+    new InvalidInputException(util.Arrays.asList(
+      new IOException(s"Input Pattern $path matches 0 files")))
+  }
+
+  def resolveInputStatuses(
+      path: Path,
+      hadoopConf: org.apache.hadoop.conf.Configuration): Array[FileStatus] = {
+    val fs = path.getFileSystem(hadoopConf)
+    val statuses = fs.globStatus(path)
+    if (statuses == null || statuses.isEmpty) {
+      val pathStr = path.toString
+      val looksLikeGlob = pathStr.exists(ch => ch == '*' || ch == '?' || ch == '[' || ch == '{')
+      if (looksLikeGlob) {
+        throw noMatchesError(path)
+      } else {
+        throw new FileNotFoundException(s"Input path does not exist: $path")
+      }
+    }
+    statuses
+  }
+
   private def sequenceFileFieldBytes(obj: Any, fieldName: String): Array[Byte] = {
     obj match {
       case bytes: Array[Byte] =>

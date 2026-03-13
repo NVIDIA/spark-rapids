@@ -18,83 +18,29 @@ package com.nvidia.spark.rapids
 
 import java.io.{DataOutputStream, File, FileOutputStream}
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.io.{BytesWritable, SequenceFile}
-import org.apache.hadoop.io.SequenceFile.CompressionType
-import org.apache.hadoop.mapreduce.lib.input.SequenceFileAsBinaryInputFormat
+import org.apache.hadoop.io.BytesWritable
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.{DataFrame, SparkSession}
-
 class SequenceFilePhysicalReplaceSuite extends AnyFunSuite {
 
   private def withPhysicalReplaceEnabledSession(f: SparkSession => Unit): Unit = {
-    SparkSession.clearActiveSession()
-    SparkSession.clearDefaultSession()
-    val spark = SparkSession.builder()
-      .appName("SequenceFilePhysicalReplaceSuite")
-      .master("local[1]")
-      .config("spark.ui.enabled", "false")
-      .config("spark.sql.shuffle.partitions", "1")
-      .config("spark.sql.extensions", "com.nvidia.spark.rapids.SQLExecPlugin")
-      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
-      .config("spark.rapids.sql.enabled", "true")
-      .config("spark.rapids.sql.format.sequencefile.rddScan.physicalReplace.enabled", "true")
-      .config("spark.rapids.sql.explain", "ALL")
-      .getOrCreate()
-    try {
-      f(spark)
-    } finally {
-      spark.stop()
-      SparkSession.clearActiveSession()
-      SparkSession.clearDefaultSession()
-    }
+    SequenceFileTestUtils.withSequenceFileSession(
+      "SequenceFilePhysicalReplaceSuite", physicalReplaceEnabled = true)(f)
   }
 
   private def withTempDir(prefix: String)(f: File => Unit): Unit = {
-    val tmpDir = Files.createTempDirectory(prefix).toFile
-    try {
-      f(tmpDir)
-    } finally {
-      def deleteRecursively(file: File): Unit = {
-        if (file.isDirectory) {
-          Option(file.listFiles()).getOrElse(Array.empty).foreach(deleteRecursively)
-        }
-        if (file.exists()) {
-          file.delete()
-        }
-      }
-      deleteRecursively(tmpDir)
-    }
+    SequenceFileTestUtils.withTempDir(prefix)(f)
   }
 
   private def writeSequenceFile(
       file: File,
       conf: Configuration,
       payloads: Array[Array[Byte]]): Unit = {
-    val path = new Path(file.toURI)
-    val writer = SequenceFile.createWriter(
-      conf,
-      SequenceFile.Writer.file(path),
-      SequenceFile.Writer.keyClass(classOf[BytesWritable]),
-      SequenceFile.Writer.valueClass(classOf[BytesWritable]),
-      SequenceFile.Writer.compression(CompressionType.NONE))
-    try {
-      payloads.zipWithIndex.foreach { case (p, idx) =>
-        val key = new BytesWritable(Array[Byte](
-          ((idx >> 24) & 0xFF).toByte,
-          ((idx >> 16) & 0xFF).toByte,
-          ((idx >> 8) & 0xFF).toByte,
-          (idx & 0xFF).toByte))
-        val value = new BytesWritable(p)
-        writer.append(key, value)
-      }
-    } finally {
-      writer.close()
-    }
+    SequenceFileTestUtils.writeSequenceFile(file, conf, payloads)
   }
 
   private def writeLegacySequenceFileHeader(file: File, isCompressed: Boolean): Unit = {
@@ -113,16 +59,7 @@ class SequenceFilePhysicalReplaceSuite extends AnyFunSuite {
   }
 
   private def readSequenceFileValueOnly(spark: SparkSession, path: String): DataFrame = {
-    import spark.implicits._
-    val sc = spark.sparkContext
-    sc.newAPIHadoopFile(
-      path,
-      classOf[SequenceFileAsBinaryInputFormat],
-      classOf[BytesWritable],
-      classOf[BytesWritable]
-    ).map { case (_, v) =>
-      SequenceFileBinaryFileFormatSuite.bytesWritablePayload(v.getBytes, v.getLength)
-    }.toDF("value")
+    SequenceFileTestUtils.readSequenceFileValueOnly(spark, path)
   }
 
   private def hasGpuSequenceFileRDDScan(df: DataFrame): Boolean = {
