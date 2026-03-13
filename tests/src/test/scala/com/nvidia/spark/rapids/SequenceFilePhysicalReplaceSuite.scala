@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.File
+import java.io.{DataOutputStream, File, FileOutputStream}
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 
@@ -97,6 +97,21 @@ class SequenceFilePhysicalReplaceSuite extends AnyFunSuite {
     }
   }
 
+  private def writeLegacySequenceFileHeader(file: File, isCompressed: Boolean): Unit = {
+    val out = new DataOutputStream(new FileOutputStream(file))
+    try {
+      out.writeByte('S')
+      out.writeByte('E')
+      out.writeByte('Q')
+      out.writeByte(4) // pre-block-compression header version
+      org.apache.hadoop.io.Text.writeString(out, classOf[BytesWritable].getName)
+      org.apache.hadoop.io.Text.writeString(out, classOf[BytesWritable].getName)
+      out.writeBoolean(isCompressed)
+    } finally {
+      out.close()
+    }
+  }
+
   private def readSequenceFileValueOnly(spark: SparkSession, path: String): DataFrame = {
     import spark.implicits._
     val sc = spark.sparkContext
@@ -136,6 +151,26 @@ class SequenceFilePhysicalReplaceSuite extends AnyFunSuite {
           assert(java.util.Arrays.equals(actual, exp))
         }
       }
+    }
+  }
+
+  test("Legacy SequenceFile headers do not read block compression flag") {
+    withTempDir("seqfile-legacy-header-test") { tmpDir =>
+      val file = new File(tmpDir, "legacy.seq")
+      val conf = new Configuration()
+      writeLegacySequenceFileHeader(file, isCompressed = false)
+
+      val method = GpuSequenceFileSerializeFromObjectExecMeta.getClass.getDeclaredMethod(
+        "isCompressedSequenceFile",
+        classOf[Path],
+        classOf[Configuration])
+      method.setAccessible(true)
+      val isCompressed = method.invoke(
+        GpuSequenceFileSerializeFromObjectExecMeta,
+        new Path(file.toURI),
+        conf).asInstanceOf[Boolean]
+
+      assert(!isCompressed)
     }
   }
 }

@@ -69,6 +69,9 @@ private[sequencefile] object GpuSequenceFileReaders {
   }
 }
 
+private[sequencefile] final class UnsupportedSequenceFileCompressionException(msg: String)
+  extends Exception(msg)
+
 /**
  * Buffers binary values into one contiguous bytes buffer with an INT32 offsets buffer, and then
  * materializes a cuDF LIST<UINT8> device column using `makeListFromOffsets`.
@@ -636,6 +639,7 @@ class MultiFileCloudSequenceFilePartitionReader(
           logWarning(s"Skipped missing file: ${partFile.filePath}", e)
           SequenceFileEmptyMetaData(partFile, 0L)
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
+        case e: UnsupportedSequenceFileCompressionException => throw e
         case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
           logWarning(s"Skipped corrupted file: ${partFile.filePath}", e)
           SequenceFileEmptyMetaData(partFile, 0L)
@@ -649,21 +653,19 @@ class MultiFileCloudSequenceFilePartitionReader(
       val startingBytesRead = fileSystemBytesRead()
       val path = new org.apache.hadoop.fs.Path(new URI(partFile.filePath.toString))
 
-      val reader = new SequenceFile.Reader(config, SequenceFile.Reader.file(path))
-      try {
-        // Check for compression - use closeOnExcept to ensure reader is closed on failure
-        closeOnExcept(reader) { _ =>
-          if (reader.isCompressed || reader.isBlockCompressed) {
-            val compressionType = reader.getCompressionType
-            val msg = s"SequenceFile reader does not support " +
-              s"compressed SequenceFiles (compressionType=$compressionType), file=$path"
-            throw new UnsupportedOperationException(msg)
-          }
+      withResource(new SequenceFile.Reader(config, SequenceFile.Reader.file(path))) { reader =>
+        // Check for compression before starting split processing.
+        // This remains an execution-time guard because planning-time sampling is conservative.
+        if (reader.isCompressed || reader.isBlockCompressed) {
+          val compressionType = reader.getCompressionType
+          val msg = s"SequenceFile reader does not support " +
+            s"compressed SequenceFiles (compressionType=$compressionType), file=$path"
+          throw new UnsupportedSequenceFileCompressionException(msg)
+        }
 
-          val start = partFile.start
-          if (start > 0) {
-            reader.sync(start)
-          }
+        val start = partFile.start
+        if (start > 0) {
+          reader.sync(start)
         }
         val end = partFile.start + partFile.length
 
@@ -779,8 +781,6 @@ class MultiFileCloudSequenceFilePartitionReader(
             }
           }
         }
-      } finally {
-        reader.close()
       }
     }
   }

@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import scala.annotation.tailrec
 import scala.util.control.NonFatal
 
 import org.apache.hadoop.fs.Path
@@ -108,6 +109,8 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
  * to the CPU path by returning conservative defaults.
  */
 object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
+  private val SequenceFileBlockCompressionVersion = 5
+
   private case class SequenceFileScanAnalysis(
       sourceScan: ExternalRDDScanExec[_],
       inputPaths: Seq[String],
@@ -163,18 +166,23 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
   }
 
   def isSimpleSequenceFileRDD(
-      rdd: RDD[_],
-      seen: Set[Int] = Set.empty): Boolean = {
-    val id = System.identityHashCode(rdd)
-    if (seen.contains(id)) return false
-    rdd match {
-      case n: NewHadoopRDD[_, _] => isNewApiSequenceFileRDD(n)
-      case h: HadoopRDD[_, _] => isOldApiSequenceFileRDD(h)
-      case other =>
-        if (other.dependencies.size != 1) false
-        else isSimpleSequenceFileRDD(
-          other.dependencies.head.rdd, seen + id)
+      rdd: RDD[_]): Boolean = {
+    @tailrec
+    def recurse(current: RDD[_], seen: Set[RDD[_]]): Boolean = {
+      if (seen.contains(current)) {
+        false
+      } else {
+        current match {
+          case n: NewHadoopRDD[_, _] => isNewApiSequenceFileRDD(n)
+          case h: HadoopRDD[_, _] => isOldApiSequenceFileRDD(h)
+          case other =>
+            if (other.dependencies.size != 1) false
+            else recurse(other.dependencies.head.rdd, seen + current)
+        }
+      }
     }
+
+    recurse(rdd, Set.empty)
   }
 
   private[rapids] def collectInputPaths(rdd: RDD[_]): Seq[String] = {
@@ -249,10 +257,15 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
       if (!(magic(0) == 'S' && magic(1) == 'E' && magic(2) == 'Q')) {
         false
       } else {
+        val version = magic(3) & 0xFF
         org.apache.hadoop.io.Text.readString(in)
         org.apache.hadoop.io.Text.readString(in)
         val isCompressed = in.readBoolean()
-        val isBlockCompressed = in.readBoolean()
+        val isBlockCompressed = if (version >= SequenceFileBlockCompressionVersion) {
+          in.readBoolean()
+        } else {
+          false
+        }
         isCompressed || isBlockCompressed
       }
     } catch {
