@@ -380,6 +380,11 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             flatDefaultStrings = arrays.defaultStrings
             flatEnumValidValues = arrays.enumValidValues
             flatEnumNames = arrays.enumNames
+
+            val prunedFieldsMap = buildPrunedFieldsMap()
+            targetExprsToRemap.foreach(
+              registerPrunedOrdinals(_, prunedFieldsMap, decodedTopLevelIndices.toSeq))
+            overrideDataType(buildDecodedSchema(prunedFieldsMap))
           }
         }
 
@@ -647,6 +652,45 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
         }
 
+        private def buildDecodedSchema(prunedFieldsMap: Map[String, Seq[String]]): StructType = {
+          def applyPruning(field: StructField, prefix: String): StructField = {
+            val path = if (prefix.isEmpty) field.name else s"$prefix.${field.name}"
+            prunedFieldsMap.get(path) match {
+              case Some(childNames) =>
+                field.dataType match {
+                  case ArrayType(st: StructType, cn) =>
+                    val pruned = StructType(
+                      st.fields.filter(f => childNames.contains(f.name))
+                        .map(f => applyPruning(f, path)))
+                    field.copy(dataType = ArrayType(pruned, cn))
+                  case st: StructType =>
+                    val pruned = StructType(
+                      st.fields.filter(f => childNames.contains(f.name))
+                        .map(f => applyPruning(f, path)))
+                    field.copy(dataType = pruned)
+                  case _ => field
+                }
+              case None =>
+                field.dataType match {
+                  case ArrayType(st: StructType, cn) =>
+                    val recursed = StructType(st.fields.map(f => applyPruning(f, path)))
+                    if (recursed != st) field.copy(dataType = ArrayType(recursed, cn))
+                    else field
+                  case st: StructType =>
+                    val recursed = StructType(st.fields.map(f => applyPruning(f, path)))
+                    if (recursed != st) field.copy(dataType = recursed)
+                    else field
+                  case _ => field
+                }
+            }
+          }
+
+          val decodedFields = decodedTopLevelIndices.map { idx =>
+            applyPruning(fullSchema.fields(idx), "")
+          }
+          StructType(decodedFields.map(f => f.copy(nullable = true)))
+        }
+
         private def registerPrunedOrdinals(
             expr: Expression,
             prunedFieldsMap: Map[String, Seq[String]],
@@ -739,48 +783,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
 
         override def convertToGpu(child: Expression): GpuExpression = {
           val prunedFieldsMap = buildPrunedFieldsMap()
-          targetExprsToRemap.foreach(
-            registerPrunedOrdinals(_, prunedFieldsMap, decodedTopLevelIndices.toSeq))
-
-          val decodedSchema = {
-            def applyPruning(field: StructField, prefix: String): StructField = {
-              val path = if (prefix.isEmpty) field.name else s"$prefix.${field.name}"
-              prunedFieldsMap.get(path) match {
-                case Some(childNames) =>
-                  field.dataType match {
-                    case ArrayType(st: StructType, cn) =>
-                      val pruned = StructType(
-                        st.fields.filter(f => childNames.contains(f.name))
-                          .map(f => applyPruning(f, path)))
-                      field.copy(dataType = ArrayType(pruned, cn))
-                    case st: StructType =>
-                      val pruned = StructType(
-                        st.fields.filter(f => childNames.contains(f.name))
-                          .map(f => applyPruning(f, path)))
-                      field.copy(dataType = pruned)
-                    case _ => field
-                  }
-                case None =>
-                  field.dataType match {
-                    case ArrayType(st: StructType, cn) =>
-                      val recursed = StructType(st.fields.map(f => applyPruning(f, path)))
-                      if (recursed != st) field.copy(dataType = ArrayType(recursed, cn))
-                      else field
-                    case st: StructType =>
-                      val recursed = StructType(st.fields.map(f => applyPruning(f, path)))
-                      if (recursed != st) field.copy(dataType = recursed)
-                      else field
-                    case _ => field
-                  }
-              }
-            }
-
-            val decodedFields = decodedTopLevelIndices.map { idx =>
-              applyPruning(fullSchema.fields(idx), "")
-            }
-            StructType(decodedFields.map(f =>
-              f.copy(nullable = true)))
-          }
+          val decodedSchema = buildDecodedSchema(prunedFieldsMap)
 
           GpuFromProtobuf(
             decodedSchema,

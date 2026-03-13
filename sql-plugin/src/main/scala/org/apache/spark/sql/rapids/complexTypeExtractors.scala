@@ -425,11 +425,27 @@ class GpuGetStructFieldMeta(
   extends UnaryExprMeta[GetStructField](expr, conf, parent, rule) {
 
   def convertToGpu(child: Expression): GpuExpression = {
+    val effectiveOrd = GpuGetStructFieldMeta.effectiveOrdinal(child, expr)
+    GpuGetStructField(child, effectiveOrd, expr.name)
+  }
+}
+
+object GpuGetStructFieldMeta {
+  def effectiveOrdinal(child: Expression, expr: GetStructField): Int = {
     val runtimeOrd = expr.getTagValue(
       GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
-    val effectiveOrd =
-      if (runtimeOrd >= 0) runtimeOrd else expr.ordinal
-    GpuGetStructField(child, effectiveOrd, expr.name)
+    if (runtimeOrd >= 0) {
+      runtimeOrd
+    } else {
+      expr.name.flatMap { fieldName =>
+        child.dataType match {
+          case st: StructType =>
+            val byName = st.fields.indexWhere(_.name == fieldName)
+            if (byName >= 0) Some(byName) else None
+          case _ => None
+        }
+      }.getOrElse(expr.ordinal)
+    }
   }
 }
 
@@ -441,10 +457,9 @@ class GpuGetArrayStructFieldsMeta(
   extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
 
   def convertToGpu(child: Expression): GpuExpression = {
+    val effectiveOrd = GpuGetArrayStructFieldsMeta.effectiveOrdinal(child, expr)
     val runtimeOrd = expr.getTagValue(
       GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
-    val effectiveOrd =
-      if (runtimeOrd >= 0) runtimeOrd else expr.ordinal
     val effectiveNumFields =
       GpuGetArrayStructFieldsMeta.effectiveNumFields(child, expr, runtimeOrd)
     GpuGetArrayStructFields(child, expr.field,
@@ -453,6 +468,23 @@ class GpuGetArrayStructFieldsMeta(
 }
 
 object GpuGetArrayStructFieldsMeta {
+  def effectiveOrdinal(
+      child: Expression,
+      expr: GetArrayStructFields): Int = {
+    val runtimeOrd = expr.getTagValue(
+      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
+    if (runtimeOrd >= 0) {
+      runtimeOrd
+    } else {
+      child.dataType match {
+        case ArrayType(st: StructType, _) =>
+          val byName = st.fields.indexWhere(_.name == expr.field.name)
+          if (byName >= 0) byName else expr.ordinal
+        case _ => expr.ordinal
+      }
+    }
+  }
+
   def effectiveNumFields(
       child: Expression,
       expr: GetArrayStructFields,

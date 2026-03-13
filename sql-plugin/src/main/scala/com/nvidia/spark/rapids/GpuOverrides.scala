@@ -955,6 +955,7 @@ object GpuOverrides extends Logging {
             + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
+        override def typeMeta: DataTypeMeta = childExprs.head.typeMeta
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
       }),
@@ -981,7 +982,28 @@ object GpuOverrides extends Logging {
         TypeSig.all),
         (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
           // This is the only NOOP operator.  It goes away when things are bound
-          override def convertToGpuImpl(): Expression = att
+          override def convertToGpuImpl(): Expression = {
+            def findParentPlan(meta: Option[RapidsMeta[_, _, _]]): Option[SparkPlanMeta[_]] = {
+              meta match {
+                case Some(planMeta: SparkPlanMeta[_]) => Some(planMeta)
+                case Some(other) => findParentPlan(other.parent)
+                case None => None
+              }
+            }
+
+            val maybeResolvedAttr = for {
+              planMeta <- findParentPlan(parent)
+              matched <- planMeta.childPlans.iterator
+                .flatMap(_.outputAttributes.iterator)
+                .find(_.exprId == att.exprId)
+            } yield AttributeReference(
+              att.name,
+              matched.dataType,
+              matched.nullable,
+              att.metadata)(att.exprId, att.qualifier)
+
+            maybeResolvedAttr.getOrElse(att)
+          }
 
         // There are so many of these that we don't need to print them out, unless it
         // will not work on the GPU
