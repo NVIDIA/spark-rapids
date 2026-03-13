@@ -226,7 +226,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 info: ProtobufFieldInfo,
                 parentIdx: Int,
                 depth: Int,
-                nestedMsgDesc: ProtobufMessageDescriptor,
+                containingMsgDesc: ProtobufMessageDescriptor,
                 pathPrefix: String = ""): Unit = {
 
               val currentIdx = flatFields.size
@@ -268,13 +268,13 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               // For nested struct types (including repeated message = ArrayType(StructType)), 
               // add child fields
               sf.dataType match {
-                case st: StructType if nestedMsgDesc != null =>
+                case st: StructType if containingMsgDesc != null =>
                   addChildFieldsFromStruct(
-                    st, nestedMsgDesc, sf.name, currentIdx, depth, pathPrefix)
+                    st, containingMsgDesc, sf.name, currentIdx, depth, pathPrefix)
                   
-                case ArrayType(st: StructType, _) if nestedMsgDesc != null =>
+                case ArrayType(st: StructType, _) if containingMsgDesc != null =>
                   addChildFieldsFromStruct(
-                    st, nestedMsgDesc, sf.name, currentIdx, depth, pathPrefix)
+                    st, containingMsgDesc, sf.name, currentIdx, depth, pathPrefix)
                   
                 case _ => // Not a struct, no children to add
               }
@@ -285,13 +285,14 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             // lookup into nestedFieldRequirements.
             def addChildFieldsFromStruct(
                 st: StructType,
-                parentMsgDesc: ProtobufMessageDescriptor,
+                containingMsgDesc: ProtobufMessageDescriptor,
                 fieldName: String,
                 parentIdx: Int,
                 parentDepth: Int,
                 pathPrefix: String): Unit = {
               val path = if (pathPrefix.isEmpty) fieldName else s"$pathPrefix.$fieldName"
-              val parentField = parentMsgDesc.findField(fieldName)
+              // containingMsgDesc is the descriptor of the message that directly contains fieldName.
+              val parentField = containingMsgDesc.findField(fieldName)
               if (parentField.isEmpty) {
                 willNotWorkOnGpu(
                   s"Nested field '$fieldName' not found in protobuf descriptor at '$path'")
@@ -440,7 +441,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             }
           }
 
-          if (!safeToPrune || collectedExprs.isEmpty || hasDirectStructRef || fieldReqs.isEmpty) {
+          // An empty fieldReqs also subsumes the "no relevant expressions collected" case.
+          if (!safeToPrune || hasDirectStructRef || fieldReqs.isEmpty) {
             targetExprsToRemap = Seq.empty
             allFieldNames
           } else {

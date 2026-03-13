@@ -297,6 +297,23 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       _.contains("Failed to read protobuf default value for field 'id'")))
   }
 
+  test("extractor preserves type mismatch reason over default reflection failure") {
+    val fieldInfo = ProtobufSchemaExtractor.extractFieldInfo(
+      StructField("id", StringType, nullable = true),
+      FakeFieldDescriptor(
+        name = "id",
+        fieldNumber = 1,
+        protoTypeName = "INT32",
+        defaultValueError =
+          Some("Failed to read protobuf default value for field 'id': unsupported type")),
+      enumsAsInts = true)
+
+    assert(fieldInfo.isRight)
+    assert(!fieldInfo.toOption.get.isSupported)
+    assert(fieldInfo.toOption.get.unsupportedReason.contains(
+      "type mismatch: Spark StringType vs Protobuf INT32"))
+  }
+
   test("validator encodes enum-string defaults into both numeric and string payloads") {
     val enumMeta = ProtobufEnumMetadata(Seq(
       ProtobufEnumValue(0, "UNKNOWN"),

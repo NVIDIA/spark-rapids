@@ -1604,7 +1604,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     conf("spark.rapids.sql.protobuf.batchMergeAfterProject.enabled")
       .doc("When set to true, allows a GPU Project containing a schema-pruned " +
         "`from_protobuf` decode to request a post-project batch coalesce. This is intended " +
-        "to reduce tiny batches produced after protobuf schema projection.")
+        "to reduce tiny batches produced after protobuf schema projection. The config is " +
+        "currently kept internal and defaults to false as a rollout safety valve while the " +
+        "optimization continues to bake on real workloads.")
       .internal()
       .booleanConf
       .createWithDefault(false)

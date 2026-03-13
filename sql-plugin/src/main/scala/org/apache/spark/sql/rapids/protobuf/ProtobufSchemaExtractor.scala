@@ -63,7 +63,19 @@ object ProtobufSchemaExtractor {
         fieldDescriptor.isRepeated,
         enumsAsInts)
 
-    fieldDescriptor.defaultValueResult.map { defaultValue =>
+    val defaultValue = fieldDescriptor.defaultValueResult match {
+      case Right(value) =>
+        value
+      case Left(_) if !isSupported =>
+        // Preserve the primary unsupported reason from checkFieldSupport for fields that are
+        // already known to be unsupported. Reflection/default extraction errors on those fields
+        // should not mask the more actionable type-support message.
+        None
+      case Left(reason) =>
+        return Left(reason)
+    }
+
+    Right(
       ProtobufFieldInfo(
         fieldNumber = fieldDescriptor.fieldNumber,
         protoTypeName = fieldDescriptor.protoTypeName,
@@ -75,8 +87,7 @@ object ProtobufSchemaExtractor {
         defaultValue = defaultValue,
         enumMetadata = fieldDescriptor.enumMetadata,
         isRepeated = fieldDescriptor.isRepeated
-      )
-    }
+      ))
   }
 
   private def unsupportedFieldInfo(
