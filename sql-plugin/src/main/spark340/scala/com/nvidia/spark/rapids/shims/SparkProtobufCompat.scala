@@ -87,7 +87,7 @@ private[shims] object SparkProtobufCompat extends Logging {
     options.keys.filterNot(SupportedOptions.contains).toSeq.sorted
 
   def isGpuSupportedProtoSyntax(syntax: String): Boolean =
-    syntax.nonEmpty && syntax != "PROTO3" && syntax != "EDITIONS"
+    syntax.nonEmpty && syntax != "null" && syntax != "PROTO3" && syntax != "EDITIONS"
 
   def resolveMessageDescriptor(
       exprInfo: ProtobufExprInfo): Either[String, ProtobufMessageDescriptor] = {
@@ -175,7 +175,7 @@ private[shims] object SparkProtobufCompat extends Logging {
   }
 
   private def typeName(t: AnyRef): String =
-    if (t == null) "null" else Try(PbReflect.invoke0[String](t, "name")).getOrElse(t.toString)
+    if (t == null) "" else Try(PbReflect.invoke0[String](t, "name")).getOrElse(t.toString)
 
   private final class ReflectiveMessageDescriptor(raw: AnyRef) extends ProtobufMessageDescriptor {
     override lazy val syntax: String = PbReflect.getFileSyntax(raw, typeName)

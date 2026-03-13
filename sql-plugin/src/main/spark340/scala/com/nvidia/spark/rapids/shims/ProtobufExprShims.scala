@@ -77,6 +77,10 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
       case e: Exception =>
         logWarning(s"Failed to load $protobufDataToCatalystClassName: ${e.getMessage}")
         Map.empty
+      case e: Error =>
+        logWarning(
+          s"JVM error while loading $protobufDataToCatalystClassName: ${e.getMessage}")
+        Map.empty
     }
   }
 

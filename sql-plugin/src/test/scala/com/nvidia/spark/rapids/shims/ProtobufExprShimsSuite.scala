@@ -242,6 +242,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     assert(!SparkProtobufCompat.isGpuSupportedProtoSyntax("PROTO3"))
     assert(!SparkProtobufCompat.isGpuSupportedProtoSyntax("EDITIONS"))
     assert(!SparkProtobufCompat.isGpuSupportedProtoSyntax(""))
+    assert(!SparkProtobufCompat.isGpuSupportedProtoSyntax("null"))
     assert(SparkProtobufCompat.isGpuSupportedProtoSyntax("PROTO2"))
   }
 
