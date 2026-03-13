@@ -322,28 +322,6 @@
         <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=3*db -->
         <!-- #if scala-2.12 -->
         <profile>
-            <id>release330db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>330db</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark330db</spark.version.classifier>
-                <spark.version>${spark330db.version}</spark.version>
-                <spark.test.version>${spark330db.version}</spark.test.version>
-                <hadoop.client.version>3.3.1</hadoop.client.version>
-                <rat.consoleOutput>true</rat.consoleOutput>
-                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
-            </properties>
-            <modules>
-                <module>shim-deps/databricks</module>
-                <module>delta-lake/delta-spark330db</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release332db</id>
             <activation>
                 <property>
@@ -833,10 +811,8 @@
         <delta33x.version>3.3.0</delta33x.version>
         <delta40x.version>4.0.0</delta40x.version>
         <!-- start dyn.shim properties -->
-        <!--  TODO: Will remove 330db from the excluding list after the issue is fixed: https://github.com/NVIDIA/spark-rapids/issues/12694 -->
         <!--  TODO: Will remove 321 from the excluding list after no need to support some legacy scenario -->
         <dyn.shim.excluded.releases>
-            330db,
             321
         </dyn.shim.excluded.releases>
         <!-- end dyn.shim properties -->
@@ -915,7 +891,6 @@
         <spark342.version>3.4.2</spark342.version>
         <spark343.version>3.4.3</spark343.version>
         <spark344.version>3.4.4</spark344.version>
-        <spark330db.version>3.3.0-databricks</spark330db.version>
         <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350db143.version>3.5.0-databricks-143</spark350db143.version>
