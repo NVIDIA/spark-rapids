@@ -1002,6 +1002,10 @@ object GpuOverrides extends Logging {
               matched.nullable,
               att.metadata)(att.exprId, att.qualifier)
 
+            // NOTE: matched.dataType may still reflect the wrapped Spark plan's original
+            // output type (for example, an un-pruned protobuf struct). Correct runtime type
+            // propagation is guaranteed by GpuBoundAttribute, which uses input(ordinal).dataType
+            // at bind time.
             maybeResolvedAttr.getOrElse(att)
           }
 

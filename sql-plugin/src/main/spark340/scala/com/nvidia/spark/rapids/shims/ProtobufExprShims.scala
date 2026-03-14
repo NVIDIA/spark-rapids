@@ -476,7 +476,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                   collectStructFieldReferences(
                     _, fieldReqs, holder, allowSemanticReferenceMatch))
                 advanceToParent()
-              case _ =>
+              case other =>
+                logDebug(s"Schema pruning disabled: unrecognized plan node " +
+                  s"${other.getClass.getSimpleName} above from_protobuf")
                 safeToPrune = false
             }
           }

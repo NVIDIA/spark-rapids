@@ -206,6 +206,12 @@ else
             PROTOBUF_JARS="${PROTOBUF_JARS:+$PROTOBUF_JARS }$PROTOBUF_JAVA_JAR_PATH"
             echo "Including protobuf-java jar: $PROTOBUF_JAVA_JAR_PATH"
         fi
+        if [[ -z "$PROTOBUF_JARS" ]]; then
+            echo "WARNING: No protobuf JARs available; protobuf tests will be skipped"
+            export PROTOBUF_JARS_AVAILABLE=false
+        else
+            export PROTOBUF_JARS_AVAILABLE=true
+        fi
         # Also add protobuf jars to driver classpath for Class.forName() to work
         # This is needed because --jars only adds to executor classpath
         if [[ -n "$PROTOBUF_JARS" ]]; then
@@ -215,6 +221,7 @@ else
         fi
     else
         export INCLUDE_SPARK_PROTOBUF_JAR=false
+        export PROTOBUF_JARS_AVAILABLE=false
     fi
 
     # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar protobuf.jar if they exist

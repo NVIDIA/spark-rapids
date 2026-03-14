@@ -29,7 +29,12 @@ from spark_session import with_cpu_session, is_before_spark_340
 import pyspark.sql.functions as f
 from pyspark.sql.types import IntegerType, LongType
 
-pytestmark = [pytest.mark.premerge_ci_1]
+_protobuf_jars_available = os.environ.get('PROTOBUF_JARS_AVAILABLE', 'true').lower() != 'false'
+
+pytestmark = [
+    pytest.mark.premerge_ci_1,
+    pytest.mark.skipif(not _protobuf_jars_available, reason="Protobuf JARs not available"),
+]
 
 
 # Random data generation configurations for simple scalars

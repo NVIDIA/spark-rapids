@@ -45,6 +45,7 @@ def conf_for_env(env_name):
     return res
 
 _DRIVER_ENV = env_for_conf('spark.driver.extraJavaOptions')
+_DRIVER_CLASSPATH = env_for_conf('spark.driver.extraClassPath')
 _SPARK_JARS = env_for_conf("spark.jars")
 _SPARK_JARS_PACKAGES = env_for_conf("spark.jars.packages")
 spark_jars_env = {
@@ -83,6 +84,13 @@ def _add_driver_classpath(jars):
     if current_args.endswith('pyspark-shell'):
         current_args = current_args[:-len('pyspark-shell')].strip()
     jar_list = [j.strip() for j in jars.split(',') if j.strip()]
+    existing_driver_cp = {
+        p for p in os.environ.get(_DRIVER_CLASSPATH, '').split(os.pathsep) if p
+    }
+    jar_list = [j for j in jar_list if j not in existing_driver_cp]
+    if not jar_list:
+        logging.info("Skipping PYSPARK_SUBMIT_ARGS driver-class-path update; jars already present")
+        return
     new_cp = os.pathsep.join(jar_list)
     if '--driver-class-path' in current_args:
         match = re.search(r'--driver-class-path\s+(\S+)', current_args)
