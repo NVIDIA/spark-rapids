@@ -41,10 +41,12 @@ private[rapids] object SequenceFileTestUtils {
       .config("spark.sql.extensions", "com.nvidia.spark.rapids.SQLExecPlugin")
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.rapids.sql.enabled", "true")
+      .config(
+        "spark.rapids.sql.format.sequencefile.rddScan.physicalReplace.enabled",
+        physicalReplaceEnabled.toString)
 
     if (physicalReplaceEnabled) {
       builder
-        .config("spark.rapids.sql.format.sequencefile.rddScan.physicalReplace.enabled", "true")
         .config("spark.rapids.sql.explain", "ALL")
     }
 

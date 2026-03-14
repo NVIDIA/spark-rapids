@@ -562,7 +562,9 @@ class MultiFileCloudSequenceFilePartitionReader(
       numRows: Int): ColumnVector = {
     // Get the actual data length from the final offset
     val dataLen = offsetsBuffer.getInt(numRows.toLong * DType.INT32.getSizeInBytes)
-    val dataSlice = dataBuffer.sliceWithCopy(0, dataBuffer.getLength)
+    // Only copy the valid payload bytes. The backing host buffer may be much larger
+    // because HostBinaryListBufferer preallocates for future growth.
+    val dataSlice = dataBuffer.sliceWithCopy(0, dataLen.toLong)
     closeOnExcept(dataSlice) { _ =>
       val offsetsSlice = offsetsBuffer.sliceWithCopy(0, offsetsBuffer.getLength)
       closeOnExcept(offsetsSlice) { _ =>

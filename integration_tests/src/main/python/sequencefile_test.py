@@ -333,6 +333,7 @@ def test_sequencefile_read_with_corrupt_files(spark_tmp_path, reader_type):
 
     all_confs = {
         'spark.rapids.sql.format.sequencefile.reader.type': reader_type,
+        'spark.rapids.sql.format.sequencefile.rddScan.physicalReplace.enabled': 'false',
         'spark.sql.files.ignoreCorruptFiles': 'true'
     }
 
