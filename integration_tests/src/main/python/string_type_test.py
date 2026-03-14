@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, \
     assert_gpu_sql_fallback_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from marks import allow_non_gpu
+from marks import allow_non_gpu, allow_non_gpu_conditional
 from spark_session import is_before_spark_400, is_databricks173_or_later
 
 
@@ -167,11 +167,9 @@ def test_constraint_char_varchar_preserve_enabled_fallback(spark_tmp_path, char_
 # The CPU plan is: Contains(static_invoke(CharVarcharCodegenUtils.readSidePadding(char_col#8, 5)), a)
 # Spark scan treats char as StringType.
 # Contains falls back because the child `static_invoke` is not supported by GPU.
-# DB 17.3+ no longer injects StaticInvoke for char padding, so ProjectExec runs on GPU.
-_allow_non_gpu_for_char_preserve = [] if is_databricks173_or_later() else ['ProjectExec']
 @pytest.mark.skipif(is_before_spark_400(),
                     reason="Spark 32x, 33x do not support char/varchar type; Spark 34x, 35x throw exception")
-@allow_non_gpu(*_allow_non_gpu_for_char_preserve)
+@allow_non_gpu_conditional(not is_databricks173_or_later(), "ProjectExec")
 def test_constraint_char_preserve_disabled_fallback(spark_tmp_path):
     preserve_char_conf = {"spark.sql.preserveCharVarcharTypeInfo": True}
     file_path = spark_tmp_path + '/PARQUET_DATA'
