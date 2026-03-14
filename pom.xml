@@ -792,24 +792,6 @@
             <build>
                 <plugins>
                     <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-enforcer-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>enforce-bloop-rules</id>
-                                <goals><goal>enforce</goal></goals>
-                                <configuration>
-                                    <rules>
-                                        <requireJavaVersion>
-                                            <message>Metals semantic database requires JAVA_HOME pointing to JDK 11+, actual Java version: ${java.version}</message>
-                                            <version>[11,)</version>
-                                        </requireJavaVersion>
-                                    </rules>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
                         <groupId>ch.epfl.scala</groupId>
                         <artifactId>bloop-maven-plugin</artifactId>
                         <executions>
@@ -1000,6 +982,9 @@
             340
         </jdk11.buildvers>
         <jdk17.buildvers>
+            330,
+            331,
+            340
         </jdk17.buildvers>
         <jdk17.scala213.buildvers>
             350,
@@ -1627,11 +1612,11 @@ This will force full Scala code rebuild in downstream modules.
                             <property>rapids.delta.artifactId1</property>
                             <regex>^rapids-4-spark-delta-.*</regex>
                         </requireProperty>
-                        <!-- #if scala-2.12 -->
                         <requireJavaVersion>
-                            <message>Only Java 8, 11, and 17 are supported!</message>
-                            <version>[1.8,1.9),[11,12),[17,18)</version>
+                            <message>To compile, use Java 17 or above (at runtime you can use Java 8+, however, other optional dependencies in your setup such as Iceberg may impose higher lower bound on the JDK runtime version )</message>
+                            <version>[17,)</version>
                         </requireJavaVersion>
+                        <!-- #if scala-2.12 -->
                         <requireProperty>
                           <property>buildver</property>
                           <regex>^(?!4[0-9]{2}).*$</regex>
@@ -1639,10 +1624,6 @@ This will force full Scala code rebuild in downstream modules.
                         </requireProperty>
                         <!-- #endif scala-2.12 -->
                         <!-- #if scala-2.13 --><!--
-                        <requireJavaVersion>
-                            <message>Build for Scala 2.13 is only available with Java 17+</message>
-                            <version>[17,)</version>
-                        </requireJavaVersion>
                         <requireProperty>
                             <regexMessage>Unexpected buildver value ${buildver} for a Scala 2.13 build, only Apache Spark versions 3.3.0 (330) and higher are supported</regexMessage>
                             <property>buildver</property>
