@@ -46,7 +46,7 @@ def _get_buildvers(buildvers, pom_file, logger=None, ignore_excluded_shims=False
             no_snapshots.append(release)
     if (not ignore_excluded_shims):
         excluded_shims = pom.find(".//pom:dyn.shim.excluded.releases", ns)
-        if excluded_shims is not None and excluded_shims.text:
+        if excluded_shims is not None and excluded_shims.text and not excluded_shims.text.isspace():
             for removed_shim in [x.strip() for x in excluded_shims.text.split(",")]:
                 if removed_shim in snapshots:
                     snapshots.remove(removed_shim)
