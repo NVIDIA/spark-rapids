@@ -136,6 +136,10 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
 
   private def isNewApiSequenceFileRDD(rdd: NewHadoopRDD[_, _]): Boolean = {
     try {
+      // Spark's Scala bytecode exposes inputFormatClass as a public field with the mangled
+      // name below (verified with javap on Spark 3.5.1), so getField is intentional here.
+      // This is not a JavaBean-style accessor method; using getMethod would look for a
+      // zero-arg method that does not exist on the compiled class.
       val f = classOf[NewHadoopRDD[_, _]]
         .getField("org$apache$spark$rdd$NewHadoopRDD$$inputFormatClass")
       val ifc = f.get(rdd).asInstanceOf[Class[_]]

@@ -670,11 +670,11 @@ class MultiFileCloudSequenceFilePartitionReader(
             var numRows = 0
             var reachedEof = false
 
-            // Hadoop SequenceFile split boundary logic (matches SequenceFileRecordReader):
-            // 1. Get position BEFORE reading
-            // 2. Read the record
-            // 3. If posBeforeRead >= end AND syncSeen (from this read), DISCARD the record
-            // This ensures each record is processed by exactly one split.
+            // Hadoop SequenceFileRecordReader saves the position before each read, then decides
+            // after the read whether to stop by checking that saved pre-read position together
+            // with syncSeen() from the read that just happened. We mirror that policy here:
+            // if the read started at/after the split end and crossed a sync marker, the record
+            // belongs to the next split and is discarded from the current one.
             while (!reachedEof) {
               val posBeforeRead = reader.getPosition
               keyDataOut.reset()
