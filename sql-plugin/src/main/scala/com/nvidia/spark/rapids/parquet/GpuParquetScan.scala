@@ -2739,7 +2739,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
         case emptyHMData: HostMemoryEmptyMetaData =>
           emptyMetas += emptyHMData
           val totalNumRows = computeNumRowsAlive(result.memBuffersAndSizes.map(_.numRows).sum,
-             result.partitionedFile)
+            emptyHMData)
           val partValues = result.partitionedFile.partitionValues
           allPartValues.append((totalNumRows, partValues))
           emptyBufferSize += emptyHMData.bufferSize
@@ -2766,7 +2766,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
             toCombine += hmWithData
             val partValues = hmWithData.partitionedFile.partitionValues
             val totalNumRows = computeNumRowsAlive(hmWithData.memBuffersAndSizes.map(_.numRows).sum,
-              hmWithData.partitionedFile)
+              hmWithData)
             allPartValues.append((totalNumRows, partValues))
           }
         case _ => throw new RuntimeException("Unknown HostMemoryBuffersWithMetaDataBase")
@@ -2855,7 +2855,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
    */
   protected def computeNumRowsAlive(
       totalNumRows: Long,
-      file: PartitionedFile,
+      metadata: HostMemoryBuffersWithMetaDataBase
   ): Int
 
   private class ReadBatchRunner(
@@ -3027,7 +3027,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
   Iterator[ColumnarBatch] = fileBufsAndMeta match {
     case meta: HostMemoryEmptyMetaData =>
       // Not reading any data, but add in partition data if needed
-      val rows = computeNumRowsAlive(meta.numRows, fileBufsAndMeta.partitionedFile)
+      val rows = computeNumRowsAlive(meta.numRows, meta)
       val origBatch = if (meta.readSchema.isEmpty) {
         new ColumnarBatch(Array.empty, rows)
       } else {
@@ -3263,7 +3263,9 @@ class MultiFileCloudParquetPartitionReader(
     )
   }
 
-  override protected def computeNumRowsAlive(totalNumRows: Long, file: PartitionedFile): Int = {
+  override protected def computeNumRowsAlive(
+      totalNumRows: Long,
+      metadata: HostMemoryBuffersWithMetaDataBase): Int = {
     Math.toIntExact(totalNumRows)
   }
 }

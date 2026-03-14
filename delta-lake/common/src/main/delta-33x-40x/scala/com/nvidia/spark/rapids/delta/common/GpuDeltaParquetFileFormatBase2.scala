@@ -39,7 +39,8 @@ import org.apache.spark.sql.catalyst.util.QuotingUtils
 import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
-import org.apache.spark.sql.delta.actions.{DeletionVectorDescriptor, Metadata, Protocol}
+import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
+import org.apache.spark.sql.delta.deletionvectors.RoaringBitmapArray
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.QueryExecutionException
@@ -333,9 +334,24 @@ class GpuDeltaParquetFileFormatBase2(
    */
   case class SpillableDeletionVectorInfo(
       serializedBitmap: SpillableHostBuffer,
+      // Bitmap loaded from the deletion vector. This is used to compute the number
+      // of rows deleted in the given range of rowws.
+      // This is temporary until we add a new API in libcudf to compute it.
+      scalaBitmap: RoaringBitmapArray,
       rowGroupOffsets: Array[Long],
       rowGroupNumRows: Array[Int]
   ) extends AutoCloseable {
+
+    def computeNumRowsDeleted(): Long = {
+      rowGroupOffsets.zip(rowGroupNumRows).map {
+        case (offset, numRows) =>
+          val contains = for (i <- offset until offset + numRows) yield {
+            if (scalaBitmap.contains(i)) 1L else 0L
+          }
+          contains.sum
+      }.sum
+    }
+
     override def close(): Unit = {
       serializedBitmap.close()
     }
@@ -344,6 +360,7 @@ class GpuDeltaParquetFileFormatBase2(
   object SpillableDeletionVectorInfo {
     def apply(
         serializedBitmap: HostMemoryBuffer,
+        scalaBitmap: RoaringBitmapArray,
         rowGroupOffsets: Array[Long],
         rowGroupNumRows: Array[Int]): SpillableDeletionVectorInfo = {
       new SpillableDeletionVectorInfo(
@@ -351,6 +368,7 @@ class GpuDeltaParquetFileFormatBase2(
           serializedBitmap,
           serializedBitmap.getLength(),
           SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+        scalaBitmap,
         rowGroupOffsets,
         rowGroupNumRows)
     }
@@ -664,13 +682,19 @@ class GpuDeltaParquetFileFormatBase2(
         .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
       val maybeSerializedDV = tablePath.map(tp =>
         RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
+      val maybeScalaBitmap = tablePath.map(tp =>
+        RapidsDeletionVectors.loadScalaBitmap(conf, dvDescriptorOpt, filterTypeOpt, tp))
 
       closeOnExcept(maybeSerializedDV) { _ =>
         val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
           .getRowGroupMetadata(blocks)
         val dvMetadata = DeletionVectorMetadata.forSingleBuffer(
           maybeSerializedDV.map(serializedDV =>
-            SpillableDeletionVectorInfo(serializedDV, rowGroupOffsets, rowGroupNumRows))
+            SpillableDeletionVectorInfo(
+              serializedDV,
+              maybeScalaBitmap.get,
+              rowGroupOffsets,
+              rowGroupNumRows))
         )
         DeltaParquetHostMemoryEmptyMetaData(
           partitionedFile,
@@ -720,6 +744,8 @@ class GpuDeltaParquetFileFormatBase2(
         .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
       val maybeSerializedDV = tablePath.map(tp =>
         RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
+      val maybeScalaBitmap = tablePath.map(tp =>
+        RapidsDeletionVectors.loadScalaBitmap(conf, dvDescriptorOpt, filterTypeOpt, tp))
       withResource(maybeSerializedDV) { _ =>
         val dvMetadataArray = memBuffersAndSize.map { singleHMBAndMeta =>
           val dataBlocks = singleHMBAndMeta.blockMeta
@@ -729,7 +755,11 @@ class GpuDeltaParquetFileFormatBase2(
           DeletionVectorMetadata.forSingleBuffer(
             maybeSerializedDV.map { serializedDV =>
               serializedDV.incRefCount()
-              SpillableDeletionVectorInfo(serializedDV, rowGroupOffsets, rowGroupNumRows)
+              SpillableDeletionVectorInfo(
+                serializedDV,
+                maybeScalaBitmap.get,
+                rowGroupOffsets,
+                rowGroupNumRows)
             })
         }
 
@@ -774,29 +804,23 @@ class GpuDeltaParquetFileFormatBase2(
 
     override protected def computeNumRowsAlive(
         totalNumRows: Long,
-        file: PartitionedFile
+        metadata: HostMemoryBuffersWithMetaDataBase
     ): Int = {
       // totalNumRows can be 0 if the file is not found but ignoreMissingFiles is true,
       // or the file is empty.
       if (totalNumRows == 0) {
         return 0
       }
-      val dvDescriptorOpt = file.otherConstantMetadataColumnValues
-        .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
-      val filterTypeOpt = file.otherConstantMetadataColumnValues
-        .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
 
-      val numDeletedRows = if (dvDescriptorOpt.isDefined && filterTypeOpt.isDefined) {
-        require(filterTypeOpt.get == RowIndexFilterType.IF_CONTAINED,
-          s"Only ${RowIndexFilterType.IF_CONTAINED} filter type is supported, " +
-            s"but got ${filterTypeOpt.get}")
-        val dvDesc = DeletionVectorDescriptor.deserializeFromBase64(dvDescriptorOpt.get)
-        dvDesc.cardinality
-      } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
-        throw new IllegalStateException(
-          "Both dvDescriptorOpt and filterTypeOpt must be defined together or both absent.")
-      } else {
-        0
+      val numDeletedRows = metadata match {
+        case emptyMeta: DeltaParquetHostMemoryEmptyMetaData =>
+          emptyMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
+            .map(_.computeNumRowsDeleted()).sum
+        case buffersMeta: DeltaParquetHostMemoryBuffersWithMetaData =>
+          buffersMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
+            .map(_.computeNumRowsDeleted()).sum
+        case _ =>
+          throw new IllegalArgumentException(s"Unexpected metadata type ${metadata.getClass()}")
       }
 
       require(numDeletedRows <= totalNumRows,
