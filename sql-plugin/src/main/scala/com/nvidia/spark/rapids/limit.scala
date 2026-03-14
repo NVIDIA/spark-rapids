@@ -193,6 +193,19 @@ class GpuCollectLimitMeta(
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(collectLimit.outputPartitioning, conf, Some(this)))
 
+  override def tagPlanForGpu(): Unit = {
+    // String matching avoids compile errors on Spark versions
+    // where CommandResultExec (added in 3.2) does not exist.
+    val childName = collectLimit.child.getClass.getSimpleName
+    if (childName == "CommandResultExec" ||
+        childName == "ExecutedCommandExec") {
+      willNotWorkOnGpu(
+        s"child $childName already provides pre-computed " +
+        "results; replacing CollectLimit would trigger " +
+        "an unnecessary Spark job")
+    }
+  }
+
   override def convertToGpu(): GpuExec =
     GpuGlobalLimitExec(collectLimit.limit,
       GpuShuffleExchangeExec(
