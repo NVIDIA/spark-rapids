@@ -31,7 +31,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan, TakeOrderedAndProjectExec}
+import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -193,13 +193,21 @@ class GpuCollectLimitMeta(
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(collectLimit.outputPartitioning, conf, Some(this)))
 
-  override def convertToGpu(): GpuExec =
+  override def convertToGpu(): GpuExec = {
+    val gpuChild = childPlans.head.convertIfNeeded()
+    // Wrap with CPU LocalLimitExec to apply per-partition row-level limits
+    // before the row-to-columnar transition. Without this, GpuRowToColumnarExec
+    // batches ALL rows before GpuLocalLimitExec can limit, so upstream
+    // row-based operators (e.g. map with accumulators) process excess rows.
+    val childWithRowLimit =
+      LocalLimitExec(collectLimit.limit, gpuChild)
     GpuGlobalLimitExec(collectLimit.limit,
       GpuShuffleExchangeExec(
         GpuSinglePartitioning,
-        GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
+        GpuLocalLimitExec(collectLimit.limit, childWithRowLimit),
         ENSURE_REQUIREMENTS
       )(SinglePartition), 0)
+  }
 }
 
 object GpuTopN {
