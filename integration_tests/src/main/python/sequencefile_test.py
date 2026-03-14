@@ -255,18 +255,18 @@ def test_multithreaded_reader_combine_mode_correctness(spark_tmp_path):
 # Configuration Tests
 # ============================================================================
 
-def test_conversion_disabled_by_default(spark_tmp_path):
-    """Test that RDD conversion is disabled by default."""
+def test_rdd_path_when_physical_replacement_disabled(spark_tmp_path):
+    """Test that the original RDD path still works when physical replacement is disabled."""
     data_path = spark_tmp_path + '/SEQFILE_DATA'
     
     payloads = [b'test']
     with_cpu_session(lambda spark: write_sequencefile_with_rdd(spark, data_path, payloads))
     
-    # Without enabling conversion, this should still work via the original RDD path
-    # (no conversion happens, just regular RDD execution)
-    all_confs = {}
+    all_confs = {
+        'spark.rapids.sql.format.sequencefile.rddScan.physicalReplace.enabled': 'false'
+    }
     
-    # This should work - the RDD path still functions, just without conversion
+    # This should work via the original RDD path with physical replacement explicitly disabled.
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: read_sequencefile_via_rdd(spark, data_path),
         conf=all_confs)

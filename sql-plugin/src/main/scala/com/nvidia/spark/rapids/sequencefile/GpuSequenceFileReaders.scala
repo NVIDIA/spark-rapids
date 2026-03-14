@@ -566,7 +566,9 @@ class MultiFileCloudSequenceFilePartitionReader(
     // because HostBinaryListBufferer preallocates for future growth.
     val dataSlice = dataBuffer.sliceWithCopy(0, dataLen.toLong)
     closeOnExcept(dataSlice) { _ =>
-      val offsetsSlice = offsetsBuffer.sliceWithCopy(0, offsetsBuffer.getLength)
+      val offsetsLen = (numRows.toLong + 1L) * DType.INT32.getSizeInBytes
+      // LIST offsets only need numRows + 1 entries, even if the reusable backing buffer grew larger.
+      val offsetsSlice = offsetsBuffer.sliceWithCopy(0, offsetsLen)
       closeOnExcept(offsetsSlice) { _ =>
         val emptyChildren = new util.ArrayList[HostColumnVectorCore]()
         val childCore = new HostColumnVectorCore(DType.UINT8, dataLen,
