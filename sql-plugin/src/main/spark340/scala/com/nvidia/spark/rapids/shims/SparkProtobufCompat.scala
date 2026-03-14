@@ -162,14 +162,19 @@ private[shims] object SparkProtobufCompat extends Logging {
         try {
           buildMethod.invoke(module, messageName, Some(filePath)).asInstanceOf[AnyRef]
         } catch {
-          // Spark 3.5+ changed the descriptor payload from Option[String] to Option[Array[Byte]]
-          // while keeping the same erased JVM signature. Retry with file contents when the
-          // path-based invocation clearly hit that binary-descriptor variant.
-          case ex: java.lang.reflect.InvocationTargetException
-              if ex.getCause.isInstanceOf[ClassCastException] ||
-                  ex.getCause.isInstanceOf[MatchError] =>
-            buildMethod.invoke(
-              module, messageName, Some(readDescriptorFile(filePath))).asInstanceOf[AnyRef]
+          case ex: java.lang.reflect.InvocationTargetException =>
+            val cause = ex.getCause
+            // Spark 3.5+ changed the descriptor payload from Option[String] to
+            // Option[Array[Byte]] while keeping the same erased JVM signature.
+            // Retry with file contents when the path-based invocation clearly hit that
+            // binary-descriptor variant.
+            if (cause != null && (cause.isInstanceOf[ClassCastException] ||
+                cause.isInstanceOf[MatchError])) {
+              buildMethod.invoke(
+                module, messageName, Some(readDescriptorFile(filePath))).asInstanceOf[AnyRef]
+            } else {
+              throw ex
+            }
         }
     }
   }

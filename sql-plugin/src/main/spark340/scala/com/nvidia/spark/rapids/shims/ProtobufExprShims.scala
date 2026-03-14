@@ -222,6 +222,12 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           // For pure scalar schemas, all fields are top-level (parentIdx == -1, depth == 0).
           {
             val flatFields = mutable.ArrayBuffer[FlattenedFieldDescriptor]()
+            var step5Failed = false
+
+            def failStep5(reason: String): Unit = {
+              step5Failed = true
+              willNotWorkOnGpu(reason)
+            }
 
             // Helper to add a field and its children recursively.
             // pathPrefix is the dot-path of ancestor fields (empty for top-level).
@@ -236,7 +242,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               val currentIdx = flatFields.size
 
               if (depth >= 10) {
-                willNotWorkOnGpu("Protobuf nesting depth exceeds maximum supported depth of 10")
+                failStep5("Protobuf nesting depth exceeds maximum supported depth of 10")
                 return
               }
 
@@ -255,7 +261,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                   GpuFromProtobuf.sparkTypeToCudfIdOpt(other)
               }
               val outputType = outputTypeOpt.getOrElse {
-                willNotWorkOnGpu(
+                failStep5(
                   s"Unsupported Spark type for protobuf field '${sf.name}': ${sf.dataType}")
                 return
               }
@@ -268,7 +274,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 parentIdx,
                 depth,
                 outputType).fold({ reason =>
-                willNotWorkOnGpu(reason)
+                failStep5(reason)
                 return
               }, flatFields += _)
 
@@ -304,8 +310,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               // fieldName.
               val parentField = containingMsgDesc.findField(fieldName)
               if (parentField.isEmpty) {
-                willNotWorkOnGpu(
+                failStep5(
                   s"Nested field '$fieldName' not found in protobuf descriptor at '$path'")
+                return
               } else {
                 parentField.get.messageDescriptor match {
                   case Some(childMsgDesc) =>
@@ -319,7 +326,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                     filteredFields.foreach { childSf =>
                       childMsgDesc.findField(childSf.name) match {
                         case None =>
-                          willNotWorkOnGpu(
+                          failStep5(
                             s"Nested field '${childSf.name}' not found in protobuf " +
                               s"descriptor for message at '$path'")
                           return
@@ -327,11 +334,11 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                           ProtobufSchemaExtractor
                             .extractFieldInfo(childSf, childFd, enumsAsInts) match {
                             case Left(reason) =>
-                              willNotWorkOnGpu(reason)
+                              failStep5(reason)
                               return
                             case Right(childInfo) =>
                               if (!childInfo.isSupported) {
-                                willNotWorkOnGpu(
+                                failStep5(
                                   s"Nested field '${childSf.name}' at '$path': " +
                                     childInfo.unsupportedReason.getOrElse("unsupported type"))
                                 return
@@ -344,8 +351,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                       }
                     }
                   case None =>
-                    willNotWorkOnGpu(
+                    failStep5(
                       s"Nested field '$fieldName' at '$path' did not resolve to a message type")
+                    return
                 }
               }
             }
@@ -356,15 +364,21 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             // remapped via PRUNED_ORDINAL_TAG to index into the pruned output.
             decodedTopLevelIndices = indicesToDecode
             indicesToDecode.foreach { schemaIdx =>
-              val sf = fullSchema.fields(schemaIdx)
-              val info = fieldsInfoMap(sf.name)
-              addFieldWithChildren(sf, info, -1, 0, msgDesc)
+              if (!step5Failed) {
+                val sf = fullSchema.fields(schemaIdx)
+                val info = fieldsInfoMap(sf.name)
+                addFieldWithChildren(sf, info, -1, 0, msgDesc)
+              }
+            }
+
+            if (step5Failed) {
+              return
             }
 
             // Populate flattened schema variables
             val flat = flatFields.toArray
             ProtobufSchemaValidator.validateFlattenedSchema(flat).fold({ reason =>
-              willNotWorkOnGpu(reason)
+              failStep5(reason)
               return
             }, identity)
             val arrays = ProtobufSchemaValidator.toFlattenedSchemaArrays(flat)
