@@ -92,7 +92,8 @@ def _add_driver_classpath(jars):
             current_args = re.sub(
                 r'--driver-class-path\s+\S+',
                 lambda m: f'--driver-class-path {merged_cp}',
-                current_args)
+                current_args,
+                count=1)
         else:
             current_args += f' --driver-class-path {new_cp}'
     else:

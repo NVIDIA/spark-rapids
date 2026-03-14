@@ -504,6 +504,16 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         private var nestedFieldRequirements: Map[String, Option[Set[String]]] = Map.empty
         private var protobufOutputExprIds: Set[
           org.apache.spark.sql.catalyst.expressions.ExprId] = Set.empty
+        private lazy val protobufOutputExprId
+          : Option[org.apache.spark.sql.catalyst.expressions.ExprId] =
+          parent.flatMap { meta =>
+            meta.wrapped match {
+              case alias: org.apache.spark.sql.catalyst.expressions
+                    .Alias if alias.child.semanticEquals(e) =>
+                Some(alias.exprId)
+              case _ => None
+            }
+          }
 
         private def getFieldName(ordinal: Int, nameOpt: Option[String],
             schema: StructType): String = {
@@ -785,17 +795,6 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               SparkProtobufCompat.sameDecodeSemantics(expr, e)) {
             return true
           }
-
-          val protobufOutputExprId
-            : Option[org.apache.spark.sql.catalyst.expressions.ExprId] =
-            parent.flatMap { meta =>
-              meta.wrapped match {
-                case alias: org.apache.spark.sql.catalyst.expressions
-                      .Alias if alias.child.semanticEquals(e) =>
-                  Some(alias.exprId)
-                case _ => None
-              }
-            }
 
           expr match {
             case attr: AttributeReference =>
