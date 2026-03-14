@@ -409,6 +409,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           var currentMeta: Option[SparkPlanMeta[_]] = findParentPlanMeta()
           var safeToPrune = true
           val collectedExprs = mutable.ArrayBuffer[Expression]()
+          val startingPlanMeta = currentMeta
 
           def advanceToParent(): Unit = {
             currentMeta = currentMeta.get.parent match {
@@ -418,6 +419,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
 
           while (currentMeta.isDefined && safeToPrune) {
+            val allowSemanticReferenceMatch = currentMeta == startingPlanMeta
             currentMeta.get.wrapped match {
               case p: ProjectExec =>
                 collectedExprs ++= p.projectList
@@ -427,26 +429,35 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                     protobufOutputExprIds += alias.exprId
                   case _ =>
                 }
-                p.projectList.foreach(collectStructFieldReferences(_, fieldReqs, holder))
+                p.projectList.foreach(
+                  collectStructFieldReferences(
+                    _, fieldReqs, holder, allowSemanticReferenceMatch))
                 advanceToParent()
               case f: org.apache.spark.sql.execution.FilterExec =>
                 collectedExprs += f.condition
-                collectStructFieldReferences(f.condition, fieldReqs, holder)
+                collectStructFieldReferences(
+                  f.condition, fieldReqs, holder, allowSemanticReferenceMatch)
                 advanceToParent()
               case a: org.apache.spark.sql.execution.aggregate.BaseAggregateExec =>
                 val exprs = a.aggregateExpressions ++ a.groupingExpressions
                 collectedExprs ++= exprs
-                exprs.foreach(collectStructFieldReferences(_, fieldReqs, holder))
+                exprs.foreach(
+                  collectStructFieldReferences(
+                    _, fieldReqs, holder, allowSemanticReferenceMatch))
                 advanceToParent()
               case s: org.apache.spark.sql.execution.SortExec =>
                 val exprs = s.sortOrder
                 collectedExprs ++= exprs
-                exprs.foreach(collectStructFieldReferences(_, fieldReqs, holder))
+                exprs.foreach(
+                  collectStructFieldReferences(
+                    _, fieldReqs, holder, allowSemanticReferenceMatch))
                 advanceToParent()
               case w: org.apache.spark.sql.execution.window.WindowExec =>
                 val exprs = w.windowExpression
                 collectedExprs ++= exprs
-                exprs.foreach(collectStructFieldReferences(_, fieldReqs, holder))
+                exprs.foreach(
+                  collectStructFieldReferences(
+                    _, fieldReqs, holder, allowSemanticReferenceMatch))
                 advanceToParent()
               case _ =>
                 safeToPrune = false
@@ -528,13 +539,14 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
          *   → Some(Seq("a", "b"))
          */
         private def resolveFieldAccessChain(
-            expr: Expression): Option[Seq[String]] = {
+            expr: Expression,
+            allowSemanticReferenceMatch: Boolean): Option[Seq[String]] = {
           expr match {
             case GetStructField(child, ordinal, nameOpt) =>
-              if (isProtobufStructReference(child)) {
+              if (isProtobufStructReference(child, allowSemanticReferenceMatch)) {
                 Some(Seq(getFieldName(ordinal, nameOpt, fullSchema)))
               } else {
-                resolveFieldAccessChain(child).flatMap { parentPath =>
+                resolveFieldAccessChain(child, allowSemanticReferenceMatch).flatMap { parentPath =>
                   val parentSchema = if (parentPath.isEmpty) fullSchema
                                      else resolveSchemaAtPath(fullSchema, parentPath)
                   if (parentSchema != null) {
@@ -544,7 +556,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                   }
                 }
               }
-            case _ if isProtobufStructReference(expr) =>
+            case _ if isProtobufStructReference(expr, allowSemanticReferenceMatch) =>
               Some(Seq.empty)
             case _ =>
               None
@@ -584,10 +596,11 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         private def collectStructFieldReferences(
             expr: Expression,
             fieldReqs: mutable.Map[String, Option[Set[String]]],
-            hasDirectStructRefHolder: () => Unit): Unit = {
+            hasDirectStructRefHolder: () => Unit,
+            allowSemanticReferenceMatch: Boolean): Unit = {
           expr match {
             case GetStructField(child, ordinal, nameOpt) =>
-              resolveFieldAccessChain(child) match {
+              resolveFieldAccessChain(child, allowSemanticReferenceMatch) match {
                 case Some(parentPath) =>
                   val parentSchema = if (parentPath.isEmpty) fullSchema
                                      else resolveSchemaAtPath(fullSchema, parentPath)
@@ -600,35 +613,40 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                       registerPathRequirements(fieldReqs, parentPath, fieldName)
                     }
                   } else {
-                    collectStructFieldReferences(child, fieldReqs, hasDirectStructRefHolder)
+                    collectStructFieldReferences(
+                      child, fieldReqs, hasDirectStructRefHolder, allowSemanticReferenceMatch)
                   }
                 case None =>
-                  collectStructFieldReferences(child, fieldReqs, hasDirectStructRefHolder)
+                  collectStructFieldReferences(
+                    child, fieldReqs, hasDirectStructRefHolder, allowSemanticReferenceMatch)
               }
 
             case gasf: GetArrayStructFields =>
-              resolveFieldAccessChain(gasf.child) match {
+              resolveFieldAccessChain(gasf.child, allowSemanticReferenceMatch) match {
                 case Some(parentPath) if parentPath.nonEmpty =>
                   registerPathRequirements(fieldReqs, parentPath, gasf.field.name)
                 case Some(parentPath) if parentPath.isEmpty =>
                   fieldReqs(gasf.field.name) = None
                 case _ =>
                   gasf.children.foreach { child =>
-                    collectStructFieldReferences(child, fieldReqs, hasDirectStructRefHolder)
+                    collectStructFieldReferences(
+                      child, fieldReqs, hasDirectStructRefHolder, allowSemanticReferenceMatch)
                   }
               }
 
             case alias: org.apache.spark.sql.catalyst.expressions.Alias =>
-              if (!isProtobufStructReference(alias.child)) {
-                collectStructFieldReferences(alias.child, fieldReqs, hasDirectStructRefHolder)
+              if (!isProtobufStructReference(alias.child, allowSemanticReferenceMatch)) {
+                collectStructFieldReferences(
+                  alias.child, fieldReqs, hasDirectStructRefHolder, allowSemanticReferenceMatch)
               }
 
             case _ =>
-              if (isProtobufStructReference(expr)) {
+              if (isProtobufStructReference(expr, allowSemanticReferenceMatch)) {
                 hasDirectStructRefHolder()
               }
               expr.children.foreach { child =>
-                collectStructFieldReferences(child, fieldReqs, hasDirectStructRefHolder)
+                collectStructFieldReferences(
+                  child, fieldReqs, hasDirectStructRefHolder, allowSemanticReferenceMatch)
               }
           }
         }
@@ -697,7 +715,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             topLevelIndices: Seq[Int]): Unit = {
           expr match {
             case gsf @ GetStructField(childExpr, ordinal, nameOpt) =>
-              resolveFieldAccessChain(childExpr) match {
+              resolveFieldAccessChain(childExpr, allowSemanticReferenceMatch = true) match {
                 case Some(parentPath) if parentPath.nonEmpty =>
                   val parentSchema = resolveSchemaAtPath(fullSchema, parentPath)
                   if (parentSchema != null) {
@@ -718,7 +736,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 case _ =>
               }
             case gasf @ GetArrayStructFields(childExpr, field, _, _, _) =>
-              resolveFieldAccessChain(childExpr) match {
+              resolveFieldAccessChain(childExpr, allowSemanticReferenceMatch = true) match {
                 case Some(parentPath) if parentPath.nonEmpty =>
                   val pathKey = parentPath.mkString(".")
                   prunedFieldsMap.get(pathKey).foreach { orderedChildren =>
@@ -741,7 +759,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
          * 2. An AttributeReference that references the output of ProtobufDataToCatalyst
          *    (when accessing from a downstream ProjectExec)
          */
-        private def isProtobufStructReference(expr: Expression): Boolean = {
+        private def isProtobufStructReference(
+            expr: Expression,
+            allowSemanticReferenceMatch: Boolean = true): Boolean = {
           if ((expr eq e) || expr.semanticEquals(e)) {
             return true
           }
@@ -752,7 +772,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           // semantics so that
           // analyzeRequiredFields detects all field accesses in one
           // pass, keeping schema projection correct.
-          if (expr.getClass == e.getClass &&
+          if (allowSemanticReferenceMatch &&
+              expr.getClass == e.getClass &&
               expr.children.nonEmpty &&
               e.children.nonEmpty &&
               ((expr.children.head eq e.children.head) ||

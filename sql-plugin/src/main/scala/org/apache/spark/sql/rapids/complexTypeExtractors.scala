@@ -437,14 +437,7 @@ object GpuGetStructFieldMeta {
     if (runtimeOrd >= 0) {
       runtimeOrd
     } else {
-      expr.name.flatMap { fieldName =>
-        child.dataType match {
-          case st: StructType =>
-            val byName = st.fields.indexWhere(_.name == fieldName)
-            if (byName >= 0) Some(byName) else None
-          case _ => None
-        }
-      }.getOrElse(expr.ordinal)
+      expr.ordinal
     }
   }
 }
@@ -476,12 +469,7 @@ object GpuGetArrayStructFieldsMeta {
     if (runtimeOrd >= 0) {
       runtimeOrd
     } else {
-      child.dataType match {
-        case ArrayType(st: StructType, _) =>
-          val byName = st.fields.indexWhere(_.name == expr.field.name)
-          if (byName >= 0) byName else expr.ordinal
-        case _ => expr.ordinal
-      }
+      expr.ordinal
     }
   }
 
