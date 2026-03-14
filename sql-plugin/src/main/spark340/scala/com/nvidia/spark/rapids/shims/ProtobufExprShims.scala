@@ -240,21 +240,24 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 return
               }
 
-              val outputType = sf.dataType match {
+              val outputTypeOpt = sf.dataType match {
                 case ArrayType(elemType, _) =>
                   elemType match {
                     case _: StructType =>
                       // Repeated message field: ArrayType(StructType) - element type is STRUCT
-                      DType.STRUCT.getTypeId.getNativeId
+                      Some(DType.STRUCT.getTypeId.getNativeId)
                     case other =>
                       GpuFromProtobuf.sparkTypeToCudfIdOpt(other)
-                        .getOrElse(DType.INT8.getTypeId.getNativeId)
                   }
                 case _: StructType =>
-                  DType.STRUCT.getTypeId.getNativeId
+                  Some(DType.STRUCT.getTypeId.getNativeId)
                 case other =>
                   GpuFromProtobuf.sparkTypeToCudfIdOpt(other)
-                    .getOrElse(DType.INT8.getTypeId.getNativeId)
+              }
+              val outputType = outputTypeOpt.getOrElse {
+                willNotWorkOnGpu(
+                  s"Unsupported Spark type for protobuf field '${sf.name}': ${sf.dataType}")
+                return
               }
 
               val path = if (pathPrefix.isEmpty) sf.name else s"$pathPrefix.${sf.name}"

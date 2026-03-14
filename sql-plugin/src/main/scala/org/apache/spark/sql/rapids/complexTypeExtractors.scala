@@ -425,13 +425,13 @@ class GpuGetStructFieldMeta(
   extends UnaryExprMeta[GetStructField](expr, conf, parent, rule) {
 
   def convertToGpu(child: Expression): GpuExpression = {
-    val effectiveOrd = GpuGetStructFieldMeta.effectiveOrdinal(child, expr)
+    val effectiveOrd = GpuGetStructFieldMeta.effectiveOrdinal(expr)
     GpuGetStructField(child, effectiveOrd, expr.name)
   }
 }
 
 object GpuGetStructFieldMeta {
-  def effectiveOrdinal(child: Expression, expr: GetStructField): Int = {
+  def effectiveOrdinal(expr: GetStructField): Int = {
     val runtimeOrd = expr.getTagValue(
       GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
     if (runtimeOrd >= 0) {
@@ -450,7 +450,7 @@ class GpuGetArrayStructFieldsMeta(
   extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
 
   def convertToGpu(child: Expression): GpuExpression = {
-    val effectiveOrd = GpuGetArrayStructFieldsMeta.effectiveOrdinal(child, expr)
+    val effectiveOrd = GpuGetArrayStructFieldsMeta.effectiveOrdinal(expr)
     val runtimeOrd = expr.getTagValue(
       GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
     val effectiveNumFields =
@@ -461,9 +461,7 @@ class GpuGetArrayStructFieldsMeta(
 }
 
 object GpuGetArrayStructFieldsMeta {
-  def effectiveOrdinal(
-      child: Expression,
-      expr: GetArrayStructFields): Int = {
+  def effectiveOrdinal(expr: GetArrayStructFields): Int = {
     val runtimeOrd = expr.getTagValue(
       GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
     if (runtimeOrd >= 0) {

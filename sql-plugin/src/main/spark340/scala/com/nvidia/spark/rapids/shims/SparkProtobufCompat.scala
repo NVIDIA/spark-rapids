@@ -249,8 +249,6 @@ private[shims] object SparkProtobufCompat extends Logging {
         throw new IllegalStateException(
           s"Unsupported protobuf numeric default value class: ${ref.getClass.getName}")
       }
-    case _ =>
-      throw new IllegalStateException("Unexpected protobuf numeric default value")
   }
 
   private def extractBytes(rawDefault: AnyRef): Array[Byte] = rawDefault match {
@@ -262,8 +260,6 @@ private[shims] object SparkProtobufCompat extends Logging {
         throw new IllegalStateException(
           s"Unsupported protobuf bytes default value class: ${ref.getClass.getName}")
       }
-    case _ =>
-      throw new IllegalStateException("Unexpected protobuf bytes default value")
   }
 
   private object PbReflect {
