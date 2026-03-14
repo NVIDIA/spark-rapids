@@ -345,10 +345,13 @@ class GpuDeltaParquetFileFormatBase2(
     def computeNumRowsDeleted(): Long = {
       rowGroupOffsets.zip(rowGroupNumRows).map {
         case (offset, numRows) =>
-          val contains = for (i <- offset until offset + numRows) yield {
-            if (scalaBitmap.contains(i)) 1L else 0L
+          val contains = 0L
+          for (i <- offset until offset + numRows) {
+            if (scalaBitmap.contains(i)) {
+              contains += 1
+            }
           }
-          contains.sum
+          contains
       }.sum
     }
 
