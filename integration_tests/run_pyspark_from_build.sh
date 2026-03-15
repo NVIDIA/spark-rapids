@@ -179,7 +179,7 @@ else
             case "$VERSION_STRING" in
                 3.4.*) PROTOBUF_JAVA_VERSION="3.25.1" ;;
                 3.5.*) PROTOBUF_JAVA_VERSION="3.25.1" ;;
-                4.0.*) PROTOBUF_JAVA_VERSION="4.29.3" ;;
+                4.0.*|4.1.*) PROTOBUF_JAVA_VERSION="4.29.3" ;;
                 *)     PROTOBUF_JAVA_VERSION="3.25.1" ;;
             esac
             echo "Using protobuf-java version $PROTOBUF_JAVA_VERSION based on Spark $VERSION_STRING"
@@ -198,19 +198,31 @@ else
             fi
         fi
         
+        SPARK_PROTOBUF_JAR_AVAILABLE=false
+        PROTOBUF_JAVA_AVAILABLE=false
+
         if [[ -f "$PROTOBUF_JAR_PATH" ]]; then
             PROTOBUF_JARS="$PROTOBUF_JAR_PATH"
             echo "Including spark-protobuf jar: $PROTOBUF_JAR_PATH"
+            SPARK_PROTOBUF_JAR_AVAILABLE=true
         fi
         if [[ -f "$PROTOBUF_JAVA_JAR_PATH" ]]; then
             PROTOBUF_JARS="${PROTOBUF_JARS:+$PROTOBUF_JARS }$PROTOBUF_JAVA_JAR_PATH"
             echo "Including protobuf-java jar: $PROTOBUF_JAVA_JAR_PATH"
+            PROTOBUF_JAVA_AVAILABLE=true
+        elif [[ -n "$BUNDLED_PB_JAR" ]]; then
+            echo "Using bundled protobuf-java jar from SPARK_HOME: $BUNDLED_PB_JAR"
+            PROTOBUF_JAVA_AVAILABLE=true
         fi
-        if [[ -z "$PROTOBUF_JARS" ]]; then
-            echo "WARNING: No protobuf JARs available; protobuf tests will be skipped"
-            export PROTOBUF_JARS_AVAILABLE=false
-        else
+
+        if [[ "$SPARK_PROTOBUF_JAR_AVAILABLE" == "true" && \
+              "$PROTOBUF_JAVA_AVAILABLE" == "true" ]]; then
             export PROTOBUF_JARS_AVAILABLE=true
+        else
+            echo "WARNING: Protobuf JAR dependencies incomplete; protobuf tests will be skipped"
+            echo "  spark-protobuf available: $SPARK_PROTOBUF_JAR_AVAILABLE"
+            echo "  protobuf-java available: $PROTOBUF_JAVA_AVAILABLE"
+            export PROTOBUF_JARS_AVAILABLE=false
         fi
         # Also add protobuf jars to driver classpath for Class.forName() to work
         # This is needed because --jars only adds to executor classpath
