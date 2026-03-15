@@ -47,21 +47,69 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.random.BernoulliCellSampler
 
+object GpuProjectExecMeta {
+  private def isProtobufDecodeExpr(expr: Expression): Boolean =
+    expr.getClass.getName.endsWith("ProtobufDataToCatalyst")
+
+  private def protobufAliasExprIds(plan: SparkPlan): Set[ExprId] = plan match {
+    case ProjectExec(projectList, _) =>
+      projectList.collect {
+        case alias: Alias if isProtobufDecodeExpr(alias.child) => alias.exprId
+      }.toSet
+    case _ => Set.empty
+  }
+
+  private def isRootedAtProtobufDecode(expr: Expression, protobufExprIds: Set[ExprId]): Boolean =
+    expr match {
+      case attr: AttributeReference =>
+        protobufExprIds.contains(attr.exprId)
+      case decode if isProtobufDecodeExpr(decode) =>
+        true
+      case GetStructField(child, _, _) =>
+        isRootedAtProtobufDecode(child, protobufExprIds)
+      case gasf: GetArrayStructFields =>
+        isRootedAtProtobufDecode(gasf.child, protobufExprIds)
+      case _ =>
+        false
+    }
+
+  private def extractsFromProtobufAlias(
+      expr: Expression,
+      protobufExprIds: Set[ExprId]): Boolean = expr match {
+    case GetStructField(child, _, _) =>
+      isRootedAtProtobufDecode(child, protobufExprIds)
+    case gasf: GetArrayStructFields =>
+      isRootedAtProtobufDecode(gasf.child, protobufExprIds)
+    case other =>
+      other.children.exists(child => extractsFromProtobufAlias(child, protobufExprIds))
+  }
+
+  private[rapids] def shouldCoalesceAfterProject(plan: ProjectExec): Boolean = {
+    val protobufExprIds = protobufAliasExprIds(plan.child)
+    plan.projectList.exists(expr => extractsFromProtobufAlias(expr, protobufExprIds))
+  }
+}
+
 class GpuProjectExecMeta(
     proj: ProjectExec,
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r)
     with Logging {
+  override protected lazy val outputTypeMetas: Option[Seq[DataTypeMeta]] =
+    Some(childExprs.map(_.typeMeta))
+
   override def convertToGpu(): GpuExec = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
     val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
     val gpuChild = childPlans.head.convertIfNeeded()
+    val forcePostProjectCoalesce = conf.isProtobufBatchMergeAfterProjectEnabled &&
+      GpuProjectExecMeta.shouldCoalesceAfterProject(proj)
     if (conf.isProjectAstEnabled) {
       // cuDF requires return column is fixed width
       val allReturnTypesFixedWidth = gpuExprs.forall(e => GpuBatchUtils.isFixedWidth(e.dataType))
       if (allReturnTypesFixedWidth && childExprs.forall(_.canThisBeAst)) {
-        return GpuProjectAstExec(gpuExprs, gpuChild)
+        return GpuProjectAstExec(gpuExprs, gpuChild, forcePostProjectCoalesce)
       }
       // explain AST because this is optional and it is sometimes hard to debug
       if (conf.shouldExplain) {
@@ -76,7 +124,7 @@ class GpuProjectExecMeta(
         }
       }
     }
-    GpuProjectExec(gpuExprs, gpuChild)
+    GpuProjectExec(gpuExprs, gpuChild, forcePostProjectCoalesce = forcePostProjectCoalesce)
   }
 }
 
@@ -290,6 +338,7 @@ object GpuProjectExecLike {
 trait GpuProjectExecLike extends GpuPartitioningPreservingUnaryExecNode with GpuExec {
 
   def projectList: Seq[Expression]
+  def forcePostProjectCoalesce: Boolean
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
@@ -299,8 +348,16 @@ trait GpuProjectExecLike extends GpuPartitioningPreservingUnaryExecNode with Gpu
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  // The same as what feeds us
-  override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
+  override def coalesceAfter: Boolean = forcePostProjectCoalesce
+
+  // Flagged protobuf projects intentionally drop the output batching guarantee so that
+  // the post-project coalesce inserted by transition rules is not optimized away.
+  override def outputBatching: CoalesceGoal =
+    if (forcePostProjectCoalesce) {
+      null
+    } else {
+      GpuExec.outputBatching(child)
+    }
 }
 
 /**
@@ -763,14 +820,19 @@ case class GpuProjectExec(
    //   immutable/List.scala#L516
    projectList: List[NamedExpression],
    child: SparkPlan,
-   enablePreSplit: Boolean = true) extends GpuProjectExecLike {
+   enablePreSplit: Boolean = true,
+   forcePostProjectCoalesce: Boolean = false) extends GpuProjectExecLike {
 
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
   override def outputBatching: CoalesceGoal = if (enablePreSplit) {
     // Pre-split will make sure the size of each output batch will not be larger
     // than the splitUntilSize.
-    TargetSize(PreProjectSplitIterator.getSplitUntilSize)
+    if (forcePostProjectCoalesce) {
+      super.outputBatching
+    } else {
+      TargetSize(PreProjectSplitIterator.getSplitUntilSize)
+    }
   } else {
     super.outputBatching
   }
@@ -822,7 +884,8 @@ case class GpuProjectAstExec(
     // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
     //   immutable/List.scala#L516
     projectList: List[Expression],
-    child: SparkPlan
+    child: SparkPlan,
+    forcePostProjectCoalesce: Boolean = false
 ) extends GpuProjectExecLike {
 
   override def output: Seq[Attribute] = {

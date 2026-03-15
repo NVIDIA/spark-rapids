@@ -185,7 +185,7 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       //
       case dvRoot @ GpuProjectExec(outputList,
       dvFilter @ GpuFilterExec(condition,
-      dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
+      dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _, _)), _, _)
         if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
           !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
         dvRoot.withNewChildren(Seq(
@@ -256,7 +256,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
 
     def pruneIsRowDeletedColumn(plan: SparkPlan): SparkPlan = {
       plan.transformUp {
-        case project @ GpuProjectExec(projectList, _, _) =>
+        case project @ GpuProjectExec(projectList, _, _, _) =>
           val newProjList = projectList.filterNot(isRowDeletedColumnRef(_))
           project.copy(projectList = newProjList)
         case fsse: GpuFileSourceScanExec =>
@@ -307,11 +307,16 @@ object DVPredicatePushdown extends ShimPredicateHelper {
   def mergeIdenticalProjects(plan: SparkPlan): SparkPlan = {
     plan.transformUp {
       case p @ GpuProjectExec(projList1,
-      GpuProjectExec(projList2, child, enablePreSplit1), enablePreSplit2) =>
+      GpuProjectExec(projList2, child, enablePreSplit1, forcePostProjectCoalesce1),
+      enablePreSplit2, forcePostProjectCoalesce2) =>
         val projSet1 = projList1.map(_.exprId).toSet
         val projSet2 = projList2.map(_.exprId).toSet
         if (projSet1 == projSet2) {
-          GpuProjectExec(projList1, child, enablePreSplit1 && enablePreSplit2)
+          GpuProjectExec(
+            projList1,
+            child,
+            enablePreSplit1 && enablePreSplit2,
+            forcePostProjectCoalesce1 || forcePostProjectCoalesce2)
         } else {
           p
         }

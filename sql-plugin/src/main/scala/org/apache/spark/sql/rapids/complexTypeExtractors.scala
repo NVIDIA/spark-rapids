@@ -32,7 +32,10 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, LongType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
+case class GpuGetStructField(
+    child: Expression,
+    ordinal: Int,
+    name: Option[String] = None)
     extends ShimUnaryExpression
     with GpuExpression
     with ShimGetStructField
@@ -41,15 +44,23 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
   lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]
 
   override def dataType: DataType = childSchema(ordinal).dataType
-  override def nullable: Boolean = child.nullable || childSchema(ordinal).nullable
+
+  override def nullable: Boolean =
+    child.nullable || childSchema(ordinal).nullable
 
   override def toString: String = {
-    val fieldName = if (resolved) childSchema(ordinal).name else s"_$ordinal"
+    val fieldName = if (resolved) {
+      childSchema(ordinal).name
+    } else {
+      s"_$ordinal"
+    }
     s"$child.${name.getOrElse(fieldName)}"
   }
 
-  override def sql: String =
-    child.sql + s".${quoteIdentifier(name.getOrElse(childSchema(ordinal).name))}"
+  override def sql: String = {
+    val fieldName = childSchema(ordinal).name
+    child.sql + s".${quoteIdentifier(name.getOrElse(fieldName))}"
+  }
 
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     val dt = dataType
@@ -59,7 +70,6 @@ case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[Strin
           GpuColumnVector.from(view.copyToColumnVector(), dt)
         }
       case s: GpuScalar =>
-        // For a scalar in we want a scalar out.
         if (!s.isValid) {
           GpuScalar(null, dt)
         } else {
@@ -402,6 +412,36 @@ case class GpuArrayPosition(left: Expression, right: Expression)
   }
 }
 
+object GpuStructFieldOrdinalTag {
+  val PRUNED_ORDINAL_TAG =
+    new org.apache.spark.sql.catalyst.trees.TreeNodeTag[Int]("GPU_PRUNED_ORDINAL")
+}
+
+class GpuGetStructFieldMeta(
+    expr: GetStructField,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends UnaryExprMeta[GetStructField](expr, conf, parent, rule) {
+
+  def convertToGpu(child: Expression): GpuExpression = {
+    val effectiveOrd = GpuGetStructFieldMeta.effectiveOrdinal(expr)
+    GpuGetStructField(child, effectiveOrd, expr.name)
+  }
+}
+
+object GpuGetStructFieldMeta {
+  def effectiveOrdinal(expr: GetStructField): Int = {
+    val runtimeOrd = expr.getTagValue(
+      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
+    if (runtimeOrd >= 0) {
+      runtimeOrd
+    } else {
+      expr.ordinal
+    }
+  }
+}
+
 class GpuGetArrayStructFieldsMeta(
      expr: GetArrayStructFields,
      conf: RapidsConf,
@@ -409,8 +449,41 @@ class GpuGetArrayStructFieldsMeta(
      rule: DataFromReplacementRule)
   extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
 
-  def convertToGpu(child: Expression): GpuExpression =
-    GpuGetArrayStructFields(child, expr.field, expr.ordinal, expr.numFields, expr.containsNull)
+  def convertToGpu(child: Expression): GpuExpression = {
+    val effectiveOrd = GpuGetArrayStructFieldsMeta.effectiveOrdinal(expr)
+    val runtimeOrd = expr.getTagValue(
+      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
+    val effectiveNumFields =
+      GpuGetArrayStructFieldsMeta.effectiveNumFields(child, expr, runtimeOrd)
+    GpuGetArrayStructFields(child, expr.field,
+      effectiveOrd, effectiveNumFields, expr.containsNull)
+  }
+}
+
+object GpuGetArrayStructFieldsMeta {
+  def effectiveOrdinal(expr: GetArrayStructFields): Int = {
+    val runtimeOrd = expr.getTagValue(
+      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
+    if (runtimeOrd >= 0) {
+      runtimeOrd
+    } else {
+      expr.ordinal
+    }
+  }
+
+  def effectiveNumFields(
+      child: Expression,
+      expr: GetArrayStructFields,
+      runtimeOrd: Int): Int = {
+    if (runtimeOrd >= 0) {
+      child.dataType match {
+        case ArrayType(st: StructType, _) => st.fields.length
+        case _ => expr.numFields
+      }
+    } else {
+      expr.numFields
+    }
+  }
 }
 
 /**
