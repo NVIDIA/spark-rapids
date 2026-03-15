@@ -298,6 +298,17 @@ class MultiFileCloudSequenceFilePartitionReader(
   private val wantsValue = requiredSchema.fieldNames.exists(
     _.equalsIgnoreCase(GpuSequenceFileReaders.VALUE_FIELD))
 
+  private def toBatchRowCount(numRows: Long): Int = {
+    try {
+      Math.toIntExact(numRows)
+    } catch {
+      case _: ArithmeticException =>
+        throw new IllegalArgumentException(
+          s"SequenceFile batch row count $numRows exceeds " +
+            "ColumnarBatch Int row limit")
+    }
+  }
+
   override def getFileFormatShortName: String = "SequenceFileBinary"
 
   /**
@@ -453,7 +464,7 @@ class MultiFileCloudSequenceFilePartitionReader(
       case empty: SequenceFileEmptyMetaData =>
         // No data, but we might need to emit partition values
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        val emptyBatch = new ColumnarBatch(Array.empty, empty.numRows.toInt)
+        val emptyBatch = new ColumnarBatch(Array.empty, toBatchRowCount(empty.numRows))
         addPartitionValuesToBatch(
           emptyBatch,
           empty.partitionedFile.partitionValues,
@@ -567,7 +578,8 @@ class MultiFileCloudSequenceFilePartitionReader(
     val dataSlice = dataBuffer.sliceWithCopy(0, dataLen.toLong)
     closeOnExcept(dataSlice) { _ =>
       val offsetsLen = (numRows.toLong + 1L) * DType.INT32.getSizeInBytes
-      // LIST offsets only need numRows + 1 entries, even if the reusable backing buffer grew larger.
+      // LIST offsets only need numRows + 1 entries,
+      // even if the reusable backing buffer grew larger.
       val offsetsSlice = offsetsBuffer.sliceWithCopy(0, offsetsLen)
       closeOnExcept(offsetsSlice) { _ =>
         val emptyChildren = new util.ArrayList[HostColumnVectorCore]()

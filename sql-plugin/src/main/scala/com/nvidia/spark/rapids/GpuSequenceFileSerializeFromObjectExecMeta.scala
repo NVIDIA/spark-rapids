@@ -21,6 +21,7 @@ import scala.util.control.NonFatal
 
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapred.{FileInputFormat => OldFileInputFormat}
+import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.mapreduce.lib.input.{
   FileInputFormat => NewFileInputFormat}
 
@@ -189,8 +190,15 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
       case n: NewHadoopRDD[_, _] =>
         try {
           val jobConf = n.getConf
-          val paths = if (jobConf != null) jobConf.get(NewFileInputFormat.INPUT_DIR) else null
-          Option(paths).toSeq.flatMap(_.split(",").map(_.trim)).filter(_.nonEmpty)
+          if (jobConf == null) {
+            Seq.empty
+          } else {
+            // Reuse Hadoop's own parsing of INPUT_DIR instead of splitting the raw conf string.
+            // This preserves any escaping/normalization semantics that FileInputFormat applies.
+            val job = Job.getInstance(jobConf)
+            val paths = NewFileInputFormat.getInputPaths(job)
+            if (paths == null) Seq.empty else paths.map(_.toString).toSeq
+          }
         } catch {
           case NonFatal(e) =>
             logDebug(s"Failed to collect input paths from NewHadoopRDD: ${e.getMessage}", e)
