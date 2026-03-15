@@ -679,25 +679,33 @@ class GpuDeltaParquetFileFormatBase2(
         numRows: Long,
         blocks: collection.Seq[BlockMetaData]
     ): HostMemoryEmptyMetaData = {
-      val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
-        .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
-      val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
-        .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
-      val maybeSerializedDV = tablePath.map(tp =>
-        RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
-      val maybeScalaBitmap = tablePath.map(tp =>
-        RapidsDeletionVectors.loadScalaBitmap(conf, dvDescriptorOpt, filterTypeOpt, tp))
+      val (maybeSerializedDV, maybeScalaBitmap) = if (numRows > 0) {
+        // numRows == 0 means the data is empty because of an empty file,
+        // file not found, or a corrupted file. In all these cases, we don't
+        // need to load deletion vectors.
+        val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
+          .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
+        val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
+          .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
+        val maybeSerializedDV = tablePath.map(tp =>
+          RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
+        val maybeScalaBitmap = tablePath.map(tp =>
+          RapidsDeletionVectors.loadScalaBitmap(conf, dvDescriptorOpt, filterTypeOpt, tp))
+        (maybeSerializedDV, maybeScalaBitmap)
+      } else {
+        (None, None)
+      }
 
       closeOnExcept(maybeSerializedDV) { _ =>
-        val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
-          .getRowGroupMetadata(blocks)
         val dvMetadata = DeletionVectorMetadata.forSingleBuffer(
-          maybeSerializedDV.map(serializedDV =>
+          maybeSerializedDV.map{ serializedDV =>
+            val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
+              .getRowGroupMetadata(blocks)
             SpillableDeletionVectorInfo(
               serializedDV,
               maybeScalaBitmap.get,
               rowGroupOffsets,
-              rowGroupNumRows))
+              rowGroupNumRows)}
         )
         DeltaParquetHostMemoryEmptyMetaData(
           partitionedFile,
