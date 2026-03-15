@@ -687,10 +687,13 @@ class GpuDeltaParquetFileFormatBase2(
           .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
         val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
           .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
-        val maybeSerializedDV = tablePath.map(tp =>
-          RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
         val maybeScalaBitmap = tablePath.map(tp =>
           RapidsDeletionVectors.loadScalaBitmap(conf, dvDescriptorOpt, filterTypeOpt, tp))
+        // Load serializedDV at last which is stored in a HostBufferMemory, so that we will
+        // not execute any other code before the serializedDV is wrapped within the withResource
+        // clause.
+        val maybeSerializedDV = tablePath.map(tp =>
+          RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
         (maybeSerializedDV, maybeScalaBitmap)
       } else {
         (None, None)
@@ -753,10 +756,13 @@ class GpuDeltaParquetFileFormatBase2(
         .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
       val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
         .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
-      val maybeSerializedDV = tablePath.map(tp =>
-        RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
       val maybeScalaBitmap = tablePath.map(tp =>
         RapidsDeletionVectors.loadScalaBitmap(conf, dvDescriptorOpt, filterTypeOpt, tp))
+      // Load serializedDV at last which is stored in a HostBufferMemory, so that we will
+      // not execute any other code before the serializedDV is wrapped within the withResource
+      // clause.
+      val maybeSerializedDV = tablePath.map(tp =>
+        RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
       withResource(maybeSerializedDV) { _ =>
         val dvMetadataArray = memBuffersAndSize.map { singleHMBAndMeta =>
           val dataBlocks = singleHMBAndMeta.blockMeta
