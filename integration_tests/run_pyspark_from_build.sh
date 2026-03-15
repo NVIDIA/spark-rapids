@@ -170,7 +170,7 @@ else
         # Also download protobuf-java jar (required dependency).
         # Detect version from the jar bundled with Spark, fall back to version mapping.
         PROTOBUF_JAVA_VERSION=""
-        BUNDLED_PB_JAR=$(ls "$SPARK_HOME"/jars/protobuf-java-[0-9]*.jar 2>/dev/null | head -1)
+        BUNDLED_PB_JAR=$(ls "$SPARK_HOME"/jars/protobuf-java-[0-9]*.jar 2>/dev/null | sort -V | tail -1)
         if [[ -n "$BUNDLED_PB_JAR" ]]; then
             PROTOBUF_JAVA_VERSION=$(basename "$BUNDLED_PB_JAR" | sed 's/protobuf-java-\(.*\)\.jar/\1/')
             echo "Detected protobuf-java version $PROTOBUF_JAVA_VERSION from SPARK_HOME"

@@ -93,8 +93,16 @@ def _spark_protobuf_jvm_available(spark) -> bool:
     even when the JVM side isn't present on the classpath, which manifests as:
       TypeError: 'JavaPackage' object is not callable
     when calling into `sc._jvm.org.apache.spark.sql.protobuf.functions.from_protobuf`.
+
+    In the integration harness, Spark jars are often attached dynamically. Using the current
+    thread's context classloader is more reliable than the default `Class.forName()` lookup.
     """
     jvm = spark.sparkContext._jvm
+    loader = None
+    try:
+        loader = jvm.Thread.currentThread().getContextClassLoader()
+    except Exception:
+        pass
     candidates = [
         # Scala object `functions` compiles to `functions$`
         "org.apache.spark.sql.protobuf.functions$",
@@ -103,11 +111,21 @@ def _spark_protobuf_jvm_available(spark) -> bool:
     ]
     for cls in candidates:
         try:
-            jvm.java.lang.Class.forName(cls)
+            if loader is not None:
+                jvm.java.lang.Class.forName(cls, True, loader)
+            else:
+                jvm.java.lang.Class.forName(cls)
             return True
         except Exception:
             continue
-    return False
+
+    # Fallback: try to resolve the JVM member through Py4J. A missing optional module typically
+    # stays as a JavaPackage placeholder instead of a callable JavaMember/JavaClass.
+    try:
+        member = jvm.org.apache.spark.sql.protobuf.functions.from_protobuf
+        return type(member).__name__ != "JavaPackage"
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------

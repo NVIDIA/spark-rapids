@@ -442,7 +442,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 collectedExprs ++= p.projectList
                 p.projectList.foreach {
                   case alias: org.apache.spark.sql.catalyst.expressions.Alias
-                      if isProtobufStructReference(alias.child) =>
+                      if isProtobufStructReference(
+                        alias.child, allowSemanticReferenceMatch) =>
                     protobufOutputExprIds += alias.exprId
                   case _ =>
                 }
@@ -655,7 +656,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 case Some(parentPath) if parentPath.nonEmpty =>
                   registerPathRequirements(fieldReqs, parentPath, gasf.field.name)
                 case Some(parentPath) if parentPath.isEmpty =>
-                  fieldReqs(gasf.field.name) = None
+                  logDebug("Schema pruning disabled: unexpected direct protobuf reference in " +
+                    "GetArrayStructFields")
+                  hasDirectStructRefHolder()
                 case _ =>
                   gasf.children.foreach { child =>
                     collectStructFieldReferences(
@@ -790,7 +793,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
          */
         private def isProtobufStructReference(
             expr: Expression,
-            allowSemanticReferenceMatch: Boolean = true): Boolean = {
+            allowSemanticReferenceMatch: Boolean): Boolean = {
           if ((expr eq e) || expr.semanticEquals(e)) {
             return true
           }
