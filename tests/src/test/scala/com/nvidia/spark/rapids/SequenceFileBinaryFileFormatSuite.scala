@@ -292,6 +292,39 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
     }
   }
 
+  test("SequenceFile PERFILE reader type is rejected") {
+    withTempDir("seqfile-perfile-reader-test") { tmpDir =>
+      val file = new File(tmpDir, "perfile.seq")
+      val conf = new Configuration()
+      val payloads = Array(Array[Byte](1, 2, 3))
+      writeSequenceFile(file, conf, payloads)
+
+      SparkSession.clearActiveSession()
+      SparkSession.clearDefaultSession()
+      val spark = SparkSession.builder()
+        .appName("SequenceFileBinaryFileFormatSuite-PERFILE")
+        .master("local[1]")
+        .config("spark.ui.enabled", "false")
+        .config("spark.sql.shuffle.partitions", "1")
+        .config("spark.sql.extensions", "com.nvidia.spark.rapids.SQLExecPlugin")
+        .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+        .config("spark.rapids.sql.enabled", "true")
+        .config("spark.rapids.sql.format.sequencefile.reader.type", "PERFILE")
+        .config("spark.rapids.sql.format.sequencefile.rddScan.physicalReplace.enabled", "true")
+        .getOrCreate()
+      try {
+        val e = intercept[IllegalArgumentException] {
+          readSequenceFileValueOnly(spark, file.getAbsolutePath).collect()
+        }
+        assert(e.getMessage.contains("PERFILE reader type is not supported for SequenceFile"))
+      } finally {
+        spark.stop()
+        SparkSession.clearActiveSession()
+        SparkSession.clearDefaultSession()
+      }
+    }
+  }
+
   // ============================================================================
   // Glob pattern tests
   // ============================================================================

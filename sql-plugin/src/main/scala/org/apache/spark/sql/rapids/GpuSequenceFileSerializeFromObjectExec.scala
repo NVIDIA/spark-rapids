@@ -98,12 +98,14 @@ case class GpuSequenceFileSerializeFromObjectExec(
   @transient private lazy val filePartitions: Seq[FilePartition] = {
     val session = SparkSession.active
     val hadoopConf = session.sessionState.newHadoopConf()
+    val ignoreMissingFiles = session.sessionState.conf.ignoreMissingFiles
 
     val allFiles = new ArrayBuffer[FileStatus]()
     inputPaths.foreach { pathStr =>
       val path = new Path(pathStr)
       val fs = path.getFileSystem(hadoopConf)
-      val statuses = GpuSequenceFileSerializeFromObjectExec.resolveInputStatuses(path, hadoopConf)
+      val statuses = Option(GpuSequenceFileSerializeFromObjectExec.resolveInputStatuses(
+        path, hadoopConf, ignoreMissingFiles)).getOrElse(Array.empty[FileStatus])
       statuses.foreach { s =>
         if (s.isFile) {
           allFiles += s
@@ -203,7 +205,8 @@ object GpuSequenceFileSerializeFromObjectExec {
 
   def resolveInputStatuses(
       path: Path,
-      hadoopConf: org.apache.hadoop.conf.Configuration): Array[FileStatus] = {
+      hadoopConf: org.apache.hadoop.conf.Configuration,
+      ignoreMissingFiles: Boolean = false): Array[FileStatus] = {
     val fs = path.getFileSystem(hadoopConf)
     val statuses = fs.globStatus(path)
     if (statuses == null || statuses.isEmpty) {
@@ -211,6 +214,8 @@ object GpuSequenceFileSerializeFromObjectExec {
       val looksLikeGlob = pathStr.exists(ch => ch == '*' || ch == '?' || ch == '[' || ch == '{')
       if (looksLikeGlob) {
         throw noMatchesError(path)
+      } else if (ignoreMissingFiles) {
+        Array.empty[FileStatus]
       } else {
         throw new FileNotFoundException(s"Input path does not exist: $path")
       }

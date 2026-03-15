@@ -300,7 +300,7 @@ def test_binary_data(spark_tmp_path, reader_type):
 
 @pytest.mark.parametrize('reader_type', sequencefile_reader_types)
 def test_sequencefile_read_with_missing_files(spark_tmp_path, reader_type):
-    """GPU replacement preserves the CPU error for missing input paths."""
+    """PySpark newAPIHadoopFile still errors on missing inputs before physical replacement."""
     existing_path = spark_tmp_path + '/SEQFILE_MISSING_DATA/existing'
     missing_path = spark_tmp_path + '/SEQFILE_MISSING_DATA/missing'
 

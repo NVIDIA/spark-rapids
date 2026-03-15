@@ -30,7 +30,8 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 private[rapids] object SequenceFileTestUtils {
   def withSequenceFileSession(
       appName: String,
-      physicalReplaceEnabled: Boolean = false)(f: SparkSession => Unit): Unit = {
+      physicalReplaceEnabled: Boolean = false,
+      extraConfs: Map[String, String] = Map.empty)(f: SparkSession => Unit): Unit = {
     SparkSession.clearActiveSession()
     SparkSession.clearDefaultSession()
     val builder = SparkSession.builder()
@@ -48,6 +49,9 @@ private[rapids] object SequenceFileTestUtils {
     if (physicalReplaceEnabled) {
       builder
         .config("spark.rapids.sql.explain", "ALL")
+    }
+    extraConfs.foreach { case (key, value) =>
+      builder.config(key, value)
     }
 
     val spark = builder.getOrCreate()

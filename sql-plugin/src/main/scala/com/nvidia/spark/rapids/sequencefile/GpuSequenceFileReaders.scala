@@ -442,6 +442,11 @@ class MultiFileCloudSequenceFilePartitionReader(
       wantsValue = wantsValue,
       allPartValues = if (allPartValues.nonEmpty) Some(allPartValues) else None)
 
+    // The returned combined metadata now owns the chunk arrays. The original wrappers are kept
+    // open so they do not eagerly close those chunks, but any deferred release callbacks should
+    // follow the combined owner.
+    toCombine.foreach(_.combineReleaseCallbacks(result))
+
     logDebug(s"Zero-copy combine took ${System.currentTimeMillis() - startCombineTime} ms, " +
       s"collected ${toCombine.length} files with ${allKeyChunks.length} key chunks, " +
       s"${allValueChunks.length} value chunks, total ${totalRows} rows, " +
@@ -462,13 +467,17 @@ class MultiFileCloudSequenceFilePartitionReader(
       fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase): Iterator[ColumnarBatch] = {
     fileBufsAndMeta match {
       case empty: SequenceFileEmptyMetaData =>
-        // No data, but we might need to emit partition values
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        val emptyBatch = new ColumnarBatch(Array.empty, toBatchRowCount(empty.numRows))
-        addPartitionValuesToBatch(
-          emptyBatch,
-          empty.partitionedFile.partitionValues,
-          empty.allPartValues)
+        try {
+          // No data, but we might need to emit partition values
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+          val emptyBatch = new ColumnarBatch(Array.empty, toBatchRowCount(empty.numRows))
+          addPartitionValuesToBatch(
+            emptyBatch,
+            empty.partitionedFile.partitionValues,
+            empty.allPartValues)
+        } finally {
+          empty.close()
+        }
 
       case meta: SequenceFileHostBuffersWithMetaData =>
         val batchIter = try {

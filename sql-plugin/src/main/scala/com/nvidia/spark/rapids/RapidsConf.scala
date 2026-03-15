@@ -1776,8 +1776,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val SEQUENCEFILE_READER_TYPE = conf("spark.rapids.sql.format.sequencefile.reader.type")
     .doc("Sets the SequenceFile reader type. Since SequenceFile decoding happens on the CPU " +
-      "(using Hadoop's SequenceFile.Reader), COALESCING mode is not supported and will throw " +
-      "an exception. MULTITHREADED uses multiple threads to read files in parallel, utilizing " +
+      "(using Hadoop's SequenceFile.Reader), COALESCING and PERFILE modes are not supported " +
+      "and will throw an exception. MULTITHREADED uses multiple threads to read files in " +
+      "parallel, utilizing " +
       "multiple CPU cores for I/O and decoding. MULTITHREADED is recommended when reading " +
       "many files as it allows the CPU to keep reading while GPU is also doing work. " +
       s"See $MULTITHREAD_READ_NUM_THREADS and " +
@@ -3726,8 +3727,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
           s"SequenceFile decoding happens on CPU, so coalescing provides no benefit. " +
           s"Use MULTITHREADED or AUTO instead.")
       case RapidsReaderType.PERFILE =>
-        logWarning("SequenceFile PERFILE reader has been removed; using MULTITHREADED instead.")
-        true
+        throw new IllegalArgumentException(
+          s"PERFILE reader type is not supported for SequenceFile. " +
+          s"SequenceFile uses only the multithreaded reader implementation. " +
+          s"Use MULTITHREADED or AUTO instead.")
       case _ =>
         // AUTO and MULTITHREADED both use the multithreaded reader implementation.
         // SequenceFile has no separate per-file reader implementation.
