@@ -4667,6 +4667,10 @@ object GpuOverrides extends Logging {
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
         TypeSig.all),
       (mapPy, conf, p, r) => new GpuMapInPandasExecMeta(mapPy, conf, p, r)),
+    exec[SerializeFromObjectExec](
+      "Serialize object rows to binary columns for SequenceFile RDD scans",
+      ExecChecks(TypeSig.all, TypeSig.BINARY),
+      (sfo, conf, p, r) => new GpuSequenceFileSerializeFromObjectExecMeta(sfo, conf, p, r)),
     exec[InMemoryTableScanExec](
       "Implementation of InMemoryTableScanExec to use GPU accelerated caching",
       ExecChecks((TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.ARRAY +
