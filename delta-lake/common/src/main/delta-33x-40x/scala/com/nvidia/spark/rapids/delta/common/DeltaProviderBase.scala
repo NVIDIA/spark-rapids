@@ -147,7 +147,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     val rapidsConf = new RapidsConf(conf)
     useMetadataRowIndex &&
       rapidsConf.isDeltaDeletionVectorPredicatePushdownEnabled &&
-      rapidsConf.isParquetPerFileReadEnabled
+      (rapidsConf.isParquetPerFileReadEnabled ||
+        rapidsConf.isParquetMultiThreadReadEnabled)
   }
 
   override def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {

@@ -22,6 +22,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.parquet._
 import org.apache.hadoop.conf.Configuration
@@ -35,15 +36,17 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.util.QuotingUtils
-import org.apache.spark.sql.connector.read.PartitionReader
+import org.apache.spark.sql.connector.read.{PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.DeltaParquetFileFormat._
 import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
+import org.apache.spark.sql.delta.deletionvectors.RoaringBitmapArray
 import org.apache.spark.sql.delta.schema.SchemaMergingUtils
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -54,6 +57,8 @@ import org.apache.spark.util.SerializableConfiguration
  * new deletion vector APIs in cuDF. Unlike the previous version where deletion vectors
  * are materialized into boolean columns and processed in a FilterExec, the deletion vectors
  * are passed to the Parquet reader and applied during reading with no materialization.
+ *
+ * Note that we do not support the DataSourceV2 API for Delta Lake tables yet.
  */
 class GpuDeltaParquetFileFormatBase2(
     protocol: Protocol,
@@ -147,6 +152,12 @@ class GpuDeltaParquetFileFormatBase2(
   def hasTablePath: Boolean = tablePath.isDefined
 
   override def hashCode(): Int = getClass.getCanonicalName.hashCode()
+
+  /////////////////////////////////
+  //
+  // Extensions for PERFILE reader
+  //
+  /////////////////////////////////
 
   override def createPartitionReaderFactory(sqlConf: SQLConf,
       broadcastedConf: Broadcast[SerializableConfiguration],
@@ -280,7 +291,8 @@ class GpuDeltaParquetFileFormatBase2(
             GpuSemaphore.acquireIfNecessary(TaskContext.get())
             val producer = if (maybeDvInfo.isDefined) {
               // MakeParquetTableWithDVProducer will try to close the hostBuf and dvInfo
-              MakeParquetTableWithDVProducer(useChunkedReader,
+              MakeParquetTableWithDVProducer(
+                useChunkedReader,
                 maxChunkedReaderMemoryUsageSizeBytes, conf,
                 targetBatchSizeBytes, parquetOpts,
                 Array(hostBuf), metrics,
@@ -308,6 +320,529 @@ class GpuDeltaParquetFileFormatBase2(
           }
         }
       }
+    }
+  }
+
+  ///////////////////////////////////////
+  //
+  // Extensions for multi-threaded reader
+  //
+  ///////////////////////////////////////
+
+  /**
+   * Spillable version of DeletionVector.DeletionVectorInfo
+   */
+  case class SpillableDeletionVectorInfo(
+      serializedBitmap: SpillableHostBuffer,
+      // Bitmap loaded from the deletion vector. This is used to compute the number
+      // of rows deleted in the given range of rowws.
+      // This is temporary until we add a new API in libcudf to compute it.
+      scalaBitmap: RoaringBitmapArray,
+      rowGroupOffsets: Array[Long],
+      rowGroupNumRows: Array[Int]
+  ) extends AutoCloseable {
+
+    def computeNumRowsDeleted(): Long = {
+      rowGroupOffsets.zip(rowGroupNumRows).map {
+        case (offset, numRows) =>
+          var contains = 0L
+          for (i <- offset until offset + numRows) {
+            if (scalaBitmap.contains(i)) {
+              contains = contains + 1L
+            }
+          }
+          contains
+      }.sum
+    }
+
+    override def close(): Unit = {
+      serializedBitmap.close()
+    }
+  }
+
+  object SpillableDeletionVectorInfo {
+    def apply(
+        serializedBitmap: HostMemoryBuffer,
+        scalaBitmap: RoaringBitmapArray,
+        rowGroupOffsets: Array[Long],
+        rowGroupNumRows: Array[Int]): SpillableDeletionVectorInfo = {
+      new SpillableDeletionVectorInfo(
+        SpillableHostBuffer(
+          serializedBitmap,
+          serializedBitmap.getLength(),
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+        scalaBitmap,
+        rowGroupOffsets,
+        rowGroupNumRows)
+    }
+  }
+
+  override def createMultiFileReaderFactory(
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      pushedFilters: Array[Filter],
+      fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    val poolConf = ThreadPoolConfBuilder(fileScan.rapidsConf)
+    GpuDeltaParquetMultiFilePartitionReaderFactory(
+      fileScan.conf,
+      broadcastedConf,
+      prepareSchema(fileScan.relation.dataSchema),
+      prepareSchema(fileScan.requiredSchema),
+      prepareSchema(fileScan.readPartitionSchema),
+      prepareFiltersForRead(pushedFilters).toArray,
+      fileScan.rapidsConf,
+      poolConf,
+      fileScan.allMetrics,
+      fileScan.queryUsesInputFile)
+  }
+
+  case class GpuDeltaParquetMultiFilePartitionReaderFactory(
+      @transient sqlConf: SQLConf,
+      broadcastedConf: Broadcast[SerializableConfiguration],
+      dataSchema: StructType,
+      readDataSchema: StructType,
+      partitionSchema: StructType,
+      filters: Array[Filter],
+      @transient rapidsConf: RapidsConf,
+      poolConfBuilder: ThreadPoolConfBuilder,
+      metrics: Map[String, GpuMetric],
+      queryUsesInputFile: Boolean)
+    extends AbstractGpuParquetMultiFilePartitionReaderFactory(sqlConf, broadcastedConf,
+      dataSchema, readDataSchema, partitionSchema, filters, rapidsConf, poolConfBuilder,
+      metrics, queryUsesInputFile) with Logging {
+
+    logDebug("Using GpuDeltaParquetMultiFilePartitionReaderFactory for multi-threaded Parquet " +
+      "reading with deletion vectors")
+
+    override protected def createBaseMultiFileCloudReader(
+        fileIO: RapidsFileIO,
+        conf: Configuration,
+        files: Array[PartitionedFile],
+        filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta,
+        isSchemaCaseSensitive: Boolean,
+        debugDumpPrefix: Option[String],
+        debugDumpAlways: Boolean,
+        maxReadBatchSizeRows: Integer,
+        maxReadBatchSizeBytes: Long,
+        targetBatchSizeBytes: Long,
+        maxGpuColumnSizeBytes: Long,
+        useChunkedReader: Boolean,
+        maxChunkedReaderMemoryUsageSizeBytes: Long,
+        compressCfg: CpuCompressionConfig,
+        execMetrics: Map[String, GpuMetric],
+        partitionSchema: StructType,
+        poolConf: ThreadPoolConf,
+        maxNumFileProcessed: Int,
+        ignoreMissingFiles: Boolean,
+        ignoreCorruptFiles: Boolean,
+        useFieldId: Boolean,
+        queryUsesInputFile: Boolean,
+        keepReadsInOrder: Boolean,
+        combineConf: CombineConf
+    ): AbstractMultiFileCloudParquetPartitionReader = {
+      new MultiFileCloudDeltaParquetPartitionReader(
+        fileIO,
+        conf,
+        files,
+        filterFunc,
+        isSchemaCaseSensitive,
+        debugDumpPrefix,
+        debugDumpAlways,
+        maxReadBatchSizeRows,
+        maxReadBatchSizeBytes,
+        targetBatchSizeBytes,
+        maxGpuColumnSizeBytes,
+        useChunkedReader,
+        maxChunkedReaderMemoryUsageSizeBytes,
+        compressCfg,
+        execMetrics,
+        partitionSchema,
+        poolConf,
+        maxNumFileProcessed,
+        ignoreMissingFiles,
+        ignoreCorruptFiles,
+        useFieldId,
+        queryUsesInputFile,
+        keepReadsInOrder,
+        combineConf
+      )
+    }
+  }
+
+  class MultiFileCloudDeltaParquetPartitionReader(
+      override val fileIO: RapidsFileIO,
+      override val conf: Configuration,
+      files: Array[PartitionedFile],
+      filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta,
+      override val isSchemaCaseSensitive: Boolean,
+      debugDumpPrefix: Option[String],
+      debugDumpAlways: Boolean,
+      maxReadBatchSizeRows: Integer,
+      maxReadBatchSizeBytes: Long,
+      targetBatchSizeBytes: Long,
+      maxGpuColumnSizeBytes: Long,
+      useChunkedReader: Boolean,
+      maxChunkedReaderMemoryUsageSizeBytes: Long,
+      override val compressCfg: CpuCompressionConfig,
+      override val execMetrics: Map[String, GpuMetric],
+      partitionSchema: StructType,
+      poolConf: ThreadPoolConf,
+      maxNumFileProcessed: Int,
+      ignoreMissingFiles: Boolean,
+      ignoreCorruptFiles: Boolean,
+      useFieldId: Boolean,
+      queryUsesInputFile: Boolean,
+      keepReadsInOrder: Boolean,
+      combineConf: CombineConf)
+    extends AbstractMultiFileCloudParquetPartitionReader(fileIO, conf, files, filterFunc,
+      isSchemaCaseSensitive, debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows,
+      maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader,
+      maxChunkedReaderMemoryUsageSizeBytes, compressCfg, execMetrics, partitionSchema,
+      poolConf, maxNumFileProcessed, ignoreMissingFiles, ignoreCorruptFiles, useFieldId,
+      queryUsesInputFile, keepReadsInOrder, combineConf) {
+
+    override protected def readBufferToBatches(
+        buffer: HostMemoryBuffersWithMetaData): Iterator[ColumnarBatch] = {
+      val deltaBuffer = buffer.asInstanceOf[DeltaParquetHostMemoryBuffersWithMetaData]
+      val memBuffersAndSize = deltaBuffer.memBuffersAndSizes
+      val hmbAndInfo = memBuffersAndSize.head
+
+      val dateRebaseMode: DateTimeRebaseMode = deltaBuffer.dateRebaseMode
+      val timestampRebaseMode: DateTimeRebaseMode = deltaBuffer.timestampRebaseMode
+      val hasInt96Timestamps: Boolean = deltaBuffer.hasInt96Timestamps
+      val clippedSchema: MessageType = deltaBuffer.clippedSchema
+      val readDataSchema: StructType = deltaBuffer.readSchema
+      val partedFile: PartitionedFile = deltaBuffer.partitionedFile
+      val hostBuffers = hmbAndInfo.hmbs
+      val allPartValues: Option[Array[(Long, InternalRow)]] = deltaBuffer.allPartValues
+      val dvMetadata: DeletionVectorMetadata = deltaBuffer.dvMetadata.head
+
+      val parseOpts = closeOnExcept(hostBuffers) { _ =>
+        getParquetOptions(readDataSchema, clippedSchema, useFieldId)
+      }
+      val colTypes = readDataSchema.fields.map(f => f.dataType)
+
+      val dvInfos: Array[SpillableDeletionVectorInfo] = if (hasTablePath) {
+        val filteredDvInfos = dvMetadata.metadatas
+          .filter(_.maybeDvInfo.isDefined)
+          .map(_.maybeDvInfo.get)
+
+        closeOnExcept(filteredDvInfos.map(_.serializedBitmap)) { _ =>
+          require(filteredDvInfos.length == dvMetadata.metadatas.length,
+            "Every DeletionVectorInfo must exist if tablePath is defined")
+        }
+        filteredDvInfos
+      } else {
+        Array()
+      }
+
+      withResource(hostBuffers) { _ =>
+        withResource(dvInfos) { _ =>
+          RmmRapidsRetryIterator.withRetryNoSplit {
+            val hostBufs = hostBuffers.safeMap(_.getDataHostBuffer())
+            val hostDvInfos = dvInfos
+              .map(spillableDvInfo =>
+                new DeletionVector.DeletionVectorInfo(
+                  spillableDvInfo.serializedBitmap.getDataHostBuffer(),
+                  spillableDvInfo.rowGroupOffsets,
+                  spillableDvInfo.rowGroupNumRows
+                ))
+            // Duplicate request is ok, and start to use the GPU just after the host
+            // buffer is ready to not block CPU things.
+            GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+            val tableReader = if (hasTablePath) {
+              // The MakeParquetTableWithDVProducer will close the input buffers
+              MakeParquetTableWithDVProducer(
+                useChunkedReader,
+                maxChunkedReaderMemoryUsageSizeBytes,
+                conf, targetBatchSizeBytes,
+                parseOpts,
+                hostBufs, metrics,
+                dateRebaseMode, timestampRebaseMode,
+                isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema, files,
+                debugDumpPrefix, debugDumpAlways,
+                hostDvInfos)
+            } else {
+              // The MakeParquetTableProducer will close the input buffers
+              MakeParquetTableProducer(
+                useChunkedReader,
+                maxChunkedReaderMemoryUsageSizeBytes,
+                conf, targetBatchSizeBytes,
+                parseOpts, hostBufs, metrics,
+                dateRebaseMode, timestampRebaseMode,
+                hasInt96Timestamps, isSchemaCaseSensitive,
+                useFieldId, readDataSchema, clippedSchema,
+                files, debugDumpPrefix, debugDumpAlways
+              )
+            }
+
+            val batchIter = CachedGpuBatchIterator(tableReader, colTypes)
+
+            if (allPartValues.isDefined) {
+              val allPartInternalRows = allPartValues.get.map(_._2)
+              // rowsPerPartition has been adjusted already to account only the alive rows.
+              val rowsPerPartition = allPartValues.get.map(_._1)
+              new GpuColumnarBatchWithPartitionValuesIterator(batchIter, allPartInternalRows,
+                rowsPerPartition, partitionSchema, maxGpuColumnSizeBytes)
+            } else {
+              // this is a bit weird, we don't have number of rows when allPartValues isn't
+              // filled in so can't use GpuColumnarBatchWithPartitionValuesIterator
+              batchIter.flatMap { batch =>
+                // we have to add partition values here for this batch, we already verified that
+                // its not different for all the blocks in this batch
+                BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
+                  partedFile.partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    /**
+     * Deletion vector metadata for a single host memory buffer containing a part of data.
+     */
+    private case class SingleBufferDVMetadata(
+        maybeDvInfo: Option[SpillableDeletionVectorInfo]
+    )
+
+    private case class DeletionVectorMetadata(
+        metadatas: Array[SingleBufferDVMetadata]
+    )
+
+    private object DeletionVectorMetadata {
+      def forSingleBuffer(maybeDvInfo: Option[SpillableDeletionVectorInfo]) = {
+        DeletionVectorMetadata(
+          Array(
+            SingleBufferDVMetadata(maybeDvInfo)
+          )
+        )
+      }
+
+      def combine(metadatas: Array[DeletionVectorMetadata]): DeletionVectorMetadata = {
+        DeletionVectorMetadata(metadatas.flatMap(_.metadatas))
+      }
+    }
+
+    private case class DeltaParquetHostMemoryEmptyMetaData(
+        override val partitionedFile: PartitionedFile,
+        bufferSize: Long,
+        override val bytesRead: Long,
+        dateRebaseMode: DateTimeRebaseMode,
+        timestampRebaseMode: DateTimeRebaseMode,
+        hasInt96Timestamps: Boolean,
+        clippedSchema: MessageType,
+        readSchema: StructType,
+        numRows: Long,
+        dvMetadata: Array[DeletionVectorMetadata],
+        override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
+      extends HostMemoryEmptyMetaData {}
+
+    private case class DeltaParquetHostMemoryBuffersWithMetaData(
+        override val partitionedFile: PartitionedFile,
+        override val memBuffersAndSizes: Array[SingleHMBAndMeta],
+        override val bytesRead: Long,
+        dateRebaseMode: DateTimeRebaseMode,
+        timestampRebaseMode: DateTimeRebaseMode,
+        hasInt96Timestamps: Boolean,
+        clippedSchema: MessageType,
+        readSchema: StructType,
+        override val allPartValues: Option[Array[(Long, InternalRow)]],
+        // deletion vector metadata. should be aligned with memBuffersAndSizes if deletion vectors
+        // are present.
+        dvMetadata: Array[DeletionVectorMetadata]
+    ) extends HostMemoryBuffersWithMetaData {
+
+      override def consumeHeadBuffer(): HostMemoryBuffersWithMetaData = {
+        require(memBuffersAndSizes.nonEmpty,
+          "consumeHeadBuffer called on HostMemoryBuffersWithMetaData with no buffers")
+        require(memBuffersAndSizes.length == dvMetadata.length,
+          "memBuffersAndSizes and dvMetadata should have the same length")
+        val (remainingBuffers, newDvMetadata) = if (memBuffersAndSizes.length > 1) {
+          (memBuffersAndSizes.drop(1), dvMetadata.drop(1))
+        } else {
+          (Array.empty[SingleHMBAndMeta], Array.empty[DeletionVectorMetadata])
+        }
+        this.copy(memBuffersAndSizes = remainingBuffers, dvMetadata = newDvMetadata)
+      }
+    }
+
+    override protected def newHMEmptyMetadataForChunks(
+        partitionedFile: PartitionedFile,
+        bufferSize: Long,
+        bytesRead: Long,
+        dateRebaseMode: DateTimeRebaseMode,
+        timestampRebaseMode: DateTimeRebaseMode,
+        hasInt96Timestamps: Boolean,
+        clippedSchema: MessageType,
+        readSchema: StructType,
+        numRows: Long,
+        blocks: collection.Seq[BlockMetaData]
+    ): HostMemoryEmptyMetaData = {
+      val (maybeSerializedDV, maybeScalaBitmap) = if (numRows > 0) {
+        // numRows == 0 means the data is empty because of an empty file,
+        // file not found, or a corrupted file. In all these cases, we don't
+        // need to load deletion vectors.
+        val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
+          .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
+        val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
+          .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
+        val maybeScalaBitmap = tablePath.map(tp =>
+          RapidsDeletionVectors.loadScalaBitmap(conf, dvDescriptorOpt, filterTypeOpt, tp))
+        // Load serializedDV at last which is stored in a HostBufferMemory, so that we will
+        // not execute any other code before the serializedDV is wrapped within the withResource
+        // clause.
+        val maybeSerializedDV = tablePath.map(tp =>
+          RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
+        (maybeSerializedDV, maybeScalaBitmap)
+      } else {
+        (None, None)
+      }
+
+      closeOnExcept(maybeSerializedDV) { _ =>
+        val dvMetadata = DeletionVectorMetadata.forSingleBuffer(
+          maybeSerializedDV.map{ serializedDV =>
+            val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
+              .getRowGroupMetadata(blocks)
+            SpillableDeletionVectorInfo(
+              serializedDV,
+              maybeScalaBitmap.get,
+              rowGroupOffsets,
+              rowGroupNumRows)}
+        )
+        DeltaParquetHostMemoryEmptyMetaData(
+          partitionedFile,
+          bufferSize,
+          bytesRead,
+          dateRebaseMode,
+          timestampRebaseMode,
+          hasInt96Timestamps,
+          clippedSchema,
+          readSchema,
+          numRows,
+          Array(dvMetadata)
+        )
+      }
+    }
+
+    override protected def newCombinedHMEmptyMetadata(emptyMeta: CombinedEmptyMeta,
+        nonEmptyMeta: CombinedMeta): HostMemoryEmptyMetaData = {
+      val metaForEmpty = emptyMeta.metaForEmpty
+      val toCombine = emptyMeta.emptyMetas.map(_.asInstanceOf[DeltaParquetHostMemoryEmptyMetaData])
+      val combinedDVMeta = DeletionVectorMetadata.combine(toCombine.flatMap(_.dvMetadata))
+
+      DeltaParquetHostMemoryEmptyMetaData(
+        metaForEmpty.partitionedFile, // just pick one since not used
+        emptyMeta.emptyBufferSize,
+        emptyMeta.emptyTotalBytesRead,
+        metaForEmpty.dateRebaseMode, // these shouldn't matter since data is empty
+        metaForEmpty.timestampRebaseMode, // these shouldn't matter since data is empty
+        metaForEmpty.hasInt96Timestamps, // these shouldn't matter since data is empty
+        metaForEmpty.clippedSchema,
+        metaForEmpty.readSchema,
+        emptyMeta.emptyNumRows,
+        Array(combinedDVMeta),
+        Some(nonEmptyMeta.allPartValues)
+      )
+    }
+
+    override protected def newHMBWithMetaDataForChunks(
+        partitionedFile: PartitionedFile,
+        memBuffersAndSize: Array[SingleHMBAndMeta],
+        bytesRead: Long,
+        fileBlockMeta: ParquetFileInfoWithBlockMeta
+    ): HostMemoryBuffersWithMetaData = {
+      val dvDescriptorOpt = partitionedFile.otherConstantMetadataColumnValues
+        .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
+      val filterTypeOpt = partitionedFile.otherConstantMetadataColumnValues
+        .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
+      val maybeScalaBitmap = tablePath.map(tp =>
+        RapidsDeletionVectors.loadScalaBitmap(conf, dvDescriptorOpt, filterTypeOpt, tp))
+      // Load serializedDV at last which is stored in a HostBufferMemory, so that we will
+      // not execute any other code before the serializedDV is wrapped within the withResource
+      // clause.
+      val maybeSerializedDV = tablePath.map(tp =>
+        RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescriptorOpt, filterTypeOpt, tp))
+      withResource(maybeSerializedDV) { _ =>
+        val dvMetadataArray = memBuffersAndSize.map { singleHMBAndMeta =>
+          val dataBlocks = singleHMBAndMeta.blockMeta
+            .map(_.asInstanceOf[ParquetDataBlock].dataBlock)
+          val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
+            .getRowGroupMetadata(dataBlocks)
+          DeletionVectorMetadata.forSingleBuffer(
+            maybeSerializedDV.map { serializedDV =>
+              serializedDV.incRefCount()
+              SpillableDeletionVectorInfo(
+                serializedDV,
+                maybeScalaBitmap.get,
+                rowGroupOffsets,
+                rowGroupNumRows)
+            })
+        }
+
+        DeltaParquetHostMemoryBuffersWithMetaData(
+          partitionedFile,
+          memBuffersAndSize,
+          bytesRead,
+          fileBlockMeta.dateRebaseMode,
+          fileBlockMeta.timestampRebaseMode,
+          fileBlockMeta.hasInt96Timestamps,
+          fileBlockMeta.schema,
+          fileBlockMeta.readSchema,
+          None,
+          dvMetadataArray
+        )
+      }
+    }
+
+    override protected def newCombinedHMBWithMetaData(
+        combinedMeta: CombinedMeta,
+        newHmbBufferInfo: SingleHMBAndMeta,
+        offset: Long
+    ): HostMemoryBuffersWithMetaData = {
+      val metaToUse = combinedMeta.firstNonEmpty
+      val toCombine = combinedMeta.toCombine
+        .collect { case hmb: DeltaParquetHostMemoryBuffersWithMetaData => hmb }
+      val combinedDVMeta = DeletionVectorMetadata.combine(toCombine.flatMap(_.dvMetadata))
+
+      DeltaParquetHostMemoryBuffersWithMetaData(
+        metaToUse.partitionedFile,
+        Array(newHmbBufferInfo),
+        offset,
+        metaToUse.dateRebaseMode,
+        metaToUse.timestampRebaseMode,
+        metaToUse.hasInt96Timestamps,
+        metaToUse.clippedSchema,
+        metaToUse.readSchema,
+        Some(combinedMeta.allPartValues),
+        Array(combinedDVMeta)
+      )
+    }
+
+    override protected def computeNumRowsAlive(
+        totalNumRows: Long,
+        metadata: HostMemoryBuffersWithMetaDataBase
+    ): Int = {
+      // totalNumRows can be 0 if the file is not found but ignoreMissingFiles is true,
+      // or the file is empty.
+      if (totalNumRows == 0) {
+        return 0
+      }
+
+      val numDeletedRows = metadata match {
+        case emptyMeta: DeltaParquetHostMemoryEmptyMetaData =>
+          emptyMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
+            .map(_.computeNumRowsDeleted()).sum
+        case buffersMeta: DeltaParquetHostMemoryBuffersWithMetaData =>
+          buffersMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
+            .map(_.computeNumRowsDeleted()).sum
+        case _ =>
+          throw new IllegalArgumentException(s"Unexpected metadata type ${metadata.getClass()}")
+      }
+
+      require(numDeletedRows <= totalNumRows,
+        s"Deletion vector cardinality ($numDeletedRows) exceeds file row count ($totalNumRows)")
+      Math.toIntExact(totalNumRows - numDeletedRows)
     }
   }
 }
@@ -406,8 +941,7 @@ object MakeParquetTableWithDVProducer extends Logging {
           try {
             RmmRapidsRetryIterator.withRetryNoSplit[Table] {
               NvtxIdWithMetrics(NvtxRegistry.PARQUET_DECODE, metrics(GPU_DECODE_TIME)) {
-                DeletionVector.readParquet(
-                  opts, buffers, deletionVectorInfos)
+                DeletionVector.readParquet(opts, buffers, deletionVectorInfos)
               }
             }
           } catch {
