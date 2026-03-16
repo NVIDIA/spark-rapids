@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -856,6 +856,389 @@ class BinaryGen(DataGen):
             length = rand.randint(self._min_length, self._max_length)
             return bytes([ rand.randint(0, 255) for _ in range(length) ])
         self._start(rand, gen_bytes)
+
+
+# -----------------------------------------------------------------------------
+# Protobuf (simple types) generators/utilities (for from_protobuf/to_protobuf tests)
+# -----------------------------------------------------------------------------
+
+_PROTOBUF_WIRE_VARINT = 0
+_PROTOBUF_WIRE_64BIT = 1
+_PROTOBUF_WIRE_LEN_DELIM = 2
+_PROTOBUF_WIRE_32BIT = 5
+
+def _encode_protobuf_uvarint(value):
+    """Encode a non-negative integer as protobuf varint."""
+    if value is None:
+        raise ValueError("value must not be None")
+    if value < 0:
+        raise ValueError("uvarint only supports non-negative integers")
+    out = bytearray()
+    v = int(value)
+    while True:
+        b = v & 0x7F
+        v >>= 7
+        if v:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            break
+    return bytes(out)
+
+def _encode_protobuf_key(field_number, wire_type):
+    return _encode_protobuf_uvarint((int(field_number) << 3) | int(wire_type))
+
+def _encode_protobuf_zigzag32(value):
+    """Encode a signed 32-bit integer using zigzag encoding (sint32)."""
+    return (value << 1) ^ (value >> 31)
+
+def _encode_protobuf_zigzag64(value):
+    """Encode a signed 64-bit integer using zigzag encoding (sint64)."""
+    return (value << 1) ^ (value >> 63)
+
+def _encode_protobuf_field(field_number, spark_type, value, encoding='default'):
+    """
+    Encode a single protobuf field for a subset of scalar types.
+    
+    encoding: 'default', 'fixed', 'zigzag' - determines how integers are encoded
+    
+    Notes on signed ints:
+    - Protobuf `int32`/`int64` use *varint* encoding of the two's-complement integer.
+    - Negative `int32` values are encoded as a 10-byte varint (because they are sign-extended to 64 bits).
+    - `sint32`/`sint64` use zigzag encoding for efficient negative number storage.
+    - `fixed32`/`fixed64` use fixed-width little-endian encoding.
+    """
+    if value is None:
+        return b""
+
+    if isinstance(spark_type, BooleanType):
+        return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_VARINT) + _encode_protobuf_uvarint(1 if value else 0)
+    elif isinstance(spark_type, IntegerType):
+        if encoding == 'fixed':
+            # fixed32 / sfixed32: 4-byte little-endian (mask handles both signed and unsigned)
+            return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_32BIT) + struct.pack("<I", int(value) & 0xFFFFFFFF)
+        elif encoding == 'zigzag':
+            # sint32: zigzag + varint
+            zigzag = _encode_protobuf_zigzag32(int(value))
+            return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_VARINT) + _encode_protobuf_uvarint(zigzag)
+        else:
+            # int32: varint (negative values are sign-extended)
+            u64 = int(value) & 0xFFFFFFFFFFFFFFFF
+            return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_VARINT) + _encode_protobuf_uvarint(u64)
+    elif isinstance(spark_type, LongType):
+        if encoding == 'fixed':
+            # fixed64 / sfixed64: 8-byte little-endian (mask handles both signed and unsigned)
+            return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_64BIT) + struct.pack("<Q", int(value) & 0xFFFFFFFFFFFFFFFF)
+        elif encoding == 'zigzag':
+            # sint64: zigzag + varint
+            zigzag = _encode_protobuf_zigzag64(int(value))
+            return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_VARINT) + _encode_protobuf_uvarint(zigzag)
+        else:
+            # int64: varint
+            u64 = int(value) & 0xFFFFFFFFFFFFFFFF
+            return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_VARINT) + _encode_protobuf_uvarint(u64)
+    elif isinstance(spark_type, FloatType):
+        return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_32BIT) + struct.pack("<f", float(value))
+    elif isinstance(spark_type, DoubleType):
+        return _encode_protobuf_key(field_number, _PROTOBUF_WIRE_64BIT) + struct.pack("<d", float(value))
+    elif isinstance(spark_type, StringType):
+        b = value.encode("utf-8")
+        return (_encode_protobuf_key(field_number, _PROTOBUF_WIRE_LEN_DELIM) +
+                _encode_protobuf_uvarint(len(b)) + b)
+    elif isinstance(spark_type, BinaryType):
+        # bytes field
+        b = bytes(value) if not isinstance(value, bytes) else value
+        return (_encode_protobuf_key(field_number, _PROTOBUF_WIRE_LEN_DELIM) +
+                _encode_protobuf_uvarint(len(b)) + b)
+    else:
+        raise ValueError("Unsupported type for protobuf simple generator: {}".format(spark_type))
+
+def _encode_protobuf_repeated_field(field_number, spark_element_type, values, encoding='default'):
+    """
+    Encode a repeated (non-packed) protobuf field.
+    Each element is encoded as a separate field with the same field number.
+    """
+    if values is None:
+        return b""
+    result = b""
+    for v in values:
+        if v is not None:
+            result += _encode_protobuf_field(field_number, spark_element_type, v, encoding)
+    return result
+
+def _encode_protobuf_packed_repeated(field_number, spark_element_type, values, encoding='default'):
+    """
+    Encode a packed repeated protobuf field (for numeric types).
+    All elements are packed into a single length-delimited field.
+    """
+    if values is None or len(values) == 0:
+        return b""
+    
+    # Encode all values without keys
+    packed_data = b""
+    for v in values:
+        if v is None:
+            continue
+        if isinstance(spark_element_type, BooleanType):
+            packed_data += _encode_protobuf_uvarint(1 if v else 0)
+        elif isinstance(spark_element_type, IntegerType):
+            if encoding == 'fixed':
+                packed_data += struct.pack("<I", int(v) & 0xFFFFFFFF)
+            elif encoding == 'zigzag':
+                packed_data += _encode_protobuf_uvarint(_encode_protobuf_zigzag32(int(v)))
+            else:
+                u64 = int(v) & 0xFFFFFFFFFFFFFFFF
+                packed_data += _encode_protobuf_uvarint(u64)
+        elif isinstance(spark_element_type, LongType):
+            if encoding == 'fixed':
+                packed_data += struct.pack("<Q", int(v) & 0xFFFFFFFFFFFFFFFF)
+            elif encoding == 'zigzag':
+                packed_data += _encode_protobuf_uvarint(_encode_protobuf_zigzag64(int(v)))
+            else:
+                u64 = int(v) & 0xFFFFFFFFFFFFFFFF
+                packed_data += _encode_protobuf_uvarint(u64)
+        elif isinstance(spark_element_type, FloatType):
+            packed_data += struct.pack("<f", float(v))
+        elif isinstance(spark_element_type, DoubleType):
+            packed_data += struct.pack("<d", float(v))
+    
+    return (_encode_protobuf_key(field_number, _PROTOBUF_WIRE_LEN_DELIM) +
+            _encode_protobuf_uvarint(len(packed_data)) + packed_data)
+
+
+# ---------------------------------------------------------------------------
+# Protobuf field descriptors
+#
+# Each descriptor pairs a DataGen (for value generation) with protobuf metadata
+# (field number, encoding) and exposes a uniform interface:
+#   spark_field  -- StructField for the Spark schema
+#   start_gen(rand) -- initialise enclosed DataGen instances
+#   gen_value()  -- produce a Spark-compatible value
+#   encode(value) -- serialise the value to protobuf wire-format bytes
+# ---------------------------------------------------------------------------
+
+class PbScalar:
+    """Scalar protobuf field (bool, int32, int64, float, double, string, bytes)."""
+    def __init__(self, name, field_number, gen, encoding='default'):
+        self.name = name
+        self.field_number = field_number
+        self.gen = gen
+        self.encoding = encoding
+
+    @property
+    def spark_field(self):
+        return StructField(self.name, self.gen.data_type, nullable=self.gen.nullable)
+
+    def start_gen(self, rand):
+        self.gen.start(rand)
+
+    def gen_value(self):
+        return self.gen.gen()
+
+    def encode(self, value):
+        return _encode_protobuf_field(self.field_number, self.gen.data_type,
+                                      value, self.encoding)
+
+
+class PbNested:
+    """Non-repeated nested message field (produces a Spark StructType)."""
+    def __init__(self, name, field_number, children):
+        """children: list of PbScalar / PbNested / PbRepeated / PbRepeatedMessage"""
+        self.name = name
+        self.field_number = field_number
+        self.children = children
+
+    @property
+    def spark_field(self):
+        child_fields = [c.spark_field for c in self.children]
+        return StructField(self.name, StructType(child_fields), nullable=True)
+
+    def start_gen(self, rand):
+        for c in self.children:
+            c.start_gen(rand)
+
+    def gen_value(self):
+        child_vals = [c.gen_value() for c in self.children]
+        return tuple(child_vals) if child_vals else None
+
+    def encode(self, value):
+        if value is None:
+            return b""
+        child_encoded = b"".join(
+            c.encode(v) for c, v in zip(self.children, value))
+        return (_encode_protobuf_key(self.field_number, _PROTOBUF_WIRE_LEN_DELIM) +
+                _encode_protobuf_uvarint(len(child_encoded)) + child_encoded)
+
+
+class PbRepeated:
+    """Repeated scalar field (produces a Spark ArrayType of scalars)."""
+    def __init__(self, name, field_number, element_gen, packed=False,
+                 encoding='default', min_len=0, max_len=5):
+        self.name = name
+        self.field_number = field_number
+        self.element_gen = element_gen
+        self.packed = packed
+        self.encoding = encoding
+        self.min_len = min_len
+        self.max_len = max_len
+        self._rand = None
+
+    @property
+    def spark_field(self):
+        return StructField(
+            self.name,
+            ArrayType(self.element_gen.data_type,
+                      containsNull=self.element_gen.nullable),
+            nullable=True)
+
+    def start_gen(self, rand):
+        self._rand = rand
+        self.element_gen.start(rand)
+
+    def gen_value(self):
+        length = self._rand.randint(self.min_len, self.max_len)
+        return [self.element_gen.gen() for _ in range(length)]
+
+    def encode(self, value):
+        if value is None:
+            return b""
+        if self.packed:
+            return _encode_protobuf_packed_repeated(
+                self.field_number, self.element_gen.data_type, value,
+                self.encoding)
+        return _encode_protobuf_repeated_field(
+            self.field_number, self.element_gen.data_type, value,
+            self.encoding)
+
+
+class PbRepeatedMessage:
+    """Repeated nested message field (produces a Spark ArrayType(StructType))."""
+    def __init__(self, name, field_number, children, min_len=0, max_len=5):
+        """children: list of PbScalar / PbNested / PbRepeated / PbRepeatedMessage"""
+        self.name = name
+        self.field_number = field_number
+        self.children = children
+        self.min_len = min_len
+        self.max_len = max_len
+        self._rand = None
+
+    @property
+    def spark_field(self):
+        child_fields = [c.spark_field for c in self.children]
+        return StructField(
+            self.name,
+            ArrayType(StructType(child_fields), containsNull=True),
+            nullable=True)
+
+    def start_gen(self, rand):
+        self._rand = rand
+        for c in self.children:
+            c.start_gen(rand)
+
+    def gen_value(self):
+        length = self._rand.randint(self.min_len, self.max_len)
+        return [tuple(c.gen_value() for c in self.children) for _ in range(length)]
+
+    def encode(self, value):
+        if value is None:
+            return b""
+        parts = []
+        for element in value:
+            if element is not None:
+                child_encoded = b"".join(
+                    c.encode(v) for c, v in zip(self.children, element))
+                parts.append(
+                    _encode_protobuf_key(self.field_number, _PROTOBUF_WIRE_LEN_DELIM) +
+                    _encode_protobuf_uvarint(len(child_encoded)) + child_encoded)
+        return b"".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Unified protobuf message generator
+# ---------------------------------------------------------------------------
+
+class ProtobufMessageGen(DataGen):
+    """
+    Generate rows containing Spark columns for each protobuf field plus
+    a binary column with the serialised protobuf message.
+
+    Supports any mix of scalar, nested, repeated-scalar, and
+    repeated-message fields at arbitrary nesting depth.
+
+    Usage::
+
+        gen = ProtobufMessageGen([
+            PbScalar("id", 1, IntegerGen()),
+            PbNested("detail", 2, [
+                PbScalar("x", 1, IntegerGen()),
+            ]),
+            PbRepeated("tags", 3, StringGen()),
+            PbRepeatedMessage("items", 4, [
+                PbScalar("name", 1, StringGen()),
+            ], min_len=0, max_len=3),
+        ])
+        df = gen_df(spark, gen, length=100)
+    """
+    def __init__(self, fields, binary_col_name="bin", nullable=False):
+        """
+        fields: list of PbScalar / PbNested / PbRepeated / PbRepeatedMessage
+        """
+        self._pb_fields = fields
+        self._binary_col_name = binary_col_name
+
+        struct_fields = [f.spark_field for f in fields]
+        struct_fields.append(StructField(binary_col_name, BinaryType(), nullable=True))
+        super().__init__(StructType(struct_fields), nullable=nullable)
+
+    def __repr__(self):
+        return "ProtobufMessageGen(fields={})".format(len(self._pb_fields))
+
+    def _cache_repr(self):
+        def _field_repr(f):
+            if isinstance(f, PbScalar):
+                return "S:{}#{}:{}".format(f.name, f.field_number, str(f.gen.data_type))
+            elif isinstance(f, PbNested):
+                kids = ",".join(_field_repr(c) for c in f.children)
+                return "N:{}#{}:[{}]".format(f.name, f.field_number, kids)
+            elif isinstance(f, PbRepeated):
+                return "R:{}#{}:{}".format(f.name, f.field_number,
+                                           str(f.element_gen.data_type))
+            elif isinstance(f, PbRepeatedMessage):
+                kids = ",".join(_field_repr(c) for c in f.children)
+                return "RM:{}#{}:[{}]".format(f.name, f.field_number, kids)
+            return "?:{}".format(f.name)
+        parts = ",".join(_field_repr(f) for f in self._pb_fields)
+        return super()._cache_repr() + "(" + parts + "," + self._binary_col_name + ")"
+
+    def __eq__(self, other):
+        return (isinstance(other, ProtobufMessageGen) and
+                self._cache_repr() == other._cache_repr())
+
+    def __hash__(self):
+        return hash(self._cache_repr())
+
+    def start(self, rand):
+        for f in self._pb_fields:
+            f.start_gen(rand)
+
+        def make_row():
+            values = [f.gen_value() for f in self._pb_fields]
+            msg = b"".join(f.encode(v)
+                           for f, v in zip(self._pb_fields, values))
+            return tuple(values + [msg])
+
+        self._start(rand, make_row)
+
+
+def encode_pb_message(fields, values):
+    """Encode specific values into protobuf binary using field descriptors.
+
+    ``fields`` is a list of PbScalar / PbNested / PbRepeated / PbRepeatedMessage.
+    ``values`` is a parallel list of concrete values (one per field).
+    Pass ``None`` for a value to omit that field from the encoded message.
+    """
+    return b"".join(f.encode(v) for f, v in zip(fields, values))
+
 
 # Note: Current(2023/06/06) maxmium IT data size is 7282688 bytes, so LRU cache with maxsize 128
 # will lead to 7282688 * 128 = 932 MB additional memory usage in edge case, which is acceptable.
