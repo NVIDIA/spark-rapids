@@ -1479,6 +1479,77 @@ def _build_required_field_descriptor_set_bytes(spark):
     return bytes(fds.toByteArray())
 
 
+def _build_nested_required_field_descriptor_set_bytes(spark):
+    """
+    Build a FileDescriptorSet for a message with a nested required field (proto2):
+      package test;
+      syntax = "proto2";
+      message InnerRequired {
+        required int32 child_id = 1;
+        optional string note = 2;
+      }
+      message WithNestedRequired {
+        optional int64 id = 1;
+        optional InnerRequired inner = 2;
+        optional string name = 3;
+      }
+    """
+    D, fd = _new_proto2_file(spark, "nested_required.proto")
+
+    label_required = D.FieldDescriptorProto.Label.LABEL_REQUIRED
+    label_optional = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
+
+    inner_msg = D.DescriptorProto.newBuilder().setName("InnerRequired")
+    inner_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("child_id")
+            .setNumber(1)
+            .setLabel(label_required)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
+            .build()
+    )
+    inner_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("note")
+            .setNumber(2)
+            .setLabel(label_optional)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
+            .build()
+    )
+    fd.addMessageType(inner_msg.build())
+
+    outer_msg = D.DescriptorProto.newBuilder().setName("WithNestedRequired")
+    outer_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("id")
+            .setNumber(1)
+            .setLabel(label_optional)
+            .setType(D.FieldDescriptorProto.Type.TYPE_INT64)
+            .build()
+    )
+    outer_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("inner")
+            .setNumber(2)
+            .setLabel(label_optional)
+            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
+            .setTypeName(".test.InnerRequired")
+            .build()
+    )
+    outer_msg.addField(
+        D.FieldDescriptorProto.newBuilder()
+            .setName("name")
+            .setNumber(3)
+            .setLabel(label_optional)
+            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
+            .build()
+    )
+    fd.addMessageType(outer_msg.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
+
+
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
 def test_from_protobuf_required_field_present(spark_tmp_path, from_protobuf_fn):
@@ -1534,6 +1605,50 @@ def test_from_protobuf_required_field_missing_failfast(spark_tmp_path, from_prot
         return df.select(decoded.alias("decoded")).collect()
 
     assert_gpu_and_cpu_error(run_on_spark, conf={}, error_message="Malformed")
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_nested_required_field_missing_permissive(
+        spark_tmp_path, from_protobuf_fn):
+    """Observe CPU/GPU parity when a nested proto2 required field is missing in PERMISSIVE mode."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested_required.desc", _build_nested_required_field_descriptor_set_bytes)
+    message_name = "test.WithNestedRequired"
+
+    inner_valid = (_encode_tag(1, 0) + _encode_varint(7) +
+                   _encode_tag(2, 2) + _encode_varint(2) + b"ok")
+    inner_missing_required = _encode_tag(2, 2) + _encode_varint(4) + b"oops"
+
+    row_valid = (_encode_tag(1, 0) + _encode_varint(100) +
+                 _encode_tag(2, 2) + _encode_varint(len(inner_valid)) + inner_valid +
+                 _encode_tag(3, 2) + _encode_varint(5) + b"valid")
+    row_missing_required = (_encode_tag(1, 0) + _encode_varint(200) +
+                            _encode_tag(2, 2) + _encode_varint(len(inner_missing_required)) +
+                            inner_missing_required +
+                            _encode_tag(3, 2) + _encode_varint(7) + b"missing")
+    row_missing_inner = (_encode_tag(1, 0) + _encode_varint(300) +
+                         _encode_tag(3, 2) + _encode_varint(8) + b"no_inner")
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(0, row_valid), (1, row_missing_required), (2, row_missing_inner)],
+            schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        inner = decoded.getField("inner")
+        return df.select(
+            f.col("idx"),
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("id").alias("id"),
+            decoded.getField("name").alias("name"),
+            inner.isNull().alias("inner_is_null"),
+            inner.getField("child_id").alias("child_id"),
+            inner.getField("note").alias("note")
+        ).orderBy("idx")
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
 def _build_default_value_descriptor_set_bytes(spark):
