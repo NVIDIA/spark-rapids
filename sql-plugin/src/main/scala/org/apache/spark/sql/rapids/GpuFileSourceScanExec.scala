@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -577,19 +577,19 @@ case class GpuFileSourceScanExec(
     val prunedPartitions = requiredPartitionSchema.map { partSchema =>
       val idsAndTypes = partSchema.map(f => (relation.partitionSchema.indexOf(f), f.dataType))
       partitions.map { p =>
-        val partFiles = p.files.map { pf =>
+        val partFiles = FilePartitionShims.getFiles(p).map { pf =>
           val prunedPartValues = idsAndTypes.map { case (id, dType) =>
             pf.partitionValues.get(id, dType)
           }
           pf.copy(partitionValues = InternalRow.fromSeq(prunedPartValues))
         }
-        p.copy(files = partFiles)
+        FilePartitionShims.copyWithFiles(p, partFiles)
       }
     }.getOrElse(partitions)
 
     // Update the preferred locations based on the file cache locality
     val locatedPartitions = prunedPartitions.map { partition =>
-      val newFiles = partition.files.map { partFile =>
+      val newFiles = FilePartitionShims.getFiles(partition).map { partFile =>
         val cacheLocations = FileCacheLocalityManager.get.getLocations(partFile.filePath.toString)
         if (cacheLocations.nonEmpty) {
           val newLocations = cacheLocations ++ partFile.locations
@@ -598,7 +598,7 @@ case class GpuFileSourceScanExec(
           partFile
         }
       }
-      partition.copy(files = newFiles)
+      FilePartitionShims.copyWithFiles(partition, newFiles)
     }
 
     if (isPerFileReadEnabled) {
@@ -607,7 +607,7 @@ case class GpuFileSourceScanExec(
         requiredSchema, fileFormat = Some(relation.fileFormat))
     } else {
       logDebug(s"Using Datasource RDD, files are: " +
-        s"${prunedPartitions.flatMap(_.files).mkString(",")}")
+        s"${prunedPartitions.flatMap(FilePartitionShims.getFiles).mkString(",")}")
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
       GpuDataSourceRDD(relation.sparkSession.sparkContext, locatedPartitions, readerFactory)
     }

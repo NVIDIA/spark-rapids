@@ -151,7 +151,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaEncodingLong]
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
   enableSuite[RapidsParquetEncodingSuite]
-    .exclude("Read row group containing both dictionary and plain encoded pages", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13739"))
+    .exclude("Read row group containing both dictionary and plain encoded pages", ADJUST_UT("Test uses CPU VectorizedParquetRecordReader directly, not a GPU path. GPU-native mixed encoding test added in PR #13982. See https://github.com/NVIDIA/spark-rapids/issues/13739"))
     .exclude("parquet v2 pages - delta encoding", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13745"))
     .exclude("parquet v2 pages - rle encoding for boolean value columns", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13746"))
   enableSuite[RapidsParquetFileFormatSuite]
@@ -230,7 +230,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-33677: LikeSimplification should be skipped if pattern contains any escapeChar", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14117"))
     .exclude("SPARK-33593: Vector reader got incorrect data with binary partition value", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14118"))
     .exclude("SPARK-33084: Add jar support Ivy URI in SQL -- jar contains udf class", ADJUST_UT("Replaced by testRapids version that uses testFile() to access Spark test resources instead of getContextClassLoader"))
-    .exclude("SPARK-33482: Fix FileScan canonicalization", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14122"))
+    .exclude("SPARK-33482: Fix FileScan canonicalization", ADJUST_UT("Replaced by testRapids version that disables AQE and broadcast to assert ReusedExchangeExec directly"))
     .exclude("SPARK-36093: RemoveRedundantAliases should not change expression's name", ADJUST_UT("Replaced by testRapids version that checks the partition column name of the GpuInsertIntoHadoopFsRelationCommand"))
     .exclude("SPARK-39166: Query context of binary arithmetic should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
     .exclude("SPARK-39175: Query context of Cast should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))

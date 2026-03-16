@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,5 +32,11 @@ object FilePartitionShims extends SplitFiles {
         PartitionedFileUtil.getPartitionedFile(f, p.values, Some(SparkPath.fromPath(f.getPath)))
       }
     }
+  }
+
+  def getFiles(p: FilePartition): Array[PartitionedFile] = p.files
+
+  def copyWithFiles(p: FilePartition, newFiles: Array[PartitionedFile]): FilePartition = {
+    p.copy(files = newFiles)
   }
 }

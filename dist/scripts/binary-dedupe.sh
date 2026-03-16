@@ -169,8 +169,15 @@ function verify_same_sha_for_unshimmed() {
   # but it is compatible with previous versions because it merely adds a new method.
   # we might need to replace this strict check with MiMa
   # https://github.com/apache/spark/blob/7011706a0a8dbec6adb5b5b121921b29b314335f/sql/core/src/main/scala/org/apache/spark/sql/columnar/CachedBatchSerializer.scala#L75-L95
+  # ProxyRapidsShuffleInternalManagerBase is not bitwise-identical when
+  # DB 17.3 is included because ShuffleManager.getReader signature differs
+  # (8-param with prismMapStatusEnabled vs 7-param). This is safe because
+  # the class provides concrete implementations for ALL getReader variants,
+  # so the JVM resolves the correct one at runtime regardless of which
+  # ShuffleManager version the class was compiled against.
   if [[ ! "$class_file_quoted" =~ com/nvidia/spark/rapids/spark[34].*/.*ShuffleManager.class && \
-          "$class_file_quoted" != "com/nvidia/spark/ParquetCachedBatchSerializer.class" ]]; then
+          "$class_file_quoted" != "com/nvidia/spark/ParquetCachedBatchSerializer.class" && \
+          ! "$class_file_quoted" =~ org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase ]]; then
       if ! grep -q "/spark.\+/$class_file_quoted" "$SPARK_SHARED_TXT"; then
         echo >&2 "$class_file is not bitwise-identical across shims"
         exit 255
