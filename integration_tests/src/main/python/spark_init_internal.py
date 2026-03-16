@@ -87,15 +87,22 @@ def _add_driver_classpath(jars):
     existing_driver_cp = {
         p for p in os.environ.get(_DRIVER_CLASSPATH, '').split(os.pathsep) if p
     }
-    jar_list = [j for j in jar_list if j not in existing_driver_cp]
+    args_driver_cp_match = re.search(r'--driver-class-path\s+(\S+)', current_args)
+    existing_args_driver_cp = {
+        p for p in (args_driver_cp_match.group(1).split(os.pathsep)
+                    if args_driver_cp_match else []) if p
+    }
+    jar_list = [
+        j for j in jar_list
+        if j not in existing_driver_cp and j not in existing_args_driver_cp
+    ]
     if not jar_list:
         logging.info("Skipping PYSPARK_SUBMIT_ARGS driver-class-path update; jars already present")
         return
     new_cp = os.pathsep.join(jar_list)
     if '--driver-class-path' in current_args:
-        match = re.search(r'--driver-class-path\s+(\S+)', current_args)
-        if match:
-            existing_cp = match.group(1)
+        if args_driver_cp_match:
+            existing_cp = args_driver_cp_match.group(1)
             merged_cp = existing_cp + os.pathsep + new_cp
             current_args = re.sub(
                 r'--driver-class-path\s+\S+',

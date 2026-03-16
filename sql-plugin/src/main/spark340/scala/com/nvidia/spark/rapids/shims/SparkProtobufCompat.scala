@@ -170,13 +170,39 @@ private[shims] object SparkProtobufCompat extends Logging {
             // binary-descriptor variant.
             if (cause != null && (cause.isInstanceOf[ClassCastException] ||
                 cause.isInstanceOf[MatchError])) {
-              buildMethod.invoke(
-                module, messageName, Some(readDescriptorFile(filePath))).asInstanceOf[AnyRef]
+              Try {
+                buildMethod.invoke(
+                  module, messageName, Some(readDescriptorFile(filePath))).asInstanceOf[AnyRef]
+              }.recoverWith { case retryEx =>
+                val wrapped = buildDescriptorRetryFailure(cause, retryEx)
+                wrapped.addSuppressed(ex)
+                scala.util.Failure(wrapped)
+              }.get
             } else {
               throw ex
             }
         }
     }
+  }
+
+  private def buildDescriptorRetryFailure(
+      originalCause: Throwable,
+      retryFailure: Throwable): RuntimeException = {
+    val retryCause = unwrapInvocationFailure(retryFailure)
+    new RuntimeException(
+      s"Spark 3.5+ descriptor bytes retry failed after initial path invocation error " +
+        s"(${describeThrowable(originalCause)}); retry error (${describeThrowable(retryCause)})",
+      retryCause)
+  }
+
+  private def unwrapInvocationFailure(t: Throwable): Throwable = t match {
+    case ex: java.lang.reflect.InvocationTargetException if ex.getCause != null => ex.getCause
+    case other => other
+  }
+
+  private def describeThrowable(t: Throwable): String = {
+    val suffix = Option(t.getMessage).filter(_.nonEmpty).map(msg => s": $msg").getOrElse("")
+    s"${t.getClass.getSimpleName}$suffix"
   }
 
   private def typeName(t: AnyRef): String =

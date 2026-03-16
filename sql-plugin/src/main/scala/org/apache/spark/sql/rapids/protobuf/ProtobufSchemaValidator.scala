@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids.protobuf
 
+import ai.rapids.cudf.DType
 import org.apache.spark.sql.rapids.GpuFromProtobuf
 import org.apache.spark.sql.types._
 
@@ -69,6 +70,7 @@ object ProtobufSchemaValidator {
   }
 
   def validateFlattenedSchema(flatFields: Seq[FlattenedFieldDescriptor]): Either[String, Unit] = {
+    val structTypeId = DType.STRUCT.getTypeId.getNativeId
     flatFields.zipWithIndex.foreach { case (field, idx) =>
       if (field.parentIdx >= idx) {
         return Left(s"Flattened protobuf schema has invalid parent index at position $idx")
@@ -78,6 +80,10 @@ object ProtobufSchemaValidator {
       }
       if (field.parentIdx >= 0 && field.depth <= 0) {
         return Left(s"Nested protobuf field at position $idx must have positive depth")
+      }
+      if (field.parentIdx >= 0 && flatFields(field.parentIdx).outputTypeId != structTypeId) {
+        return Left(
+          s"Protobuf field at position $idx has a non-STRUCT parent at ${field.parentIdx}")
       }
       if (field.encoding == GpuFromProtobuf.ENC_ENUM_STRING) {
         if (field.enumValidValues == null || field.enumNames == null) {

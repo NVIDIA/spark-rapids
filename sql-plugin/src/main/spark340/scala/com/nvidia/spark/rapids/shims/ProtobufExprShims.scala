@@ -478,6 +478,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                     _, fieldReqs, holder, allowSemanticReferenceMatch))
                 advanceToParent()
               case other =>
+                // Keep schema projection conservative for less common plan shapes above
+                // from_protobuf. Those plans currently fall back to full-schema decode
+                // until we add dedicated coverage for pruning through them.
                 logDebug(s"Schema pruning disabled: unrecognized plan node " +
                   s"${other.getClass.getSimpleName} above from_protobuf")
                 safeToPrune = false

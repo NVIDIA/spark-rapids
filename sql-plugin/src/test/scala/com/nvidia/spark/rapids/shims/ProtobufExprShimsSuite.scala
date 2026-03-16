@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
+import ai.rapids.cudf.DType
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.expressions.{
@@ -123,6 +124,16 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       s"$messageName:${binaryFileDescriptorSet.map(_.mkString(",")).getOrElse("none")}"
   }
 
+  private object FakeSpark35RetryFailureProtobufUtils {
+    def buildDescriptor(messageName: String, binaryFileDescriptorSet: Option[Array[Byte]]): String = {
+      val bytes = binaryFileDescriptorSet.getOrElse(Array.emptyByteArray)
+      if (bytes.sameElements(Array[Byte](1, 2, 3))) {
+        throw new IllegalArgumentException(s"Unknown message $messageName")
+      }
+      s"$messageName:${bytes.mkString(",")}"
+    }
+  }
+
   private case class FakeMessageDescriptor(
       syntax: String,
       fields: Map[String, ProtobufFieldDescriptor]) extends ProtobufMessageDescriptor {
@@ -216,6 +227,26 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       _ => fail("binary descriptor source should not read a file"))
 
     assert(result == "test.Message:4,5,6")
+  }
+
+  test("compat preserves retry context when descriptor bytes fallback also fails") {
+    val buildMethod = FakeSpark35RetryFailureProtobufUtils.getClass.getMethod(
+      "buildDescriptor", classOf[String], classOf[scala.Option[_]])
+
+    val ex = intercept[RuntimeException] {
+      SparkProtobufCompat.invokeBuildDescriptor(
+        buildMethod,
+        FakeSpark35RetryFailureProtobufUtils,
+        "test.Message",
+        ProtobufDescriptorSource.DescriptorPath("/tmp/test.desc"),
+        _ => Array[Byte](1, 2, 3))
+    }
+
+    assert(ex.getMessage.contains("descriptor bytes retry failed"))
+    assert(ex.getMessage.contains("ClassCastException"))
+    assert(ex.getMessage.contains("Unknown message test.Message"))
+    assert(ex.getCause.isInstanceOf[IllegalArgumentException])
+    assert(ex.getSuppressed.exists(_.isInstanceOf[java.lang.reflect.InvocationTargetException]))
   }
 
   test("compat distinguishes decode semantics across message descriptor and options") {
@@ -426,6 +457,45 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
 
     assert(flat.left.toOption.exists(
       _.contains("Incompatible default value for protobuf field 'common.score'")))
+  }
+
+  test("validator rejects flattened schema with non-STRUCT parent") {
+    val flatFields = Seq(
+      FlattenedFieldDescriptor(
+        fieldNumber = 1,
+        parentIdx = -1,
+        depth = 0,
+        wireType = 0,
+        outputTypeId = DType.INT32.getTypeId.getNativeId,
+        encoding = GpuFromProtobuf.ENC_DEFAULT,
+        isRepeated = false,
+        isRequired = false,
+        hasDefaultValue = false,
+        defaultInt = 0L,
+        defaultFloat = 0.0,
+        defaultBool = false,
+        defaultString = Array.emptyByteArray,
+        enumValidValues = null,
+        enumNames = null),
+      FlattenedFieldDescriptor(
+        fieldNumber = 2,
+        parentIdx = 0,
+        depth = 1,
+        wireType = 0,
+        outputTypeId = DType.INT32.getTypeId.getNativeId,
+        encoding = GpuFromProtobuf.ENC_DEFAULT,
+        isRepeated = false,
+        isRequired = false,
+        hasDefaultValue = false,
+        defaultInt = 0L,
+        defaultFloat = 0.0,
+        defaultBool = false,
+        defaultString = Array.emptyByteArray,
+        enumValidValues = null,
+        enumNames = null))
+
+    val validation = ProtobufSchemaValidator.validateFlattenedSchema(flatFields)
+    assert(validation.left.toOption.exists(_.contains("non-STRUCT parent")))
   }
 
   test("array struct field meta uses pruned child field count after ordinal remap") {
