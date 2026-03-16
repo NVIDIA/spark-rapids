@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.sequencefile.GpuSequenceFileMultiFilePartitionReaderFactory
 import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, PartitionedFileUtilsShim}
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.{FileStatus, Path, PathFilter}
 import org.apache.hadoop.mapreduce.lib.input.InvalidInputException
 
 import org.apache.spark.rdd.RDD
@@ -101,17 +101,26 @@ case class GpuSequenceFileSerializeFromObjectExec(
     val ignoreMissingFiles = session.sessionState.conf.ignoreMissingFiles
 
     val allFiles = new ArrayBuffer[FileStatus]()
+    val hiddenFilter: PathFilter = (p: Path) =>
+      !p.getName.startsWith("_") && !p.getName.startsWith(".")
     inputPaths.foreach { pathStr =>
       val path = new Path(pathStr)
       val fs = path.getFileSystem(hadoopConf)
-      val statuses = Option(GpuSequenceFileSerializeFromObjectExec.resolveInputStatuses(
-        path, hadoopConf, ignoreMissingFiles)).getOrElse(Array.empty[FileStatus])
+      val statuses = Option(
+        GpuSequenceFileSerializeFromObjectExec.resolveInputStatuses(
+          path, hadoopConf, ignoreMissingFiles))
+        .getOrElse(Array.empty[FileStatus])
       statuses.foreach { s =>
-        if (s.isFile) {
+        if (s.isFile && hiddenFilter.accept(s.getPath)) {
           allFiles += s
-        } else {
+        } else if (!s.isFile) {
           val iter = fs.listFiles(s.getPath, true)
-          while (iter.hasNext) allFiles += iter.next()
+          while (iter.hasNext) {
+            val child = iter.next()
+            if (hiddenFilter.accept(child.getPath)) {
+              allFiles += child
+            }
+          }
         }
       }
     }
