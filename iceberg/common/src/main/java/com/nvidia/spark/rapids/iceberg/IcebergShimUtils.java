@@ -32,13 +32,23 @@ import java.util.Map;
  * {@link ShimUtils} based on the detected Iceberg version.
  */
 public interface IcebergShimUtils {
-    /** Returns the file location string from an Iceberg {@link ContentFile}. */
+    /**
+     * Returns the fully qualified location URI of an Iceberg {@link ContentFile},
+     * e.g. {@code "s3://bucket/path/to/file.parquet"} or {@code "file:/path/to/file.parquet"}.
+     * The API to obtain this differs across Iceberg versions ({@code path()} in 1.6.x,
+     * {@code location()} in 1.9.x+).
+     */
     String locationOf(ContentFile<?> f);
 
     /**
-     * Builds the constants map for a file scan task, mapping field IDs to constant values
-     * converted to Spark's internal representation. Constants include partition values,
+     * Builds the constants map for a file scan task. Constants include partition values,
      * metadata columns, and any other fields that are constant for the entire scan task.
+     *
+     * @return a map where keys are Iceberg field IDs from the read schema, and values are
+     *         the corresponding constant values converted to Spark's internal representation.
+     *         The value type is a wildcard because the actual types vary per field (e.g.
+     *         {@code UTF8String}, {@code Long}, {@code Integer}) depending on the Iceberg
+     *         type-to-Spark type conversion, which differs across Iceberg versions.
      */
     Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema, Table table);
 }
