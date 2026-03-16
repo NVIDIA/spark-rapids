@@ -17,6 +17,7 @@
 package org.apache.spark.sql.rapids.protobuf
 
 import ai.rapids.cudf.DType
+
 import org.apache.spark.sql.rapids.GpuFromProtobuf
 import org.apache.spark.sql.types._
 

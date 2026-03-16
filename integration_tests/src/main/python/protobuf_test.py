@@ -1609,6 +1609,31 @@ def test_from_protobuf_required_field_missing_failfast(spark_tmp_path, from_prot
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
+def test_from_protobuf_required_field_missing_permissive(spark_tmp_path, from_protobuf_fn):
+    """Required-field violations should null the whole row in PERMISSIVE mode."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "required.desc", _build_required_field_descriptor_set_bytes)
+    message_name = "test.WithRequired"
+
+    missing_required_row = _encode_tag(2, 2) + _encode_varint(5) + b"hello"
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(missing_required_row,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("id").alias("id"),
+            decoded.getField("name").alias("name"),
+            decoded.getField("count").alias("count")
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
 def test_from_protobuf_nested_required_field_missing_permissive(
         spark_tmp_path, from_protobuf_fn):
     """Observe CPU/GPU parity when a nested proto2 required field is missing in PERMISSIVE mode."""

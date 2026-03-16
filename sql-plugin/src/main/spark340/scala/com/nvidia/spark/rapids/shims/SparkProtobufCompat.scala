@@ -230,13 +230,18 @@ private[shims] object SparkProtobufCompat extends Logging {
     override lazy val defaultValueResult: Either[String, Option[ProtobufDefaultValue]] =
       Try {
         if (PbReflect.hasDefaultValue(raw)) {
-          PbReflect.getDefaultValue(raw).map(toDefaultValue(_, protoTypeName, enumMetadata))
+          PbReflect.getDefaultValue(raw) match {
+            case Some(default) =>
+              toDefaultValue(default, protoTypeName, enumMetadata).map(Some(_))
+            case None =>
+              Right(None)
+          }
         } else {
-          None
+          Right(None)
         }
       }.toEither.left.map { t =>
         s"Failed to read protobuf default value for field '$name': ${t.getMessage}"
-      }
+      }.flatMap(identity)
     override lazy val messageDescriptor: Option[ProtobufMessageDescriptor] =
       if (protoTypeName == "MESSAGE") {
         Some(new ReflectiveMessageDescriptor(PbReflect.getMessageType(raw)))
@@ -248,26 +253,31 @@ private[shims] object SparkProtobufCompat extends Logging {
   private def toDefaultValue(
       rawDefault: AnyRef,
       protoTypeName: String,
-      enumMetadata: Option[ProtobufEnumMetadata]): ProtobufDefaultValue = protoTypeName match {
+      enumMetadata: Option[ProtobufEnumMetadata]): Either[String, ProtobufDefaultValue] =
+    protoTypeName match {
     case "BOOL" =>
-      ProtobufDefaultValue.BoolValue(rawDefault.asInstanceOf[java.lang.Boolean].booleanValue())
+      Right(ProtobufDefaultValue.BoolValue(
+        rawDefault.asInstanceOf[java.lang.Boolean].booleanValue()))
     case "FLOAT" =>
-      ProtobufDefaultValue.FloatValue(rawDefault.asInstanceOf[java.lang.Float].floatValue())
+      Right(ProtobufDefaultValue.FloatValue(
+        rawDefault.asInstanceOf[java.lang.Float].floatValue()))
     case "DOUBLE" =>
-      ProtobufDefaultValue.DoubleValue(rawDefault.asInstanceOf[java.lang.Double].doubleValue())
+      Right(ProtobufDefaultValue.DoubleValue(
+        rawDefault.asInstanceOf[java.lang.Double].doubleValue()))
     case "STRING" =>
-      ProtobufDefaultValue.StringValue(if (rawDefault == null) null else rawDefault.toString)
+      Right(ProtobufDefaultValue.StringValue(
+        if (rawDefault == null) null else rawDefault.toString))
     case "BYTES" =>
-      ProtobufDefaultValue.BinaryValue(extractBytes(rawDefault))
+      Right(ProtobufDefaultValue.BinaryValue(extractBytes(rawDefault)))
     case "ENUM" =>
       val number = extractNumber(rawDefault).intValue()
-      enumMetadata.map(_.enumDefault(number))
-        .getOrElse(ProtobufDefaultValue.EnumValue(number, rawDefault.toString))
+      Right(enumMetadata.map(_.enumDefault(number))
+        .getOrElse(ProtobufDefaultValue.EnumValue(number, rawDefault.toString)))
     case "INT32" | "UINT32" | "SINT32" | "FIXED32" | "SFIXED32" |
          "INT64" | "UINT64" | "SINT64" | "FIXED64" | "SFIXED64" =>
-      ProtobufDefaultValue.IntValue(extractNumber(rawDefault).longValue())
+      Right(ProtobufDefaultValue.IntValue(extractNumber(rawDefault).longValue()))
     case other =>
-      throw new IllegalStateException(
+      Left(
         s"Unsupported protobuf default value type '$other' for value ${rawDefault.toString}")
   }
 

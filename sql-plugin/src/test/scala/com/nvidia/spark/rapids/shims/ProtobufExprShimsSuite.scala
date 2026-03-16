@@ -125,7 +125,9 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
   }
 
   private object FakeSpark35RetryFailureProtobufUtils {
-    def buildDescriptor(messageName: String, binaryFileDescriptorSet: Option[Array[Byte]]): String = {
+    def buildDescriptor(
+        messageName: String,
+        binaryFileDescriptorSet: Option[Array[Byte]]): String = {
       val bytes = binaryFileDescriptorSet.getOrElse(Array.emptyByteArray)
       if (bytes.sameElements(Array[Byte](1, 2, 3))) {
         throw new IllegalArgumentException(s"Unknown message $messageName")
@@ -278,6 +280,23 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     assert(!SparkProtobufCompat.isGpuSupportedProtoSyntax(""))
     assert(!SparkProtobufCompat.isGpuSupportedProtoSyntax("null"))
     assert(SparkProtobufCompat.isGpuSupportedProtoSyntax("PROTO2"))
+  }
+
+  test("compat returns Left for unsupported default value types") {
+    val method = SparkProtobufCompat.getClass.getDeclaredMethod(
+      "toDefaultValue",
+      classOf[AnyRef],
+      classOf[String],
+      classOf[scala.Option[_]])
+    method.setAccessible(true)
+
+    val result = method.invoke(
+      SparkProtobufCompat,
+      "opaque-default",
+      "MESSAGE",
+      scala.None).asInstanceOf[Either[String, ProtobufDefaultValue]]
+
+    assert(result.left.toOption.exists(_.contains("Unsupported protobuf default value type")))
   }
 
   test("extractor preserves typed enum defaults") {
