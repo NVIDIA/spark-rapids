@@ -677,7 +677,8 @@ class MultiFileCloudSequenceFilePartitionReader(
         // operations (each doubling copies all existing data to a new buffer).
         val splitSize = partFile.length
         val initialSize = math.max(math.min(splitSize, 256L * 1024L * 1024L), 1024L * 1024L)
-        val estimatedRows = math.max((splitSize / 512).toInt, 1024) // ~512 bytes/record estimate
+        val estimatedRows = math.max(
+          math.min(splitSize / 512L, Int.MaxValue.toLong).toInt, 1024)
         val initialRows = math.min(estimatedRows, 4 * 1024 * 1024) // cap at 4M rows
 
         val keyBufferer = if (wantsKey) {
