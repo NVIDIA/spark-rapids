@@ -352,7 +352,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
     }
     val spark = SparkSession.active
     val formatCls = cmd.fileFormat.getClass
-    fileFormat = if (formatCls == classOf[CSVFileFormat]) {
+    fileFormat = if (classOf[CSVFileFormat].isAssignableFrom(formatCls)) {
       willNotWorkOnGpu("CSV output is not supported")
       None
     } else if (formatCls == classOf[JsonFileFormat]) {
