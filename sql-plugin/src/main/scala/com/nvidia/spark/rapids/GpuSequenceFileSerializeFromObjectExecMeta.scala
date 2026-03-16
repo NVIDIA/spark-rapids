@@ -118,7 +118,9 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
  * to the CPU path by returning conservative defaults.
  */
 object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
-  private val SequenceFileBlockCompressionVersion = 5
+  // Hadoop SequenceFile.BLOCK_COMPRESS_VERSION = 4. The isBlockCompressed flag
+  // is only present in the header when version >= 4.
+  private val SequenceFileBlockCompressionVersion = 4
 
   private case class SequenceFileScanAnalysis(
       sourceScan: ExternalRDDScanExec[_],
@@ -137,17 +139,17 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
 
   private def isNewApiSequenceFileRDD(rdd: NewHadoopRDD[_, _]): Boolean = {
     try {
-      // Spark's Scala bytecode exposes inputFormatClass as a public field with the mangled
-      // name below (verified with javap on Spark 3.5.1), so getField is intentional here.
-      // This is not a JavaBean-style accessor method; using getMethod would look for a
-      // zero-arg method that does not exist on the compiled class.
-      val f = classOf[NewHadoopRDD[_, _]]
-        .getField("org$apache$spark$rdd$NewHadoopRDD$$inputFormatClass")
-      val ifc = f.get(rdd).asInstanceOf[Class[_]]
+      // NewHadoopRDD stores inputFormatClass as a public final field. The Scala-mangled
+      // name varies across Spark versions, so we locate it by type rather than by name.
+      val ifc = classOf[NewHadoopRDD[_, _]].getFields
+        .find(f => classOf[Class[_]].isAssignableFrom(f.getType))
+        .map(_.get(rdd).asInstanceOf[Class[_]])
+        .orNull
       ifc != null && ifc.getName.contains("SequenceFile")
     } catch {
       case NonFatal(e) =>
-        logDebug(s"Failed to inspect NewHadoopRDD input format via reflection: ${e.getMessage}", e)
+        logDebug(s"Failed to inspect NewHadoopRDD input format: " +
+          e.getMessage, e)
         false
     }
   }

@@ -48,6 +48,16 @@ private[sequencefile] object GpuSequenceFileReaders {
   final val KEY_FIELD: String = "key"
   final val VALUE_FIELD: String = "value"
 
+  /**
+   * Extracts the payload from a serialized BytesWritable record
+   * (4-byte big-endian length prefix + payload bytes) and appends
+   * it to the host buffer.
+   *
+   * Records with a missing or inconsistent length prefix produce a
+   * zero-length payload. This is not an error: BytesWritable allows
+   * empty payloads, and truly corrupt records never reach this method
+   * because SequenceFile.Reader.nextRaw() throws IOException first.
+   */
   def addBytesWritablePayload(
       bufferer: HostBinaryListBufferer,
       bytes: Array[Byte],
