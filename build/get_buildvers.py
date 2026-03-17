@@ -59,6 +59,11 @@ def _get_buildvers(buildvers, pom_file, logger=None, ignore_excluded_shims=False
                     raise Exception(
                         "Shim {} listed in dyn.shim.excluded.releases in pom.xml not present in releases".format(
                             removed_shim))
+                else:
+                    if logger:
+                        logger.debug(
+                            "Shim %s listed in dyn.shim.excluded.releases not found in scala2.13 "
+                            "releases (expected for scala-2.12-only profiles)", removed_shim)
 
     if "scala2.13" in pom_file:
         no_snapshots = list(filter(lambda x: not x.endswith("cdh"), no_snapshots))
