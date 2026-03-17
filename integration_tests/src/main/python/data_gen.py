@@ -946,7 +946,7 @@ def _pb_scalar_kind_spark_type(kind):
     raise ValueError(f'Unsupported protobuf scalar kind: {kind}')
 
 
-@dataclass(frozen=True)
+@dataclass
 class PbEnumSpec:
     name: str
     values: tuple
@@ -961,7 +961,7 @@ class PbEnumSpec:
             raise ValueError(f'duplicate enum names in {self.name}')
         if len(numbers) != len(set(numbers)):
             raise ValueError(f'duplicate enum numbers in {self.name}')
-        object.__setattr__(self, 'values', values)
+        self.values = values
 
     def number_for(self, value):
         if isinstance(value, str):
@@ -972,7 +972,7 @@ class PbEnumSpec:
         return int(value)
 
 
-@dataclass(frozen=True)
+@dataclass
 class PbScalarFieldSpec:
     name: str
     number: int
@@ -986,8 +986,8 @@ class PbScalarFieldSpec:
     enum: object = None
 
     def __post_init__(self):
-        object.__setattr__(self, 'name', str(self.name))
-        object.__setattr__(self, 'number', int(self.number))
+        self.name = str(self.name)
+        self.number = int(self.number)
         if self.number <= 0:
             raise ValueError('field numbers must be positive')
         if self.cardinality != PbCardinality.REPEATED and self.packed:
@@ -1010,7 +1010,7 @@ class PbScalarFieldSpec:
             raise ValueError(f'packed encoding is not supported for {self.kind.value}: {self.name}')
 
 
-@dataclass(frozen=True)
+@dataclass
 class PbMessageFieldSpec:
     name: str
     number: int
@@ -1020,9 +1020,9 @@ class PbMessageFieldSpec:
     max_len: int = 5
 
     def __post_init__(self):
-        object.__setattr__(self, 'name', str(self.name))
-        object.__setattr__(self, 'number', int(self.number))
-        object.__setattr__(self, 'fields', tuple(self.fields))
+        self.name = str(self.name)
+        self.number = int(self.number)
+        self.fields = tuple(self.fields)
         if self.number <= 0:
             raise ValueError('field numbers must be positive')
         if self.min_len < 0 or self.max_len < self.min_len:
@@ -1031,14 +1031,14 @@ class PbMessageFieldSpec:
             raise ValueError('required message field cannot define repeated bounds')
 
 
-@dataclass(frozen=True)
+@dataclass
 class PbMessageSpec:
     name: str
     fields: tuple
 
     def __post_init__(self):
-        object.__setattr__(self, 'name', str(self.name))
-        object.__setattr__(self, 'fields', tuple(self.fields))
+        self.name = str(self.name)
+        self.fields = tuple(self.fields)
         _validate_pb_fields(self.fields, self.name)
 
     def as_datagen(self, binary_col_name='bin'):
@@ -1060,6 +1060,12 @@ def _validate_pb_fields(fields, owner_name):
 class _PbBuilder:
     def message(self, name, fields):
         return PbMessageSpec(name, tuple(fields))
+
+    def schema(self, name, fields):
+        return self.message(name, fields)
+
+    def as_datagen(self, fields, binary_col_name='bin', schema_name='Generated'):
+        return self.message(schema_name, fields).as_datagen(binary_col_name=binary_col_name)
 
     def bool(self, name, number, gen=None, default=None):
         return PbScalarFieldSpec(name, number, PbScalarKind.BOOL, gen=gen, default=default)
@@ -1113,10 +1119,39 @@ class _PbBuilder:
         return PbScalarFieldSpec(
             name, number, PbScalarKind.ENUM, gen=gen, default=default, enum=enum_spec)
 
+    def field(self, name, number, gen, encoding='default', default=None):
+        spark_type = gen.data_type
+        if isinstance(spark_type, BooleanType):
+            return self.bool(name, number, gen=gen, default=default)
+        if isinstance(spark_type, IntegerType):
+            if encoding == 'fixed':
+                return self.fixed32(name, number, gen=gen, default=default)
+            if encoding == 'zigzag':
+                return self.sint32(name, number, gen=gen, default=default)
+            return self.int32(name, number, gen=gen, default=default)
+        if isinstance(spark_type, LongType):
+            if encoding == 'fixed':
+                return self.fixed64(name, number, gen=gen, default=default)
+            if encoding == 'zigzag':
+                return self.sint64(name, number, gen=gen, default=default)
+            return self.int64(name, number, gen=gen, default=default)
+        if isinstance(spark_type, FloatType):
+            return self.float(name, number, gen=gen, default=default)
+        if isinstance(spark_type, DoubleType):
+            return self.double(name, number, gen=gen, default=default)
+        if isinstance(spark_type, StringType):
+            return self.string(name, number, gen=gen, default=default)
+        if isinstance(spark_type, BinaryType):
+            return self.bytes(name, number, gen=gen, default=default)
+        raise ValueError(f'Unsupported DataGen for protobuf scalar: {spark_type}')
+
     def message_field(self, name, number, fields):
         return PbMessageFieldSpec(name, number, tuple(fields))
 
     def nested(self, name, number, fields):
+        return self.message_field(name, number, fields)
+
+    def nested_field(self, name, number, fields):
         return self.message_field(name, number, fields)
 
     def repeated(self, field_spec, min_len=0, max_len=5, packed=False):
@@ -1137,8 +1172,19 @@ class _PbBuilder:
                 max_len=max_len)
         raise TypeError(f'Unsupported protobuf field for repeated(): {type(field_spec)}')
 
+    def repeated_field(self, name, number, gen, packed=False,
+                       encoding='default', min_len=0, max_len=5):
+        return self.repeated(
+            self.field(name, number, gen, encoding=encoding),
+            min_len=min_len,
+            max_len=max_len,
+            packed=packed)
+
     def repeated_message(self, name, number, fields, min_len=0, max_len=5):
         return self.repeated(self.message_field(name, number, fields), min_len=min_len, max_len=max_len)
+
+    def repeated_message_field(self, name, number, fields, min_len=0, max_len=5):
+        return self.repeated_message(name, number, fields, min_len=min_len, max_len=max_len)
 
     def required(self, field_spec):
         if isinstance(field_spec, PbScalarFieldSpec):
@@ -1474,7 +1520,7 @@ def encode_pb_message(message_spec, value):
     return ProtobufEncoder().encode_message(message_spec, value)
 
 
-def _kind_from_legacy_scalar(spark_type, encoding='default'):
+def _kind_from_scalar_type(spark_type, encoding='default'):
     if isinstance(spark_type, BooleanType):
         return PbScalarKind.BOOL
     if isinstance(spark_type, IntegerType):
@@ -1501,8 +1547,8 @@ def _kind_from_legacy_scalar(spark_type, encoding='default'):
 
 
 def _encode_protobuf_packed_repeated(field_number, spark_element_type, values, encoding='default'):
-    """Legacy helper retained for protobuf tests that directly assert packed encoding bytes."""
-    kind = _kind_from_legacy_scalar(spark_element_type, encoding=encoding)
+    """Encode a packed repeated field directly from Spark scalar type metadata."""
+    kind = _kind_from_scalar_type(spark_element_type, encoding=encoding)
     field_spec = PbScalarFieldSpec(
         name='packed_field',
         number=field_number,
