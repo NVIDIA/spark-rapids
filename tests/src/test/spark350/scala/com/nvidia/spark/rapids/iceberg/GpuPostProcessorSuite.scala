@@ -733,7 +733,8 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
       StructField("a", IntegerType, true),
       StructField("b", DoubleType, true)
     ))
-    def struct(vals: Object*): HostColumnVector.StructData = new HostColumnVector.StructData(vals: _*)
+    def struct(vals: Object*): HostColumnVector.StructData =
+      new HostColumnVector.StructData(vals: _*)
     val hostStructType = new HostColumnVector.StructType(
       true,
       new HostColumnVector.BasicType(true, DType.INT32),

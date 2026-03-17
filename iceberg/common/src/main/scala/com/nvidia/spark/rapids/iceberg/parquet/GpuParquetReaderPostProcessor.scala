@@ -30,7 +30,6 @@ import com.nvidia.spark.rapids.GpuScalar
 import com.nvidia.spark.rapids.NoopMetric
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
-import com.nvidia.spark.rapids.{GpuMetric => RapidsGpuMetric}
 import com.nvidia.spark.rapids.SpillableColumnarBatch
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
@@ -565,14 +564,14 @@ class GpuParquetReaderPostProcessor(
     private[iceberg] val idToConstant: JMap[Integer, _],
     private[iceberg] val expectedSchema: Schema,
     shadedFileReadSchema: ShadedMessageType,
-    metrics: Map[String, RapidsGpuMetric]
+    metrics: Map[String, com.nvidia.spark.rapids.GpuMetric]
 ) {
   private val icebergBuildActionTimeMetricName = "icebergBuildActionTime"
   private val icebergPostProcessTimeMetricName = "icebergPostProcessTime"
 
-  private val buildActionTimeMetric: RapidsGpuMetric =
+  private val buildActionTimeMetric: com.nvidia.spark.rapids.GpuMetric =
     metrics.getOrElse(icebergBuildActionTimeMetricName, NoopMetric)
-  private val postProcessTimeMetric: RapidsGpuMetric =
+  private val postProcessTimeMetric: com.nvidia.spark.rapids.GpuMetric =
     metrics.getOrElse(icebergPostProcessTimeMetricName, NoopMetric)
   require(parquetInfo != null, "parquetInfo cannot be null")
   require(parquetInfo.blocks.size == parquetInfo.blocksFirstRowIndices.size,
