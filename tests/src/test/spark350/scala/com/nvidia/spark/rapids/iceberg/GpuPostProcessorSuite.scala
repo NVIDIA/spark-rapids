@@ -688,7 +688,9 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
   test("Process columnar batch with struct<int, double> promoted to struct<long, double>") {
     import com.nvidia.spark.rapids.SpillableColumnarBatch
     import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+    import com.nvidia.spark.rapids.GpuColumnVector
     import com.nvidia.spark.rapids.SpillPriorities
+    import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType, HostColumnVector}
     import org.apache.spark.sql.types._
 
     val structFieldId = 1
@@ -727,14 +729,23 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     assert(actionPlan.contains("ProcessStruct"))
     assert(actionPlan.contains("UpCast"))
 
-    // Create a columnar batch with struct<int, double> data using FuzzerUtils
-    import com.nvidia.spark.rapids.FuzzerUtils
-    val schema = StructType(Array(StructField("struct_col",
-      StructType(Seq(
-        StructField("a", IntegerType, true),
-        StructField("b", DoubleType, true)
-      )), true)))
-    val inputBatch = FuzzerUtils.createColumnarBatch(schema, rowCount = 2, seed = 42)
+    val sparkStructType = StructType(Seq(
+      StructField("a", IntegerType, true),
+      StructField("b", DoubleType, true)
+    ))
+    def struct(vals: Object*): HostColumnVector.StructData = new HostColumnVector.StructData(vals: _*)
+    val hostStructType = new HostColumnVector.StructType(
+      true,
+      new HostColumnVector.BasicType(true, DType.INT32),
+      new HostColumnVector.BasicType(true, DType.FLOAT64))
+    val inputCol = closeOnExcept(CudfColumnVector.fromStructs(
+      hostStructType,
+      struct(Integer.valueOf(1), Double.box(1.25)),
+      null,
+      struct(Integer.valueOf(3), Double.box(3.5)))) { cudfCol =>
+      GpuColumnVector.from(cudfCol, sparkStructType)
+    }
+    val inputBatch = new org.apache.spark.sql.vectorized.ColumnarBatch(Array(inputCol), 3)
     val spillable = closeOnExcept(inputBatch) { batch =>
       SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     }
@@ -743,20 +754,96 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     withResource(spillable) { _ =>
       withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
         // Verify basic properties
-        assert(outputBatch.numRows() == 2)
+        assert(outputBatch.numRows() == 3)
         assert(outputBatch.numCols() == 1)
 
-        // Verify the output has the correct types
-        import com.nvidia.spark.rapids.GpuColumnVector
         val gpuCol = outputBatch.column(0).asInstanceOf[GpuColumnVector]
+        withResource(gpuCol.copyToHost()) { hostCol =>
+          assert(!hostCol.getBase.isNull(0))
+          assert(hostCol.getBase.isNull(1))
+          assert(!hostCol.getBase.isNull(2))
+        }
+
         val cudfCol = gpuCol.getBase
-        // It's a struct with 2 children
         assert(cudfCol.getNumChildren == 2)
-        // First child should be INT64 (promoted from INT32)
-        assert(cudfCol.getChildColumnView(0).getType.equals(ai.rapids.cudf.DType.INT64))
-        // Second child should be FLOAT64
-        assert(cudfCol.getChildColumnView(1).getType.equals(ai.rapids.cudf.DType.FLOAT64))
+        withResource(cudfCol.getChildColumnView(0)) { child =>
+          assert(child.getType.equals(DType.INT64))
+        }
+        withResource(cudfCol.getChildColumnView(1)) { child =>
+          assert(child.getType.equals(DType.FLOAT64))
+        }
       }
     }
+  }
+
+  test("Missing optional struct is filled with null parent values") {
+    import com.nvidia.spark.rapids.Arm.withResource
+    import com.nvidia.spark.rapids.GpuColumnVector
+
+    val structFieldId = 1
+    val fieldAId = 2
+    val fieldBId = 3
+
+    val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
+    val expectedSchema = new Schema(
+      Types.NestedField.optional(structFieldId, "struct_col",
+        Types.StructType.of(
+          Types.NestedField.optional(fieldAId, "a", Types.LongType.get()),
+          Types.NestedField.optional(fieldBId, "b", Types.StringType.get())
+        ))
+    )
+
+    val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      new JHashMap[Integer, Any](),
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
+
+    assert(processor.displayActionPlan().contains("FillNull(struct<"))
+
+    withResource(processor.process(
+      new org.apache.spark.sql.vectorized.ColumnarBatch(
+        Array.empty[org.apache.spark.sql.vectorized.ColumnVector],
+        3))) { outputBatch =>
+      assert(outputBatch.numRows() == 3)
+      assert(outputBatch.numCols() == 1)
+
+      withResource(outputBatch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+        (0 until outputBatch.numRows()).foreach { i =>
+          assert(hostCol.getBase.isNull(i))
+        }
+      }
+    }
+  }
+
+  test("Whole-struct constants build a FetchConstant action") {
+    val structFieldId = 1
+    val fieldAId = 2
+    val fieldBId = 3
+
+    val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
+    val expectedSchema = new Schema(
+      Types.NestedField.optional(structFieldId, "struct_col",
+        Types.StructType.of(
+          Types.NestedField.optional(fieldAId, "a", Types.LongType.get()),
+          Types.NestedField.optional(fieldBId, "b", Types.StringType.get())
+        ))
+    )
+
+    val idToConstant = new JHashMap[Integer, Any]()
+    idToConstant.put(structFieldId, null)
+
+    val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      idToConstant,
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
+
+    assert(processor.displayActionPlan().contains(
+      s"FetchConstant(fieldId=$structFieldId, struct<"))
   }
 }

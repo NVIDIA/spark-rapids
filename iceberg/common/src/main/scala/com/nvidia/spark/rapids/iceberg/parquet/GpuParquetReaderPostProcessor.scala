@@ -16,20 +16,21 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
-import java.util.{List => JList, Map => JMap}
+import java.util.{List => JList, Map => JMap, Optional}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable.Stack
 
-import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, ColumnView, DType}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.CastOptions
 import com.nvidia.spark.rapids.GpuCast
 import com.nvidia.spark.rapids.GpuColumnVector
-import com.nvidia.spark.rapids.GpuMetric
 import com.nvidia.spark.rapids.GpuScalar
 import com.nvidia.spark.rapids.NoopMetric
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.{GpuMetric => RapidsGpuMetric}
 import com.nvidia.spark.rapids.SpillableColumnarBatch
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
@@ -68,17 +69,39 @@ private[iceberg] class ColumnActionContext(
     val processor: GpuParquetReaderPostProcessor,
     val column: Option[CudfColumnVector]
 ) {
+  private def checkedRowCountToInt(rowCount: Long): Int = {
+    try {
+      Math.toIntExact(rowCount)
+    } catch {
+      case e: ArithmeticException =>
+        throw new IllegalStateException(
+          s"Row count $rowCount exceeds the supported Int range",
+          e)
+    }
+  }
+
+  def requireColumn(actionName: String): CudfColumnVector = {
+    column.getOrElse(throw new IllegalStateException(s"$actionName requires an input column"))
+  }
+
   def withColumn(col: CudfColumnVector): ColumnActionContext = {
     new ColumnActionContext(processor, Some(col))
   }
 
-  def numRows: Int = column.map(_.getRowCount.toInt).getOrElse(processor.currentNumRows)
+  def numRows: Int = column match {
+    case Some(col) =>
+      // Nested actions must use the current column row count because list/map children can have
+      // a different row count from the top-level batch.
+      checkedRowCountToInt(col.getRowCount)
+    case None =>
+      processor.currentNumRows
+  }
 }
 
 /** Pass through column directly (schemas match exactly). */
 private[iceberg] case object PassThrough extends ColumnAction {
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
-    ctx.column.get.incRefCount()
+    ctx.requireColumn("PassThrough").incRefCount()
   }
 
   override def display(indent: Int): String = {
@@ -92,7 +115,7 @@ private[iceberg] case class UpCast(
     toType: DataType
 ) extends ColumnAction {
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
-    val col = ctx.column.get
+    val col = ctx.requireColumn("UpCast")
     GpuCast.doCast(col, fromType, toType, CastOptions.DEFAULT_CAST_OPTIONS)
   }
 
@@ -186,11 +209,12 @@ private[iceberg] case class ProcessList(
     elementAction: ColumnAction
 ) extends ColumnAction {
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
-    val col = ctx.column.get
+    val col = ctx.requireColumn("ProcessList")
     if (elementAction == PassThrough) {
       col.incRefCount()
     } else {
       val elementCol = withResource(col.getChildColumnView(0)) { childView =>
+        // Nested actions may replace the child column, so detach it from the temporary view first.
         childView.copyToColumnVector()
       }
       withResource(elementCol) { _ =>
@@ -218,7 +242,7 @@ private[iceberg] case class ProcessMap(
     valueAction: ColumnAction
 ) extends ColumnAction {
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
-    val col = ctx.column.get
+    val col = ctx.requireColumn("ProcessMap")
     if (keyAction == PassThrough && valueAction == PassThrough) {
       col.incRefCount()
     } else {
@@ -276,42 +300,39 @@ private[iceberg] case class ProcessStruct(
     s"fieldActions size ${fieldActions.size} must match inputIndices size ${inputIndices.size}")
 
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
-    // Handle case where entire struct is missing from file (ctx.column is None)
-    // In this case, all inputIndices must be None and we generate all children
-    ctx.column match {
-      case None =>
-        // Struct is missing from file - all fields must be generated
-        require(inputIndices.forall(_.isEmpty),
-          "When struct column is missing, all inputIndices must be None")
-        val childCols = fieldActions.safeMap(action => action.execute(ctx))
-        withResource(childCols) { cols =>
-          CudfColumnVector.makeStruct(ctx.numRows, cols: _*)
-        }
-      
-      case Some(col) =>
-        val childCols = fieldActions.zip(inputIndices).safeMap { case (action, inputIdx) =>
-          inputIdx match {
-            case Some(idx) =>
-              // Field exists in input - get child at the correct index
-              val childCol = withResource(col.getChildColumnView(idx)) { childView =>
-                childView.copyToColumnVector()
-              }
-              if (action == PassThrough) {
-                childCol
-              } else {
-                withResource(childCol) { _ =>
-                  action.execute(ctx.withColumn(childCol))
-                }
-              }
-            case None =>
-              // Field doesn't exist in input - action must generate the column
-              // (FillNull, FetchConstant, etc.)
-              action.execute(ctx)
+    val col = ctx.requireColumn("ProcessStruct")
+    val childCols = fieldActions.zip(inputIndices).safeMap { case (action, inputIdx) =>
+      inputIdx match {
+        case Some(idx) =>
+          // Field exists in input - get child at the correct index
+          val childCol = withResource(col.getChildColumnView(idx)) { childView =>
+            childView.copyToColumnVector()
           }
+          if (action == PassThrough) {
+            childCol
+          } else {
+            withResource(childCol) { _ =>
+              action.execute(ctx.withColumn(childCol))
+            }
+          }
+        case None =>
+          // Field doesn't exist in input - action must generate the column
+          // (FillNull, FetchConstant, etc.)
+          action.execute(ctx)
+      }
+    }
+    withResource(childCols) { cols =>
+      withResource(col.getValid) { valid =>
+        withResource(new ColumnView(
+            DType.STRUCT,
+            col.getRowCount,
+            Optional.empty[java.lang.Long](),
+            valid,
+            null,
+            cols.map(_.asInstanceOf[ColumnView]).toArray)) { view =>
+          view.copyToColumnVector()
         }
-        withResource(childCols) { cols =>
-          CudfColumnVector.makeStruct(ctx.numRows, cols: _*)
-        }
+      }
     }
   }
 
@@ -341,7 +362,7 @@ private[iceberg] object MissingFieldActionBuilder {
   def buildAction(
       fieldId: Int,
       sparkType: DataType,
-      isOptional: Boolean,
+      isFieldOptional: Boolean,
       idToConstant: JMap[Integer, _]): ColumnAction = {
     // 1. Check constant map
     if (idToConstant.containsKey(fieldId)) {
@@ -360,7 +381,7 @@ private[iceberg] object MissingFieldActionBuilder {
     }
 
     // 3. Check if optional - fill null
-    if (isOptional) {
+    if (isFieldOptional) {
       FillNull(sparkType)
     } else {
       // 4. Required field missing - throw error
@@ -378,8 +399,8 @@ private class ActionBuildingVisitor(
     idToConstant: JMap[Integer, _]
 ) extends SchemaWithPartnerVisitor[Type, ColumnAction] {
 
-  // Track current field using a list as stack (for nested struct handling)
-  private var fieldStack: List[Types.NestedField] = Nil
+  // Track the current field while descending nested structs.
+  private val fieldStack = Stack.empty[Types.NestedField]
   private def currentField: Types.NestedField = fieldStack.headOption.orNull
 
   override def schema(
@@ -393,26 +414,31 @@ private class ActionBuildingVisitor(
       struct: Types.StructType,
       partner: Type,
       fieldResults: JList[ColumnAction]): ColumnAction = {
+    val sparkType = SparkSchemaUtil.convert(struct)
+
     // Check if the entire struct is a constant (e.g., partition struct)
     // This must be checked BEFORE processing children because the constant
     // is for the whole struct, not individual fields
     if (currentField != null && idToConstant.containsKey(currentField.fieldId())) {
-      val sparkType = SparkSchemaUtil.convert(struct)
       return FetchConstant(currentField.fieldId(), sparkType)
     }
-    
+
+    if (partner == null) {
+      return MissingFieldActionBuilder.buildAction(
+        currentField.fieldId(),
+        sparkType,
+        currentField.isOptional,
+        idToConstant)
+    }
+
     val actions = fieldResults.asScala.toSeq
     val expectedFields = struct.fields().asScala
 
     // Build input indices mapping from expected field ID to partner (file) field position
-    val partnerFieldIdToIndex: Map[Int, Int] = if (partner != null) {
+    val partnerFieldIdToIndex: Map[Int, Int] =
       partner.asStructType().fields().asScala.zipWithIndex.map { case (f, i) =>
         f.fieldId() -> i
       }.toMap
-    } else {
-      // Partner is null - struct doesn't exist in file, all fields must be generated
-      Map.empty
-    }
 
     // Map each expected field to its input index (if exists in partner/file)
     val inputIndices = expectedFields.map { f =>
@@ -434,11 +460,11 @@ private class ActionBuildingVisitor(
   }
 
   override def beforeField(field: Types.NestedField, partner: Type): Unit = {
-    fieldStack = field :: fieldStack
+    fieldStack.push(field)
   }
 
   override def afterField(field: Types.NestedField, partner: Type): Unit = {
-    fieldStack = fieldStack.tail
+    fieldStack.pop()
   }
 
   override def field(
@@ -557,12 +583,15 @@ class GpuParquetReaderPostProcessor(
     private[iceberg] val idToConstant: JMap[Integer, _],
     private[iceberg] val expectedSchema: Schema,
     shadedFileReadSchema: ShadedMessageType,
-    metrics: Map[String, GpuMetric]
+    metrics: Map[String, RapidsGpuMetric]
 ) {
-  private val buildActionTimeMetric: GpuMetric =
-    metrics.getOrElse(GpuMetric.ICEBERG_BUILD_ACTION_TIME, NoopMetric)
-  private val postProcessTimeMetric: GpuMetric =
-    metrics.getOrElse(GpuMetric.ICEBERG_POST_PROCESS_TIME, NoopMetric)
+  private val icebergBuildActionTimeMetricName = "icebergBuildActionTime"
+  private val icebergPostProcessTimeMetricName = "icebergPostProcessTime"
+
+  private val buildActionTimeMetric: RapidsGpuMetric =
+    metrics.getOrElse(icebergBuildActionTimeMetricName, NoopMetric)
+  private val postProcessTimeMetric: RapidsGpuMetric =
+    metrics.getOrElse(icebergPostProcessTimeMetricName, NoopMetric)
   require(parquetInfo != null, "parquetInfo cannot be null")
   require(parquetInfo.blocks.size == parquetInfo.blocksFirstRowIndices.size,
     s"Parquet info block count ${parquetInfo.blocks.size} not matching parquet info block " +
@@ -573,19 +602,22 @@ class GpuParquetReaderPostProcessor(
 
   private[iceberg] val fileReadSchema = parquetInfo.schema
   private[iceberg] val filePath: String = parquetInfo.filePath.toString
+  // Total rows already emitted from completed blocks while generating `_pos`.
   private[iceberg] var processedBlockRowCounts = 0L
+  // Total rows emitted from the file so far, including the current block.
   private[iceberg] var processedRowCount = 0L
+  // Current parquet block index while generating `_pos`.
   private[iceberg] var curBlockIndex = 0
-  // Set during process() for actions that don't have a column
+  // Top-level batch row count for actions that generate a column without an input column.
   private[iceberg] var currentNumRows = 0
 
   // Convert shaded parquet schema to Iceberg schema for comparison
   private val fileIcebergSchema: Schema = ParquetSchemaUtil.convert(shadedFileReadSchema)
 
   // Build field ID to batch index mapping using the UNSHADED schema from parquetInfo.
-  // The batch returned by parquet reader is in FILE order, and the schema stored in
-  // parquetInfo is the one that was actually used for reading.
-  // Map field ID to file position (batch index).
+  // The parquet reader returns top-level columns in the physical file-read order captured by
+  // parquetInfo.schema, which can differ from the requested Iceberg schema order.
+  // Map field ID to that batch position.
   private val fieldIdToBatchIndex: Map[Int, Int] = {
     (0 until fileReadSchema.getFieldCount).flatMap { i =>
       Option(fileReadSchema.getType(i).getId).map(id => id.intValue() -> i)
@@ -665,10 +697,9 @@ class GpuParquetReaderPostProcessor(
               s"Root action must be ProcessStruct, but got: ${rootAction.getClass.getSimpleName}")
           }
 
-          // For root-level processing, use fieldIdToBatchIndex to map field IDs to batch columns.
-          // The batch is in readSchema order (expected order with missing fields skipped).
-          // For PassThrough columns, we incRefCount so they survive when batch is closed.
-          // For transformed columns, we create new column vectors.
+          // Root-level columns are not wrapped in a single struct column, so we cannot execute
+          // ProcessStruct directly here. Instead we run each field action against the matching
+          // batch column (or None for generated fields) and assemble the output batch ourselves.
           val columns: Seq[ColumnVector] = fieldActions.zip(fields).zipWithIndex.safeMap {
             case ((action, field), idx) =>
               val batchIdx = fieldIdToBatchIndex.get(field.fieldId())

@@ -24,6 +24,7 @@ import scala.collection.mutable.ListBuffer
 import scala.util.Random
 
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
@@ -169,7 +170,8 @@ object FuzzerUtils {
           // For nested types (array, map, struct), we fall back to Row-based approach
           // since GpuColumnarBatchBuilder doesn't support these directly
           case _: ArrayType | _: MapType | _: StructType =>
-            throw new MatchError(field.dataType)
+            throw new IllegalStateException(
+              s"GpuColumnarBatchBuilder does not support nested type ${field.dataType}")
         }
     }
     builders.build(rowCount)
@@ -204,7 +206,7 @@ object FuzzerUtils {
       new org.apache.spark.sql.vectorized.ColumnarBatch(gpuCols.toArray, rowCount)
     } catch {
       case e: Throwable =>
-        columns.foreach(_.close())
+        columns.safeClose(e)
         throw e
     }
   }
@@ -238,7 +240,7 @@ object FuzzerUtils {
         val values = data.map(v => if (v == null) null else v.asInstanceOf[String])
         CudfColumnVector.fromStrings(values: _*)
       case ArrayType(elementType, _) =>
-        val listType = getHostListType(elementType, nullable)
+        val listType = createHostListType(elementType, nullable)
         val javaLists = data.map { v =>
           if (v == null) null
           else v.asInstanceOf[Seq[_]].map(boxValue).asJava
@@ -269,8 +271,8 @@ object FuzzerUtils {
         import ai.rapids.cudf.HostColumnVector
         
         val structType = new HostColumnVector.StructType(true, Seq(
-          getHostColumnType(keyType, false),  // Keys are not nullable
-          getHostColumnType(valueType, valueContainsNull)
+          createHostColumnType(keyType, false),  // Keys are not nullable
+          createHostColumnType(valueType, valueContainsNull)
         ).asJava)
         
         val listType = new HostColumnVector.ListType(nullable, structType)
@@ -295,18 +297,18 @@ object FuzzerUtils {
   /**
    * Creates a HostColumnVector type descriptor for lists
    */
-  private def getHostListType(
+  private def createHostListType(
       elementType: DataType,
       nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
     import ai.rapids.cudf.HostColumnVector
     
-    new HostColumnVector.ListType(nullable, getHostColumnType(elementType, nullable))
+    new HostColumnVector.ListType(nullable, createHostColumnType(elementType, nullable))
   }
   
   /**
    * Creates a HostColumnVector type descriptor for any data type
    */
-  private def getHostColumnType(
+  private def createHostColumnType(
       dataType: DataType,
       nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
     import ai.rapids.cudf.{DType, HostColumnVector}
