@@ -455,9 +455,10 @@ protobuf jars explicitly when launching the integration test harness:
 - `spark-protobuf_${scala.binary.version}-${spark.version}.jar`
 - optionally `protobuf-java-*.jar` if your Spark distribution does not already bundle it
 
-Execute the following command to run protobuf tests:
+Execute the following command to run protobuf tests (`PROTOBUF_JARS` accepts
+both comma- and colon-separated paths):
 ```shell
-$ PROTOBUF_JARS=/path/to/spark-protobuf.jar,/path/to/protobuf-java.jar \
+$ PROTOBUF_JARS=/path/to/spark-protobuf.jar:/path/to/protobuf-java.jar \
   ./integration_tests/run_pyspark_from_build.sh -m protobuf_test
 ```
 

@@ -2446,9 +2446,9 @@ def test_from_protobuf_bug4_max_depth(spark_tmp_path, from_protobuf_fn):
     # Depth 12 exceeds GPU max nesting depth (10), so the query should
     # gracefully fall back to CPU. Verify that it still produces correct
     # results (CPU path) without crashing.
-    from spark_session import with_cpu_session
     cpu_result = with_cpu_session(lambda spark: run_on_spark(spark).collect())
     assert len(cpu_result) > 0
+    assert cpu_result[0]["val12"] is not None
 
 
 # ===========================================================================
