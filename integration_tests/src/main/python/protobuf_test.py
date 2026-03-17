@@ -33,8 +33,6 @@ pytestmark = [
     pytest.mark.premerge_ci_1,
     protobuf_test,
     pytest.mark.skipif(not _protobuf_jars_available, reason="Protobuf JARs not available"),
-    pytest.mark.skipif(not is_protobuf_runtime_available(),
-                       reason="spark-protobuf runtime not available"),
 ]
 
 
@@ -75,6 +73,9 @@ _random_scalar_test_configs = [
 
 @pytest.fixture(scope="module")
 def from_protobuf_fn():
+    """Skip the module if spark-protobuf is not on the classpath at runtime."""
+    if not is_protobuf_runtime_available():
+        pytest.skip("spark-protobuf runtime not available on the classpath")
     from pyspark.sql.protobuf.functions import from_protobuf
     return from_protobuf
 
