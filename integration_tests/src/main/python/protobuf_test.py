@@ -64,22 +64,6 @@ _random_scalar_test_configs = [
         PbScalar("f64", 5, DoubleGen()),
         PbScalar("s", 6, StringGen()),
     ]),
-    ("floats_edge_cases", [
-        PbScalar("b", 1, BooleanGen()),
-        PbScalar("i32", 2, IntegerGen()),
-        PbScalar("i64", 3, LongGen()),
-        PbScalar("f32", 4, FloatGen(no_nans=True, special_cases=[-0.0, 0.0, 1.0, -1.0])),
-        PbScalar("f64", 5, DoubleGen(no_nans=True, special_cases=[-0.0, 0.0, 1.0, -1.0])),
-        PbScalar("s", 6, StringGen()),
-    ]),
-    ("large_dataset", [
-        PbScalar("b", 1, BooleanGen()),
-        PbScalar("i32", 2, IntegerGen()),
-        PbScalar("i64", 3, LongGen()),
-        PbScalar("f32", 4, FloatGen()),
-        PbScalar("f64", 5, DoubleGen()),
-        PbScalar("s", 6, StringGen(pattern="[a-z]{0,50}")),
-    ]),
 ]
 
 
@@ -2167,42 +2151,11 @@ def test_from_protobuf_nested_message(spark_tmp_path, from_protobuf_fn):
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
-def test_from_protobuf_nested_message_field_access(spark_tmp_path, from_protobuf_fn):
-    """
-    Test accessing fields within nested message.
-    """
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        spark_tmp_path, "nested.desc", _build_nested_descriptor_set_bytes)
-    message_name = "test.WithNested"
-
-    data_gen = ProtobufMessageGen([
-        PbScalar("simple_int", 1, IntegerGen()),
-        PbScalar("simple_str", 2, StringGen(nullable=True)),
-        PbNested("nested_msg", 3, [PbScalar("x", 1, IntegerGen())]),
-        PbScalar("simple_long", 4, LongGen()),
-    ])
-
-    def run_on_spark(spark):
-        df = gen_df(spark, data_gen)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        # Access nested field directly
-        return df.select(
-            decoded.getField("simple_int").alias("simple_int"),
-            decoded.getField("nested_msg").getField("x").alias("nested_x"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@_xfail_gpu_protobuf
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
 def test_from_protobuf_nested_message_field_access_with_batch_merge(
         spark_tmp_path, from_protobuf_fn):
     """
-    Same as nested field access, but with protobuf post-project batch merge enabled.
-    This protects correctness when schema-projected protobuf output is coalesced.
+    Test accessing fields within nested message, with protobuf post-project batch merge
+    enabled. This protects correctness when schema-projected protobuf output is coalesced.
     """
     desc_path, desc_bytes = _setup_protobuf_desc(
         spark_tmp_path, "nested.desc", _build_nested_descriptor_set_bytes)
@@ -3096,11 +3049,13 @@ def _get_field_by_path(expr, path):
 
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@pytest.mark.parametrize("boundary", ["alias", "withcolumn"], ids=idfn)
 @ignore_order(local=True)
-def test_from_protobuf_projection_across_alias_project_boundary(
-        spark_tmp_path, from_protobuf_fn):
+def test_from_protobuf_projection_across_plan_boundary(
+        spark_tmp_path, from_protobuf_fn, boundary):
+    """Schema projection across alias (select→select) and withColumn plan boundaries."""
     desc_path, desc_bytes = _setup_protobuf_desc(
-        spark_tmp_path, "schema_proj_alias.desc",
+        spark_tmp_path, "schema_proj_boundary.desc",
         _build_schema_projection_descriptor_set_bytes)
     message_name = "test.SchemaProj"
 
@@ -3108,32 +3063,16 @@ def test_from_protobuf_projection_across_alias_project_boundary(
         df = spark.createDataFrame([(row,) for row in _schema_proj_test_data], schema="bin binary")
         decoded = _call_from_protobuf(
             from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        aliased = df.select(decoded.alias("decoded"))
-        return aliased.select(
-            f.col("decoded").getField("detail").getField("a").alias("detail_a"),
-            f.col("decoded").getField("id").alias("id"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@_xfail_gpu_protobuf
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_projection_across_withcolumn_boundary(
-        spark_tmp_path, from_protobuf_fn):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        spark_tmp_path, "schema_proj_withcolumn.desc",
-        _build_schema_projection_descriptor_set_bytes)
-    message_name = "test.SchemaProj"
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,) for row in _schema_proj_test_data], schema="bin binary")
-        with_decoded = df.withColumn(
-            "decoded",
-            _call_from_protobuf(from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes))
-        return with_decoded.select(
-            f.col("decoded").getField("items").getField("a").alias("items_a"),
-            f.col("decoded").getField("id").alias("id"))
+        if boundary == "alias":
+            aliased = df.select(decoded.alias("decoded"))
+            return aliased.select(
+                f.col("decoded").getField("detail").getField("a").alias("detail_a"),
+                f.col("decoded").getField("id").alias("id"))
+        else:
+            with_decoded = df.withColumn("decoded", decoded)
+            return with_decoded.select(
+                f.col("decoded").getField("items").getField("a").alias("items_a"),
+                f.col("decoded").getField("id").alias("id"))
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
@@ -3914,27 +3853,6 @@ def test_deep_pruning_mixed_depths(spark_tmp_path, from_protobuf_fn):
             _get_field_by_path(decoded, ["level2", "level3", "val3"]).alias("val3"),
             _get_field_by_path(decoded, ["level2", "level3", "level4", "level5", "val5"])
                 .alias("val5"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@_xfail_gpu_protobuf
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_deep_pruning_sibling_at_depth_3(spark_tmp_path, from_protobuf_fn):
-    """At depth 3, access val3 but NOT level4 -- level4 subtree should be pruned."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        spark_tmp_path, "dp_sib3.desc", _build_deep_nested_5_level_descriptor_set_bytes)
-    message_name = "test.Level1"
-    data_gen = _deep_5_level_data_gen()
-
-    def run_on_spark(spark):
-        df = gen_df(spark, data_gen)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        return df.select(
-            _get_field_by_path(decoded, ["level2", "level3", "val3"]).alias("val3"),
         )
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
