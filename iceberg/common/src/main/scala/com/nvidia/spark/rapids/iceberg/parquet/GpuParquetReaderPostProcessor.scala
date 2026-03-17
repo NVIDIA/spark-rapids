@@ -63,20 +63,32 @@ private[iceberg] sealed trait ColumnAction {
  *
  * @param processor The processor instance for accessing metadata, constants, and numRows.
  * @param column    The current column to operate on (None for constant/null actions).
+ * @param numRows   Row count to use for actions that need to generate a column. Nested contexts
+ *                  inherit this from their parent when a child column is missing.
  */
 private[iceberg] class ColumnActionContext(
     val processor: GpuParquetReaderPostProcessor,
-    val column: Option[CudfColumnVector]
+    val column: Option[CudfColumnVector],
+    val numRows: Int
 ) {
+  private def checkedRowCountToInt(rowCount: Long): Int = {
+    try {
+      Math.toIntExact(rowCount)
+    } catch {
+      case e: ArithmeticException =>
+        throw new IllegalStateException(
+          s"Row count $rowCount exceeds the supported Int range",
+          e)
+    }
+  }
+
   def requireColumn(actionName: String): CudfColumnVector = {
     column.getOrElse(throw new IllegalStateException(s"$actionName requires an input column"))
   }
 
   def withColumn(col: CudfColumnVector): ColumnActionContext = {
-    new ColumnActionContext(processor, Some(col))
+    new ColumnActionContext(processor, Some(col), checkedRowCountToInt(col.getRowCount))
   }
-
-  def numRows: Int = processor.currentNumRows
 }
 
 /** Pass through column directly (schemas match exactly). */
@@ -685,7 +697,7 @@ class GpuParquetReaderPostProcessor(
             case ((action, field), idx) =>
               val batchIdx = fieldIdToBatchIndex.get(field.fieldId())
               val col = batchIdx.map(i => batch.column(i).asInstanceOf[GpuColumnVector].getBase)
-              val ctx = new ColumnActionContext(this, col)
+              val ctx = new ColumnActionContext(this, col, currentNumRows)
               val result = action.execute(ctx)
               closeOnExcept(result) { _ =>
                 GpuColumnVector.from(result, expectedSparkTypes(idx)).asInstanceOf[ColumnVector]

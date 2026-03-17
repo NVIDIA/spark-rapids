@@ -23,7 +23,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
 
-import com.nvidia.spark.rapids.Arm.closeOnExcept
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
@@ -256,12 +256,8 @@ object FuzzerUtils {
           }
           buildCudfColumn(field.dataType, childData, field.nullable)
         }
-        try {
-          CudfColumnVector.makeStruct(data.length, childColumns: _*)
-        } catch {
-          case e: Throwable =>
-            childColumns.foreach(_.close())
-            throw e
+        withResource(childColumns) { cols =>
+          CudfColumnVector.makeStruct(data.length, cols: _*)
         }
       case MapType(keyType, valueType, valueContainsNull) =>
         // Map is represented as list<struct<key, value>> in cuDF
