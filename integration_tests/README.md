@@ -458,7 +458,7 @@ protobuf jars explicitly when launching the integration test harness:
 Execute the following command to run protobuf tests (`PROTOBUF_JARS` accepts
 both comma- and colon-separated paths):
 ```shell
-$ PROTOBUF_JARS=/path/to/spark-protobuf.jar:/path/to/protobuf-java.jar \
+$ PROTOBUF_JARS=/path/to/spark-protobuf_2.12-3.5.1.jar:/path/to/protobuf-java-3.25.1.jar \
   ./integration_tests/run_pyspark_from_build.sh -m protobuf_test
 ```
 

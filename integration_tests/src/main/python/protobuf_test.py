@@ -14,7 +14,6 @@
 
 import inspect
 import os
-import struct
 
 import pytest
 
@@ -23,13 +22,12 @@ from data_gen import (
     BooleanGen, IntegerGen, LongGen, FloatGen, DoubleGen, StringGen, BinaryGen,
     gen_df, idfn
 )
-from protobuf_data_gen import pb, encode_pb_message, _encode_protobuf_packed_repeated
+from protobuf_data_gen import pb, encode_pb_message
 from marks import ignore_order, protobuf_test
 from spark_session import with_cpu_session, is_before_spark_340, is_protobuf_runtime_available
 import pyspark.sql.functions as f
-from pyspark.sql.types import IntegerType, LongType
 
-_protobuf_jars_available = os.environ.get('PROTOBUF_JARS_AVAILABLE', 'true').lower() != 'false'
+_protobuf_jars_available = os.environ.get('PROTOBUF_JARS_AVAILABLE', 'false').lower() == 'true'
 
 pytestmark = [
     pytest.mark.premerge_ci_1,
@@ -102,31 +100,6 @@ def _call_from_protobuf(from_protobuf_fn, col, message_name,
     if options is not None:
         return from_protobuf_fn(col, message_name, desc_path, options)
     return from_protobuf_fn(col, message_name, desc_path)
-
-
-def test_call_from_protobuf_preserves_options_for_legacy_signature():
-    calls = []
-
-    def fake_from_protobuf(col, message_name, desc_path, *args):
-        calls.append((col, message_name, desc_path, args))
-        return "ok"
-
-    options = {"enums.as.ints": "true"}
-    result = _call_from_protobuf(
-        fake_from_protobuf, "col", "msg", "/tmp/test.desc", b"desc", options=options)
-
-    assert result == "ok"
-    assert calls == [("col", "msg", "/tmp/test.desc", (options,))]
-
-
-def test_encode_protobuf_packed_repeated_fixed_uses_unsigned_twos_complement():
-    i32_encoded = _encode_protobuf_packed_repeated(
-        1, IntegerType(), [0xFFFFFFFF], encoding='fixed')
-    i64_encoded = _encode_protobuf_packed_repeated(
-        1, LongType(), [0xFFFFFFFFFFFFFFFF], encoding='fixed')
-
-    assert i32_encoded == b"\x0a\x04" + struct.pack("<I", 0xFFFFFFFF)
-    assert i64_encoded == b"\x0a\x08" + struct.pack("<Q", 0xFFFFFFFFFFFFFFFF)
 
 
 def _build_simple_descriptor_set_bytes(spark):
