@@ -21,10 +21,11 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import (
     BooleanGen, IntegerGen, LongGen, FloatGen, DoubleGen, StringGen, BinaryGen,
-    pb, encode_pb_message, gen_df, idfn, _encode_protobuf_packed_repeated
+    gen_df, idfn
 )
-from marks import ignore_order
-from spark_session import with_cpu_session, is_before_spark_340
+from protobuf_data_gen import pb, encode_pb_message, _encode_protobuf_packed_repeated
+from marks import ignore_order, protobuf_test
+from spark_session import with_cpu_session, is_before_spark_340, is_protobuf_runtime_available
 import pyspark.sql.functions as f
 from pyspark.sql.types import IntegerType, LongType
 
@@ -32,8 +33,12 @@ _protobuf_jars_available = os.environ.get('PROTOBUF_JARS_AVAILABLE', 'true').low
 
 pytestmark = [
     pytest.mark.premerge_ci_1,
+    protobuf_test,
     pytest.mark.skipif(not _protobuf_jars_available, reason="Protobuf JARs not available"),
+    pytest.mark.skipif(not is_protobuf_runtime_available(),
+                       reason="spark-protobuf runtime not available"),
 ]
+
 
 _xfail_gpu_protobuf = pytest.mark.xfail(
     reason="GPU from_protobuf plugin not yet merged (spark-rapids-jni#4107 + spark-rapids#14354)"
@@ -66,68 +71,14 @@ _random_scalar_test_configs = [
 ]
 
 
-def _try_import_from_protobuf():
-    try:
-        from pyspark.sql.protobuf.functions import from_protobuf
-        return from_protobuf
-    except Exception:
-        return None
-
-
-def _spark_protobuf_jvm_available(spark) -> bool:
-    """
-    `spark-protobuf` is an optional external module. PySpark may have the Python wrappers
-    even when the JVM side isn't present on the classpath, which manifests as:
-      TypeError: 'JavaPackage' object is not callable
-    when calling into `sc._jvm.org.apache.spark.sql.protobuf.functions.from_protobuf`.
-
-    In the integration harness, Spark jars are often attached dynamically. Using the current
-    thread's context classloader is more reliable than the default `Class.forName()` lookup.
-    """
-    jvm = spark.sparkContext._jvm
-    loader = None
-    try:
-        loader = jvm.Thread.currentThread().getContextClassLoader()
-    except Exception:
-        pass
-    candidates = [
-        # Scala object `functions` compiles to `functions$`
-        "org.apache.spark.sql.protobuf.functions$",
-        # Some environments may expose it differently
-        "org.apache.spark.sql.protobuf.functions",
-    ]
-    for cls in candidates:
-        try:
-            if loader is not None:
-                jvm.java.lang.Class.forName(cls, True, loader)
-            else:
-                jvm.java.lang.Class.forName(cls)
-            return True
-        except Exception:
-            continue
-
-    # Fallback: try to resolve the JVM member through Py4J. A missing optional module typically
-    # stays as a JavaPackage placeholder instead of a callable JavaMember/JavaClass.
-    try:
-        member = jvm.org.apache.spark.sql.protobuf.functions.from_protobuf
-        return type(member).__name__ != "JavaPackage"
-    except Exception:
-        return False
-
-
 # ---------------------------------------------------------------------------
 # Shared fixture and helpers to reduce per-test boilerplate
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
 def from_protobuf_fn():
-    """Skip the entire module if from_protobuf or the JVM module is unavailable."""
-    fn = _try_import_from_protobuf()
-    if fn is None:
-        pytest.skip("from_protobuf not available")
-    if not with_cpu_session(_spark_protobuf_jvm_available):
-        pytest.skip("spark-protobuf JVM not available")
-    return fn
+    from pyspark.sql.protobuf.functions import from_protobuf
+    return from_protobuf
 
 
 def _setup_protobuf_desc(spark_tmp_path, desc_name, build_fn):

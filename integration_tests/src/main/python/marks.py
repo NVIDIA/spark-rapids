@@ -37,6 +37,7 @@ pyarrow_test = pytest.mark.pyarrow_test
 datagen_overrides = pytest.mark.datagen_overrides
 tz_sensitive_test = pytest.mark.tz_sensitive_test
 hybrid_test = pytest.mark.hybrid_test
+protobuf_test = pytest.mark.protobuf_test
 
 # Specific mark for allowing non-GPU Delta writes based on certain conditions.
 # Use this mark instead of `allow_non_gpu` for Delta writes when you want to

@@ -448,6 +448,23 @@ $ LOAD_HYBRID_BACKEND=1 \
 ```
 For more information about Hybrid feature, refer to [link](../docs/dev/hybrid-execution.md)
 
+### Running with Protobuf tests
+The protobuf tests require extra jars. To enable protobuf tests, provide the
+protobuf jars explicitly when launching the integration test harness:
+
+- `spark-protobuf_${scala.binary.version}-${spark.version}.jar`
+- optionally `protobuf-java-*.jar` if your Spark distribution does not already bundle it
+
+Execute the following command to run protobuf tests:
+```shell
+$ PROTOBUF_JARS=/path/to/spark-protobuf.jar,/path/to/protobuf-java.jar \
+  ./integration_tests/run_pyspark_from_build.sh -m protobuf_test
+```
+
+`run_pyspark_from_build.sh` does not download protobuf jars automatically.
+If `PROTOBUF_JARS` is not provided or does not include a `spark-protobuf` jar,
+the protobuf tests are skipped.
+
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
