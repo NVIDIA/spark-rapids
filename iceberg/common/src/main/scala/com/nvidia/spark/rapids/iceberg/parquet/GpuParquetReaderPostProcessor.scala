@@ -69,17 +69,6 @@ private[iceberg] class ColumnActionContext(
     val processor: GpuParquetReaderPostProcessor,
     val column: Option[CudfColumnVector]
 ) {
-  private def checkedRowCountToInt(rowCount: Long): Int = {
-    try {
-      Math.toIntExact(rowCount)
-    } catch {
-      case e: ArithmeticException =>
-        throw new IllegalStateException(
-          s"Row count $rowCount exceeds the supported Int range",
-          e)
-    }
-  }
-
   def requireColumn(actionName: String): CudfColumnVector = {
     column.getOrElse(throw new IllegalStateException(s"$actionName requires an input column"))
   }
@@ -88,14 +77,7 @@ private[iceberg] class ColumnActionContext(
     new ColumnActionContext(processor, Some(col))
   }
 
-  def numRows: Int = column match {
-    case Some(col) =>
-      // Nested actions must use the current column row count because list/map children can have
-      // a different row count from the top-level batch.
-      checkedRowCountToInt(col.getRowCount)
-    case None =>
-      processor.currentNumRows
-  }
+  def numRows: Int = processor.currentNumRows
 }
 
 /** Pass through column directly (schemas match exactly). */

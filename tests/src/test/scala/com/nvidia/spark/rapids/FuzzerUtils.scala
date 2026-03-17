@@ -23,13 +23,14 @@ import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.util.Random
 
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
@@ -191,23 +192,20 @@ object FuzzerUtils {
     }
     
     // Convert rows to columnar batch using cuDF column builders    
-    val columns = schema.fields.map { field =>
+    val columns = schema.fields.safeMap { field =>
       val columnData = rows.map(row => {
         val idx = schema.fieldIndex(field.name)
         if (row.isNullAt(idx)) null else row.get(idx)
       })
       buildCudfColumn(field.dataType, columnData, field.nullable)
     }
-    
-    try {
-      val gpuCols = columns.zip(schema.fields).map { case (cudfCol, field) =>
-        GpuColumnVector.from(cudfCol, field.dataType)
+
+    closeOnExcept(columns.toArray) { rawColumns =>
+      closeOnExcept(rawColumns.zip(schema.fields).safeMap { case (cudfCol, field) =>
+        GpuColumnVector.from(cudfCol, field.dataType).asInstanceOf[ColumnVector]
+      }.toArray) { gpuCols =>
+        new org.apache.spark.sql.vectorized.ColumnarBatch(gpuCols, rowCount)
       }
-      new org.apache.spark.sql.vectorized.ColumnarBatch(gpuCols.toArray, rowCount)
-    } catch {
-      case e: Throwable =>
-        columns.safeClose(e)
-        throw e
     }
   }
   
@@ -247,7 +245,7 @@ object FuzzerUtils {
         }
         CudfColumnVector.fromLists(listType, javaLists: _*)
       case structType: StructType =>
-        val childColumns = structType.fields.map { field =>
+        val childColumns = structType.fields.safeMap { field =>
           val childData = data.map { v =>
             if (v == null) null
             else {
