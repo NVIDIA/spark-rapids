@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import scala.reflect.ClassTag
 import scala.util.Try
 
 import com.nvidia.spark.rapids.{AppendDataExecMeta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, FileFormatChecks, GpuExec, GpuExpression, GpuScan, IcebergFormatType, OverwriteByExpressionExecMeta, OverwritePartitionsDynamicExecMeta, RapidsConf, ScanMeta, ScanRule, ShimReflectionUtils, SparkPlanMeta, StaticInvokeMeta, WriteFileOp}
-import com.nvidia.spark.rapids.iceberg.IcebergProviderImpl.checkChildPlan
+import com.nvidia.spark.rapids.iceberg.IcebergProviderBase.checkChildPlan
 import com.nvidia.spark.rapids.shims.{ReplaceDataExecMeta, WriteDeltaExecMeta}
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.spark.functions.{BucketFunction, DaysFunction, GpuBucketExpression, GpuDaysExpression, GpuHoursExpression, GpuMonthsExpression, GpuTruncateExpression, GpuYearsExpression, HoursFunction, MonthsFunction, TruncateFunction, YearsFunction}
@@ -37,7 +37,7 @@ import org.apache.spark.sql.execution.datasources.v2.{AppendDataExec, AtomicCrea
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.types.{DateType, TimestampType}
 
-class IcebergProviderImpl extends IcebergProvider {
+abstract class IcebergProviderBase extends IcebergProvider {
   override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = {
     val cpuBatchQueryScanClass = ShimReflectionUtils.loadClass(
       IcebergProvider.cpuBatchQueryScanClassName)
@@ -406,7 +406,7 @@ class IcebergProviderImpl extends IcebergProvider {
   }
 }
 
-object IcebergProviderImpl {
+object IcebergProviderBase {
   def checkChildPlan[T <: SparkPlan](meta: SparkPlanMeta[T]): Unit = {
     if (meta.childPlans.nonEmpty) {
       val childMeta = meta.childPlans.head
