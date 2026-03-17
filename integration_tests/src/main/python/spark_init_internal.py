@@ -110,6 +110,11 @@ def _add_driver_classpath(jars):
                 current_args,
                 count=1)
         else:
+            current_args = re.sub(
+                r'--driver-class-path(?=\s|$)',
+                '',
+                current_args,
+                count=1).strip()
             current_args += f' --driver-class-path {new_cp}'
     else:
         current_args += f' --driver-class-path {new_cp}'

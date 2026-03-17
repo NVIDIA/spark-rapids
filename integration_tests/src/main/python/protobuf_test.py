@@ -180,46 +180,17 @@ def test_encode_protobuf_packed_repeated_fixed_uses_unsigned_twos_complement():
 
 
 def _build_simple_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for:
-      package test;
-      syntax = "proto2";
-      message Simple {
-        optional bool   b   = 1;
-        optional int32  i32 = 2;
-        optional int64  i64 = 3;
-        optional float  f32 = 4;
-        optional double f64 = 5;
-        optional string s   = 6;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "simple.proto")
-
-    msg = D.DescriptorProto.newBuilder().setName("Simple")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    def add_field(name, number, ftype):
-        msg.addField(
-            D.FieldDescriptorProto.newBuilder()
-              .setName(name)
-              .setNumber(number)
-              .setLabel(label_opt)
-              .setType(ftype)
-              .build()
-        )
-
-    add_field("b", 1, D.FieldDescriptorProto.Type.TYPE_BOOL)
-    add_field("i32", 2, D.FieldDescriptorProto.Type.TYPE_INT32)
-    add_field("i64", 3, D.FieldDescriptorProto.Type.TYPE_INT64)
-    add_field("f32", 4, D.FieldDescriptorProto.Type.TYPE_FLOAT)
-    add_field("f64", 5, D.FieldDescriptorProto.Type.TYPE_DOUBLE)
-    add_field("s", 6, D.FieldDescriptorProto.Type.TYPE_STRING)
-
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    # py4j converts Java byte[] to a Python bytes-like object
-    return bytes(fds.toByteArray())
+    """Build a simple scalar proto2 descriptor."""
+    return _build_proto2_descriptor(spark, "simple.proto", [
+        _msg("Simple", [
+            _field("b", 1, "BOOL"),
+            _field("i32", 2, "INT32"),
+            _field("i64", 3, "INT64"),
+            _field("f32", 4, "FLOAT"),
+            _field("f64", 5, "DOUBLE"),
+            _field("s", 6, "STRING"),
+        ]),
+    ])
 
 
 def _write_bytes_to_hadoop_path(spark, path_str, data_bytes):
@@ -245,6 +216,104 @@ def _new_proto2_file(spark, name):
     except Exception:
         pass
     return D, fd
+
+
+def _field(name, number, ftype, label="optional", default=None,
+           type_name=None, packed=False):
+    """Declarative field spec for `_build_proto2_descriptor`."""
+    return {
+        "name": name,
+        "number": number,
+        "type": ftype,
+        "label": label,
+        "default": default,
+        "type_name": type_name,
+        "packed": packed,
+    }
+
+
+def _msg(name, fields, enums=None):
+    """Declarative message spec for `_build_proto2_descriptor`."""
+    return {"name": name, "fields": fields, "enums": enums or []}
+
+
+def _enum(name, values):
+    """Declarative enum spec. Values are `(name, number)` tuples."""
+    return {"name": name, "values": values}
+
+
+def _build_proto2_descriptor(spark, filename, messages, file_enums=None):
+    """Build FileDescriptorSet bytes from declarative message and enum specs."""
+    D, fd = _new_proto2_file(spark, filename)
+    type_map = {
+        "BOOL": D.FieldDescriptorProto.Type.TYPE_BOOL,
+        "INT32": D.FieldDescriptorProto.Type.TYPE_INT32,
+        "INT64": D.FieldDescriptorProto.Type.TYPE_INT64,
+        "UINT32": D.FieldDescriptorProto.Type.TYPE_UINT32,
+        "UINT64": D.FieldDescriptorProto.Type.TYPE_UINT64,
+        "SINT32": D.FieldDescriptorProto.Type.TYPE_SINT32,
+        "SINT64": D.FieldDescriptorProto.Type.TYPE_SINT64,
+        "FIXED32": D.FieldDescriptorProto.Type.TYPE_FIXED32,
+        "FIXED64": D.FieldDescriptorProto.Type.TYPE_FIXED64,
+        "SFIXED32": D.FieldDescriptorProto.Type.TYPE_SFIXED32,
+        "SFIXED64": D.FieldDescriptorProto.Type.TYPE_SFIXED64,
+        "FLOAT": D.FieldDescriptorProto.Type.TYPE_FLOAT,
+        "DOUBLE": D.FieldDescriptorProto.Type.TYPE_DOUBLE,
+        "STRING": D.FieldDescriptorProto.Type.TYPE_STRING,
+        "BYTES": D.FieldDescriptorProto.Type.TYPE_BYTES,
+        "MESSAGE": D.FieldDescriptorProto.Type.TYPE_MESSAGE,
+        "ENUM": D.FieldDescriptorProto.Type.TYPE_ENUM,
+    }
+    label_map = {
+        "optional": D.FieldDescriptorProto.Label.LABEL_OPTIONAL,
+        "repeated": D.FieldDescriptorProto.Label.LABEL_REPEATED,
+        "required": D.FieldDescriptorProto.Label.LABEL_REQUIRED,
+    }
+
+    def _default_literal(value):
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        return str(value)
+
+    def _build_enum(enum_spec):
+        enum_builder = D.EnumDescriptorProto.newBuilder().setName(enum_spec["name"])
+        for value_name, value_number in enum_spec["values"]:
+            enum_builder.addValue(
+                D.EnumValueDescriptorProto.newBuilder()
+                    .setName(value_name)
+                    .setNumber(value_number)
+                    .build()
+            )
+        return enum_builder.build()
+
+    packed_options = D.FieldOptions.newBuilder().setPacked(True).build()
+
+    for enum_spec in file_enums or []:
+        fd.addEnumType(_build_enum(enum_spec))
+
+    for message_spec in messages:
+        message_builder = D.DescriptorProto.newBuilder().setName(message_spec["name"])
+        for enum_spec in message_spec["enums"]:
+            message_builder.addEnumType(_build_enum(enum_spec))
+        for field_spec in message_spec["fields"]:
+            field_builder = (
+                D.FieldDescriptorProto.newBuilder()
+                    .setName(field_spec["name"])
+                    .setNumber(field_spec["number"])
+                    .setLabel(label_map[field_spec["label"]])
+                    .setType(type_map[field_spec["type"]])
+            )
+            if field_spec["type_name"] is not None:
+                field_builder.setTypeName(field_spec["type_name"])
+            if field_spec["default"] is not None:
+                field_builder.setDefaultValue(_default_literal(field_spec["default"]))
+            if field_spec["packed"]:
+                field_builder.setOptions(packed_options)
+            message_builder.addField(field_builder.build())
+        fd.addMessageType(message_builder.build())
+
+    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
+    return bytes(fds.toByteArray())
 
 
 @_xfail_gpu_protobuf
@@ -540,79 +609,16 @@ def test_from_protobuf_customer_heavy_nested_proto(spark_tmp_path, from_protobuf
 
 
 def _build_nested_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for a message with both simple fields and nested message:
-      package test;
-      syntax = "proto2";
-      message Nested {
-        optional int32 x = 1;
-      }
-      message WithNested {
-        optional int32  simple_int  = 1;
-        optional string simple_str  = 2;
-        optional Nested nested_msg  = 3;   // nested message
-        optional int64  simple_long = 4;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "nested.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    # Define Nested message
-    nested_msg = D.DescriptorProto.newBuilder().setName("Nested")
-    nested_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("x")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    fd.addMessageType(nested_msg.build())
-
-    # Define WithNested message
-    with_nested_msg = D.DescriptorProto.newBuilder().setName("WithNested")
-    # simple_int
-    with_nested_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("simple_int")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    # simple_str
-    with_nested_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("simple_str")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    # nested_msg (nested message type)
-    with_nested_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("nested_msg")
-            .setNumber(3)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Nested")
-            .build()
-    )
-    # simple_long
-    with_nested_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("simple_long")
-            .setNumber(4)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT64)
-            .build()
-    )
-    fd.addMessageType(with_nested_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for a message with a nested child struct."""
+    return _build_proto2_descriptor(spark, "nested.proto", [
+        _msg("Nested", [_field("x", 1, "INT32")]),
+        _msg("WithNested", [
+            _field("simple_int", 1, "INT32"),
+            _field("simple_str", 2, "STRING"),
+            _field("nested_msg", 3, "MESSAGE", type_name=".test.Nested"),
+            _field("simple_long", 4, "INT64"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -649,150 +655,33 @@ def test_from_protobuf_schema_projection_simple_fields_only(spark_tmp_path, from
 
 
 def _build_enum_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for a message with enum field:
-      package test;
-      syntax = "proto2";
-      message WithEnum {
-        enum Color {
-          RED = 0;
-          GREEN = 1;
-          BLUE = 2;
-        }
-        optional Color color = 1;
-        optional int32 count = 2;
-        optional string name = 3;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "enum.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    # Define WithEnum message with nested enum
-    msg = D.DescriptorProto.newBuilder().setName("WithEnum")
-
-    # Add enum type definition
-    enum_type = D.EnumDescriptorProto.newBuilder().setName("Color")
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("RED").setNumber(0).build())
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("GREEN").setNumber(1).build())
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("BLUE").setNumber(2).build())
-    msg.addEnumType(enum_type.build())
-
-    # Add color field (enum type)
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("color")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
-            .setTypeName(".test.WithEnum.Color")
-            .build()
-    )
-    # Add count field (int32)
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("count")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    # Add name field (string)
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("name")
-            .setNumber(3)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-
-    fd.addMessageType(msg.build())
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor with a message-local enum field."""
+    return _build_proto2_descriptor(spark, "enum.proto", [
+        _msg("WithEnum", [
+            _field("color", 1, "ENUM", type_name=".test.WithEnum.Color"),
+            _field("count", 2, "INT32"),
+            _field("name", 3, "STRING"),
+        ], enums=[
+            _enum("Color", [("RED", 0), ("GREEN", 1), ("BLUE", 2)]),
+        ]),
+    ])
 
 
 def _build_nested_enum_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for a nested enum message:
-      package test;
-      syntax = "proto2";
-      message WithNestedEnum {
-        optional int32 id = 1;
-        optional Detail detail = 2;
-        optional string name = 3;
-      }
-      message Detail {
-        enum Status {
-          UNKNOWN = 0;
-          OK = 1;
-          BAD = 2;
-        }
-        optional Status status = 1;
-        optional int32 count = 2;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "nested_enum.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    detail_msg = D.DescriptorProto.newBuilder().setName("Detail")
-    detail_enum = D.EnumDescriptorProto.newBuilder().setName("Status")
-    detail_enum.addValue(
-        D.EnumValueDescriptorProto.newBuilder().setName("UNKNOWN").setNumber(0).build())
-    detail_enum.addValue(
-        D.EnumValueDescriptorProto.newBuilder().setName("OK").setNumber(1).build())
-    detail_enum.addValue(
-        D.EnumValueDescriptorProto.newBuilder().setName("BAD").setNumber(2).build())
-    detail_msg.addEnumType(detail_enum.build())
-    detail_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("status")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
-            .setTypeName(".test.Detail.Status")
-            .build()
-    )
-    detail_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("count")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    fd.addMessageType(detail_msg.build())
-
-    top_msg = D.DescriptorProto.newBuilder().setName("WithNestedEnum")
-    top_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    top_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("detail")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Detail")
-            .build()
-    )
-    top_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("name")
-            .setNumber(3)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    fd.addMessageType(top_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor with a nested message that owns an enum field."""
+    return _build_proto2_descriptor(spark, "nested_enum.proto", [
+        _msg("Detail", [
+            _field("status", 1, "ENUM", type_name=".test.Detail.Status"),
+            _field("count", 2, "INT32"),
+        ], enums=[
+            _enum("Status", [("UNKNOWN", 0), ("OK", 1), ("BAD", 2)]),
+        ]),
+        _msg("WithNestedEnum", [
+            _field("id", 1, "INT32"),
+            _field("detail", 2, "MESSAGE", type_name=".test.Detail"),
+            _field("name", 3, "STRING"),
+        ]),
+    ])
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -949,94 +838,34 @@ def test_from_protobuf_nested_enum_invalid_permissive_nulls_sibling_fields(
 
 
 def _build_nested_enum_default_struct_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for:
-      package test;
-      syntax = "proto2";
-      enum Language {
-        UNKNOWN_LANGUAGE = 0;
-        EN = 1;
-        ZH = 2;
-      }
-      enum CodeType {
-        UNKNOWN_CODE = 0;
-        UTF8 = 1;
-        GBK = 2;
-      }
-      message CommonWithEnumDefaults {
-        optional string logid = 1;
-        optional Language language = 2 [default = EN];
-        optional CodeType code_type = 3 [default = UTF8];
-      }
-      message OuterWithCommonEnumDefaults {
-        optional int32 id = 1;
-        optional CommonWithEnumDefaults common = 2;
-      }
-
-    Regression target:
-      In string mode, spark-protobuf surfaces enum defaults as EnumValueDescriptor.
-      GPU planning must not cast those defaults to Python/Scala String blindly.
-    """
-    D, fd = _new_proto2_file(spark, "nested_enum_defaults.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    language_enum = D.EnumDescriptorProto.newBuilder().setName("Language")
-    language_enum.addValue(
-        D.EnumValueDescriptorProto.newBuilder()
-            .setName("UNKNOWN_LANGUAGE").setNumber(0).build())
-    language_enum.addValue(
-        D.EnumValueDescriptorProto.newBuilder()
-            .setName("EN").setNumber(1).build())
-    language_enum.addValue(
-        D.EnumValueDescriptorProto.newBuilder()
-            .setName("ZH").setNumber(2).build())
-    fd.addEnumType(language_enum.build())
-
-    code_enum = D.EnumDescriptorProto.newBuilder().setName("CodeType")
-    code_enum.addValue(
-        D.EnumValueDescriptorProto.newBuilder()
-            .setName("UNKNOWN_CODE").setNumber(0).build())
-    code_enum.addValue(
-        D.EnumValueDescriptorProto.newBuilder()
-            .setName("UTF8").setNumber(1).build())
-    code_enum.addValue(
-        D.EnumValueDescriptorProto.newBuilder()
-            .setName("GBK").setNumber(2).build())
-    fd.addEnumType(code_enum.build())
-
-    common_msg = D.DescriptorProto.newBuilder().setName("CommonWithEnumDefaults")
-    common_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("logid").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
-    common_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("language").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
-            .setTypeName(".test.Language")
-            .setDefaultValue("EN").build())
-    common_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("code_type").setNumber(3).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
-            .setTypeName(".test.CodeType")
-            .setDefaultValue("UTF8").build())
-    fd.addMessageType(common_msg.build())
-
-    outer_msg = D.DescriptorProto.newBuilder().setName("OuterWithCommonEnumDefaults")
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("common").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.CommonWithEnumDefaults").build())
-    fd.addMessageType(outer_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor with file-level enum defaults inside a nested struct."""
+    return _build_proto2_descriptor(
+        spark,
+        "nested_enum_defaults.proto",
+        [
+            _msg("CommonWithEnumDefaults", [
+                _field("logid", 1, "STRING"),
+                _field("language", 2, "ENUM", type_name=".test.Language", default="EN"),
+                _field("code_type", 3, "ENUM", type_name=".test.CodeType", default="UTF8"),
+            ]),
+            _msg("OuterWithCommonEnumDefaults", [
+                _field("id", 1, "INT32"),
+                _field("common", 2, "MESSAGE", type_name=".test.CommonWithEnumDefaults"),
+            ]),
+        ],
+        file_enums=[
+            _enum("Language", [
+                ("UNKNOWN_LANGUAGE", 0),
+                ("EN", 1),
+                ("ZH", 2),
+            ]),
+            _enum("CodeType", [
+                ("UNKNOWN_CODE", 0),
+                ("UTF8", 1),
+                ("GBK", 2),
+            ]),
+        ],
+    )
 
 
 @_xfail_gpu_protobuf
@@ -1076,38 +905,16 @@ def test_from_protobuf_nested_enum_defaults_string_mode(spark_tmp_path, from_pro
 
 
 def _build_repeated_enum_descriptor_set_bytes(spark):
-    """
-    message WithRepeatedEnum {
-        optional int32 id = 1;
-        repeated Priority priority = 2;
-        enum Priority { UNKNOWN = 0; FOO = 1; BAR = 2; }
-    }
-    """
-    D, fd = _new_proto2_file(spark, "repeated_enum.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-
-    msg = D.DescriptorProto.newBuilder().setName("WithRepeatedEnum")
-
-    enum_type = D.EnumDescriptorProto.newBuilder().setName("Priority")
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("UNKNOWN").setNumber(0).build())
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("FOO").setNumber(1).build())
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("BAR").setNumber(2).build())
-    msg.addEnumType(enum_type.build())
-
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("priority").setNumber(2).setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
-            .setTypeName(".test.WithRepeatedEnum.Priority").build())
-
-    fd.addMessageType(msg.build())
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor with a repeated enum field."""
+    return _build_proto2_descriptor(spark, "repeated_enum.proto", [
+        _msg("WithRepeatedEnum", [
+            _field("id", 1, "INT32"),
+            _field("priority", 2, "ENUM", label="repeated",
+                   type_name=".test.WithRepeatedEnum.Priority"),
+        ], enums=[
+            _enum("Priority", [("UNKNOWN", 0), ("FOO", 1), ("BAR", 2)]),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -1176,57 +983,20 @@ def test_from_protobuf_repeated_enum_string_invalid_permissive_nulls_sibling_fie
 
 
 def _build_repeated_message_enum_descriptor_set_bytes(spark):
-    """
-    message ContainerWithPriorityItems {
-        optional int32 id = 1;
-        repeated ItemWithPriority items = 2;
-        optional string title = 3;
-    }
-    message ItemWithPriority {
-        optional Priority priority = 1;
-        optional int32 count = 2;
-    }
-    enum Priority { UNKNOWN = 0; FOO = 1; BAR = 2; }
-    """
-    D, fd = _new_proto2_file(spark, "repeated_message_enum.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-
-    item_msg = D.DescriptorProto.newBuilder().setName("ItemWithPriority")
-    enum_type = D.EnumDescriptorProto.newBuilder().setName("Priority")
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("UNKNOWN").setNumber(0).build())
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("FOO").setNumber(1).build())
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("BAR").setNumber(2).build())
-    item_msg.addEnumType(enum_type.build())
-    item_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("priority").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
-            .setTypeName(".test.ItemWithPriority.Priority").build())
-    item_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("count").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    fd.addMessageType(item_msg.build())
-
-    container_msg = D.DescriptorProto.newBuilder().setName("ContainerWithPriorityItems")
-    container_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    container_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("items").setNumber(2).setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.ItemWithPriority").build())
-    container_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("title").setNumber(3).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
-    fd.addMessageType(container_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for repeated messages whose child struct contains an enum."""
+    return _build_proto2_descriptor(spark, "repeated_message_enum.proto", [
+        _msg("ItemWithPriority", [
+            _field("priority", 1, "ENUM", type_name=".test.ItemWithPriority.Priority"),
+            _field("count", 2, "INT32"),
+        ], enums=[
+            _enum("Priority", [("UNKNOWN", 0), ("FOO", 1), ("BAR", 2)]),
+        ]),
+        _msg("ContainerWithPriorityItems", [
+            _field("id", 1, "INT32"),
+            _field("items", 2, "MESSAGE", label="repeated", type_name=".test.ItemWithPriority"),
+            _field("title", 3, "STRING"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -1302,57 +1072,21 @@ def test_from_protobuf_repeated_message_child_enum_string_invalid_permissive(
 
 
 def _build_nested_repeated_enum_descriptor_set_bytes(spark):
-    """
-    message OuterWithNestedRepeatedEnum {
-        optional int32 id = 1;
-        optional InnerWithRepeatedPriority inner = 2;
-        optional string name = 3;
-    }
-    message InnerWithRepeatedPriority {
-        repeated Priority priority = 1;
-        optional int32 count = 2;
-    }
-    enum Priority { UNKNOWN = 0; FOO = 1; BAR = 2; }
-    """
-    D, fd = _new_proto2_file(spark, "nested_repeated_enum.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-
-    inner_msg = D.DescriptorProto.newBuilder().setName("InnerWithRepeatedPriority")
-    enum_type = D.EnumDescriptorProto.newBuilder().setName("Priority")
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("UNKNOWN").setNumber(0).build())
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("FOO").setNumber(1).build())
-    enum_type.addValue(D.EnumValueDescriptorProto.newBuilder().setName("BAR").setNumber(2).build())
-    inner_msg.addEnumType(enum_type.build())
-    inner_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("priority").setNumber(1).setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_ENUM)
-            .setTypeName(".test.InnerWithRepeatedPriority.Priority").build())
-    inner_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("count").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    fd.addMessageType(inner_msg.build())
-
-    outer_msg = D.DescriptorProto.newBuilder().setName("OuterWithNestedRepeatedEnum")
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("inner").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.InnerWithRepeatedPriority").build())
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("name").setNumber(3).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
-    fd.addMessageType(outer_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for a nested struct containing a repeated enum field."""
+    return _build_proto2_descriptor(spark, "nested_repeated_enum.proto", [
+        _msg("InnerWithRepeatedPriority", [
+            _field("priority", 1, "ENUM", label="repeated",
+                   type_name=".test.InnerWithRepeatedPriority.Priority"),
+            _field("count", 2, "INT32"),
+        ], enums=[
+            _enum("Priority", [("UNKNOWN", 0), ("FOO", 1), ("BAR", 2)]),
+        ]),
+        _msg("OuterWithNestedRepeatedEnum", [
+            _field("id", 1, "INT32"),
+            _field("inner", 2, "MESSAGE", type_name=".test.InnerWithRepeatedPriority"),
+            _field("name", 3, "STRING"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -1430,125 +1164,29 @@ def test_from_protobuf_nested_repeated_enum_string_invalid_permissive(
 
 
 def _build_required_field_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for a message with required fields (proto2):
-      package test;
-      syntax = "proto2";
-      message WithRequired {
-        required int64 id = 1;
-        optional string name = 2;
-        optional int32 count = 3;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "required.proto")
-
-    label_required = D.FieldDescriptorProto.Label.LABEL_REQUIRED
-    label_optional = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    msg = D.DescriptorProto.newBuilder().setName("WithRequired")
-    
-    # id field (required)
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id")
-            .setNumber(1)
-            .setLabel(label_required)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT64)
-            .build()
-    )
-    # name field (optional)
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("name")
-            .setNumber(2)
-            .setLabel(label_optional)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    # count field (optional)
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("count")
-            .setNumber(3)
-            .setLabel(label_optional)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-
-    fd.addMessageType(msg.build())
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for top-level proto2 required-field validation."""
+    return _build_proto2_descriptor(spark, "required.proto", [
+        _msg("WithRequired", [
+            _field("id", 1, "INT64", label="required"),
+            _field("name", 2, "STRING"),
+            _field("count", 3, "INT32"),
+        ]),
+    ])
 
 
 def _build_nested_required_field_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for a message with a nested required field (proto2):
-      package test;
-      syntax = "proto2";
-      message InnerRequired {
-        required int32 child_id = 1;
-        optional string note = 2;
-      }
-      message WithNestedRequired {
-        optional int64 id = 1;
-        optional InnerRequired inner = 2;
-        optional string name = 3;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "nested_required.proto")
-
-    label_required = D.FieldDescriptorProto.Label.LABEL_REQUIRED
-    label_optional = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    inner_msg = D.DescriptorProto.newBuilder().setName("InnerRequired")
-    inner_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("child_id")
-            .setNumber(1)
-            .setLabel(label_required)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    inner_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("note")
-            .setNumber(2)
-            .setLabel(label_optional)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    fd.addMessageType(inner_msg.build())
-
-    outer_msg = D.DescriptorProto.newBuilder().setName("WithNestedRequired")
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id")
-            .setNumber(1)
-            .setLabel(label_optional)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT64)
-            .build()
-    )
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("inner")
-            .setNumber(2)
-            .setLabel(label_optional)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.InnerRequired")
-            .build()
-    )
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("name")
-            .setNumber(3)
-            .setLabel(label_optional)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    fd.addMessageType(outer_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor with a nested proto2 required field."""
+    return _build_proto2_descriptor(spark, "nested_required.proto", [
+        _msg("InnerRequired", [
+            _field("child_id", 1, "INT32", label="required"),
+            _field("note", 2, "STRING"),
+        ]),
+        _msg("WithNestedRequired", [
+            _field("id", 1, "INT64"),
+            _field("inner", 2, "MESSAGE", type_name=".test.InnerRequired"),
+            _field("name", 3, "STRING"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -1682,55 +1320,14 @@ def test_from_protobuf_nested_required_field_missing_permissive(
 
 
 def _build_default_value_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for a message with default values (proto2):
-      package test;
-      syntax = "proto2";
-      message WithDefaults {
-        optional int32 count = 1 [default = 42];
-        optional string name = 2 [default = "unknown"];
-        optional bool flag = 3 [default = true];
-      }
-    Note: Setting explicit defaults requires using FieldOptions which may not be
-    available via the simple DescriptorProtos API. For testing, we rely on proto2
-    implicit behavior where hasDefaultValue() returns true for optional fields.
-    """
-    D, fd = _new_proto2_file(spark, "defaults.proto")
-
-    label_optional = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    msg = D.DescriptorProto.newBuilder().setName("WithDefaults")
-    
-    # count field with default
-    count_field = D.FieldDescriptorProto.newBuilder() \
-        .setName("count") \
-        .setNumber(1) \
-        .setLabel(label_optional) \
-        .setType(D.FieldDescriptorProto.Type.TYPE_INT32) \
-        .setDefaultValue("42")
-    msg.addField(count_field.build())
-    
-    # name field with default
-    name_field = D.FieldDescriptorProto.newBuilder() \
-        .setName("name") \
-        .setNumber(2) \
-        .setLabel(label_optional) \
-        .setType(D.FieldDescriptorProto.Type.TYPE_STRING) \
-        .setDefaultValue("unknown")
-    msg.addField(name_field.build())
-    
-    # flag field with default
-    flag_field = D.FieldDescriptorProto.newBuilder() \
-        .setName("flag") \
-        .setNumber(3) \
-        .setLabel(label_optional) \
-        .setType(D.FieldDescriptorProto.Type.TYPE_BOOL) \
-        .setDefaultValue("true")
-    msg.addField(flag_field.build())
-
-    fd.addMessageType(msg.build())
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for proto2 scalar default-value behavior."""
+    return _build_proto2_descriptor(spark, "defaults.proto", [
+        _msg("WithDefaults", [
+            _field("count", 1, "INT32", default=42),
+            _field("name", 2, "STRING", default="unknown"),
+            _field("flag", 3, "BOOL", default=True),
+        ]),
+    ])
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -1781,76 +1378,28 @@ def test_from_protobuf_default_values_cases(spark_tmp_path, from_protobuf_fn, de
 
 
 def _build_all_scalars_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for message with all scalar types:
-      message AllScalars {
-        optional bool b = 1;
-        optional int32 i32 = 2;
-        optional int64 i64 = 3;
-        optional float f32 = 4;
-        optional double f64 = 5;
-        optional string s = 6;
-        optional sint32 si32 = 7;  // zigzag encoding
-        optional sint64 si64 = 8;  // zigzag encoding
-        optional fixed32 fx32 = 9;
-        optional fixed64 fx64 = 10;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "all_scalars.proto")
-
-    msg = D.DescriptorProto.newBuilder().setName("AllScalars")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    def add_field(name, number, ftype):
-        msg.addField(
-            D.FieldDescriptorProto.newBuilder()
-              .setName(name)
-              .setNumber(number)
-              .setLabel(label_opt)
-              .setType(ftype)
-              .build()
-        )
-
-    T = D.FieldDescriptorProto.Type
-    add_field("b", 1, T.TYPE_BOOL)
-    add_field("i32", 2, T.TYPE_INT32)
-    add_field("i64", 3, T.TYPE_INT64)
-    add_field("f32", 4, T.TYPE_FLOAT)
-    add_field("f64", 5, T.TYPE_DOUBLE)
-    add_field("s", 6, T.TYPE_STRING)
-    add_field("si32", 7, T.TYPE_SINT32)
-    add_field("si64", 8, T.TYPE_SINT64)
-    add_field("fx32", 9, T.TYPE_FIXED32)
-    add_field("fx64", 10, T.TYPE_FIXED64)
-
-    fd.addMessageType(msg.build())
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor covering all scalar wire encodings used in tests."""
+    return _build_proto2_descriptor(spark, "all_scalars.proto", [
+        _msg("AllScalars", [
+            _field("b", 1, "BOOL"),
+            _field("i32", 2, "INT32"),
+            _field("i64", 3, "INT64"),
+            _field("f32", 4, "FLOAT"),
+            _field("f64", 5, "DOUBLE"),
+            _field("s", 6, "STRING"),
+            _field("si32", 7, "SINT32"),
+            _field("si64", 8, "SINT64"),
+            _field("fx32", 9, "FIXED32"),
+            _field("fx64", 10, "FIXED64"),
+        ]),
+    ])
 
 
 def _build_scalar_bytes_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for:
-      message ScalarBytes {
-        optional bytes payload = 1;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "scalar_bytes.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    msg = D.DescriptorProto.newBuilder().setName("ScalarBytes")
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("payload")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_BYTES)
-            .build()
-    )
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for a single optional bytes field."""
+    return _build_proto2_descriptor(spark, "scalar_bytes.proto", [
+        _msg("ScalarBytes", [_field("payload", 1, "BYTES")]),
+    ])
 
 
 def _scalar_test_id(config):
@@ -1988,39 +1537,13 @@ def test_from_protobuf_duplicate_fields(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_repeated_int_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for a message with repeated int32 field:
-      message WithRepeatedInt {
-        optional int32 id = 1;
-        repeated int32 values = 2;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "repeated_int.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-
-    msg = D.DescriptorProto.newBuilder().setName("WithRepeatedInt")
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("values")
-            .setNumber(2)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for an optional id plus repeated int32 values."""
+    return _build_proto2_descriptor(spark, "repeated_int.proto", [
+        _msg("WithRepeatedInt", [
+            _field("id", 1, "INT32"),
+            _field("values", 2, "INT32", label="repeated"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2052,39 +1575,13 @@ def test_from_protobuf_repeated_int32(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_repeated_string_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for a message with repeated string field:
-      message WithRepeatedString {
-        optional string name = 1;
-        repeated string tags = 2;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "repeated_string.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-
-    msg = D.DescriptorProto.newBuilder().setName("WithRepeatedString")
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("name")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("tags")
-            .setNumber(2)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for an optional string plus repeated strings."""
+    return _build_proto2_descriptor(spark, "repeated_string.proto", [
+        _msg("WithRepeatedString", [
+            _field("name", 1, "STRING"),
+            _field("tags", 2, "STRING", label="repeated"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2183,80 +1680,18 @@ def test_from_protobuf_nested_message_field_access_with_batch_merge(
 
 
 def _build_deep_nested_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for deeply nested message:
-      message Inner {
-        optional int32 value = 1;
-      }
-      message Middle {
-        optional string name = 1;
-        optional Inner inner = 2;
-      }
-      message Outer {
-        optional int32 id = 1;
-        optional Middle middle = 2;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "deep_nested.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    # Inner message
-    inner_msg = D.DescriptorProto.newBuilder().setName("Inner")
-    inner_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("value")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    fd.addMessageType(inner_msg.build())
-
-    # Middle message
-    middle_msg = D.DescriptorProto.newBuilder().setName("Middle")
-    middle_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("name")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    middle_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("inner")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Inner")
-            .build()
-    )
-    fd.addMessageType(middle_msg.build())
-
-    # Outer message
-    outer_msg = D.DescriptorProto.newBuilder().setName("Outer")
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    outer_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("middle")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Middle")
-            .build()
-    )
-    fd.addMessageType(outer_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for three levels of nested messages."""
+    return _build_proto2_descriptor(spark, "deep_nested.proto", [
+        _msg("Inner", [_field("value", 1, "INT32")]),
+        _msg("Middle", [
+            _field("name", 1, "STRING"),
+            _field("inner", 2, "MESSAGE", type_name=".test.Inner"),
+        ]),
+        _msg("Outer", [
+            _field("id", 1, "INT32"),
+            _field("middle", 2, "MESSAGE", type_name=".test.Middle"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2291,65 +1726,17 @@ def test_from_protobuf_deep_nested(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_repeated_message_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for repeated message field (array of structs):
-      message Item {
-        optional int32 id = 1;
-        optional string name = 2;
-      }
-      message Container {
-        optional string title = 1;
-        repeated Item items = 2;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "repeated_message.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-
-    # Item message
-    item_msg = D.DescriptorProto.newBuilder().setName("Item")
-    item_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    item_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("name")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    fd.addMessageType(item_msg.build())
-
-    # Container message
-    container_msg = D.DescriptorProto.newBuilder().setName("Container")
-    container_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("title")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .build()
-    )
-    container_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("items")
-            .setNumber(2)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Item")
-            .build()
-    )
-    fd.addMessageType(container_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for an array-of-struct repeated message field."""
+    return _build_proto2_descriptor(spark, "repeated_message.proto", [
+        _msg("Item", [
+            _field("id", 1, "INT32"),
+            _field("name", 2, "STRING"),
+        ]),
+        _msg("Container", [
+            _field("title", 1, "STRING"),
+            _field("items", 2, "MESSAGE", label="repeated", type_name=".test.Item"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2384,49 +1771,18 @@ def test_from_protobuf_repeated_message(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_nested_with_repeated_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for nested message with repeated fields:
-      message NestedWithRepeated {
-        optional string name = 1;
-        repeated int32 values = 2;
-        optional int32 count = 3;
-      }
-      message OuterWithNestedRepeated {
-        optional int32 id = 1;
-        optional NestedWithRepeated nested = 2;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "nested_with_repeated.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-
-    # NestedWithRepeated message
-    nested_msg = D.DescriptorProto.newBuilder().setName("NestedWithRepeated")
-    nested_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("name").setNumber(1).setLabel(label_opt)
-        .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
-    nested_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("values").setNumber(2).setLabel(label_rep)
-        .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    nested_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("count").setNumber(3).setLabel(label_opt)
-        .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    fd.addMessageType(nested_msg.build())
-
-    # OuterWithNestedRepeated message
-    outer_msg = D.DescriptorProto.newBuilder().setName("OuterWithNestedRepeated")
-    outer_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("id").setNumber(1).setLabel(label_opt)
-        .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    outer_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("nested").setNumber(2).setLabel(label_opt)
-        .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-        .setTypeName(".test.NestedWithRepeated").build())
-    fd.addMessageType(outer_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for a nested message that contains a repeated field."""
+    return _build_proto2_descriptor(spark, "nested_with_repeated.proto", [
+        _msg("NestedWithRepeated", [
+            _field("name", 1, "STRING"),
+            _field("values", 2, "INT32", label="repeated"),
+            _field("count", 3, "INT32"),
+        ]),
+        _msg("OuterWithNestedRepeated", [
+            _field("id", 1, "INT32"),
+            _field("nested", 2, "MESSAGE", type_name=".test.NestedWithRepeated"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2465,60 +1821,19 @@ def test_from_protobuf_nested_with_repeated(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_repeated_with_nested_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for repeated message with nested message:
-      message Inner {
-        optional int32 value = 1;
-      }
-      message ItemWithNested {
-        optional int32 id = 1;
-        optional Inner inner = 2;
-        optional string name = 3;
-      }
-      message ContainerWithNestedItems {
-        optional string title = 1;
-        repeated ItemWithNested items = 2;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "repeated_with_nested.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-
-    # Inner message
-    inner_msg = D.DescriptorProto.newBuilder().setName("Inner")
-    inner_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("value").setNumber(1).setLabel(label_opt)
-        .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    fd.addMessageType(inner_msg.build())
-
-    # ItemWithNested message
-    item_msg = D.DescriptorProto.newBuilder().setName("ItemWithNested")
-    item_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("id").setNumber(1).setLabel(label_opt)
-        .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    item_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("inner").setNumber(2).setLabel(label_opt)
-        .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-        .setTypeName(".test.Inner").build())
-    item_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("name").setNumber(3).setLabel(label_opt)
-        .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
-    fd.addMessageType(item_msg.build())
-
-    # ContainerWithNestedItems message
-    container_msg = D.DescriptorProto.newBuilder().setName("ContainerWithNestedItems")
-    container_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("title").setNumber(1).setLabel(label_opt)
-        .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
-    container_msg.addField(D.FieldDescriptorProto.newBuilder()
-        .setName("items").setNumber(2).setLabel(label_rep)
-        .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-        .setTypeName(".test.ItemWithNested").build())
-    fd.addMessageType(container_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for repeated messages that each contain a nested struct."""
+    return _build_proto2_descriptor(spark, "repeated_with_nested.proto", [
+        _msg("Inner", [_field("value", 1, "INT32")]),
+        _msg("ItemWithNested", [
+            _field("id", 1, "INT32"),
+            _field("inner", 2, "MESSAGE", type_name=".test.Inner"),
+            _field("name", 3, "STRING"),
+        ]),
+        _msg("ContainerWithNestedItems", [
+            _field("title", 1, "STRING"),
+            _field("items", 2, "MESSAGE", label="repeated", type_name=".test.ItemWithNested"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2557,64 +1872,15 @@ def test_from_protobuf_repeated_with_nested(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_packed_repeated_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for message with packed repeated fields (proto2):
-      message WithPackedRepeated {
-        optional int32 id = 1;
-        repeated int32 int_values = 2 [packed=true];
-        repeated double double_values = 3 [packed=true];
-        repeated bool bool_values = 4 [packed=true];
-      }
-    Uses proto2 with FieldOptions.packed=true (not proto3).
-    """
-    D, fd = _new_proto2_file(spark, "packed_repeated.proto")
-
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    # Build FieldOptions with packed=true for repeated numeric fields
-    packed_opts = D.FieldOptions.newBuilder().setPacked(True).build()
-
-    msg = D.DescriptorProto.newBuilder().setName("WithPackedRepeated")
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("int_values")
-            .setNumber(2)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .setOptions(packed_opts)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("double_values")
-            .setNumber(3)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_DOUBLE)
-            .setOptions(packed_opts)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("bool_values")
-            .setNumber(4)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_BOOL)
-            .setOptions(packed_opts)
-            .build()
-    )
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for packed repeated numeric and bool fields."""
+    return _build_proto2_descriptor(spark, "packed_repeated.proto", [
+        _msg("WithPackedRepeated", [
+            _field("id", 1, "INT32"),
+            _field("int_values", 2, "INT32", label="repeated", packed=True),
+            _field("double_values", 3, "DOUBLE", label="repeated", packed=True),
+            _field("bool_values", 4, "BOOL", label="repeated", packed=True),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2650,75 +1916,17 @@ def test_from_protobuf_packed_repeated(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_repeated_all_types_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for message with various repeated field types:
-      message WithRepeatedAllTypes {
-        optional int32 id = 1;
-        repeated int64 long_values = 2;
-        repeated float float_values = 3;
-        repeated double double_values = 4;
-        repeated bool bool_values = 5;
-        repeated bytes bytes_values = 6;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "repeated_all.proto")
-
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    msg = D.DescriptorProto.newBuilder().setName("WithRepeatedAllTypes")
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("long_values")
-            .setNumber(2)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT64)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("float_values")
-            .setNumber(3)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_FLOAT)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("double_values")
-            .setNumber(4)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_DOUBLE)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("bool_values")
-            .setNumber(5)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_BOOL)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("bytes_values")
-            .setNumber(6)
-            .setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_BYTES)
-            .build()
-    )
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor with repeated fields of several scalar types."""
+    return _build_proto2_descriptor(spark, "repeated_all.proto", [
+        _msg("WithRepeatedAllTypes", [
+            _field("id", 1, "INT32"),
+            _field("long_values", 2, "INT64", label="repeated"),
+            _field("float_values", 3, "FLOAT", label="repeated"),
+            _field("double_values", 4, "DOUBLE", label="repeated"),
+            _field("bool_values", 5, "BOOL", label="repeated"),
+            _field("bytes_values", 6, "BYTES", label="repeated"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2785,56 +1993,15 @@ def test_from_protobuf_large_repeated_array(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_signed_int_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for message with signed integer types:
-      message WithSignedInts {
-        optional sint32 si32 = 1;  // zigzag encoding
-        optional sint64 si64 = 2;  // zigzag encoding
-        optional sfixed32 sf32 = 3;  // fixed 4-byte
-        optional sfixed64 sf64 = 4;  // fixed 8-byte
-      }
-    """
-    D, fd = _new_proto2_file(spark, "signed_int.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    msg = D.DescriptorProto.newBuilder().setName("WithSignedInts")
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("si32")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_SINT32)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("si64")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_SINT64)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("sf32")
-            .setNumber(3)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_SFIXED32)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("sf64")
-            .setNumber(4)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_SFIXED64)
-            .build()
-    )
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for zigzag and signed fixed-width integer fields."""
+    return _build_proto2_descriptor(spark, "signed_int.proto", [
+        _msg("WithSignedInts", [
+            _field("si32", 1, "SINT32"),
+            _field("si64", 2, "SINT64"),
+            _field("sf32", 3, "SFIXED32"),
+            _field("sf64", 4, "SFIXED64"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2877,38 +2044,13 @@ def test_from_protobuf_signed_integers(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_fixed_int_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for message with fixed-width integer types:
-      message WithFixedInts {
-        optional fixed32 fx32 = 1;
-        optional fixed64 fx64 = 2;
-      }
-    """
-    D, fd = _new_proto2_file(spark, "fixed_int.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    msg = D.DescriptorProto.newBuilder().setName("WithFixedInts")
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("fx32")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_FIXED32)
-            .build()
-    )
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("fx64")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_FIXED64)
-            .build()
-    )
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for fixed-width integer fields."""
+    return _build_proto2_descriptor(spark, "fixed_int.proto", [
+        _msg("WithFixedInts", [
+            _field("fx32", 1, "FIXED32"),
+            _field("fx64", 2, "FIXED64"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -2942,66 +2084,20 @@ def test_from_protobuf_fixed_integers(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_schema_projection_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for nested schema projection testing:
-      message Detail {
-        optional int32  a = 1;
-        optional int32  b = 2;
-        optional string c = 3;
-      }
-      message SchemaProj {
-        optional int32  id     = 1;
-        optional string name   = 2;
-        optional Detail detail = 3;
-        repeated Detail items  = 4;
-      }
-    The Detail message has 3 fields so we can test pruning subsets.
-    """
-    D, fd = _new_proto2_file(spark, "schema_proj.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-
-    # Detail message: { a: int32, b: int32, c: string }
-    detail_msg = D.DescriptorProto.newBuilder().setName("Detail")
-    detail_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("a").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    detail_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("b").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    detail_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("c").setNumber(3).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
-    fd.addMessageType(detail_msg.build())
-
-    # SchemaProj message: { id, name, detail: Detail, items: repeated Detail }
-    main_msg = D.DescriptorProto.newBuilder().setName("SchemaProj")
-    main_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    main_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("name").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
-    main_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("detail").setNumber(3).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Detail").build())
-    main_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("items").setNumber(4).setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Detail").build())
-    fd.addMessageType(main_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor with nested and repeated struct fields for pruning tests."""
+    return _build_proto2_descriptor(spark, "schema_proj.proto", [
+        _msg("Detail", [
+            _field("a", 1, "INT32"),
+            _field("b", 2, "INT32"),
+            _field("c", 3, "STRING"),
+        ]),
+        _msg("SchemaProj", [
+            _field("id", 1, "INT32"),
+            _field("name", 2, "STRING"),
+            _field("detail", 3, "MESSAGE", type_name=".test.Detail"),
+            _field("items", 4, "MESSAGE", label="repeated", type_name=".test.Detail"),
+        ]),
+    ])
 
 
 # Field descriptors for SchemaProj: {id, name, detail: {a, b, c}, items[]: {a, b, c}}
@@ -3078,54 +2174,18 @@ def test_from_protobuf_projection_across_plan_boundary(
 
 
 def _build_dual_message_projection_descriptor_set_bytes(spark):
-    """
-    message BytesView {
-        optional int32 status = 1;
-        optional bytes payload = 2;
-    }
-    message NestedPayload {
-        optional int32 count = 1;
-    }
-    message NestedView {
-        optional int32 status = 1;
-        optional NestedPayload payload = 2;
-    }
-    """
-    D, fd = _new_proto2_file(spark, "dual_projection.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    nested_msg = D.DescriptorProto.newBuilder().setName("NestedPayload")
-    nested_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("count").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    fd.addMessageType(nested_msg.build())
-
-    bytes_view = D.DescriptorProto.newBuilder().setName("BytesView")
-    bytes_view.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("status").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    bytes_view.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("payload").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_BYTES).build())
-    fd.addMessageType(bytes_view.build())
-
-    nested_view = D.DescriptorProto.newBuilder().setName("NestedView")
-    nested_view.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("status").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    nested_view.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("payload").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.NestedPayload").build())
-    fd.addMessageType(nested_view.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build descriptors for two logical views over the same binary payload column."""
+    return _build_proto2_descriptor(spark, "dual_projection.proto", [
+        _msg("NestedPayload", [_field("count", 1, "INT32")]),
+        _msg("BytesView", [
+            _field("status", 1, "INT32"),
+            _field("payload", 2, "BYTES"),
+        ]),
+        _msg("NestedView", [
+            _field("status", 1, "INT32"),
+            _field("payload", 2, "MESSAGE", type_name=".test.NestedPayload"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -3157,116 +2217,26 @@ def test_from_protobuf_different_messages_same_binary_column_do_not_interfere(
 
 
 def _build_deep_nested_5_level_descriptor_set_bytes(spark):
-    """
-    Build a FileDescriptorSet for 5-level deep nesting:
-      message Level5 { optional int32 val5 = 1; }
-      message Level4 { optional int32 val4 = 1; optional Level5 level5 = 2; }
-      message Level3 { optional int32 val3 = 1; optional Level4 level4 = 2; }
-      message Level2 { optional int32 val2 = 1; optional Level3 level3 = 2; }
-      message Level1 { optional int32 val1 = 1; optional Level2 level2 = 2; }
-    """
-    D, fd = _new_proto2_file(spark, "deep_nested_5_level.proto")
-
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    # Level5 message
-    level5_msg = D.DescriptorProto.newBuilder().setName("Level5")
-    level5_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("val5")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    fd.addMessageType(level5_msg.build())
-
-    # Level4 message
-    level4_msg = D.DescriptorProto.newBuilder().setName("Level4")
-    level4_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("val4")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    level4_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("level5")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Level5")
-            .build()
-    )
-    fd.addMessageType(level4_msg.build())
-
-    # Level3 message
-    level3_msg = D.DescriptorProto.newBuilder().setName("Level3")
-    level3_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("val3")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    level3_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("level4")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Level4")
-            .build()
-    )
-    fd.addMessageType(level3_msg.build())
-
-    # Level2 message
-    level2_msg = D.DescriptorProto.newBuilder().setName("Level2")
-    level2_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("val2")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    level2_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("level3")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Level3")
-            .build()
-    )
-    fd.addMessageType(level2_msg.build())
-
-    # Level1 message
-    level1_msg = D.DescriptorProto.newBuilder().setName("Level1")
-    level1_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("val1")
-            .setNumber(1)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .build()
-    )
-    level1_msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("level2")
-            .setNumber(2)
-            .setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Level2")
-            .build()
-    )
-    fd.addMessageType(level1_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for a five-level nested message chain."""
+    return _build_proto2_descriptor(spark, "deep_nested_5_level.proto", [
+        _msg("Level5", [_field("val5", 1, "INT32")]),
+        _msg("Level4", [
+            _field("val4", 1, "INT32"),
+            _field("level5", 2, "MESSAGE", type_name=".test.Level5"),
+        ]),
+        _msg("Level3", [
+            _field("val3", 1, "INT32"),
+            _field("level4", 2, "MESSAGE", type_name=".test.Level4"),
+        ]),
+        _msg("Level2", [
+            _field("val2", 1, "INT32"),
+            _field("level3", 2, "MESSAGE", type_name=".test.Level3"),
+        ]),
+        _msg("Level1", [
+            _field("val1", 1, "INT32"),
+            _field("level2", 2, "MESSAGE", type_name=".test.Level2"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -3326,28 +2296,18 @@ def test_from_protobuf_schema_projection_cases(
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 def _build_name_collision_descriptor_set_bytes(spark):
-    D, fd = _new_proto2_file(spark, "name_collision.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    # User message
-    user_msg = D.DescriptorProto.newBuilder().setName("User")
-    user_msg.addField(D.FieldDescriptorProto.newBuilder().setName("age").setNumber(1).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    user_msg.addField(D.FieldDescriptorProto.newBuilder().setName("id").setNumber(2).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    fd.addMessageType(user_msg.build())
-
-    # Ad message
-    ad_msg = D.DescriptorProto.newBuilder().setName("Ad")
-    ad_msg.addField(D.FieldDescriptorProto.newBuilder().setName("id").setNumber(1).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    fd.addMessageType(ad_msg.build())
-
-    # Event message
-    event_msg = D.DescriptorProto.newBuilder().setName("Event")
-    event_msg.addField(D.FieldDescriptorProto.newBuilder().setName("user_info").setNumber(1).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE).setTypeName(".test.User").build())
-    event_msg.addField(D.FieldDescriptorProto.newBuilder().setName("ad_info").setNumber(2).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE).setTypeName(".test.Ad").build())
-    fd.addMessageType(event_msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a regression schema with same-named fields in unrelated nested messages."""
+    return _build_proto2_descriptor(spark, "name_collision.proto", [
+        _msg("User", [
+            _field("age", 1, "INT32"),
+            _field("id", 2, "INT32"),
+        ]),
+        _msg("Ad", [_field("id", 1, "INT32")]),
+        _msg("Event", [
+            _field("user_info", 1, "MESSAGE", type_name=".test.User"),
+            _field("ad_info", 2, "MESSAGE", type_name=".test.Ad"),
+        ]),
+    ])
 
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -3383,16 +2343,13 @@ def test_from_protobuf_bug1_name_collision(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_filter_jump_descriptor_set_bytes(spark):
-    D, fd = _new_proto2_file(spark, "filter_jump.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    msg = D.DescriptorProto.newBuilder().setName("Event")
-    msg.addField(D.FieldDescriptorProto.newBuilder().setName("status").setNumber(1).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    msg.addField(D.FieldDescriptorProto.newBuilder().setName("ad_info").setNumber(2).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_STRING).build())
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a minimal descriptor used by the filter-jump regression test."""
+    return _build_proto2_descriptor(spark, "filter_jump.proto", [
+        _msg("Event", [
+            _field("status", 1, "INT32"),
+            _field("ad_info", 2, "STRING"),
+        ]),
+    ])
 
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -3421,21 +2378,16 @@ def test_from_protobuf_bug2_filter_jump(spark_tmp_path, from_protobuf_fn):
 
 
 def _build_unrelated_struct_name_collision_descriptor_set_bytes(spark):
-    D, fd = _new_proto2_file(spark, "unrelated_struct.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    # Nested message
-    nested_msg = D.DescriptorProto.newBuilder().setName("Nested")
-    nested_msg.addField(D.FieldDescriptorProto.newBuilder().setName("dummy").setNumber(1).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    nested_msg.addField(D.FieldDescriptorProto.newBuilder().setName("winfoid").setNumber(2).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    fd.addMessageType(nested_msg.build())
-
-    msg = D.DescriptorProto.newBuilder().setName("Event")
-    msg.addField(D.FieldDescriptorProto.newBuilder().setName("ad_info").setNumber(1).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE).setTypeName(".test.Nested").build())
-    fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a regression schema where an unrelated nested struct shares a field name."""
+    return _build_proto2_descriptor(spark, "unrelated_struct.proto", [
+        _msg("Nested", [
+            _field("dummy", 1, "INT32"),
+            _field("winfoid", 2, "INT32"),
+        ]),
+        _msg("Event", [
+            _field("ad_info", 1, "MESSAGE", type_name=".test.Nested"),
+        ]),
+    ])
 
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -3481,19 +2433,16 @@ def test_from_protobuf_bug3_unrelated_struct_name_collision(spark_tmp_path, from
 
 
 def _build_max_depth_descriptor_set_bytes(spark):
-    D, fd = _new_proto2_file(spark, "max_depth.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    # Generate 12 levels of nesting
+    """Build a descriptor for a 12-level nested message chain."""
+    messages = []
     for i in range(12, 0, -1):
-        msg = D.DescriptorProto.newBuilder().setName(f"Level{i}")
-        msg.addField(D.FieldDescriptorProto.newBuilder().setName(f"val{i}").setNumber(1).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
+        fields = [_field(f"val{i}", 1, "INT32")]
         if i < 12:
-            msg.addField(D.FieldDescriptorProto.newBuilder().setName(f"level{i+1}").setNumber(2).setLabel(label_opt).setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE).setTypeName(f".test.Level{i+1}").build())
-        fd.addMessageType(msg.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+            fields.append(
+                _field(f"level{i + 1}", 2, "MESSAGE", type_name=f".test.Level{i + 1}")
+            )
+        messages.append(_msg(f"Level{i}", fields))
+    return _build_proto2_descriptor(spark, "max_depth.proto", messages)
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
@@ -3605,27 +2554,13 @@ def test_from_protobuf_bool_noncanonical_varint_scalar(spark_tmp_path, from_prot
 
 
 def _build_repeated_bool_descriptor_set_bytes(spark):
-    """
-    message WithRepeatedBool {
-        optional int32 id = 1;
-        repeated bool flags = 2;
-    }
-    """
-    D, fd = _new_proto2_file(spark, "repeated_bool.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-    label_rep = D.FieldDescriptorProto.Label.LABEL_REPEATED
-    msg = D.DescriptorProto.newBuilder().setName("WithRepeatedBool")
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    msg.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("flags").setNumber(2).setLabel(label_rep)
-            .setType(D.FieldDescriptorProto.Type.TYPE_BOOL).build())
-    fd.addMessageType(msg.build())
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor for an optional id plus repeated bool flags."""
+    return _build_proto2_descriptor(spark, "repeated_bool.proto", [
+        _msg("WithRepeatedBool", [
+            _field("id", 1, "INT32"),
+            _field("flags", 2, "BOOL", label="repeated"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
@@ -3664,52 +2599,18 @@ def test_from_protobuf_bool_noncanonical_varint_repeated(spark_tmp_path, from_pr
 # ---------------------------------------------------------------------------
 
 def _build_nested_with_defaults_descriptor_set_bytes(spark):
-    """
-    message Inner {
-        optional int32  count = 1 [default = 42];
-        optional string label = 2 [default = "hello"];
-        optional bool   flag  = 3 [default = true];
-    }
-    message OuterWithNestedDefaults {
-        optional int32 id    = 1;
-        optional Inner inner = 2;
-    }
-    """
-    D, fd = _new_proto2_file(spark, "nested_defaults.proto")
-    label_opt = D.FieldDescriptorProto.Label.LABEL_OPTIONAL
-
-    inner = D.DescriptorProto.newBuilder().setName("Inner")
-    inner.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("count").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32)
-            .setDefaultValue("42").build())
-    inner.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("label").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_STRING)
-            .setDefaultValue("hello").build())
-    inner.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("flag").setNumber(3).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_BOOL)
-            .setDefaultValue("true").build())
-    fd.addMessageType(inner.build())
-
-    outer = D.DescriptorProto.newBuilder().setName("OuterWithNestedDefaults")
-    outer.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("id").setNumber(1).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build())
-    outer.addField(
-        D.FieldDescriptorProto.newBuilder()
-            .setName("inner").setNumber(2).setLabel(label_opt)
-            .setType(D.FieldDescriptorProto.Type.TYPE_MESSAGE)
-            .setTypeName(".test.Inner").build())
-    fd.addMessageType(outer.build())
-
-    fds = D.FileDescriptorSet.newBuilder().addFile(fd.build()).build()
-    return bytes(fds.toByteArray())
+    """Build a descriptor with proto2 defaults inside a nested child struct."""
+    return _build_proto2_descriptor(spark, "nested_defaults.proto", [
+        _msg("Inner", [
+            _field("count", 1, "INT32", default=42),
+            _field("label", 2, "STRING", default="hello"),
+            _field("flag", 3, "BOOL", default=True),
+        ]),
+        _msg("OuterWithNestedDefaults", [
+            _field("id", 1, "INT32"),
+            _field("inner", 2, "MESSAGE", type_name=".test.Inner"),
+        ]),
+    ])
 
 
 @_xfail_gpu_protobuf
