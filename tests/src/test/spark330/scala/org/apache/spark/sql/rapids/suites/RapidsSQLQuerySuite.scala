@@ -253,12 +253,13 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
   }
 
   // Original: SQLQuerySuite.scala lines 4103-4124
-  // Disable AQE and broadcast so the static ReuseExchange
+  // Uses V1 parquet (default) instead of V2 to avoid DSv2
+  // computeStats-before-pushdown guard (see #14422).
+  // Disables AQE and broadcast so the static ReuseExchange
   // rule fires and we can assert ReusedExchangeExec.
   testRapids(
     "SPARK-33482: Fix FileScan canonicalization") {
     withSQLConf(
-      SQLConf.USE_V1_SOURCE_LIST.key -> "",
       SQLConf.ADAPTIVE_EXECUTION_ENABLED.key -> "false",
       SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> "-1") {
       withTempPath { path =>
@@ -280,7 +281,7 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
           }
           assert(reused.nonEmpty,
             "Expected ReusedExchangeExec for " +
-              "3 identical FileScan canonicalization, " +
+              "3 identical scan canonicalization, " +
               "but found none.\nPlan:\n" +
               df.queryExecution.executedPlan)
         }
