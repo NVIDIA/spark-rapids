@@ -237,8 +237,8 @@ object FuzzerUtils {
       case StringType =>
         val values = data.map(v => if (v == null) null else v.asInstanceOf[String])
         CudfColumnVector.fromStrings(values: _*)
-      case ArrayType(elementType, _) =>
-        val listType = createHostListType(elementType, nullable)
+      case ArrayType(elementType, containsNull) =>
+        val listType = createHostListType(elementType, nullable, containsNull)
         val javaLists = data.map { v =>
           if (v == null) null
           else v.asInstanceOf[Seq[_]].map(boxValue).asJava
@@ -293,10 +293,13 @@ object FuzzerUtils {
    */
   private def createHostListType(
       elementType: DataType,
-      nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
+      listNullable: Boolean,
+      elementNullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
     import ai.rapids.cudf.HostColumnVector
-    
-    new HostColumnVector.ListType(nullable, createHostColumnType(elementType, nullable))
+
+    new HostColumnVector.ListType(
+      listNullable,
+      createHostColumnType(elementType, elementNullable))
   }
   
   /**

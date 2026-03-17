@@ -89,6 +89,10 @@ private[iceberg] class ColumnActionContext(
   def withColumn(col: CudfColumnVector): ColumnActionContext = {
     new ColumnActionContext(processor, Some(col), checkedRowCountToInt(col.getRowCount))
   }
+
+  def withNoColumn(numRows: Int): ColumnActionContext = {
+    new ColumnActionContext(processor, None, numRows)
+  }
 }
 
 /** Pass through column directly (schemas match exactly). */
@@ -311,7 +315,7 @@ private[iceberg] case class ProcessStruct(
         case None =>
           // Field doesn't exist in input - action must generate the column
           // (FillNull, FetchConstant, etc.)
-          action.execute(ctx)
+          action.execute(ctx.withNoColumn(ctx.numRows))
       }
     }
     withResource(childCols) { cols =>
@@ -469,10 +473,14 @@ private class ActionBuildingVisitor(
       list: Types.ListType,
       partner: Type,
       elementResult: ColumnAction): ColumnAction = {
-    // If partner is null, the entire list is missing from the file - fill with null
+    // If partner is null, the entire list is missing from the file.
     if (partner == null) {
       val sparkType = SparkSchemaUtil.convert(list)
-      return FillNull(sparkType)
+      return MissingFieldActionBuilder.buildAction(
+        currentField.fieldId(),
+        sparkType,
+        currentField.isOptional,
+        idToConstant)
     }
     
     if (elementResult == PassThrough) {
@@ -487,10 +495,14 @@ private class ActionBuildingVisitor(
       partner: Type,
       keyResult: ColumnAction,
       valueResult: ColumnAction): ColumnAction = {
-    // If partner is null, the entire map is missing from the file - fill with null
+    // If partner is null, the entire map is missing from the file.
     if (partner == null) {
       val sparkType = SparkSchemaUtil.convert(map)
-      return FillNull(sparkType)
+      return MissingFieldActionBuilder.buildAction(
+        currentField.fieldId(),
+        sparkType,
+        currentField.isOptional,
+        idToConstant)
     }
     
     if (keyResult == PassThrough && valueResult == PassThrough) {

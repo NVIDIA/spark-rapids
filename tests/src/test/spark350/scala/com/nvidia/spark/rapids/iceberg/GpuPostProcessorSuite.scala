@@ -492,6 +492,55 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     assert(ex.getMessage.contains("Missing required field"))
   }
 
+  test("Throws exception for missing required list field") {
+    val listFieldId = 1
+    val listElementId = 2
+
+    val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
+    val expectedSchema = new Schema(
+      Types.NestedField.required(listFieldId, "required_list",
+        Types.ListType.ofOptional(listElementId, Types.LongType.get()))
+    )
+
+    val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val ex = intercept[IllegalArgumentException] {
+      new GpuParquetReaderPostProcessor(
+        parquetInfo,
+        new JHashMap[Integer, Any](),
+        expectedSchema,
+        shadedSchema,
+        Map.empty)
+    }
+    assert(ex.getMessage.contains("Missing required field"))
+  }
+
+  test("Throws exception for missing required map field") {
+    val mapFieldId = 1
+    val mapKeyId = 2
+    val mapValueId = 3
+
+    val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
+    val expectedSchema = new Schema(
+      Types.NestedField.required(mapFieldId, "required_map",
+        Types.MapType.ofOptional(
+          mapKeyId,
+          mapValueId,
+          Types.LongType.get(),
+          Types.StringType.get()))
+    )
+
+    val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val ex = intercept[IllegalArgumentException] {
+      new GpuParquetReaderPostProcessor(
+        parquetInfo,
+        new JHashMap[Integer, Any](),
+        expectedSchema,
+        shadedSchema,
+        Map.empty)
+    }
+    assert(ex.getMessage.contains("Missing required field"))
+  }
+
   /**
    * Test 4: Process a columnar batch with array type (passthrough, no promotion needed)
    */
