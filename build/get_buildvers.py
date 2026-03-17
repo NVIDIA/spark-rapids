@@ -52,7 +52,10 @@ def _get_buildvers(buildvers, pom_file, logger=None, ignore_excluded_shims=False
                     snapshots.remove(removed_shim)
                 elif removed_shim in no_snapshots:
                     no_snapshots.remove(removed_shim)
-                else:
+                elif "scala2.13" not in pom_file:
+                    # For the main pom.xml, all profiles should be present.
+                    # For scala2.13/pom.xml, some profiles (e.g. scala-2.12-only
+                    # Databricks shims) are commented out and won't be found.
                     raise Exception(
                         "Shim {} listed in dyn.shim.excluded.releases in pom.xml not present in releases".format(
                             removed_shim))
