@@ -145,7 +145,7 @@ else
         AVRO_JARS=""
     fi
 
-    # Protobuf tests require explicit extra jars, similar to hybrid execution.
+    # Protobuf tests require explicit extra jars
     PROTOBUF_EXTRA_JARS=""
     export PROTOBUF_JARS_AVAILABLE=false
     if [[ -n "${PROTOBUF_JARS}" ]];
@@ -445,7 +445,6 @@ else
       export PYSP_TEST_spark_memory_offHeap_size=512M
       export PYSP_TEST_spark_gluten_loadLibFromJar=true
     fi
-
 
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
     EXPLAIN_ONLY_CPU_SMOKE_TEST="${EXPLAIN_ONLY_CPU_SMOKE_TEST:-0}"
