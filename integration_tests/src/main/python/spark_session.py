@@ -376,7 +376,10 @@ def is_protobuf_runtime_available():
     except Exception:
         return False
 
-    jvm = _spark.sparkContext._jvm
+    try:
+        jvm = _spark.sparkContext._jvm
+    except Exception:
+        return False
     loader = None
     try:
         loader = jvm.Thread.currentThread().getContextClassLoader()
