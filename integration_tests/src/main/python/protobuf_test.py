@@ -102,6 +102,27 @@ def _call_from_protobuf(from_protobuf_fn, col, message_name,
     return from_protobuf_fn(col, message_name, desc_path)
 
 
+def _encode_varint(value):
+    """Encode a non-negative integer as a protobuf varint (for hand-crafting test bytes)."""
+    if value < 0:
+        raise ValueError(f"_encode_varint only accepts non-negative integers, got: {value}")
+    out = bytearray()
+    v = int(value)
+    while True:
+        b = v & 0x7F
+        v >>= 7
+        if v:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            break
+    return bytes(out)
+
+
+def _encode_tag(field_number, wire_type):
+    return _encode_varint((field_number << 3) | wire_type)
+
+
 def _build_simple_descriptor_set_bytes(spark):
     """Build a simple scalar proto2 descriptor."""
     return _build_proto2_descriptor(spark, "simple.proto", [
@@ -2422,31 +2443,6 @@ def test_from_protobuf_bug4_max_depth(spark_tmp_path, from_protobuf_fn):
     cpu_result = with_cpu_session(lambda spark: run_on_spark(spark).collect())
     assert len(cpu_result) > 0
     assert cpu_result[0]["val12"] is not None
-
-
-# ===========================================================================
-# Regression tests for known bugs found by code review
-# ===========================================================================
-
-def _encode_varint(value):
-    """Encode a non-negative integer as a protobuf varint (for hand-crafting test bytes)."""
-    if value < 0:
-        raise ValueError(f"_encode_varint only accepts non-negative integers, got: {value}")
-    out = bytearray()
-    v = int(value)
-    while True:
-        b = v & 0x7F
-        v >>= 7
-        if v:
-            out.append(b | 0x80)
-        else:
-            out.append(b)
-            break
-    return bytes(out)
-
-
-def _encode_tag(field_number, wire_type):
-    return _encode_varint((field_number << 3) | wire_type)
 
 
 # ---------------------------------------------------------------------------
