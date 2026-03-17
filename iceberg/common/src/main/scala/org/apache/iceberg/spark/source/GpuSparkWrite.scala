@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,11 +25,12 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.GpuIcebergSpecPartitioner
+import com.nvidia.spark.rapids.shims.parquet.ParquetFieldIdShims
 import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg._
 import org.apache.iceberg.io._
-import org.apache.iceberg.spark.{Spark3Util, SparkSchemaUtil}
+import org.apache.iceberg.spark.{GpuTypeToSparkType, Spark3Util, SparkSchemaUtil}
 import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
 import org.apache.iceberg.spark.source.GpuWriteContext.positionDeleteSparkType
 import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
@@ -42,8 +43,10 @@ import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{DataWriter, _}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -104,7 +107,12 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     val outputSpecId = FieldUtils.readField(cpu, "outputSpecId", true).asInstanceOf[Int]
     val targetFileSize = FieldUtils.readField(cpu, "targetFileSize", true).asInstanceOf[Long]
     val writeSchema = FieldUtils.readField(cpu, "writeSchema", true).asInstanceOf[Schema]
-    val dsSchema = FieldUtils.readField(cpu, "dsSchema", true).asInstanceOf[StructType]
+    // Convert writeSchema to Spark StructType with Iceberg field IDs (PARQUET:field_id).
+    // The CPU path uses Iceberg's own Parquet writer which natively embeds field IDs, but
+    // the GPU path uses Spark's Parquet infrastructure which requires field IDs in the
+    // StructType metadata. Without them, Iceberg's ParquetMetrics cannot extract file-level
+    // statistics, causing StrictMetricsEvaluator to fail during overwrite validation.
+    val dsSchema = GpuTypeToSparkType.toSparkType(writeSchema)
     val useFanout = FieldUtils.readField(cpu, "useFanoutWriter", true).asInstanceOf[Boolean]
     val writeProps = FieldUtils.readField(cpu, "writeProperties", true)
       .asInstanceOf[java.util.Map[String, String]]
@@ -115,6 +123,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     }
 
     val hadoopConf = sparkContext.hadoopConfiguration
+
     val job = {
       val tmpJob  = Job.getInstance(hadoopConf)
       tmpJob.setOutputKeyClass(classOf[Void])
@@ -179,6 +188,16 @@ object GpuSparkWrite {
       deleteFormat: Option[FileFormat],
       partitionSpec: PartitionSpec,
       meta: SparkPlanMeta[_]): Unit = {
+
+    // Iceberg requires Parquet field IDs for correct file-level metrics. Without them,
+    // StrictMetricsEvaluator fails during overwrite validation.
+    val spark = SparkSessionUtils.sessionFromPlan(meta.wrapped.asInstanceOf[SparkPlan])
+    val hadoopConf = spark.sparkContext.hadoopConfiguration
+    val sqlConf = spark.sessionState.conf
+    if (!ParquetFieldIdShims.getParquetIdWriteEnabled(hadoopConf, sqlConf)) {
+      meta.willNotWorkOnGpu("Iceberg requires Parquet field IDs to be written for correct " +
+        "file-level metrics. Set spark.sql.parquet.fieldId.write.enabled=true")
+    }
 
     // Check file format support
     if (dataFormat.exists(!_.equals(FileFormat.PARQUET))) {
@@ -292,6 +311,7 @@ object GpuSparkWrite {
   def convert(cpuWrite: Write): GpuSparkWrite = {
     new GpuSparkWrite(cpuWrite.asInstanceOf[SparkWrite])
   }
+
 }
 
 class GpuWriterFactory(val tableBroadcast: Broadcast[Table],

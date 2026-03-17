@@ -1712,7 +1712,8 @@ class RapidsCachingWriter[K, V](
  *       Apache Spark to use the RAPIDS shuffle manager,
  */
 class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
-  extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging {
+  extends ShuffleManager with RapidsShuffleHeartbeatHandler with Logging
+  with RapidsShuffleReaderShim with ProxyShuffleReaderDelegate {
 
   def getServerId: BlockManagerId = server.fold(blockManager.blockManagerId)(_.getId)
 
@@ -1781,6 +1782,12 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     }
     if (rapidsConf.isSqlExplainOnlyEnabled) {
       fallThroughReasons += "Plugin is in explain only mode"
+    }
+    if (GpuShuffleEnv.isRowBasedChecksumEnabled) {
+      fallThroughReasons += "Detected order-independent checksum enabled " +
+        "(spark.sql.shuffle.orderIndependentChecksum.enabled or " +
+        "enableFullRetryOnMismatch). " +
+        "This Spark 4.1+ feature is not yet supported by Spark-Rapids."
     }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
@@ -1975,14 +1982,14 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     }
   }
 
-  override def getReader[K, C](
-                                  handle: ShuffleHandle,
-                                  startMapIndex: Int,
-                                  endMapIndex: Int,
-                                  startPartition: Int,
-                                  endPartition: Int,
-                                  context: TaskContext,
-                                  metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+  def getReaderImpl[K, C](
+      handle: ShuffleHandle,
+      startMapIndex: Int,
+      endMapIndex: Int,
+      startPartition: Int,
+      endPartition: Int,
+      context: TaskContext,
+      metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     handle match {
       case gpuHandle: GpuShuffleHandle[_, _] =>
         logInfo(s"Asking map output tracker for dependency ${gpuHandle.dependency}, " +
@@ -2050,13 +2057,13 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
               numReaderThreads = rapidsConf.shuffleMultiThreadedReaderThreads)
           case _ =>
             val shuffleHandle = RapidsShuffleInternalManagerBase.unwrapHandle(other)
-            wrapped.getReader(shuffleHandle, startMapIndex, endMapIndex, startPartition,
-              endPartition, context, metrics)
+            ShuffleManagerShims.getReader(wrapped, shuffleHandle, startMapIndex, endMapIndex,
+              startPartition, endPartition, context, metrics)
         }
       case other =>
         val shuffleHandle = RapidsShuffleInternalManagerBase.unwrapHandle(other)
-        wrapped.getReader(shuffleHandle, startMapIndex, endMapIndex, startPartition,
-          endPartition, context, metrics)
+        ShuffleManagerShims.getReader(wrapped, shuffleHandle, startMapIndex, endMapIndex,
+          startPartition, endPartition, context, metrics)
     }
   }
 

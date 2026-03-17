@@ -17,6 +17,7 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "400"}
 {"spark": "401"}
+{"spark": "402"}
 {"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.rapids.shims
@@ -31,5 +32,12 @@ object FilePartitionShims extends SplitFiles {
         PartitionedFileUtil.getPartitionedFile(f, f.getPath, p.values, 0, f.getLen)
       }
     }
+  }
+
+  // Methods for FilePartition (overloaded)
+  def getFiles(p: FilePartition): Array[PartitionedFile] = p.files
+
+  def copyWithFiles(p: FilePartition, newFiles: Array[PartitionedFile]): FilePartition = {
+    p.copy(files = newFiles)
   }
 }

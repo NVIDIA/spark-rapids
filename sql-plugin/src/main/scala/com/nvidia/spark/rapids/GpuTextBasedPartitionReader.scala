@@ -94,6 +94,20 @@ object FilterEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLineBu
 }
 
 /**
+ * Factory for CSV reading that filters empty lines using Java String.trim() compatible whitespace
+ * (all chars <= 0x20). This matches Spark CPU's CSVExprUtils.filterCommentAndEmpty behavior which
+ * uses line.trim.nonEmpty to filter blank lines.
+ */
+object FilterCsvEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
+  override def createBufferer(estimatedSize: Long,
+      lineSeparatorInRead: Array[Byte]): HostLineBufferer =
+    new HostLineBufferer(estimatedSize, lineSeparatorInRead, true) {
+      // Match Java's String.trim() which treats all chars <= '\u0020' as whitespace.
+      override def isWhiteSpace(b: Byte): Boolean = (b & 0xFF) <= 0x20
+    }
+}
+
+/**
  * Buffer the lines in a single HostMemoryBuffer with the separator inserted inbetween each of
  * the lines.
  */

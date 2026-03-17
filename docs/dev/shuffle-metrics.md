@@ -1,3 +1,9 @@
+---
+layout: page
+title: Shuffle Metrics
+nav_order: 15
+parent: Developer Overview
+---
 # Shuffle Metrics: SparkRapidsShuffleDiskSavingsEvent
 
 When using MULTITHREADED shuffle mode with `spark.rapids.shuffle.multithreaded.skipMerge=true`,

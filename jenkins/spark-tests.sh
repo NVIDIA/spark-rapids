@@ -254,72 +254,86 @@ run_iceberg_tests() {
   # get the patch version of Spark
   SPARK_PATCH_VER=$(echo "$SPARK_VER" | cut -d. -f3)
 
-  # Determine Iceberg version based on Spark version and Scala version
-  # Scala 2.12 + Spark 3.5.x -> Iceberg 1.6.1
-  # Scala 2.13 + Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
-  # Scala 2.13 + Spark 3.5.4-3.5.7 -> Iceberg 1.9.2
-  # Otherwise -> skip
-  if [[ "$ICEBERG_SPARK_VER" = "3.5" ]]; then
-    if [[ "$SCALA_BINARY_VER" == "2.12" ]]; then
-      ICEBERG_VERSION=1.6.1
-    elif [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
-      if [[ "$SPARK_PATCH_VER" -ge 0 && "$SPARK_PATCH_VER" -le 3 ]]; then
-        ICEBERG_VERSION=1.6.1
-      elif [[ "$SPARK_PATCH_VER" -ge 4 && "$SPARK_PATCH_VER" -le 7 ]]; then
-        ICEBERG_VERSION=1.9.2
-      else
-        echo "!!!! Skipping Iceberg tests. Spark patch version $SPARK_PATCH_VER is not supported for Scala $SCALA_BINARY_VER"
-        return 0
-      fi
-    else
-      echo "!!!! Skipping Iceberg tests. Scala version $SCALA_BINARY_VER is not supported"
-      return 0
-    fi
-  else
+  if [[ "$ICEBERG_SPARK_VER" != "3.5" ]]; then
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
     return 0
   fi
 
-  local test_type=${1:-'default'}
-  if [[ "$test_type" == "default" ]]; then
-    echo "!!! Running iceberg tests"
-    PYSP_TEST_spark_driver_memory=6G \
-    PYSP_TEST_spark_executor_memory=6G \
-    PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
-      PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
-      PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-      PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
-      PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
-      ./run_pyspark_from_build.sh -m iceberg --iceberg
-  elif [[ "$test_type" == "rest" ]]; then
-    echo "!!! Running iceberg tests with rest catalog"
-    ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
-org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
-        env \
-          ICEBERG_TEST_CATALOG_TYPE="rest" \
-          ICEBERG_TEST_REMOTE_CATALOG=1 \
-          PYSP_TEST_spark_driver_memory=6G \
-          PYSP_TEST_spark_executor_memory=6G \
-          PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
-          PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
-          PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="org.apache.iceberg.rest.RESTCatalog" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_uri="${ICEBERG_REST_CATALOG_URI:-http://localhost:8181/catalog/}" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_credential="${ICEBERG_REST_CREDENTIAL}" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri="${ICEBERG_REST_OAUTH2_SERVER_URI:-http://localhost:8080/realms/iceberg/protocol/openid-connect/token}" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_scope="${ICEBERG_REST_SCOPE:-lakekeeper}" \
-          PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${ICEBERG_REST_WAREHOUSE:-demo}" \
-          ./run_pyspark_from_build.sh -m iceberg --iceberg
-  elif [[ "$test_type" == "s3tables" ]]; then
-    echo "!!! Running iceberg tests with s3tables"
-    # AWS deps versions for Spark 3.5.x
-    AWS_SDK_VERSION=${AWS_SDK_VERSION:-"2.29.26"}
-    HADOOP_AWS_VERSION=${HADOOP_AWS_VERSION:-"3.3.4"}
-    AWS_SDK_BUNDLE_VERSION=${AWS_SDK_BUNDLE_VERSION:-"1.12.709"}
-    S3TABLES_CATALOG_VERSION=${S3TABLES_CATALOG_VERSION:-"0.1.6"}
+  # Supported Iceberg versions per Spark patch version:
+  # Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
+  # Spark 3.5.4+       -> Iceberg 1.9.2, 1.10.1
+  local supported_versions
+  if [[ "$SPARK_PATCH_VER" -le 3 ]]; then
+    supported_versions="1.6.1"
+  else
+    supported_versions="1.9.2 1.10.1"
+  fi
 
-    ICEBERG_S3TABLES_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
+  if [[ -n "$ICEBERG_VERSIONS" ]]; then
+    for ver in $ICEBERG_VERSIONS; do
+      if ! echo "$supported_versions" | grep -qw "$ver"; then
+        echo "!!!! Error: Iceberg version $ver is not supported on Spark $SPARK_VER (supported: $supported_versions)"
+        return 1
+      fi
+    done
+    echo "Using user-specified ICEBERG_VERSIONS=$ICEBERG_VERSIONS"
+  else
+    # Default: test one representative version per Spark patch range
+    if [[ "$SPARK_PATCH_VER" -le 3 ]]; then
+      ICEBERG_VERSIONS="1.6.1"
+    elif [[ "$SPARK_PATCH_VER" -le 6 ]]; then
+      ICEBERG_VERSIONS="1.9.2"
+    else
+      ICEBERG_VERSIONS="1.10.1"
+    fi
+  fi
+
+  local test_type=${1:-'default'}
+  for ICEBERG_VERSION in $ICEBERG_VERSIONS; do
+    echo "Running Iceberg tests for Iceberg version $ICEBERG_VERSION"
+    if [[ "$test_type" == "default" ]]; then
+      echo "!!! Running iceberg tests"
+      PYSP_TEST_spark_driver_memory=6G \
+      PYSP_TEST_spark_executor_memory=6G \
+      PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
+        PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
+        ./run_pyspark_from_build.sh -m iceberg --iceberg
+    elif [[ "$test_type" == "rest" ]]; then
+      echo "!!! Running iceberg tests with rest catalog"
+      ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
+org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
+          # filecache.enabled is a startup-only config, so it must be set here via
+          # PYSP_TEST_ env var rather than as a session-level Spark config, because
+          # FileCacheManager is initialized at executor startup time.
+          env \
+            ICEBERG_TEST_CATALOG_TYPE="rest" \
+            ICEBERG_TEST_REMOTE_CATALOG=1 \
+            PYSP_TEST_spark_driver_memory=6G \
+            PYSP_TEST_spark_executor_memory=6G \
+            PYSP_TEST_spark_rapids_filecache_enabled=true \
+            PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
+            PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
+            PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+            PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+            "PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl=org.apache.iceberg.rest.RESTCatalog" \
+            PYSP_TEST_spark_sql_catalog_spark__catalog_uri="${ICEBERG_REST_CATALOG_URI:-http://localhost:8181/catalog/}" \
+            PYSP_TEST_spark_sql_catalog_spark__catalog_credential="${ICEBERG_REST_CREDENTIAL}" \
+            "PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri=${ICEBERG_REST_OAUTH2_SERVER_URI:-http://localhost:8080/realms/iceberg/protocol/openid-connect/token}" \
+            PYSP_TEST_spark_sql_catalog_spark__catalog_scope="${ICEBERG_REST_SCOPE:-lakekeeper}" \
+            PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${ICEBERG_REST_WAREHOUSE:-demo}" \
+            ./run_pyspark_from_build.sh -m iceberg --iceberg
+    elif [[ "$test_type" == "s3tables" ]]; then
+      echo "!!! Running iceberg tests with s3tables"
+      # AWS deps versions for Spark 3.5.x
+      AWS_SDK_VERSION=${AWS_SDK_VERSION:-"2.29.26"}
+      HADOOP_AWS_VERSION=${HADOOP_AWS_VERSION:-"3.3.4"}
+      AWS_SDK_BUNDLE_VERSION=${AWS_SDK_BUNDLE_VERSION:-"1.12.709"}
+      S3TABLES_CATALOG_VERSION=${S3TABLES_CATALOG_VERSION:-"0.1.6"}
+
+      ICEBERG_S3TABLES_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
 software.amazon.s3tables:s3-tables-catalog-for-iceberg-runtime:${S3TABLES_CATALOG_VERSION},\
 software.amazon.awssdk:apache-client:${AWS_SDK_VERSION},\
 software.amazon.awssdk:aws-core:${AWS_SDK_VERSION},\
@@ -335,21 +349,26 @@ software.amazon.awssdk:s3tables:${AWS_SDK_VERSION},\
 org.apache.hadoop:hadoop-aws:${HADOOP_AWS_VERSION},\
 com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
 
-    # Requires to setup s3 buckets and namespaces to run iceberg s3tables tests.
-    # These steps are included in the test pipeline.
-    # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
-    env \
-      ICEBERG_TEST_REMOTE_CATALOG=1 \
-      PYSP_TEST_spark_driver_memory=6G \
-      PYSP_TEST_spark_executor_memory=6G \
-      PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
-      PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
-      PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
-      PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-      PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog" \
-      PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${S3TABLES_BUCKET_ARN}" \
-      ./run_pyspark_from_build.sh -s -m iceberg --iceberg
-  fi
+      # Requires to setup s3 buckets and namespaces to run iceberg s3tables tests.
+      # These steps are included in the test pipeline.
+      # Please refer to integration_tests/README.md#run-apache-iceberg-s3tables-tests
+      # filecache.enabled is a startup-only config, so it must be set here via
+      # PYSP_TEST_ env var rather than as a session-level Spark config, because
+      # FileCacheManager is initialized at executor startup time.
+      env \
+        ICEBERG_TEST_REMOTE_CATALOG=1 \
+        PYSP_TEST_spark_driver_memory=6G \
+        PYSP_TEST_spark_executor_memory=6G \
+        PYSP_TEST_spark_rapids_filecache_enabled=true \
+        PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
+        PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
+        PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+        "PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl=software.amazon.s3tables.iceberg.S3TablesCatalog" \
+        PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${S3TABLES_BUCKET_ARN}" \
+        ./run_pyspark_from_build.sh -s -m iceberg --iceberg
+    fi
+  done
 }
 
 run_avro_tests() {

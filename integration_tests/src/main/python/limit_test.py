@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,8 +28,10 @@ def test_simple_limit(data_gen):
 
 
 def offset_test_wrapper(sql, batch_size):
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
     conf = {'spark.rapids.sql.exec.CollectLimitExec': 'true',
-            'spark.rapids.sql.batchSizeBytes': batch_size}
+            'spark.rapids.sql.batchSizeBytes': batch_size,
+            'spark.sql.adaptive.enabled': 'false'}
 
     # Create dataframe to test CollectLimit
     def spark_df(spark):

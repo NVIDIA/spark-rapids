@@ -118,9 +118,9 @@ You can also install some manually and build a combined jar. For instance to bui
 
 ```shell script
 mvn clean
-mvn -Dbuildver=320 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=321 install -Drat.skip=true -DskipTests
-mvn -Dbuildver=321cdh install -Drat.skip=true -DskipTests
+mvn -Dbuildver=330 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=331 install -Drat.skip=true -DskipTests
+mvn -Dbuildver=332 install -Drat.skip=true -DskipTests
 mvn -pl dist -PnoSnapshots package -DskipTests
 ```
 
@@ -182,11 +182,11 @@ Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
 
-### Building and Testing with JDK9+
+### Building and Testing
 
-We support JDK8 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
+We support JDK17 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
 with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
-the environment to your JDK root directory. NOTE: for JDK17, we only support build against spark 3.3.0+
+the environment to your JDK root directory.
 If you need to build with a JDK version that we do not test internally add
 `-Denforcer.skipRules=requireJavaVersion` to the Maven invocation.
 
@@ -197,7 +197,7 @@ NOTE: Build process does not require an ARM machine, so if you want to build the
 on X86 machine, please also add `-DskipTests` in commands.
 
 ```bash
-mvn clean verify -Dbuildver=320 -Parm64
+mvn clean verify -Dbuildver=330 -Parm64
 ```
 
 ### Iterative development during local testing
@@ -253,7 +253,7 @@ The following acronyms may appear in directory names:
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
 |db     |Databricks  |332db  |Databricks Spark based on Spark 3.3.2         |
-|cdh    |Cloudera CDH|321cdh |Cloudera CDH Spark based on Apache Spark 3.2.1|
+|cdh    |Cloudera CDH|(removed)|Cloudera CDH shims have been removed         |
 
 The version-specific directory names have one of the following forms / use cases:
 
@@ -383,11 +383,6 @@ You can now open the spark-rapids as a
 
 Read on for VS Code Scala Metals instructions.
 
-##### JDK 11 Requirement
-
-It is known that Bloop's SemanticDB generation with JDK 8 is broken for spark-rapids. Please use JDK
-11 or later for Bloop builds.
-
 #### Bloop, Scala Metals, and Visual Studio Code
 
 _Last tested with 1.63.0-insider (Universal) Commit: bedf867b5b02c1c800fbaf4d6ce09cefba_
@@ -410,7 +405,7 @@ Install [Scala Metals extension](https://scalameta.org/metals/docs/editors/vscod
 either locally or into a Remote-SSH extension destination depending on your target environment.
 When your project folder is open in VS Code, it may prompt you to import Maven project.
 IMPORTANT: always decline with "Don't ask again", otherwise it will overwrite the Bloop projects
-generated with the default `320` profile. If you need to use a different profile, always rerun the
+generated with the default `330` profile. If you need to use a different profile, always rerun the
 command above manually. When regenerating projects it's recommended to proceed to Metals
 "Build commands" View, and click:
 1. "Restart build server"
@@ -437,7 +432,7 @@ jps -l
 Metals background compilation process status appears to be resetting to 0% after reaching 99%
 and you see a peculiar error message [`java.lang.RuntimeException: boom`][1]. This is a known issue
 when running Metals/Bloop on Java 8. To work around it, ensure Metals and Bloop are both running on
-Java 11+.
+Java 17 (minimum Java version for our project):
 
 1. The `-DbloopInstall` profile will enforce Java 11+ compliance.
 

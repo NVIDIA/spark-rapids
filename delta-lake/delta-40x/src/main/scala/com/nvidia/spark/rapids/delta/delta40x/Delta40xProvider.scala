@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, Opt
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.AppendDataExecV1
+import org.apache.spark.sql.internal.SQLConf
 
 object Delta40xProvider extends DeltaProviderBase with Logging {
 
@@ -73,25 +74,38 @@ object Delta40xProvider extends DeltaProviderBase with Logging {
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
-  override protected def toGpuParquetFileFormat(fmt: DeltaParquetFileFormat): FileFormat = {
-    val optimizationsEnabled = if (fmt.hasTablePath) {
-      logWarning("Input Delta table has deletion vectors. Optimizations such as file splitting " +
-        "and predicate pushdown are currently not supported for this table " +
-        "(https://github.com/NVIDIA/spark-rapids/issues/13999). If you see performance issues, " +
-        "consider disabling deletion vectors and running the optimize command on the table. " +
-        "See https://docs.delta.io/delta-deletion-vectors/#apply-changes-to-parquet-data-files " +
-        "for more details about how to apply delete changes to physical files.")
-      false
+  override protected def toGpuParquetFileFormat(conf: SQLConf, fmt: DeltaParquetFileFormat)
+  : FileFormat = {
+    if (canPushDVPredicateDownToScan(conf)) {
+      // Pushing down deletion vector predicates is currently only supported
+      // when the metadata row index is enabled.
+      GpuDelta40xParquetFileFormat2(
+        protocol = fmt.protocol,
+        metadata = fmt.metadata,
+        nullableRowTrackingFields = false,
+        optimizationsEnabled = fmt.optimizationsEnabled,
+        tablePath = fmt.tablePath,
+        isCDCRead = fmt.isCDCRead)
     } else {
-      fmt.optimizationsEnabled
+      val optimizationsEnabled = if (fmt.hasTablePath) {
+        logWarning("Input Delta table has deletion vectors. Optimizations such as file splitting " +
+          "and predicate pushdown are currently not supported for this table " +
+          "(https://github.com/NVIDIA/spark-rapids/issues/13999). If you see performance issues, " +
+          "consider disabling deletion vectors and running the optimize command on the table. " +
+          "See https://docs.delta.io/delta-deletion-vectors/#apply-changes-to-parquet-data-files " +
+          "for more details about how to apply delete changes to physical files.")
+        false
+      } else {
+        fmt.optimizationsEnabled
+      }
+      GpuDelta40xParquetFileFormat(
+        protocol = fmt.protocol,
+        metadata = fmt.metadata,
+        nullableRowTrackingFields = false,
+        optimizationsEnabled = optimizationsEnabled,
+        tablePath = fmt.tablePath,
+        isCDCRead = fmt.isCDCRead)
     }
-    GpuDelta40xParquetFileFormat(
-      protocol = fmt.protocol,
-      metadata = fmt.metadata,
-      nullableRowTrackingFields = false,
-      optimizationsEnabled = optimizationsEnabled,
-      tablePath = fmt.tablePath,
-      isCDCRead = fmt.isCDCRead)
   }
 
   override def convertToGpu(

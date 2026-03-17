@@ -14,7 +14,8 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
+from asserts import assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
+from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import get_full_table_name
 from marks import allow_non_gpu, iceberg, ignore_order
@@ -572,6 +573,36 @@ def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_ty
         lambda spark : spark.sql("SELECT *, input_file_name() FROM {}".format(table)),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.skipif(not is_iceberg_remote_catalog(), reason="Filecache is only meaningful with remote storage, skipping for local Hadoop filesystem")
+def test_iceberg_read_with_filecache(spark_tmp_table_factory, reader_type):
+    """Create a table on CPU, read it twice on GPU with file cache enabled,
+    and verify both reads match the CPU result."""
+    filecache_enabled = with_gpu_session(
+        lambda spark: spark.conf.get("spark.rapids.filecache.enabled", "false"))
+    assert filecache_enabled == "true", \
+        "spark.rapids.filecache.enabled must be set to true to run this test"
+    table = get_full_table_name(spark_tmp_table_factory)
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql(f"CREATE TABLE {table} USING ICEBERG AS SELECT * FROM {tmpview}")
+    with_cpu_session(setup_iceberg_table)
+    query = f"SELECT * FROM {table}"
+    cpu_result = with_cpu_session(lambda spark: spark.sql(query).collect())
+    # Note: spark.rapids.filecache.enabled is a startup-only config, so it must
+    # be set via PYSP_TEST_spark_rapids_filecache_enabled env var, not here.
+    filecache_conf = {
+        'spark.rapids.sql.format.parquet.reader.type': reader_type,
+    }
+    gpu_result_1 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
+    gpu_result_2 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
+    assert_equal_with_local_sort(cpu_result, gpu_result_1)
+    assert_equal_with_local_sort(cpu_result, gpu_result_2)
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering

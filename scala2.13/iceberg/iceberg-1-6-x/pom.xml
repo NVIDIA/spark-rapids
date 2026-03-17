@@ -53,6 +53,8 @@
         <dependency>
             <groupId>org.apache.iceberg</groupId>
             <artifactId>iceberg-spark-runtime-${iceberg.artifact.suffix}_${scala.binary.version}</artifactId>
+            <version>${iceberg.16x.version}</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 

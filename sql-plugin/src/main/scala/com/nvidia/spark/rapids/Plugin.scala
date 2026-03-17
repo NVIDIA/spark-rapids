@@ -34,7 +34,7 @@ import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.io.async.TrafficController
-import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, RmmSpark, TaskPriority}
+import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, Hash, JSONUtils, RmmSpark, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import org.apache.commons.lang3.exception.ExceptionUtils
 
@@ -46,7 +46,7 @@ import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.internal.StaticSQLConf
-import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleCleanupListener}
+import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleCleanupListener, XxHash64Utils}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class PluginException(msg: String) extends RuntimeException(msg)
@@ -627,6 +627,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
       // plugin expects. If there is a version mismatch, throw error. This check can be disabled
       // by setting this config spark.rapids.cudfVersionOverride=true
       checkCudfVersion(conf)
+      checkJniConstants()
 
       // Validate driver and executor time zone are same if the driver time zone is supported by
       // the plugin.
@@ -744,6 +745,15 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         logWarning(s"Ignoring error due to ${RapidsConf.CUDF_VERSION_OVERRIDE.key}=true: " +
             s"${x.getMessage}")
     }
+  }
+
+  private def checkJniConstants(): Unit = {
+    require(XxHash64Utils.MAX_STACK_DEPTH == Hash.MAX_STACK_DEPTH,
+      s"XxHash64Utils.MAX_STACK_DEPTH (${XxHash64Utils.MAX_STACK_DEPTH}) != " +
+        s"Hash.MAX_STACK_DEPTH (${Hash.MAX_STACK_DEPTH})")
+    require(JsonPathParser.MAX_PATH_DEPTH == JSONUtils.MAX_PATH_DEPTH,
+      s"JsonPathParser.MAX_PATH_DEPTH (${JsonPathParser.MAX_PATH_DEPTH}) != " +
+        s"JSONUtils.MAX_PATH_DEPTH (${JSONUtils.MAX_PATH_DEPTH})")
   }
 
   // Wait for command spawned via Process

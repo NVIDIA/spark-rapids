@@ -18,7 +18,7 @@ from pyspark import BarrierTaskContext, TaskContext
 from conftest import is_at_least_precommit_run, is_databricks_runtime
 from spark_session import (is_before_spark_330, is_before_spark_331, is_before_spark_350,
                            is_databricks133_or_later, is_databricks143_or_later,
-                           is_spark_400_or_later)
+                           is_spark_400_or_later, is_spark_411_or_later)
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -51,7 +51,9 @@ arrow_udf_conf = {
     'spark.rapids.sql.exec.WindowInPandasExec': 'true',
     # ArrowWindowPythonExec is the new name for WindowInPandasExec in Spark 4.1+
     'spark.rapids.sql.exec.ArrowWindowPythonExec': 'true',
-    'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true'
+    'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true',
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    'spark.sql.adaptive.enabled': 'false'
 }
 
 # From Spark 41x, Spark uses stricter checker by default,
@@ -520,3 +522,23 @@ def test_pandas_math_udf_with_rand():
         lambda spark: unary_op_df(spark, int_gen, length=10, num_slices=1).select(
             my_udf(f.rand(42))),
         conf=arrow_udf_conf_unsafe)
+
+
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_spark_411_or_later(),
+                    reason='iterator.DataFrame in group-map is supported from 4.1.X')
+def test_apply_in_pandas_iterator_basic():
+    # group_map udf accepts an iterator and returns an iterator
+    def sum_udf(batches: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
+        total = 0
+        for batch in batches:
+            total += batch["v"].sum()
+        yield pd.DataFrame({"v": [total]})
+
+    def test_func(spark):
+        df = spark.createDataFrame(
+            [(1, 11), (1, 22), (2, 33), (2, 55), (2, 100)], ("id", "v")
+        )
+        return df.groupby("id").applyInPandas(sum_udf, schema="v long")
+
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=arrow_udf_conf_unsafe)
