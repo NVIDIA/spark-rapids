@@ -21,13 +21,20 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error
 from data_gen import (
     BooleanGen, IntegerGen, LongGen, FloatGen, DoubleGen, StringGen, BinaryGen,
-    ProtobufMessageGen, PbScalar, PbNested, PbRepeated, PbRepeatedMessage,
-    encode_pb_message, gen_df, idfn, _encode_protobuf_packed_repeated
+    pb, encode_pb_message, gen_df, idfn, _encode_protobuf_packed_repeated
 )
 from marks import ignore_order
 from spark_session import with_cpu_session, is_before_spark_340
 import pyspark.sql.functions as f
-from pyspark.sql.types import IntegerType, LongType
+from pyspark.sql.types import (
+    BinaryType,
+    BooleanType,
+    DoubleType,
+    FloatType,
+    IntegerType,
+    LongType,
+    StringType,
+)
 
 _protobuf_jars_available = os.environ.get('PROTOBUF_JARS_AVAILABLE', 'true').lower() != 'false'
 
@@ -41,28 +48,81 @@ _xfail_gpu_protobuf = pytest.mark.xfail(
 )
 
 
+def _scalar(name, field_number, gen, encoding='default', default=None):
+    spark_type = gen.data_type
+    if isinstance(spark_type, BooleanType):
+        return pb.bool(name, field_number, gen=gen, default=default)
+    if isinstance(spark_type, IntegerType):
+        if encoding == 'fixed':
+            return pb.fixed32(name, field_number, gen=gen, default=default)
+        if encoding == 'zigzag':
+            return pb.sint32(name, field_number, gen=gen, default=default)
+        return pb.int32(name, field_number, gen=gen, default=default)
+    if isinstance(spark_type, LongType):
+        if encoding == 'fixed':
+            return pb.fixed64(name, field_number, gen=gen, default=default)
+        if encoding == 'zigzag':
+            return pb.sint64(name, field_number, gen=gen, default=default)
+        return pb.int64(name, field_number, gen=gen, default=default)
+    if isinstance(spark_type, FloatType):
+        return pb.float(name, field_number, gen=gen, default=default)
+    if isinstance(spark_type, DoubleType):
+        return pb.double(name, field_number, gen=gen, default=default)
+    if isinstance(spark_type, StringType):
+        return pb.string(name, field_number, gen=gen, default=default)
+    if isinstance(spark_type, BinaryType):
+        return pb.bytes(name, field_number, gen=gen, default=default)
+    raise ValueError(f"Unsupported DataGen for protobuf scalar: {spark_type}")
+
+
+def _nested(name, field_number, children):
+    return pb.nested(name, field_number, children)
+
+
+def _repeated(name, field_number, element_gen, packed=False,
+              encoding='default', min_len=0, max_len=5):
+    return pb.repeated(
+        _scalar(name, field_number, element_gen, encoding=encoding),
+        min_len=min_len,
+        max_len=max_len,
+        packed=packed)
+
+
+def _repeated_message(name, field_number, children, min_len=0, max_len=5):
+    return pb.repeated_message(
+        name, field_number, children, min_len=min_len, max_len=max_len)
+
+
+def _schema(name, fields):
+    return pb.message(name, fields)
+
+
+def _as_datagen(fields, binary_col_name="bin", schema_name="Generated"):
+    return _schema(schema_name, fields).as_datagen(binary_col_name=binary_col_name)
+
+
 # Random data generation configurations for simple scalars
 _random_scalar_test_configs = [
     # (test_id, data_gen_config)
     ("all_types", [
-        PbScalar("b", 1, BooleanGen()),
-        PbScalar("i32", 2, IntegerGen()),
-        PbScalar("i64", 3, LongGen()),
-        PbScalar("f32", 4, FloatGen()),
-        PbScalar("f64", 5, DoubleGen()),
-        PbScalar("s", 6, StringGen()),
+        _scalar("b", 1, BooleanGen()),
+        _scalar("i32", 2, IntegerGen()),
+        _scalar("i64", 3, LongGen()),
+        _scalar("f32", 4, FloatGen()),
+        _scalar("f64", 5, DoubleGen()),
+        _scalar("s", 6, StringGen()),
     ]),
     ("integers_edge_cases", [
-        PbScalar("b", 1, BooleanGen()),
-        PbScalar("i32", 2, IntegerGen(
+        _scalar("b", 1, BooleanGen()),
+        _scalar("i32", 2, IntegerGen(
             min_val=-2147483648, max_val=2147483647,
             special_cases=[-2147483648, -1, 0, 1, 2147483647])),
-        PbScalar("i64", 3, LongGen(
+        _scalar("i64", 3, LongGen(
             min_val=-9223372036854775808, max_val=9223372036854775807,
             special_cases=[-9223372036854775808, -1, 0, 1, 9223372036854775807])),
-        PbScalar("f32", 4, FloatGen()),
-        PbScalar("f64", 5, DoubleGen()),
-        PbScalar("s", 6, StringGen()),
+        _scalar("f32", 4, FloatGen()),
+        _scalar("f64", 5, DoubleGen()),
+        _scalar("s", 6, StringGen()),
     ]),
 ]
 
@@ -326,13 +386,13 @@ def test_from_protobuf_simple_parquet_binary_round_trip(spark_tmp_path, from_pro
         spark_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
 
     # Build a DF with scalar columns + binary protobuf column and write to parquet
-    row_gen = ProtobufMessageGen([
-        PbScalar("b", 1, BooleanGen(nullable=True)),
-        PbScalar("i32", 2, IntegerGen(nullable=True, min_val=0, max_val=1 << 20)),
-        PbScalar("i64", 3, LongGen(nullable=True, min_val=0, max_val=1 << 40, special_cases=[])),
-        PbScalar("f32", 4, FloatGen(nullable=True, no_nans=True)),
-        PbScalar("f64", 5, DoubleGen(nullable=True, no_nans=True)),
-        PbScalar("s", 6, StringGen(nullable=True)),
+    row_gen = _as_datagen([
+        _scalar("b", 1, BooleanGen(nullable=True)),
+        _scalar("i32", 2, IntegerGen(nullable=True, min_val=0, max_val=1 << 20)),
+        _scalar("i64", 3, LongGen(nullable=True, min_val=0, max_val=1 << 40, special_cases=[])),
+        _scalar("f32", 4, FloatGen(nullable=True, no_nans=True)),
+        _scalar("f64", 5, DoubleGen(nullable=True, no_nans=True)),
+        _scalar("s", 6, StringGen(nullable=True)),
     ], binary_col_name="bin")
 
     def write_parquet(spark):
@@ -395,189 +455,189 @@ def _build_main_log_record_fields():
     u64 = lambda: LongGen(min_val=0, max_val=(1 << 50))
 
     type_a_query_schema = [
-        PbScalar("keyword", 1, StringGen()),
-        PbScalar("session_id", 2, StringGen()),
+        _scalar("keyword", 1, StringGen()),
+        _scalar("session_id", 2, StringGen()),
     ]
     type_a_pair_schema = [
-        PbScalar("record_id", 1, StringGen()),
-        PbScalar("item_id", 2, StringGen()),
+        _scalar("record_id", 1, StringGen()),
+        _scalar("item_id", 2, StringGen()),
     ]
     schema_type_a = [
-        PbNested("query_schema", 1, type_a_query_schema),
-        PbRepeatedMessage("pair_schema", 2, type_a_pair_schema, min_len=0, max_len=3),
+        _nested("query_schema", 1, type_a_query_schema),
+        _repeated_message("pair_schema", 2, type_a_pair_schema, min_len=0, max_len=3),
     ]
 
     type_b_query_schema = [
-        PbScalar("profile_tag_id", 1, StringGen()),
-        PbScalar("entity_id", 2, StringGen()),
+        _scalar("profile_tag_id", 1, StringGen()),
+        _scalar("entity_id", 2, StringGen()),
     ]
     type_b_style_elem = [
-        PbScalar("template_id", 1, StringGen()),
-        PbScalar("material_id", 2, StringGen()),
+        _scalar("template_id", 1, StringGen()),
+        _scalar("material_id", 2, StringGen()),
     ]
     type_b_style_schema = [
-        PbRepeatedMessage("values", 1, type_b_style_elem, min_len=0, max_len=3),
+        _repeated_message("values", 1, type_b_style_elem, min_len=0, max_len=3),
     ]
     schema_type_b = [
-        PbNested("query_schema", 1, type_b_query_schema),
-        PbRepeatedMessage("style_schema", 2, type_b_style_schema, min_len=0, max_len=3),
+        _nested("query_schema", 1, type_b_query_schema),
+        _repeated_message("style_schema", 2, type_b_style_schema, min_len=0, max_len=3),
     ]
 
     type_c_query_schema = [
-        PbScalar("keyword", 1, StringGen()),
-        PbScalar("category", 2, StringGen()),
+        _scalar("keyword", 1, StringGen()),
+        _scalar("category", 2, StringGen()),
     ]
     type_c_pair_schema = [
-        PbScalar("item_id", 1, StringGen()),
-        PbScalar("target_url", 2, StringGen()),
+        _scalar("item_id", 1, StringGen()),
+        _scalar("target_url", 2, StringGen()),
     ]
     type_c_style_schema = [
-        PbRepeatedMessage("values", 1, [], min_len=0, max_len=3),
+        _repeated_message("values", 1, [], min_len=0, max_len=3),
     ]
     schema_type_c = [
-        PbNested("query_schema", 1, type_c_query_schema),
-        PbRepeatedMessage("pair_schema", 2, type_c_pair_schema, min_len=0, max_len=3),
-        PbRepeatedMessage("style_schema", 3, type_c_style_schema, min_len=0, max_len=3),
+        _nested("query_schema", 1, type_c_query_schema),
+        _repeated_message("pair_schema", 2, type_c_pair_schema, min_len=0, max_len=3),
+        _repeated_message("style_schema", 3, type_c_style_schema, min_len=0, max_len=3),
     ]
     predictor_schema = [
-        PbNested("type_a_schema", 1, schema_type_a),
-        PbNested("type_b_schema", 2, schema_type_b),
-        PbNested("type_c_schema", 3, schema_type_c),
+        _nested("type_a_schema", 1, schema_type_a),
+        _nested("type_b_schema", 2, schema_type_b),
+        _nested("type_c_schema", 3, schema_type_c),
     ]
 
     device_req_field = [
-        PbScalar("os_type", 1, IntegerGen()),
-        PbScalar("device_id", 2, BinaryGen(min_length=0, max_length=16)),
+        _scalar("os_type", 1, IntegerGen()),
+        _scalar("device_id", 2, BinaryGen(min_length=0, max_length=16)),
     ]
     partner_info = [
-        PbScalar("token", 1, StringGen()),
-        PbScalar("partner_id", 2, u64()),
+        _scalar("token", 1, StringGen()),
+        _scalar("partner_id", 2, u64()),
     ]
     coordinate = [
-        PbScalar("x", 1, DoubleGen()),
-        PbScalar("y", 2, DoubleGen()),
+        _scalar("x", 1, DoubleGen()),
+        _scalar("y", 2, DoubleGen()),
     ]
     location_point = [
-        PbScalar("frequency", 1, u32()),
-        PbNested("coord", 2, coordinate),
-        PbScalar("timestamp", 3, u64()),
+        _scalar("frequency", 1, u32()),
+        _nested("coord", 2, coordinate),
+        _scalar("timestamp", 3, u64()),
     ]
     change_log = [
-        PbScalar("value_before", 1, u32()),
-        PbScalar("parameters", 2, StringGen()),
+        _scalar("value_before", 1, u32()),
+        _scalar("parameters", 2, StringGen()),
     ]
     kv_pair = [
-        PbScalar("key", 1, BinaryGen(min_length=0, max_length=16)),
-        PbScalar("value", 2, BinaryGen(min_length=0, max_length=16)),
+        _scalar("key", 1, BinaryGen(min_length=0, max_length=16)),
+        _scalar("value", 2, BinaryGen(min_length=0, max_length=16)),
     ]
     style_config = [
-        PbScalar("style_id", 1, u32()),
-        PbRepeatedMessage("kv_pairs", 2, kv_pair, min_len=0, max_len=3),
+        _scalar("style_id", 1, u32()),
+        _repeated_message("kv_pairs", 2, kv_pair, min_len=0, max_len=3),
     ]
     module_a_res = [
-        PbScalar("route_tag", 1, StringGen()),
-        PbScalar("status_tag", 2, IntegerGen()),
-        PbScalar("region_id", 3, u32()),
-        PbRepeated("experiment_ids", 4, StringGen(), packed=False, min_len=0, max_len=3),
-        PbScalar("quality_score", 5, DoubleGen()),
-        PbRepeatedMessage("location_points", 6, location_point, min_len=0, max_len=3),
-        PbRepeated("interest_ids", 7, u64(), packed=False, min_len=0, max_len=3),
+        _scalar("route_tag", 1, StringGen()),
+        _scalar("status_tag", 2, IntegerGen()),
+        _scalar("region_id", 3, u32()),
+        _repeated("experiment_ids", 4, StringGen(), packed=False, min_len=0, max_len=3),
+        _scalar("quality_score", 5, DoubleGen()),
+        _repeated_message("location_points", 6, location_point, min_len=0, max_len=3),
+        _repeated("interest_ids", 7, u64(), packed=False, min_len=0, max_len=3),
     ]
     module_a_src_res = [
-        PbScalar("match_type", 1, u32()),
+        _scalar("match_type", 1, u32()),
     ]
     module_a_detail = [
-        PbScalar("type_code", 1, u32()),
-        PbScalar("item_id", 2, u64()),
-        PbScalar("strategy_type", 3, IntegerGen()),
-        PbScalar("min_value", 4, LongGen()),
-        PbScalar("target_url", 5, BinaryGen(min_length=0, max_length=24)),
-        PbScalar("title", 6, StringGen()),
-        PbScalar("is_valid", 7, BooleanGen()),
-        PbScalar("score_ratio", 8, FloatGen()),
-        PbRepeated("template_ids", 9, u32(), packed=False, min_len=0, max_len=3),
-        PbRepeated("material_ids", 10, u64(), packed=False, min_len=0, max_len=3),
-        PbRepeatedMessage("styles", 11, style_config, min_len=0, max_len=3),
-        PbRepeatedMessage("change_logs", 12, change_log, min_len=0, max_len=3),
-        PbNested("partner_info", 13, partner_info),
-        PbNested("predictor_schema", 14, predictor_schema),
+        _scalar("type_code", 1, u32()),
+        _scalar("item_id", 2, u64()),
+        _scalar("strategy_type", 3, IntegerGen()),
+        _scalar("min_value", 4, LongGen()),
+        _scalar("target_url", 5, BinaryGen(min_length=0, max_length=24)),
+        _scalar("title", 6, StringGen()),
+        _scalar("is_valid", 7, BooleanGen()),
+        _scalar("score_ratio", 8, FloatGen()),
+        _repeated("template_ids", 9, u32(), packed=False, min_len=0, max_len=3),
+        _repeated("material_ids", 10, u64(), packed=False, min_len=0, max_len=3),
+        _repeated_message("styles", 11, style_config, min_len=0, max_len=3),
+        _repeated_message("change_logs", 12, change_log, min_len=0, max_len=3),
+        _nested("partner_info", 13, partner_info),
+        _nested("predictor_schema", 14, predictor_schema),
     ]
 
     block_element = [
-        PbScalar("element_id", 1, u64()),
-        PbRepeated("ref_ids", 2, u64(), packed=False, min_len=0, max_len=3),
+        _scalar("element_id", 1, u64()),
+        _repeated("ref_ids", 2, u64(), packed=False, min_len=0, max_len=3),
     ]
     block_info = [
-        PbScalar("block_id", 1, u64()),
-        PbRepeatedMessage("elements", 2, block_element, min_len=0, max_len=3),
+        _scalar("block_id", 1, u64()),
+        _repeated_message("elements", 2, block_element, min_len=0, max_len=3),
     ]
     module_b_detail = [
-        PbRepeated("tags", 1, u32(), packed=False, min_len=0, max_len=3),
-        PbScalar("item_id", 2, u64()),
-        PbScalar("name", 3, StringGen()),
-        PbRepeatedMessage("blocks", 4, block_info, min_len=0, max_len=3),
+        _repeated("tags", 1, u32(), packed=False, min_len=0, max_len=3),
+        _scalar("item_id", 2, u64()),
+        _scalar("name", 3, StringGen()),
+        _repeated_message("blocks", 4, block_info, min_len=0, max_len=3),
     ]
 
     request_info = [
-        PbScalar("page_num", 1, u32()),
-        PbScalar("channel_code", 2, StringGen()),
-        PbRepeated("experiment_ids", 3, u32(), packed=False, min_len=0, max_len=3),
-        PbScalar("is_filtered", 4, BooleanGen()),
+        _scalar("page_num", 1, u32()),
+        _scalar("channel_code", 2, StringGen()),
+        _repeated("experiment_ids", 3, u32(), packed=False, min_len=0, max_len=3),
+        _scalar("is_filtered", 4, BooleanGen()),
     ]
     extended_req_info = [
-        PbNested("device_req_field", 1, device_req_field),
+        _nested("device_req_field", 1, device_req_field),
     ]
     server_added_field = [
-        PbScalar("region_code", 1, u32()),
-        PbScalar("flow_type", 2, StringGen()),
-        PbScalar("filter_result", 3, IntegerGen()),
-        PbRepeated("hit_rule_list", 4, IntegerGen(), packed=False, min_len=0, max_len=3),
-        PbScalar("request_time", 5, u64()),
-        PbScalar("skip_flag", 6, BooleanGen()),
+        _scalar("region_code", 1, u32()),
+        _scalar("flow_type", 2, StringGen()),
+        _scalar("filter_result", 3, IntegerGen()),
+        _repeated("hit_rule_list", 4, IntegerGen(), packed=False, min_len=0, max_len=3),
+        _scalar("request_time", 5, u64()),
+        _scalar("skip_flag", 6, BooleanGen()),
     ]
     basic_info = [
-        PbNested("request_info", 1, request_info),
-        PbNested("extended_req_info", 2, extended_req_info),
-        PbNested("server_added_field", 3, server_added_field),
+        _nested("request_info", 1, request_info),
+        _nested("extended_req_info", 2, extended_req_info),
+        _nested("server_added_field", 3, server_added_field),
     ]
 
     channel_info = [
-        PbScalar("channel_id", 1, IntegerGen()),
-        PbNested("module_a_res", 2, module_a_res),
+        _scalar("channel_id", 1, IntegerGen()),
+        _nested("module_a_res", 2, module_a_res),
     ]
     src_channel_info = [
-        PbScalar("channel_id", 1, IntegerGen()),
-        PbNested("module_a_src_res", 2, module_a_src_res),
+        _scalar("channel_id", 1, IntegerGen()),
+        _nested("module_a_src_res", 2, module_a_src_res),
     ]
     item_detail_field = [
-        PbScalar("rank", 1, u32()),
-        PbScalar("record_id", 2, u64()),
-        PbScalar("keyword", 3, StringGen()),
-        PbNested("module_a_detail", 4, module_a_detail),
-        PbNested("module_b_detail", 5, module_b_detail),
+        _scalar("rank", 1, u32()),
+        _scalar("record_id", 2, u64()),
+        _scalar("keyword", 3, StringGen()),
+        _nested("module_a_detail", 4, module_a_detail),
+        _nested("module_b_detail", 5, module_b_detail),
     ]
     data_source_field = [
-        PbScalar("source_id", 1, u32()),
-        PbRepeatedMessage("src_channel_list", 2, src_channel_info, min_len=0, max_len=3),
-        PbScalar("billing_name", 3, StringGen()),
-        PbRepeatedMessage("item_list", 4, item_detail_field, min_len=0, max_len=3),
-        PbScalar("is_free", 5, BooleanGen()),
+        _scalar("source_id", 1, u32()),
+        _repeated_message("src_channel_list", 2, src_channel_info, min_len=0, max_len=3),
+        _scalar("billing_name", 3, StringGen()),
+        _repeated_message("item_list", 4, item_detail_field, min_len=0, max_len=3),
+        _scalar("is_free", 5, BooleanGen()),
     ]
     log_content = [
-        PbNested("basic_info", 1, basic_info),
-        PbRepeatedMessage("channel_list", 2, channel_info, min_len=0, max_len=3),
-        PbRepeatedMessage("source_list", 3, data_source_field, min_len=0, max_len=3),
+        _nested("basic_info", 1, basic_info),
+        _repeated_message("channel_list", 2, channel_info, min_len=0, max_len=3),
+        _repeated_message("source_list", 3, data_source_field, min_len=0, max_len=3),
     ]
 
     return [
-        PbScalar(
+        _scalar(
             "source", 1,
             IntegerGen(min_val=0, max_val=1, nullable=False, special_cases=[4])),
-        PbScalar("timestamp", 2, LongGen(min_val=0, max_val=(1 << 50), nullable=False)),
-        PbScalar("user_id", 3, StringGen()),
-        PbScalar("account_id", 4, LongGen()),
-        PbScalar("client_ip", 5, IntegerGen(min_val=0, max_val=0x7FFFFFFF), encoding='fixed'),
-        PbNested("log_content", 6, log_content),
+        _scalar("timestamp", 2, LongGen(min_val=0, max_val=(1 << 50), nullable=False)),
+        _scalar("user_id", 3, StringGen()),
+        _scalar("account_id", 4, LongGen()),
+        _scalar("client_ip", 5, IntegerGen(min_val=0, max_val=0x7FFFFFFF), encoding='fixed'),
+        _nested("log_content", 6, log_content),
     ]
 
 
@@ -595,7 +655,7 @@ def test_from_protobuf_customer_heavy_nested_proto(spark_tmp_path, from_protobuf
     with_cpu_session(lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
 
     message_name = "com.test.proto.sample.MainLogRecord"
-    data_gen = ProtobufMessageGen(_build_main_log_record_fields())
+    data_gen = _as_datagen(_build_main_log_record_fields())
 
     def run_on_spark(spark):
         generated = gen_df(spark, data_gen).select("bin")
@@ -634,10 +694,10 @@ def test_from_protobuf_schema_projection_simple_fields_only(spark_tmp_path, from
         spark_tmp_path, "nested.desc", _build_nested_descriptor_set_bytes)
     message_name = "test.WithNested"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("simple_int", 1, IntegerGen()),
-        PbScalar("simple_str", 2, StringGen()),
-        PbScalar("simple_long", 4, LongGen()),
+    data_gen = _as_datagen([
+        _scalar("simple_int", 1, IntegerGen()),
+        _scalar("simple_str", 2, StringGen()),
+        _scalar("simple_long", 4, LongGen()),
     ])
 
     def run_on_spark(spark):
@@ -698,42 +758,45 @@ def test_from_protobuf_enum_cases(spark_tmp_path, from_protobuf_fn, enum_case):
     desc_path, desc_bytes = _setup_protobuf_desc(
         spark_tmp_path, "enum.desc", _build_enum_descriptor_set_bytes)
     message_name = "test.WithEnum"
-
-    _ef_full = [
-        PbScalar("color", 1, IntegerGen()),
-        PbScalar("count", 2, IntegerGen()),
-        PbScalar("name", 3, StringGen()),
-    ]
-    _ef_partial = [PbScalar("color", 1, IntegerGen()), PbScalar("count", 2, IntegerGen())]
+    color_enum = pb.enum_type("Color", [("RED", 0), ("GREEN", 1), ("BLUE", 2)])
+    full_schema = _schema("WithEnumManual", [
+        pb.enum_field("color", 1, color_enum),
+        _scalar("count", 2, IntegerGen()),
+        _scalar("name", 3, StringGen()),
+    ])
+    partial_schema = _schema("WithEnumManualPartial", [
+        pb.enum_field("color", 1, color_enum),
+        _scalar("count", 2, IntegerGen()),
+    ])
 
     if enum_case == "as_int":
         rows = [
-            (encode_pb_message(_ef_full, [1, 42, "test"]),),
-            (encode_pb_message(_ef_full, [0, 100, None]),),
-            (encode_pb_message(_ef_full, [None, 200, "hello"]),),
+            (encode_pb_message(full_schema, {"color": 1, "count": 42, "name": "test"}),),
+            (encode_pb_message(full_schema, {"color": 0, "count": 100}),),
+            (encode_pb_message(full_schema, {"count": 200, "name": "hello"}),),
             (None,),
         ]
         options = {"enums.as.ints": "true"}
         select_mode = "fields3"
     elif enum_case == "unknown_as_int":
-        rows = [(encode_pb_message(_ef_partial, [999, 42]),)]
+        rows = [(encode_pb_message(partial_schema, {"color": 999, "count": 42}),)]
         options = {"enums.as.ints": "true", "mode": "PERMISSIVE"}
         select_mode = "fields2"
     elif enum_case == "as_string":
         rows = [
-            (encode_pb_message(_ef_full, [1, 42, "test"]),),
-            (encode_pb_message(_ef_full, [0, 100, None]),),
-            (encode_pb_message(_ef_full, [2, 200, "hello"]),),
-            (encode_pb_message(_ef_full, [None, 300, "world"]),),
+            (encode_pb_message(full_schema, {"color": 1, "count": 42, "name": "test"}),),
+            (encode_pb_message(full_schema, {"color": 0, "count": 100}),),
+            (encode_pb_message(full_schema, {"color": 2, "count": 200, "name": "hello"}),),
+            (encode_pb_message(full_schema, {"count": 300, "name": "world"}),),
             (None,),
         ]
         options = None
         select_mode = "fields3"
     else:
         rows = [
-            (encode_pb_message(_ef_partial, [1, 10]),),
-            (encode_pb_message(_ef_partial, [999, 20]),),
-            (encode_pb_message(_ef_partial, [2, 30]),),
+            (encode_pb_message(partial_schema, {"color": 1, "count": 10}),),
+            (encode_pb_message(partial_schema, {"color": 999, "count": 20}),),
+            (encode_pb_message(partial_schema, {"color": 2, "count": 30}),),
         ]
         options = {"mode": "PERMISSIVE"}
         select_mode = "decoded"
@@ -770,19 +833,19 @@ def test_from_protobuf_nested_enum_permissive_invalid_row_null(spark_tmp_path, f
     desc_path, desc_bytes = _setup_protobuf_desc(
         spark_tmp_path, "nested_enum.desc", _build_nested_enum_descriptor_set_bytes)
     message_name = "test.WithNestedEnum"
-
-    fields = [
-        PbScalar("id", 1, IntegerGen()),
-        PbNested("detail", 2, [
-            PbScalar("status", 1, IntegerGen()),
-            PbScalar("count", 2, IntegerGen()),
+    status_enum = pb.enum_type("Status", [("UNKNOWN", 0), ("OK", 1), ("BAD", 2)])
+    schema = _schema("WithNestedEnumManual", [
+        _scalar("id", 1, IntegerGen()),
+        _nested("detail", 2, [
+            pb.enum_field("status", 1, status_enum),
+            _scalar("count", 2, IntegerGen()),
         ]),
-        PbScalar("name", 3, StringGen(nullable=True)),
-    ]
+        _scalar("name", 3, StringGen(nullable=True)),
+    ])
     rows = [
-        (0, encode_pb_message(fields, [1, (1, 10), "ok"])),       # status=OK
-        (1, encode_pb_message(fields, [2, (2, 20), "bad"])),      # status=BAD
-        (2, encode_pb_message(fields, [3, (None, 30), "none"])),  # missing enum
+        (0, encode_pb_message(schema, {"id": 1, "detail": {"status": 1, "count": 10}, "name": "ok"})),
+        (1, encode_pb_message(schema, {"id": 2, "detail": {"status": 2, "count": 20}, "name": "bad"})),
+        (2, encode_pb_message(schema, {"id": 3, "detail": {"count": 30}, "name": "none"})),
         (3, None),
     ]
 
@@ -1204,13 +1267,13 @@ def test_from_protobuf_required_field_present(spark_tmp_path, from_protobuf_fn):
     # Create test data with required field present
     # Row 0: id=100, name="test", count=42
     # Row 1: id=200, name missing, count missing
-    _rf = [
-        PbScalar("id", 1, LongGen()),
-        PbScalar("name", 2, StringGen()),
-        PbScalar("count", 3, IntegerGen()),
-    ]
-    test_data_row0 = encode_pb_message(_rf, [100, "test", 42])
-    test_data_row1 = encode_pb_message(_rf, [200, None, None])
+    required_schema = _schema("WithRequiredManual", [
+        _scalar("id", 1, LongGen()),
+        _scalar("name", 2, StringGen()),
+        _scalar("count", 3, IntegerGen()),
+    ])
+    test_data_row0 = encode_pb_message(required_schema, {"id": 100, "name": "test", "count": 42})
+    test_data_row1 = encode_pb_message(required_schema, {"id": 200})
 
     def run_on_spark(spark):
         df = spark.createDataFrame(
@@ -1344,23 +1407,23 @@ def test_from_protobuf_default_values_cases(spark_tmp_path, from_protobuf_fn, de
         spark_tmp_path, "defaults.desc", _build_default_value_descriptor_set_bytes)
     message_name = "test.WithDefaults"
 
-    _df = [
-        PbScalar("count", 1, IntegerGen()),
-        PbScalar("name", 2, StringGen()),
-        PbScalar("flag", 3, BooleanGen()),
-    ]
+    defaults_schema = _schema("WithDefaultsManual", [
+        _scalar("count", 1, IntegerGen(), default=42),
+        _scalar("name", 2, StringGen(), default="unknown"),
+        _scalar("flag", 3, BooleanGen(), default=True),
+    ])
 
     if default_case == "field_present":
-        rows = [(encode_pb_message(_df, [100, "test", False]),)]
+        rows = [(encode_pb_message(defaults_schema, {"count": 100, "name": "test", "flag": False}),)]
         select_mode = "all"
     elif default_case == "missing_fields":
         rows = [
-            (encode_pb_message(_df, [None, None, None]),),
-            (encode_pb_message(_df, [100, None, None]),),
+            (encode_pb_message(defaults_schema, {}),),
+            (encode_pb_message(defaults_schema, {"count": 100}),),
         ]
         select_mode = "all"
     else:
-        rows = [(encode_pb_message(_df, [42, None, True]),)]
+        rows = [(encode_pb_message(defaults_schema, {"count": 42, "flag": True}),)]
         select_mode = "name_only"
 
     def run_on_spark(spark):
@@ -1422,7 +1485,7 @@ def test_from_protobuf_random_scalars(spark_tmp_path, from_protobuf_fn, test_con
         spark_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
     message_name = "test.Simple"
 
-    data_gen = ProtobufMessageGen(field_configs)
+    data_gen = _as_datagen(field_configs)
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -1452,21 +1515,21 @@ def test_from_protobuf_all_scalar_types(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "all_scalars.desc", _build_all_scalars_descriptor_set_bytes)
     message_name = "test.AllScalars"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("b", 1, BooleanGen()),
-        PbScalar("i32", 2, IntegerGen()),
-        PbScalar("i64", 3, LongGen()),
-        PbScalar("f32", 4, FloatGen()),
-        PbScalar("f64", 5, DoubleGen()),
-        PbScalar("s", 6, StringGen()),
-        PbScalar("si32", 7, IntegerGen(
+    data_gen = _as_datagen([
+        _scalar("b", 1, BooleanGen()),
+        _scalar("i32", 2, IntegerGen()),
+        _scalar("i64", 3, LongGen()),
+        _scalar("f32", 4, FloatGen()),
+        _scalar("f64", 5, DoubleGen()),
+        _scalar("s", 6, StringGen()),
+        _scalar("si32", 7, IntegerGen(
             special_cases=[-1, 0, 1, -2147483648, 2147483647]), encoding='zigzag'),
-        PbScalar("si64", 8, LongGen(
+        _scalar("si64", 8, LongGen(
             special_cases=[-1, 0, 1, -9223372036854775808, 9223372036854775807]),
             encoding='zigzag'),
-        PbScalar("fx32", 9, IntegerGen(
+        _scalar("fx32", 9, IntegerGen(
             special_cases=[0, 1, -1, 2147483647, -2147483648]), encoding='fixed'),
-        PbScalar("fx64", 10, LongGen(
+        _scalar("fx64", 10, LongGen(
             special_cases=[0, 1, -1]), encoding='fixed'),
     ])
 
@@ -1499,8 +1562,8 @@ def test_from_protobuf_scalar_bytes(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "scalar_bytes.desc", _build_scalar_bytes_descriptor_set_bytes)
     message_name = "test.ScalarBytes"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("payload", 1, BinaryGen(min_length=0, max_length=16)),
+    data_gen = _as_datagen([
+        _scalar("payload", 1, BinaryGen(min_length=0, max_length=16)),
     ])
 
     def run_on_spark(spark):
@@ -1557,9 +1620,9 @@ def test_from_protobuf_repeated_int32(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "repeated_int.desc", _build_repeated_int_descriptor_set_bytes)
     message_name = "test.WithRepeatedInt"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("id", 1, IntegerGen()),
-        PbRepeated("values", 2, IntegerGen(), min_len=0, max_len=10),
+    data_gen = _as_datagen([
+        _scalar("id", 1, IntegerGen()),
+        _repeated("values", 2, IntegerGen(), min_len=0, max_len=10),
     ])
 
     def run_on_spark(spark):
@@ -1595,9 +1658,9 @@ def test_from_protobuf_repeated_string(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "repeated_string.desc", _build_repeated_string_descriptor_set_bytes)
     message_name = "test.WithRepeatedString"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("name", 1, StringGen()),
-        PbRepeated("tags", 2, StringGen(), min_len=0, max_len=5),
+    data_gen = _as_datagen([
+        _scalar("name", 1, StringGen()),
+        _repeated("tags", 2, StringGen(), min_len=0, max_len=5),
     ])
 
     def run_on_spark(spark):
@@ -1623,11 +1686,11 @@ def test_from_protobuf_nested_message(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "nested.desc", _build_nested_descriptor_set_bytes)
     message_name = "test.WithNested"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("simple_int", 1, IntegerGen()),
-        PbScalar("simple_str", 2, StringGen(nullable=True)),
-        PbNested("nested_msg", 3, [PbScalar("x", 1, IntegerGen())]),
-        PbScalar("simple_long", 4, LongGen()),
+    data_gen = _as_datagen([
+        _scalar("simple_int", 1, IntegerGen()),
+        _scalar("simple_str", 2, StringGen(nullable=True)),
+        _nested("nested_msg", 3, [_scalar("x", 1, IntegerGen())]),
+        _scalar("simple_long", 4, LongGen()),
     ])
 
     def run_on_spark(spark):
@@ -1658,11 +1721,11 @@ def test_from_protobuf_nested_message_field_access_with_batch_merge(
         spark_tmp_path, "nested.desc", _build_nested_descriptor_set_bytes)
     message_name = "test.WithNested"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("simple_int", 1, IntegerGen()),
-        PbScalar("simple_str", 2, StringGen(nullable=True)),
-        PbNested("nested_msg", 3, [PbScalar("x", 1, IntegerGen())]),
-        PbScalar("simple_long", 4, LongGen()),
+    data_gen = _as_datagen([
+        _scalar("simple_int", 1, IntegerGen()),
+        _scalar("simple_str", 2, StringGen(nullable=True)),
+        _nested("nested_msg", 3, [_scalar("x", 1, IntegerGen())]),
+        _scalar("simple_long", 4, LongGen()),
     ])
 
     def run_on_spark(spark):
@@ -1705,11 +1768,11 @@ def test_from_protobuf_deep_nested(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "deep_nested.desc", _build_deep_nested_descriptor_set_bytes)
     message_name = "test.Outer"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("id", 1, IntegerGen()),
-        PbNested("middle", 2, [
-            PbScalar("name", 1, StringGen()),
-            PbNested("inner", 2, [PbScalar("value", 1, IntegerGen())]),
+    data_gen = _as_datagen([
+        _scalar("id", 1, IntegerGen()),
+        _nested("middle", 2, [
+            _scalar("name", 1, StringGen()),
+            _nested("inner", 2, [_scalar("value", 1, IntegerGen())]),
         ]),
     ])
 
@@ -1750,11 +1813,11 @@ def test_from_protobuf_repeated_message(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "repeated_message.desc", _build_repeated_message_descriptor_set_bytes)
     message_name = "test.Container"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("title", 1, StringGen()),
-        PbRepeatedMessage("items", 2, [
-            PbScalar("id", 1, IntegerGen()),
-            PbScalar("name", 2, StringGen()),
+    data_gen = _as_datagen([
+        _scalar("title", 1, StringGen()),
+        _repeated_message("items", 2, [
+            _scalar("id", 1, IntegerGen()),
+            _scalar("name", 2, StringGen()),
         ], min_len=0, max_len=5),
     ])
 
@@ -1799,12 +1862,12 @@ def test_from_protobuf_nested_with_repeated(spark_tmp_path, from_protobuf_fn):
         _build_nested_with_repeated_descriptor_set_bytes)
     message_name = "test.OuterWithNestedRepeated"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("id", 1, IntegerGen()),
-        PbNested("nested", 2, [
-            PbScalar("name", 1, StringGen()),
-            PbRepeated("values", 2, IntegerGen(), min_len=0, max_len=5),
-            PbScalar("count", 3, IntegerGen()),
+    data_gen = _as_datagen([
+        _scalar("id", 1, IntegerGen()),
+        _nested("nested", 2, [
+            _scalar("name", 1, StringGen()),
+            _repeated("values", 2, IntegerGen(), min_len=0, max_len=5),
+            _scalar("count", 3, IntegerGen()),
         ]),
     ])
 
@@ -1850,12 +1913,12 @@ def test_from_protobuf_repeated_with_nested(spark_tmp_path, from_protobuf_fn):
         _build_repeated_with_nested_descriptor_set_bytes)
     message_name = "test.ContainerWithNestedItems"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("title", 1, StringGen()),
-        PbRepeatedMessage("items", 2, [
-            PbScalar("id", 1, IntegerGen()),
-            PbNested("inner", 2, [PbScalar("value", 1, IntegerGen())]),
-            PbScalar("name", 3, StringGen()),
+    data_gen = _as_datagen([
+        _scalar("title", 1, StringGen()),
+        _repeated_message("items", 2, [
+            _scalar("id", 1, IntegerGen()),
+            _nested("inner", 2, [_scalar("value", 1, IntegerGen())]),
+            _scalar("name", 3, StringGen()),
         ], min_len=0, max_len=3),
     ])
 
@@ -1894,11 +1957,11 @@ def test_from_protobuf_packed_repeated(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "packed.desc", _build_packed_repeated_descriptor_set_bytes)
     message_name = "test.WithPackedRepeated"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("id", 1, IntegerGen()),
-        PbRepeated("int_values", 2, IntegerGen(), packed=True, min_len=0, max_len=10),
-        PbRepeated("double_values", 3, DoubleGen(), packed=True, min_len=0, max_len=5),
-        PbRepeated("bool_values", 4, BooleanGen(), packed=True, min_len=0, max_len=5),
+    data_gen = _as_datagen([
+        _scalar("id", 1, IntegerGen()),
+        _repeated("int_values", 2, IntegerGen(), packed=True, min_len=0, max_len=10),
+        _repeated("double_values", 3, DoubleGen(), packed=True, min_len=0, max_len=5),
+        _repeated("bool_values", 4, BooleanGen(), packed=True, min_len=0, max_len=5),
     ])
 
     def run_on_spark(spark):
@@ -1938,13 +2001,13 @@ def test_from_protobuf_repeated_all_types(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "repeated_all.desc", _build_repeated_all_types_descriptor_set_bytes)
     message_name = "test.WithRepeatedAllTypes"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("id", 1, IntegerGen()),
-        PbRepeated("long_values", 2, LongGen()),
-        PbRepeated("float_values", 3, FloatGen()),
-        PbRepeated("double_values", 4, DoubleGen()),
-        PbRepeated("bool_values", 5, BooleanGen()),
-        PbRepeated("bytes_values", 6, BinaryGen()),
+    data_gen = _as_datagen([
+        _scalar("id", 1, IntegerGen()),
+        _repeated("long_values", 2, LongGen()),
+        _repeated("float_values", 3, FloatGen()),
+        _repeated("double_values", 4, DoubleGen()),
+        _repeated("bool_values", 5, BooleanGen()),
+        _repeated("bytes_values", 6, BinaryGen()),
     ])
 
     def run_on_spark(spark):
@@ -1975,9 +2038,9 @@ def test_from_protobuf_large_repeated_array(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "repeated_int.desc", _build_repeated_int_descriptor_set_bytes)
     message_name = "test.WithRepeatedInt"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("id", 1, IntegerGen()),
-        PbRepeated("values", 2, IntegerGen(), min_len=500, max_len=1000),
+    data_gen = _as_datagen([
+        _scalar("id", 1, IntegerGen()),
+        _repeated("values", 2, IntegerGen(), min_len=500, max_len=1000),
     ])
 
     def run_on_spark(spark):
@@ -2016,15 +2079,15 @@ def test_from_protobuf_signed_integers(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "signed.desc", _build_signed_int_descriptor_set_bytes)
     message_name = "test.WithSignedInts"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("si32", 1, IntegerGen(
+    data_gen = _as_datagen([
+        _scalar("si32", 1, IntegerGen(
             special_cases=[-1, 0, 1, -2147483648, 2147483647]), encoding='zigzag'),
-        PbScalar("si64", 2, LongGen(
+        _scalar("si64", 2, LongGen(
             special_cases=[-1, 0, 1, -9223372036854775808, 9223372036854775807]),
             encoding='zigzag'),
-        PbScalar("sf32", 3, IntegerGen(
+        _scalar("sf32", 3, IntegerGen(
             special_cases=[0, 1, -1, 2147483647, -2147483648]), encoding='fixed'),
-        PbScalar("sf64", 4, LongGen(
+        _scalar("sf64", 4, LongGen(
             special_cases=[0, 1, -1]), encoding='fixed'),
     ])
 
@@ -2064,10 +2127,10 @@ def test_from_protobuf_fixed_integers(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "fixed.desc", _build_fixed_int_descriptor_set_bytes)
     message_name = "test.WithFixedInts"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("fx32", 1, IntegerGen(
+    data_gen = _as_datagen([
+        _scalar("fx32", 1, IntegerGen(
             special_cases=[0, 1, -1, 2147483647, -2147483648]), encoding='fixed'),
-        PbScalar("fx64", 2, LongGen(
+        _scalar("fx64", 2, LongGen(
             special_cases=[0, 1, -1]), encoding='fixed'),
     ])
 
@@ -2102,24 +2165,41 @@ def _build_schema_projection_descriptor_set_bytes(spark):
 
 # Field descriptors for SchemaProj: {id, name, detail: {a, b, c}, items[]: {a, b, c}}
 _detail_children = [
-    PbScalar("a", 1, IntegerGen()),
-    PbScalar("b", 2, IntegerGen()),
-    PbScalar("c", 3, StringGen()),
+    _scalar("a", 1, IntegerGen()),
+    _scalar("b", 2, IntegerGen()),
+    _scalar("c", 3, StringGen()),
 ]
-_schema_proj_fields = [
-    PbScalar("id", 1, IntegerGen()),
-    PbScalar("name", 2, StringGen()),
-    PbNested("detail", 3, _detail_children),
-    PbRepeatedMessage("items", 4, _detail_children),
-]
+_schema_proj_schema = _schema("SchemaProjManual", [
+    _scalar("id", 1, IntegerGen()),
+    _scalar("name", 2, StringGen()),
+    _nested("detail", 3, _detail_children),
+    _repeated_message("items", 4, _detail_children),
+])
 
 _schema_proj_test_data = [
-    encode_pb_message(_schema_proj_fields,
-                      [1, "alice", (10, 20, "d1"), [(100, 200, "i1"), (101, 201, "i2")]]),
-    encode_pb_message(_schema_proj_fields,
-                      [2, "bob", (30, 40, "d2"), [(300, 400, "i3")]]),
-    encode_pb_message(_schema_proj_fields,
-                      [3, "carol", (50, 60, "d3"), []]),
+    encode_pb_message(_schema_proj_schema, {
+        "id": 1,
+        "name": "alice",
+        "detail": {"a": 10, "b": 20, "c": "d1"},
+        "items": [
+            {"a": 100, "b": 200, "c": "i1"},
+            {"a": 101, "b": 201, "c": "i2"},
+        ],
+    }),
+    encode_pb_message(_schema_proj_schema, {
+        "id": 2,
+        "name": "bob",
+        "detail": {"a": 30, "b": 40, "c": "d2"},
+        "items": [
+            {"a": 300, "b": 400, "c": "i3"},
+        ],
+    }),
+    encode_pb_message(_schema_proj_schema, {
+        "id": 3,
+        "name": "carol",
+        "detail": {"a": 50, "b": 60, "c": "d3"},
+        "items": [],
+    }),
 ]
 
 
@@ -2247,16 +2327,16 @@ def test_from_protobuf_deep_nesting_5_levels(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "deep_nested_5_level.desc",
         _build_deep_nested_5_level_descriptor_set_bytes)
     message_name = "test.Level1"
-    data_gen = ProtobufMessageGen([
-        PbScalar("val1", 1, IntegerGen()),
-        PbNested("level2", 2, [
-            PbScalar("val2", 1, IntegerGen()),
-            PbNested("level3", 2, [
-                PbScalar("val3", 1, IntegerGen()),
-                PbNested("level4", 2, [
-                    PbScalar("val4", 1, IntegerGen()),
-                    PbNested("level5", 2, [
-                        PbScalar("val5", 1, IntegerGen()),
+    data_gen = _as_datagen([
+        _scalar("val1", 1, IntegerGen()),
+        _nested("level2", 2, [
+            _scalar("val2", 1, IntegerGen()),
+            _nested("level3", 2, [
+                _scalar("val3", 1, IntegerGen()),
+                _nested("level4", 2, [
+                    _scalar("val4", 1, IntegerGen()),
+                    _nested("level5", 2, [
+                        _scalar("val5", 1, IntegerGen()),
                     ]),
                 ]),
             ]),
@@ -2318,13 +2398,13 @@ def test_from_protobuf_bug1_name_collision(spark_tmp_path, from_protobuf_fn):
         _build_name_collision_descriptor_set_bytes)
     message_name = "test.Event"
 
-    data_gen = ProtobufMessageGen([
-        PbNested("user_info", 1, [
-            PbScalar("age", 1, IntegerGen()),
-            PbScalar("id", 2, IntegerGen()),
+    data_gen = _as_datagen([
+        _nested("user_info", 1, [
+            _scalar("age", 1, IntegerGen()),
+            _scalar("id", 2, IntegerGen()),
         ]),
-        PbNested("ad_info", 2, [
-            PbScalar("id", 1, IntegerGen()),
+        _nested("ad_info", 2, [
+            _scalar("id", 1, IntegerGen()),
         ]),
     ])
 
@@ -2360,9 +2440,9 @@ def test_from_protobuf_bug2_filter_jump(spark_tmp_path, from_protobuf_fn):
         _build_filter_jump_descriptor_set_bytes)
     message_name = "test.Event"
 
-    data_gen = ProtobufMessageGen([
-        PbScalar("status", 1, IntegerGen(min_val=1, max_val=1)),
-        PbScalar("ad_info", 2, StringGen()),
+    data_gen = _as_datagen([
+        _scalar("status", 1, IntegerGen(min_val=1, max_val=1)),
+        _scalar("ad_info", 2, StringGen()),
     ])
 
     def run_on_spark(spark):
@@ -2398,10 +2478,10 @@ def test_from_protobuf_bug3_unrelated_struct_name_collision(spark_tmp_path, from
         _build_unrelated_struct_name_collision_descriptor_set_bytes)
     message_name = "test.Event"
 
-    data_gen = ProtobufMessageGen([
-        PbNested("ad_info", 1, [
-            PbScalar("dummy", 1, IntegerGen()),
-            PbScalar("winfoid", 2, IntegerGen()),
+    data_gen = _as_datagen([
+        _nested("ad_info", 1, [
+            _scalar("dummy", 1, IntegerGen()),
+            _scalar("winfoid", 2, IntegerGen()),
         ]),
     ])
 
@@ -2455,13 +2535,13 @@ def test_from_protobuf_bug4_max_depth(spark_tmp_path, from_protobuf_fn):
     # Build the deeply nested data gen spec
     def build_nested_gen(level):
         if level == 12:
-            return [PbScalar(f"val{level}", 1, IntegerGen())]
+            return [_scalar(f"val{level}", 1, IntegerGen())]
         return [
-            PbScalar(f"val{level}", 1, IntegerGen()),
-            PbNested(f"level{level+1}", 2, build_nested_gen(level+1))
+            _scalar(f"val{level}", 1, IntegerGen()),
+            _nested(f"level{level+1}", 2, build_nested_gen(level+1))
         ]
 
-    data_gen = ProtobufMessageGen(build_nested_gen(1))
+    data_gen = _as_datagen(build_nested_gen(1))
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -2669,16 +2749,16 @@ def test_from_protobuf_nested_child_default_values(spark_tmp_path, from_protobuf
 # ===========================================================================
 
 def _deep_5_level_data_gen():
-    return ProtobufMessageGen([
-        PbScalar("val1", 1, IntegerGen()),
-        PbNested("level2", 2, [
-            PbScalar("val2", 1, IntegerGen()),
-            PbNested("level3", 2, [
-                PbScalar("val3", 1, IntegerGen()),
-                PbNested("level4", 2, [
-                    PbScalar("val4", 1, IntegerGen()),
-                    PbNested("level5", 2, [
-                        PbScalar("val5", 1, IntegerGen()),
+    return _as_datagen([
+        _scalar("val1", 1, IntegerGen()),
+        _nested("level2", 2, [
+            _scalar("val2", 1, IntegerGen()),
+            _nested("level3", 2, [
+                _scalar("val3", 1, IntegerGen()),
+                _nested("level4", 2, [
+                    _scalar("val4", 1, IntegerGen()),
+                    _nested("level5", 2, [
+                        _scalar("val5", 1, IntegerGen()),
                     ]),
                 ]),
             ]),
