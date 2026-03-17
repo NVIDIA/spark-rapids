@@ -2457,6 +2457,8 @@ def test_from_protobuf_bug4_max_depth(spark_tmp_path, from_protobuf_fn):
 
 def _encode_varint(value):
     """Encode a non-negative integer as a protobuf varint (for hand-crafting test bytes)."""
+    if value < 0:
+        raise ValueError(f"_encode_varint only accepts non-negative integers, got: {value}")
     out = bytearray()
     v = int(value)
     while True:
