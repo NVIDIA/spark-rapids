@@ -382,7 +382,7 @@ def is_protobuf_runtime_available():
         return False
     loader = None
     try:
-        loader = jvm.Thread.currentThread().getContextClassLoader()
+        loader = jvm.java.lang.Thread.currentThread().getContextClassLoader()
     except Exception:
         pass
 
