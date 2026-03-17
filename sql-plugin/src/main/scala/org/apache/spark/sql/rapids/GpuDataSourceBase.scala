@@ -393,24 +393,62 @@ object GpuDataSourceBase extends Logging {
 
     // ServiceLoader iteration can throw ServiceConfigurationError if an incompatible
     // or broken DataSourceRegister provider is on the classpath. Use a manual loop
-    // to skip broken providers and continue iteration in DataSource.lookupDataSource.
+    // to skip broken providers and continue iteration.
+    // hasNext() and next() are handled separately because hasNext() can also
+    // throw ServiceConfigurationError.
     val providers = {
       val buf = new scala.collection.mutable.ListBuffer[DataSourceRegister]()
       val iter = serviceLoader.iterator()
       var done = false
       while (!done) {
-        try {
-          if (iter.hasNext) {
+        val hasMore = try {
+          iter.hasNext
+        } catch {
+          case e: ServiceConfigurationError =>
+            val cause = e.getCause
+            if (cause.isInstanceOf[NoClassDefFoundError]) {
+              val className =
+                cause.getMessage.replaceAll("/", ".")
+              if (spark2RemovedClasses.contains(className)) {
+                throw new ClassNotFoundException(
+                  "Detected an incompatible " +
+                    "DataSourceRegister. Please remove the " +
+                    "incompatible library from classpath or " +
+                    s"upgrade it. Error: ${e.getMessage}", e)
+              }
+            }
+            logWarning("Skipping broken DataSourceRegister " +
+              s"provider (hasNext): ${e.getMessage}")
+            // Assume more entries may exist;
+            // let next() advance past the broken entry.
+            true
+        }
+        if (!hasMore) {
+          done = true
+        } else {
+          try {
             val provider = iter.next()
             if (provider.shortName().equalsIgnoreCase(provider1)) {
               buf += provider
             }
-          } else {
-            done = true
+          } catch {
+            case e: ServiceConfigurationError =>
+              val cause = e.getCause
+              if (cause.isInstanceOf[NoClassDefFoundError]) {
+                val className =
+                  cause.getMessage.replaceAll("/", ".")
+                if (spark2RemovedClasses.contains(className)) {
+                  throw new ClassNotFoundException(
+                    "Detected an incompatible " +
+                      "DataSourceRegister. Please remove the " +
+                      "incompatible library from classpath " +
+                      "or upgrade it. " +
+                      s"Error: ${e.getMessage}", e)
+                }
+              }
+              logWarning("Skipping broken DataSourceRegister" +
+                s" provider: ${e.getMessage}")
           }
-        } catch {
-          case e: ServiceConfigurationError =>
-            logWarning(s"Skipping broken DataSourceRegister provider: ${e.getMessage}")
         }
       }
       buf.toList
