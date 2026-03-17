@@ -338,6 +338,10 @@ class GpuDeltaParquetFileFormatBase2(
       // of rows deleted in the given range of rowws.
       // This is temporary until we add a new API in libcudf to compute it.
       scalaBitmap: RoaringBitmapArray,
+      // The offsets and numRows below are the original row group offsets and row counts
+      // in the file. The combining process in multi-threaded reader involves re-organizing
+      // row groups across files, but the offsets and numRows here are not changed even
+      // after the combining.
       rowGroupOffsets: Array[Long],
       rowGroupNumRows: Array[Int]
   ) extends AutoCloseable {

@@ -57,8 +57,13 @@ import org.apache.spark.util.SerializableConfiguration
  * This contains a single HostMemoryBuffer along with other metadata needed
  * for combining the buffers before sending to GPU.
  *
+ * This class is shared across file and table formats, and contains only format-agnostic
+ * metadata about the given host memory buffers. For example, `numRows` is strictly the
+ * total row count in the buffers — not an adjusted figure accounting for format-specific
+ * concepts like deleted rows in Delta Lake or Iceberg.
+ *
  * @param hmbs buffers read from a file
- * @param bytes total bytes read in the buffers
+ * @param bytes total bytes in the buffers
  * @param numRows total number of rows in the buffers
  * @param blockMeta the metadata of the data blocks read.
  *                  It can be empty after multiple [[SingleHMBAndMeta]]s are combined
