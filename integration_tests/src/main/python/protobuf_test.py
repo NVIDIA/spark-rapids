@@ -2419,9 +2419,9 @@ def test_from_protobuf_bug4_max_depth(spark_tmp_path, from_protobuf_fn):
     # Build the deeply nested data gen spec
     def build_nested_gen(level):
         if level == 12:
-            return [pb.field(f"val{level}", 1, IntegerGen())]
+            return [pb.field(f"val{level}", 1, IntegerGen(nullable=False))]
         return [
-            pb.field(f"val{level}", 1, IntegerGen()),
+            pb.field(f"val{level}", 1, IntegerGen(nullable=False)),
             pb.nested_field(f"level{level+1}", 2, build_nested_gen(level+1))
         ]
 
