@@ -280,26 +280,10 @@ object GpuScalar extends Logging {
         s" for LongType, expecting Long, or Int.")
     }
     case DoubleType => v match {
-      case d: Double =>
-        // cuDF Scalar.fromDouble normalizes -0.0 to 0.0 (see #14116).
-        if (JDouble.doubleToRawLongBits(d) == JDouble.doubleToRawLongBits(-0.0d)) {
-          withResource(ColumnVector.fromDoubles(d)) { cv =>
-            cv.getScalarElement(0)
-          }
-        } else {
-          Scalar.fromDouble(d)
-        }
-      case f: Float =>
-        val d = f.toDouble
-        if (JDouble.doubleToRawLongBits(d) == JDouble.doubleToRawLongBits(-0.0d)) {
-          withResource(ColumnVector.fromDoubles(d)) { cv =>
-            cv.getScalarElement(0)
-          }
-        } else {
-          Scalar.fromDouble(d)
-        }
-      case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
-        s" for DoubleType, expecting Double or Float.")
+        case d: Double => Scalar.fromDouble(d)
+        case f: Float => Scalar.fromDouble(f.toDouble)
+        case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
+          s" for DoubleType, expecting Double or Float.")
     }
     case TimestampType => v match {
       // Usually the timestamp will be used by the `add/sub` operators for date/time related
@@ -330,15 +314,7 @@ object GpuScalar extends Logging {
         s" for DateType, expecting Int or LocalDate")
     }
     case FloatType => v match {
-      case f: Float =>
-        // cuDF Scalar.fromFloat normalizes -0.0f to 0.0f (see #14116).
-        if (JFloat.floatToRawIntBits(f) == JFloat.floatToRawIntBits(-0.0f)) {
-          withResource(ColumnVector.fromFloats(f)) { cv =>
-            cv.getScalarElement(0)
-          }
-        } else {
-          Scalar.fromFloat(f)
-        }
+      case f: Float => Scalar.fromFloat(f)
       case _ => throw new IllegalArgumentException(s"'$v: ${v.getClass}' is not supported" +
         s" for FloatType, expecting Float.")
     }
