@@ -152,8 +152,7 @@ def test_array_item_with_strict_index(strict_index_enabled, index):
 @pytest.mark.parametrize('index', [-2, 100, array_neg_index_gen, array_out_index_gen], ids=idfn)
 @disable_ansi_mode
 def test_array_item_ansi_fail_invalid_index(index):
-    message = "SparkArrayIndexOutOfBoundsException" if (is_databricks104_or_later() or is_spark_330_or_later() and is_before_spark_400()) else \
-        "ArrayIndexOutOfBoundsException"
+    message = "ArrayIndexOutOfBoundsException"
     if isinstance(index, int):
         test_func = lambda spark: unary_op_df(spark, ArrayGen(int_gen)).select(col('a')[index]).collect()
     else:

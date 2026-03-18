@@ -47,7 +47,7 @@ object ShimLoaderTemp {
     "com.nvidia.spark.rapids.delta.DeltaProbeImpl")
 
   def newIcebergProvider(): IcebergProvider = ShimReflectionUtils.newInstanceOf[IcebergProvider](
-    "com.nvidia.spark.rapids.iceberg.IcebergProviderImpl")
+    s"${IcebergProvider.shimPackage}.IcebergProviderImpl")
 
   def newPlanShims(): PlanShims = ShimReflectionUtils.newInstanceOf[PlanShims](
     "com.nvidia.spark.rapids.shims.PlanShimsImpl"
