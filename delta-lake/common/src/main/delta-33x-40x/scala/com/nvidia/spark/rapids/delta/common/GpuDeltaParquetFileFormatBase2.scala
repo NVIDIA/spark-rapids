@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids.delta.common
 
 import java.io.IOException
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -403,6 +405,53 @@ class GpuDeltaParquetFileFormatBase2(
       fileScan.queryUsesInputFile)
   }
 
+  /**
+   * Per-block DV info attached to each [[ParquetSingleDataBlockMeta]].
+   * One instance per row group; multiple instances from the same file share the same
+   * dvDescriptor but differ in rowGroupOffset/rowGroupNumRows.
+   * Extends [[ParquetExtraInfo]] additively — no overrides.
+   */
+  class DeltaParquetExtraInfo(
+      dateRebaseMode: DateTimeRebaseMode,
+      timestampRebaseMode: DateTimeRebaseMode,
+      hasInt96Timestamps: Boolean,
+      // Base64-encoded DV descriptor string for this block's source file. None if no DV.
+      // The filter type is always RowIndexFilterType.IF_CONTAINED; verified at extraction time.
+      val dvDescriptor: Option[String],
+      // Within-file row-index ordinal of this row group's first row.
+      // Captured from BlockMetaData before any merging; invariant to computeBlockMetaData().
+      val rowGroupOffset: Long,
+      val rowGroupNumRows: Int
+  ) extends ParquetExtraInfo(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps)
+
+  /**
+   * Per-file DV load result produced during [[prepareForDecode]].
+   *
+   * @param gpuBitmap serialized roaring bitmap buffer for [[MakeParquetTableWithDVProducer]]
+   * @param aliveCount number of alive (non-deleted) rows; pre-computed from the Scala bitmap
+   *                   so [[getRowsPerPartition]] needs no additional I/O
+   */
+  case class SerializedRoaringBitmap(gpuBitmap: HostMemoryBuffer, aliveCount: Long)
+
+  /**
+   * Per-batch DV info that replaces [[ParquetExtraInfo]] in [[CurrentChunkMeta]] after batch
+   * assembly.  Two-phase construction:
+   *  - [[perFileDVEntries]] is populated by [[onBatchAssembled]] during batch assembly.
+   *  - [[loadedDVResults]] is filled in by [[prepareForDecode]] after the copy phase.
+   */
+  class DeltaBatchExtraInfo(
+      dateRebaseMode: DateTimeRebaseMode,
+      timestampRebaseMode: DateTimeRebaseMode,
+      hasInt96Timestamps: Boolean,
+      val perFileDVEntries: Seq[(Option[String], Array[Long], Array[Int])],
+      // Filled by prepareForDecode() after the copy phase; empty until then.
+      val loadedDVResults: Seq[SerializedRoaringBitmap] = Seq.empty
+  ) extends ParquetExtraInfo(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps) {
+    def copy(loadedDVResults: Seq[SerializedRoaringBitmap]): DeltaBatchExtraInfo =
+      new DeltaBatchExtraInfo(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,
+        perFileDVEntries, loadedDVResults)
+  }
+
   case class GpuDeltaParquetMultiFilePartitionReaderFactory(
       @transient sqlConf: SQLConf,
       broadcastedConf: Broadcast[SerializableConfiguration],
@@ -473,6 +522,101 @@ class GpuDeltaParquetFileFormatBase2(
         keepReadsInOrder,
         combineConf
       )
+    }
+
+    override def buildBaseColumnarReaderForCoalescing(
+        files: Array[PartitionedFile],
+        conf: Configuration): PartitionReader[ColumnarBatch] = {
+      val poolConf = poolConfBuilder.build()
+      val clippedBlocks = ArrayBuffer[ParquetSingleDataBlockMeta]()
+
+      metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
+        metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
+          val metaAndFilesArr = readBlockMetasForCoalescing(files, conf, poolConf)
+          metaAndFilesArr.foreach { metaAndFile =>
+            val dvDescriptorOpt = metaAndFile.file.otherConstantMetadataColumnValues
+              .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
+            val filterTypeOpt = metaAndFile.file.otherConstantMetadataColumnValues
+              .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
+            filterTypeOpt.foreach { ft =>
+              require(ft == RowIndexFilterType.IF_CONTAINED,
+                s"Unexpected DV filter type for coalescing reader: $ft")
+            }
+            val singleFileInfo = metaAndFile.meta
+            // Capture per-row-group offsets before any block merging occurs.
+            val (rowGroupOffsets, rowGroupNumRows) =
+              RapidsDeletionVectors.getRowGroupMetadata(singleFileInfo.blocks)
+            clippedBlocks ++= singleFileInfo.blocks.zipWithIndex.map { case (block, i) =>
+              ParquetSingleDataBlockMeta(
+                singleFileInfo.filePath,
+                ParquetDataBlock(block, compressCfg),
+                metaAndFile.file.partitionValues,
+                ParquetSchemaWrapper(singleFileInfo.schema),
+                singleFileInfo.readSchema,
+                new DeltaParquetExtraInfo(
+                  singleFileInfo.dateRebaseMode,
+                  singleFileInfo.timestampRebaseMode,
+                  singleFileInfo.hasInt96Timestamps,
+                  dvDescriptorOpt,
+                  rowGroupOffsets(i),
+                  rowGroupNumRows(i)))
+            }
+          }
+        }
+      }
+
+      new MultiFileDeltaCoalescingParquetPartitionReader(fileIO, conf, files,
+        clippedBlocks.toSeq, isCaseSensitive, debugDumpPrefix, debugDumpAlways,
+        maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes,
+        maxGpuColumnSizeBytes, useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+        compressCfg, metrics, partitionSchema, poolConf, ignoreMissingFiles,
+        ignoreCorruptFiles, readUseFieldId, tablePath)
+    }
+  }
+
+  /**
+   * Coalescing Parquet reader for Delta tables with Deletion Vector support.
+   *
+   * Overrides the standard coalescing pipeline hooks to:
+   *  - collect per-block DV descriptors during batch assembly ([[onBatchAssembled]])
+   *  - load DV bitmaps concurrently after the copy phase ([[prepareForDecode]])
+   *  - pass DV info to the cuDF Parquet reader ([[readBufferToTablesAndClose]])
+   *  - substitute DV-filtered alive row counts for partition routing ([[getRowsPerPartition]])
+   */
+  // TODO: Task 3 — implement DV-aware hooks
+  class MultiFileDeltaCoalescingParquetPartitionReader(
+      fileIO: RapidsFileIO,
+      conf: Configuration,
+      splits: Array[PartitionedFile],
+      clippedBlocks: Seq[ParquetSingleDataBlockMeta],
+      isSchemaCaseSensitive: Boolean,
+      debugDumpPrefix: Option[String],
+      debugDumpAlways: Boolean,
+      maxReadBatchSizeRows: Integer,
+      maxReadBatchSizeBytes: Long,
+      targetBatchSizeBytes: Long,
+      maxGpuColumnSizeBytes: Long,
+      useChunkedReader: Boolean,
+      maxChunkedReaderMemoryUsageSizeBytes: Long,
+      compressCfg: CpuCompressionConfig,
+      execMetrics: Map[String, GpuMetric],
+      partitionSchema: StructType,
+      poolConf: ThreadPoolConf,
+      ignoreMissingFiles: Boolean,
+      ignoreCorruptFiles: Boolean,
+      useFieldId: Boolean,
+      tablePathOpt: Option[String])
+    extends MultiFileCoalescingParquetPartitionReaderBase(fileIO, conf, clippedBlocks,
+      isSchemaCaseSensitive, maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes,
+      maxGpuColumnSizeBytes, compressCfg, execMetrics, partitionSchema, poolConf,
+      ignoreMissingFiles, ignoreCorruptFiles) {
+
+    override def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer, dataSize: Long,
+        clippedSchema: SchemaBase, readDataSchema: StructType,
+        extraInfo: ExtraInfo): GpuDataProducer[Table] = {
+      // TODO: Task 3 — implement DV-aware decoding
+      throw new UnsupportedOperationException(
+        "DV coalescing reader readBufferToTablesAndClose not yet implemented")
     }
   }
 

@@ -345,7 +345,9 @@ case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[B
   }
 }
 
-private case class BlockMetaWithPartFile(meta: ParquetFileInfoWithBlockMeta, file: PartitionedFile)
+private[rapids] case class BlockMetaWithPartFile(
+    meta: ParquetFileInfoWithBlockMeta,
+    file: PartitionedFile)
 
 /**
  * A parquet compatible stream that allows reading from a HostMemoryBuffer to Parquet.
@@ -1284,6 +1286,42 @@ abstract class AbstractGpuParquetMultiFilePartitionReaderFactory(
   }
 
   /**
+   * Reads footer metadata for all files in preparation for a coalescing read.
+   * Handles missing/corrupt files according to [[ignoreMissingFiles]] / [[ignoreCorruptFiles]]
+   * and performs the footer reads in parallel when [[numFilesFilterParallel]] > 0.
+   * Extracted so Delta subclasses can reuse this I/O layer while constructing their own
+   * per-block extra info.
+   */
+  protected def readBlockMetasForCoalescing(
+      files: Array[PartitionedFile],
+      conf: Configuration,
+      poolConf: ThreadPoolConf): Array[BlockMetaWithPartFile] = {
+    if (numFilesFilterParallel > 0) {
+      val tc = TaskContext.get()
+      val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
+      files.grouped(numFilesFilterParallel).map { fileGroup =>
+        // we need to copy the Hadoop Configuration because filter push down can mutate it,
+        // which can affect other threads.
+        threadPool.submit(
+          new CoalescingFilterRunner(footerReadType, tc, fileGroup, new Configuration(conf),
+            filters, readDataSchema))
+      }.toArray.flatMap { future =>
+        future.get().data
+      }
+    } else {
+      // We need to copy the Hadoop Configuration because filter push down can mutate it. In
+      // this case we are serially iterating through the files so each one mutating it serially
+      // doesn't affect the filter of the other files. We just need to make sure it's copied
+      // once so other tasks don't modify the same conf.
+      val hadoopConf = new Configuration(conf)
+      files.map { file =>
+        filterBlocksForCoalescingReader(footerReadType, file,
+          hadoopConf, filters, readDataSchema)
+      }
+    }
+  }
+
+  /**
    * Build the PartitionReader for coalescing reading
    *
    * @param files files to be read
@@ -1298,29 +1336,7 @@ abstract class AbstractGpuParquetMultiFilePartitionReaderFactory(
 
     metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
       metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
-        val metaAndFilesArr = if (numFilesFilterParallel > 0) {
-          val tc = TaskContext.get()
-          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
-          files.grouped(numFilesFilterParallel).map { fileGroup =>
-            // we need to copy the Hadoop Configuration because filter push down can mutate it,
-            // which can affect other threads.
-            threadPool.submit(
-              new CoalescingFilterRunner(footerReadType, tc, fileGroup, new Configuration(conf),
-                filters, readDataSchema))
-          }.toArray.flatMap { future =>
-            future.get().data
-          }
-        } else {
-          // We need to copy the Hadoop Configuration because filter push down can mutate it. In
-          // this case we are serially iterating through the files so each one mutating it serially
-          // doesn't affect the filter of the other files. We just need to make sure it's copied
-          // once so other tasks don't modify the same conf.
-          val hadoopConf = new Configuration(conf)
-          files.map { file =>
-            filterBlocksForCoalescingReader(footerReadType, file,
-              hadoopConf, filters, readDataSchema)
-          }
-        }
+        val metaAndFilesArr = readBlockMetasForCoalescing(files, conf, poolConf)
         metaAndFilesArr.foreach { metaAndFile =>
           val singleFileInfo = metaAndFile.meta
           clippedBlocks ++= singleFileInfo.blocks.map(block =>
