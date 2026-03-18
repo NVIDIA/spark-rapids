@@ -243,6 +243,8 @@ class GpuDeltaParquetFileFormatBase(
   }
 }
 
+// Note: this class extends GpuParquetMultiFilePartitionReaderFactory, but this is an anti-pattern
+// as GpuParquetMultiFilePartitionReaderFactory is a case class.
 class DeltaMultiFileReaderFactory(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
