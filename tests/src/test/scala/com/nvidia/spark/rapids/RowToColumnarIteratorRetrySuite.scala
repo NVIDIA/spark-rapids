@@ -16,28 +16,14 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.jni.{CpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.types._
 
 class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
   private val schema = StructType(Seq(StructField("a", IntegerType)))
   private val batchSize = 1 * 1024 * 1024 * 1024
-
-  private def rowThatFailsOnceWithCpuRetryOOM(value: Int): InternalRow = {
-    var failed = false
-    new GenericInternalRow(Array[Any](value.asInstanceOf[AnyRef])) {
-      override def getInt(ordinal: Int): Int = {
-        if (!failed) {
-          failed = true
-          throw new CpuRetryOOM("Injected row conversion failure")
-        }
-        super.getInt(ordinal)
-      }
-    }
-  }
 
   test("test simple GPU OOM retry") {
     val rowIter: Iterator[InternalRow] = (1 to 10).map(InternalRow(_)).toIterator
