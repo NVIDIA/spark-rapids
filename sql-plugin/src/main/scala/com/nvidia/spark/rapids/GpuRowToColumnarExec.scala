@@ -671,9 +671,16 @@ class RowToColumnarIterator(
                 batchDone = true
               case _: CpuRetryOOM | _: CpuSplitAndRetryOOM |
                    _: GpuRetryOOM | _: GpuSplitAndRetryOOM =>
-                // Either this is the first row, RequireSingleBatch, or a SplitAndRetry
-                // signal. Fall back to the full retry framework which will block the
-                // thread until memory is freed, then retry.
+                // Fall back to the full retry framework which will block the thread
+                // until memory is freed, then retry. We reach here when:
+                //   (a) rowCount == 0 (first row, nothing to emit yet),
+                //   (b) RequireSingleBatch (cannot end batch early), or
+                //   (c) SplitAndRetryOOM (memory critically low — ending the batch
+                //       early would not help because tryBuild() would likely OOM too;
+                //       we must block and wait for spill to free memory first).
+                // For case (c) with rowCount > 0 and TargetSize, this means the
+                // already-converted rows are discarded if the retry ultimately fails.
+                // This is acceptable because the task will fail anyway.
                 builders.restoreState(snapshots)
                 pendingRow = copyRow(row)
                 val converter = new RetryableRowConverter(builders, rowCopyProjection)
