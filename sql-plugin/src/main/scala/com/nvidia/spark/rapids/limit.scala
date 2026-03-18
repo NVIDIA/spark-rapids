@@ -196,18 +196,14 @@ class GpuCollectLimitMeta(
   // Shared implementation for all Spark versions. Shim overrides supply
   // the real offset (Spark 3.4+); the base class passes 0 (Spark 3.3).
   //
-  // applyRowLimit: when true AND the child is row-based, wrap with CPU
+  // When the child is row-based and limit > 0, wrap with CPU
   // LocalLimitExec to stop upstream row iterators early — matching CPU
   // CollectLimitExec.doExecute() per-partition .take(limit) behavior.
-  // Disabled for Spark 3.4+ shims where OFFSET semantics require
-  // limit+offset accounting (tracked in #14397) and the integration
-  // test framework does not yet allow LocalLimitExec in GPU plans.
-  protected def buildCollectLimitGpu(
-      offset: Int,
-      applyRowLimit: Boolean = false): GpuExec = {
+  // Skip when limit < 0 (OFFSET-only) since all rows must pass through.
+  protected def buildCollectLimitGpu(offset: Int): GpuExec = {
     val gpuChild = childPlans.head.convertIfNeeded()
     val effectiveChild =
-      if (applyRowLimit && !gpuChild.supportsColumnar) {
+      if (collectLimit.limit > 0 && !gpuChild.supportsColumnar) {
         LocalLimitExec(collectLimit.limit, gpuChild)
       } else {
         gpuChild
@@ -220,8 +216,7 @@ class GpuCollectLimitMeta(
       )(SinglePartition), offset)
   }
 
-  override def convertToGpu(): GpuExec =
-    buildCollectLimitGpu(0, applyRowLimit = true)
+  override def convertToGpu(): GpuExec = buildCollectLimitGpu(0)
 }
 
 object GpuTopN {
