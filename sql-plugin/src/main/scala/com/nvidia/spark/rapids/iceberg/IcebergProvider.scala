@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{GpuExec, GpuExpression, ScanRule, ShimLoader, ShimLoaderTemp, SparkPlanMeta, SparkShimVersion, StaticInvokeMeta, VersionUtils}
+import com.nvidia.spark.rapids.{GpuExec, GpuExpression, ScanRule, ShimLoader, ShimLoaderTemp, ShimReflectionUtils, SparkPlanMeta, SparkShimVersion, StaticInvokeMeta, VersionUtils}
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
@@ -42,6 +42,29 @@ object IcebergProvider {
 
   val cpuBatchQueryScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
   val cpuCopyOnWriteScanClassName: String = "org.apache.iceberg.spark.source.SparkCopyOnWriteScan"
+
+  /**
+   * Returns the version-specific sub-package for the current Spark + Iceberg combination.
+   * Used by both [[ShimLoaderTemp]] and [[ShimUtils]] to load the correct shim classes.
+   */
+  lazy val shimPackage: String = {
+    if (VersionUtils.cmpSparkVersion(3, 5, 4) >= 0) {
+      // Spark 3.5.4+ ships with iceberg 1.9.x or 1.10.x.
+      // Probe the iceberg-spark-runtime jar: IdentityPartitionConverters
+      // exists in iceberg <= 1.9 and was removed in 1.10.
+      try {
+        ShimReflectionUtils.loadClass(
+          "org.apache.iceberg.data.IdentityPartitionConverters")
+        "com.nvidia.spark.rapids.iceberg.iceberg19x"
+      } catch {
+        case _: ClassNotFoundException | _: LinkageError =>
+          "com.nvidia.spark.rapids.iceberg.iceberg110x"
+      }
+    } else {
+      // Spark 3.5.0-3.5.3 ships with iceberg 1.6.x
+      "com.nvidia.spark.rapids.iceberg.iceberg16x"
+    }
+  }
 
   def isSupportedSparkVersion(): Boolean = {
     ShimLoader.getShimVersion match {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.nvidia.spark.rapids
 
 import java.io.{BufferedReader, File, InputStreamReader}
@@ -21,8 +20,8 @@ import java.io.{BufferedReader, File, InputStreamReader}
 import scala.collection.mutable
 import scala.io.Source
 
+import com.nvidia.spark.rapids.shims.EventLogJsonShims
 import org.json4s._
-import org.json4s.jackson.JsonMethods._
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -190,7 +189,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
 
         lines.foreach { line =>
           try {
-            val json = parse(line)
+            val json = EventLogJsonShims.parseJson(line)
             val eventType = (json \ "Event").extractOpt[String]
 
             eventType match {
@@ -199,11 +198,12 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
                 val taskInfo = (json \ "Task Info")
 
                 // Extract task execution time from Task Metrics
-                val taskId = (taskInfo \ "Task ID").extractOpt[Long]
+                val taskId = EventLogJsonShims.extractLong(taskInfo \ "Task ID")
                 val taskMetrics = (json \ "Task Metrics")
                 // https://github.com/apache/spark/blob/450b415028c3b00f3a002126cd11318d3932e28f/
                 // core/src/main/scala/org/apache/spark/ui/jobs/StagePage.scala#L151
-                val executorRunTime = (taskMetrics \ "Executor Run Time").extractOpt[Long]
+                val executorRunTime =
+                  EventLogJsonShims.extractLong(taskMetrics \ "Executor Run Time")
 
                 (taskId, executorRunTime) match {
                   case (Some(tId), Some(runTime)) =>

@@ -33,4 +33,11 @@ object FilePartitionShims extends SplitFiles {
       }
     }
   }
+
+  // Methods for FilePartition (overloaded)
+  def getFiles(p: FilePartition): Array[PartitionedFile] = p.files
+
+  def copyWithFiles(p: FilePartition, newFiles: Array[PartitionedFile]): FilePartition = {
+    p.copy(files = newFiles)
+  }
 }
