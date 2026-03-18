@@ -1084,7 +1084,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     clippedBlocks.iterator.buffered
   private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
 
-  private case class CurrentChunkMeta(
+  protected case class CurrentChunkMeta(
     clippedSchema: SchemaBase,
     readSchema: StructType,
     currentChunk: Seq[(Path, DataBlockBase)],
@@ -1437,7 +1437,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *
    * @return [[CurrentChunkMeta]]
    */
-  private def populateCurrentBlockChunk(): CurrentChunkMeta = {
+  protected def populateCurrentBlockChunk(): CurrentChunkMeta = {
     val currentChunk = new ArrayBuffer[(Path, DataBlockBase)]
     var numRows: Long = 0
     var numBytes: Long = 0
