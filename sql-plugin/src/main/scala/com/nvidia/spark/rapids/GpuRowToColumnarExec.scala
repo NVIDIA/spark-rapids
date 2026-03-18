@@ -592,7 +592,9 @@ class RowToColumnarIterator(
   private var totalOutputRows: Long = 0
   private lazy val rowCopyProjection: UnsafeProjection = UnsafeProjection.create(localSchema)
 
-  // Row that couldn't be converted due to OOM, saved for the next batch
+  // Row that couldn't be converted due to OOM, saved for the next batch.
+  // Note: pendingRow may remain non-null after an unrecoverable exception in buildBatch().
+  // This is safe because Spark will not call next() again after a task-failing exception.
   private var pendingRow: InternalRow = _
 
   override def hasNext: Boolean = pendingRow != null || rowIter.hasNext
@@ -680,6 +682,11 @@ class RowToColumnarIterator(
                 // currentThreadStartRetryBlock calls inside withRetryNoSplit.
                 RmmSpark.currentThreadEndRetryBlock()
                 try {
+                  // If withRetryNoSplit throws (e.g. unrecoverable OOM or
+                  // SplitAndRetryOOM re-raised by NoInputSpliterator.split()),
+                  // pendingRow stays non-null. This is fine because the exception
+                  // will fail the entire task — Spark will not call next() again
+                  // on this iterator.
                   val bytesWritten = withRetryNoSplit {
                     withRestoreOnRetry(converter) {
                       converters.convert(converter.currentRow, builders)
