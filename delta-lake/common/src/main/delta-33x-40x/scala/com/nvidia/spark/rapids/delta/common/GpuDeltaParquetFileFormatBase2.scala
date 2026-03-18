@@ -428,11 +428,14 @@ class GpuDeltaParquetFileFormatBase2(
   /**
    * Per-file DV load result produced during [[prepareForDecode]].
    *
-   * @param gpuBitmap serialized roaring bitmap buffer for [[MakeParquetTableWithDVProducer]]
+   * @param gpuBitmap spillable wrapper around the serialized roaring bitmap buffer; using
+   *                  [[SpillableHostBuffer]] lets [[readBufferToTablesAndClose]] safely obtain
+   *                  a new ref-counted [[HostMemoryBuffer]] on each OOM retry attempt without
+   *                  risking a double-close of the underlying buffer
    * @param aliveCount number of alive (non-deleted) rows; pre-computed from the Scala bitmap
    *                   so [[getRowsPerPartition]] needs no additional I/O
    */
-  case class SerializedRoaringBitmap(gpuBitmap: HostMemoryBuffer, aliveCount: Long)
+  case class SerializedRoaringBitmap(gpuBitmap: SpillableHostBuffer, aliveCount: Long)
 
   /**
    * Per-batch DV info that replaces [[ParquetExtraInfo]] in [[CurrentChunkMeta]] after batch
@@ -457,6 +460,10 @@ class GpuDeltaParquetFileFormatBase2(
     def copy(loadedDVResults: Seq[SerializedRoaringBitmap]): DeltaBatchExtraInfo =
       new DeltaBatchExtraInfo(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,
         perFileDVEntries, perFilePartitionIndex, loadedDVResults)
+
+    /** Closes the SpillableHostBuffers in loadedDVResults. Called by withRetryNoSplit in
+     * readBatchData after the decode phase completes. */
+    override def close(): Unit = loadedDVResults.map(_.gpuBitmap).safeClose()
   }
 
   case class GpuDeltaParquetMultiFilePartitionReaderFactory(
@@ -680,7 +687,14 @@ class GpuDeltaParquetFileFormatBase2(
         case (dvDescOpt, offsets, numRows) =>
           threadPool.submit(new Callable[SerializedRoaringBitmap] {
             override def call(): SerializedRoaringBitmap = {
-              val gpuBitmap = RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescOpt, tp)
+              val rawBitmap = RapidsDeletionVectors.loadDeletionVector(fileIO, dvDescOpt, tp)
+              // Wrap in SpillableHostBuffer so that readBufferToTablesAndClose can call
+              // getDataHostBuffer() on each OOM retry attempt to obtain a fresh ref-counted
+              // HostMemoryBuffer, without risking a double-close of the underlying buffer.
+              // DeltaBatchExtraInfo.close() releases the SpillableHostBuffer when the decode
+              // phase completes (via withRetryNoSplit in readBatchData).
+              val gpuBitmap = SpillableHostBuffer(rawBitmap, rawBitmap.getLength,
+                SpillPriorities.ACTIVE_BATCHING_PRIORITY)
               val filterTypeOpt = dvDescOpt.map(_ => RowIndexFilterType.IF_CONTAINED)
               val scalaBitmap = RapidsDeletionVectors.loadScalaBitmap(
                 conf, dvDescOpt, filterTypeOpt, tp)
@@ -731,10 +745,15 @@ class GpuDeltaParquetFileFormatBase2(
         require(tablePathOpt.isDefined,
           "tablePath must be set when a deletion vector descriptor is present")
         // loadedDVResults is parallel to perFileDVEntries: one bitmap per file in batch order.
+        // getDataHostBuffer() returns a fresh ref-counted HostMemoryBuffer for this attempt;
+        // if a prior attempt failed with OOM, the previous HostMemoryBuffer was closed by the
+        // failed DeltaParquetTableReader, but the SpillableHostBuffer is still alive and can
+        // produce a new ref-counted copy here.
         val dvInfos = batchExtra.loadedDVResults
           .zip(batchExtra.perFileDVEntries)
           .map { case (loaded, (_, offsets, numRows)) =>
-            new DeletionVector.DeletionVectorInfo(loaded.gpuBitmap, offsets, numRows)
+            new DeletionVector.DeletionVectorInfo(
+              loaded.gpuBitmap.getDataHostBuffer(), offsets, numRows)
           }.toArray
         // MakeParquetTableWithDVProducer closes the bitmaps in dvInfos.
         MakeParquetTableWithDVProducer(useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,

@@ -1010,9 +1010,14 @@ trait SchemaBase {
 }
 
 /**
- * A common trait for the extra information for different file format
+ * A common trait for the extra information for different file format.
+ * Extends AutoCloseable so that subclasses can hold native resources (e.g. SpillableHostBuffers
+ * for deletion-vector bitmaps) that must be released after the decode phase completes.
+ * The default implementation is a no-op; subclasses override as needed.
  */
-trait ExtraInfo
+trait ExtraInfo extends AutoCloseable {
+  override def close(): Unit = {}
+}
 
 /**
  * A single block info of a file,
@@ -1347,7 +1352,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         } else {
           val decodeMeta = prepareForDecode(meta)
           startNewBufferRetry
-          val iter = RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
+          val iter = RmmRapidsRetryIterator.withRetryNoSplit(
+              Seq[AutoCloseable](dataBuffer, decodeMeta.extraInfo)) { _ =>
             val dataBuf = dataBuffer.getDataHostBuffer()
             val tableReader = readBufferToTablesAndClose(dataBuf, dataBuf.getLength,
               decodeMeta.clippedSchema, decodeMeta.readSchema, decodeMeta.extraInfo)
