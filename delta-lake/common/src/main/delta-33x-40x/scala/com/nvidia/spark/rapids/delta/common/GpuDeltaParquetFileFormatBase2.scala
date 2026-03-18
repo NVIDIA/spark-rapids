@@ -454,15 +454,19 @@ class GpuDeltaParquetFileFormatBase2(
       // Filled by prepareForDecode() after the copy phase; empty until then.
       val loadedDVResults: Seq[SerializedRoaringBitmap] = Seq.empty
   ) extends ParquetExtraInfo(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps) {
-    /** True if at least one file in this batch carries a deletion vector descriptor. */
+    /**
+     * True if at least one file in this batch carries a deletion vector descriptor.
+     */
     def hasDeletionVectors: Boolean = perFileDVEntries.exists(_._1.isDefined)
 
-    def copy(loadedDVResults: Seq[SerializedRoaringBitmap]): DeltaBatchExtraInfo =
+    def withLoadedDVResults(loadedDVResults: Seq[SerializedRoaringBitmap]): DeltaBatchExtraInfo =
       new DeltaBatchExtraInfo(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,
         perFileDVEntries, perFilePartitionIndex, loadedDVResults)
 
-    /** Closes the SpillableHostBuffers in loadedDVResults. Called by withRetryNoSplit in
-     * readBatchData after the decode phase completes. */
+    /**
+     * Closes the SpillableHostBuffers in loadedDVResults. Called by withRetryNoSplit in
+     * readBatchData after the decode phase completes.
+     */
     override def close(): Unit = loadedDVResults.map(_.gpuBitmap).safeClose()
   }
 
@@ -727,7 +731,7 @@ class GpuDeltaParquetFileFormatBase2(
           loaded.map(_.gpuBitmap).safeClose(e)
           throw e
       }
-      meta.copy(extraInfo = batchExtra.copy(loadedDVResults = loaded.toSeq))
+      meta.copy(extraInfo = batchExtra.withLoadedDVResults(loaded.toSeq))
     }
 
     /**
