@@ -193,21 +193,32 @@ class GpuCollectLimitMeta(
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(collectLimit.outputPartitioning, conf, Some(this)))
 
-  override def convertToGpu(): GpuExec = {
+  // Shared implementation for all Spark versions. Shim overrides supply
+  // the real offset (Spark 3.4+); the base class passes 0 (Spark 3.3).
+  protected def buildCollectLimitGpu(offset: Int): GpuExec = {
     val gpuChild = childPlans.head.convertIfNeeded()
-    // Wrap with CPU LocalLimitExec to apply per-partition row-level limits
-    // before the row-to-columnar transition. Without this, GpuRowToColumnarExec
-    // batches ALL rows before GpuLocalLimitExec can limit, so upstream
-    // row-based operators (e.g. map with accumulators) process excess rows.
-    val childWithRowLimit =
+    // Only wrap with CPU LocalLimitExec when the child is row-based.
+    // For row-based children (e.g. map with accumulators), GpuRowToColumnarExec
+    // would batch ALL rows before GpuLocalLimitExec can limit. LocalLimitExec
+    // applies .take(limit) at the row level, stopping upstream iterators early
+    // — matching CPU CollectLimitExec.doExecute() behavior.
+    // For columnar children, GpuLocalLimitExec already handles limiting
+    // efficiently via GPU batch slicing — adding LocalLimitExec would force
+    // unnecessary columnar-to-row-to-columnar transitions.
+    val effectiveChild = if (!gpuChild.supportsColumnar) {
       LocalLimitExec(collectLimit.limit, gpuChild)
+    } else {
+      gpuChild
+    }
     GpuGlobalLimitExec(collectLimit.limit,
       GpuShuffleExchangeExec(
         GpuSinglePartitioning,
-        GpuLocalLimitExec(collectLimit.limit, childWithRowLimit),
+        GpuLocalLimitExec(collectLimit.limit, effectiveChild),
         ENSURE_REQUIREMENTS
-      )(SinglePartition), 0)
+      )(SinglePartition), offset)
   }
+
+  override def convertToGpu(): GpuExec = buildCollectLimitGpu(0)
 }
 
 object GpuTopN {

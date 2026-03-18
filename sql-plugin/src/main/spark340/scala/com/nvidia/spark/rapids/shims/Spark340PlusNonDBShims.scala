@@ -42,7 +42,7 @@ import com.nvidia.spark.rapids.GpuOverrides.{exec, pluginSupportedOrderableSig}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.catalyst.expressions.{Empty2Null, Expression, KnownNullable, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
-import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
+import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.datasources.{GpuWriteFilesMeta, WriteFilesExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
@@ -116,17 +116,8 @@ trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
           TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
         TypeSig.all),
       (collectLimit, conf, p, r) => new GpuCollectLimitMeta(collectLimit, conf, p, r) {
-        override def convertToGpu(): GpuExec = {
-          val gpuChild = childPlans.head.convertIfNeeded()
-          val childWithRowLimit =
-            LocalLimitExec(collectLimit.limit, gpuChild)
-          GpuGlobalLimitExec(collectLimit.limit,
-            GpuShuffleExchangeExec(
-              GpuSinglePartitioning,
-              GpuLocalLimitExec(collectLimit.limit, childWithRowLimit),
-              ENSURE_REQUIREMENTS
-            )(SinglePartition), collectLimit.offset)
-        }
+        override def convertToGpu(): GpuExec =
+          buildCollectLimitGpu(collectLimit.offset)
       }
     ).disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
         "of rows in a batch it could help by limiting the number of rows transferred from " +
