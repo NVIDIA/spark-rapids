@@ -641,6 +641,12 @@ class RowToColumnarIterator(
               (pendingRow != null || rowIter.hasNext) &&
               (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
 
+            // These two branches are mutually exclusive: we either consume pendingRow
+            // or call rowIter.next(), never both. rowIter.next() only returns JVM-heap
+            // InternalRows (typically UnsafeRow) which do not trigger RMM host
+            // allocations, so a CpuRetryOOM here is not expected. If one did occur it
+            // would propagate out of the while loop and be cleaned up by the finally
+            // block (currentThreadEndRetryBlock) and withResource(builders).
             val row = if (pendingRow != null) {
               val r = pendingRow
               pendingRow = null
@@ -666,14 +672,14 @@ class RowToColumnarIterator(
                 // Either this is the first row, RequireSingleBatch, or a SplitAndRetry
                 // signal. Fall back to the full retry framework which will block the
                 // thread until memory is freed, then retry.
-                // Exit the outer retry block first to avoid nesting
-                // currentThreadStartRetryBlock calls.
                 builders.restoreState(snapshots)
                 pendingRow = copyRow(row)
+                val converter = new RetryableRowConverter(builders, rowCopyProjection)
+                converter.attempt(pendingRow)
+                // Exit the outer retry block to avoid nesting
+                // currentThreadStartRetryBlock calls inside withRetryNoSplit.
                 RmmSpark.currentThreadEndRetryBlock()
                 try {
-                  val converter = new RetryableRowConverter(builders, rowCopyProjection)
-                  converter.attempt(pendingRow)
                   val bytesWritten = withRetryNoSplit {
                     withRestoreOnRetry(converter) {
                       converters.convert(converter.currentRow, builders)
