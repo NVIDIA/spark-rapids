@@ -759,15 +759,15 @@ def test_from_protobuf_nested_enum_invalid_permissive_nulls_sibling_fields(
         spark_tmp_path, "nested_enum.desc", _build_nested_enum_descriptor_set_bytes)
     message_name = "test.WithNestedEnum"
 
+    detail_valid = (_encode_tag(1, 0) + _encode_varint(1) +
+                    _encode_tag(2, 0) + _encode_varint(10))
     row_valid = (_encode_tag(1, 0) + _encode_varint(1) +
-                 _encode_tag(2, 2) + _encode_varint(4) +
-                 _encode_tag(1, 0) + _encode_varint(1) +
-                 _encode_tag(2, 0) + _encode_varint(10) +
+                 _encode_tag(2, 2) + _encode_varint(len(detail_valid)) + detail_valid +
                  _encode_tag(3, 2) + _encode_varint(2) + b"ok")
+    detail_invalid = (_encode_tag(1, 0) + _encode_varint(999) +
+                      _encode_tag(2, 0) + _encode_varint(20))
     row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
-                   _encode_tag(2, 2) + _encode_varint(4) +
-                   _encode_tag(1, 0) + _encode_varint(999) +
-                   _encode_tag(2, 0) + _encode_varint(20) +
+                   _encode_tag(2, 2) + _encode_varint(len(detail_invalid)) + detail_invalid +
                    _encode_tag(3, 2) + _encode_varint(3) + b"bad")
 
     def run_on_spark(spark):
