@@ -444,6 +444,199 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
     with_cpu_session(convert_and_setup_name_mapping, conf={"spark.databricks.delta.properties.defaults.enableDeletionVectors": "false"})
     assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.format("delta").load(data_path))
 
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
+@pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_deletion_vector_coalescing_count_star(
+        spark_tmp_path, dv_predicate_pushdown, use_metadata_row_index):
+    """
+    Verifies alive row counts are correct with COUNT(*) (zero-column projection) and
+    the COALESCING reader. Mirrors test_delta_deletion_vector_multithreaded_combine_count_star.
+    """
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
+        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
+        "spark.sql.files.maxRecordsPerFile": "200",
+    }
+
+    def setup_tables(spark):
+        col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[1, 2, 3])
+        col_b_gen = IntegerGen(min_val=0, max_val=32, nullable=False, special_cases=[0])
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: two_col_df(spark, col_a_gen, col_b_gen, length=20480),
+                               use_cdf=False, enable_deletion_vectors=True, partition_columns=["b"])
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)")
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 33)")
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 1")
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 2")
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 3")
+    with_cpu_session(setup_tables, conf=conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT count(*) FROM delta.`{data_path}` WHERE b = 0"),
+        conf=conf)
+
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
+@pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_deletion_vector_coalescing_partitioned_table(
+        spark_tmp_path, dv_predicate_pushdown, use_metadata_row_index):
+    """
+    Verifies partition values are attached correctly after DV filtering when files
+    from the same partition are coalesced into one batch.
+    Mirrors test_delta_deletion_vector_multithreaded_read_partitioned_table.
+    """
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
+        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
+        "spark.sql.files.maxRecordsPerFile": "200",
+    }
+
+    def setup_tables(spark):
+        col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[1])
+        col_b_gen = IntegerGen(min_val=0, max_val=32, nullable=False, special_cases=[0])
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: two_col_df(spark, col_a_gen, col_b_gen, length=20480),
+                               use_cdf=False, enable_deletion_vectors=True, partition_columns=["b"])
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)")
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 33)")
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 1")
+    with_cpu_session(setup_tables, conf=conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT * FROM delta.`{data_path}`"),
+        conf=conf)
+
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_deletion_vector_coalescing_mixed_dv_no_dv(spark_tmp_path, dv_predicate_pushdown):
+    """
+    Verifies EC-1: COALESCING reader correctly handles a batch containing both
+    DV-bearing files and files without DVs. Non-DV files should use empty bitmaps
+    so all their rows are returned.
+    """
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
+        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.sql.files.maxRecordsPerFile": "200",
+    }
+
+    def setup_tables(spark):
+        # Initial data: rows with a=0 and a=1. DELETE only targets a=0, so files
+        # containing only a=1 rows will have no DV; files with a=0 rows will.
+        col_a_gen = IntegerGen(min_val=0, max_val=1, nullable=False, special_cases=[0, 1])
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: unary_op_df(spark, col_a_gen, length=4000),
+                               use_cdf=False, enable_deletion_vectors=True)
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0")
+        # Insert a fresh file with no deletions (guaranteed no DV)
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(2)")
+    with_cpu_session(setup_tables, conf=conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT * FROM delta.`{data_path}`"),
+        conf=conf)
+
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_deletion_vector_coalescing_ignore_missing_files(spark_tmp_path):
+    """
+    Verifies EC-3: when ignoreMissingFiles=true and one DV-bearing file has been
+    removed, the COALESCING reader does not crash and GPU/CPU results agree for the
+    surviving files.
+    """
+    import os
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.sql.files.ignoreMissingFiles": "true",
+        "spark.sql.files.maxRecordsPerFile": "200",
+    }
+
+    def setup_tables(spark):
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: unary_op_df(spark, int_gen, length=4000),
+                               use_cdf=False, enable_deletion_vectors=True)
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0")
+    with_cpu_session(setup_tables, conf=conf)
+
+    # Remove one parquet file to simulate a missing file
+    parquet_files = sorted(f for f in os.listdir(data_path) if f.endswith(".parquet"))
+    assert len(parquet_files) > 1, "Expected multiple parquet files for this test"
+    os.remove(os.path.join(data_path, parquet_files[0]))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT * FROM delta.`{data_path}`"),
+        conf=conf)
+
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_deletion_vector_coalescing_ignore_corrupt_files(spark_tmp_path):
+    """
+    Verifies EC-7: when ignoreCorruptFiles=true, the coalescing reader is disabled
+    (canUseCoalesceFilesReader returns false) and the query falls back to MULTITHREADED,
+    which still reads DV-bearing files correctly.
+    """
+    import os
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.sql.files.ignoreCorruptFiles": "true",
+        "spark.sql.files.maxRecordsPerFile": "200",
+    }
+
+    def setup_tables(spark):
+        setup_delta_dest_table(spark, data_path,
+                               dest_table_func=lambda spark: unary_op_df(spark, int_gen, length=4000),
+                               use_cdf=False, enable_deletion_vectors=True)
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0")
+    with_cpu_session(setup_tables, conf=conf)
+
+    # Corrupt one parquet file
+    parquet_files = sorted(f for f in os.listdir(data_path) if f.endswith(".parquet"))
+    assert len(parquet_files) > 1, "Expected multiple parquet files"
+    with open(os.path.join(data_path, parquet_files[0]), "wb") as f:
+        f.write(b"NOT A VALID PARQUET FILE")
+
+    # ignoreCorruptFiles=true disables COALESCING; reader falls back to MULTITHREADED.
+    # Verify GPU and CPU agree on the result (corrupt file silently skipped).
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT * FROM delta.`{data_path}`"),
+        conf=conf)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
