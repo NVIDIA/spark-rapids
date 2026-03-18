@@ -1087,7 +1087,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   protected case class CurrentChunkMeta(
     clippedSchema: SchemaBase,
     readSchema: StructType,
-    currentChunk: Seq[(Path, DataBlockBase)],
+    currentChunk: Seq[SingleDataBlockInfo],
     numTotalRows: Long,
     rowsPerPartition: Array[Long],
     allPartValues: Array[InternalRow],
@@ -1273,49 +1273,81 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    */
   def startNewBufferRetry: Unit = ()
 
+  /**
+   * Hook called after the copy phase (readPartFiles) completes, before GPU decode.
+   * Subclasses override to perform additional per-batch preparation using the copied buffer
+   * (e.g. loading deletion vector bitmaps concurrently with the copy results).
+   * The returned [[CurrentChunkMeta]] replaces the input for all subsequent decode operations.
+   * Default implementation returns the meta unchanged.
+   */
+  protected def prepareForDecode(meta: CurrentChunkMeta): CurrentChunkMeta = meta
+
+  /**
+   * Hook called when constructing the partition-values iterator to determine the number of
+   * alive rows per partition after any row-level filtering (e.g. deletion vectors).
+   * Subclasses override to substitute DV-filtered counts in place of raw row counts.
+   * Default implementation returns rawRowsPerPartition unchanged.
+   */
+  protected def getRowsPerPartition(
+      rawRowsPerPartition: Array[Long],
+      allPartValues: Array[InternalRow]): Array[Long] = rawRowsPerPartition
+
   private def readBatch(): Iterator[ColumnarBatch] = {
     NvtxRegistry.FILE_FORMAT_READ_BATCH {
       val currentChunkMeta = populateCurrentBlockChunk()
-      val batchIter = if (currentChunkMeta.clippedSchema.isEmpty) {
-        // not reading any data, so return a degenerate ColumnarBatch with the row count
-        if (currentChunkMeta.numTotalRows == 0) {
-          EmptyGpuColumnarBatchIterator
-        } else {
-          val rows = currentChunkMeta.numTotalRows.toInt
-          // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get())
-          val nullColumns = currentChunkMeta.readSchema.safeMap(f =>
-            GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
-          val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
-          new SingleGpuColumnarBatchIterator(emptyBatch)
-        }
-      } else {
-        val colTypes = currentChunkMeta.readSchema.fields.map(f => f.dataType)
-        if (currentChunkMeta.currentChunk.isEmpty) {
-          CachedGpuBatchIterator(EmptyTableReader, colTypes)
-        } else {
-          val dataBuffer = readPartFiles(currentChunkMeta.currentChunk,
-            currentChunkMeta.clippedSchema)
-          if (dataBuffer.length == 0) {
-            dataBuffer.close()
-            CachedGpuBatchIterator(EmptyTableReader, colTypes)
-          } else {
-            startNewBufferRetry
-            RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
-              val dataBuf = dataBuffer.getDataHostBuffer()
-              val tableReader = readBufferToTablesAndClose(dataBuf, dataBuf.getLength,
-                currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
-                currentChunkMeta.extraInfo)
-              CachedGpuBatchIterator(tableReader, colTypes)
-            }
-          }
+      val (batchIter, effectiveMeta) = readBatchData(currentChunkMeta)
+      new GpuColumnarBatchWithPartitionValuesIterator(batchIter, effectiveMeta.allPartValues,
+        getRowsPerPartition(effectiveMeta.rowsPerPartition, effectiveMeta.allPartValues),
+        partitionSchema, maxGpuColumnSizeBytes).map { withParts =>
+        withResource(withParts) { _ =>
+          finalizeOutputBatch(withParts, effectiveMeta.extraInfo)
         }
       }
-      new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
-        currentChunkMeta.rowsPerPartition, partitionSchema,
-        maxGpuColumnSizeBytes).map { withParts =>
-        withResource(withParts) { _ =>
-          finalizeOutputBatch(withParts, currentChunkMeta.extraInfo)
+    }
+  }
+
+  /**
+   * Reads the data for the current batch and returns the decoded batch iterator together with
+   * the effective [[CurrentChunkMeta]] after [[prepareForDecode]] has run. Callers use the
+   * returned meta (rather than the input meta) for any post-decode operations such as
+   * [[getRowsPerPartition]] and [[finalizeOutputBatch]], so that subclass hooks populated
+   * during the decode phase (e.g. loaded DV bitmaps) are visible.
+   */
+  private def readBatchData(
+      meta: CurrentChunkMeta): (Iterator[ColumnarBatch], CurrentChunkMeta) = {
+    if (meta.clippedSchema.isEmpty) {
+      // not reading any data, so return a degenerate ColumnarBatch with the row count
+      val iter = if (meta.numTotalRows == 0) {
+        EmptyGpuColumnarBatchIterator
+      } else {
+        val rows = meta.numTotalRows.toInt
+        // Someone is going to process this data, even if it is just a row count
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        val nullColumns = meta.readSchema.safeMap(f =>
+          GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
+        val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
+        new SingleGpuColumnarBatchIterator(emptyBatch)
+      }
+      (iter, meta)
+    } else {
+      val colTypes = meta.readSchema.fields.map(f => f.dataType)
+      if (meta.currentChunk.isEmpty) {
+        (CachedGpuBatchIterator(EmptyTableReader, colTypes), meta)
+      } else {
+        val dataBuffer = readPartFiles(meta.currentChunk, meta.clippedSchema)
+        if (dataBuffer.length == 0) {
+          dataBuffer.close()
+          (CachedGpuBatchIterator(EmptyTableReader, colTypes), meta)
+        } else {
+          val decodeMeta = prepareForDecode(meta)
+          startNewBufferRetry
+          val iter = RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
+            val dataBuf = dataBuffer.getDataHostBuffer()
+            val tableReader = readBufferToTablesAndClose(dataBuf, dataBuf.getLength,
+              decodeMeta.clippedSchema, decodeMeta.readSchema, decodeMeta.extraInfo)
+            CachedGpuBatchIterator(tableReader, colTypes)
+          }
+          (iter, decodeMeta)
         }
       }
     }
@@ -1328,14 +1360,14 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @return the HostMemoryBuffer
    */
   private def readPartFiles(
-      blocks: Seq[(Path, DataBlockBase)],
+      blocks: Seq[SingleDataBlockInfo],
       clippedSchema: SchemaBase): SpillableHostBuffer = {
 
     NvtxIdWithMetrics(NvtxRegistry.BUFFER_FILE_SPLIT, metrics("bufferTime")) {
       // ugly but we want to keep the order
       val filesAndBlocks = LinkedHashMap[Path, ArrayBuffer[DataBlockBase]]()
-      blocks.foreach { case (path, block) =>
-        filesAndBlocks.getOrElseUpdate(path, new ArrayBuffer[DataBlockBase]) += block
+      blocks.foreach { b =>
+        filesAndBlocks.getOrElseUpdate(b.filePath, new ArrayBuffer[DataBlockBase]) += b.dataBlock
       }
       val tasks = new java.util.ArrayList[Future[AsyncResult[(Seq[DataBlockBase], Long)]]]()
 
@@ -1438,7 +1470,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @return [[CurrentChunkMeta]]
    */
   protected def populateCurrentBlockChunk(): CurrentChunkMeta = {
-    val currentChunk = new ArrayBuffer[(Path, DataBlockBase)]
+    val currentChunk = new ArrayBuffer[SingleDataBlockInfo]
     var numRows: Long = 0
     var numBytes: Long = 0
     var numChunkBytes: Long = 0
@@ -1500,10 +1532,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             }
 
             val nextBlock = blockIterator.next()
-            val nextTuple = (nextBlock.filePath, nextBlock.dataBlock)
-            currentChunk += nextTuple
-            numRows += currentChunk.last._2.getRowCount
-            numChunkBytes += currentChunk.last._2.getReadDataSize
+            currentChunk += nextBlock
+            numRows += currentChunk.last.dataBlock.getRowCount
+            numChunkBytes += currentChunk.last.dataBlock.getReadDataSize
             numBytes += estimatedBytes
             readNextBatch()
           }
