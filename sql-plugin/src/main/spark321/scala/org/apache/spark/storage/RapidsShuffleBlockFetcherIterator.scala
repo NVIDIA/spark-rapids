@@ -38,7 +38,9 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "358"}
 {"spark": "400"}
+{"spark": "400db173"}
 {"spark": "401"}
 {"spark": "402"}
 {"spark": "411"}
@@ -1087,9 +1089,9 @@ final class RapidsShuffleBlockFetcherIterator(
         try {
           while (checkedIn.read(buffer) != -1) {}
           val checksum = checkedIn.getChecksum.getValue
-          cause = shuffleClient.diagnoseCorruption(address.host, address.port, address.executorId,
-            shuffleBlock.shuffleId, shuffleBlock.mapId, shuffleBlock.reduceId, checksum,
-            checksumAlgorithm)
+          cause = ShuffleClientShims.diagnoseCorruption(shuffleClient,
+            address.host, address.port, address.executorId,
+            shuffleBlock, checksum, checksumAlgorithm)
         } catch {
           case e: Exception =>
             logWarning("Unable to diagnose the corruption cause of the corrupted block", e)

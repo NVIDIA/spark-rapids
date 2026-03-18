@@ -37,6 +37,7 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "358"}
 {"spark": "400"}
 {"spark": "401"}
 {"spark": "402"}
@@ -51,7 +52,9 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuMultiplyDTInterval}
 
 object DayTimeIntervalShims {
-  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = 
+    // TimeAdd moved to TimeAddShims to handle version differences
+    TimeAddShims.exprs ++ Seq(
     GpuOverrides.expr[Abs](
       "Absolute value",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
@@ -92,5 +95,6 @@ object DayTimeIntervalShims {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuDivideDTInterval(lhs, rhs)
       })
-  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r))
+    .toMap[Class[_ <: Expression], ExprRule[_ <: Expression]]
 }

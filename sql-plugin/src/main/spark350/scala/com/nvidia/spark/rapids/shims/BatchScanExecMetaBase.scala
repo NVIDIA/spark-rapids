@@ -24,7 +24,9 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "358"}
 {"spark": "400"}
+{"spark": "400db173"}
 {"spark": "401"}
 {"spark": "402"}
 {"spark": "411"}
@@ -33,7 +35,6 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.v2.BatchScanExec
 
@@ -56,12 +57,12 @@ abstract class BatchScanExecMetaBase(p: BatchScanExec,
     }
     wrapped.runtimeFilters.map { filter =>
       filter.transformDown {
-        case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
+        case dpe @ DynamicPruningShims(inSub: InSubqueryExec) =>
           inSub.plan match {
             case bc: SubqueryBroadcastExec =>
-              dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
+              DynamicPruningShims(inSub.copy(plan = convertBroadcast(bc)))
             case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
-              dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
+              DynamicPruningShims(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
             case _ =>
               dpe
           }

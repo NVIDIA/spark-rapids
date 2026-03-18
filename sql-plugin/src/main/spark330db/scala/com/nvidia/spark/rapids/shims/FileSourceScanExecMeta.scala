@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,14 @@
 {"spark": "332db"}
 {"spark": "341db"}
 {"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.catalyst.expressions.{DynamicPruningExpression, Expression}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
@@ -90,12 +91,12 @@ class FileSourceScanExecMeta(plan: FileSourceScanExec,
   private def convertDynamicPruningFilters(filters: Seq[Expression]): Seq[Expression] = {
     filters.map { filter =>
       filter.transformDown {
-        case dpe @ DynamicPruningExpression(inSub: InSubqueryExec) =>
+        case dpe @ DynamicPruningShims(inSub: InSubqueryExec) =>
           inSub.plan match {
             case bc: SubqueryBroadcastExec =>
-              dpe.copy(inSub.copy(plan = convertBroadcast(bc)))
+              DynamicPruningShims(inSub.copy(plan = convertBroadcast(bc)))
             case reuse @ ReusedSubqueryExec(bc: SubqueryBroadcastExec) =>
-              dpe.copy(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
+              DynamicPruningShims(inSub.copy(plan = reuse.copy(convertBroadcast(bc))))
             case _ =>
               dpe
           }

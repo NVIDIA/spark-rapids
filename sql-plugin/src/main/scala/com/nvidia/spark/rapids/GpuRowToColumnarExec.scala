@@ -659,13 +659,8 @@ class RowToColumnarIterator(
                 builders.restoreState(snapshots)
                 pendingRow = copyRow(row)
                 if (rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike]) {
-                  // We already have converted rows. End this batch early and let
-                  // the saved pendingRow be picked up by the next batch.
                   batchDone = true
                 } else {
-                  // Either this is the very first row or we must fit all rows in one batch
-                  // (RequireSingleBatch). Fall back to the full retry framework which will
-                  // block the thread until memory is freed, then retry.
                   val converter = new RetryableRowConverter(builders, rowCopyProjection)
                   converter.attempt(pendingRow)
                   val bytesWritten = withRetryNoSplit {
