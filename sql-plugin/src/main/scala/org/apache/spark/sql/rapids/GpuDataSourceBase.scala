@@ -358,6 +358,19 @@ object GpuDataSourceBase extends Logging {
     "org.apache.spark.sql.sources.HadoopFsRelationProvider",
     "org.apache.spark.Logging")
 
+  private def handleServiceConfigError(e: ServiceConfigurationError, context: String): Unit = {
+    val cause = e.getCause
+    if (cause.isInstanceOf[NoClassDefFoundError]) {
+      val className = cause.getMessage.replaceAll("/", ".")
+      if (spark2RemovedClasses.contains(className)) {
+        throw new ClassNotFoundException(
+          "Detected an incompatible DataSourceRegister. Please remove the " +
+            s"incompatible library from classpath or upgrade it. Error: ${e.getMessage}", e)
+      }
+    }
+    logWarning(s"Skipping broken DataSourceRegister provider$context: ${e.getMessage}")
+  }
+
   def lookupDataSourceWithFallback(className: String, conf: SQLConf): Class[_] = {
     val cls = GpuDataSourceBase.lookupDataSource(className, conf)
     // `providingClass` is used for resolving data source relation for catalog tables.
@@ -405,22 +418,9 @@ object GpuDataSourceBase extends Logging {
           iter.hasNext
         } catch {
           case e: ServiceConfigurationError =>
-            val cause = e.getCause
-            if (cause.isInstanceOf[NoClassDefFoundError]) {
-              val className =
-                cause.getMessage.replaceAll("/", ".")
-              if (spark2RemovedClasses.contains(className)) {
-                throw new ClassNotFoundException(
-                  "Detected an incompatible " +
-                    "DataSourceRegister. Please remove the " +
-                    "incompatible library from classpath or " +
-                    s"upgrade it. Error: ${e.getMessage}", e)
-              }
-            }
-            logWarning("Skipping broken DataSourceRegister " +
-              s"provider (hasNext): ${e.getMessage}")
             // Assume more entries may exist;
             // let next() advance past the broken entry.
+            handleServiceConfigError(e, " (hasNext)")
             true
         }
         if (!hasMore) {
@@ -433,21 +433,7 @@ object GpuDataSourceBase extends Logging {
             }
           } catch {
             case e: ServiceConfigurationError =>
-              val cause = e.getCause
-              if (cause.isInstanceOf[NoClassDefFoundError]) {
-                val className =
-                  cause.getMessage.replaceAll("/", ".")
-                if (spark2RemovedClasses.contains(className)) {
-                  throw new ClassNotFoundException(
-                    "Detected an incompatible " +
-                      "DataSourceRegister. Please remove the " +
-                      "incompatible library from classpath " +
-                      "or upgrade it. " +
-                      s"Error: ${e.getMessage}", e)
-                }
-              }
-              logWarning("Skipping broken DataSourceRegister" +
-                s" provider: ${e.getMessage}")
+              handleServiceConfigError(e, "")
           }
         }
       }
