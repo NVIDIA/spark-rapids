@@ -71,6 +71,7 @@ _random_scalar_test_configs = [
 # Shared fixture and helpers to reduce per-test boilerplate
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def from_protobuf_fn():
     """Skip the module if spark-protobuf is not on the classpath at runtime."""
@@ -215,10 +216,12 @@ def _build_proto2_descriptor(spark, filename, messages, file_enums=None):
         "required": D.FieldDescriptorProto.Label.LABEL_REQUIRED,
     }
 
+
     def _default_literal(value):
         if isinstance(value, bool):
             return "true" if value else "false"
         return str(value)
+
 
     def _build_enum(enum_spec):
         enum_builder = D.EnumDescriptorProto.newBuilder().setName(enum_spec["name"])
@@ -279,6 +282,7 @@ def test_from_protobuf_simple_parquet_binary_round_trip(spark_tmp_path, from_pro
         pb.field("f64", 5, DoubleGen(nullable=True, no_nans=True)),
         pb.field("s", 6, StringGen(nullable=True)),
     ], binary_col_name="bin")
+
 
     def write_parquet(spark):
         df = gen_df(spark, row_gen)
@@ -542,6 +546,7 @@ def test_from_protobuf_customer_heavy_nested_proto(spark_tmp_path, from_protobuf
     message_name = "com.test.proto.sample.MainLogRecord"
     data_gen = pb.as_datagen(_build_main_log_record_fields())
 
+
     def run_on_spark(spark):
         generated = gen_df(spark, data_gen).select("bin")
         decoded = _call_from_protobuf(
@@ -584,6 +589,7 @@ def test_from_protobuf_schema_projection_simple_fields_only(spark_tmp_path, from
         pb.field("simple_str", 2, StringGen()),
         pb.field("simple_long", 4, LongGen()),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -686,6 +692,7 @@ def test_from_protobuf_enum_cases(spark_tmp_path, from_protobuf_fn, enum_case):
         options = {"mode": "PERMISSIVE"}
         select_mode = "decoded"
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(rows, schema="bin binary")
         decoded = _call_from_protobuf(
@@ -734,6 +741,7 @@ def test_from_protobuf_nested_enum_permissive_invalid_row_null(spark_tmp_path, f
         (3, None),
     ]
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(rows, schema="idx int, bin binary")
         decoded = _call_from_protobuf(
@@ -769,6 +777,7 @@ def test_from_protobuf_nested_enum_invalid_permissive_nulls_sibling_fields(
     row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
                    _encode_tag(2, 2) + _encode_varint(len(detail_invalid)) + detail_invalid +
                    _encode_tag(3, 2) + _encode_varint(3) + b"bad")
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame([(0, row_valid), (1, row_invalid)], schema="idx int, bin binary")
@@ -839,6 +848,7 @@ def test_from_protobuf_nested_enum_defaults_string_mode(spark_tmp_path, from_pro
                         _encode_tag(2, 2) + _encode_varint(0))
     row_no_common = _encode_tag(1, 0) + _encode_varint(3)
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(
             [(row_logid_only,), (row_empty_common,), (row_no_common,)],
@@ -888,6 +898,7 @@ def test_from_protobuf_repeated_enum_invalid_permissive(spark_tmp_path, from_pro
     row3 = (_encode_tag(1, 0) + _encode_varint(3) +
             _encode_tag(2, 0) + _encode_varint(0))
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(
             [(row1,), (row2,), (row3,)], schema="bin binary")
@@ -915,6 +926,7 @@ def test_from_protobuf_repeated_enum_string_invalid_permissive_nulls_sibling_fie
     row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
                    _encode_tag(2, 0) + _encode_varint(1) +
                    _encode_tag(2, 0) + _encode_varint(99))
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame([(0, row_valid), (1, row_invalid)], schema="idx int, bin binary")
@@ -968,6 +980,7 @@ def test_from_protobuf_repeated_message_child_enum_string(
     row_no_items = (_encode_tag(1, 0) + _encode_varint(2) +
                     _encode_tag(3, 2) + _encode_varint(5) + b"empty")
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(
             [(row_with_items,), (row_no_items,), (None,)], schema="bin binary")
@@ -1001,6 +1014,7 @@ def test_from_protobuf_repeated_message_child_enum_string_invalid_permissive(
     row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
                    _encode_tag(2, 2) + _encode_varint(len(item_invalid)) + item_invalid +
                    _encode_tag(3, 2) + _encode_varint(3) + b"bad")
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame(
@@ -1057,6 +1071,7 @@ def test_from_protobuf_nested_repeated_enum_string(
     row_no_inner = (_encode_tag(1, 0) + _encode_varint(2) +
                     _encode_tag(3, 2) + _encode_varint(4) + b"none")
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(
             [(row_with_inner,), (row_no_inner,), (None,)], schema="bin binary")
@@ -1092,6 +1107,7 @@ def test_from_protobuf_nested_repeated_enum_string_invalid_permissive(
     row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
                    _encode_tag(2, 2) + _encode_varint(len(inner_invalid)) + inner_invalid +
                    _encode_tag(3, 2) + _encode_varint(3) + b"bad")
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame(
@@ -1160,6 +1176,7 @@ def test_from_protobuf_required_field_present(spark_tmp_path, from_protobuf_fn):
     test_data_row0 = encode_pb_message(required_schema, {"id": 100, "name": "test", "count": 42})
     test_data_row1 = encode_pb_message(required_schema, {"id": 200})
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(
             [(test_data_row0,), (test_data_row1,)],
@@ -1187,6 +1204,7 @@ def test_from_protobuf_required_field_missing_failfast(spark_tmp_path, from_prot
 
     missing_required_row = _encode_tag(2, 2) + _encode_varint(4) + b"oops"
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame([(missing_required_row,)], schema="bin binary")
         decoded = _call_from_protobuf(
@@ -1206,6 +1224,7 @@ def test_from_protobuf_required_field_missing_permissive(spark_tmp_path, from_pr
     message_name = "test.WithRequired"
 
     missing_required_row = _encode_tag(2, 2) + _encode_varint(5) + b"hello"
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame([(missing_required_row,)], schema="bin binary")
@@ -1245,6 +1264,7 @@ def test_from_protobuf_nested_required_field_missing_permissive(
                             _encode_tag(3, 2) + _encode_varint(7) + b"missing")
     row_missing_inner = (_encode_tag(1, 0) + _encode_varint(300) +
                          _encode_tag(3, 2) + _encode_varint(8) + b"no_inner")
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame(
@@ -1311,6 +1331,7 @@ def test_from_protobuf_default_values_cases(spark_tmp_path, from_protobuf_fn, de
         rows = [(encode_pb_message(defaults_schema, {"count": 42, "flag": True}),)]
         select_mode = "name_only"
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(rows, schema="bin binary")
         decoded = _call_from_protobuf(
@@ -1372,6 +1393,7 @@ def test_from_protobuf_random_scalars(spark_tmp_path, from_protobuf_fn, test_con
 
     data_gen = pb.as_datagen(field_configs)
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
 
@@ -1418,6 +1440,7 @@ def test_from_protobuf_all_scalar_types(spark_tmp_path, from_protobuf_fn):
             special_cases=[0, 1, -1]), encoding='fixed'),
     ])
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -1451,6 +1474,7 @@ def test_from_protobuf_scalar_bytes(spark_tmp_path, from_protobuf_fn):
         pb.field("payload", 1, BinaryGen(min_length=0, max_length=16)),
     ])
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -1472,6 +1496,7 @@ def test_from_protobuf_duplicate_fields(spark_tmp_path, from_protobuf_fn):
     # i32 (field 2) appears twice in row0 and three times in row1.
     test_data_row0 = bytes([0x10, 0x01, 0x10, 0x2A])
     test_data_row1 = bytes([0x10, 0x03, 0x10, 0x04, 0x10, 0x05])
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame(
@@ -1509,6 +1534,7 @@ def test_from_protobuf_repeated_int32(spark_tmp_path, from_protobuf_fn):
         pb.field("id", 1, IntegerGen()),
         pb.repeated_field("values", 2, IntegerGen(), min_len=0, max_len=10),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -1548,6 +1574,7 @@ def test_from_protobuf_repeated_string(spark_tmp_path, from_protobuf_fn):
         pb.repeated_field("tags", 2, StringGen(), min_len=0, max_len=5),
     ])
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -1577,6 +1604,7 @@ def test_from_protobuf_nested_message(spark_tmp_path, from_protobuf_fn):
         pb.nested_field("nested_msg", 3, [pb.field("x", 1, IntegerGen())]),
         pb.field("simple_long", 4, LongGen()),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -1612,6 +1640,7 @@ def test_from_protobuf_nested_message_field_access_with_batch_merge(
         pb.nested_field("nested_msg", 3, [pb.field("x", 1, IntegerGen())]),
         pb.field("simple_long", 4, LongGen()),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -1661,6 +1690,7 @@ def test_from_protobuf_deep_nested(spark_tmp_path, from_protobuf_fn):
         ]),
     ])
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -1705,6 +1735,7 @@ def test_from_protobuf_repeated_message(spark_tmp_path, from_protobuf_fn):
             pb.field("name", 2, StringGen()),
         ], min_len=0, max_len=5),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -1755,6 +1786,7 @@ def test_from_protobuf_nested_with_repeated(spark_tmp_path, from_protobuf_fn):
             pb.field("count", 3, IntegerGen()),
         ]),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -1807,6 +1839,7 @@ def test_from_protobuf_repeated_with_nested(spark_tmp_path, from_protobuf_fn):
         ], min_len=0, max_len=3),
     ])
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -1848,6 +1881,7 @@ def test_from_protobuf_packed_repeated(spark_tmp_path, from_protobuf_fn):
         pb.repeated_field("double_values", 3, DoubleGen(), packed=True, min_len=0, max_len=5),
         pb.repeated_field("bool_values", 4, BooleanGen(), packed=True, min_len=0, max_len=5),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -1895,6 +1929,7 @@ def test_from_protobuf_repeated_all_types(spark_tmp_path, from_protobuf_fn):
         pb.repeated_field("bytes_values", 6, BinaryGen()),
     ])
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -1927,6 +1962,7 @@ def test_from_protobuf_large_repeated_array(spark_tmp_path, from_protobuf_fn):
         pb.field("id", 1, IntegerGen()),
         pb.repeated_field("values", 2, IntegerGen(), min_len=500, max_len=1000),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -1976,6 +2012,7 @@ def test_from_protobuf_signed_integers(spark_tmp_path, from_protobuf_fn):
             special_cases=[0, 1, -1]), encoding='fixed'),
     ])
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -2018,6 +2055,7 @@ def test_from_protobuf_fixed_integers(spark_tmp_path, from_protobuf_fn):
         pb.field("fx64", 2, LongGen(
             special_cases=[0, 1, -1]), encoding='fixed'),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -2120,6 +2158,7 @@ def test_from_protobuf_projection_across_plan_boundary(
         _build_schema_projection_descriptor_set_bytes)
     message_name = "test.SchemaProj"
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame([(row,) for row in _schema_proj_test_data], schema="bin binary")
         decoded = _call_from_protobuf(
@@ -2168,6 +2207,7 @@ def test_from_protobuf_different_messages_same_binary_column_do_not_interfere(
                 _encode_tag(2, 2) + _encode_varint(len(payload_keep)) + payload_keep)
     row_drop = (_encode_tag(1, 0) + _encode_varint(0) +
                 _encode_tag(2, 2) + _encode_varint(len(payload_drop)) + payload_drop)
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame([(row_keep,), (row_drop,)], schema="bin binary")
@@ -2249,6 +2289,7 @@ def test_from_protobuf_schema_projection_cases(
         spark_tmp_path, "schema_proj.desc", _build_schema_projection_descriptor_set_bytes)
     message_name = "test.SchemaProj"
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(
             [(d,) for d in _schema_proj_test_data], schema="bin binary")
@@ -2259,6 +2300,7 @@ def test_from_protobuf_schema_projection_cases(
         return df.select(*selected)
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
 
 def _build_name_collision_descriptor_set_bytes(spark):
     """Build a regression schema with same-named fields in unrelated nested messages."""
@@ -2273,6 +2315,7 @@ def _build_name_collision_descriptor_set_bytes(spark):
             _field("ad_info", 2, "MESSAGE", type_name=".test.Ad"),
         ]),
     ])
+
 
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -2292,6 +2335,7 @@ def test_from_protobuf_bug1_name_collision(spark_tmp_path, from_protobuf_fn):
             pb.field("id", 1, IntegerGen()),
         ]),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -2316,6 +2360,7 @@ def _build_filter_jump_descriptor_set_bytes(spark):
         ]),
     ])
 
+
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
@@ -2329,6 +2374,7 @@ def test_from_protobuf_bug2_filter_jump(spark_tmp_path, from_protobuf_fn):
         pb.field("status", 1, IntegerGen(min_val=1, max_val=1)),
         pb.field("ad_info", 2, StringGen()),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -2354,6 +2400,7 @@ def _build_unrelated_struct_name_collision_descriptor_set_bytes(spark):
         ]),
     ])
 
+
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
@@ -2369,6 +2416,7 @@ def test_from_protobuf_bug3_unrelated_struct_name_collision(spark_tmp_path, from
             pb.field("winfoid", 2, IntegerGen()),
         ]),
     ])
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -2409,8 +2457,8 @@ def _build_max_depth_descriptor_set_bytes(spark):
         messages.append(_msg(f"Level{i}", fields))
     return _build_proto2_descriptor(spark, "max_depth.proto", messages)
 
+
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
 def test_from_protobuf_bug4_max_depth(spark_tmp_path, from_protobuf_fn):
     desc_path, desc_bytes = _setup_protobuf_desc(
         spark_tmp_path, "max_depth.desc",
@@ -2427,6 +2475,7 @@ def test_from_protobuf_bug4_max_depth(spark_tmp_path, from_protobuf_fn):
         ]
 
     data_gen = pb.as_datagen(build_nested_gen(1))
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -2455,6 +2504,7 @@ def test_from_protobuf_bug4_max_depth(spark_tmp_path, from_protobuf_fn):
 #   For v = 256, static_cast<uint8_t>(256) == 0  →  false.  BUG.
 # ---------------------------------------------------------------------------
 
+
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
@@ -2479,6 +2529,7 @@ def test_from_protobuf_bool_noncanonical_varint_scalar(spark_tmp_path, from_prot
     # Another non-canonical value: varint(512)
     row_bool_512 = _encode_tag(1, 0) + _encode_varint(512) + \
                    _encode_tag(2, 0) + _encode_varint(101)
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame(
@@ -2524,6 +2575,7 @@ def test_from_protobuf_bool_noncanonical_varint_repeated(spark_tmp_path, from_pr
            _encode_tag(2, 0) + _encode_varint(1) +
            _encode_tag(2, 0) + _encode_varint(512))
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame([(row,)], schema="bin binary")
         decoded = _call_from_protobuf(
@@ -2539,6 +2591,7 @@ def test_from_protobuf_bool_noncanonical_varint_repeated(spark_tmp_path, from_pr
 # ---------------------------------------------------------------------------
 # Regression guard: nested message child field default values
 # ---------------------------------------------------------------------------
+
 
 def _build_nested_with_defaults_descriptor_set_bytes(spark):
     """Build a descriptor with proto2 defaults inside a nested child struct."""
@@ -2584,6 +2637,7 @@ def test_from_protobuf_nested_child_default_values(spark_tmp_path, from_protobuf
     # Row 3: outer.id = 30, inner is fully absent → inner itself is null.
     row_no_inner = _encode_tag(1, 0) + _encode_varint(30)
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(
             [(row_empty_inner,), (row_partial_inner,), (row_no_inner,)],
@@ -2609,6 +2663,7 @@ def test_from_protobuf_nested_child_default_values(spark_tmp_path, from_protobuf
 # GetStructField chains, so accessing decoded.level2.level3.val3 would
 # decode ALL of level3's children instead of only val3.
 # ===========================================================================
+
 
 def _deep_5_level_data_gen():
     return pb.as_datagen([
@@ -2638,6 +2693,7 @@ def test_deep_pruning_3_level_leaf(spark_tmp_path, from_protobuf_fn):
     message_name = "test.Level1"
     data_gen = _deep_5_level_data_gen()
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -2659,6 +2715,7 @@ def test_deep_pruning_5_level_leaf(spark_tmp_path, from_protobuf_fn):
         spark_tmp_path, "dp5.desc", _build_deep_nested_5_level_descriptor_set_bytes)
     message_name = "test.Level1"
     data_gen = _deep_5_level_data_gen()
+
 
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
@@ -2686,6 +2743,7 @@ def test_deep_pruning_mixed_depths(spark_tmp_path, from_protobuf_fn):
     message_name = "test.Level1"
     data_gen = _deep_5_level_data_gen()
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -2711,6 +2769,7 @@ def test_deep_pruning_whole_struct_at_depth_3(spark_tmp_path, from_protobuf_fn):
     message_name = "test.Level1"
     data_gen = _deep_5_level_data_gen()
 
+
     def run_on_spark(spark):
         df = gen_df(spark, data_gen)
         decoded = _call_from_protobuf(
@@ -2726,6 +2785,7 @@ def test_deep_pruning_whole_struct_at_depth_3(spark_tmp_path, from_protobuf_fn):
 # FAILFAST mode tests
 # ===========================================================================
 
+
 @_xfail_gpu_protobuf
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 def test_from_protobuf_failfast_malformed_data(spark_tmp_path, from_protobuf_fn):
@@ -2738,6 +2798,7 @@ def test_from_protobuf_failfast_malformed_data(spark_tmp_path, from_protobuf_fn)
     valid_row = _encode_tag(1, 0) + _encode_varint(1) + \
                 _encode_tag(2, 0) + _encode_varint(42)
     malformed_row = bytes([0x08, 0x80])  # field 1, varint, but only continuation byte -- no end
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame(
@@ -2769,6 +2830,7 @@ def test_from_protobuf_permissive_malformed_returns_null(spark_tmp_path, from_pr
     valid_row = _encode_tag(2, 0) + _encode_varint(99)
     malformed_row = bytes([0x08, 0x80])  # truncated varint
 
+
     def run_on_spark(spark):
         df = spark.createDataFrame(
             [(valid_row,), (malformed_row,)],
@@ -2793,6 +2855,7 @@ def test_from_protobuf_all_null_input(spark_tmp_path, from_protobuf_fn):
     desc_path, desc_bytes = _setup_protobuf_desc(
         spark_tmp_path, "allnull.desc", _build_simple_descriptor_set_bytes)
     message_name = "test.Simple"
+
 
     def run_on_spark(spark):
         df = spark.createDataFrame(
