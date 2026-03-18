@@ -347,16 +347,20 @@ class GpuDeltaParquetFileFormatBase2(
   ) extends AutoCloseable {
 
     def computeNumRowsDeleted(): Long = {
-      rowGroupOffsets.zip(rowGroupNumRows).map {
-        case (offset, numRows) =>
-          var contains = 0L
-          for (i <- offset until offset + numRows) {
-            if (scalaBitmap.contains(i)) {
-              contains = contains + 1L
+      if (scalaBitmap.cardinality == 0) {
+        0L
+      } else {
+        rowGroupOffsets.zip(rowGroupNumRows).map {
+          case (offset, numRows) =>
+            var contains = 0L
+            for (i <- offset until offset + numRows) {
+              if (scalaBitmap.contains(i)) {
+                contains = contains + 1L
+              }
             }
-          }
-          contains
-      }.sum
+            contains
+        }.sum
+      }
     }
 
     override def close(): Unit = {
