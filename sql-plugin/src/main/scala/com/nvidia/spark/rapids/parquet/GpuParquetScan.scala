@@ -2321,7 +2321,7 @@ case class ParquetSingleDataBlockMeta(
  * Provides all the Parquet-specific block-copy machinery shared between the plain coalescing
  * reader and the Delta-aware coalescing reader: header/footer writing, block-split predicate,
  * batch runner, and the [[populateCurrentBlockChunk]] template method with the
- * [[onBatchAssembled]] extension point.
+ * [[augmentChunkMeta]] extension point.
  *
  * Both [[MultiFileParquetPartitionReader]] and the Delta-aware coalescing reader extend this
  * class. Neither extends the other.
@@ -2499,12 +2499,12 @@ abstract class MultiFileCoalescingParquetPartitionReaderBase(
 
   /**
    * Template method: assembles the current block chunk via the base-class implementation, then
-   * calls [[onBatchAssembled]] so subclasses can augment the resulting [[CurrentChunkMeta]]
+   * calls [[augmentChunkMeta]] so subclasses can augment the resulting [[CurrentChunkMeta]]
    * without duplicating the assembly loop.
    */
   final override def populateCurrentBlockChunk(): CurrentChunkMeta = {
     val meta = super.populateCurrentBlockChunk()
-    onBatchAssembled(meta)
+    augmentChunkMeta(meta)
   }
 
   /**
@@ -2513,7 +2513,7 @@ abstract class MultiFileCoalescingParquetPartitionReaderBase(
    * the returned [[CurrentChunkMeta]] without touching the assembly loop.
    * Default implementation returns the meta unchanged.
    */
-  protected def onBatchAssembled(meta: CurrentChunkMeta): CurrentChunkMeta = meta
+  protected def augmentChunkMeta(meta: CurrentChunkMeta): CurrentChunkMeta = meta
 }
 
 /**

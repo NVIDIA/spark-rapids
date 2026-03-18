@@ -1287,17 +1287,23 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * alive rows per partition after any row-level filtering (e.g. deletion vectors).
    * Subclasses override to substitute DV-filtered counts in place of raw row counts.
    * Default implementation returns rawRowsPerPartition unchanged.
+   *
+   * @param rawRowsPerPartition raw row counts per partition from batch assembly
+   * @param allPartValues partition values per partition entry
+   * @param extraInfo extra info for the current batch (may be cast to a subtype)
    */
   protected def getRowsPerPartition(
       rawRowsPerPartition: Array[Long],
-      allPartValues: Array[InternalRow]): Array[Long] = rawRowsPerPartition
+      allPartValues: Array[InternalRow],
+      extraInfo: ExtraInfo): Array[Long] = rawRowsPerPartition
 
   private def readBatch(): Iterator[ColumnarBatch] = {
     NvtxRegistry.FILE_FORMAT_READ_BATCH {
       val currentChunkMeta = populateCurrentBlockChunk()
       val (batchIter, effectiveMeta) = readBatchData(currentChunkMeta)
       new GpuColumnarBatchWithPartitionValuesIterator(batchIter, effectiveMeta.allPartValues,
-        getRowsPerPartition(effectiveMeta.rowsPerPartition, effectiveMeta.allPartValues),
+        getRowsPerPartition(effectiveMeta.rowsPerPartition, effectiveMeta.allPartValues,
+          effectiveMeta.extraInfo),
         partitionSchema, maxGpuColumnSizeBytes).map { withParts =>
         withResource(withParts) { _ =>
           finalizeOutputBatch(withParts, effectiveMeta.extraInfo)
