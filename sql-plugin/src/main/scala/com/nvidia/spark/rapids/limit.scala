@@ -195,21 +195,23 @@ class GpuCollectLimitMeta(
 
   // Shared implementation for all Spark versions. Shim overrides supply
   // the real offset (Spark 3.4+); the base class passes 0 (Spark 3.3).
-  protected def buildCollectLimitGpu(offset: Int): GpuExec = {
+  //
+  // applyRowLimit: when true AND the child is row-based, wrap with CPU
+  // LocalLimitExec to stop upstream row iterators early — matching CPU
+  // CollectLimitExec.doExecute() per-partition .take(limit) behavior.
+  // Disabled for Spark 3.4+ shims where OFFSET semantics require
+  // limit+offset accounting (tracked in #14397) and the integration
+  // test framework does not yet allow LocalLimitExec in GPU plans.
+  protected def buildCollectLimitGpu(
+      offset: Int,
+      applyRowLimit: Boolean = false): GpuExec = {
     val gpuChild = childPlans.head.convertIfNeeded()
-    // Only wrap with CPU LocalLimitExec when the child is row-based.
-    // For row-based children (e.g. map with accumulators), GpuRowToColumnarExec
-    // would batch ALL rows before GpuLocalLimitExec can limit. LocalLimitExec
-    // applies .take(limit) at the row level, stopping upstream iterators early
-    // — matching CPU CollectLimitExec.doExecute() behavior.
-    // For columnar children, GpuLocalLimitExec already handles limiting
-    // efficiently via GPU batch slicing — adding LocalLimitExec would force
-    // unnecessary columnar-to-row-to-columnar transitions.
-    val effectiveChild = if (!gpuChild.supportsColumnar) {
-      LocalLimitExec(collectLimit.limit, gpuChild)
-    } else {
-      gpuChild
-    }
+    val effectiveChild =
+      if (applyRowLimit && !gpuChild.supportsColumnar) {
+        LocalLimitExec(collectLimit.limit, gpuChild)
+      } else {
+        gpuChild
+      }
     GpuGlobalLimitExec(collectLimit.limit,
       GpuShuffleExchangeExec(
         GpuSinglePartitioning,
@@ -218,7 +220,8 @@ class GpuCollectLimitMeta(
       )(SinglePartition), offset)
   }
 
-  override def convertToGpu(): GpuExec = buildCollectLimitGpu(0)
+  override def convertToGpu(): GpuExec =
+    buildCollectLimitGpu(0, applyRowLimit = true)
 }
 
 object GpuTopN {
