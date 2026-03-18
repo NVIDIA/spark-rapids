@@ -654,13 +654,24 @@ class RowToColumnarIterator(
               byteCount += converters.convert(row, builders)
               rowCount += 1
             } catch {
-              case _: CpuRetryOOM | _: CpuSplitAndRetryOOM |
-                   _: GpuRetryOOM | _: GpuSplitAndRetryOOM =>
+              case _: CpuRetryOOM | _: GpuRetryOOM
+                  if rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike] =>
+                // Plain retry OOM after we already have rows: end this batch early
+                // and let pendingRow be picked up by the next batch.
                 builders.restoreState(snapshots)
                 pendingRow = copyRow(row)
-                if (rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike]) {
-                  batchDone = true
-                } else {
+                batchDone = true
+              case _: CpuRetryOOM | _: CpuSplitAndRetryOOM |
+                   _: GpuRetryOOM | _: GpuSplitAndRetryOOM =>
+                // Either this is the first row, RequireSingleBatch, or a SplitAndRetry
+                // signal. Fall back to the full retry framework which will block the
+                // thread until memory is freed, then retry.
+                // Exit the outer retry block first to avoid nesting
+                // currentThreadStartRetryBlock calls.
+                builders.restoreState(snapshots)
+                pendingRow = copyRow(row)
+                RmmSpark.currentThreadEndRetryBlock()
+                try {
                   val converter = new RetryableRowConverter(builders, rowCopyProjection)
                   converter.attempt(pendingRow)
                   val bytesWritten = withRetryNoSplit {
@@ -671,6 +682,8 @@ class RowToColumnarIterator(
                   byteCount += bytesWritten
                   rowCount += 1
                   pendingRow = null
+                } finally {
+                  RmmSpark.currentThreadStartRetryBlock()
                 }
             }
           }

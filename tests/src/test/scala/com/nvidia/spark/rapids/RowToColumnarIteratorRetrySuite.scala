@@ -69,6 +69,25 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     assertResult(totalRows)(totalRowsSeen)
   }
 
+  test("test first-row CPU OOM with TargetSize goal falls back to retry") {
+    val totalRows = 10
+    val rowIter: Iterator[InternalRow] = (1 to totalRows).map(InternalRow(_)).toIterator
+    val goal = TargetSize(batchSize)
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, schema, goal, batchSize, new GpuRowToColumnConverter(schema))
+    // skipCount=0 so the OOM fires on the very first CPU allocation, exercising the
+    // fallback withRetryNoSplit path when rowCount == 0 with a non-RequireSingleBatch goal.
+    RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.CPU.ordinal, 0)
+    var totalRowsSeen = 0
+    while (row2ColIter.hasNext) {
+      Arm.withResource(row2ColIter.next()) { batch =>
+        totalRowsSeen += batch.numRows()
+      }
+    }
+    assertResult(totalRows)(totalRowsSeen)
+  }
+
   test("test simple OOM split and retry") {
     val rowIter: Iterator[InternalRow] = (1 to 10).map(InternalRow(_)).toIterator
     val row2ColIter = new RowToColumnarIterator(
