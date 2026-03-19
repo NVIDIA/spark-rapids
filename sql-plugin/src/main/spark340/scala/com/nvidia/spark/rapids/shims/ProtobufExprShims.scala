@@ -399,6 +399,10 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             flatEnumNames = arrays.enumNames
 
             val prunedFieldsMap = buildPrunedFieldsMap()
+            // PRUNED_ORDINAL_TAG is set here, after all willNotWorkOnGpu guards succeed.
+            // This is safe because the CPU path never reads the tag, and if a parent later
+            // forces this subtree back to CPU, the decode and its field extractors fall back
+            // together, so no partial-GPU path can misread stale ordinals.
             targetExprsToRemap.foreach(
               registerPrunedOrdinals(_, prunedFieldsMap, decodedTopLevelIndices.toSeq))
             overrideDataType(buildDecodedSchema(prunedFieldsMap))

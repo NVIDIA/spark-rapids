@@ -178,5 +178,49 @@ final case class FlattenedSchemaArrays(
     defaultBools: Array[Boolean],
     defaultStrings: Array[Array[Byte]],
     enumValidValues: Array[Array[Int]],
-    enumNames: Array[Array[Array[Byte]]]
-)
+    enumNames: Array[Array[Array[Byte]]]) {
+  override def equals(other: Any): Boolean = other match {
+    case that: FlattenedSchemaArrays =>
+      Arrays.equals(fieldNumbers, that.fieldNumbers) &&
+        Arrays.equals(parentIndices, that.parentIndices) &&
+        Arrays.equals(depthLevels, that.depthLevels) &&
+        Arrays.equals(wireTypes, that.wireTypes) &&
+        Arrays.equals(outputTypeIds, that.outputTypeIds) &&
+        Arrays.equals(encodings, that.encodings) &&
+        Arrays.equals(isRepeated, that.isRepeated) &&
+        Arrays.equals(isRequired, that.isRequired) &&
+        Arrays.equals(hasDefaultValue, that.hasDefaultValue) &&
+        Arrays.equals(defaultInts, that.defaultInts) &&
+        Arrays.equals(defaultFloats, that.defaultFloats) &&
+        Arrays.equals(defaultBools, that.defaultBools) &&
+        Arrays.deepEquals(
+          defaultStrings.asInstanceOf[Array[Object]],
+          that.defaultStrings.asInstanceOf[Array[Object]]) &&
+        Arrays.deepEquals(
+          enumValidValues.asInstanceOf[Array[Object]],
+          that.enumValidValues.asInstanceOf[Array[Object]]) &&
+        Arrays.deepEquals(
+          enumNames.asInstanceOf[Array[Object]],
+          that.enumNames.asInstanceOf[Array[Object]])
+    case _ => false
+  }
+
+  override def hashCode(): Int = {
+    var result = Arrays.hashCode(fieldNumbers)
+    result = 31 * result + Arrays.hashCode(parentIndices)
+    result = 31 * result + Arrays.hashCode(depthLevels)
+    result = 31 * result + Arrays.hashCode(wireTypes)
+    result = 31 * result + Arrays.hashCode(outputTypeIds)
+    result = 31 * result + Arrays.hashCode(encodings)
+    result = 31 * result + Arrays.hashCode(isRepeated)
+    result = 31 * result + Arrays.hashCode(isRequired)
+    result = 31 * result + Arrays.hashCode(hasDefaultValue)
+    result = 31 * result + Arrays.hashCode(defaultInts)
+    result = 31 * result + Arrays.hashCode(defaultFloats)
+    result = 31 * result + Arrays.hashCode(defaultBools)
+    result = 31 * result + Arrays.deepHashCode(defaultStrings.asInstanceOf[Array[Object]])
+    result = 31 * result + Arrays.deepHashCode(enumValidValues.asInstanceOf[Array[Object]])
+    result = 31 * result + Arrays.deepHashCode(enumNames.asInstanceOf[Array[Object]])
+    result
+  }
+}
