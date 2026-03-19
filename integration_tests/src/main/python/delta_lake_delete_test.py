@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2025, NVIDIA CORPORATION.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -311,6 +311,43 @@ def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns, enable_de
     delete_sql = "DELETE FROM delta.`{path}` WHERE b < 'd'"
     assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, generate_dest_data,
                                     delete_sql, enable_deletion_vectors, partition_columns)
+
+@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(),
+    reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
+def test_delta_delete_twice_with_dv(spark_tmp_path):
+    """Regression test for https://github.com/NVIDIA/spark-rapids/issues/14442.
+    The second DELETE on a DV-enabled table accesses _metadata.file_path and _metadata.row_index
+    as nested fields. The plugin must not prune _metadata when its nested fields are still
+    referenced."""
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    def generate_dest_data(spark):
+        return two_col_df(spark,
+                          IntegerGen(special_cases=[100]),
+                          IntegerGen(special_cases=[200]))
+    conf = copy_and_update(delta_delete_enabled_conf,
+        {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
+    # Setup identical tables for CPU and GPU
+    with_cpu_session(lambda spark: setup_delta_dest_tables(spark, data_path,
+        generate_dest_data, use_cdf=False, enable_deletion_vectors=True))
+    cpu_path = data_path + "/CPU"
+    gpu_path = data_path + "/GPU"
+    # First delete creates a deletion vector
+    first_delete_sql = "DELETE FROM delta.`{path}` WHERE a = 100"
+    with_cpu_session(lambda spark: spark.sql(first_delete_sql.format(path=cpu_path)).collect(), conf=conf)
+    with_gpu_session(lambda spark: spark.sql(first_delete_sql.format(path=gpu_path)).collect(), conf=conf)
+    # Second delete reads the table with existing DV, triggering _metadata nested field access
+    second_delete_sql = "DELETE FROM delta.`{path}` WHERE b = 200"
+    with_cpu_session(lambda spark: spark.sql(second_delete_sql.format(path=cpu_path)).collect(), conf=conf)
+    with_gpu_session(lambda spark: spark.sql(second_delete_sql.format(path=gpu_path)).collect(), conf=conf)
+    # Verify the final table state matches between CPU and GPU
+    cpu_result = with_cpu_session(lambda spark:
+        spark.sql("SELECT * FROM delta.`{}`".format(cpu_path)).sort("a", "b").collect(), conf=conf)
+    gpu_result = with_cpu_session(lambda spark:
+        spark.sql("SELECT * FROM delta.`{}`".format(gpu_path)).sort("a", "b").collect(), conf=conf)
+    assert_equal(cpu_result, gpu_result)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
