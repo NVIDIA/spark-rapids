@@ -214,6 +214,10 @@ object GpuAnsi {
     assertMinValueOverflow(cv, op, CurrentOrigin.get)
   }
 
+  def assertMinValueOverflow(minVal: Scalar, cv: GpuColumnVector, op: String): Unit = {
+    assertMinValueOverflow(minVal, cv, op, CurrentOrigin.get)
+  }
+
   def assertMinValueOverflow(minVal: Scalar,
       cv: GpuColumnVector, op: String, origin: Origin): Unit = {
     withResource(cv.getBase.equalToNullAware(minVal)) { isMinVal =>
