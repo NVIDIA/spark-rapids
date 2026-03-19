@@ -455,7 +455,7 @@ def test_delta_deletion_vector_coalescing_count_star(
         spark_tmp_path, dv_predicate_pushdown, use_metadata_row_index):
     """
     Verifies alive row counts are correct with COUNT(*) (zero-column projection) and
-    the COALESCING reader. Mirrors test_delta_deletion_vector_multithreaded_combine_count_star.
+    the COALESCING reader.
     """
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {
@@ -463,7 +463,7 @@ def test_delta_deletion_vector_coalescing_count_star(
         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
         "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
         "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
-        "spark.sql.files.maxRecordsPerFile": "200",
+        "spark.sql.files.maxRecordsPerFile": "200" # set a small maxRecordsPerFile to create more than 1 file in each partition
     }
 
     def setup_tables(spark):
@@ -472,8 +472,8 @@ def test_delta_deletion_vector_coalescing_count_star(
         setup_delta_dest_table(spark, data_path,
                                dest_table_func=lambda spark: two_col_df(spark, col_a_gen, col_b_gen, length=20480),
                                use_cdf=False, enable_deletion_vectors=True, partition_columns=["b"])
-        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)")
-        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 33)")
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)") # make sure there will be a file with one row with a = 1, which will be deleted.
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 33)") # make sure there will be a partition with only 1 row, which will be deleted.
         spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 1")
         spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 2")
         spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 3")
@@ -496,7 +496,6 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
     """
     Verifies partition values are attached correctly after DV filtering when files
     from the same partition are coalesced into one batch.
-    Mirrors test_delta_deletion_vector_multithreaded_read_partitioned_table.
     """
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {
@@ -504,7 +503,7 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
         "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
         "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
-        "spark.sql.files.maxRecordsPerFile": "200",
+        "spark.sql.files.maxRecordsPerFile": "200" # set a small maxRecordsPerFile to create more than 1 file in each partition
     }
 
     def setup_tables(spark):
@@ -513,8 +512,8 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
         setup_delta_dest_table(spark, data_path,
                                dest_table_func=lambda spark: two_col_df(spark, col_a_gen, col_b_gen, length=20480),
                                use_cdf=False, enable_deletion_vectors=True, partition_columns=["b"])
-        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)")
-        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 33)")
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 0)") # make sure there will be a file with one row with a = 1, which will be deleted.
+        spark.sql(f"INSERT INTO delta.`{data_path}` VALUES(1, 33)") # make sure there will be a partition with only 1 row, which will be deleted.
         spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 1")
     with_cpu_session(setup_tables, conf=conf)
 
@@ -531,7 +530,7 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
                     reason="Delta Lake deletion vector support is required")
 def test_delta_deletion_vector_coalescing_mixed_dv_no_dv(spark_tmp_path, dv_predicate_pushdown):
     """
-    Verifies EC-1: COALESCING reader correctly handles a batch containing both
+    COALESCING reader correctly handles a batch containing both
     DV-bearing files and files without DVs. Non-DV files should use empty bitmaps
     so all their rows are returned.
     """
@@ -567,7 +566,7 @@ def test_delta_deletion_vector_coalescing_mixed_dv_no_dv(spark_tmp_path, dv_pred
                     reason="Delta Lake deletion vector support is required")
 def test_delta_deletion_vector_coalescing_ignore_missing_files(spark_tmp_path):
     """
-    Verifies EC-3: when ignoreMissingFiles=true and one DV-bearing file has been
+    When ignoreMissingFiles=true and one DV-bearing file has been
     removed, the COALESCING reader does not crash and GPU/CPU results agree for the
     surviving files.
     """
@@ -604,7 +603,7 @@ def test_delta_deletion_vector_coalescing_ignore_missing_files(spark_tmp_path):
                     reason="Delta Lake deletion vector support is required")
 def test_delta_deletion_vector_coalescing_ignore_corrupt_files(spark_tmp_path):
     """
-    Verifies EC-7: when ignoreCorruptFiles=true, the coalescing reader is disabled
+    When ignoreCorruptFiles=true, the coalescing reader is disabled
     (canUseCoalesceFilesReader returns false) and the query falls back to MULTITHREADED,
     which still reads DV-bearing files correctly.
     """
