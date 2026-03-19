@@ -1359,7 +1359,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
           dataBuffer.close()
           (CachedGpuBatchIterator(EmptyTableReader, colTypes), meta)
         } else {
-          val decodeMeta = prepareForDecode(meta)
+          val decodeMeta = closeOnExcept(dataBuffer) { _ => prepareForDecode(meta) }
           startNewBufferRetry
           val iter = RmmRapidsRetryIterator.withRetryNoSplit(
               Seq[AutoCloseable](dataBuffer, decodeMeta.extraInfo)) { _ =>

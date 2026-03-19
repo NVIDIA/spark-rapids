@@ -1102,6 +1102,10 @@ class GpuDeltaParquetFileFormatBase2(
           fileNumRows = ArrayBuffer[Int]()
           if (block.partitionValues != prevPartValues) partIdx += 1
         }
+        if (prevPath == block.filePath) {
+          require(fileDesc == extra.dvDescriptor,
+            s"Row groups within the same file must share the same DV descriptor: $prevPath")
+        }
         prevPath = block.filePath
         prevPartValues = block.partitionValues
         fileDesc = extra.dvDescriptor
@@ -1165,13 +1169,17 @@ class GpuDeltaParquetFileFormatBase2(
         })
       }
 
-      // Await results; close any successfully loaded bitmaps if a later task fails.
+      // Await results; close all bitmaps (collected + uncollected futures) on failure.
       val loaded = new ArrayBuffer[SerializedRoaringBitmap]()
       try {
         loadFutures.foreach(f => loaded += f.get())
       } catch {
         case e: Throwable =>
           loaded.map(_.gpuBitmap).safeClose(e)
+          // Drain and close any futures we never retrieved.
+          loadFutures.drop(loaded.size).foreach { f =>
+            try { f.get().gpuBitmap.close() } catch { case _: Throwable => () }
+          }
           throw e
       }
       meta.copy(extraInfo = batchExtra.withLoadedDVResults(loaded.toSeq))

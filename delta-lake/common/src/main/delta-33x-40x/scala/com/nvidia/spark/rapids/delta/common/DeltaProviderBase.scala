@@ -142,8 +142,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     val useMetadataRowIndex = conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
     // Creating a RapidsConf might be expensive in some cases, but this is temporary
     // until we support the non-useMetadataRowIndex code path for the cuDF-based DV-aware reader.
-    // Note: useMetadataRowIndex is not currently supported by the DV-aware delta reader,
-    // so we require it to be enabled as a precondition.
+    // The DV-aware reader requires useMetadataRowIndex=true;
+    // the useMetadataRowIndex=false code path is not yet supported.
     val rapidsConf = new RapidsConf(conf)
     useMetadataRowIndex && rapidsConf.isDeltaDeletionVectorPredicatePushdownEnabled
   }
