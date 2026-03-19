@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.shims.{AggregateInPandasExecShims, DistributionUt
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, BoundReference, Cast, ComplexTypeMergingExpression, Expression, Literal, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
-import org.apache.spark.sql.catalyst.trees.{TreeNodeTag, UnaryLike}
+import org.apache.spark.sql.catalyst.trees.{CurrentOrigin, TreeNodeTag, UnaryLike}
 import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.execution.{ScalarSubquery, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
@@ -1412,7 +1412,11 @@ abstract class BaseExprMeta[INPUT <: Expression](
     if (willUseGpuCpuBridge) {
       convertForGpuCpuBridge()
     } else {
-      convertToGpuImpl()
+      // Propagate the origin from the CPU expression so that GPU expressions
+      // inherit the SQL query context for error messages (e.g. ANSI overflow).
+      CurrentOrigin.withOrigin(wrapped.origin) {
+        convertToGpuImpl()
+      }
     }
   }
 
