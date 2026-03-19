@@ -283,11 +283,9 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
   }
 
   test("compat returns Left for unsupported default value types") {
-    val method = SparkProtobufCompat.getClass.getDeclaredMethod(
-      "toDefaultValue",
-      classOf[AnyRef],
-      classOf[String],
-      classOf[scala.Option[_]])
+    val method = SparkProtobufCompat.getClass.getDeclaredMethods
+      .find(_.getName.endsWith("toDefaultValue"))
+      .getOrElse(fail("toDefaultValue method not found"))
     method.setAccessible(true)
 
     val result = method.invoke(
