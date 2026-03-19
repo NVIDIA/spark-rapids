@@ -1327,19 +1327,30 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private def readBatchData(
       meta: CurrentChunkMeta): (Iterator[ColumnarBatch], CurrentChunkMeta) = {
     if (meta.clippedSchema.isEmpty) {
-      // not reading any data, so return a degenerate ColumnarBatch with the row count
-      val iter = if (meta.numTotalRows == 0) {
-        EmptyGpuColumnarBatchIterator
-      } else {
-        val rows = meta.numTotalRows.toInt
-        // Someone is going to process this data, even if it is just a row count
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        val nullColumns = meta.readSchema.safeMap(f =>
-          GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
-        val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
-        new SingleGpuColumnarBatchIterator(emptyBatch)
+      // not reading any data, so return a degenerate ColumnarBatch with the row count.
+      // Still call prepareForDecode so subclass hooks (e.g. DV alive-count computation)
+      // are available to getRowsPerPartition.
+      val decodeMeta = prepareForDecode(meta)
+      // Compute effective row count: getRowsPerPartition may adjust for deleted rows.
+      val effectiveRowsPerPartition = getRowsPerPartition(
+        decodeMeta.rowsPerPartition, decodeMeta.allPartValues, decodeMeta.extraInfo)
+      val totalRows = effectiveRowsPerPartition.sum.toInt
+      val iter = try {
+        if (totalRows == 0) {
+          EmptyGpuColumnarBatchIterator
+        } else {
+          // Someone is going to process this data, even if it is just a row count
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+          val nullColumns = decodeMeta.readSchema.safeMap(f =>
+            GpuColumnVector.fromNull(totalRows, f.dataType).asInstanceOf[SparkVector])
+          val emptyBatch = new ColumnarBatch(nullColumns.toArray, totalRows)
+          new SingleGpuColumnarBatchIterator(emptyBatch)
+        }
+      } finally {
+        // No decode phase in the empty-schema path, so close extraInfo resources directly.
+        decodeMeta.extraInfo.close()
       }
-      (iter, meta)
+      (iter, decodeMeta)
     } else {
       val colTypes = meta.readSchema.fields.map(f => f.dataType)
       if (meta.currentChunk.isEmpty) {
