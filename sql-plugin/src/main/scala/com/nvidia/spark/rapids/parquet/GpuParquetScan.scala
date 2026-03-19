@@ -1289,8 +1289,6 @@ abstract class AbstractGpuParquetMultiFilePartitionReaderFactory(
    * Reads footer metadata for all files in preparation for a coalescing read.
    * Handles missing/corrupt files according to [[ignoreMissingFiles]] / [[ignoreCorruptFiles]]
    * and performs the footer reads in parallel when [[numFilesFilterParallel]] > 0.
-   * Extracted so Delta subclasses can reuse this I/O layer while constructing their own
-   * per-block extra info.
    */
   protected def readBlockMetasForCoalescing(
       files: Array[PartitionedFile],

@@ -1011,9 +1011,6 @@ trait SchemaBase {
 
 /**
  * A common trait for the extra information for different file format.
- * Extends AutoCloseable so that subclasses can hold native resources (e.g. SpillableHostBuffers
- * for deletion-vector bitmaps) that must be released after the decode phase completes.
- * The default implementation is a no-op; subclasses override as needed.
  */
 trait ExtraInfo extends AutoCloseable {
   override def close(): Unit = {}
@@ -1281,7 +1278,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   /**
    * Hook called after the copy phase (readPartFiles) completes, before GPU decode.
    * Subclasses override to perform additional per-batch preparation using the copied buffer
-   * (e.g. loading deletion vector bitmaps concurrently with the copy results).
    * The returned [[CurrentChunkMeta]] replaces the input for all subsequent decode operations.
    * Default implementation returns the meta unchanged.
    */
@@ -1289,9 +1285,12 @@ abstract class MultiFileCoalescingPartitionReaderBase(
 
   /**
    * Hook called when constructing the partition-values iterator to determine the number of
-   * alive rows per partition after any row-level filtering (e.g. deletion vectors).
-   * Subclasses override to substitute DV-filtered counts in place of raw row counts.
+   * alive rows per partition after any row-level filtering (e.g. filtering deleted rows).
+   * Subclasses override to adjust the given raw row counts.
    * Default implementation returns rawRowsPerPartition unchanged.
+   *
+   * [[prepareForDecode]] must be called before this method so that any subclass hooks populated
+   * necessary metadata in [[CurrentChunkMeta]].
    *
    * @param rawRowsPerPartition raw row counts per partition from batch assembly
    * @param allPartValues partition values per partition entry
@@ -1322,16 +1321,15 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * the effective [[CurrentChunkMeta]] after [[prepareForDecode]] has run. Callers use the
    * returned meta (rather than the input meta) for any post-decode operations such as
    * [[getRowsPerPartition]] and [[finalizeOutputBatch]], so that subclass hooks populated
-   * during the decode phase (e.g. loaded DV bitmaps) are visible.
+   * during the decode phase are visible.
    */
   private def readBatchData(
       meta: CurrentChunkMeta): (Iterator[ColumnarBatch], CurrentChunkMeta) = {
     if (meta.clippedSchema.isEmpty) {
       // not reading any data, so return a degenerate ColumnarBatch with the row count.
-      // Still call prepareForDecode so subclass hooks (e.g. DV alive-count computation)
-      // are available to getRowsPerPartition.
+      // Still call prepareForDecode so subclass hooks are available to getRowsPerPartition.
       val decodeMeta = prepareForDecode(meta)
-      // Compute effective row count: getRowsPerPartition may adjust for deleted rows.
+      // Compute effective row count.
       val effectiveRowsPerPartition = getRowsPerPartition(
         decodeMeta.rowsPerPartition, decodeMeta.allPartValues, decodeMeta.extraInfo)
       val totalRows = effectiveRowsPerPartition.sum.toInt

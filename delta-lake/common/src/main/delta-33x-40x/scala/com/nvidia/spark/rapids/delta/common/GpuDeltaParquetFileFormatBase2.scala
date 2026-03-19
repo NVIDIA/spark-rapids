@@ -1082,9 +1082,6 @@ class GpuDeltaParquetFileFormatBase2(
           override def call(): SerializedRoaringBitmap = {
             val rawBitmap = RapidsDeletionVectors.loadDeletionVector(
               fileIO, entry.dvDescriptor, tp)
-            // Wrap in SpillableHostBuffer so that readBufferToTablesAndClose can call
-            // getDataHostBuffer() on each OOM retry attempt to obtain a fresh ref-counted
-            // HostMemoryBuffer, without risking a double-close of the underlying buffer.
             // DeltaBatchExtraInfo.close() releases the SpillableHostBuffer when the decode
             // phase completes (via withRetryNoSplit in readBatchData).
             val gpuBitmap = SpillableHostBuffer(rawBitmap, rawBitmap.getLength,
@@ -1139,17 +1136,13 @@ class GpuDeltaParquetFileFormatBase2(
         require(tablePathOpt.isDefined,
           "tablePath must be set when a deletion vector descriptor is present")
         // loadedDVResults is parallel to perFileEntries: one bitmap per file in batch order.
-        // getDataHostBuffer() returns a fresh ref-counted HostMemoryBuffer for this attempt;
-        // if a prior attempt failed with OOM, the previous HostMemoryBuffer was closed by the
-        // failed DeltaParquetTableReader, but the SpillableHostBuffer is still alive and can
-        // produce a new ref-counted copy here.
         val dvInfos = batchExtra.loadedDVResults
           .zip(batchExtra.perFileEntries)
           .map { case (loaded, entry) =>
             new DeletionVector.DeletionVectorInfo(
               loaded.gpuBitmap.getDataHostBuffer(), entry.rowGroupOffsets, entry.rowGroupNumRows)
           }.toArray
-        // MakeParquetTableWithDVProducer closes the bitmaps in dvInfos.
+        // MakeParquetTableWithDVProducer closes the dataBuffer and the bitmaps in dvInfos.
         MakeParquetTableWithDVProducer(useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
           conf, currentTargetBatchSize, parseOpts,
           Array(dataBuffer), metrics,
@@ -1157,6 +1150,7 @@ class GpuDeltaParquetFileFormatBase2(
           isSchemaCaseSensitive, useFieldId, readDataSchema, clippedSchema,
           splits, debugDumpPrefix, debugDumpAlways, dvInfos)
       } else {
+        // MakeParquetTableProducer closes the dataBuffer.
         MakeParquetTableProducer(useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
           conf, currentTargetBatchSize, parseOpts,
           Array(dataBuffer), metrics,
