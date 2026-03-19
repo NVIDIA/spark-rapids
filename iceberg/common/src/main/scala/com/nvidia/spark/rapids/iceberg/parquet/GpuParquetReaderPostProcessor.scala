@@ -258,6 +258,9 @@ private[iceberg] case class ProcessMap(
           val valueCol = cols(1)
           withResource(keyAction.execute(ctx.withColumn(keyCol))) { newKey =>
             withResource(valueAction.execute(ctx.withColumn(valueCol))) { newValue =>
+              // No validity buffer needed: in Iceberg/cuDF map representation,
+              // key-value struct entries are never null — only individual
+              // keys or values can be null.
               withResource(CudfColumnVector.makeStruct(newKey, newValue)) { kvStruct =>
                 withResource(col.replaceListChild(kvStruct)) { view =>
                   view.copyToColumnVector()
@@ -396,9 +399,12 @@ private class ActionBuildingVisitor(
     idToConstant: JMap[Integer, _]
 ) extends SchemaWithPartnerVisitor[Type, ColumnAction] {
 
-  // Track the current field while descending nested structs.
-  private val fieldStack = Stack.empty[Types.NestedField]
-  private def currentField: Types.NestedField = fieldStack.headOption.orNull
+  // Track the current field and whether we are inside a constant struct.
+  private val fieldStack = Stack.empty[(Types.NestedField, Boolean)]
+  private def currentField: Types.NestedField =
+    fieldStack.headOption.map(_._1).orNull
+  private def isInsideConstantStruct: Boolean =
+    fieldStack.headOption.exists(_._2)
 
   override def schema(
       schema: Schema,
@@ -421,6 +427,9 @@ private class ActionBuildingVisitor(
     }
 
     if (partner == null) {
+      if (isInsideConstantStruct) {
+        return FillNull(sparkType)
+      }
       return MissingFieldActionBuilder.buildAction(
         currentField.fieldId(),
         sparkType,
@@ -457,7 +466,10 @@ private class ActionBuildingVisitor(
   }
 
   override def beforeField(field: Types.NestedField, partner: Type): Unit = {
-    fieldStack.push(field)
+    fieldStack.push((field,
+      isInsideConstantStruct ||
+        (field.`type`().isStructType &&
+          idToConstant.containsKey(field.fieldId()))))
   }
 
   override def afterField(field: Types.NestedField, partner: Type): Unit = {
@@ -473,9 +485,11 @@ private class ActionBuildingVisitor(
       list: Types.ListType,
       partner: Type,
       elementResult: ColumnAction): ColumnAction = {
-    // If partner is null, the entire list is missing from the file.
     if (partner == null) {
       val sparkType = SparkSchemaUtil.convert(list)
+      if (isInsideConstantStruct) {
+        return FillNull(sparkType)
+      }
       return MissingFieldActionBuilder.buildAction(
         currentField.fieldId(),
         sparkType,
@@ -495,9 +509,11 @@ private class ActionBuildingVisitor(
       partner: Type,
       keyResult: ColumnAction,
       valueResult: ColumnAction): ColumnAction = {
-    // If partner is null, the entire map is missing from the file.
     if (partner == null) {
       val sparkType = SparkSchemaUtil.convert(map)
+      if (isInsideConstantStruct) {
+        return FillNull(sparkType)
+      }
       return MissingFieldActionBuilder.buildAction(
         currentField.fieldId(),
         sparkType,
@@ -525,8 +541,9 @@ private class ActionBuildingVisitor(
       } else {
         UpCast(fileType, expectedType)
       }
+    } else if (isInsideConstantStruct) {
+      FillNull(expectedType)
     } else {
-      // Partner missing - use shared logic
       MissingFieldActionBuilder.buildAction(
         currentField.fieldId(),
         expectedType,
@@ -539,7 +556,8 @@ private class ActionBuildingVisitor(
 /**
  * Partner accessors to navigate file schema alongside expected schema.
  */
-private class FileSchemaAccessors extends SchemaWithPartnerVisitor.PartnerAccessors[Type] {
+private class FileSchemaAccessors
+    extends SchemaWithPartnerVisitor.PartnerAccessors[Type] {
 
   override def fieldPartner(partnerStruct: Type, fieldId: Int, name: String): Type = {
     if (partnerStruct == null) return null

@@ -896,4 +896,38 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     assert(processor.displayActionPlan().contains(
       s"FetchConstant(fieldId=$structFieldId, struct<"))
   }
+
+  test("Constant struct with required children does not throw") {
+    val structFieldId = 1
+    val fieldAId = 2
+    val fieldBId = 3
+
+    val parquetSchema = new ShadedMessageType("test",
+      Seq.empty[ShadedType].asJava)
+    val expectedSchema = new Schema(
+      Types.NestedField.optional(structFieldId, "partition_struct",
+        Types.StructType.of(
+          Types.NestedField.required(fieldAId, "a",
+            Types.IntegerType.get()),
+          Types.NestedField.required(fieldBId, "b",
+            Types.StringType.get())
+        ))
+    )
+
+    val idToConstant = new JHashMap[Integer, Any]()
+    idToConstant.put(structFieldId, null)
+
+    val (parquetInfo, shadedSchema) =
+      createParquetInfo(parquetSchema)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      idToConstant,
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
+
+    val plan = processor.displayActionPlan()
+    assert(plan.contains(
+      s"FetchConstant(fieldId=$structFieldId, struct<"))
+  }
 }
