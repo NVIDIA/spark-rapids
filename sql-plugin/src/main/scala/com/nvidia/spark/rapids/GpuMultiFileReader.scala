@@ -1304,10 +1304,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   private def readBatch(): Iterator[ColumnarBatch] = {
     NvtxRegistry.FILE_FORMAT_READ_BATCH {
       val currentChunkMeta = populateCurrentBlockChunk()
-      val (batchIter, effectiveMeta) = readBatchData(currentChunkMeta)
+      val (batchIter, effectiveMeta, effectiveRows) = readBatchData(currentChunkMeta)
       new GpuColumnarBatchWithPartitionValuesIterator(batchIter, effectiveMeta.allPartValues,
-        getRowsPerPartition(effectiveMeta.rowsPerPartition, effectiveMeta.allPartValues,
-          effectiveMeta.extraInfo),
+        effectiveRows,
         partitionSchema, maxGpuColumnSizeBytes).map { withParts =>
         withResource(withParts) { _ =>
           finalizeOutputBatch(withParts, effectiveMeta.extraInfo)
@@ -1317,14 +1316,13 @@ abstract class MultiFileCoalescingPartitionReaderBase(
   }
 
   /**
-   * Reads the data for the current batch and returns the decoded batch iterator together with
-   * the effective [[CurrentChunkMeta]] after [[prepareForDecode]] has run. Callers use the
-   * returned meta (rather than the input meta) for any post-decode operations such as
-   * [[getRowsPerPartition]] and [[finalizeOutputBatch]], so that subclass hooks populated
-   * during the decode phase are visible.
+   * Reads the data for the current batch and returns a triple of (batch iterator,
+   * effective [[CurrentChunkMeta]], effective rows-per-partition). The effective meta
+   * reflects any changes made by [[prepareForDecode]], and the rows-per-partition array
+   * is the result of [[getRowsPerPartition]] so callers do not need to invoke it again.
    */
   private def readBatchData(
-      meta: CurrentChunkMeta): (Iterator[ColumnarBatch], CurrentChunkMeta) = {
+      meta: CurrentChunkMeta): (Iterator[ColumnarBatch], CurrentChunkMeta, Array[Long]) = {
     if (meta.clippedSchema.isEmpty) {
       // not reading any data, so return a degenerate ColumnarBatch with the row count.
       // Still call prepareForDecode so subclass hooks are available to getRowsPerPartition.
@@ -1348,18 +1346,20 @@ abstract class MultiFileCoalescingPartitionReaderBase(
         // No decode phase in the empty-schema path, so close extraInfo resources directly.
         decodeMeta.extraInfo.close()
       }
-      (iter, decodeMeta)
+      (iter, decodeMeta, effectiveRowsPerPartition)
     } else {
       val colTypes = meta.readSchema.fields.map(f => f.dataType)
       if (meta.currentChunk.isEmpty) {
-        (CachedGpuBatchIterator(EmptyTableReader, colTypes), meta)
+        (CachedGpuBatchIterator(EmptyTableReader, colTypes), meta, meta.rowsPerPartition)
       } else {
         val dataBuffer = readPartFiles(meta.currentChunk, meta.clippedSchema)
         if (dataBuffer.length == 0) {
           dataBuffer.close()
-          (CachedGpuBatchIterator(EmptyTableReader, colTypes), meta)
+          (CachedGpuBatchIterator(EmptyTableReader, colTypes), meta, meta.rowsPerPartition)
         } else {
           val decodeMeta = closeOnExcept(dataBuffer) { _ => prepareForDecode(meta) }
+          val effectiveRows = getRowsPerPartition(
+            decodeMeta.rowsPerPartition, decodeMeta.allPartValues, decodeMeta.extraInfo)
           startNewBufferRetry
           val iter = RmmRapidsRetryIterator.withRetryNoSplit(
               Seq[AutoCloseable](dataBuffer, decodeMeta.extraInfo)) { _ =>
@@ -1368,7 +1368,7 @@ abstract class MultiFileCoalescingPartitionReaderBase(
               decodeMeta.clippedSchema, decodeMeta.readSchema, decodeMeta.extraInfo)
             CachedGpuBatchIterator(tableReader, colTypes)
           }
-          (iter, decodeMeta)
+          (iter, decodeMeta, effectiveRows)
         }
       }
     }
