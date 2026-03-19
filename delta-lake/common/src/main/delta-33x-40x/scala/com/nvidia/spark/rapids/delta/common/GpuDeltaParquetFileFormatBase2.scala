@@ -1146,25 +1146,27 @@ class GpuDeltaParquetFileFormatBase2(
             // phase completes (via withRetryNoSplit in readBatchData).
             val gpuBitmap = SpillableHostBuffer(rawBitmap, rawBitmap.getLength,
               SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-            val filterTypeOpt = entry.dvDescriptor.map(_ => RowIndexFilterType.IF_CONTAINED)
-            val scalaBitmap = RapidsDeletionVectors.loadScalaBitmap(
-              conf, entry.dvDescriptor, filterTypeOpt, tp)
-            val totalRows = entry.rowGroupNumRows.map(_.toLong).sum
-            val numDeleted: Long = if (scalaBitmap.cardinality == 0) {
-              0L
-            } else {
-              entry.rowGroupOffsets.zip(entry.rowGroupNumRows).map { case (offset, count) =>
-                var deleted = 0L
-                for (i <- offset until offset + count) {
-                  if (scalaBitmap.contains(i)) deleted += 1L
-                }
-                deleted
-              }.sum
+            closeOnExcept(gpuBitmap) { _ =>
+              val filterTypeOpt = entry.dvDescriptor.map(_ => RowIndexFilterType.IF_CONTAINED)
+              val scalaBitmap = RapidsDeletionVectors.loadScalaBitmap(
+                conf, entry.dvDescriptor, filterTypeOpt, tp)
+              val totalRows = entry.rowGroupNumRows.map(_.toLong).sum
+              val numDeleted: Long = if (scalaBitmap.cardinality == 0) {
+                0L
+              } else {
+                entry.rowGroupOffsets.zip(entry.rowGroupNumRows).map { case (offset, count) =>
+                  var deleted = 0L
+                  for (i <- offset until offset + count) {
+                    if (scalaBitmap.contains(i)) deleted += 1L
+                  }
+                  deleted
+                }.sum
+              }
+              require(numDeleted <= totalRows,
+                s"Deletion vector cardinality ($numDeleted) exceeds " +
+                  s"file row count ($totalRows)")
+              SerializedRoaringBitmap(gpuBitmap, totalRows - numDeleted)
             }
-            require(numDeleted <= totalRows,
-              s"Deletion vector cardinality ($numDeleted) exceeds " +
-                s"file row count ($totalRows)")
-            SerializedRoaringBitmap(gpuBitmap, totalRows - numDeleted)
           }
         })
       }
