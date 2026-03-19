@@ -228,9 +228,9 @@ else
         # 0 is more efficient
         TEST_PARALLEL_OPTS=()
     elif [[ ${TEST_PARALLEL} -gt ${MAX_PARALLEL} ]]; then
-        TEST_PARALLEL_OPTS=("-n" "$MAX_PARALLEL")
+        TEST_PARALLEL_OPTS=("-n" "$MAX_PARALLEL" "--dist" "worksteal")
     else
-        TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
+        TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL" "--dist" "worksteal")
     fi
 
     mkdir -p "$TARGET_DIR"
