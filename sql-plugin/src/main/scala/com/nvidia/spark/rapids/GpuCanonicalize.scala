@@ -78,10 +78,12 @@ object GpuCanonicalize {
 
   /** Rearrange expressions that are commutative or associative. */
   private def expressionReorder(e: Expression): Expression = e match {
-    case a @ GpuAdd(_, _, f) =>
-      orderCommutative(a, { case GpuAdd(l, r, _) => Seq(l, r) }).reduce(GpuAdd(_, _, f))
-    case m @ GpuMultiply(_, _, f) =>
-      orderCommutative(m, { case GpuMultiply(l, r, _) => Seq(l, r) }).reduce(GpuMultiply(_, _, f))
+    case a @ GpuAdd(_, _, f, o) =>
+      orderCommutative(a, { case GpuAdd(l, r, _, _) => Seq(l, r) })
+        .reduce(GpuAdd(_, _, f, o))
+    case m @ GpuMultiply(_, _, f, o) =>
+      orderCommutative(m, { case GpuMultiply(l, r, _, _) => Seq(l, r) })
+        .reduce(GpuMultiply(_, _, f, o))
     case o: GpuOr =>
       orderCommutative(o, { case GpuOr(l, r) if l.deterministic && r.deterministic => Seq(l, r) })
           .reduce(GpuOr)

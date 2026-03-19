@@ -1941,7 +1941,7 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuAdd(lhs, rhs, failOnError = ansiEnabled)
+          GpuAdd(lhs, rhs, ansiEnabled, origin = a.origin)
       }),
     expr[Subtract](
       "Subtraction",
@@ -1970,7 +1970,7 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuSubtract(lhs, rhs, ansiEnabled)
+          GpuSubtract(lhs, rhs, ansiEnabled, origin = a.origin)
       }),
     expr[And](
       "Logical AND",

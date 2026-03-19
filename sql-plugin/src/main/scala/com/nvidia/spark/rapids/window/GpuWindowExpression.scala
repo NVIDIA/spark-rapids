@@ -1481,7 +1481,8 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
             if (needsBasicOverflowCheck) {
               withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { updated =>
                 closeOnExcept(mask.ifElse(updated, windowedColumnOutput)) { ret =>
-                  AddOverflowChecks.basicOpOverflowCheck(updated, prev, ret, Some(mask))
+                  AddOverflowChecks.basicOpOverflowCheck(
+                    updated, prev, ret, mask = Some(mask))
                   ret
                 }
               }
