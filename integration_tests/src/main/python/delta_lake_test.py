@@ -525,20 +525,20 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
-def test_delta_deletion_vector_coalescing_mixed_dv_no_dv(spark_tmp_path, dv_predicate_pushdown):
+def test_delta_deletion_vector_mixed_dv_no_dv(spark_tmp_path, reader_type, dv_predicate_pushdown):
     """
-    COALESCING reader correctly handles a batch containing both
-    DV-bearing files and files without DVs. Non-DV files should use empty bitmaps
-    so all their rows are returned.
+    Correctly handles a batch containing both DV-bearing files and files without DVs.
+    Non-DV files should use empty bitmaps so all their rows are returned.
     """
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {
         "spark.databricks.delta.delete.deletionVectors.persistent": "true",
         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
-        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.rapids.sql.format.parquet.reader.type": reader_type,
         "spark.sql.files.maxRecordsPerFile": "200",
     }
 
@@ -562,19 +562,19 @@ def test_delta_deletion_vector_coalescing_mixed_dv_no_dv(spark_tmp_path, dv_pred
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
-def test_delta_deletion_vector_coalescing_ignore_missing_files(spark_tmp_path):
+def test_delta_deletion_vector_ignore_missing_files(spark_tmp_path, reader_type):
     """
-    When ignoreMissingFiles=true and one DV-bearing file has been
-    removed, the COALESCING reader does not crash and GPU/CPU results agree for the
-    surviving files.
+    When ignoreMissingFiles=true and one DV-bearing file has been removed, the reader
+    does not crash and GPU/CPU results agree for the surviving files.
     """
     import os
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {
         "spark.databricks.delta.delete.deletionVectors.persistent": "true",
-        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.rapids.sql.format.parquet.reader.type": reader_type,
         "spark.sql.files.ignoreMissingFiles": "true",
         "spark.sql.files.maxRecordsPerFile": "200",
     }
@@ -599,19 +599,20 @@ def test_delta_deletion_vector_coalescing_ignore_missing_files(spark_tmp_path):
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
-def test_delta_deletion_vector_coalescing_ignore_corrupt_files(spark_tmp_path):
+def test_delta_deletion_vector_ignore_corrupt_files(spark_tmp_path, reader_type):
     """
-    When ignoreCorruptFiles=true, the coalescing reader is disabled
-    (canUseCoalesceFilesReader returns false) and the query falls back to MULTITHREADED,
-    which still reads DV-bearing files correctly.
+    When ignoreCorruptFiles=true, the corrupt file is silently skipped and
+    GPU/CPU results agree on the surviving files.
+    Note: COALESCING falls back to MULTITHREADED when ignoreCorruptFiles=true.
     """
     import os
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {
         "spark.databricks.delta.delete.deletionVectors.persistent": "true",
-        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.rapids.sql.format.parquet.reader.type": reader_type,
         "spark.sql.files.ignoreCorruptFiles": "true",
         "spark.sql.files.maxRecordsPerFile": "200",
     }
@@ -629,7 +630,6 @@ def test_delta_deletion_vector_coalescing_ignore_corrupt_files(spark_tmp_path):
     with open(os.path.join(data_path, parquet_files[0]), "wb") as f:
         f.write(b"NOT A VALID PARQUET FILE")
 
-    # ignoreCorruptFiles=true disables COALESCING; reader falls back to MULTITHREADED.
     # Verify GPU and CPU agree on the result (corrupt file silently skipped).
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql(f"SELECT * FROM delta.`{data_path}`"),
