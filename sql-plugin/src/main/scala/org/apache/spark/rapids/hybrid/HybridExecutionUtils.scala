@@ -191,7 +191,7 @@ object HybridExecutionUtils extends PredicateHelper {
   }
 
   // scalastyle:off line.size.limit
-  // from https://github.com/apache/incubator-gluten/blob/branch-1.2/docs/velox-backend-support-progress.md
+  // from https://github.com/apache/gluten/blob/branch-1.2/docs/velox-backend-support-progress.md
   // and test_hybrid_parquet_filter_pushdown_more_exprs.py
   // scalastyle:on
   val ansiOn = Seq(
