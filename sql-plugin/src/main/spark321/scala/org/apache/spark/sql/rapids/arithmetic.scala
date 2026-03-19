@@ -47,7 +47,8 @@ case class GpuIntegralDivide(
     left: Expression,
     right: Expression,
     failOnError: Boolean = SQLConf.get.ansiEnabled,
-    override val origin: Origin = CurrentOrigin.get) extends GpuIntegralDivideParent(left, right)
+    override val origin: Origin = CurrentOrigin.get)
+    extends GpuIntegralDivideParent(left, right) with GpuArithmeticOriginMixin
 
 object GpuDecimalDivide {
   def apply(left: Expression, right: Expression, dataType: DecimalType): GpuDecimalDivide = {
@@ -93,13 +94,15 @@ case class GpuAdd(
     left: Expression,
     right: Expression,
     failOnError: Boolean,
-    override val origin: Origin = CurrentOrigin.get) extends GpuAddBase
+    override val origin: Origin = CurrentOrigin.get)
+    extends GpuAddBase with GpuArithmeticOriginMixin
 
 case class GpuSubtract(
     left: Expression,
     right: Expression,
     failOnError: Boolean,
-    override val origin: Origin = CurrentOrigin.get) extends GpuSubtractBase
+    override val origin: Origin = CurrentOrigin.get)
+    extends GpuSubtractBase with GpuArithmeticOriginMixin
 
 case class GpuRemainder(
     left: Expression,
