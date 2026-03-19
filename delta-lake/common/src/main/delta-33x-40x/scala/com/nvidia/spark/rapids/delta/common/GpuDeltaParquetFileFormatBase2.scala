@@ -986,6 +986,62 @@ class GpuDeltaParquetFileFormatBase2(
   //
   /////////////////////////////////////
 
+  // Pipeline overview — DV metadata flows through four phases of the coalescing reader:
+  //
+  // ┌───────────────────────────────────────────────────────────────────────────────────┐
+  // │ BLOCK COLLECTION PHASE  (serial)                                                  │
+  // │                                                                                   │
+  // │  buildBaseColumnarReaderForCoalescing()                                           │
+  // │                                                                                   │
+  // │  for each file:                                                                   │
+  // │    dvDesc ← extractDVDescriptor(partitionedFile)                                  │
+  // │    for each row group:                                                            │
+  // │      ParquetSingleDataBlockMeta(...,                                              │
+  // │        DeltaParquetExtraInfo(dvDesc, rowGroupOffset, rowGroupNumRows))            │
+  // └──────────────────────────────────┬────────────────────────────────────────────────┘
+  //                                    │ flat Seq[ParquetSingleDataBlockMeta]
+  //                                    ▼
+  // ┌───────────────────────────────────────────────────────────────────────────────────┐
+  // │ BATCH ASSEMBLY PHASE  (serial)                                                    │
+  // │                                                                                   │
+  // │  augmentChunkMeta()                                                               │
+  // │    groups consecutive same-file blocks into Seq[PerFileDVEntry]                   │
+  // │    returns meta.copy(extraInfo = DeltaBatchExtraInfo(perFileEntries))              │
+  // └──────────────────────────────────┬────────────────────────────────────────────────┘
+  //                                    │ CurrentChunkMeta with DeltaBatchExtraInfo
+  //                                    ▼
+  // ┌───────────────────────────────────────────────────────────────────────────────────┐
+  // │ COPY PHASE  (parallel, per-file — existing thread pool)                           │
+  // │                                                                                   │
+  // │  pre-allocate combined HostMemoryBuffer                                           │
+  // │  ParquetCopyBlocksRunner per file → col_data slices in combined buffer            │
+  // │  await all futures; write combined footer                                         │
+  // └──────────────────────────────────┬────────────────────────────────────────────────┘
+  //                                    │ combined buffer
+  //                                    ▼
+  // ┌───────────────────────────────────────────────────────────────────────────────────┐
+  // │ DV LOAD PHASE  (parallel, per-file — thread pool)                                 │
+  // │                                                                                   │
+  // │  prepareForDecode()                                                               │
+  // │  for each file (concurrent):                                                      │
+  // │    loadDeletionVector() → SpillableHostBuffer (gpuBitmap)                         │
+  // │    loadScalaBitmap()    → compute aliveCount                                      │
+  // │    → SerializedRoaringBitmap(gpuBitmap, aliveCount)                               │
+  // │  attach results: batchExtra.withLoadedDVResults(loaded)                           │
+  // └──────────────────────────────────┬────────────────────────────────────────────────┘
+  //                                    │ combined buffer + updated CurrentChunkMeta
+  //                                    ▼
+  // ┌───────────────────────────────────────────────────────────────────────────────────┐
+  // │ GPU DECODE PHASE  (serial)                                                        │
+  // │                                                                                   │
+  // │  readBufferToTablesAndClose()                                                     │
+  // │    loadedDVResults.map(_.gpuBitmap.getDataHostBuffer()) → DeletionVectorInfo[]    │
+  // │    MakeParquetTableWithDVProducer(combinedBuffer, dvInfos) → filtered Table       │
+  // │                                                                                   │
+  // │  getRowsPerPartition()                                                            │
+  // │    loadedDVResults.map(_.aliveCount) → alive row counts per partition              │
+  // └───────────────────────────────────────────────────────────────────────────────────┘
+
   /**
    * Coalescing Parquet reader for Delta tables with Deletion Vector support.
    *
