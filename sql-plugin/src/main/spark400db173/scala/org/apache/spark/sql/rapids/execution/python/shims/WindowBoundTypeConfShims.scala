@@ -15,13 +15,15 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "400db173"}
 {"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
 /**
  * Shim for window bound type config key.
- * In Spark 4.1.x, the config key changed from "pandas_window_bound_types" to "window_bound_types".
+ * In Spark 4.1.x and Databricks-17.3, the config key changed from "pandas_window_bound_types"
+ * to "window_bound_types".
  */
 object WindowBoundTypeConfShims {
   val windowBoundTypeConf: String = "window_bound_types"
