@@ -1158,9 +1158,10 @@ class GpuDeltaParquetFileFormatBase2(
                 // checking each deleted index against the row ranges.
                 // This is a temporary solution until we add a dedicated API in cuDF.
                 var count = 0L
+                val rowRanges = entry.rowGroupOffsets.zip(entry.rowGroupNumRows)
                 scalaBitmap.forEach { deletedIndex: Long =>
-                  entry.rowGroupOffsets.zip(entry.rowGroupNumRows).find { case (offset, count) =>
-                    deletedIndex >= offset && deletedIndex < offset + count
+                  rowRanges.find { case (offset, numRows) =>
+                    deletedIndex >= offset && deletedIndex < offset + numRows
                   }.foreach { _ =>
                     // If the deleted index falls within this row group, count it as deleted.
                     count += 1L
