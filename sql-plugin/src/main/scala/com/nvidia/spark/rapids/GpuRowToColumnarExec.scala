@@ -691,8 +691,11 @@ class RowToColumnarIterator(
   }
 
   private def estimateInitialTargetRows(): Unit = {
+    // estimate the size of the first batch based on the schema
     if (targetRows == 0) {
       if (localSchema.fields.isEmpty) {
+        // if there are no columns then we just default to a small number
+        // of rows for the first batch
         targetRows = 1024
         initialRows = targetRows
       } else {
@@ -712,6 +715,7 @@ class RowToColumnarIterator(
       withResource(new GpuColumnarBatchBuilder(localSchema, initialRows)) { builders =>
         val (rowCount, _) = convertRows(builders)
 
+        // enforce RequireSingleBatch limit
         if ((pendingRow != null || rowIter.hasNext) &&
             localGoal.isInstanceOf[RequireSingleBatchLike]) {
           throw new IllegalStateException("A single batch is required for this operation." +
@@ -720,7 +724,9 @@ class RowToColumnarIterator(
 
         streamTime += System.nanoTime() - streamStart
 
-        // TaskContext.get() can return null during unit testing
+        // About to place data back on the GPU
+        // note that TaskContext.get() can return null during unit testing so we wrap it in an
+        // option here
         Option(TaskContext.get())
             .foreach(ctx => GpuSemaphore.acquireIfNecessary(ctx))
 
@@ -733,7 +739,7 @@ class RowToColumnarIterator(
         numOutputRows += rowCount
         numOutputBatches += 1
 
-        // Refine targetRows estimate based on average across all batches
+        // refine the targetRows estimate based on the average of all batches processed so far
         totalOutputBytes += GpuColumnVector.getTotalDeviceMemoryUsed(ret)
         totalOutputRows += rowCount
         if (totalOutputRows > 0 && totalOutputBytes > 0) {
@@ -741,6 +747,7 @@ class RowToColumnarIterator(
             GpuBatchUtils.estimateRowCount(targetSizeBytes, totalOutputBytes, totalOutputRows)
         }
 
+        // The returned batch will be closed by the consumer of it
         ret
       }
     }
@@ -749,26 +756,47 @@ class RowToColumnarIterator(
 }
 
 /**
- * Retryable single-row converter for the fallback path. Defers expensive work
- * to OOM time: builder state captured lazily on `currentRow` access, row copy
- * deferred to `restore()`. Call `attempt()` before each conversion.
+ * A retryable row converter that integrates with the retry framework via `withRestoreOnRetry`.
+ *
+ * The design defers expensive operations to when OOM actually occurs:
+ * - Builder state is captured lazily on first `currentRow` access (before convert runs)
+ * - Row copying is deferred to `restore()` - only happens if OOM occurs
+ * - `checkpoint()` is a no-op since we capture state lazily
+ *
+ * This class is designed to be reused across multiple rows to minimize object allocation
+ * overhead. Call `attempt()` with a new row before each conversion attempt.
+ *
+ * This minimizes overhead in the common case (no OOM) while still enabling proper
+ * rollback when OOM does occur.
  */
 private class RetryableRowConverter(
     builders: GpuColumnarBatchBuilder,
     projection: UnsafeProjection)
   extends Retryable {
 
+  // The current row being converted - set via attempt()
   private var initialRow: InternalRow = _
+
+  // Builder state - captured once on first call to ensureSnapshotCaptured()
   private var builderSnapshots: Array[RapidsHostColumnBuilder.BuilderSnapshot] = _
   private var snapshotCaptured: Boolean = false
+
+  // Row snapshot - only created when restore() is called (i.e., OOM happened)
   private var rowSnapshot: Option[UnsafeRow] = None
 
+  /**
+   * Attempt the conversion for a new row. This must be called before each row conversion.
+   */
   def attempt(row: InternalRow): Unit = {
     initialRow = row
     snapshotCaptured = false
     rowSnapshot = None
   }
 
+  /**
+   * Ensures builder state is captured exactly once, before conversion starts.
+   * This must be called before convert() to enable rollback on OOM.
+   */
   private def ensureSnapshotCaptured(): Unit = {
     if (!snapshotCaptured) {
       builderSnapshots = builders.captureState()
@@ -776,7 +804,10 @@ private class RetryableRowConverter(
     }
   }
 
-  /** Returns the current row; captures builder state lazily on first access. */
+  /**
+   * The row to convert. Captures builder state on first access.
+   * After restore(), returns the copied row for retry.
+   */
   def currentRow: InternalRow = {
     ensureSnapshotCaptured()
     rowSnapshot.getOrElse(initialRow)
@@ -784,14 +815,19 @@ private class RetryableRowConverter(
 
   override def checkpoint(): Unit = ()
 
-  /** Copies the row for retry and rolls back builders to pre-conversion state. */
+  /**
+   * Called by withRestoreOnRetry when an OOM occurs.
+   * Copies the row (for retry) and rolls back the builders to pre-conversion state.
+   */
   override def restore(): Unit = {
+    // Snapshot the row for the retry attempt (only on first restore)
     if (rowSnapshot.isEmpty) {
       rowSnapshot = Some(initialRow match {
         case unsafe: UnsafeRow => unsafe.copy()
         case other => projection.apply(other).copy()
       })
     }
+    // Roll back builders to state before this row's conversion started
     builders.restoreState(builderSnapshots)
   }
 
