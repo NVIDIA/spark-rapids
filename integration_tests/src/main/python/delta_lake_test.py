@@ -463,7 +463,8 @@ def test_delta_deletion_vector_coalescing_count_star(
         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
         "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
         "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
-        "spark.sql.files.maxRecordsPerFile": "200" # set a small maxRecordsPerFile to create more than 1 file in each partition
+        "spark.sql.files.maxRecordsPerFile": "200", # set a small maxRecordsPerFile to create more than 1 file in each partition
+        "spark.sql.adaptive.enabled": "false" # disable AQE temporarily until https://github.com/nviDIA/spark-rapids/issues/14319 is resolved.
     }
 
     def setup_tables(spark):
@@ -577,6 +578,7 @@ def test_delta_deletion_vector_ignore_missing_files(spark_tmp_path, reader_type)
         "spark.rapids.sql.format.parquet.reader.type": reader_type,
         "spark.sql.files.ignoreMissingFiles": "true",
         "spark.sql.files.maxRecordsPerFile": "200",
+        "spark.sql.adaptive.enabled": "false" # disable AQE temporarily until https://github.com/nviDIA/spark-rapids/issues/14319 is resolved.
     }
 
     def setup_tables(spark):
@@ -615,6 +617,7 @@ def test_delta_deletion_vector_ignore_corrupt_files(spark_tmp_path, reader_type)
         "spark.rapids.sql.format.parquet.reader.type": reader_type,
         "spark.sql.files.ignoreCorruptFiles": "true",
         "spark.sql.files.maxRecordsPerFile": "200",
+        "spark.sql.adaptive.enabled": "false" # disable AQE temporarily until https://github.com/nviDIA/spark-rapids/issues/14319 is resolved.
     }
 
     def setup_tables(spark):
