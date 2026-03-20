@@ -16,11 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.jni.{CpuRetryOOM, CpuSplitAndRetryOOM, GpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark}
+import com.nvidia.spark.rapids.jni.{CpuRetryOOM, CpuSplitAndRetryOOM, GpuRetryOOM, GpuSplitAndRetryOOM}
 import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, GpuTypeShims, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
@@ -621,48 +619,19 @@ class RowToColumnarIterator(
   }
 
   /**
-   * Convert a single row via the full retry framework (blocks until memory is freed).
-   * Temporarily exits the outer retry block to avoid nesting with withRetryNoSplit.
-   */
-  private def fallbackConvertRow(
-      row: InternalRow,
-      builders: GpuColumnarBatchBuilder,
-      snapshots: Array[RapidsHostColumnBuilder.BuilderSnapshot]): Double = {
-    builders.restoreState(snapshots)
-    pendingRow = copyRow(row)
-    val converter = new RetryableRowConverter(builders, rowCopyProjection)
-    converter.attempt(pendingRow)
-    RmmSpark.currentThreadEndRetryBlock()
-    try {
-      val bytes = withRetryNoSplit {
-        withRestoreOnRetry(converter) {
-          converters.convert(converter.currentRow, builders)
-        }
-      }
-      pendingRow = null
-      bytes
-    } finally {
-      RmmSpark.currentThreadStartRetryBlock()
-    }
-  }
-
-  /**
    * Core conversion loop inside a single RMM retry block (so host allocations
    * throw retryable OOMs instead of fatal OutOfMemoryError).
    *
    * OOM strategy:
-   *  - RetryOOM with rows already converted → emit partial batch, save failed row
-   *  - First row / RequireSingleBatch / SplitAndRetryOOM → fallback to withRetryNoSplit
-   *    (SplitAndRetry always falls back because memory is too low for tryBuild too)
+   *  - Has rows to emit (and not RequireSingleBatch) → emit partial batch, save failed row
+   *  - No rows yet + RetryOOM → block until memory freed, then while loop retries
+   *  - No rows yet + SplitAndRetryOOM → propagate (can't split a single row)
    */
   private def convertRows(builders: GpuColumnarBatchBuilder): (Int, Double) = {
     var rowCount = 0
     var byteCount: Double = 0
-    def canEmitEarly: Boolean =
-      rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike]
 
-    RmmSpark.currentThreadStartRetryBlock()
-    try {
+    RmmRapidsRetryIterator.withRetryBlock {
       while (hasNext && (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
         val snapshots = builders.captureState()
         var row: InternalRow = null
@@ -671,21 +640,20 @@ class RowToColumnarIterator(
           byteCount += converters.convert(row, builders)
           rowCount += 1
         } catch {
-          case _: CpuRetryOOM | _: GpuRetryOOM if canEmitEarly =>
-            // Partial batch available: emit what we have, save the failed row.
-            if (row != null) {
-              builders.restoreState(snapshots)
-              pendingRow = copyRow(row)
+          case oom @ (_: CpuRetryOOM | _: CpuSplitAndRetryOOM |
+                      _: GpuRetryOOM | _: GpuSplitAndRetryOOM) =>
+            builders.restoreState(snapshots)
+            if (row != null) pendingRow = copyRow(row)
+            if (rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike]) {
+              return (rowCount, byteCount)
             }
-            return (rowCount, byteCount)
-          case _: CpuRetryOOM | _: CpuSplitAndRetryOOM |
-               _: GpuRetryOOM | _: GpuSplitAndRetryOOM if row != null =>
-            byteCount += fallbackConvertRow(row, builders, snapshots)
-            rowCount += 1
+            // No rows to emit — must retry or fail.
+            oom match {
+              case _: CpuSplitAndRetryOOM | _: GpuSplitAndRetryOOM => throw oom
+              case _ => RmmRapidsRetryIterator.blockUntilMemoryFreed()
+            }
         }
       }
-    } finally {
-      RmmSpark.currentThreadEndRetryBlock()
     }
     (rowCount, byteCount)
   }
@@ -751,84 +719,6 @@ class RowToColumnarIterator(
         ret
       }
     }
-  }
-
-}
-
-/**
- * A retryable row converter that integrates with the retry framework via `withRestoreOnRetry`.
- *
- * The design defers expensive operations to when OOM actually occurs:
- * - Builder state is captured lazily on first `currentRow` access (before convert runs)
- * - Row copying is deferred to `restore()` - only happens if OOM occurs
- * - `checkpoint()` is a no-op since we capture state lazily
- *
- * This class is designed to be reused across multiple rows to minimize object allocation
- * overhead. Call `attempt()` with a new row before each conversion attempt.
- *
- * This minimizes overhead in the common case (no OOM) while still enabling proper
- * rollback when OOM does occur.
- */
-private class RetryableRowConverter(
-    builders: GpuColumnarBatchBuilder,
-    projection: UnsafeProjection)
-  extends Retryable {
-
-  // The current row being converted - set via attempt()
-  private var initialRow: InternalRow = _
-
-  // Builder state - captured once on first call to ensureSnapshotCaptured()
-  private var builderSnapshots: Array[RapidsHostColumnBuilder.BuilderSnapshot] = _
-  private var snapshotCaptured: Boolean = false
-
-  // Row snapshot - only created when restore() is called (i.e., OOM happened)
-  private var rowSnapshot: Option[UnsafeRow] = None
-
-  /**
-   * Attempt the conversion for a new row. This must be called before each row conversion.
-   */
-  def attempt(row: InternalRow): Unit = {
-    initialRow = row
-    snapshotCaptured = false
-    rowSnapshot = None
-  }
-
-  /**
-   * Ensures builder state is captured exactly once, before conversion starts.
-   * This must be called before convert() to enable rollback on OOM.
-   */
-  private def ensureSnapshotCaptured(): Unit = {
-    if (!snapshotCaptured) {
-      builderSnapshots = builders.captureState()
-      snapshotCaptured = true
-    }
-  }
-
-  /**
-   * The row to convert. Captures builder state on first access.
-   * After restore(), returns the copied row for retry.
-   */
-  def currentRow: InternalRow = {
-    ensureSnapshotCaptured()
-    rowSnapshot.getOrElse(initialRow)
-  }
-
-  override def checkpoint(): Unit = ()
-
-  /**
-   * Called by withRestoreOnRetry when an OOM occurs.
-   * Copies the row (for retry) and rolls back the builders to pre-conversion state.
-   */
-  override def restore(): Unit = {
-    // Snapshot the row for the retry attempt (only on first restore)
-    if (rowSnapshot.isEmpty) {
-      rowSnapshot = Some(initialRow match {
-        case unsafe: UnsafeRow => unsafe.copy()
-        case other => projection.apply(other).copy()
-      })
-    }
-    // Roll back builders to state before this row's conversion started
-    builders.restoreState(builderSnapshots)
   }
 
 }

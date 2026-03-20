@@ -101,11 +101,10 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     }
   }
 
-  // Note: CpuSplitAndRetryOOM is handled by the same catch clause as CpuRetryOOM in the
-  // per-row path. A dedicated test is not feasible because RMM allocator-level OOM injection
-  // cannot reliably target the per-row convert() — it tends to hit builders.tryBuild() instead,
-  // which has its own withRetryNoSplit wrapper. The GPU split-and-retry test below covers the
-  // NoInputSpliterator.split() re-raise behavior.
+  // Note: SplitAndRetryOOM with rowCount == 0 is propagated directly (can't split a single
+  // row). A dedicated CpuSplitAndRetryOOM test for per-row convert() is not feasible because
+  // RMM allocator-level OOM injection cannot reliably target it — it tends to hit
+  // builders.tryBuild() instead. The GPU split-and-retry test below verifies propagation.
 
   test("test simple OOM split and retry") {
     val rowIter: Iterator[InternalRow] = (1 to 10).map(InternalRow(_)).toIterator
