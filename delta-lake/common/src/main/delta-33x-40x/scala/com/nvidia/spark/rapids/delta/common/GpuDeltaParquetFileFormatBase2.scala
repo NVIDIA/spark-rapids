@@ -365,15 +365,13 @@ class GpuDeltaParquetFileFormatBase2(
       // in the bitmap (deleted row indices) and checking which row group each
       // belongs to. This is O(deleted_rows * num_row_groups) instead of
       // O(total_rows). The former is usually smaller than the latter.
+      // This is a temporary solution until we add a dedicated API in cuDF.
       scalaBitmap.forEach { deletedIndex: Long =>
-        var i = 0
-        while (i < rowGroupOffsets.length) {
-          val start = rowGroupOffsets(i)
-          val end = start + rowGroupNumRows(i)
-          if (deletedIndex >= start && deletedIndex < end) {
-            count += 1L
-          }
-          i += 1
+        rowGroupOffsets.zip(rowGroupNumRows).find { case (offset, count) =>
+          deletedIndex >= offset && deletedIndex < offset + count
+        }.foreach { _ =>
+          // If the deleted index falls within this row group, count it as deleted.
+          count += 1L
         }
       }
       count
