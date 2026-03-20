@@ -479,13 +479,9 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       }
     }
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
-      getSupportedSchemaFromUnsupported(
-        cacheAttributes, selectedAttributes)
-    convertCachedBatchToColumnarInternal(
-      input,
-      cachedSchemaWithNames,
-      selectedSchemaWithNames,
-      selectedAttributes)
+      getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
+    convertCachedBatchToColumnarInternal(input,
+      cachedSchemaWithNames, selectedSchemaWithNames, selectedAttributes)
   }
 
   private def convertCachedBatchToColumnarInternal(
@@ -577,33 +573,26 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           new ColumnarBatch(Array.empty, parquetCB.numRows)
         case other =>
           throw new IllegalStateException(
-            s"Expected ParquetCachedBatch but " +
-              s"got ${other.getClass}")
+            s"Expected ParquetCachedBatch but got ${other.getClass}")
       }
     }
     val rapidsConf = new RapidsConf(conf)
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
-      getSupportedSchemaFromUnsupported(
-        cacheAttributes, selectedAttributes)
+      getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU &&
         isSchemaSupportedByCudf(cachedSchemaWithNames)) {
-      val batches = convertCachedBatchToColumnarInternal(
-        input, cachedSchemaWithNames,
+      val batches = convertCachedBatchToColumnarInternal(input, cachedSchemaWithNames,
         selectedSchemaWithNames, selectedAttributes)
       val cbRdd = batches.map(batch => {
         withResource(batch) { gpuBatch =>
           val cols = GpuColumnVector.extractColumns(gpuBatch)
-          new ColumnarBatch(
-            cols.safeMap(_.copyToHost()).toArray,
-            gpuBatch.numRows())
+          new ColumnarBatch(cols.safeMap(_.copyToHost()).toArray, gpuBatch.numRows())
         }
       })
-      cbRdd.mapPartitions(
-        iter => CloseableColumnBatchIterator(iter))
+      cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
     } else {
       val origSelectedAttributesWithUnambiguousNames =
-        sanitizeColumnNames(
-          selectedAttributes, selectedSchemaWithNames)
+        sanitizeColumnNames(selectedAttributes, selectedSchemaWithNames)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter => {
