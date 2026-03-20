@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,27 +43,71 @@ object IcebergProvider {
   val cpuBatchQueryScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
   val cpuCopyOnWriteScanClassName: String = "org.apache.iceberg.spark.source.SparkCopyOnWriteScan"
 
+  // Iceberg 1.9.0 is the only release where IcebergBuild.version() does not return a
+  // valid version (it returns "unspecified", fixed in 1.9.1). Identify it by its
+  // known release commit ID.
+  private val ICEBERG_190_COMMIT = "7dbafb438ee1e68d0047bebcb587265d7d87d8a1"
+
+  /**
+   * Returns the exact Iceberg version string (e.g. "1.6.1", "1.9.2", "1.10.1")
+   * from the runtime jar via IcebergBuild.version().
+   *
+   * Falls back to commit ID matching for iceberg 1.9.0 (which has a known bug
+   * where version() returns "unspecified"), and to "unknown" as a last resort.
+   */
+  lazy val detectedVersion: String = {
+    try {
+      val clazz = ShimReflectionUtils.loadClass("org.apache.iceberg.IcebergBuild")
+      val version = clazz.getMethod("version").invoke(null).asInstanceOf[String]
+      if (version.matches("\\d+\\.\\d+\\.\\d+.*")) {
+        version
+      } else {
+        val commitId = clazz.getMethod("gitCommitId").invoke(null).asInstanceOf[String]
+        if (commitId == ICEBERG_190_COMMIT) "1.9.0" else version
+      }
+    } catch {
+      case _: Exception => "unknown"
+    }
+  }
+
+  // (Spark major.minor.patch, Iceberg major.minor) -> shim sub-package
+  private val sparkIcebergToShim: Map[(String, String), String] = Map(
+    ("3.5.0", "1.6") -> "iceberg16x",
+    ("3.5.1", "1.6") -> "iceberg16x",
+    ("3.5.2", "1.6") -> "iceberg16x",
+    ("3.5.3", "1.6") -> "iceberg16x",
+    ("3.5.4", "1.9") -> "iceberg19x",
+    ("3.5.4", "1.10") -> "iceberg110x",
+    ("3.5.5", "1.9") -> "iceberg19x",
+    ("3.5.5", "1.10") -> "iceberg110x",
+    ("3.5.6", "1.9") -> "iceberg19x",
+    ("3.5.6", "1.10") -> "iceberg110x",
+    ("3.5.7", "1.9") -> "iceberg19x",
+    ("3.5.7", "1.10") -> "iceberg110x",
+    ("3.5.8", "1.9") -> "iceberg19x",
+    ("3.5.8", "1.10") -> "iceberg110x"
+  )
+
   /**
    * Returns the version-specific sub-package for the current Spark + Iceberg combination.
    * Used by both [[ShimLoaderTemp]] and [[ShimUtils]] to load the correct shim classes.
    */
   lazy val shimPackage: String = {
-    if (VersionUtils.cmpSparkVersion(3, 5, 4) >= 0) {
-      // Spark 3.5.4+ ships with iceberg 1.9.x or 1.10.x.
-      // Probe the iceberg-spark-runtime jar: IdentityPartitionConverters
-      // exists in iceberg <= 1.9 and was removed in 1.10.
-      try {
-        ShimReflectionUtils.loadClass(
-          "org.apache.iceberg.data.IdentityPartitionConverters")
-        "com.nvidia.spark.rapids.iceberg.iceberg19x"
-      } catch {
-        case _: ClassNotFoundException | _: LinkageError =>
-          "com.nvidia.spark.rapids.iceberg.iceberg110x"
-      }
-    } else {
-      // Spark 3.5.0-3.5.3 ships with iceberg 1.6.x
-      "com.nvidia.spark.rapids.iceberg.iceberg16x"
+    val sparkVersion = ShimLoader.getShimVersion match {
+      case SparkShimVersion(major, minor, patch) => s"$major.$minor.$patch"
+      case v => v.toString
     }
+    val icebergParts = detectedVersion.split("\\.")
+    if (icebergParts.length < 2) {
+      throw new UnsupportedOperationException(
+        s"Unrecognized Iceberg version: $detectedVersion on Spark $sparkVersion")
+    }
+    val icebergMajorMinor = s"${icebergParts(0)}.${icebergParts(1)}"
+    val key = (sparkVersion, icebergMajorMinor)
+    val subpackage = sparkIcebergToShim.getOrElse(key,
+      throw new UnsupportedOperationException(
+        s"Unsupported Spark/Iceberg combination: Spark $sparkVersion, Iceberg $detectedVersion"))
+    s"com.nvidia.spark.rapids.iceberg.$subpackage"
   }
 
   def isSupportedSparkVersion(): Boolean = {
