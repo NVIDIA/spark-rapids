@@ -314,7 +314,6 @@ def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns, enable_de
 
 @allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
 @delta_lake
-@ignore_order
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(),
     reason="Deletion vectors new in Delta Lake 2.4 / Apache Spark 3.4")
 def test_delta_delete_twice_with_dv(spark_tmp_path):
