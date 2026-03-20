@@ -331,11 +331,6 @@ class GpuDeltaParquetFileFormatBase2(
 
   /**
    * Spillable version of DeletionVector.DeletionVectorInfo.
-   *
-   * The number of deleted rows is computed eagerly at construction time using
-   * the Scala bitmap's forEach method, which iterates only over set bits
-   * (deleted row indices). This is O(deleted_rows) instead of O(total_rows).
-   * The Scala bitmap is not retained after construction.
    */
   case class SpillableDeletionVectorInfo(
       serializedBitmap: SpillableHostBuffer,
@@ -357,10 +352,8 @@ class GpuDeltaParquetFileFormatBase2(
   object SpillableDeletionVectorInfo {
 
     /**
-     * Computes the number of deleted rows by iterating only over the set bits
-     * in the bitmap (deleted row indices) and checking which row group each
-     * belongs to. This is O(deleted_rows * num_row_groups) instead of
-     * O(total_rows).
+     * Computes the number of deleted rows within the given row ranges
+     * in the bitmap.
      */
     private def countDeletedRows(
         scalaBitmap: RoaringBitmapArray,
@@ -368,6 +361,10 @@ class GpuDeltaParquetFileFormatBase2(
         rowGroupNumRows: Array[Int]): Long = {
       if (scalaBitmap.cardinality == 0) return 0L
       var count = 0L
+      // Computes the number of deleted rows by iterating only over the set bits
+      // in the bitmap (deleted row indices) and checking which row group each
+      // belongs to. This is O(deleted_rows * num_row_groups) instead of
+      // O(total_rows). The former is usually smaller than the latter.
       scalaBitmap.forEach { deletedIndex: Long =>
         var i = 0
         while (i < rowGroupOffsets.length) {
