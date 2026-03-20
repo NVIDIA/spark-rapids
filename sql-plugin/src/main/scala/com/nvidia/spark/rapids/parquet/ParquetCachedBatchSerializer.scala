@@ -466,19 +466,26 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
-    // optimize
-    val newSelectedAttributes = if (selectedAttributes.isEmpty) {
-      cacheAttributes
-    } else {
-      selectedAttributes
+    // When no columns are selected (e.g., count-only scan or
+    // cross-join side that needs only row count), return
+    // row-only batches without decoding parquet data.
+    if (selectedAttributes.isEmpty) {
+      return input.map {
+        case parquetCB: ParquetCachedBatch =>
+          new ColumnarBatch(Array.empty, parquetCB.numRows)
+        case other =>
+          throw new IllegalStateException(
+            s"Expected ParquetCachedBatch but got ${other.getClass}")
+      }
     }
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
-      getSupportedSchemaFromUnsupported(cacheAttributes, newSelectedAttributes)
+      getSupportedSchemaFromUnsupported(
+        cacheAttributes, selectedAttributes)
     convertCachedBatchToColumnarInternal(
       input,
       cachedSchemaWithNames,
       selectedSchemaWithNames,
-      newSelectedAttributes)
+      selectedAttributes)
   }
 
   private def convertCachedBatchToColumnarInternal(
@@ -563,29 +570,40 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
-    // optimize
-    val newSelectedAttributes = if (selectedAttributes.isEmpty) {
-      cacheAttributes
-    } else {
-      selectedAttributes
+    // When no columns are selected, return row-only batches
+    if (selectedAttributes.isEmpty) {
+      return input.map {
+        case parquetCB: ParquetCachedBatch =>
+          new ColumnarBatch(Array.empty, parquetCB.numRows)
+        case other =>
+          throw new IllegalStateException(
+            s"Expected ParquetCachedBatch but " +
+              s"got ${other.getClass}")
+      }
     }
     val rapidsConf = new RapidsConf(conf)
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
-      getSupportedSchemaFromUnsupported(cacheAttributes, newSelectedAttributes)
+      getSupportedSchemaFromUnsupported(
+        cacheAttributes, selectedAttributes)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU &&
         isSchemaSupportedByCudf(cachedSchemaWithNames)) {
-      val batches = convertCachedBatchToColumnarInternal(input, cachedSchemaWithNames,
-        selectedSchemaWithNames, newSelectedAttributes)
+      val batches = convertCachedBatchToColumnarInternal(
+        input, cachedSchemaWithNames,
+        selectedSchemaWithNames, selectedAttributes)
       val cbRdd = batches.map(batch => {
         withResource(batch) { gpuBatch =>
           val cols = GpuColumnVector.extractColumns(gpuBatch)
-          new ColumnarBatch(cols.safeMap(_.copyToHost()).toArray, gpuBatch.numRows())
+          new ColumnarBatch(
+            cols.safeMap(_.copyToHost()).toArray,
+            gpuBatch.numRows())
         }
       })
-      cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
+      cbRdd.mapPartitions(
+        iter => CloseableColumnBatchIterator(iter))
     } else {
       val origSelectedAttributesWithUnambiguousNames =
-        sanitizeColumnNames(newSelectedAttributes, selectedSchemaWithNames)
+        sanitizeColumnNames(
+          selectedAttributes, selectedSchemaWithNames)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter => {
