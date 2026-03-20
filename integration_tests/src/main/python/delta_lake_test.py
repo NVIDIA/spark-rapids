@@ -451,6 +451,7 @@ def test_delta_name_column_mapping_no_field_ids(spark_tmp_path, enable_deletion_
 @pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
+@pytest.mark.skipif(is_databricks_runtime(), reason="Databricks Spark generates a different query plan for the test query that is not convertible to a GPU plan")
 def test_delta_deletion_vector_coalescing_count_star(
         spark_tmp_path, dv_predicate_pushdown, use_metadata_row_index):
     """
@@ -463,8 +464,7 @@ def test_delta_deletion_vector_coalescing_count_star(
         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{dv_predicate_pushdown}",
         "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
         "spark.databricks.delta.deletionVectors.useMetadataRowIndex": f"{use_metadata_row_index}",
-        "spark.sql.files.maxRecordsPerFile": "200", # set a small maxRecordsPerFile to create more than 1 file in each partition
-        "spark.sql.adaptive.enabled": "false" # disable AQE temporarily until https://github.com/nviDIA/spark-rapids/issues/14319 is resolved.
+        "spark.sql.files.maxRecordsPerFile": "200" # set a small maxRecordsPerFile to create more than 1 file in each partition
     }
 
     def setup_tables(spark):
