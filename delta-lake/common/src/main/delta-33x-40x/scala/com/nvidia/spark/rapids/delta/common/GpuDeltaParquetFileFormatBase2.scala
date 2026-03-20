@@ -454,7 +454,7 @@ class GpuDeltaParquetFileFormatBase2(
    *  - [[loadedDVResults]] is filled in by [[prepareForDecode]] after the copy phase.
    *  [[perFileEntries]] and [[loadedDVResults]] are always parallel sequences of the same length.
    */
-  class DeltaBatchExtraInfo(
+  case class DeltaBatchExtraInfo(
       dateRebaseMode: DateTimeRebaseMode,
       timestampRebaseMode: DateTimeRebaseMode,
       hasInt96Timestamps: Boolean,
@@ -465,14 +465,13 @@ class GpuDeltaParquetFileFormatBase2(
     /**
      * True if at least one file in this batch carries a deletion vector descriptor.
      */
-    def hasDeletionVectors: Boolean = perFileEntries.exists(_.dvDescriptor.isDefined)
+    lazy val hasDeletionVectors: Boolean = perFileEntries.exists(_.dvDescriptor.isDefined)
 
     /**
      * Returns a copy of this instance with [[loadedDVResults]] set.
      */
     def withLoadedDVResults(loadedDVResults: Seq[SerializedRoaringBitmap]): DeltaBatchExtraInfo =
-      new DeltaBatchExtraInfo(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps,
-        perFileEntries, loadedDVResults)
+      DeltaBatchExtraInfo.copy(loadedDVResults = loadedDVResults)
 
     /**
      * Closes the DV bitmaps in [[loadedDVResults]].
@@ -1172,19 +1171,11 @@ class GpuDeltaParquetFileFormatBase2(
       }
 
       // Await results; close all bitmaps (collected + uncollected futures) on failure.
-      val loaded = new ArrayBuffer[SerializedRoaringBitmap]()
-      try {
+      closeOnExcept(loadFutures.map(_.get().gpuBitmap)) { _ =>
+        val loaded = new ArrayBuffer[SerializedRoaringBitmap]()
         loadFutures.foreach(f => loaded += f.get())
-      } catch {
-        case e: Throwable =>
-          loaded.map(_.gpuBitmap).safeClose(e)
-          // Drain and close any futures we never retrieved.
-          loadFutures.drop(loaded.size).foreach { f =>
-            try { f.get().gpuBitmap.close() } catch { case _: Throwable => () }
-          }
-          throw e
+        meta.copy(extraInfo = batchExtra.withLoadedDVResults(loaded.toSeq))
       }
-      meta.copy(extraInfo = batchExtra.withLoadedDVResults(loaded.toSeq))
     }
 
     /**
