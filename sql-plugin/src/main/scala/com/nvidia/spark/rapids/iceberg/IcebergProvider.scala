@@ -53,20 +53,16 @@ object IcebergProvider {
    * from the runtime jar via IcebergBuild.version().
    *
    * Falls back to commit ID matching for iceberg 1.9.0 (which has a known bug
-   * where version() returns "unspecified"), and to "unknown" as a last resort.
+   * where version() returns "unspecified").
    */
   lazy val detectedVersion: String = {
-    try {
-      val clazz = ShimReflectionUtils.loadClass("org.apache.iceberg.IcebergBuild")
-      val version = clazz.getMethod("version").invoke(null).asInstanceOf[String]
-      if (version.matches("\\d+\\.\\d+\\.\\d+.*")) {
-        version
-      } else {
-        val commitId = clazz.getMethod("gitCommitId").invoke(null).asInstanceOf[String]
-        if (commitId == ICEBERG_190_COMMIT) "1.9.0" else version
-      }
-    } catch {
-      case _: Exception => "unknown"
+    val clazz = ShimReflectionUtils.loadClass("org.apache.iceberg.IcebergBuild")
+    val version = clazz.getMethod("version").invoke(null).asInstanceOf[String]
+    if (version.matches("\\d+\\.\\d+\\.\\d+.*")) {
+      version
+    } else {
+      val commitId = clazz.getMethod("gitCommitId").invoke(null).asInstanceOf[String]
+      if (commitId == ICEBERG_190_COMMIT) "1.9.0" else version
     }
   }
 
