@@ -330,14 +330,17 @@ class GpuDeltaParquetFileFormatBase2(
   ///////////////////////////////////////
 
   /**
-   * Spillable version of DeletionVector.DeletionVectorInfo
+   * Spillable version of DeletionVector.DeletionVectorInfo.
+   *
+   * The number of deleted rows is computed eagerly at construction time using
+   * the Scala bitmap's forEach method, which iterates only over set bits
+   * (deleted row indices). This is O(deleted_rows) instead of O(total_rows).
+   * The Scala bitmap is not retained after construction.
    */
   case class SpillableDeletionVectorInfo(
       serializedBitmap: SpillableHostBuffer,
-      // Bitmap loaded from the deletion vector. This is used to compute the number
-      // of rows deleted in the given range of rowws.
-      // This is temporary until we add a new API in libcudf to compute it.
-      scalaBitmap: RoaringBitmapArray,
+      // Pre-computed number of deleted rows across all row groups.
+      numRowsDeleted: Long,
       // The offsets and numRows below are the original row group offsets and row counts
       // in the file. The combining process in multi-threaded reader involves re-organizing
       // row groups across files, but the offsets and numRows here are not changed even
@@ -346,40 +349,51 @@ class GpuDeltaParquetFileFormatBase2(
       rowGroupNumRows: Array[Int]
   ) extends AutoCloseable {
 
-    def computeNumRowsDeleted(): Long = {
-      if (scalaBitmap.cardinality == 0) {
-        0L
-      } else {
-        rowGroupOffsets.zip(rowGroupNumRows).map {
-          case (offset, numRows) =>
-            var contains = 0L
-            for (i <- offset until offset + numRows) {
-              if (scalaBitmap.contains(i)) {
-                contains = contains + 1L
-              }
-            }
-            contains
-        }.sum
-      }
-    }
-
     override def close(): Unit = {
       serializedBitmap.close()
     }
   }
 
   object SpillableDeletionVectorInfo {
+
+    /**
+     * Computes the number of deleted rows by iterating only over the set bits
+     * in the bitmap (deleted row indices) and checking which row group each
+     * belongs to. This is O(deleted_rows * num_row_groups) instead of
+     * O(total_rows).
+     */
+    private def countDeletedRows(
+        scalaBitmap: RoaringBitmapArray,
+        rowGroupOffsets: Array[Long],
+        rowGroupNumRows: Array[Int]): Long = {
+      if (scalaBitmap.cardinality == 0) return 0L
+      var count = 0L
+      scalaBitmap.forEach { deletedIndex: Long =>
+        var i = 0
+        while (i < rowGroupOffsets.length) {
+          val start = rowGroupOffsets(i)
+          val end = start + rowGroupNumRows(i)
+          if (deletedIndex >= start && deletedIndex < end) {
+            count += 1L
+          }
+          i += 1
+        }
+      }
+      count
+    }
+
     def apply(
         serializedBitmap: HostMemoryBuffer,
         scalaBitmap: RoaringBitmapArray,
         rowGroupOffsets: Array[Long],
         rowGroupNumRows: Array[Int]): SpillableDeletionVectorInfo = {
+      val numRowsDeleted = countDeletedRows(scalaBitmap, rowGroupOffsets, rowGroupNumRows)
       new SpillableDeletionVectorInfo(
         SpillableHostBuffer(
           serializedBitmap,
           serializedBitmap.getLength(),
           SpillPriorities.ACTIVE_BATCHING_PRIORITY),
-        scalaBitmap,
+        numRowsDeleted,
         rowGroupOffsets,
         rowGroupNumRows)
     }
@@ -840,10 +854,10 @@ class GpuDeltaParquetFileFormatBase2(
       val numDeletedRows = metadata match {
         case emptyMeta: DeltaParquetHostMemoryEmptyMetaData =>
           emptyMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
-            .map(_.computeNumRowsDeleted()).sum
+            .map(_.numRowsDeleted).sum
         case buffersMeta: DeltaParquetHostMemoryBuffersWithMetaData =>
           buffersMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
-            .map(_.computeNumRowsDeleted()).sum
+            .map(_.numRowsDeleted).sum
         case _ =>
           throw new IllegalArgumentException(s"Unexpected metadata type ${metadata.getClass()}")
       }
