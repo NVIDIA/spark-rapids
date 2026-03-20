@@ -438,7 +438,6 @@ object RapidsConf extends Logging {
       .integerConf
       .createWithDefault(2)
 
-
   val GPU_COREDUMP_DIR = conf("spark.rapids.gpu.coreDump.dir")
     .doc("The URI to a directory where a GPU core dump will be created if the GPU encounters " +
       "an exception. The URI can reference a distributed filesystem. The filename will be of the " +
