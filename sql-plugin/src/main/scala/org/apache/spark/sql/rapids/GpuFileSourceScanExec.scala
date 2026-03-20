@@ -654,7 +654,7 @@ case class GpuFileSourceScanExec(
 object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val cls = meta.wrapped.relation.fileFormat.getClass
-    if (cls == classOf[CSVFileFormat]) {
+    if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
       GpuReadCSVFileFormat.tagSupport(meta)
     } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
       GpuReadOrcFileFormat.tagSupport(meta)
@@ -672,7 +672,7 @@ object GpuFileSourceScanExec {
   def convertFileFormat(relation: HadoopFsRelation): FileFormat = {
     val format = relation.fileFormat
     val cls = format.getClass
-    if (cls == classOf[CSVFileFormat]) {
+    if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
       new GpuReadCSVFileFormat
     } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
       new GpuReadOrcFileFormat
