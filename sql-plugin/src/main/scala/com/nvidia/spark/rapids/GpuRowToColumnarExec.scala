@@ -643,34 +643,39 @@ class RowToColumnarIterator(
               (pendingRow != null || rowIter.hasNext) &&
               (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
 
-            // These two branches are mutually exclusive: we either consume pendingRow
-            // or call rowIter.next(), never both. rowIter.next() only returns JVM-heap
-            // InternalRows (typically UnsafeRow) which do not trigger RMM host
-            // allocations, so a CpuRetryOOM here is not expected. If one did occur it
-            // would propagate out of the while loop and be cleaned up by the finally
-            // block (currentThreadEndRetryBlock) and withResource(builders).
-            val row = if (pendingRow != null) {
-              val r = pendingRow
-              pendingRow = null
-              r
-            } else {
-              rowIter.next()
-            }
-
+            // Capture builder state before getting or converting the row so that
+            // we can roll back on OOM. This is safe to call before row retrieval
+            // because rowIter.next() does not modify builders.
             val snapshots = builders.captureState()
+            var row: InternalRow = null
             try {
+              // These two branches are mutually exclusive: we either consume
+              // pendingRow or call rowIter.next(), never both.
+              row = if (pendingRow != null) {
+                val r = pendingRow
+                pendingRow = null
+                r
+              } else {
+                rowIter.next()
+              }
               byteCount += converters.convert(row, builders)
               rowCount += 1
             } catch {
               case _: CpuRetryOOM | _: GpuRetryOOM
                   if rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike] =>
-                // Plain retry OOM after we already have rows: end this batch early
-                // and let pendingRow be picked up by the next batch.
-                builders.restoreState(snapshots)
-                pendingRow = copyRow(row)
+                // Plain retry OOM after we already have rows: end this batch early.
+                if (row != null) {
+                  // OOM from convert(): restore builder state and save the row
+                  // for the next batch.
+                  builders.restoreState(snapshots)
+                  pendingRow = copyRow(row)
+                }
+                // If row == null, OOM was from rowIter.next(). Builders are
+                // untouched (no restore needed) and the row was not consumed
+                // from the iterator, so it will be retried in the next batch.
                 batchDone = true
               case _: CpuRetryOOM | _: CpuSplitAndRetryOOM |
-                   _: GpuRetryOOM | _: GpuSplitAndRetryOOM =>
+                   _: GpuRetryOOM | _: GpuSplitAndRetryOOM if row != null =>
                 // Fall back to the full retry framework which will block the thread
                 // until memory is freed, then retry. We reach here when:
                 //   (a) rowCount == 0 (first row, nothing to emit yet),
@@ -706,6 +711,12 @@ class RowToColumnarIterator(
                   RmmSpark.currentThreadStartRetryBlock()
                 }
             }
+            // If row == null and no catch arm matched (e.g. OOM from
+            // rowIter.next() when rowCount == 0 or RequireSingleBatch, or
+            // SplitAndRetryOOM from rowIter.next()), the exception propagates
+            // through the finally blocks which clean up the retry block and
+            // builders. This is the correct behavior since we have no rows to
+            // emit and no row to retry.
           }
         } finally {
           RmmSpark.currentThreadEndRetryBlock()
