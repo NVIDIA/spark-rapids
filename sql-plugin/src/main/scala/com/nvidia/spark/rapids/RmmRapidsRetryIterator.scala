@@ -215,8 +215,11 @@ object RmmRapidsRetryIterator extends Logging {
    */
   def blockUntilMemoryFreed(): Unit = {
     RmmSpark.currentThreadEndRetryBlock()
-    RmmSpark.blockThreadUntilReady()
-    RmmSpark.currentThreadStartRetryBlock()
+    try {
+      RmmSpark.blockThreadUntilReady()
+    } finally {
+      RmmSpark.currentThreadStartRetryBlock()
+    }
   }
 
   /**
