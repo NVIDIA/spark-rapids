@@ -480,8 +480,11 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
     }
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
       getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
-    convertCachedBatchToColumnarInternal(input,
-      cachedSchemaWithNames, selectedSchemaWithNames, selectedAttributes)
+    convertCachedBatchToColumnarInternal(
+      input,
+      cachedSchemaWithNames,
+      selectedSchemaWithNames,
+      selectedAttributes)
   }
 
   private def convertCachedBatchToColumnarInternal(
