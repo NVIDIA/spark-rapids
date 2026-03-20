@@ -455,9 +455,9 @@ class GpuDeltaParquetFileFormatBase2(
    *  [[perFileEntries]] and [[loadedDVResults]] are always parallel sequences of the same length.
    */
   case class DeltaBatchExtraInfo(
-      dateRebaseMode: DateTimeRebaseMode,
-      timestampRebaseMode: DateTimeRebaseMode,
-      hasInt96Timestamps: Boolean,
+      override val dateRebaseMode: DateTimeRebaseMode,
+      override val timestampRebaseMode: DateTimeRebaseMode,
+      override val hasInt96Timestamps: Boolean,
       val perFileEntries: Seq[PerFileDVEntry],
       // Filled by prepareForDecode() after the copy phase; empty until then.
       val loadedDVResults: Seq[SerializedRoaringBitmap] = Seq.empty
@@ -471,7 +471,7 @@ class GpuDeltaParquetFileFormatBase2(
      * Returns a copy of this instance with [[loadedDVResults]] set.
      */
     def withLoadedDVResults(loadedDVResults: Seq[SerializedRoaringBitmap]): DeltaBatchExtraInfo =
-      DeltaBatchExtraInfo.copy(loadedDVResults = loadedDVResults)
+      this.copy(loadedDVResults = loadedDVResults)
 
     /**
      * Closes the DV bitmaps in [[loadedDVResults]].
@@ -1153,13 +1153,20 @@ class GpuDeltaParquetFileFormatBase2(
               val numDeleted: Long = if (scalaBitmap.cardinality == 0) {
                 0L
               } else {
-                entry.rowGroupOffsets.zip(entry.rowGroupNumRows).map { case (offset, count) =>
-                  var deleted = 0L
-                  for (i <- offset until offset + count) {
-                    if (scalaBitmap.contains(i)) deleted += 1L
+                // Computes the number of rows deleted within given row ranges.
+                // This currently requires iterating through the bitmap and
+                // checking each deleted index against the row ranges.
+                // This is a temporary solution until we add a dedicated API in cuDF.
+                var count = 0L
+                scalaBitmap.forEach { deletedIndex: Long =>
+                  entry.rowGroupOffsets.zip(entry.rowGroupNumRows).find { case (offset, count) =>
+                    deletedIndex >= offset && deletedIndex < offset + count
+                  }.foreach { _ =>
+                    // If the deleted index falls within this row group, count it as deleted.
+                    count += 1L
                   }
-                  deleted
-                }.sum
+                }
+                count
               }
               require(numDeleted <= totalRows,
                 s"Deletion vector cardinality ($numDeleted) exceeds " +
