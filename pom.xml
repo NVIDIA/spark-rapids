@@ -499,6 +499,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -524,6 +525,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -549,6 +551,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -574,6 +577,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -599,6 +603,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -925,6 +930,7 @@
         <iceberg.16x.version>1.6.1</iceberg.16x.version>
         <iceberg.19x.version>1.9.2</iceberg.19x.version>
         <iceberg.110x.version>1.10.1</iceberg.110x.version>
+        <iceberg.version>${iceberg.16x.version}</iceberg.version>
         <!--
             If true, disables verification that all Shims be built as of one and the same git
             commit hash. Do not use for CI!
@@ -1078,7 +1084,7 @@
             <dependency>
                 <groupId>org.apache.iceberg</groupId>
                 <artifactId>iceberg-spark-runtime-${iceberg.artifact.suffix}_${scala.binary.version}</artifactId>
-                <version>${iceberg.16x.version}</version>
+                <version>${iceberg.version}</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
