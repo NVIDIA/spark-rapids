@@ -26,9 +26,10 @@
       "severity": "high"
     },
     {
+    {
       "id": "host-device-transfer",
       "rule": "Avoid unnecessary host-device memory copies. Keep data on GPU between consecutive operations.",
-      "scope": ["sql-plugin/src/**"],
+      "scope": ["sql-plugin/src/**", "shuffle-plugin/src/**"],
       "severity": "medium"
     },
     {
