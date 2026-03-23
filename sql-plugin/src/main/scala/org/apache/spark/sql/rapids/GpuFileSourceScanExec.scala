@@ -654,7 +654,9 @@ case class GpuFileSourceScanExec(
 object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val cls = meta.wrapped.relation.fileFormat.getClass
-    if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
+    if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.tagSupportForGpuFileSourceScan(meta)
+    } else if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
       GpuReadCSVFileFormat.tagSupport(meta)
     } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
       GpuReadOrcFileFormat.tagSupport(meta)
@@ -662,8 +664,6 @@ object GpuFileSourceScanExec {
       GpuReadParquetFileFormat.tagSupport(meta)
     } else if (classOf[JsonFileFormat].isAssignableFrom(cls)) {
       GpuReadJsonFileFormat.tagSupport(meta)
-    } else if (ExternalSource.isSupportedFormat(cls)) {
-      ExternalSource.tagSupportForGpuFileSourceScan(meta)
     } else {
       meta.willNotWorkOnGpu(s"unsupported file format: ${cls.getCanonicalName}")
     }
@@ -672,7 +672,9 @@ object GpuFileSourceScanExec {
   def convertFileFormat(relation: HadoopFsRelation): FileFormat = {
     val format = relation.fileFormat
     val cls = format.getClass
-    if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
+    if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.getReadFileFormat(relation)
+    } else if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
       new GpuReadCSVFileFormat
     } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
       new GpuReadOrcFileFormat
@@ -680,8 +682,6 @@ object GpuFileSourceScanExec {
       new GpuReadParquetFileFormat
     } else if (classOf[JsonFileFormat].isAssignableFrom(cls)) {
       new GpuReadJsonFileFormat
-    } else if (ExternalSource.isSupportedFormat(cls)) {
-      ExternalSource.getReadFileFormat(relation)
     } else {
       throw new IllegalArgumentException(s"${cls.getCanonicalName} is not supported")
     }
