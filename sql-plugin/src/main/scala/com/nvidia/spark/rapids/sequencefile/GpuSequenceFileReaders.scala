@@ -255,9 +255,20 @@ private[sequencefile] case class SequenceFileHostBuffersWithMetaData(
     override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
   extends HostMemoryBuffersWithMetaDataBase {
 
+  // When chunks are transferred to a combined result, this flag prevents
+  // double-close: the combined result owns the chunks, not the original wrapper.
+  private var _chunksTransferred: Boolean = false
+
+  /** Mark that this wrapper's chunks have been transferred to a combined result. */
+  def markChunksTransferred(): Unit = {
+    _chunksTransferred = true
+  }
+
   override def close(): Unit = {
-    keyChunks.foreach(_.close())
-    valueChunks.foreach(_.close())
+    if (!_chunksTransferred) {
+      keyChunks.foreach(_.close())
+      valueChunks.foreach(_.close())
+    }
     super.close()
   }
 }
@@ -437,25 +448,35 @@ class MultiFileCloudSequenceFilePartitionReader(
     // The actual concatenation will happen on GPU (much faster)
     val allKeyChunks = toCombine.flatMap(_.keyChunks)
     val allValueChunks = toCombine.flatMap(_.valueChunks)
-    val totalRows = toCombine.map(_.totalRows).sum
+    val totalRowsLong = toCombine.map(_.totalRows.toLong).sum
+    if (totalRowsLong > Int.MaxValue) {
+      throw new IllegalStateException(
+        s"Combined SequenceFile batch row count $totalRowsLong exceeds Int.MaxValue")
+    }
+    val totalRows = totalRowsLong.toInt
     val totalBytesRead = input.map(_.bytesRead).sum
     val firstMeta = toCombine.head
 
-    val result = SequenceFileHostBuffersWithMetaData(
-      partitionedFile = firstMeta.partitionedFile,
-      memBuffersAndSizes = Array(SingleHMBAndMeta.empty(totalRows)),
-      bytesRead = totalBytesRead,
-      keyChunks = allKeyChunks,
-      valueChunks = allValueChunks,
-      totalRows = totalRows,
-      wantsKey = wantsKey,
-      wantsValue = wantsValue,
-      allPartValues = if (allPartValues.nonEmpty) Some(allPartValues) else None)
+    val result = closeOnExcept(allKeyChunks ++ allValueChunks) { _ =>
+      SequenceFileHostBuffersWithMetaData(
+        partitionedFile = firstMeta.partitionedFile,
+        memBuffersAndSizes = Array(SingleHMBAndMeta.empty(totalRows)),
+        bytesRead = totalBytesRead,
+        keyChunks = allKeyChunks,
+        valueChunks = allValueChunks,
+        totalRows = totalRows,
+        wantsKey = wantsKey,
+        wantsValue = wantsValue,
+        allPartValues =
+          if (allPartValues.nonEmpty) Some(allPartValues) else None)
+    }
 
-    // The returned combined metadata now owns the chunk arrays. The original wrappers are kept
-    // open so they do not eagerly close those chunks, but any deferred release callbacks should
-    // follow the combined owner.
-    toCombine.foreach(_.combineReleaseCallbacks(result))
+    // Mark original wrappers as transferred so their close() won't double-close
+    // chunks that are now owned by the combined result.
+    toCombine.foreach { wrapper =>
+      wrapper.markChunksTransferred()
+      wrapper.combineReleaseCallbacks(result)
+    }
 
     logDebug(s"Zero-copy combine took ${System.currentTimeMillis() - startCombineTime} ms, " +
       s"collected ${toCombine.length} files with ${allKeyChunks.length} key chunks, " +
@@ -594,7 +615,13 @@ class MultiFileCloudSequenceFilePartitionReader(
     val dataLen = offsetsBuffer.getInt(numRows.toLong * DType.INT32.getSizeInBytes)
     // Only copy the valid payload bytes. The backing host buffer may be much larger
     // because HostBinaryListBufferer preallocates for future growth.
-    val dataSlice = dataBuffer.sliceWithCopy(0, dataLen.toLong)
+    // When all payloads are empty (dataLen == 0), allocate a minimal 1-byte buffer
+    // because HostColumnVectorCore requires a non-null data buffer.
+    val dataSlice = if (dataLen > 0) {
+      dataBuffer.sliceWithCopy(0, dataLen.toLong)
+    } else {
+      HostAlloc.alloc(1, preferPinned = false)
+    }
     closeOnExcept(dataSlice) { _ =>
       val offsetsLen = (numRows.toLong + 1L) * DType.INT32.getSizeInBytes
       // LIST offsets only need numRows + 1 entries,
@@ -636,6 +663,9 @@ class MultiFileCloudSequenceFilePartitionReader(
         case e: FileNotFoundException if ignoreMissingFiles =>
           logWarning(s"Skipped missing file: ${partFile.filePath}", e)
           SequenceFileEmptyMetaData(partFile, 0L)
+        // Explicit rethrow: FileNotFoundException extends IOException, so without this
+        // case a missing file with !ignoreMissingFiles && ignoreCorruptFiles would be
+        // silently swallowed by the IOException handler below.
         case e: FileNotFoundException if !ignoreMissingFiles => throw e
         case e: UnsupportedSequenceFileCompressionException => throw e
         case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>

@@ -52,11 +52,20 @@ import org.apache.spark.util.SerializableConfiguration
  *
  * The CPU fallback path (doExecute) still uses the original child RDD.
  */
+/**
+ * @param sequenceFileSchema schema with effective column names (after any parent Project
+ *                           rename) used to determine which SequenceFile columns to read.
+ *                           The field names "key"/"value" map to the corresponding
+ *                           SequenceFile key/value columns. This may differ from outputAttrs
+ *                           names when a parent ProjectExec renames columns (e.g., encoder
+ *                           default "value" renamed to "key" by .toDF("key")).
+ */
 case class GpuSequenceFileSerializeFromObjectExec(
     outputAttrs: Seq[Attribute],
     child: SparkPlan,
     goal: CoalesceSizeGoal,
-    inputPaths: Seq[String])(
+    inputPaths: Seq[String],
+    sequenceFileSchema: StructType)(
     @transient val rapidsConf: RapidsConf)
   extends UnaryExecNode with GpuExec {
 
@@ -88,8 +97,10 @@ case class GpuSequenceFileSerializeFromObjectExec(
         DESCRIPTION_SCHEDULE_TIME_BUBBLE)
   )
 
-  private lazy val readDataSchema: StructType = StructType(
-    outputAttrs.map(a => StructField(a.name, a.dataType, a.nullable)))
+  // Use sequenceFileSchema (effective column names) to determine which SequenceFile
+  // columns (key/value) the reader should produce. This may differ from outputAttrs
+  // when a parent ProjectExec renames columns.
+  private lazy val readDataSchema: StructType = sequenceFileSchema
 
   /**
    * List all input files and bin-pack them into FilePartitions.
@@ -219,14 +230,17 @@ object GpuSequenceFileSerializeFromObjectExec {
     val fs = path.getFileSystem(hadoopConf)
     val statuses = fs.globStatus(path)
     if (statuses == null || statuses.isEmpty) {
+      if (ignoreMissingFiles) {
+        return Array.empty[FileStatus]
+      }
       val pathStr = path.toString
-      val looksLikeGlob = pathStr.exists(ch => ch == '*' || ch == '?' || ch == '[' || ch == '{')
+      val looksLikeGlob = pathStr.exists(
+        ch => ch == '*' || ch == '?' || ch == '[' || ch == '{')
       if (looksLikeGlob) {
         throw noMatchesError(path)
-      } else if (ignoreMissingFiles) {
-        Array.empty[FileStatus]
       } else {
-        throw new FileNotFoundException(s"Input path does not exist: $path")
+        throw new FileNotFoundException(
+          s"Input path does not exist: $path")
       }
     }
     statuses

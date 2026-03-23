@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import scala.annotation.tailrec
+import scala.language.existentials
 import scala.util.control.NonFatal
 
 import org.apache.hadoop.fs.Path
@@ -27,9 +28,10 @@ import org.apache.hadoop.mapreduce.lib.input.{
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.{HadoopRDD, NewHadoopRDD, RDD}
-import org.apache.spark.sql.execution.{ExternalRDDScanExec, SerializeFromObjectExec, SparkPlan}
+import org.apache.spark.sql.execution.{ExternalRDDScanExec, ProjectExec,
+  SerializeFromObjectExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuSequenceFileSerializeFromObjectExec
-import org.apache.spark.sql.types.BinaryType
+import org.apache.spark.sql.types.{BinaryType, StructField, StructType}
 
 class GpuSequenceFileSerializeFromObjectExecMeta(
     plan: SerializeFromObjectExec,
@@ -54,18 +56,62 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
   private var scanAnalysis: Option[SequenceFileScanAnalysis] =
     None
 
+  // Effective column names after any parent ProjectExec rename.
+  // These determine which SequenceFile columns (key/value) the reader produces.
+  // For example, rdd.map(kv => keyBytes).toDF("key") has internal name "value"
+  // (encoder default) but effective name "key" (from the parent Project rename).
+  private var effectiveColumnNames: Seq[String] = Seq.empty
+
+  /**
+   * Resolves the effective output column names by checking for a parent ProjectExec
+   * that renames columns. Falls back to the internal names if no rename is detected.
+   */
+  private def resolveEffectiveColumnNames(): Seq[String] = {
+    parent match {
+      case Some(spm: SparkPlanMeta[_]) =>
+        spm.wrapped match {
+          case p: ProjectExec if p.output.length == wrapped.output.length =>
+            p.output.map(_.name)
+          case _ => wrapped.output.map(_.name)
+        }
+      case _ => wrapped.output.map(_.name)
+    }
+  }
+
   override def tagPlanForGpu(): Unit = {
     if (!conf.isSequenceFileRDDPhysicalReplaceEnabled) {
       willNotWorkOnGpu("SequenceFile RDD physical replacement is disabled")
       return
     }
-    val outOk = wrapped.output.nonEmpty && wrapped.output.forall { a =>
-      val isKeyOrValue = a.name.equalsIgnoreCase("key") ||
-        a.name.equalsIgnoreCase("value")
-      isKeyOrValue && a.dataType == BinaryType
+    val typeOk = wrapped.output.nonEmpty &&
+      wrapped.output.forall(_.dataType == BinaryType)
+    if (!typeOk) {
+      willNotWorkOnGpu("SequenceFile object replacement only supports BinaryType output")
+      return
     }
-    if (!outOk) {
-      willNotWorkOnGpu("SequenceFile object replacement only supports BinaryType key/value output")
+    effectiveColumnNames = resolveEffectiveColumnNames()
+    // Validate that this is a recognizable SequenceFile output pattern:
+    //   (a) Single column: internal name "value"/"key" (Array[Byte] encoder default),
+    //       effective name "key"/"value" — handles rdd.map(kv => kv._1).toDF("key").
+    //   (b) Two columns: internal names "_1"/"_2" (tuple encoder), effective names
+    //       exactly {"key","value"} in any order — handles
+    //       rdd.map(kv => (kv._1,kv._2)).toDF("value","key").
+    //       Reading is positional: col0=SF key, col1=SF value regardless of effective names.
+    //   (c) Fallback: internal names already "key"/"value", effective names "key"/"value".
+    val internalNames = wrapped.output.map(_.name)
+    val namesOk = internalNames match {
+      case Seq(n) if n.equalsIgnoreCase("value") || n.equalsIgnoreCase("key") =>
+        effectiveColumnNames.forall(e => e.equalsIgnoreCase("key") || e.equalsIgnoreCase("value"))
+      case Seq("_1", "_2") =>
+        effectiveColumnNames.map(_.toLowerCase).toSet == Set("key", "value")
+      case _ =>
+        internalNames.forall(n => n.equalsIgnoreCase("key") || n.equalsIgnoreCase("value")) &&
+          effectiveColumnNames.forall(n => n.equalsIgnoreCase("key") || n.equalsIgnoreCase("value"))
+    }
+    if (!namesOk) {
+      willNotWorkOnGpu("Output columns do not match a supported SequenceFile pattern: " +
+        s"internal=[${internalNames.mkString(",")}] " +
+        s"effective=[${effectiveColumnNames.mkString(",")}]")
       return
     }
     wrapped.child match {
@@ -98,11 +144,32 @@ class GpuSequenceFileSerializeFromObjectExecMeta(
     }
     require(analysis.inputPaths.nonEmpty,
       "SequenceFile input paths should be collected before GPU physical replacement")
+    // Build the SequenceFile read schema. The field names determine which SF column
+    // (key or value) to read; fields are accessed positionally by the reader.
+    //
+    // For the tuple case (internal names "_1"/"_2"), always use canonical [key, value]
+    // order so that col0 = SF key and col1 = SF value regardless of how the user
+    // named the output columns via toDF(). The output attribute names (effective names)
+    // may differ from the read schema names, but columnar access is positional, so
+    // the correct data lands in each output position.
+    //
+    // For the single-column case, use the effective name directly: it tells us whether
+    // to read the SF key or value column.
+    val seqFileSchema = if (wrapped.output.map(_.name) == Seq("_1", "_2")) {
+      StructType(Seq(
+        StructField("key", BinaryType, nullable = true),
+        StructField("value", BinaryType, nullable = true)))
+    } else {
+      StructType(effectiveColumnNames.zip(wrapped.output).map { case (effName, attr) =>
+        StructField(effName, attr.dataType, attr.nullable)
+      })
+    }
     GpuSequenceFileSerializeFromObjectExec(
       wrapped.output,
       wrapped.child,
       TargetSize(conf.gpuTargetBatchSizeBytes),
-      analysis.inputPaths)(conf)
+      analysis.inputPaths,
+      seqFileSchema)(conf)
   }
 
   override def convertToCpu(): SparkPlan = wrapped
@@ -139,12 +206,21 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
 
   private def isNewApiSequenceFileRDD(rdd: NewHadoopRDD[_, _]): Boolean = {
     try {
-      // NewHadoopRDD stores inputFormatClass as a public final field. The Scala-mangled
-      // name varies across Spark versions, so we locate it by type rather than by name.
-      val ifc = classOf[NewHadoopRDD[_, _]].getFields
-        .find(f => classOf[Class[_]].isAssignableFrom(f.getType))
-        .map(_.get(rdd).asInstanceOf[Class[_]])
-        .orNull
+      val clazz = classOf[NewHadoopRDD[_, _]]
+      // Try the known field name first (stable across current Spark versions),
+      // then fall back to locating the first public Class[_]-typed field.
+      // This two-step approach avoids silently matching a wrong field if a future
+      // Spark version adds another Class[_] field before inputFormatClass.
+      val ifc = try {
+        val f = clazz.getField("inputFormatClass")
+        f.get(rdd).asInstanceOf[Class[_]]
+      } catch {
+        case _: NoSuchFieldException =>
+          clazz.getFields
+            .find(f => classOf[Class[_]].isAssignableFrom(f.getType))
+            .map(_.get(rdd).asInstanceOf[Class[_]])
+            .orNull
+      }
       ifc != null && ifc.getName.contains("SequenceFile")
     } catch {
       case NonFatal(e) =>
@@ -187,6 +263,7 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
     recurse(rdd, Set.empty)
   }
 
+  @tailrec
   private[rapids] def collectInputPaths(rdd: RDD[_]): Seq[String] = {
     rdd match {
       case n: NewHadoopRDD[_, _] =>
@@ -223,18 +300,33 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
     }
   }
 
-  private def findAnyFile(path: Path, conf: org.apache.hadoop.conf.Configuration): Option[Path] = {
+  /** Maximum number of files to sample per input path for compression detection. */
+  private val CompressionSampleSize = 5
+
+  /**
+   * Returns up to `maxFiles` file paths under the given (possibly globbed) path.
+   * Uses a lazy iterator so that callers can short-circuit as soon as a compressed
+   * file is found without listing the entire directory tree.
+   */
+  private def findSampleFiles(
+      path: Path,
+      conf: org.apache.hadoop.conf.Configuration,
+      maxFiles: Int): Iterator[Path] = {
     val fs = path.getFileSystem(conf)
     val statuses = fs.globStatus(path)
     if (statuses == null || statuses.isEmpty) {
-      None
+      Iterator.empty
     } else {
-      val first = statuses.head
-      if (first.isFile) Some(first.getPath)
-      else {
-        val it = fs.listFiles(first.getPath, true)
-        if (it.hasNext) Some(it.next().getPath) else None
-      }
+      statuses.iterator.flatMap { s =>
+        if (s.isFile) Iterator.single(s.getPath)
+        else {
+          val it = fs.listFiles(s.getPath, true)
+          new Iterator[Path] {
+            override def hasNext: Boolean = it.hasNext
+            override def next(): Path = it.next().getPath
+          }
+        }
+      }.take(maxFiles)
     }
   }
 
@@ -267,12 +359,17 @@ object GpuSequenceFileSerializeFromObjectExecMeta extends Logging {
     }
   }
 
+  // Samples up to CompressionSampleSize files per input path for compression detection.
+  // If a directory contains a mix of compressed and uncompressed files this may still
+  // miss some, but the executor-side ReadBatchRunner will throw
+  // UnsupportedSequenceFileCompressionException for any compressed file it encounters.
   private def hasCompressedInput(
       inputPaths: Seq[String],
       conf: org.apache.hadoop.conf.Configuration): Boolean = {
     inputPaths.exists { p =>
       try {
-        findAnyFile(new Path(p), conf).exists(f => isCompressedSequenceFile(f, conf))
+        findSampleFiles(new Path(p), conf, CompressionSampleSize)
+          .exists(f => isCompressedSequenceFile(f, conf))
       } catch {
         case NonFatal(_) => false
       }

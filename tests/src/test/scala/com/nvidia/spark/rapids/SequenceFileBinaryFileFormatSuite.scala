@@ -130,7 +130,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       SequenceFile.Writer.compression(CompressionType.RECORD, new DefaultCodec()))
     try {
       payloads.zipWithIndex.foreach { case (p, idx) =>
-        val key = new BytesWritable(intToBytes(idx))
+        val key = new BytesWritable(SequenceFileTestUtils.intToBytes(idx))
         val value = new BytesWritable(p)
         writer.append(key, value)
       }
@@ -138,13 +138,6 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
       writer.close()
     }
   }
-
-  private def intToBytes(i: Int): Array[Byte] = Array[Byte](
-    ((i >> 24) & 0xFF).toByte,
-    ((i >> 16) & 0xFF).toByte,
-    ((i >> 8) & 0xFF).toByte,
-    (i & 0xFF).toByte
-  )
 
   private def bytesToInt(b: Array[Byte]): Int = {
     require(b.length == 4, s"Expected 4 bytes, got ${b.length}")
@@ -223,7 +216,7 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
         }.sortBy { case (value, _) => bytesToInt(value) }
 
         val expected = payloads.zipWithIndex.map { case (value, idx) =>
-          (intToBytes(idx), value)
+          (SequenceFileTestUtils.intToBytes(idx), value)
         }
 
         assert(got.length == expected.length)
@@ -231,6 +224,42 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
           assert(java.util.Arrays.equals(actualValue, expectedKey))
           assert(java.util.Arrays.equals(actualKey, expectedValue))
         }
+      }
+    }
+  }
+
+  test("Physical replacement supports key-only reads via parent Project rename") {
+    // For single-element RDD[Array[Byte]], Spark's encoder names the column "value".
+    // .toDF("key") adds a ProjectExec renaming "value" → "key". The GPU replacement
+    // resolves the effective column name "key" from the parent Project and correctly
+    // reads the SequenceFile key column.
+    withTempDir("seqfile-physical-keyonly-test") { tmpDir =>
+      val file = new File(tmpDir, "keyonly.seq")
+      val conf = new Configuration()
+      val payloads = Array(
+        Array[Byte](1, 2, 3),
+        "keyonly".getBytes(StandardCharsets.UTF_8))
+      writeSequenceFile(file, conf, payloads)
+
+      withPhysicalReplaceEnabledSession { spark =>
+        import spark.implicits._
+        val sc = spark.sparkContext
+        val df = sc.newAPIHadoopFile(
+          file.getAbsolutePath,
+          classOf[SequenceFileAsBinaryInputFormat],
+          classOf[BytesWritable],
+          classOf[BytesWritable]
+        ).map { case (k, _) =>
+          SequenceFileTestUtils.bytesWritablePayload(k.getBytes, k.getLength)
+        }.toDF("key")
+
+        assert(hasGpuSequenceFileRDDScan(df),
+          s"Expected GPU SequenceFile exec in plan:\n${df.queryExecution.executedPlan}")
+        val got = df.collect().map(_.getAs[Array[Byte]](0)).sortBy(b => bytesToInt(b))
+        assert(got.length == payloads.length)
+        // Keys are 4-byte big-endian integers written by writeSequenceFile
+        assert(bytesToInt(got(0)) == 0)
+        assert(bytesToInt(got(1)) == 1)
       }
     }
   }
@@ -615,5 +644,3 @@ class SequenceFileBinaryFileFormatSuite extends AnyFunSuite {
     }
   }
 }
-
-object SequenceFileBinaryFileFormatSuite
