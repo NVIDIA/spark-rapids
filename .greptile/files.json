@@ -1,0 +1,30 @@
+{
+  "files": [
+    {
+      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuOverrides.scala",
+      "description": "GPU operator override registry and fallback rules"
+    },
+    {
+      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/RapidsConf.scala",
+      "description": "Configuration keys and defaults"
+    },
+    {
+      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/SpillableColumnarBatch.scala",
+      "description": "GPU memory spill framework"
+    },
+    {
+      "path": "integration_tests/src/main/python/asserts.py",
+      "description": "GPU vs CPU comparison assertions for Python integration tests",
+      "scope": ["integration_tests/**"]
+    },
+    {
+      "path": "integration_tests/src/main/python/data_gen.py",
+      "description": "Seeded data generation framework for test reproducibility",
+      "scope": ["integration_tests/**"]
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "description": "Contribution guidelines"
+    }
+  ]
+}
