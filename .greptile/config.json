@@ -14,9 +14,10 @@
       "severity": "high"
     },
     {
+    {
       "id": "oom-retry-handling",
       "rule": "GPU memory-allocating code must be wrapped in withRetry/withRetryNoSplit from RmmRapidsRetryIterator. The retry function must be idempotent. Input should be SpillableColumnarBatch before entering retry.",
-      "scope": ["sql-plugin/src/**"],
+      "scope": ["sql-plugin/src/**", "shuffle-plugin/src/**"],
       "severity": "high"
     },
     {
