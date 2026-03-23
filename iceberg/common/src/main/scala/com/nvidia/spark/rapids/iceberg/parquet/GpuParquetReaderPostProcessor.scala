@@ -72,14 +72,11 @@ private[iceberg] class ColumnActionContext(
     val numRows: Int
 ) {
   private def checkedRowCountToInt(rowCount: Long): Int = {
-    try {
-      Math.toIntExact(rowCount)
-    } catch {
-      case e: ArithmeticException =>
-        throw new IllegalStateException(
-          s"Row count $rowCount exceeds the supported Int range",
-          e)
+    if (rowCount > Int.MaxValue || rowCount < Int.MinValue) {
+      throw new IllegalStateException(
+        s"Row count $rowCount exceeds the supported Int range")
     }
+    rowCount.toInt
   }
 
   def requireColumn(actionName: String): CudfColumnVector = {
@@ -90,7 +87,7 @@ private[iceberg] class ColumnActionContext(
     new ColumnActionContext(processor, Some(col), checkedRowCountToInt(col.getRowCount))
   }
 
-  def withNoColumn(numRows: Int): ColumnActionContext = {
+  def withoutColumn(numRows: Int): ColumnActionContext = {
     new ColumnActionContext(processor, None, numRows)
   }
 }
@@ -318,7 +315,7 @@ private[iceberg] case class ProcessStruct(
         case None =>
           // Field doesn't exist in input - action must generate the column
           // (FillNull, FetchConstant, etc.)
-          action.execute(ctx.withNoColumn(ctx.numRows))
+          action.execute(ctx.withoutColumn(ctx.numRows))
       }
     }
     withResource(childCols) { cols =>
