@@ -58,11 +58,12 @@ The canonical location for a file shared by multiple shims is `src/main/<lowest_
 
 ## Iceberg
 
+Code in `iceberg/` and `sql-plugin/src/**/iceberg/**`. Handle schema evolution, partition spec changes, metadata consistency, and merge-on-read delete files correctly.
+
 ## Delta Lake
 
 Code in `delta-lake/` and `sql-plugin/src/**/delta/`. Verify row-level tracking, commit protocol, and conflict resolution for DML operations.
 
-Code in `delta-lake/`. Verify row-level tracking, commit protocol, and conflict resolution for DML operations.
 
 ## Test Quality
 
