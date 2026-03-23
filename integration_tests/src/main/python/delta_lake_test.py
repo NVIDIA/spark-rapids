@@ -566,6 +566,7 @@ def test_delta_deletion_vector_mixed_dv_no_dv(spark_tmp_path, reader_type, dv_pr
 @pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/7733")
 def test_delta_deletion_vector_ignore_missing_files(spark_tmp_path, reader_type):
     """
     When ignoreMissingFiles=true and one DV-bearing file has been removed, the reader
@@ -604,6 +605,7 @@ def test_delta_deletion_vector_ignore_missing_files(spark_tmp_path, reader_type)
 @pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/7733")
 def test_delta_deletion_vector_ignore_corrupt_files(spark_tmp_path, reader_type):
     """
     When ignoreCorruptFiles=true, the corrupt file is silently skipped and
