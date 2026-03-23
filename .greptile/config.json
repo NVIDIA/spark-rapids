@@ -83,7 +83,7 @@
     {
       "id": "delta-dml-correctness",
       "rule": "Verify row-level change tracking, commit protocol adherence, and conflict resolution in merge/update/delete.",
-      "scope": ["delta-lake/**"],
+      "scope": ["delta-lake/**", "sql-plugin/src/**/delta/**"],
       "severity": "high"
     },
     {
