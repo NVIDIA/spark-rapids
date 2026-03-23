@@ -8,9 +8,15 @@
 
   "rules": [
     {
-      "id": "gpu-resource-close",
-      "rule": "GPU resources (ColumnVector, Table, DeviceMemoryBuffer, SpillableColumnarBatch) must be closed via try-with-resources or close() in a finally block.",
+      "id": "gpu-resource-arm",
+      "rule": "GPU resources must use withResource() or closeOnExcept() from Arm.scala. Never use bare .close() on GPU resources.",
       "scope": ["sql-plugin/src/**", "shuffle-plugin/src/**"],
+      "severity": "high"
+    },
+    {
+      "id": "oom-retry-handling",
+      "rule": "GPU memory-allocating code must be wrapped in withRetry/withRetryNoSplit from RmmRapidsRetryIterator. The retry function must be idempotent. Input should be SpillableColumnarBatch before entering retry.",
+      "scope": ["sql-plugin/src/**"],
       "severity": "high"
     },
     {
@@ -59,6 +65,12 @@
       "id": "shim-consistency",
       "rule": "Spark API changes must be shimmed for all supported versions. Verify shim classes override all required methods.",
       "scope": ["sql-plugin/src/**/shims/**", "sql-plugin/src/main/spark*/**"],
+      "severity": "high"
+    },
+    {
+      "id": "shim-json-annotation",
+      "rule": "Every shim-specific source file must have a spark-rapids-shim-json-lines comment block after the copyright header listing supported Spark versions.",
+      "scope": ["sql-plugin/src/main/spark*/**"],
       "severity": "high"
     },
     {

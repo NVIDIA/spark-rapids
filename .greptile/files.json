@@ -9,6 +9,14 @@
       "description": "Configuration keys and defaults"
     },
     {
+      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/Arm.scala",
+      "description": "ARM pattern (withResource/closeOnExcept) for GPU resource management"
+    },
+    {
+      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/RmmRapidsRetryIterator.scala",
+      "description": "OOM retry framework (withRetry/withRetryNoSplit) for GPU memory allocation"
+    },
+    {
       "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/SpillableColumnarBatch.scala",
       "description": "GPU memory spill framework"
     },

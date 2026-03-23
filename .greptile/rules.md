@@ -1,10 +1,21 @@
 # spark-rapids Code Review Rules
 
-## GPU Resource Management
+## GPU Resource Management (ARM Pattern)
 
-Close all GPU resources (`ColumnVector`, `Table`, `DeviceMemoryBuffer`, `SpillableColumnarBatch`) via try-with-resources or close() in a finally block.
+Use the project's ARM pattern from `Arm.scala` — never bare `.close()`:
+- `withResource(r)(block)` — always closes `r` in finally, even on success
+- `closeOnExcept(r)(block)` — closes `r` only if an exception occurs (use when caller owns the resource on success)
+- `safeClose`, `safeMap`, `safeConsume` from `RapidsPluginImplicits` for collections
 
 Prefer `SpillableColumnarBatch`/`SpillableBuffer` over raw device memory to enable spill-to-disk.
+
+## OOM Retry Handling
+
+GPU memory-allocating code must use retry handlers from `RmmRapidsRetryIterator.scala`:
+- `withRetry(input, splitPolicy)(fn)` — retries on OOM, optionally splitting input
+- `withRetryNoSplit(input)(fn)` — retries without splitting
+- The retry function must be idempotent
+- Input should be `SpillableColumnarBatch` before entering retry
 
 ## Memory Safety
 
@@ -26,6 +37,7 @@ Null-check cuDF native objects and results from aggregations/joins that may be e
 
 - No nested locks without documented ordering
 - Long-running operations (RPC, IPC, GPU kernels) need configurable timeouts
+- `GpuSemaphore.acquireIfNecessary(context)` must be called before GPU work; release with `releaseIfNecessary`
 
 ## GPU Operator Fallback
 
@@ -34,6 +46,15 @@ New operators must declare fallback in `GpuOverrides` with clear log messages fo
 ## Spark Version Compatibility
 
 Shim all Spark API interactions for supported versions. Shims live at `sql-plugin/src/main/spark{VERSION}/`. Avoid removed/relocated internal APIs.
+
+Every shim-specific source file must have a `spark-rapids-shim-json-lines` comment block after the copyright header:
+```
+/*** spark-rapids-shim-json-lines
+{"spark": "330"}
+{"spark": "340"}
+spark-rapids-shim-json-lines ***/
+```
+The canonical location for a file shared by multiple shims is `src/main/<lowest_buildver>/`.
 
 ## Iceberg
 
