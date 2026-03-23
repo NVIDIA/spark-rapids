@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{Arithmetic, RoundMode}
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.CharsetDecode
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.NumberConverter
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
@@ -2514,5 +2515,24 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     withResource(GpuColumnVector.from(lhs, numRows)) { col =>
       doColumnar(col, rhs)
     }
+  }
+}
+
+case class GpuStringDecode(bin: Expression, charsetName: String)
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
+
+  override def child: Expression = bin
+
+  override def dataType: DataType = StringType
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val charsetId = charsetName match {
+      case "GBK" => CharsetDecode.GBK
+      case other =>
+        throw new UnsupportedOperationException(s"Unsupported charset on GPU: $other")
+    }
+    CharsetDecode.decode(input.getBase, charsetId)
   }
 }
