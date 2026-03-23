@@ -188,7 +188,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       dvFilter @ GpuFilterExec(condition,
       dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
         if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
-          !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
+          !outputList.flatMap(_.references).exists(_.name == "_metadata") &&
+          inputList.exists(_.name == "_metadata") =>
         dvRoot.withNewChildren(Seq(
           dvFilter.withNewChildren(Seq(
             dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
@@ -213,7 +214,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     maybeDVScan.map {
       case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _))) =>
         condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
-          inputList.exists(_.name == "_metadata") && !outputList.exists(_.name == "_metadata")
+          inputList.exists(_.name == "_metadata") &&
+          !outputList.flatMap(_.references).exists(_.name == "_metadata")
       case _ =>
         false
     }.getOrElse(false)
