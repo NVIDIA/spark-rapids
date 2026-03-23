@@ -189,6 +189,7 @@ def test_delta_deletion_vector_multithreaded_read(spark_tmp_path, chunk_size, us
 @pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
+@pytest.mark.skipif(is_databricks_runtime(), reason="This test is currently failing on Databricks due to https://github.com/nviDIA/spark-rapids/issues/14319")
 def test_delta_deletion_vector_multithreaded_combine_count_star(
         spark_tmp_path, use_cdf,  dv_predicate_pushdown, use_metadata_row_index):
     """
