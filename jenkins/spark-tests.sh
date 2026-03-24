@@ -254,7 +254,7 @@ run_iceberg_tests() {
   # get the patch version of Spark
   SPARK_PATCH_VER=$(echo "$SPARK_VER" | cut -d. -f3)
 
-  if [[ "$ICEBERG_SPARK_VER" != "3.5" ]]; then
+  if [[ "$ICEBERG_SPARK_VER" != "3.5" && "$ICEBERG_SPARK_VER" != "4.0" ]]; then
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
     return 0
   fi
@@ -262,8 +262,15 @@ run_iceberg_tests() {
   # Supported Iceberg versions per Spark patch version:
   # Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
   # Spark 3.5.4+       -> Iceberg 1.9.2, 1.10.1
+  # Spark 4.0.x        -> Iceberg 1.10.1
   local supported_versions
-  if [[ "$SPARK_PATCH_VER" -le 3 ]]; then
+  if [[ "$ICEBERG_SPARK_VER" == "4.0" ]]; then
+    if [[ "$SCALA_BINARY_VER" != "2.13" ]]; then
+      echo "!!!! Skipping Iceberg tests. Spark 4.0 Iceberg tests require Scala 2.13"
+      return 0
+    fi
+    supported_versions="1.10.1"
+  elif [[ "$SPARK_PATCH_VER" -le 3 ]]; then
     supported_versions="1.6.1"
   else
     supported_versions="1.9.2 1.10.1"
@@ -279,7 +286,9 @@ run_iceberg_tests() {
     echo "Using user-specified ICEBERG_VERSIONS=$ICEBERG_VERSIONS"
   else
     # Default: test one representative version per Spark patch range
-    if [[ "$SPARK_PATCH_VER" -le 3 ]]; then
+    if [[ "$ICEBERG_SPARK_VER" == "4.0" ]]; then
+      ICEBERG_VERSIONS="1.10.1"
+    elif [[ "$SPARK_PATCH_VER" -le 3 ]]; then
       ICEBERG_VERSIONS="1.6.1"
     elif [[ "$SPARK_PATCH_VER" -le 6 ]]; then
       ICEBERG_VERSIONS="1.9.2"
@@ -327,7 +336,7 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
             ./run_pyspark_from_build.sh -m iceberg --iceberg
     elif [[ "$test_type" == "s3tables" ]]; then
       echo "!!! Running iceberg tests with s3tables"
-      # AWS deps versions for Spark 3.5.x
+      # AWS deps versions for Spark 3.5.x and 4.0.x
       AWS_SDK_VERSION=${AWS_SDK_VERSION:-"2.29.26"}
       HADOOP_AWS_VERSION=${HADOOP_AWS_VERSION:-"3.3.4"}
       AWS_SDK_BUNDLE_VERSION=${AWS_SDK_BUNDLE_VERSION:-"1.12.709"}

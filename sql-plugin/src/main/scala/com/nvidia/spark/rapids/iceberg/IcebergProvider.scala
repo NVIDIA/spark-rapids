@@ -48,8 +48,11 @@ object IcebergProvider {
    * Used by both [[ShimLoaderTemp]] and [[ShimUtils]] to load the correct shim classes.
    */
   lazy val shimPackage: String = {
-    if (VersionUtils.cmpSparkVersion(3, 5, 4) >= 0) {
-      // Spark 3.5.4+ ships with iceberg 1.9.x or 1.10.x.
+    if (VersionUtils.cmpSparkVersion(4, 0, 0) >= 0) {
+      // Spark 4.0.x only supports iceberg 1.10.x
+      "com.nvidia.spark.rapids.iceberg.iceberg110x"
+    } else if (VersionUtils.cmpSparkVersion(3, 5, 4) >= 0) {
+      // Spark 3.5.4+ can use iceberg 1.9.x or 1.10.x.
       // Probe the iceberg-spark-runtime jar: IdentityPartitionConverters
       // exists in iceberg <= 1.9 and was removed in 1.10.
       try {
@@ -70,7 +73,7 @@ object IcebergProvider {
     ShimLoader.getShimVersion match {
       case _: SparkShimVersion =>
         VersionUtils.cmpSparkVersion(3, 5, 0) >= 0 &&
-        VersionUtils.cmpSparkVersion(4, 0, 0) < 0
+        VersionUtils.cmpSparkVersion(4, 1, 0) < 0
       case _ => false
     }
   }

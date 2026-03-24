@@ -204,7 +204,7 @@ object GpuIcebergPartitioner {
     withResource(new ColumnarBatch(hostColsArray, numRows)) { hostBatch =>
         hostBatch.rowIterator()
           .asScala
-          .map(internalRow => new GpuInternalRow(internalRow))
+          .map(internalRow => ShimUtils.wrapInternalRow(internalRow, sparkType))
           .map(internalRow => {
             val row = new GenericRowWithSchema(internalRow.toSeq(sparkType).toArray, sparkType)
             new SparkStructLike(icebergType).wrap(row)
