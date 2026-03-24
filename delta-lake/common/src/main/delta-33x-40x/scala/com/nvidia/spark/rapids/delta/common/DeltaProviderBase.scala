@@ -139,8 +139,9 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
   }
 
   override def canPushDVPredicateDownToScan(conf: RapidsConf): Boolean = {
-    val useMetadataRowIndex = conf.getStr(
-      DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX.key).forall(_.toBoolean)
+    val dvConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
+    val useMetadataRowIndex = conf.getStr(dvConf.key)
+      .getOrElse(dvConf.defaultValueString).toBoolean
     useMetadataRowIndex && conf.isDeltaDeletionVectorPredicatePushdownEnabled
   }
 
