@@ -2,7 +2,7 @@
 
 ## Project Context
 
-spark-rapids is a GPU acceleration plugin for Apache Spark. It translates Spark SQL operations into GPU-accelerated equivalents using NVIDIA RAPIDS/cuDF. The project supports multiple Spark versions (3.2.x through 4.0.x) via a shim layer architecture.
+spark-rapids is a GPU acceleration plugin for Apache Spark. It translates Spark SQL operations into GPU-accelerated equivalents using NVIDIA RAPIDS/cuDF. The project supports multiple Spark versions via a shim layer architecture. See `sql-plugin/src/main/` for the list of supported Spark version shims.
 
 ## Review Focus — CRITICAL Issues (must flag)
 
@@ -45,6 +45,6 @@ spark-rapids is a GPU acceleration plugin for Apache Spark. It translates Spark 
 ```bash
 mvn clean verify -DskipTests           # Build
 mvn test -pl tests                      # Unit tests
-mvn test -pl tests -Dbuildver=341       # Tests for Spark 3.4.1
+mvn test -pl tests -Dbuildver=<VER>     # Tests for a specific Spark version (e.g., 341)
 cd integration_tests && pytest -v       # Integration tests
 ```
