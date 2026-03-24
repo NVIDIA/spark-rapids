@@ -21,7 +21,6 @@ import org.apache.iceberg.*;
 import org.apache.iceberg.spark.source.GpuBaseReader;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PartitionUtil;
-import org.apache.spark.sql.catalyst.InternalRow;
 
 import java.util.Map;
 
@@ -42,11 +41,5 @@ public class ShimUtilsImpl implements IcebergShimUtils {
         } else {
             return PartitionUtil.constantsMap(task, GpuBaseReader::convertConstant);
         }
-    }
-
-    @Override
-    public InternalRow wrapInternalRow(InternalRow row,
-            org.apache.spark.sql.types.StructType schema) {
-        return new GpuInternalRow(row);
     }
 }

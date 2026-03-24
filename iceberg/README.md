@@ -36,3 +36,4 @@ that is picked up by the Iceberg submodules via the Maven build helper plugin.
 |-----------------------------------|------------------------------------------|
 | `common/src/main/scala`           | Scala code shared across all versions    |
 | `common/src/main/java`            | Java code shared across all versions     |
+| `common/src/main/spark35x/java`   | Java code for Spark 3.5.x only           |

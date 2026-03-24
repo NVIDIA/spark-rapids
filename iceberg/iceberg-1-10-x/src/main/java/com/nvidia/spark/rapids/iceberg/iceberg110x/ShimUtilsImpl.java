@@ -21,14 +21,7 @@ import org.apache.iceberg.*;
 import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PartitionUtil;
-import org.apache.spark.sql.catalyst.InternalRow;
-import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
-import org.apache.spark.sql.types.DataType;
-import org.apache.spark.sql.types.DateType;
-import org.apache.spark.sql.types.DecimalType;
-import org.apache.spark.sql.types.StringType;
 
-import java.time.LocalDate;
 import java.util.Map;
 
 /** Iceberg 1.10.x shim: uses {@code SparkUtil::internalToSpark}. */
@@ -48,32 +41,5 @@ public class ShimUtilsImpl implements IcebergShimUtils {
         } else {
             return PartitionUtil.constantsMap(task, SparkUtil::internalToSpark);
         }
-    }
-
-    @Override
-    public InternalRow wrapInternalRow(InternalRow row,
-            org.apache.spark.sql.types.StructType schema) {
-        int n = row.numFields();
-        Object[] values = new Object[n];
-        org.apache.spark.sql.types.StructField[] fields = schema.fields();
-        for (int i = 0; i < n; i++) {
-            if (row.isNullAt(i)) {
-                values[i] = null;
-            } else {
-                DataType dt = fields[i].dataType();
-                if (dt instanceof DateType) {
-                    values[i] = LocalDate.ofEpochDay(row.getInt(i));
-                } else if (dt instanceof StringType) {
-                    org.apache.spark.unsafe.types.UTF8String s = row.getUTF8String(i);
-                    values[i] = s == null ? null : s.toString();
-                } else if (dt instanceof DecimalType) {
-                    DecimalType ddt = (DecimalType) dt;
-                    values[i] = row.getDecimal(i, ddt.precision(), ddt.scale()).toJavaBigDecimal();
-                } else {
-                    values[i] = row.get(i, dt);
-                }
-            }
-        }
-        return new GenericInternalRow(values);
     }
 }

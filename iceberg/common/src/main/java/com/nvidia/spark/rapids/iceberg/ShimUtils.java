@@ -22,7 +22,6 @@ import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
-import org.apache.spark.sql.catalyst.InternalRow;
 
 import java.util.Map;
 
@@ -52,10 +51,5 @@ public class ShimUtils {
     public static Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema,
                                                     Table table) {
         return IMPL.constantsMap(task, readSchema, table);
-    }
-
-    public static InternalRow wrapInternalRow(InternalRow row,
-            org.apache.spark.sql.types.StructType schema) {
-        return IMPL.wrapInternalRow(row, schema);
     }
 }

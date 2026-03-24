@@ -20,7 +20,6 @@ import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
-import org.apache.spark.sql.catalyst.InternalRow;
 
 import java.util.Map;
 
@@ -52,6 +51,4 @@ public interface IcebergShimUtils {
      *         type-to-Spark type conversion, which differs across Iceberg versions.
      */
     Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema, Table table);
-
-    InternalRow wrapInternalRow(InternalRow row, org.apache.spark.sql.types.StructType schema);
 }
