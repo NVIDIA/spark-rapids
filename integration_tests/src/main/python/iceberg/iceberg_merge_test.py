@@ -20,10 +20,10 @@ from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list)
 from marks import allow_non_gpu, iceberg, ignore_order, datagen_overrides
-from spark_session import is_spark_35x, with_gpu_session, with_cpu_session
+from spark_session import is_iceberg_supported_spark, with_gpu_session, with_cpu_session
 
-pytestmark = pytest.mark.skipif(not is_spark_35x(),
-                                reason="Current spark-rapids only support spark 3.5.x")
+pytestmark = pytest.mark.skipif(not is_iceberg_supported_spark(),
+                                reason="Iceberg acceleration requires Spark 3.5.x or 4.0.x")
 
 # Base configuration for Iceberg MERGE tests
 iceberg_merge_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})

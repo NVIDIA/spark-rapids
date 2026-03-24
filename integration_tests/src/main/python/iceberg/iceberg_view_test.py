@@ -20,11 +20,11 @@ from conftest import is_iceberg_rest_catalog
 from data_gen import *
 from iceberg import get_full_table_name, rapids_reader_types, create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list
 from marks import iceberg, ignore_order
-from spark_session import with_cpu_session, is_spark_35x
+from spark_session import with_cpu_session, is_iceberg_supported_spark
 
 pytestmark = [
-    pytest.mark.skipif(not is_spark_35x(),
-                       reason="Current spark-rapids only support spark 3.5.x"),
+    pytest.mark.skipif(not is_iceberg_supported_spark(),
+                       reason="Iceberg acceleration requires Spark 3.5.x or 4.0.x"),
 
     # Iceberg view tests only supported with REST catalog,
     # because the view sql is not supported with Hadoop/S3Table catalog for Iceberg 1.9.x

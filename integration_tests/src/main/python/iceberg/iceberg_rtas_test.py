@@ -23,11 +23,11 @@ from iceberg import (create_iceberg_table, iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
                      get_full_table_name, iceberg_write_enabled_conf)
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
-from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
+from spark_session import with_gpu_session, with_cpu_session, is_iceberg_supported_spark
 
 pytestmark = [
-    pytest.mark.skipif(not is_spark_35x(),
-                       reason="Current spark-rapids only support spark 3.5.x"),
+    pytest.mark.skipif(not is_iceberg_supported_spark(),
+                       reason="Iceberg acceleration requires Spark 3.5.x or 4.0.x"),
 ]
 
 
