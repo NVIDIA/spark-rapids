@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.Row
+import org.apache.spark.sql.execution.LocalLimitExec
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.DataTypes
 
@@ -90,5 +91,35 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
       (7, ("8", Seq(("8", "8")).toMap, Array(7L, 8L)), Array(7)),
       (9, ("10", Seq(("10", "10")).toMap, Array(9L, 10L)), Array(9)))
         .toDF("a", "b", "c")
+  }
+
+  // Plan inspection: verify which limit node is chosen based on
+  // whether the child is columnar (GPU) or row-based (CPU).
+
+  test("collect limit uses GpuLocalLimitExec for columnar child") {
+    val conf = enableCollectLimitExec()
+    withGpuSparkSession(spark => {
+      val df = spark.range(100).limit(5)
+      val plan = df.queryExecution.executedPlan
+      assert(
+        plan.find(_.isInstanceOf[GpuLocalLimitExec]).isDefined,
+        "Expected GpuLocalLimitExec for columnar child" +
+          s"\n${plan.treeString}")
+    }, conf)
+  }
+
+  test("collect limit uses CPU LocalLimitExec for row child") {
+    val conf = enableCollectLimitExec()
+      .set("spark.rapids.sql.exec.RangeExec", "false")
+      .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
+        "LocalLimitExec,RangeExec")
+    withGpuSparkSession(spark => {
+      val df = spark.range(100).limit(5)
+      val plan = df.queryExecution.executedPlan
+      assert(
+        plan.find(_.isInstanceOf[LocalLimitExec]).isDefined,
+        "Expected CPU LocalLimitExec for row-based child" +
+          s"\n${plan.treeString}")
+    }, conf)
   }
 }
