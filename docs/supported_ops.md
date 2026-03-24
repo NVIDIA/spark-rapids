@@ -422,29 +422,29 @@ Accelerator supports are described below.
 </tr>
 <tr>
 <td rowspan="1">SerializeFromObjectExec</td>
-<td rowspan="1">Serialize object rows to binary columns for SequenceFile RDD scans</td>
+<td rowspan="1">GPU replacement for SequenceFile RDD scans (non-SequenceFile uses fall back to CPU)</td>
 <td rowspan="1">None</td>
 <td>Input/Output</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
 <td>S</td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
-<td> </td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
+<td><b>NS</b></td>
 </tr>
 <tr>
 <td rowspan="1">SortExec</td>
