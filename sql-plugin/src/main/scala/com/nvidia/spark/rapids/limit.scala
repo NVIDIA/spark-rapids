@@ -202,16 +202,21 @@ class GpuCollectLimitMeta(
   // Skip when limit < 0 (OFFSET-only) since all rows must pass through.
   protected def buildCollectLimitGpu(offset: Int): GpuExec = {
     val gpuChild = childPlans.head.convertIfNeeded()
-    val effectiveChild =
+    // When the child is row-based, insert CPU LocalLimitExec to stop
+    // upstream row iterators early (matching CPU CollectLimitExec
+    // per-partition .take(limit) behavior). In this case LocalLimitExec
+    // already enforces the limit, so skip the redundant
+    // GpuLocalLimitExec wrapper.
+    val localLimited =
       if (collectLimit.limit > 0 && !gpuChild.supportsColumnar) {
         LocalLimitExec(collectLimit.limit, gpuChild)
       } else {
-        gpuChild
+        GpuLocalLimitExec(collectLimit.limit, gpuChild)
       }
     GpuGlobalLimitExec(collectLimit.limit,
       GpuShuffleExchangeExec(
         GpuSinglePartitioning,
-        GpuLocalLimitExec(collectLimit.limit, effectiveChild),
+        localLimited,
         ENSURE_REQUIREMENTS
       )(SinglePartition), offset)
   }
