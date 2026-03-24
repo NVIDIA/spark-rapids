@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,33 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
-{"spark": "330cdh"}
 {"spark": "331"}
 {"spark": "332"}
-{"spark": "332cdh"}
 {"spark": "333"}
 {"spark": "334"}
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "400"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.{GpuOverrides, GpuTransitionOverrides, SparkQueryCompareTestSuite}
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.catalyst.expressions.{DynamicPruningExpression, ExprId}
 import org.apache.spark.sql.execution.{FilterExec, InSubqueryExec, LocalTableScanExec, ProjectExec, RowToColumnarExec, SparkPlan, SubqueryExec}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 
 /**
  * Testing for GpuInSubqeryExec. It is difficult to build a series of DataFrame
@@ -57,13 +65,13 @@ class GpuInSubqueryExecSuite extends SparkQueryCompareTestSuite {
   }
 
   private def subqueryTable(spark: SparkSession): DataFrame = {
-    import spark.sqlContext.implicits._
+    import spark.implicits._
     Seq("400.0", "123.4").toDF("strings")
   }
 
   private def buildCpuInSubqueryPlan(
       spark: SparkSession,
-      shouldBroadcast: Boolean): SparkPlan = {
+      shouldBroadcastOrDpp: Boolean): SparkPlan = {
     val df1ReadExec = readToPhysicalPlan(nullableStringsIntsDf(spark))
     val df2ReadExec = readToPhysicalPlan(subqueryTable(spark))
     val inSubquery = InSubqueryExec(
@@ -71,16 +79,19 @@ class GpuInSubqueryExecSuite extends SparkQueryCompareTestSuite {
       SubqueryExec("sbe",
         ProjectExec(Seq(df2ReadExec.output.head), df2ReadExec)),
       ExprId(7),
-      shouldBroadcast=shouldBroadcast)
+      shouldBroadcastOrDpp)
     FilterExec(DynamicPruningExpression(inSubquery), df1ReadExec)
   }
 
-  for (shouldBroadcast <- Seq(false, true)) {
-    test(s"InSubqueryExec shouldBroadcast=$shouldBroadcast") {
+  /**
+   * The named parameter shouldBroadcast was renamed to isDynamicPruning in Spark 4.0.0+
+   */
+  for (shouldBroadcastOrDpp <- Seq(false, true)) {
+    test(s"InSubqueryExec shouldBroadcastOrDpp=$shouldBroadcastOrDpp") {
       val gpuResults = withGpuSparkSession({ spark =>
         val overrides = new GpuOverrides()
         val transitionOverrides = new GpuTransitionOverrides()
-        val cpuPlan = buildCpuInSubqueryPlan(spark, shouldBroadcast)
+        val cpuPlan = buildCpuInSubqueryPlan(spark, shouldBroadcastOrDpp)
         val gpuPlan = transitionOverrides(overrides(cpuPlan))
         gpuPlan.execute().collect()
       })

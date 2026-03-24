@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@ import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession => SqlSparkSession}
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, Partitioning}
 import org.apache.spark.sql.catalyst.trees.TreeNode
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.connector.read.Scan
@@ -65,6 +65,7 @@ trait SparkShims {
   def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]]
   def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]]
   def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]]
+  def getPartitionings: Map[Class[_ <: Partitioning], PartRule[_ <: Partitioning]] = Map.empty
   def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
     DataWritingCommandRule[_ <: DataWritingCommand]]
   def getRunnableCmds: Map[Class[_ <: RunnableCommand], RunnableCommandRule[_ <: RunnableCommand]]
@@ -74,12 +75,18 @@ trait SparkShims {
       newPlan: SparkPlan): BroadcastQueryStageExec
 
   def getFileScanRDD(
-      sparkSession: SparkSession,
+      sparkSession: SqlSparkSession,
       readFunction: (PartitionedFile) => Iterator[InternalRow],
       filePartitions: Seq[FilePartition],
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference] = Seq.empty,
       fileFormat: Option[FileFormat] = None): RDD[InternalRow]
+
+  /**
+   * Get files from FilePartition. In Spark 4.0+, the files method was deprecated
+   * in favor of filesWithAbsolutePaths or innerFiles.
+   */
+  def getPartitionFiles(partition: FilePartition): Seq[PartitionedFile]
 
   def shouldFailDivOverflow: Boolean
 
@@ -122,8 +129,6 @@ trait SparkShims {
   def isExchangeOp(plan: SparkPlanMeta[_]): Boolean
 
   def getDateFormatter(): DateFormatter
-
-  def sessionFromPlan(plan: SparkPlan): SparkSession
 
   def isCustomReaderExec(x: SparkPlan): Boolean
 
@@ -170,8 +175,6 @@ trait SparkShims {
    */
   def skipAssertIsOnTheGpu(plan: SparkPlan): Boolean
 
-  def leafNodeDefaultParallelism(ss: SparkSession): Int
-
   def getAdaptiveInputPlan(adaptivePlan: AdaptiveSparkPlanExec): SparkPlan
 
   def neverReplaceShowCurrentNamespaceCommand: ExecRule[_ <: SparkPlan]
@@ -199,4 +202,17 @@ trait SparkShims {
    * Handle regexp_replace inconsistency from https://issues.apache.org/jira/browse/SPARK-39107
    */
   def reproduceEmptyStringBug: Boolean
+
+
+  /**
+   * Handle TableCacheQueryStageExec for getNonQueryStagePlan.
+   * Returns None for versions where TableCacheQueryStageExec doesn't exist.
+   */
+  def getTableCacheNonQueryStagePlan(plan: SparkPlan): Option[SparkPlan] = None
+
+  /**
+   * Return true if this shim registers GPU replacements for `WriteFilesExec`.
+   * Used to keep higher-level feature gating (e.g. LORE) aligned with shim coverage.
+   */
+  def hasGpuWriteFiles: Boolean = false
 }

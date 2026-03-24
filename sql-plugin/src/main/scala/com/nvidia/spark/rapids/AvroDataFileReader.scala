@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,8 @@ import org.apache.avro.mapred.FsInput
 import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 
 private[rapids] class AvroSeekableInputStream(in: SeekableInput) extends InputStream
     with SeekableInput {
@@ -80,7 +82,7 @@ case class Header(
   @transient
   lazy val schema: Schema = {
     getMetaString(SCHEMA)
-      .map(s => new Schema.Parser().setValidateDefaults(false).setValidate(false).parse(s))
+      .map(s => TrampolineConnectShims.createSchemaParser().parse(s))
       .orNull
   }
 
@@ -183,7 +185,7 @@ abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
     var l = vin.readMapStart().toInt
     if (l > 0) {
       do {
-        for (i <- 1 to l) {
+        for (_ <- 1 to l) {
           val key = vin.readString(null).toString
           val value = vin.readBytes(null)
           val bb = new Array[Byte](value.remaining())

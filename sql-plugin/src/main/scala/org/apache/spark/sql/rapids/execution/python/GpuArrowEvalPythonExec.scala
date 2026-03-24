@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -25,6 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -35,7 +36,7 @@ import org.apache.spark.api.python._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
+import org.apache.spark.sql.rapids.execution.python.shims.{GpuArrowPythonRunner, PythonArgumentUtils}
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -71,13 +72,31 @@ class RebatchingRoundoffIterator(
     }
   }
 
+  private[this] def concatRowsOnlyBatch(cbs: ColumnarBatch*): ColumnarBatch = {
+    if (cbs.length == 1) {
+      return cbs.head
+    }
+    withResource(cbs) { _ =>
+      val totalRowsNum = cbs.map(_.numRows().toLong).sum
+      if (totalRowsNum != totalRowsNum.toInt) {
+        throw new IllegalStateException("Cannot support a batch larger that MAX INT rows")
+      }
+      new ColumnarBatch(Array.empty, totalRowsNum.toInt)
+    }
+  }
+
   private[this] def concat(l: ColumnarBatch, r: ColumnarBatch): ColumnarBatch = {
-    withResource(GpuColumnVector.from(l)) { lTable =>
-      withResource(GpuColumnVector.from(r)) { rTable =>
-        withResource(Table.concatenate(lTable, rTable)) { concatTable =>
-          GpuColumnVector.from(concatTable, GpuColumnVector.extractTypes(l))
+    assert(l.numCols() == r.numCols())
+    if (l.numCols() > 0) {
+      withResource(GpuColumnVector.from(l)) { lTable =>
+        withResource(GpuColumnVector.from(r)) { rTable =>
+          withResource(Table.concatenate(lTable, rTable)) { concatTable =>
+            GpuColumnVector.from(concatTable, GpuColumnVector.extractTypes(l))
+          }
         }
       }
+    } else { // rows only batches
+      concatRowsOnlyBatch(l, r)
     }
   }
 
@@ -91,7 +110,13 @@ class RebatchingRoundoffIterator(
       batches.append(SpillableColumnarBatch(got, SpillPriorities.ACTIVE_BATCHING_PRIORITY))
     }
     val toConcat = batches.toArray.safeMap(_.getColumnarBatch())
-    ConcatAndConsumeAll.buildNonEmptyBatch(toConcat, schema)
+    assert(toConcat.nonEmpty, "no batches to be concatenated")
+    // expect all batches have the same number of columns
+    if (toConcat.head.numCols() > 0) {
+      ConcatAndConsumeAll.buildNonEmptyBatch(toConcat, schema)
+    } else {
+      concatRowsOnlyBatch(toConcat: _*)
+    }
   }
 
   override def next(): ColumnarBatch = {
@@ -148,8 +173,9 @@ class RebatchingRoundoffIterator(
     }
 
     val rc: Long = combined.numRows()
+    val numCols = combined.numCols()
 
-    if (rc % targetRoundoff == 0 || rc < targetRoundoff) {
+    if (rc % targetRoundoff == 0 || rc < targetRoundoff || numCols == 0) {
       return combined
     }
 
@@ -337,15 +363,16 @@ case class GpuArrowEvalPythonExec(
 
   override def producedAttributes: AttributeSet = AttributeSet(resultAttrs)
 
-  private def collectFunctions(udf: GpuPythonUDF): (ChainedPythonFunctions, Seq[Expression]) = {
+  private def collectFunctions(
+      udf: GpuPythonUDF): ((ChainedPythonFunctions, Long), Seq[Expression]) = {
     udf.children match {
       case Seq(u: GpuPythonUDF) =>
-        val (chained, children) = collectFunctions(u)
-        (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
+        val ((chained, _), children) = collectFunctions(u)
+        ((ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), udf.resultId.id), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
-        assert(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
-        (ChainedPythonFunctions(Seq(udf.func)), udf.children)
+        assertInTests(children.forall(_.find(_.isInstanceOf[GpuPythonUDF]).isEmpty))
+        ((ChainedPythonFunctions(Seq(udf.func)), udf.resultId.id), udf.children)
     }
   }
 
@@ -371,6 +398,7 @@ case class GpuArrowEvalPythonExec(
     val targetBatchSize = batchSize
     val runnerConf = pythonRunnerConf
     val timeZone = sessionLocalTimeZone
+    val localMetrics = allMetrics
 
     val inputRDD = child.executeColumnar()
     inputRDD.mapPartitions { iter =>
@@ -379,36 +407,20 @@ case class GpuArrowEvalPythonExec(
 
       // Not sure why we are doing this in every task.  It is not going to change, but it might
       // just be less that we have to ship.
-
-      // flatten all the arguments
-      val allInputs = new ArrayBuffer[Expression]
-      // TODO eventually we should just do type checking on these, but that can get a little complex
-      // with how things are setup for replacement...
-      // perhaps it needs to be with the special, it is an gpu compatible expression, but not a
-      // gpu expression...
-      val dataTypes = new ArrayBuffer[DataType]
-      val argOffsets = inputs.map { input =>
-        input.map { e =>
-          if (allInputs.exists(_.semanticEquals(e))) {
-            allInputs.indexWhere(_.semanticEquals(e))
-          } else {
-            allInputs += e
-            dataTypes += e.dataType
-            allInputs.length - 1
-          }
-        }.toArray
-      }.toArray
-
-      val pythonInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
-        StructField(s"_$i", dt)
+      val udfArgs = PythonArgumentUtils.flatten(inputs)
+      val pythonInputSchema = StructType(
+        udfArgs.flattenedTypes.zipWithIndex.map { case (dt, i) => StructField(s"_$i", dt)
       }.toArray)
 
-      val boundReferences = GpuBindReferences.bindReferences(allInputs.toSeq, childOutput)
+      val boundReferences = GpuBindReferences.bindReferences(udfArgs.flattenedArgs,
+        childOutput, localMetrics)
       val batchProducer = new BatchProducer(
         new RebatchingRoundoffIterator(iter, inputSchema, targetBatchSize, numInputRows,
           numInputBatches))
       val pyInputIterator = batchProducer.asIterator.map { batch =>
-        withResource(batch)(GpuProjectExec.project(_, boundReferences))
+        GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+          SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+          boundReferences)
       }
 
       if (isPythonOnGpuEnabled) {
@@ -420,12 +432,13 @@ case class GpuArrowEvalPythonExec(
         val pyRunner = new GpuArrowPythonRunner(
           pyFuncs,
           evalType,
-          argOffsets,
+          udfArgs.argOffsets,
           pythonInputSchema,
           timeZone,
           runnerConf,
           targetBatchSize,
-          pythonOutputSchema)
+          pythonOutputSchema,
+          udfArgs.argNames)
 
         val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
         new CombiningIterator(batchProducer.getBatchQueue, outputIterator, pyRunner, numOutputRows,

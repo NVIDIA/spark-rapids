@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{Cuda, NvtxColor, Table}
+import ai.rapids.cudf.{Cuda, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRetry, withRetryNoSplit}
@@ -67,7 +67,7 @@ object ConcatAndConsumeAll {
     if (arrayOfBatches.length == 1) {
       arrayOfBatches(0)
     } else {
-      val tables = arrayOfBatches.map(GpuColumnVector.from)
+      val tables = arrayOfBatches.safeMap(GpuColumnVector.from)
       try {
         val combined = Table.concatenate(tables: _*)
         try {
@@ -223,8 +223,6 @@ case class RequireSingleBatchWithFilter(filterExpression: GpuExpression)
 case class TargetSize(override val targetSizeBytes: Long)
     extends CoalesceSizeGoal
         with SplittableGoal {
-  require(targetSizeBytes <= Integer.MAX_VALUE,
-    "Target cannot exceed 2GB without checks for cudf row count limit")
 }
 
 /**
@@ -247,6 +245,18 @@ case class BatchedByKey(gpuOrder: Seq[SortOrder])(val cpuOrder: Seq[SortOrder])
   override def children: Seq[Expression] = gpuOrder
 }
 
+object OpNameNvtxMap {
+  private val map = Map(
+    "GpuCoalesceBatches: collect" -> NvtxRegistry.GPU_COALESCE_BATCHES_COLLECT,
+    "build batch: collect" -> NvtxRegistry.BUILD_BATCH_COLLECT,
+    "GpuCoalesceBatches concat" -> NvtxRegistry.GPU_COALESCE_BATCHES_CONCAT,
+    "single build batch concat" -> NvtxRegistry.SINGLE_BUILD_BATCH_CONCAT,
+    "HostColumnarToGpu concat" -> NvtxRegistry.HOST_COLUMNAR_TO_GPU_CONCAT
+  )
+
+  def get(opName: String): Option[NvtxId] = map.get(opName)
+}
+
 abstract class AbstractGpuCoalesceIterator(
     inputIter: Iterator[ColumnarBatch],
     goal: CoalesceSizeGoal,
@@ -254,12 +264,18 @@ abstract class AbstractGpuCoalesceIterator(
     numInputBatches: GpuMetric,
     numOutputRows: GpuMetric,
     numOutputBatches: GpuMetric,
-    streamTime: GpuMetric,
+    streamTimeOrNoop: GpuMetric,
     concatTime: GpuMetric,
     opTime: GpuMetric,
     opName: String) extends Iterator[ColumnarBatch] with Logging {
 
-  private val iter = new CollectTimeIterator(s"$opName: collect", inputIter, streamTime)
+  val streamTime = streamTimeOrNoop match {
+    case NoopMetric => new LocalGpuMetric
+    case _ => streamTimeOrNoop
+  }
+  private val iter = new CollectTimeIterator(
+    OpNameNvtxMap.get(s"$opName: collect").getOrElse(NvtxRegistry.GPU_COALESCE_ITERATOR),
+    inputIter, streamTime)
 
   private var batchInitialized: Boolean = false
 
@@ -462,7 +478,7 @@ abstract class AbstractGpuCoalesceIterator(
         // If we have reached the cuDF limit once, proactively filter batches
         // after that first limit is reached.
         GpuFilter.filterAndClose(cbFromIter, inputFilterTier.get,
-          NoopMetric, NoopMetric, opTime)
+          NoopMetric, NoopMetric, NoopMetric)
       } else {
         Iterator(cbFromIter)
       }
@@ -499,7 +515,7 @@ abstract class AbstractGpuCoalesceIterator(
                     var filteredBytes = 0L
                     if (hasAnyToConcat) {
                       val filteredDowIter = GpuFilter.filterAndClose(concatAllAndPutOnGPU(),
-                        filterTier, NoopMetric, NoopMetric, opTime)
+                        filterTier, NoopMetric, NoopMetric, NoopMetric)
                       while (filteredDowIter.hasNext) {
                         closeOnExcept(filteredDowIter.next()) { filteredDownCb =>
                           filteredNumRows += filteredDownCb.numRows()
@@ -512,7 +528,7 @@ abstract class AbstractGpuCoalesceIterator(
                     // filterAndClose takes ownership of CB so we should not close it on a failure
                     // anymore...
                     val filteredCbIter = GpuFilter.filterAndClose(cb.release, filterTier,
-                      NoopMetric, NoopMetric, opTime)
+                      NoopMetric, NoopMetric, NoopMetric)
                     while (filteredCbIter.hasNext) {
                       closeOnExcept(filteredCbIter.next()) { filteredCb =>
                         val filteredWouldBeRows = filteredNumRows + filteredCb.numRows()
@@ -597,7 +613,8 @@ abstract class AbstractGpuCoalesceIterator(
    *
    * @return The coalesced batch
    */
-  override def next(): ColumnarBatch = withResource(new MetricRange(opTime)) { _ =>
+  override def next(): ColumnarBatch = withResource(
+    new MetricRange(Seq(opTime), excludeMetric = Seq(streamTime))) { _ =>
     if (coalesceBatchIterator.hasNext) {
       val batch = coalesceBatchIterator.next()
       if (wasLastBatch) {
@@ -622,7 +639,9 @@ abstract class AbstractGpuCoalesceIterator(
           wasLastBatch
         }
 
-        withResource(new NvtxWithMetrics(s"$opName concat", NvtxColor.CYAN, concatTime)) { _ =>
+        NvtxIdWithMetrics(
+            OpNameNvtxMap.get(s"$opName concat").getOrElse(NvtxRegistry.CONCAT_PENDING),
+            concatTime) {
           goal match {
             case _: SplittableGoal if supportsRetryIterator =>
               coalesceBatchIterator = getCoalesceRetryIterator
@@ -691,6 +710,11 @@ case class BatchesToCoalesce(batches: Array[SpillableColumnarBatch])
     extends AutoCloseable {
   override def close(): Unit = {
     batches.safeClose()
+  }
+
+  override def toString: String = {
+    val totalSize = batches.map(_.sizeInBytes).sum
+    s"BatchesToCoalesce totalSize:$totalSize, batches:[${batches.mkString(";")}]"
   }
 }
 
@@ -863,7 +887,7 @@ class GpuCompressionAwareCoalesceIterator(
     }
   }
 
-  override def getCoalesceRetryIterator(): Iterator[ColumnarBatch] = {
+  override def getCoalesceRetryIterator: Iterator[ColumnarBatch] = {
     val candidates = BatchesToCoalesce(batches.clone().toArray)
     batches.clear()
     withRetry(candidates, splitBatchesToCoalesceFn) { attempt: BatchesToCoalesce =>
@@ -884,7 +908,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
 
   protected override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
     CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
@@ -920,7 +944,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val concatTime = gpuLongMetric(CONCAT_TIME)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
 
     // cache in local vars to avoid serializing the plan
     val outputSchema = schema
@@ -949,7 +973,7 @@ case class GpuCoalesceBatches(child: SparkPlan, goal: CoalesceGoal)
           val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
           val f = GpuKeyBatchingIterator.makeFunc(batchingGoal.gpuOrder, output.toArray, targetSize,
             numInputRows, numInputBatches, numOutputRows, numOutputBatches,
-            concatTime, opTime)
+            concatTime, opTime, allMetrics)
           batches.mapPartitions { iter =>
             f(iter)
           }

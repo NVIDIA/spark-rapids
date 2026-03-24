@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,53 +19,10 @@ package com.nvidia.spark.rapids
 import java.io.{File, FileOutputStream}
 
 import ai.rapids.cudf.DType
-import com.nvidia.spark.rapids.shims.{CastCheckShims, GpuTypeShims, TypeSigUtil}
+import com.nvidia.spark.rapids.shims.{CastCheckShims, GpuTypeShims}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, UnaryExpression, WindowSpecDefinition}
 import org.apache.spark.sql.types._
-
-/** Trait of TypeSigUtil for different spark versions */
-trait TypeSigUtilBase {
-
-  /**
-   * Check if this type of Spark-specific is supported by the plugin or not.
-   * @param check the Supported Types
-   * @param dataType the data type to be checked
-   * @return true if it is allowed else false.
-   */
-  def isSupported(check: TypeEnum.ValueSet, dataType: DataType): Boolean
-
-  /**
-   * Get all supported types for the spark-specific
-   * @return the all supported typ
-   */
-  def getAllSupportedTypes: TypeEnum.ValueSet
-
-  /**
-   * Return the reason why this type is not supported.\
-   * @param check the Supported Types
-   * @param dataType the data type to be checked
-   * @param notSupportedReason the reason for not supporting
-   * @return the reason
-   */
-  def reasonNotSupported(
-    check: TypeEnum.ValueSet,
-    dataType: DataType,
-    notSupportedReason: Seq[String]): Seq[String]
-
-  /**
-   * Map DataType to TypeEnum
-   * @param dataType the data type to be mapped
-   * @return the TypeEnum
-   */
-  def mapDataTypeToTypeEnum(dataType: DataType): TypeEnum.Value
-
-  /** Get numeric and interval TypeSig */
-  def getNumericAndInterval: TypeSig
-
-  /** Get Ansi year-month and day-time TypeSig */
-  def getAnsiInterval: TypeSig
-}
 
 /**
  * The level of support that the plugin has for a given type.  Used for documentation generation.
@@ -342,7 +299,9 @@ final class TypeSig private(
     case _: ArrayType => litOnlyTypes.contains(TypeEnum.ARRAY)
     case _: MapType => litOnlyTypes.contains(TypeEnum.MAP)
     case _: StructType => litOnlyTypes.contains(TypeEnum.STRUCT)
-    case _ => TypeSigUtil.isSupported(litOnlyTypes, dataType)
+    case _: DayTimeIntervalType => litOnlyTypes.contains(TypeEnum.DAYTIME)
+    case _: YearMonthIntervalType => litOnlyTypes.contains(TypeEnum.YEARMONTH)
+    case _ => false
   }
 
   def isSupportedBySpark(dataType: DataType): Boolean =
@@ -377,7 +336,9 @@ final class TypeSig private(
         fields.map(_.dataType).forall { t =>
           isSupported(childTypes, t)
         }
-      case _ => TypeSigUtil.isSupported(check, dataType)
+      case _: DayTimeIntervalType => check.contains(TypeEnum.DAYTIME)
+      case _: YearMonthIntervalType => check.contains(TypeEnum.YEARMONTH)
+      case _ => false
     }
 
   def reasonNotSupported(dataType: DataType): Seq[String] =
@@ -461,8 +422,11 @@ final class TypeSig private(
         } else {
           basicNotSupportedMessage(dataType, TypeEnum.STRUCT, check, isChild)
         }
-      case _ => TypeSigUtil.reasonNotSupported(check, dataType,
-        Seq(withChild(isChild, s"$dataType is not supported")))
+      case _: DayTimeIntervalType =>
+        basicNotSupportedMessage(dataType, TypeEnum.DAYTIME, check, isChild)
+      case _: YearMonthIntervalType =>
+        basicNotSupportedMessage(dataType, TypeEnum.YEARMONTH, check, isChild)
+      case _ => Seq(withChild(isChild, s"$dataType is not supported"))
     }
 
   def areAllSupportedByPlugin(types: Seq[DataType]): Boolean =
@@ -584,7 +548,7 @@ object TypeSig {
    * All types nested and not nested
    */
   val all: TypeSig = {
-    val allSupportedTypes = TypeSigUtil.getAllSupportedTypes()
+    val allSupportedTypes: TypeEnum.ValueSet = TypeEnum.values
     new TypeSig(allSupportedTypes, DecimalType.MAX_PRECISION, allSupportedTypes)
   }
 
@@ -689,12 +653,13 @@ object TypeSig {
   /**
    * numeric + CALENDAR
    */
-  val numericAndInterval: TypeSig = TypeSigUtil.getNumericAndInterval()
+  val numericAndInterval: TypeSig = TypeSig.cpuNumeric + TypeSig.CALENDAR + TypeSig.DAYTIME +
+    TypeSig.YEARMONTH
 
   /**
-   * ANSI year-month and day-time interval for Spark 320+
+   * ANSI year-month and day-time interval
    */
-  val ansiIntervals: TypeSig = TypeSigUtil.getAnsiInterval
+  val ansiIntervals: TypeSig = TypeSig.DAYTIME + TypeSig.YEARMONTH
 
   /**
    * All types that CUDF supports sorting/ordering on.
@@ -716,12 +681,6 @@ object TypeSig {
   val comparable: TypeSig = (BOOLEAN + BYTE + SHORT + INT + LONG + FLOAT + DOUBLE + DATE +
       TIMESTAMP + STRING + DECIMAL_128 + NULL + BINARY + CALENDAR + ARRAY + STRUCT +
       UDT).nested()
-
-  /**
-   * commonCudfTypes plus decimal, null and nested types.
-   */
-  val commonCudfTypesWithNested: TypeSig = (commonCudfTypes + DECIMAL_128 + NULL +
-      ARRAY + STRUCT + MAP).nested()
 
   /**
    * Different types of Pandas UDF support different sets of output type. Please refer to
@@ -1143,6 +1102,64 @@ object CaseWhenCheck extends ExprChecks {
 }
 
 /**
+ * This is specific to Invoke, because it does not follow the typical parameter convention.
+ * Invoke is a dynamic expression, it can wrap arbitrary expressions.
+ * This does very few checks, the main checks are in the `InvokeExprMeta` class.
+ */
+object InvokeCheck extends ExprChecks {
+
+  override def tagAst(meta: BaseExprMeta[_]): Unit = {
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+  }
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
+    if (exprMeta.context != ProjectExprContext) {
+      meta.willNotWorkOnGpu(s"this is not supported in the ${exprMeta.context} context")
+    }
+  }
+
+  /**
+   * Partially supports all the output types since `Invoke` is a dynamic expression.
+   */
+  override def support(dataType: TypeEnum.Value):
+  Map[ExpressionContext, Map[String, SupportLevel]] = {
+    val projectSupport = new PartiallySupported(
+      note = Some("Invoke is a dynamic expression, all types are partially supported."))
+    Map((ProjectExprContext, Map(("result", projectSupport))))
+  }
+}
+
+/**
+ * This is specific to StaticInvoke, because it does not follow the typical parameter convention.
+ * StaticInvoke is a dynamic expression, it can wrap arbitrary expressions.
+ * This does very few checks, the main checks are in the `StaticInvokeExprMeta` class.
+ */
+object StaticInvokeCheck extends ExprChecks {
+
+  override def tagAst(meta: BaseExprMeta[_]): Unit = {
+    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+  }
+
+  override def tag(meta: RapidsMeta[_, _, _]): Unit = {
+    val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
+    if (exprMeta.context != ProjectExprContext) {
+      meta.willNotWorkOnGpu(s"this is not supported in the ${exprMeta.context} context")
+    }
+  }
+
+  /**
+   * Partially supports all the output types since `StaticInvoke` is a dynamic expression.
+   */
+  override def support(dataType: TypeEnum.Value):
+  Map[ExpressionContext, Map[String, SupportLevel]] = {
+    val projectSupport = new PartiallySupported(
+      note = Some("StaticInvoke is a dynamic expression, all types are partially supported."))
+    Map((ProjectExprContext, Map(("result", projectSupport))))
+  }
+}
+
+/**
  * This is specific to WindowSpec, because it does not follow the typical parameter convention.
  */
 object WindowSpecCheck extends ExprChecks {
@@ -1370,7 +1387,9 @@ class CastChecks extends ExprChecks {
     case _: ArrayType => (arrayChecks, sparkArraySig)
     case _: MapType => (mapChecks, sparkMapSig)
     case _: StructType => (structChecks, sparkStructSig)
-    case _ => getChecksAndSigs(TypeSigUtil.mapDataTypeToTypeEnum(from))
+    case _: DayTimeIntervalType => getChecksAndSigs(TypeEnum.DAYTIME)
+    case _: YearMonthIntervalType => getChecksAndSigs(TypeEnum.YEARMONTH)
+    case _ => getChecksAndSigs(TypeEnum.UDT) // default to UDT
   }
 
   private[this] def getChecksAndSigs(from: TypeEnum.Value): (TypeSig, TypeSig) = from match {
@@ -1438,10 +1457,15 @@ class CastChecks extends ExprChecks {
   }
 }
 
+object ToPrettyStringChecks {
+  private val BINARY_STYLE_KEY = "spark.sql.binaryOutputStyle"
+}
+
 /** 
  * This class is just restricting the 'to' dataType to a StringType in the CastChecks class
  */ 
 class ToPrettyStringChecks extends CastChecks {
+  import ToPrettyStringChecks.BINARY_STYLE_KEY
 
   override protected def tagBase(meta: RapidsMeta[_, _, _], willNotWork: String => Unit): Unit = {
     val cast = meta.wrapped.asInstanceOf[UnaryExpression]
@@ -1449,6 +1473,19 @@ class ToPrettyStringChecks extends CastChecks {
     val to = StringType
     if (!gpuCanCast(from, to)) {
       willNotWork(s"${meta.wrapped.getClass.getSimpleName} from $from to $to is not supported")
+    }
+
+    if (from == BinaryType) {
+      // Technically this is only needed for 4.0.0+, but we are doing it for all of them
+      // because it should not hurt, and it makes the code simpler.
+      // https://github.com/NVIDIA/spark-rapids/issues/10884 and
+      // https://github.com/apache/spark/pull/46133/files
+      meta.conf.getStr(BINARY_STYLE_KEY) match {
+        case Some(style) =>
+          willNotWork(s"$style is not supported for $BINARY_STYLE_KEY")
+        case None =>
+          // Noop the only one we support (the default)
+      }
     }
   }
 }
@@ -1707,8 +1744,7 @@ object ExprChecks {
  * Used for generating the support docs.
  */
 object SupportedOpsDocs {
-  private lazy val allSupportedTypes =
-    TypeSigUtil.getAllSupportedTypes()
+  private lazy val allSupportedTypes: TypeEnum.ValueSet = TypeEnum.values
 
   private def execChecksHeaderLine(): Unit = {
     println("<tr>")
@@ -1766,14 +1802,11 @@ object SupportedOpsDocs {
     println("title: Supported Operators")
     println("nav_order: 6")
     println("---")
-    println("<!-- Generated by SupportedOpsDocs.help. DO NOT EDIT! -->")
+    MarkdownUtils.printApacheSparkVersion("SupportedOpsDocs.help")
     println("Apache Spark supports processing various types of data. Not all expressions")
     println("support all data types. The RAPIDS Accelerator for Apache Spark has further")
     println("restrictions on what types are supported for processing. This tries")
     println("to document what operations are supported and what data types each operation supports.")
-    println("Because Apache Spark is under active development too and this document was generated")
-    println(s"against version ${ShimLoader.getSparkVersion} of Spark. Most of this should still")
-    println("apply to other versions of Spark, but there may be slight changes.")
     println()
     println("# General limitations")
     println("## `Decimal`")
@@ -2162,8 +2195,7 @@ object SupportedOpsDocs {
 
 object SupportedOpsForTools {
 
-  private lazy val allSupportedTypes =
-    TypeSigUtil.getAllSupportedTypes()
+  private lazy val allSupportedTypes: TypeEnum.ValueSet = TypeEnum.values
 
   // if a string contains what we are going to use for a delimiter, replace
   // it with something else
@@ -2188,42 +2220,68 @@ object SupportedOpsForTools {
     val conf = new RapidsConf(Map.empty[String, String])
     val types = allSupportedTypes.toSeq
     val header = Seq("Format", "Direction") ++ types
-    val writeOps: Array[String] = Array.fill(types.size)("NA")
     println(header.mkString(","))
     GpuOverrides.fileFormats.toSeq.sortBy(_._1.toString).foreach {
       case (format, ioMap) =>
         val formatLowerCase = format.toString.toLowerCase
-        val formatEnabled = formatLowerCase match {
-          case "csv" => conf.isCsvEnabled && conf.isCsvReadEnabled
+        // Get a tuple of (formatEnabled, readEnabled, Optional(writeEnabled)).
+        // The writeEnabled configuration is optional because it is not always defined.
+        val (formatEnabled, readEnabled, writeEnabled) = formatLowerCase match {
+          case "csv" =>
+            (conf.isCsvEnabled, conf.isCsvReadEnabled, None)
           case "delta" =>
             // Delta Lake reads of data files appear as a normal Parquet read
-            conf.isParquetEnabled && conf.isParquetReadEnabled
-          case "parquet" => conf.isParquetEnabled && conf.isParquetReadEnabled
-          case "orc" => conf.isOrcEnabled && conf.isOrcReadEnabled
-          case "json" => conf.isJsonEnabled && conf.isJsonReadEnabled
-          case "avro" => conf.isAvroEnabled && conf.isAvroReadEnabled
-          case "iceberg" => conf.isIcebergEnabled && conf.isIcebergReadEnabled
-          case "hivetext" => conf.isHiveDelimitedTextEnabled && conf.isHiveDelimitedTextReadEnabled
+            (conf.isParquetEnabled, conf.isParquetReadEnabled, Some(conf.isParquetWriteEnabled))
+          case "parquet" =>
+            (conf.isParquetEnabled, conf.isParquetReadEnabled, Some(conf.isParquetWriteEnabled))
+          case "orc" =>
+            (conf.isOrcEnabled, conf.isOrcReadEnabled, Some(conf.isOrcWriteEnabled))
+          case "json" =>
+            (conf.isJsonEnabled, conf.isJsonReadEnabled, None)
+          case "avro" =>
+            (conf.isAvroEnabled, conf.isAvroReadEnabled, None)
+          case "iceberg" =>
+            (conf.isIcebergEnabled, conf.isIcebergReadEnabled, Some(conf.isIcebergWriteEnabled))
+          case "hivetext" =>
+            (conf.isHiveDelimitedTextEnabled,
+              conf.isHiveDelimitedTextReadEnabled,
+              Some(conf.isHiveDelimitedTextWriteEnabled))
           case _ =>
             throw new IllegalArgumentException("Format is unknown we need to add it here!")
         }
-        val read = ioMap(ReadFileOp)
-        // we have lots of configs for various operations, just try to get the main ones
-        val readOps = types.map { t =>
-          if (!formatEnabled) {
-            // indicate configured off by default
-            "CO"
-          } else {
-            read.support(t).text
+        if (!formatEnabled) {
+          // Configured off by default.
+          // Write CO for all types in the read section.
+          println(s"$format,read,${types.map(_ => "CO").mkString(",")}")
+        } else {
+          // Step-1: fill in the read values.
+          val readObj = ioMap(ReadFileOp)
+          // we have lots of configs for various operations, just try to get the main ones
+          val finalReadOps = types.map { t =>
+            if (!readEnabled) {
+              // indicate configured off by default
+              "CO"
+            } else {
+              readObj.support(t).text
+            }
           }
-        }
-        // print read formats and types
-        println(s"${(Seq(format, "read") ++ readOps).mkString(",")}")
+          // print read formats and types
+          println(s"${(Seq(format, "read") ++ finalReadOps).mkString(",")}")
 
-        val writeFileFormat = ioMap(WriteFileOp).getFileFormat
-        // print supported write formats and NA for types. Cannot determine types from event logs.
-        if (writeFileFormat != TypeSig.none) {
-          println(s"${(Seq(format, "write") ++ writeOps).mkString(",")}")
+          // Step-2: fill in the write values if any.
+          val writeOpObj = ioMap(WriteFileOp)
+          val writeFileFormat = writeOpObj.getFileFormat
+          if (writeFileFormat != TypeSig.none) { // types are defined
+            val finalWriteOps = types.map { t =>
+              if (writeEnabled.getOrElse(false)) {
+                // indicate configured off by default
+                writeOpObj.support(t).text
+              } else {
+                "CO"
+              }
+            }
+            println(s"${(Seq(format, "write") ++ finalWriteOps).mkString(",")}")
+          }
         }
     }
   }

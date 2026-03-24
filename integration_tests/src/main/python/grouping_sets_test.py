@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,6 +40,7 @@ _grouping_set_sqls = [
     'SELECT a, b, count(1) FROM testData '
         'GROUP BY a, GROUPING SETS((a, b), (a), (), (a, b), (a), (b), ())',
 ]
+
 
 # test nested syntax of grouping set, rollup and cube
 @ignore_order

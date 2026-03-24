@@ -20,7 +20,7 @@ import org.mockito.Mockito.{mock, when}
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSet, Expression}
 import org.apache.spark.sql.rapids.{GpuGreaterThan, GpuLength, GpuStringTrim}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{BooleanType, IntegerType, StringType}
 
 
 class AstUtilSuite extends GpuUnitTests {
@@ -187,21 +187,11 @@ class AstUtilSuite extends GpuUnitTests {
     rootMeta
   }
 
-  test("Non-Ast-able tree should not split"){
-    val l1 = AttributeReference("l1", StringType)()
-    val l2 = AttributeReference("l2", StringType)()
-    val (e, l, r) =
-      AstUtil.extractNonAstFromJoinCond(Some(buildTree1(l1, false)), Seq(l1), Seq(l2), false)
-    assertResult(true)(l.isEmpty)
-    assertResult(true)(r.isEmpty)
-    assertResult(true)(e.get.isInstanceOf[GpuStringTrim])
-  }
-
   test("Tree of single ast-able node should not split") {
     val l1 = AttributeReference("l1", StringType)()
     val l2 = AttributeReference("l2", StringType)()
     val (e, l, r) =
-      AstUtil.extractNonAstFromJoinCond(Some(buildTree1(l1, true)), Seq(l1), Seq(l2), false)
+      AstUtil.extractNonAstFromJoinCond(Some(buildTree1(l1, true)), Seq(l1), Seq(l2))
     assertResult(true)(l.isEmpty)
     assertResult(true)(r.isEmpty)
     assertResult(true)(e.get.isInstanceOf[GpuStringTrim])
@@ -211,7 +201,7 @@ class AstUtilSuite extends GpuUnitTests {
     val l1 = AttributeReference("l1", StringType)()
     val l2 = AttributeReference("l2", StringType)()
     val (e, l, r) =
-      AstUtil.extractNonAstFromJoinCond(Some(buildTree3(l1, l1, false)), Seq(l1), Seq(l2), false)
+      AstUtil.extractNonAstFromJoinCond(Some(buildTree3(l1, l1, false)), Seq(l1), Seq(l2))
     assertResult(true)(l.size == 1)
     assertResult(true)(l.exists(checkEquals(_, GpuLength(GpuStringTrim(l1)))))
     assertResult(true)(r.isEmpty)
@@ -232,7 +222,7 @@ class AstUtilSuite extends GpuUnitTests {
     val l1 = AttributeReference("l1", StringType)()
     val l2 = AttributeReference("l2", StringType)()
     val (e, l, r) =
-      AstUtil.extractNonAstFromJoinCond(Some(buildTree3(l1, l2, false)), Seq(l1), Seq(l2), false)
+      AstUtil.extractNonAstFromJoinCond(Some(buildTree3(l1, l2, false)), Seq(l1), Seq(l2))
     assertResult(true)(l.size == 1)
     assertResult(true)(l.exists(checkEquals(_, GpuLength(GpuStringTrim(l1)))))
     assertResult(true)(r.size == 1)
@@ -245,10 +235,72 @@ class AstUtilSuite extends GpuUnitTests {
     val l1 = AttributeReference("l1", StringType)()
     val l2 = AttributeReference("l2", StringType)()
     val (e, l, r) =
-      AstUtil.extractNonAstFromJoinCond(Some(buildTree3(l1, l2, true)), Seq(l1), Seq(l2), false)
+      AstUtil.extractNonAstFromJoinCond(Some(buildTree3(l1, l2, true)), Seq(l1), Seq(l2))
     assertResult(true)(l.size == 0)
     assertResult(true)(r.size == 0)
     assertResult(true)(checkEquals(e.get,
       GpuGreaterThan(GpuLength(GpuStringTrim(l1)), GpuLength(GpuStringTrim(l2)))))
+  }
+
+  // Build a simple tree representing: cast(a:int as boolean)
+  // This simulates a condition like: SELECT * FROM t1 JOIN t2 ON t1.intCol
+  // where intCol is cast to boolean for the join condition
+  private[this] def buildTreeWithCast(attr: AttributeReference): BaseExprMeta[Expression] = {
+    // Create the mock cast expression (int -> boolean)
+    val castExpr = mock(classOf[Expression])
+    when(castExpr.references).thenReturn(AttributeSet(Seq(attr)))
+    when(castExpr.dataType).thenReturn(BooleanType)
+    
+    val castMeta = mock(classOf[BaseExprMeta[Expression]])
+    when(castMeta.childExprs).thenReturn(Seq.empty)
+    when(castMeta.canSelfBeAst).thenReturn(false) // Cast cannot be AST
+    when(castMeta.convertToGpu).thenReturn(castExpr)
+    when(castMeta.wrapped).thenReturn(castExpr)
+    castMeta
+  }
+
+  test("Top-level non-AST expression on single side should be extracted") {
+    val l1 = AttributeReference("l1", IntegerType)()
+    val r1 = AttributeReference("r1", IntegerType)()
+
+    // Test with left side only
+    val (expr, leftExprs, rightExprs) =
+      AstUtil.extractNonAstFromJoinCond(Some(buildTreeWithCast(l1)), Seq(l1), Seq(r1))
+
+    // Should extract the cast to the left side
+    assertResult(1)(leftExprs.size)
+    assertResult(0)(rightExprs.size)
+    assertResult(true)(expr.isDefined)
+
+     // The returned expression should be an attribute reference (the replacement)
+     assertResult(true)(expr.get.isInstanceOf[AttributeReference])
+ 
+     // The attribute should match the one from the left expression alias
+     val leftAlias = leftExprs.head.asInstanceOf[GpuAlias]
+     val expectedAttr = AttributeReference(leftAlias.name, leftAlias.child.dataType,
+       leftAlias.child.nullable, leftAlias.metadata)(leftAlias.exprId, leftAlias.qualifier)
+     assertResult(expectedAttr)(expr.get)
+  }
+
+  test("Top-level non-AST expression on right side should be extracted to right") {
+    val l1 = AttributeReference("l1", IntegerType)()
+    val r1 = AttributeReference("r1", IntegerType)()
+    
+    // Test with right side only
+    val (expr, leftExprs, rightExprs) =
+      AstUtil.extractNonAstFromJoinCond(Some(buildTreeWithCast(r1)), Seq(l1), Seq(r1))
+    
+    // Should extract the cast to the right side
+    assertResult(0)(leftExprs.size)
+    assertResult(1)(rightExprs.size)
+    
+     // The returned expression should be an attribute reference (the replacement)
+     assertResult(true)(expr.get.isInstanceOf[AttributeReference])
+     
+     // The attribute should match the one from the right expression alias
+     val rightAlias = rightExprs.head.asInstanceOf[GpuAlias]
+     val expectedAttr = AttributeReference(rightAlias.name, rightAlias.child.dataType,
+       rightAlias.child.nullable, rightAlias.metadata)(rightAlias.exprId, rightAlias.qualifier)
+     assertResult(expectedAttr)(expr.get)
   }
 }

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from asserts import *
 from conftest import is_not_utc
 from data_gen import *
 from conftest import is_databricks_runtime
-from marks import allow_non_gpu, ignore_order, datagen_overrides
+from marks import allow_non_gpu, datagen_overrides, disable_ansi_mode, ignore_order
 from spark_session import *
 from pyspark.sql.functions import create_map, col, lit, row_number
 from pyspark.sql.types import *
@@ -91,6 +91,74 @@ def test_map_entries(data_gen):
                 'map_entries(a)'))
 
 
+@pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
+def test_map_from_entries(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                'map_from_entries(map_entries(a))'),
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+
+@pytest.mark.parametrize('key_gen,value_gen', [
+    (IntegerGen(nullable=False), IntegerGen()),
+    (StringGen(nullable=False), StringGen()),
+    (LongGen(nullable=False), DoubleGen()),
+    (IntegerGen(nullable=False), ArrayGen(IntegerGen())),
+    (StringGen(nullable=False), StructGen([['child', IntegerGen()]])),
+], ids=idfn)
+def test_map_from_entries_basic(key_gen, value_gen):
+    # Create an array of struct<key, value> and convert to map
+    struct_gen = StructGen([
+        ('key', key_gen),
+        ('value', value_gen)
+    ], nullable=False)
+    array_gen = ArrayGen(struct_gen, max_length=10)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, array_gen).selectExpr(
+                'map_from_entries(a)'),
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+
+@pytest.mark.parametrize('key_gen,value_gen', [
+    (IntegerGen(nullable=True), IntegerGen()),
+    (StringGen(nullable=True), StringGen()),
+    (LongGen(nullable=True), DoubleGen()),
+    (IntegerGen(nullable=True), ArrayGen(IntegerGen())),
+    (StringGen(nullable=True), StructGen([['child', IntegerGen()]])),
+], ids=idfn)
+def test_map_from_entries_null_keys(key_gen, value_gen):
+    # Create an array of struct<key, value> and convert to map
+    struct_gen = StructGen([
+        ('key', key_gen),
+        ('value', value_gen)
+    ], nullable=False)
+    array_gen = ArrayGen(struct_gen, max_length=10)
+    assert_gpu_and_cpu_error(
+            lambda spark: unary_op_df(spark, array_gen).selectExpr(
+                'map_from_entries(a)').collect(),
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'},
+            error_message='Cannot use null as map key')
+
+
+def test_map_from_entries_dup_exception():
+    # Test that duplicate keys throw an exception with EXCEPTION policy
+    struct_gen = RepeatSeqGen(StructGen([
+        ('key', IntegerGen(nullable=False)),
+        ('value', IntegerGen())
+    ], nullable=False), length=2)
+    array_gen = ArrayGen(struct_gen, min_length=2, max_length=10)
+    def do_it(spark):
+        df = unary_op_df(spark, array_gen)
+        result = df.selectExpr(
+                'map_from_entries(a)').collect()
+        return result
+
+    assert_gpu_and_cpu_error(
+            do_it,
+            conf={'spark.sql.mapKeyDedupPolicy': 'EXCEPTION'},
+            error_message='Duplicate map key')
+
+
 def get_map_value_gens(precision=18, scale=0):
     def simple_struct_value_gen():
         return StructGen([["child", IntegerGen()]])
@@ -138,6 +206,7 @@ numeric_key_map_gens = [MapGen(key, value(), max_length=6)
                         for key in numeric_key_gens for value in get_map_value_gens()]
 
 
+@disable_ansi_mode  # ANSI mode failures are tested separately.
 @pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
 def test_get_map_value_numeric_keys(data_gen):
     key_gen = data_gen._key_gen
@@ -151,6 +220,7 @@ def test_get_map_value_numeric_keys(data_gen):
             'a[999]'))
 
 
+@disable_ansi_mode  # ANSI mode failures are tested separately.
 @pytest.mark.parametrize('data_gen', supported_key_map_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_get_map_value_supported_keys(data_gen):
@@ -174,6 +244,7 @@ def test_get_map_value_fallback_keys(data_gen):
         cpu_fallback_class_name="GetMapValue")
 
 
+@disable_ansi_mode  # ANSI mode failures are tested separately.
 @pytest.mark.parametrize('key_gen', numeric_key_gens, ids=idfn)
 def test_basic_scalar_map_get_map_value(key_gen):
     def query_map_scalar(spark):
@@ -221,11 +292,12 @@ def test_map_scalars_supported_key_types(data_gen):
             "       (select first(map(key_at_ix_next, 'value'), true) " +
             "        from single_key_tbl_next)[key_at_ix] " +
             "from single_key_tbl")
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         query_map_scalar,
         # check that GpuGetMapValue wasn't optimized out
         exist_classes="GpuGetMapValue",
-        conf = {"spark.rapids.sql.explain": "NONE"})
+        conf = {"spark.rapids.sql.explain": "NONE", 'spark.sql.adaptive.enabled': 'false'})
 
 
 @pytest.mark.parametrize('data_gen',
@@ -437,6 +509,16 @@ def test_str_to_map_expr_with_all_regex_delimiters():
         ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
 
 
+@pytest.mark.parametrize('empty_type', all_empty_string_types)
+def test_str_to_map_input_all_empty(empty_type):
+    data_gen = mk_empty_str_gen(empty_type)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, data_gen).selectExpr(
+            'str_to_map(a) as m0',
+            'str_to_map(a, ",") as m1',
+            'str_to_map(a, ",", ":") as m2'
+        ), conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
 @pytest.mark.skipif(not is_before_spark_330(),
                     reason="Only in Spark 3.1.1+ (< 3.3.0) + ANSI mode, map key throws on no such element")
 @pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
@@ -639,6 +721,8 @@ def test_map_element_at_ansi_null(data_gen):
                 'element_at(a, "NOT_FOUND")'),
             conf=ansi_enabled_conf)
 
+
+@disable_ansi_mode  # ANSI mode failures are tested separately.
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_transform_values(data_gen):
@@ -738,6 +822,73 @@ def test_sql_map_scalars(query):
             lambda spark: spark.sql('SELECT {}'.format(query)))
 
 
+@pytest.mark.parametrize('data_gen', map_gens_sample \
+                         + [MapGen(f(nullable=False, min_val=-10, max_val=10), f(), min_length=10) for f in [ByteGen, ShortGen, IntegerGen, LongGen]] \
+                         + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), min_length=10)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_map_zip_with(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                    'map_zip_with(a, b,  (key, value1, value2) -> value1) as ident1',
+                    'map_zip_with(a, b,  (key, value1, value2) -> value2) as ident2',
+                    'map_zip_with(a, b,  (key, value1, value2) -> null) as n',
+                    'map_zip_with(a, b,  (key, value1, value2) -> 1) as one',
+                    'map_zip_with(a, b,  (key, value1, value2) -> key) as indexed',]
+        value_type = data_gen.data_type.valueType
+        if isinstance(value_type, IntegralType):
+            columns.extend([
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) + coalesce(value2, 0)) as add',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) * coalesce(value2, 0)) as mul',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 0) - coalesce(value2, 0)) as sub',
+                    'map_zip_with(a, b,  (key, value1, value2) -> coalesce(value1, 1) / if(coalesce(value2, 1) == 0, 1, coalesce(value2, 1))) as div',])
+        if isinstance(value_type, StringType):
+            columns.extend([
+                    'map_zip_with(a, b,  (key, value1, value2) -> concat(coalesce(value1, ""), "-test-", coalesce(value2, ""))) as string_concat',])
+        if isinstance(value_type, ArrayType):
+            columns.extend([
+                    'map_zip_with(a, b,  (key, value1, value2) -> concat(value1, value2)) as array_concat',])
+        df = two_col_df(spark, data_gen, data_gen)
+        return df.selectExpr(columns)
+    # ANSI mode is disabled since this test verifies the behaviour of map_zip_with and the evaluation of the associated lambda. 
+    # Exceptions during overflow conditions are tested in the arithmetic-ops tests.
+    # Not using @disable_ansi_mode because of https://github.com/NVIDIA/spark-rapids/issues/13214.  Using explicit setting instead.
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.sql.ansi.enabled': False})
+
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=-5, max_val=5), ArrayGen(int_gen, max_length=5), min_length=7)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_map_zip_with_lambda(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                    'map_zip_with(a, b, (k, arr, v2) -> exists(arr, v1 -> v1 = v2)) as lambdatest',]
+        b_gen = MapGen(IntegerGen(False), IntegerGen())
+        df = two_col_df(spark, data_gen, b_gen)
+        return df.selectExpr(columns)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=-15, max_val=-5), IntegerGen(), min_length=7)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_map_zip_with_bind(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b', 'c',
+                    'map_zip_with(a, b, (k, v1, v2) -> (v1 | v2) & c) as bindtest',]
+        df = three_col_df(spark, data_gen, data_gen, int_gen)
+        return df.selectExpr(columns)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+@pytest.mark.parametrize('data_gen', [MapGen(IntegerGen(False, min_val=5, max_val=15), IntegerGen(), min_length=7)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_map_zip_with_mismatch_keys(data_gen):
+    def do_it(spark):
+        columns = ['a', 'b',
+                    'map_zip_with(a, b, (k, v1, v2) -> v1 + v2) as mismatch',]
+        b_gen = MapGen(ByteGen(False), ByteGen())
+        df = two_col_df(spark, data_gen, b_gen)
+        return df.selectExpr(columns)
+    # ANSI mode is disabled since this test verifies the behaviour of map_zip_with and the evaluation of the associated lambda. 
+    # Exceptions during overflow conditions are tested in the arithmetic-ops tests.
+    # Not using @disable_ansi_mode because of https://github.com/NVIDIA/spark-rapids/issues/13214.  Using explicit setting instead.
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.sql.ansi.enabled': False})
+
 @pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_filter(data_gen):
@@ -747,3 +898,30 @@ def test_map_filter(data_gen):
                'map_filter(a, (key, value) -> isnotnull(key) and isnull(value) )']
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, data_gen).selectExpr(columns))
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_element_at is not supported before Spark 3.3.0")
+@pytest.mark.parametrize('data_gen', numeric_key_map_gens, ids=idfn)
+def test_try_element_at_map_numeric_keys(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'try_element_at(a, 0)',
+            'try_element_at(a, 1)',
+            'try_element_at(a, null)',
+            'try_element_at(a, -9)',
+            'try_element_at(a, 999)'))
+
+
+@pytest.mark.skipif(is_before_spark_330(), reason="try_element_at is not supported before Spark 3.3.0")
+@pytest.mark.parametrize('data_gen', [simple_string_to_string_map_gen], ids=idfn)
+def test_try_element_at_map_missing_keys(data_gen):
+    missing_keys = StringGen(pattern='MISSING_KEY')
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, missing_keys).selectExpr(
+            'try_element_at(a, b)'),
+        conf=ansi_disabled_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: two_col_df(spark, data_gen, missing_keys).selectExpr(
+            'try_element_at(a, b)'),
+        conf=ansi_enabled_conf)

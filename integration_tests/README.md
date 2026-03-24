@@ -16,7 +16,7 @@ in the cluster but it is not required.
 
 ### Prerequisites
 
-The build requires `OpenJDK 8`, `maven`, and `python`.
+The build requires `OpenJDK 17`, `maven`, and `python`.
 Skip to the next section if you have already installed them.
 
 #### Java Environment
@@ -263,7 +263,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-24.04.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-24.04.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-26.04.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-26.04.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -283,10 +283,10 @@ durations.run(new com.nvidia.spark.rapids.JoinsSuite)
 Most clusters probably will not have the RAPIDS plugin installed in the cluster yet.
 If you just want to verify the SQL replacement is working you will need to add the
 `rapids-4-spark` jar to your `spark-submit` command. Note the following example
-assumes CUDA 11.0 is being used and the Spark distribution is built with Scala 2.12.
+assumes CUDA 12 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-24.04.0-SNAPSHOT-cuda11.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -296,7 +296,7 @@ You do need to have access to a compatible GPU with the needed CUDA drivers. The
 
 ### Runtime Environment
 
-`--runtime_env` is used to specify the environment you are running the tests in. Valid values are `databricks`,`emr`,`dataproc` and `apache`. This is generally used
+`--runtime_env` is used to specify the environment you are running the tests in. Valid values are `databricks`,`emr`,`dataproc`,`dataproc_serverless` and `apache`. This is generally used
 when certain environments have different behavior, and the tests don't have a good way to auto-detect the environment yet.
 
 ### timezone
@@ -330,8 +330,9 @@ under YARN and even though it is off by default you probably want to be sure it 
 
 In case your test jars and resources are downloaded to the `local-path` from dependency Repo, and you want to run tests with them
 using the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh), then the `LOCAL_JAR_PATH=local-path` must be set to point
-to the `local-path`, e.g. `LOCAL_JAR_PATH=local-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`.By setting `LOCAL_JAR_PATH=local-path`
-the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find the test jars and resources in the alternate path.
+to the `local-path`, e.g. `LOCAL_JAR_PATH=local-path bash [run_pyspark_from_build.sh](run_pyspark_from_build.sh)`. By setting `LOCAL_JAR_PATH=local-path`
+the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) can find the test jars and resources in the alternate path. If you only want to override the 
+plugin jar then you can just set `PLUGIN_JAR=<path to the jar>`.
 
 When running the shell-script [run_pyspark_from_build.sh](run_pyspark_from_build.sh) under YARN or Kubernetes, the `$SCRIPTPATH` in the python options
 `--rootdir $SCRIPTPATH ...` and `--std_input_path $SCRIPTPATH ...` will not work, as the `$SCRIPTPATH` is a local path, you need to overwrite it to the cloud paths.
@@ -364,6 +365,56 @@ This marker has the following arguments:
                need the special override.
 - `permanent`: forces a test to ignore `DATAGEN_SEED` if True. If False, or if absent, the `DATAGEN_SEED` value always wins.
 
+### Randomly selecting tests
+
+To shorten feedback cycles, you can ask the harness to execute only a random subset of the collected
+tests by setting the `RANDOM_SELECT` environment variable before invoking
+`run_pyspark_from_build.sh`. Values greater than or equal to `1` are treated as an absolute number of
+tests to run, values between `0` and `1` are interpreted as a fraction of the collected test set, and
+`0` skips all tests. Leave the variable unset to execute the full suite. You can combine `RANDOM_SELECT`
+with `TESTS`, `-k`, or `-m` filters to limit the pool of tests that the random selection operates on.
+
+Set `RANDOM_SELECT_SEED` to make the selection deterministic when reproducing runs. If omitted, the
+seed defaults to `0`.
+
+Examples:
+
+```shell
+# Run 100 random tests out of the collected set
+RANDOM_SELECT=100 ./integration_tests/run_pyspark_from_build.sh
+
+# Run roughly 10% of the collected tests
+RANDOM_SELECT=0.1 ./integration_tests/run_pyspark_from_build.sh
+
+# Run 100 random tests with a fixed seed for reproducibility
+RANDOM_SELECT=100 RANDOM_SELECT_SEED=42 ./integration_tests/run_pyspark_from_build.sh
+
+# Run 100 random tests chosen from cases matching the keyword "aggregate"
+RANDOM_SELECT=100 ./integration_tests/run_pyspark_from_build.sh -k 'aggregate'
+```
+
+If the requested count or fraction is greater than or equal to the number of collected tests, the full
+set is executed and a message is printed indicating that no reduction was applied.
+
+### Controlling OOM injection
+
+Synthetic GPU out-of-memory (OOM) injection helps exercise recovery paths in the plugin. Use the pytest
+option `--test_oom_injection_mode` to choose how the harness injects OOMs:
+
+- `random` (default): randomly inject OOMs into a subset of tests.
+- `always`: inject OOMs into every eligible test.
+- `never`: disable OOM injection.
+
+Pass the option through the wrapper script by appending it after `--`, for example:
+
+```shell
+./integration_tests/run_pyspark_from_build.sh -- --test_oom_injection_mode=never
+```
+
+The randomness used when the mode is `random` is controlled by the `SPARK_RAPIDS_TEST_INJECT_OOM_SEED`
+environment variable. If unset, the launcher script assigns the current timestamp and prints the seed at
+startup so that the run can be reproduced.
+
 ### Running with non-UTC time zone
 For the new added cases, we should check non-UTC time zone is working, or the non-UTC nightly CIs will fail.
 The non-UTC nightly CIs are verifing all cases with non-UTC time zone.
@@ -384,10 +435,23 @@ non_utc_allow_for_sequence = ['ProjectExec'] # Update after non-utc time zone is
 test_my_new_added_case_for_sequence_operator()
 ```
 
+### Running with Hybrid execution
+The hybrid tests require extra jars. To enable hybrid tests, the following prerequisites are required::
+- Build Gluten bundle jar, Gluten thirdparty jar, refer to [link](../docs/dev/hybrid-execution.md#build)
+- Download Hybrid jar, refer to [link](../docs/dev/hybrid-execution.md#download-rapids-hybrid-jar-from-maven-repo)
+
+Execute the following command to run Hybrid tests:
+```shell
+$ LOAD_HYBRID_BACKEND=1 \
+  HYBRID_BACKEND_JARS=/path/to/${GLUTEN_BUNDLE_JAR},/path/to/${GLUTEN_THIRD_PARTY_JAR},/path/to/HYBRID_JAR \
+  ./integration_tests/run_pyspark_from_build.sh -m hybrid_test
+```
+For more information about Hybrid feature, refer to [link](../docs/dev/hybrid-execution.md)
+
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
-the [event log enabled](https://spark.apache.org/docs/3.1.1/monitoring.html) by default. You can opt
+the [event log enabled](https://spark.apache.org/docs/latest/monitoring.html) by default. You can opt
 out by setting the environment variable `SPARK_EVENTLOG_ENABLED` to `false`.
 
 Compressed event logs will appear under the run directories of the form
@@ -404,10 +468,23 @@ SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=integration_tests/target/run
 By default, integration tests write event logs using [Zstandard](https://facebook.github.io/zstd/)
 (`zstd`) compression codec. It can be changed by setting the environment variable `PYSP_TEST_spark_eventLog_compression_codec` to one of
 the SHS supported values for the config key
-[`spark.eventLog.compression.codec`](https://spark.apache.org/docs/3.1.1/configuration.html#spark-ui)
+[`spark.eventLog.compression.codec`](https://spark.apache.org/docs/latest/configuration.html#spark-ui)
 
 With `zstd` it's easy to view / decompress event logs using the CLI `zstd -d [--stdout] <file>`
 even without the SHS webUI.
+
+### Worker Logs 
+
+NOTE: Available only in local mode i.e. master URL = local[K, F]  
+
+By default, when using xdist the integration tests will write the tests output to console and to a text file 
+that will appear under the run directory of the form 
+`integration_tests/target/run_dir-<timestamp>-xxxx/WORKERID_worker_logs.log`. The output format of the log and the log level  
+can be changed by modifying the file `integration_tests/src/test/resources/pytest_log4j.properties`.
+
+If xdist is not used (e.g., `TEST_PARALLEL=1`)
+the worker log will be `integration_tests/target/run_dir-<timestamp>-xxxx/gw0_worker_logs.log` as if executed by
+worker 0 under xdist.
 
 ### Enabling cudf_udf Tests
 
@@ -427,10 +504,10 @@ To run cudf_udf tests, need following configuration changes:
    * Decrease `spark.rapids.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
    * Add `spark.rapids.python.concurrentPythonWorkers` and `spark.rapids.python.memory.gpu.allocFraction` to reserve enough GPU memory for Python processes in case of out-of-memory.
 
-As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 11.0:
+As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 12:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-24.04.0-SNAPSHOT-cuda11.jar,rapids-4-spark-tests_2.12-24.04.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-24.04.0-SNAPSHOT-cuda11.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-24.04.0-SNAPSHOT-cuda11.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar,rapids-4-spark-tests_2.12-26.04.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests
@@ -448,6 +525,17 @@ Some tests require that Apache Iceberg has been configured in the Spark environm
 properly without it. These tests assume Iceberg is not configured and are disabled by default.
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.
+
+### Run Apache iceberg s3tables tests
+
+To run iceberg tests against aws s3tables catalog, we need to setup several things:
+1. Run `aws configure` to setup aws credentials and region.
+2. Create a s3tables [table bucket](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables-buckets-create.html), and fetch its arn
+3. Create a namespace with name `default` under the table bucket created in step 2.
+4. Add environment `ICEBERG_TEST_REMOTE_CATALOG=1`
+5. Set spark catalog implementation s3 tables: 
+   `--conf spark.sql.catalog.spark_catalog.catalog-impl="software.amazon.s3tables.iceberg.S3TablesCatalog"`
+6. Set spark warehouse to table bucket arn in step 2: `--conf spark.sql.catalog.spark_catalog.warehouse=<table bucket arn>`
 
 ### Enabling Delta Lake tests
 

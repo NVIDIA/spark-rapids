@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -101,19 +101,20 @@ object TestUtils extends Assertions {
     assertResult(e.getRowCount)(a.getRowCount)
     assertResult(e.getNumChildren)(a.getNumChildren)
     (0L until e.getRowCount).foreach { i =>
-      assertResult(e.isNull(i))(a.isNull(i))
+      val clue = s"current row is $i"
+      assertResult(e.isNull(i), clue)(a.isNull(i))
       if (!e.isNull(i)) {
         e.getType match {
-          case DType.BOOL8 => assertResult(e.getBoolean(i))(a.getBoolean(i))
-          case DType.INT8 => assertResult(e.getByte(i))(a.getByte(i))
-          case DType.INT16 => assertResult(e.getShort(i))(a.getShort(i))
-          case DType.INT32 => assertResult(e.getInt(i))(a.getInt(i))
-          case DType.INT64 => assertResult(e.getLong(i))(a.getLong(i))
-          case DType.FLOAT32 => assertResult(e.getFloat(i))(a.getFloat(i))
-          case DType.FLOAT64 => assertResult(e.getDouble(i))(a.getDouble(i))
-          case DType.STRING => assertResult(e.getJavaString(i))(a.getJavaString(i))
+          case DType.BOOL8 => assertResult(e.getBoolean(i), clue)(a.getBoolean(i))
+          case DType.INT8 => assertResult(e.getByte(i), clue)(a.getByte(i))
+          case DType.INT16 => assertResult(e.getShort(i), clue)(a.getShort(i))
+          case DType.INT32 => assertResult(e.getInt(i), clue)(a.getInt(i))
+          case DType.INT64 => assertResult(e.getLong(i), clue)(a.getLong(i))
+          case DType.FLOAT32 => assertResult(e.getFloat(i), clue)(a.getFloat(i))
+          case DType.FLOAT64 => assertResult(e.getDouble(i), clue)(a.getDouble(i))
+          case DType.STRING => assertResult(e.getJavaString(i), clue)(a.getJavaString(i))
           case dt if dt.isDecimalType && dt.isBackedByLong =>
-            assertResult(e.getBigDecimal(i))(a.getBigDecimal(i))
+            assertResult(e.getBigDecimal(i), clue)(a.getBigDecimal(i))
           case DType.LIST | DType.STRUCT =>
             (0 until e.getNumChildren).foreach { childIdx =>
               val eChild = e.getChildColumnView(childIdx)

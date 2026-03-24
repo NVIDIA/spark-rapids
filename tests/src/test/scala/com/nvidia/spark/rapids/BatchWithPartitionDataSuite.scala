@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@ import org.apache.spark.unsafe.types.UTF8String
 /**
  * Unit tests for utility methods in [[ BatchWithPartitionDataUtils ]]
  */
-class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQueryCompareTestSuite {
+class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase {
 
   test("test splitting partition data into groups") {
     val maxGpuColumnSizeBytes = 1000L
@@ -55,48 +55,46 @@ class BatchWithPartitionDataSuite extends RmmSparkRetrySuiteBase with SparkQuery
     // This test uses single-row partition values that should throw a GpuSplitAndRetryOOM exception
     // when a retry is forced.
     val maxGpuColumnSizeBytes = 1000L
-    withGpuSparkSession(_ => {
-      val (_, partValues, _, partSchema) = getSamplePartitionData
-      closeOnExcept(buildBatch(getSampleValueData)) { valueBatch =>
-        val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
-          Array(1), partValues.take(1), partSchema, maxGpuColumnSizeBytes)
-        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-          RmmSpark.OomInjectionType.GPU.ordinal, 0)
-        withResource(resultBatchIter) { _ =>
-          assertThrows[GpuSplitAndRetryOOM] {
-            resultBatchIter.next()
-          }
+    val (_, partValues, _, partSchema) = getSamplePartitionData
+    closeOnExcept(buildBatch(getSampleValueData)) { valueBatch =>
+      val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
+        Array(1), partValues.take(1), partSchema, maxGpuColumnSizeBytes)
+      RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+        RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      withResource(resultBatchIter) { _ =>
+        assertThrows[GpuSplitAndRetryOOM] {
+          resultBatchIter.next()
         }
       }
-    })
+    }
   }
 
   test("test adding partition values to batch with OOM split and retry") {
     // This test should split the input batch and process them when a retry is forced.
     val maxGpuColumnSizeBytes = 1000L
-    withGpuSparkSession(_ => {
-      val (partCols, partValues, partRows, partSchema) = getSamplePartitionData
-      withResource(buildBatch(getSampleValueData)) { valueBatch =>
-        withResource(buildBatch(partCols)) { partBatch =>
-          withResource(GpuColumnVector.combineColumns(valueBatch, partBatch)) { expectedBatch =>
-            // we incRefCounts here because `addPartitionValuesToBatch` takes ownership of
-            // `valueBatch`, but we are keeping it alive since its columns are part of
-            // `expectedBatch`
-            GpuColumnVector.incRefCounts(valueBatch)
-            val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
-              partRows, partValues, partSchema, maxGpuColumnSizeBytes)
-            withResource(resultBatchIter) { _ =>
-              RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-                RmmSpark.OomInjectionType.GPU.ordinal, 0)
-              // Assert that the final count of rows matches expected batch
-              // We also need to close each batch coming from `resultBatchIter`.
-              val rowCounts = resultBatchIter.map(withResource(_){_.numRows()}).sum
-              assert(rowCounts == expectedBatch.numRows())
-            }
+    val (partCols, partValues, partRows, partSchema) = getSamplePartitionData
+    withResource(buildBatch(getSampleValueData)) { valueBatch =>
+      withResource(buildBatch(partCols)) { partBatch =>
+        withResource(GpuColumnVector.combineColumns(valueBatch, partBatch)) { expectedBatch =>
+          // we incRefCounts here because `addPartitionValuesToBatch` takes ownership of
+          // `valueBatch`, but we are keeping it alive since its columns are part of
+          // `expectedBatch`
+          GpuColumnVector.incRefCounts(valueBatch)
+          val resultBatchIter = BatchWithPartitionDataUtils.addPartitionValuesToBatch(valueBatch,
+            partRows, partValues, partSchema, maxGpuColumnSizeBytes)
+          withResource(resultBatchIter) { _ =>
+            RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+              RmmSpark.OomInjectionType.GPU.ordinal, 0)
+            // Assert that the final count of rows matches expected batch
+            // We also need to close each batch coming from `resultBatchIter`.
+            val rowCounts = resultBatchIter.map(withResource(_) {
+              _.numRows()
+            }).sum
+            assert(rowCounts == expectedBatch.numRows())
           }
         }
       }
-    })
+    }
   }
 
   private def getSamplePartitionData: (Array[Array[String]], Array[InternalRow], Array[Long],

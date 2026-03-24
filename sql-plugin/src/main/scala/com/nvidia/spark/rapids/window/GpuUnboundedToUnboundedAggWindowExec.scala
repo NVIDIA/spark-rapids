@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,9 @@
 package com.nvidia.spark.rapids.window
 
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
-import scala.reflect.ClassTag
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
+import com.nvidia.spark.rapids.{AutoClosableArrayBuffer, ConcatAndConsumeAll, GpuAlias, GpuBindReferences, GpuBoundReference, GpuColumnVector, GpuExpression, GpuLiteral, GpuMetric, GpuProjectExec, SpillableColumnarBatch, SpillPriorities}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
@@ -35,32 +34,6 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression, GpuAggregateFunction, GpuCount}
 import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
-
-
-/**
- * Just a simple wrapper to make working with buffers of AutoClosable things play
- * nicely with withResource.
- */
-class AutoClosableArrayBuffer[T <: AutoCloseable]() extends AutoCloseable {
-  private val data = new ArrayBuffer[T]()
-
-  def append(scb: T): Unit = data.append(scb)
-
-  def last: T = data.last
-
-  def removeLast(): T = data.remove(data.length - 1)
-
-  def foreach[U](f: T => U): Unit = data.foreach(f)
-
-  def toArray[B >: T : ClassTag]: Array[B] = data.toArray
-
-  override def toString: String = s"AutoCloseable(${super.toString})"
-
-  override def close(): Unit = {
-    data.foreach(_.close())
-    data.clear()
-  }
-}
 
 /**
  * Utilities for conversion between SpillableColumnarBatch, ColumnarBatch, and cudf.Table.
@@ -1036,19 +1009,21 @@ object AggResultBatchConventions {
  */
 object GpuUnboundedToUnboundedAggWindowIterator {
   def rideAlongProjection(windowOps: Seq[NamedExpression],
-      childOutput: Seq[Attribute]): (Seq[Attribute], Seq[GpuExpression]) = {
+      childOutput: Seq[Attribute],
+      metrics: Map[String, GpuMetric]): (Seq[Attribute], Seq[GpuExpression]) = {
     val rideAlong = windowOps.filter {
       case GpuAlias(_: AttributeReference, _) | _: AttributeReference => true
       case _ => false
     }
     val rideAlongOutput = rideAlong.map(_.toAttribute)
-    val boundRideAlong = GpuBindReferences.bindGpuReferences(rideAlong, childOutput)
+    val boundRideAlong = GpuBindReferences.bindGpuReferences(rideAlong, childOutput, metrics)
     (rideAlongOutput, boundRideAlong)
   }
 
 
   def tmpAggregationOps(windowOps: Seq[NamedExpression],
-      childOutput: Seq[Attribute]): (Seq[Attribute], Seq[GpuExpression]) = {
+      childOutput: Seq[Attribute],
+      metrics: Map[String, GpuMetric]): (Seq[Attribute], Seq[GpuExpression]) = {
     //  TODO I don't know what this is really going to look like. I am just doing an approximation
     //    here so I can get the output of the aggregations after everything is done for the
     //    repeat. Please fill this in/split it apart, whatever to make it work for you
@@ -1075,7 +1050,8 @@ object GpuUnboundedToUnboundedAggWindowIterator {
     // to do that. This will not work if we are going to output that count column.
 
     val aggregationsOutput = windowAggs.map(_.toAttribute)
-    val boundAggregations = GpuBindReferences.bindGpuReferences(windowAggs, childOutput)
+    val boundAggregations = GpuBindReferences.bindGpuReferences(windowAggs, childOutput,
+      metrics)
     (aggregationsOutput, boundAggregations)
   }
 
@@ -1086,13 +1062,14 @@ object GpuUnboundedToUnboundedAggWindowIterator {
 
   def computeFinalProject(rideAlongOutput: Seq[Attribute],
       aggsToRepeatOutput: Seq[Attribute],
-      windowOps: Seq[NamedExpression]): Seq[GpuExpression] = {
+      windowOps: Seq[NamedExpression],
+      metrics: Map[String, GpuMetric]): Seq[GpuExpression] = {
     val combinedOutput = rideAlongOutput ++ aggsToRepeatOutput
     val remapped = windowOps.map { expr =>
       GpuAlias(AttributeReference(expr.name, expr.dataType, expr.nullable)(expr.exprId),
         expr.name)(expr.exprId)
     }
-    GpuBindReferences.bindGpuReferences(remapped, combinedOutput)
+    GpuBindReferences.bindGpuReferences(remapped, combinedOutput, metrics)
   }
 
   /**
@@ -1100,21 +1077,26 @@ object GpuUnboundedToUnboundedAggWindowIterator {
    * @param gpuPartitionSpec the partition spec for the GPU
    * @param windowOps the window operations (along with the pass-through columns)
    * @param childOutput what the output of the operation feeding this looks like
+   * @param metrics metrics to inject into the bound expressions
    * @return
    */
   def breakUpAggregations(gpuPartitionSpec: Seq[Expression],
       windowOps: Seq[NamedExpression],
-      childOutput: Seq[Attribute]): GpuUnboundedToUnboundedAggStages = {
+      childOutput: Seq[Attribute],
+      metrics: Map[String, GpuMetric]): GpuUnboundedToUnboundedAggStages = {
     val childTypes = childOutput.map{_.dataType}
 
     // STEP 0. Bind the partition spec to be used for the window.
-    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
+    val boundPartitionSpec = GpuBindReferences.bindGpuReferences(gpuPartitionSpec,
+      childOutput, metrics)
 
     // STEP 1. project that will pull out the columns that are output unchanged.
-    val (rideAlongOutput, boundRideAlong) = rideAlongProjection(windowOps, childOutput)
+    val (rideAlongOutput, boundRideAlong) = rideAlongProjection(windowOps, childOutput,
+      metrics)
 
     // STEP 2. project that will pull out the columns needed for the aggregation.
-    val (aggregationsOutput, boundAggregations) = tmpAggregationOps(windowOps, childOutput)
+    val (aggregationsOutput, boundAggregations) = tmpAggregationOps(windowOps, childOutput,
+      metrics)
 
     // STEP N: Given the output of the aggregations get the aggregations without that count.
     // The count and aggs locations is by convention.
@@ -1123,7 +1105,8 @@ object GpuUnboundedToUnboundedAggWindowIterator {
     // STEP N + 1: After the repeat is done the repeated columns are put at the end of the
     //  rideAlong columns and then we need to do a project that would put them all in the
     //  proper output order, according to the windowOps
-    val finalProject = computeFinalProject(rideAlongOutput, aggsToRepeatOutput, windowOps)
+    val finalProject = computeFinalProject(rideAlongOutput, aggsToRepeatOutput, windowOps,
+      metrics)
 
     GpuUnboundedToUnboundedAggStages(childTypes, boundPartitionSpec, boundRideAlong,
                                      boundAggregations, finalProject)
@@ -1173,10 +1156,10 @@ case class GpuUnboundedToUnboundedAggWindowExec(
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputBatches = gpuLongMetric(GpuMetric.NUM_OUTPUT_BATCHES)
     val numOutputRows = gpuLongMetric(GpuMetric.NUM_OUTPUT_ROWS)
-    val opTime = gpuLongMetric(GpuMetric.OP_TIME)
+    val opTime = gpuLongMetric(GpuMetric.OP_TIME_LEGACY)
 
     val boundStages = GpuUnboundedToUnboundedAggWindowIterator.breakUpAggregations(
-      gpuPartitionSpec, windowOps, child.output)
+      gpuPartitionSpec, windowOps, child.output, allMetrics)
 
     child.executeColumnar().mapPartitions { iter =>
       GpuUnboundedToUnboundedAggWindowIterator(iter, boundStages,

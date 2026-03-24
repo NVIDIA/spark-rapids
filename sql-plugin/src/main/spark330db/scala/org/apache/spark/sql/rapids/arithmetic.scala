@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,23 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
@@ -32,30 +47,31 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.{Expression, NullIntolerant}
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerant {
+abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolerantShim {
 
   protected val failOnError: Boolean
 
   protected def allowPrecisionLoss = SQLConf.get.decimalOperationsAllowPrecisionLoss
 
   // arithmetic operations can overflow and throw exceptions in ANSI mode
-  override def hasSideEffects: Boolean = super.hasSideEffects || SQLConf.get.ansiEnabled
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnError
 
   def dataTypeInternal(lhs: Expression, rhs: Expression) = (lhs.dataType, rhs.dataType) match {
     case (DecimalType.Fixed(p1, s1), DecimalType.Fixed(p2, s2)) =>
       resultDecimalType(p1, s1, p2, s2)
     case _ => lhs.dataType
   }
-  override def dataType: DataType = dataTypeInternal(left, right)
+  override lazy val dataType: DataType = dataTypeInternal(left, right)
 
   protected def resultDecimalType(p1: Int, s1: Int, p2: Int, s2: Int): DecimalType = {
     throw new IllegalStateException(
@@ -397,13 +413,27 @@ case class GpuPmod(
   }
 }
 
+object GpuDecimalDivide {
+  def apply(left: Expression, right: Expression, dataType: DecimalType): GpuDecimalDivide = {
+    val ansi = SQLConf.get.ansiEnabled
+    GpuDecimalDivide(left, right, dataType, ansi, ansi)
+  }
+
+  def apply(left: Expression, right: Expression, dataType: DecimalType,
+            failOnError: Boolean): GpuDecimalDivide =
+    GpuDecimalDivide(left, right, dataType, failOnError, failOnError)
+}
+
 case class GpuDecimalDivide(
     left: Expression,
     right: Expression,
-    override val dataType: DecimalType,
-    failOnError: Boolean = SQLConf.get.ansiEnabled)
+    dt: DecimalType,
+    override val failOnError: Boolean,
+    override val failOnDivideByZero: Boolean)
     extends CudfBinaryArithmetic with GpuDecimalDivideBase {
   override def inputType: AbstractDataType = DecimalType
+
+  override lazy val dataType: DecimalType = dt
 
   override def symbol: String = "/"
 
@@ -441,11 +471,13 @@ case class GpuDecimalDivide(
 case class GpuDecimalMultiply(
     left: Expression,
     right: Expression,
-    override val dataType: DecimalType,
+    dt: DecimalType,
     useLongMultiply: Boolean = false,
     failOnError: Boolean = SQLConf.get.ansiEnabled) extends CudfBinaryArithmetic
     with GpuDecimalMultiplyBase {
   override def inputType: AbstractDataType = DecimalType
+
+  override lazy val dataType: DecimalType = dt
 
   override def symbol: String = "*"
 
@@ -491,13 +523,15 @@ case class GpuIntegralDivide(
 case class GpuIntegralDecimalDivide(
     left: Expression,
     right: Expression,
-    failOnError: Boolean = SQLConf.get.ansiEnabled)
+    override val failOnError: Boolean = SQLConf.get.ansiEnabled)
     extends CudfBinaryArithmetic with GpuDecimalDivideBase {
+  override val failOnDivideByZero: Boolean = failOnError
+
   override def inputType: AbstractDataType = TypeCollection(IntegralType, DecimalType)
 
   def integerDivide: Boolean = true
 
-  override def dataType: DataType = LongType
+  override lazy val dataType: DataType = LongType
 
   override def symbol: String = "/"
 

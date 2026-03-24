@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -33,6 +33,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkException
 import org.apache.spark.sql.{DataFrame, Dataset}
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.delta._
@@ -64,7 +65,8 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
 class GpuOptimisticTransaction
     (deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)
     (implicit clock: Clock)
-  extends GpuOptimisticTransactionBase(deltaLog, snapshot, rapidsConf)(clock) {
+  extends GpuOptimisticTransactionBase(deltaLog,
+    Option.empty[CatalogTable], snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
    *
@@ -201,8 +203,8 @@ class GpuOptimisticTransaction
         val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
         val basicWriteJobStatsTracker = new BasicColumnarWriteJobStatsTracker(
           serializableHadoopConf,
-          BasicWriteJobStatsTracker.metrics)
-        registerSQLMetrics(spark, basicWriteJobStatsTracker.driverSideMetrics)
+          GpuMetric.wrap(BasicWriteJobStatsTracker.metrics))
+        registerSQLMetrics(spark, GpuMetric.unwrap(basicWriteJobStatsTracker.driverSideMetrics))
         statsTrackers.append(basicWriteJobStatsTracker)
         gpuRapidsWrite.foreach { grw =>
           val tracker = new GpuWriteJobStatsTracker(serializableHadoopConf,
@@ -241,8 +243,9 @@ class GpuOptimisticTransaction
           bucketSpec = None,
           statsTrackers = optionalStatsTracker.toSeq ++ statsTrackers,
           options = options,
-          rapidsConf.stableSort,
-          rapidsConf.concurrentWriterPartitionFlushSize)
+          useStableSort = rapidsConf.stableSort,
+          concurrentWriterPartitionFlushSize = rapidsConf.concurrentWriterPartitionFlushSize,
+          baseDebugOutputPath = rapidsConf.outputDebugDumpPrefix)
       } catch {
         case s: SparkException =>
           // Pull an InvariantViolationException up to the top level if it was the root cause.

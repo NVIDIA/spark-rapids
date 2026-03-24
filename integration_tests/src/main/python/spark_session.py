@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@ import os
 import calendar, time
 from datetime import date, datetime
 from contextlib import contextmanager, ExitStack
-from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf
+from conftest import is_allowing_any_non_gpu, get_non_gpu_allowed, get_validate_execs_in_gpu_plan, is_databricks_runtime, is_at_least_precommit_run, get_inject_oom_conf, is_per_test_ansi_mode_enabled
 from pyspark.sql import DataFrame
 from pyspark.sql.types import TimestampType, DateType, _acceptable_types
 from spark_init_internal import get_spark_i_know_what_i_am_doing, spark_version
@@ -41,13 +41,12 @@ _orig_conf_keys = _orig_conf.keys()
 # Many of these are redundant with default settings for the configs but are set here explicitly
 # to ensure any cluster settings do not interfere with tests that assume the defaults.
 _default_conf = {
-    'spark.ansi.enabled': 'false',
+    'spark.rapids.sql.test.retryContextCheck.enabled': 'true',
     'spark.rapids.sql.castDecimalToFloat.enabled': 'false',
     'spark.rapids.sql.castFloatToDecimal.enabled': 'false',
     'spark.rapids.sql.castFloatToIntegralTypes.enabled': 'false',
     'spark.rapids.sql.castFloatToString.enabled': 'false',
     'spark.rapids.sql.castStringToFloat.enabled': 'false',
-    'spark.rapids.sql.castStringToTimestamp.enabled': 'false',
     'spark.rapids.sql.fast.sample': 'false',
     'spark.rapids.sql.hasExtendedYearValues': 'true',
     'spark.rapids.sql.hashOptimizeSort.enabled': 'false',
@@ -127,6 +126,9 @@ def with_spark_session(func, conf={}):
     """Run func that takes a spark session as input with the given configs set."""
     reset_spark_session_conf()
     _add_job_description(conf)
+    # Only set the ansi conf if not set by the test explicitly by setting the value in the dict
+    if "spark.sql.ansi.enabled" not in conf and is_per_test_ansi_mode_enabled() is not None:
+        conf["spark.sql.ansi.enabled"] = is_per_test_ansi_mode_enabled()
     _set_all_confs(conf)
     ret = func(_spark)
     _check_for_proper_return_values(ret)
@@ -175,6 +177,9 @@ def is_before_spark_314():
 def is_before_spark_320():
     return spark_version() < "3.2.0"
 
+def is_before_spark_321():
+    return spark_version() < "3.2.1"
+
 def is_before_spark_322():
     return spark_version() < "3.2.2"
 
@@ -205,6 +210,15 @@ def is_before_spark_350():
 def is_before_spark_351():
     return spark_version() < "3.5.1"
 
+def is_before_spark_353():
+    return spark_version() < "3.5.3"
+
+def is_spark_350_or_351():
+    return spark_version() >= "3.5.0" and spark_version() <= "3.5.1"
+
+def is_before_spark_400():
+    return spark_version() < "4.0.0"
+
 def is_spark_320_or_later():
     return spark_version() >= "3.2.0"
 
@@ -217,8 +231,32 @@ def is_spark_340_or_later():
 def is_spark_341():
     return spark_version() == "3.4.1"
 
+def is_spark_341_or_later():
+    return spark_version() >= "3.4.1"
+
 def is_spark_350_or_later():
     return spark_version() >= "3.5.0"
+
+def is_spark_353_or_later():
+    return spark_version() >= "3.5.3"
+
+def is_spark_351_or_later():
+    return spark_version() >= "3.5.1"
+
+def is_spark_356_or_later():
+    return spark_version() >= "3.5.6"
+
+def is_spark_35x():
+    return "3.5.0" <= spark_version() < "3.6.0"
+
+def is_spark_400_or_later():
+    return spark_version() >= "4.0.0"
+
+def is_spark_401_or_later():
+    return spark_version() >= "4.0.1"
+
+def is_spark_411_or_later():
+    return spark_version() >= "4.1.1"
 
 def is_spark_330():
     return spark_version() == "3.3.0"
@@ -241,14 +279,20 @@ def is_spark_332cdh():
 def is_spark_cdh():
     return is_spark_321cdh() or is_spark_330cdh() or is_spark_332cdh()
 
-def is_databricks_version_or_later(major, minor):
+def __databricks_version(major, minor):
     spark = get_spark_i_know_what_i_am_doing()
     version = spark.conf.get("spark.databricks.clusterUsageTags.sparkVersion", "0.0")
     parts = version.split(".")
     if (len(parts) < 2):
         raise RuntimeError("Unable to determine Databricks version from version string: " + version)
-    db_major = int(parts[0])
-    db_minor = int(parts[1])
+    return int(parts[0]), int(parts[1])
+
+def is_databricks_version(major, minor):
+    db_major, db_minor = __databricks_version(major, minor)
+    return db_minor == minor and db_major == major
+
+def is_databricks_version_or_later(major, minor):
+    db_major, db_minor = __databricks_version(major, minor)
     return db_minor >= minor if (db_major == major) else db_major >= major
 
 def is_databricks104_or_later():
@@ -262,6 +306,15 @@ def is_databricks122_or_later():
 
 def is_databricks133_or_later():
     return is_databricks_version_or_later(13, 3)
+
+def is_databricks133():
+    return is_databricks_version(13, 3)
+
+def is_databricks143_or_later():
+    return is_databricks_version_or_later(14, 3)
+
+def is_databricks173_or_later():
+    return is_databricks_version_or_later(17, 3)
 
 def supports_delta_lake_deletion_vectors():
     if is_databricks_runtime():
@@ -316,3 +369,6 @@ def is_hive_available():
     if is_at_least_precommit_run():
         return True
     return _spark.conf.get("spark.sql.catalogImplementation") == "hive"
+
+def is_hybrid_backend_loaded():
+    return _spark.conf.get("spark.rapids.sql.hybrid.loadBackend", "false") == "true"

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,12 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.{DeltaColumnMappingMode, DeltaParquetFileFormat, IdMapping}
-import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
 import com.nvidia.spark.rapids.SparkPlanMeta
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.FileSourceScanExec
+import org.apache.spark.sql.execution.datasources.HadoopFsRelation
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 
@@ -50,16 +50,17 @@ object GpuDeltaParquetFileFormat {
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
     val requiredSchema = meta.wrapped.requiredSchema
-    if (requiredSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)) {
+    if (requiredSchema.exists(_.name.startsWith("_databricks_internal"))) {
       meta.willNotWorkOnGpu(
-        s"reading metadata column $IS_ROW_DELETED_COLUMN_NAME is not supported")
+        s"reading metadata columns starting with prefix _databricks_internal is not supported")
     }
-    if (format.hasDeletionVectorMap()) {
+    if (format.hasDeletionVectorMap) {
       meta.willNotWorkOnGpu("deletion vectors are not supported")
     }
   }
 
-  def convertToGpu(fmt: DeltaParquetFileFormat): GpuDeltaParquetFileFormat = {
+  def convertToGpu(relation: HadoopFsRelation): GpuDeltaParquetFileFormat = {
+    val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
     GpuDeltaParquetFileFormat(fmt.columnMappingMode, fmt.referenceSchema, fmt.isSplittable)
   }
 }

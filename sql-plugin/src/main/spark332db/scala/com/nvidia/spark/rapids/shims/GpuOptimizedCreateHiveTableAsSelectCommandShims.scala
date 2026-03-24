@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,23 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -31,7 +46,7 @@ import scala.util.control.NonFatal
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.{SaveMode, SparkSession}
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.TableIdentifier
 import org.apache.spark.sql.catalyst.catalog.{CatalogTable, SessionCatalog}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
@@ -43,6 +58,8 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuInsertIntoHadoopFsRelationCommand, GpuOrcFileFormat}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -188,16 +205,17 @@ final class OptimizedCreateHiveTableAsSelectCommandMeta(
     // before the table exists will crash. So this ends up replicating a portion of the logic
     // from OptimizedCreateHiveTableAsSelectCommand.getWritingCommand and underlying
     // utility methods to be able to tag whether we can support the optimized Hive write.
-    val spark = SparkSession.active
+    val spark = TrampolineConnectShims.getActiveSession
     val tableDesc = cmd.tableDesc
 
     if (tableDesc.partitionColumnNames.nonEmpty) {
       willNotWorkOnGpu("partitioned writes are not supported")
     }
 
-    if (tableDesc.bucketSpec.isDefined) {
-      willNotWorkOnGpu("bucketing is not supported")
-    }
+    val outputColumns =
+      DataWritingCommand.logicalPlanOutputWithNames(cmd.query, cmd.outputColumnNames)
+    BucketingUtilsShim.tagForHiveBucketingWrite(this, tableDesc.bucketSpec, outputColumns,
+      conf.isForceHiveHashForBucketedWrite)
 
     val serde = tableDesc.storage.serde.getOrElse("").toLowerCase(Locale.ROOT)
     if (serde.contains("parquet")) {

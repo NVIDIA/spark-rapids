@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,12 @@ package com.nvidia.spark.rapids.delta
 import com.databricks.sql.transaction.tahoe.commands.{UpdateCommand, UpdateCommandEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuUpdateCommand}
 import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta, RunnableCommandMeta}
+import com.nvidia.spark.rapids.delta.shims.UpdateCommandMetaShim
 
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 class UpdateCommandMeta(
-    updateCmd: UpdateCommand,
+    val updateCmd: UpdateCommand,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
@@ -34,6 +35,7 @@ class UpdateCommandMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
+    UpdateCommandMetaShim.tagForGpu(this)
     RapidsDeltaUtils.tagForDeltaWrite(this, updateCmd.target.schema,
       Some(updateCmd.tahoeFileIndex.deltaLog), Map.empty, updateCmd.tahoeFileIndex.spark)
   }
@@ -50,7 +52,7 @@ class UpdateCommandMeta(
 }
 
 class UpdateCommandEdgeMeta(
-    updateCmd: UpdateCommandEdge,
+    val updateCmd: UpdateCommandEdge,
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
@@ -61,6 +63,7 @@ class UpdateCommandEdgeMeta(
       willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
           s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
+    UpdateCommandMetaShim.tagForGpu(this)
     RapidsDeltaUtils.tagForDeltaWrite(this, updateCmd.target.schema,
       Some(updateCmd.tahoeFileIndex.deltaLog), Map.empty, updateCmd.tahoeFileIndex.spark)
   }

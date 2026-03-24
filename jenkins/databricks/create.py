@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,16 +27,16 @@ def main():
   workspace = 'https://dbc-9ff9942e-a9c4.cloud.databricks.com'
   token = ''
   sshkey = ''
-  cluster_name = 'CI-GPU-databricks-24.04.0-SNAPSHOT'
+  cluster_name = 'CI-GPU-databricks-26.04.0-SNAPSHOT'
   idletime = 240
-  runtime = '7.0.x-gpu-ml-scala2.12'
+  runtime = '13.3.x-gpu-ml-scala2.12'
   num_workers = 1
   worker_type = 'g4dn.xlarge'
   driver_type = 'g4dn.xlarge'
   cloud_provider = 'aws'
   # comma separated init scripts in Databricks workspace, e.g. /foo,/bar,...
   init_scripts = ''
-  aws_zone='us-west-2c'
+  aws_zone='auto'
 
 
   try:

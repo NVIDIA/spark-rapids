@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,10 +26,11 @@ import scala.collection.JavaConverters._
 import scala.util.{Failure, Random, Success, Try}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, NamedExpression}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types._
 
 class CastOpSuite extends GpuExpressionTestSuite {
@@ -221,7 +222,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       .set(SQLConf.ANSI_ENABLED.key, ansiModeBoolString)
       .set(RapidsConf.EXPLAIN.key, "ALL")
       .set(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key, "true")
-      .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
       .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
       // Tests that this is not true for are skipped in 3.2.0+
       .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
@@ -267,7 +267,6 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES.key, "true")
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
-        .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
         .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
         .set("spark.sql.ansi.enabled", String.valueOf(ansiEnabled))
         .set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
@@ -306,7 +305,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
   }
 
-  private def compareFloatToStringResults(float: Boolean, fromCpu: Array[Row], 
+  private def compareFloatToStringResults(float: Boolean, fromCpu: Array[Row],
       fromGpu: Array[Row]): Unit = {
     fromCpu.zip(fromGpu).foreach {
       case (c, g) =>
@@ -438,12 +437,12 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   test("cast float to string") {
-    testCastToString[Float](DataTypes.FloatType, comparisonFunc = 
+    testCastToString[Float](DataTypes.FloatType, comparisonFunc =
         Some(compareStringifiedFloats(true)))
   }
 
   test("cast double to string") {
-    testCastToString[Double](DataTypes.DoubleType, comparisonFunc = 
+    testCastToString[Double](DataTypes.DoubleType, comparisonFunc =
         Some(compareStringifiedFloats(false)))
   }
 
@@ -476,7 +475,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       comparisonFunc = comparisonFunc)
   }
 
-  testSparkResultsAreEqual("Test cast from long", longsDf) {
+  testSparkResultsAreEqual("Test cast from long", longsDf,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12714")) {
     frame => frame.select(
       col("longs").cast(IntegerType),
       col("longs").cast(LongType),
@@ -491,7 +491,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test cast from float", mixedFloatDf,
-      conf = sparkConf) {
+      conf = sparkConf,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
     frame => frame.select(
       col("floats").cast(IntegerType),
       col("floats").cast(LongType),
@@ -505,7 +506,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test cast from double", doubleWithNansDf,
-      conf = sparkConf) {
+      conf = sparkConf,
+      assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
     frame => frame.select(
       col("doubles").cast(IntegerType),
       col("doubles").cast(LongType),
@@ -530,7 +532,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("bools").cast(DoubleType))
   }
 
-  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet) {
+  testSparkResultsAreEqual("Test cast from date", timestampDatesMsecParquet,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12714")) {
     frame => frame.select(
       col("date"),
       col("date").cast(BooleanType),
@@ -544,7 +547,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
       col("date").cast(TimestampType))
    }
 
-  testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings) {
+  testSparkResultsAreEqual("Test cast from string to bool", maybeBoolStrings,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12715")) {
     frame => frame.select(col("maybe_bool").cast(BooleanType))
   }
 
@@ -572,9 +576,14 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual(
-    "Test cast from timestamp", timestampDatesMsecParquet)(timestampCastFn)
+    "Test cast from timestamp",
+    timestampDatesMsecParquet,
+    assumeCondition = spark =>
+      ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12714")(spark)
+  )(timestampCastFn)
 
   test("Test cast from timestamp in UTC-equivalent timezone") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12714")
     val oldtz = TimeZone.getDefault
     try {
       TimeZone.setDefault(TimeZone.getTimeZone("Etc/UTC-0"))
@@ -593,7 +602,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test cast from strings to int", doublesAsStrings,
-    conf = sparkConf) {
+    conf = sparkConf,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/11552")) {
     frame => frame.select(
       col("c0").cast(LongType),
       col("c0").cast(IntegerType),
@@ -614,7 +624,8 @@ class CastOpSuite extends GpuExpressionTestSuite {
   }
 
   testSparkResultsAreEqual("Test bad cast from strings to floats", invalidFloatStringsDf,
-    conf = sparkConf, maxFloatDiff = 0.0001) {
+    conf = sparkConf, maxFloatDiff = 0.0001,
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/11552")) {
     frame =>frame.select(
       col("c0").cast(DoubleType),
       col("c0").cast(FloatType),
@@ -693,6 +704,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.FloatType, scale,
         customDataGenerator = Some(floatsIncludeNaNs))
+      testCastToDecimal(DataTypes.FloatType, scale,
+        customDataGenerator = Some(floatsIncludeNaNs),
+        ansiEnabled = true)
     }
   }
 
@@ -710,6 +724,9 @@ class CastOpSuite extends GpuExpressionTestSuite {
     List(-10, -1, 0, 1, 10).foreach { scale =>
       testCastToDecimal(DataTypes.DoubleType, scale,
         customDataGenerator = Some(doublesIncludeNaNs))
+      testCastToDecimal(DataTypes.DoubleType, scale,
+        customDataGenerator = Some(doublesIncludeNaNs),
+        ansiEnabled = true)
     }
   }
 
@@ -727,6 +744,32 @@ class CastOpSuite extends GpuExpressionTestSuite {
     }
     testCastToDecimal(DataTypes.DoubleType, precision = 9, scale = 6,
       customDataGenerator = Option(genDoubles))
+  }
+
+  test("cast float/double to decimal (borderline value rounding)") {
+    val genFloats_12_7: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(3527.61953125f))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.FloatType, precision = 12, scale = 7,
+      customDataGenerator = Option(genFloats_12_7))
+
+    val genDoubles_12_7: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(3527.61953125))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.DoubleType, precision = 12, scale = 7,
+      customDataGenerator = Option(genDoubles_12_7))
+
+    val genFloats_3_1: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(9.95f))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.FloatType, precision = 3, scale = 1,
+      customDataGenerator = Option(genFloats_3_1))
+
+    val genDoubles_3_1: SparkSession => DataFrame = (ss: SparkSession) => {
+      ss.createDataFrame(List(Tuple1(9.95))).selectExpr("_1 AS col")
+    }
+    testCastToDecimal(DataTypes.DoubleType, precision = 3, scale = 1,
+      customDataGenerator = Option(genDoubles_3_1))
   }
 
   test("cast decimal to decimal") {
@@ -796,19 +839,19 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("Detect overflow from numeric types to decimal") {
     def intGenerator(column: Seq[Int])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
     def longGenerator(column: Seq[Long])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
     def floatGenerator(column: Seq[Float])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
     def doubleGenerator(column: Seq[Double])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
     def decimalGenerator(column: Seq[Decimal], decType: DecimalType
@@ -832,10 +875,22 @@ class CastOpSuite extends GpuExpressionTestSuite {
       // Catch out of range exception when AnsiMode is on
       assert(
         exceptionContains(
-        intercept[org.apache.spark.SparkException] {
-          nonOverflowCase(dataType, generator, precision, scale)
-        },
-        GpuCast.OVERFLOW_MESSAGE)
+          if (isSpark400OrLater) {
+            // For Spark 4.0+, catch the SparkArithmeticException by class name since
+            // it is a private class and cannot be caught using intercept[SparkArithmeticException]
+            try {
+              nonOverflowCase(dataType, generator, precision, scale)
+              new Exception("Expected an arithmetic exception but none was thrown")
+            } catch {
+              case e: Exception if e.getClass.getName.endsWith("SparkArithmeticException") =>
+                e
+            }
+          } else {
+            intercept[org.apache.spark.SparkException] {
+              nonOverflowCase(dataType, generator, precision, scale)
+            }
+          },
+          "cannot be represented as Decimal")
       )
       // Compare gpu results with cpu ones when AnsiMode is off (most of them should be null)
       testCastToDecimal(dataType,
@@ -932,7 +987,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
 
   test("cast string to decimal (truncated cases)") {
     def specialGenerator(column: Seq[String])(ss: SparkSession): DataFrame = {
-      import ss.sqlContext.implicits._
+      import ss.implicits._
       column.toDF("col")
     }
 
@@ -967,7 +1022,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     dataType: DataType,
     scale: Int,
     precision: Int = ai.rapids.cudf.DType.DECIMAL128_MAX_PRECISION,
-    floatEpsilon: Double = 1e-9,
+    floatEpsilon: Double = 1e-14,
     customDataGenerator: Option[SparkSession => DataFrame] = None,
     customRandGenerator: Option[scala.util.Random] = None,
     ansiEnabled: Boolean = false,
@@ -981,6 +1036,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
       val conf = new SparkConf()
         .set(RapidsConf.ENABLE_CAST_FLOAT_TO_DECIMAL.key, "true")
         .set("spark.rapids.sql.exec.FileSourceScanExec", "false")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "FileSourceScanExec")
         .set("spark.sql.legacy.allowNegativeScaleOfDecimal", "true")
         .set("spark.sql.ansi.enabled", ansiEnabled.toString)
 
@@ -1024,7 +1080,7 @@ class CastOpSuite extends GpuExpressionTestSuite {
     rndGenerator: scala.util.Random,
     rowCount: Int)(ss: SparkSession): DataFrame = {
 
-    import ss.sqlContext.implicits._
+    import ss.implicits._
     val enhancedRnd = new EnhancedRandom(rndGenerator, FuzzerOptions()) {
       override def nextLong(): Long = r.nextInt(11) match {
         case 0 => -999999999999999999L
@@ -1089,77 +1145,77 @@ object CastOpSuite {
   }
 
   def bytesAsShorts(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toShort).toDF("c0")
   }
 
   def bytesAsInts(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toInt).toDF("c0")
   }
 
   def bytesAsLongs(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toLong).toDF("c0")
   }
 
   def bytesAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toFloat).toDF("c0")
   }
 
   def bytesAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(_.toDouble).toDF("c0")
   }
 
   def bytesAsTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
   def bytesAsStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     byteValues.map(value => String.valueOf(value)).toDF("c0")
   }
 
   def shortsAsInts(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(_.toInt).toDF("c0")
   }
 
   def shortsAsLongs(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(_.toLong).toDF("c0")
   }
 
   def shortsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(_.toFloat).toDF("c0")
   }
 
   def shortsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(_.toDouble).toDF("c0")
   }
 
   def shortsAsTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
   def shortsAsStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     shortValues.map(value => String.valueOf(value)).toDF("c0")
   }
 
   def intsAsLongs(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     intValues.map(_.toLong).toDF("c0")
   }
 
   def intsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     // Spark 3.1.0 changed the range of floats that can be cast to integral types and this
     // required the intsAsFloats to be updated to avoid using Int.MaxValue. The supported
     // range is now `Math.floor(x) <= Int.MaxValue && Math.ceil(x) >= Int.MinValue`
@@ -1167,52 +1223,52 @@ object CastOpSuite {
   }
 
   def intsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     intValues.map(_.toDouble).toDF("c0")
   }
 
   def intsAsTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     intValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
   def intsAsStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     intValues.map(value => String.valueOf(value)).toDF("c0")
   }
 
   def longsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(_.toFloat).toDF("c0")
   }
 
   def longsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(_.toDouble).toDF("c0")
   }
 
   def longsAsTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     timestampValues.map(value => new Timestamp(value)).toDF("c0")
   }
 
   def longsAsStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(value => String.valueOf(value)).toDF("c0")
   }
 
   def longsAsDecimalStrings(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(value => String.valueOf(value) + ".1").toDF("c0")
   }
 
   def timestampsAsFloats(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     timestampValues.map(_.toFloat).toDF("c0")
   }
 
   def timestampsAsDoubles(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     timestampValues.map(_.toDouble).toDF("c0")
   }
 
@@ -1334,7 +1390,6 @@ object CastOpSuite {
     } else {
       Seq(
         "23:59:59.333666Z",
-        "T21:34:56.333666Z"
       )
     }
 
@@ -1370,7 +1425,7 @@ object CastOpSuite {
   }
 
   def longsDivideByMicrosPerSecond(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     longValues.map(_ / 10000000L).toDF("c0")
   }
 
@@ -1378,12 +1433,12 @@ object CastOpSuite {
       session: SparkSession,
       castStringToTimestamp: Boolean,
       validOnly: Boolean): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     timestampsAsStringsSeq(castStringToTimestamp, validOnly).toDF("c0")
   }
 
   def validTimestamps(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     val timestampStrings = Seq(
       "8669-07-22T04:45:57.73",
       "6233-08-04T19:30:55.701",

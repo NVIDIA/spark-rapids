@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import java.util.Locale
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{NvtxColor, Schema, Table}
+import ai.rapids.cudf.{Schema, Table}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
@@ -88,11 +88,6 @@ object GpuJsonScan {
     // {name: 'Reynold Xin'} is not supported by CUDF
     if (options.allowUnquotedFieldNames) {
       meta.willNotWorkOnGpu(s"$op does not support allowUnquotedFieldNames")
-    }
-
-    // {'name': 'Reynold Xin'} turning single quotes off is not supported by CUDF
-    if (!options.allowSingleQuotes) {
-      meta.willNotWorkOnGpu(s"$op does not support disabling allowSingleQuotes")
     }
 
     // {"name": "Cazen Lee", "price": "\$10"} is not supported by CUDF
@@ -177,6 +172,12 @@ object GpuJsonScan {
     }
 
     if (hasDates || hasTimestamps) {
+      if (!meta.conf.isJsonDateTimeReadEnabled) {
+        meta.willNotWorkOnGpu("JsonScan on GPU does not support DateType or TimestampType" +
+          " by default due to compatibility. " +
+          "Set `spark.rapids.sql.json.read.datetime.enabled` to `true` to enable them.")
+      }
+
       if (!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
       }
@@ -246,8 +247,7 @@ case class GpuJsonScan(
     dataFilters: Seq[Expression],
     maxReaderBatchSizeRows: Integer,
     maxReaderBatchSizeBytes: Long,
-    maxGpuColumnSizeBytes: Long,
-    mixedTypesAsStringEnabled: Boolean)
+    maxGpuColumnSizeBytes: Long)
   extends TextBasedFileScan(sparkSession, options) with GpuScan {
 
   private lazy val parsedOptions: JSONOptions = new JSONOptions(
@@ -270,8 +270,7 @@ case class GpuJsonScan(
 
     GpuJsonPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
-      maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap,
-      mixedTypesAsStringEnabled)
+      maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap)
   }
 
   override def withInputFile(): GpuScan = this
@@ -289,8 +288,7 @@ case class GpuJsonPartitionReaderFactory(
     maxReaderBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
     metrics: Map[String, GpuMetric],
-    @transient params: Map[String, String],
-    mixedTypesAsStringEnabled: Boolean) extends ShimFilePartitionReaderFactory(params) {
+    @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
@@ -300,7 +298,7 @@ case class GpuJsonPartitionReaderFactory(
     val conf = broadcastedConf.value.value
     val reader = new PartitionReaderWithBytesRead(new JsonPartitionReader(conf, partFile,
       dataSchema, readDataSchema, parsedOptions, maxReaderBatchSizeRows, maxReaderBatchSizeBytes,
-      metrics, mixedTypesAsStringEnabled))
+      metrics))
     ColumnarPartitionReaderWithPartitionValues.newReader(partFile, reader, partitionSchema,
       maxGpuColumnSizeBytes)
   }
@@ -319,10 +317,12 @@ object JsonPartitionReader {
     // to apply the read schema projection here
     try {
       RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        withResource(new NvtxWithMetrics(formatName + " decode",
-          NvtxColor.DARK_GREEN, decodeTime)) { _ =>
+        NvtxIdWithMetrics(NvtxRegistry.JSON_DECODE_SCAN, decodeTime) {
           try {
-            Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize)
+            Table.readJSON(cudfSchema, jsonOpts, dataBuffer, 0, dataSize, dataBufferer.getNumLines):
+              @scala.annotation.nowarn(
+                "cat=deprecation&msg=method readJSON in class Table is deprecated"
+              )
           } catch {
             case e: AssertionError if e.getMessage == "CudfColumns can't be null or empty" =>
               // this happens when every row in a JSON file is invalid (or we are
@@ -346,14 +346,14 @@ class JsonPartitionReader(
     parsedOptions: JSONOptions,
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
-    execMetrics: Map[String, GpuMetric],
-    enableMixedTypesAsString: Boolean)
-  extends GpuTextBasedPartitionReader[HostLineBufferer, HostLineBuffererFactory.type](conf,
+    execMetrics: Map[String, GpuMetric])
+  extends GpuTextBasedPartitionReader[HostLineBufferer,
+    FilterEmptyHostLineBuffererFactory.type](conf,
     partFile, dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
-    maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
+    maxBytesPerChunk, execMetrics, FilterEmptyHostLineBuffererFactory) {
 
   def buildJsonOptions(parsedOptions: JSONOptions): cudf.JSONOptions =
-    GpuJsonReadCommon.cudfJsonOptions(parsedOptions, enableMixedTypesAsString)
+    GpuJsonReadCommon.cudfJsonOptions(parsedOptions)
 
   /**
    * Read the host buffer to GPU table

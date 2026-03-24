@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, NVIDIA CORPORATION.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,6 +42,14 @@ def define_deps(spark_version, scala_version):
     elif spark_version.startswith('3.4'):
         spark_prefix = '----ws_3_4'
         mvn_prefix = '--mvn'
+    elif spark_version.startswith('3.5'):
+        spark_prefix = '----ws_3_5'
+        mvn_prefix = '--mvn'
+    elif spark_version.startswith('4.0'):
+        spark_prefix = '----ws_4_0'
+        mvn_prefix = '--mvn'
+    else:
+        raise Exception(f"Unsupported Databricks version {spark.version}")
 
     spark_suffix = f'hive-{hive_version}__hadoop-{hadoop_version}_{scala_version}'
 
@@ -68,15 +76,26 @@ def define_deps(spark_version, scala_version):
                  f'{spark_prefix}--common--tags--tags-{spark_suffix}_deploy.jar'),
         Artifact('org.apache.spark', f'spark-core_{scala_version}',
                  f'{spark_prefix}--core--core-{spark_suffix}_deploy.jar'),
-
+        Artifact('org.apache.spark', f'spark-versions_{scala_version}',
+                 f'spark--versions--*--shim*_{scala_version}_deploy.jar'),
+        Artifact('org.apache.spark', f'databricks-versions_{scala_version}',
+                 f'common--build-info--build-info-spark_*_{scala_version}_deploy.jar'),
         # Spark Hive Patches
         Artifact('org.apache.spark', f'spark-hive_{scala_version}',
                          f'{spark_prefix}--sql--hive--hive-{spark_suffix}_*.jar'),
         Artifact('org.apache.hive', 'hive-exec',
                          f'{spark_prefix}--patched-hive-with-glue--hive-exec*.jar'),
-        Artifact('org.apache.hive', 'hive-metastore-client-patched',
-                         f'{spark_prefix}--patched-hive-with-glue--hive-*-patch-{spark_suffix}_deploy.jar'),
-
+    ]
+    # hive-metastore-client-patched has different naming pattern in Spark 4.0
+    if spark_version.startswith('4.0'):
+        # Spark 4.0: the patch jar uses scala 2.13
+        deps += [Artifact('org.apache.hive', 'hive-metastore-client-patched',
+                 f'{spark_prefix}--patched-hive-with-glue--hive-*-patch-hive-2.3__hadoop-3.2_2.*.jar')]
+    else:
+        # Spark 3.x versions
+        deps += [Artifact('org.apache.hive', 'hive-metastore-client-patched',
+                 f'{spark_prefix}--patched-hive-with-glue--hive-*-patch-{spark_suffix}_deploy.jar')]
+    deps += [
         # Hive
         Artifact('org.apache.hive', 'hive-serde',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.hive--hive-serde--org.apache.hive__hive-serde__*.jar'),
@@ -115,32 +134,53 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--org.json4s--json4s-jackson_{scala_version}--org.json4s__json4s-jackson_{scala_version}__*.jar'),
         Artifact('org.javaassist', 'javaassist',
                  f'{prefix_ws_sp_mvn_hadoop}--org.javassist--javassist--org.javassist__javassist__*.jar'),
-        Artifact('com.fasterxml.jackson.core', 'jackson-core',
+        Artifact('com.fasterxml.jackson.core', 'jackson-databind',
                  f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-databind--com.fasterxml.jackson.core__jackson-databind__*.jar'),
+        Artifact('com.fasterxml.jackson.core', 'jackson-core',
+                 f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-core--com.fasterxml.jackson.core__jackson-core__*.jar'),
         Artifact('com.fasterxml.jackson.core', 'jackson-annotations',
                  f'{prefix_ws_sp_mvn_hadoop}--com.fasterxml.jackson.core--jackson-annotations--com.fasterxml.jackson.core__jackson-annotations__*.jar'),
-        Artifact('org.apache.spark', f'spark-avro_{scala_version}',
-                 f'{spark_prefix}--vendor--avro--avro-*.jar'),
         Artifact('org.apache.avro', 'avro-mapred',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro-mapred--org.apache.avro__avro-mapred__*.jar'),
         Artifact('org.apache.avro', 'avro',
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro--org.apache.avro__avro__*.jar'),
+        Artifact('com.github.luben', 'zstd-jni',
+                 f'{prefix_ws_sp_mvn_hadoop}--com.github.luben--zstd-jni--com.github.luben__zstd-jni__*.jar'),
+
+        # Netty dependencies for MultithreadedShuffleBufferCatalog
+        Artifact('io.netty', 'netty-common',
+                 f'{prefix_ws_sp_mvn_hadoop}--io.netty--netty-common--io.netty__netty-common__*.jar'),
+        Artifact('io.netty', 'netty-transport',
+                 f'{prefix_ws_sp_mvn_hadoop}--io.netty--netty-transport--io.netty__netty-transport__*.jar'),
+        Artifact('io.netty', 'netty-handler',
+                 f'{prefix_ws_sp_mvn_hadoop}--io.netty--netty-handler--io.netty__netty-handler__*.jar'),
     ]
 
+    # spark-avro has different locations depending on Spark version
+    if spark_version.startswith('4.0'):
+        deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
+                 f'{spark_prefix}--connector--avro--avro-{spark_suffix}_*.jar')]
+    elif spark_version.startswith('3.5'):
+        deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
+                 f'{prefix_ws_sp_mvn_hadoop}--org.apache.avro--avro--org.apache.avro*.jar')]
+    else:
+        deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
+                 f'{spark_prefix}--vendor--avro--avro-*.jar')]
+
     # Parquet
-    if spark_version.startswith('3.4'):
+    if spark_version.startswith('3.4') or spark_version.startswith('3.5') or spark_version.startswith('4.0'):
         deps += [
-        Artifact('org.apache.parquet', 'parquet-hadoop', 
+        Artifact('org.apache.parquet', 'parquet-hadoop',
              f'{spark_prefix}--third_party--parquet-mr--parquet-hadoop--parquet-hadoop-shaded--*--libparquet-hadoop-internal.jar'),
-        Artifact('org.apache.parquet', 'parquet-common', 
+        Artifact('org.apache.parquet', 'parquet-common',
              f'{spark_prefix}--third_party--parquet-mr--parquet-common--parquet-common-shaded--*--libparquet-common-internal.jar'),
         Artifact('org.apache.parquet', 'parquet-column',
              f'{spark_prefix}--third_party--parquet-mr--parquet-column--parquet-column-shaded--*--libparquet-column-internal.jar'),
         Artifact('org.apache.parquet', 'parquet-format',
              f'{spark_prefix}--third_party--parquet-mr--parquet-format-structures--parquet-format-structures-shaded--*--libparquet-format-structures-internal.jar'),
-        Artifact('shaded.parquet.org.apache.thrift', f'shaded-parquet-thrift_{scala_version}', 
-            f'{spark_prefix}--third_party--parquet-mr--parquet-format-structures--parquet-format-structures-shaded--*--org.apache.thrift__libthrift__0.16.0.jar'),
-        Artifact('org.apache.parquet', f'parquet-format-internal_{scala_version}', 
+        Artifact('shaded.parquet.org.apache.thrift', f'shaded-parquet-thrift_{scala_version}',
+            f'{spark_prefix}--third_party--parquet-mr--parquet-format-structures--parquet-format-structures-shaded--*--org.apache.thrift__libthrift__*.jar'),
+        Artifact('org.apache.parquet', f'parquet-format-internal_{scala_version}',
             f'{spark_prefix}--third_party--parquet-mr--parquet-format-structures--parquet-format-structures-shaded--*--libparquet-thrift.jar')
         ]
     else:
@@ -157,7 +197,7 @@ def define_deps(spark_version, scala_version):
 
 
     # log4j-core
-    if spark_version.startswith('3.3') or spark_version.startswith('3.4'):
+    if spark_version.startswith('3.3') or spark_version.startswith('3.4') or spark_version.startswith('3.5') or spark_version.startswith('4.0'):
         deps += Artifact('org.apache.logging.log4j', 'log4j-core',
                          f'{prefix_ws_sp_mvn_hadoop}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__*.jar'),
 
@@ -167,14 +207,31 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-parser-combinators_{scala_version}-*.jar')
     ]
 
-    if spark_version.startswith('3.4'):
+    if spark_version.startswith('3.4') or spark_version.startswith('3.5') or spark_version.startswith('4.0'):
         deps += [
         # Spark Internal Logging
-        Artifact('org.apache.spark', f'spark-common-utils_{scala_version}', f'{spark_prefix}--common--utils--common-utils-hive-2.3__hadoop-3.2_2.12_deploy.jar'),
+        Artifact('org.apache.spark', f'spark-common-utils_{scala_version}', f'{spark_prefix}--common--utils--common-utils-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar'),
         # Spark SQL API
-        Artifact('org.apache.spark', f'spark-sql-api_{scala_version}', f'{spark_prefix}--sql--api--sql-api-hive-2.3__hadoop-3.2_2.12_deploy.jar')
+        Artifact('org.apache.spark', f'spark-sql-api_{scala_version}', f'{spark_prefix}--sql--api--sql-api-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar')
         ]
 
+    if spark_version.startswith('3.5') or spark_version.startswith('4.0'):
+        deps += [
+        Artifact('org.scala-lang.modules', f'scala-collection-compat_{scala_version}',
+             f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-collection-compat_{scala_version}--org.scala-lang.modules__scala-collection-compat_{scala_version}__2.11.0.jar'), 
+        Artifact('org.apache.avro', f'avro-connector', f'{spark_prefix}--connector--avro--avro-hive-2.3__hadoop-3.2_{scala_version}_shaded--*--avro-unshaded-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar')
+        ]
+
+    # Databricks 17.3 (Spark 4.0) requires additional common-utils JARs
+    if spark_version.startswith('4.0'):
+        deps += [
+        # Logging class is in common-utils-other
+        Artifact('org.apache.spark', f'spark-common-utils-other_{scala_version}', f'{spark_prefix}--common--utils--common-utils-other-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar'),
+        # ConfigEntry and related config classes are in common-config
+        Artifact('org.apache.spark', f'spark-common-config_{scala_version}', f'{spark_prefix}--common--utils--common-config-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar'),
+        Artifact('org.apache.orc', 'orc-format',
+                 f'{prefix_ws_sp_mvn_hadoop}--org.apache.orc--orc-format--org.apache.orc__orc-format__*-shaded-protobuf.jar')
+        ]
 
     return deps
 

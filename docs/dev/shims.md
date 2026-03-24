@@ -8,7 +8,7 @@ parent: Developer Overview
 # Shim Development
 
 RAPIDS Accelerator For Apache Spark supports multiple feature version lines of
-Apache Spark such as 3.1.x, 3.2.x, 3.3.0 and a number of vendor releases that contain
+Apache Spark such as 3.3.x, 3.4.x, 3.5.x, 4.x and a number of vendor releases that contain
 a mix of patches from different upstream releases. These artifacts are generally
 incompatible between each other, at both source code level and even more often
 at the binary level. The role of the Shim layer is to hide these issues from the
@@ -40,16 +40,30 @@ for conflicting Shim implementations.
 
 ### Compile-time issues
 
+#### Methods added in new versions
+
+If the base class or trait in the new version just adds new methods on top of previous versions and can be implemented
+with default behavior, they can be added directly to the unshimmed class. For methods introduced
+in newer versions that do not exist in older versions, removing the override keyword ensures that
+these methods are treated as new additions rather than overrides. This allows the same class to work
+across different Spark versions.
+
+#### Different parent class signatures
+
 Upstream base classes we derive from might be incompatible in the sense that one version
 requires us to implement/override the method `M` whereas the other prohibits it by marking
 the base implementation `final`, E.g. `org.apache.spark.sql.catalyst.trees.TreeNode` changes
-between Spark 3.1.x and Spark 3.2.x. So instead of deriving from such classes directly we
+between Spark 3.3.x and Spark 3.5.x. So instead of deriving from such classes directly we
 inject an intermediate trait e.g. `com.nvidia.spark.rapids.shims.ShimExpression` that
 has a varying source code depending on the Spark version we compile against to overcome this
-issue as you can see e.g., comparing TreeNode:
+issue as you can see e.g., comparing shim implementations across versions:
 
-1. [ShimExpression For 3.1.x](https://github.com/NVIDIA/spark-rapids/blob/6a82213a798a81a5f32f8cf8b4c630e38d112f65/sql-plugin/src/main/spark311/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L28)
-2. [ShimExpression For 3.2.x](https://github.com/NVIDIA/spark-rapids/blob/6a82213a798a81a5f32f8cf8b4c630e38d112f65/sql-plugin/src/main/spark320/scala/com/nvidia/spark/rapids/shims/TreeNode.scala#L37)
+1. [Shim implementation for 3.3.0](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/spark330/scala/com/nvidia/spark/rapids/shims/Spark330PlusShims.scala)
+2. [Shim service provider for 3.5.1](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/spark351/scala/com/nvidia/spark/rapids/shims/spark351/SparkShimServiceProvider.scala)
+
+The `ShimExpression` and related traits themselves live in a single shared file,
+[TreeNode.scala](https://github.com/NVIDIA/spark-rapids/blob/main/sql-plugin/src/main/spark321/scala/com/nvidia/spark/rapids/shims/TreeNode.scala),
+which is built for 3.3.x+ (with backward compatibility to 3.2.1 in the build) via the shim-json-lines build.
 
 This resolves compile-time problems, however, now we face the problem at run time.
 
@@ -65,20 +79,20 @@ So instead we resort to the idea of JDK's ParallelWorldClassloader in combinatio
 Spark runtime uses mutable classloaders we can alter after detecting the runtime version.
 Using JarURLConnection URLs we create a Parallel World of the current version within the jar, e.g.:
 
-Spark 3.0.2's URLs:
+Spark 3.3.0's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/spark302/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark330/
 ```
 
-Spark 3.2.0's URLs :
+Spark 3.5.1's URLs:
 
 ```text
-jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/
-jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/spark3xx-common/
-jar:file:/home/spark/rapids-4-spark_2.12-24.04.0.jar!/spark320/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark-shared/
+jar:file:/home/spark/rapids-4-spark_2.12-26.04.0.jar!/spark351/
 ```
 
 ### Late Inheritance in Public Classes
@@ -96,7 +110,7 @@ by having the documented facade classes with a shim specifier in their package n
 The second issue that every parent class/trait in the inheritance graph is loaded using the classloader outside
 Plugin's control. Therefore, all this bytecode must reside in the conventional jar location, and it must
 be bitwise-identical across *all* shims. The only way to keep the source code for shared functionality unduplicated,
-(i.e., in `sql-plugin/src/main/scala` as opposed to be duplicated in `sql-plugin/src/main/spark3*/scala` source code roots)
+(i.e., in `sql-plugin/src/main/scala` as opposed to being duplicated in versioned shim source roots such as `sql-plugin/src/main/spark3*/scala` and `sql-plugin/src/main/spark4*/scala`)
 is to delay inheriting `ShuffleManager` until as late as possible, as close as possible to the facade class where we
 have to split the source code anyway. Use traits as much as possible for flexibility.
 
@@ -143,7 +157,7 @@ This has two pre-requisites:
 
 1. The .class file with the bytecode is bitwise-identical among the currently
 supported Spark versions. To verify this you can inspect the dist jar and check
-if the class file is under `spark3xx-common` jar entry. If this is not the case then
+if the class file is under `spark-shared` jar entry. If this is not the case then
 code should be refactored until all discrepancies are shimmed away.
 1. The transitive closure of the classes compile-time-referenced by `A` should
 have the property above.
@@ -155,11 +169,11 @@ the `[Graphviz tool](https://graphviz.org/)` used here.
 
 To figure out the transitive closure of a class we first need to build
 the `dist` module. While iterating on the PR, it should be sufficient
-to build against the lowest and highest versions of the supported Spark version
-range. As of the time of this writing:
+to build against two representative versions of the supported Spark version
+range (e.g. 330 and 351):
 
 ```bash
-./build/buildall --parallel=4  --profile=311,330 --module=dist
+./build/buildall --parallel=4  --profile=330,351 --module=dist
 ```
 
 However, before submitting the PR execute the full build `--profile=noSnapshots`.
@@ -181,28 +195,28 @@ mv org com ai public/
 and you will see the dependencies of `public` classes. By design `public` classes
 should have only edges only to other `public` classes in the dist jar.
 
-Execute `jdeps` against `public`, `spark3xx-common` and an *exactly one* parallel
+Execute `jdeps` against `public`, `spark-shared` and an *exactly one* parallel
 world such as `spark330`
 
 ```bash
 ${JAVA_HOME}/bin/jdeps -v \
   -dotoutput /tmp/jdeps330 \
   -regex '(com|org)\..*\.rapids\..*' \
-  public spark3xx-common spark330
+  public spark-shared spark330
 ```
 
 This will produce three DOT files for each "archive" with directed edges for
 a class in the archive to a class either in this or another archive.
 
-Looking at an output file, e.g. `/tmp/jdeps330/spark3xx-common.dot`,
+Looking at an output file, e.g. `/tmp/jdeps330/spark-shared.dot`,
 unfortunately you see that jdeps does not label the source class node but labels
 the target class node of an edge. Thus the graph is incorrect as it breaks paths
 if a node has both incoming and outgoing edges.
 
 ```bash
-$ grep 'com.nvidia.spark.rapids.GpuFilterExec\$' spark3xx-common.dot
+$ grep 'com.nvidia.spark.rapids.GpuFilterExec\$' spark-shared.dot
    "com.nvidia.spark.rapids.GpuFilterExec$"           -> "com.nvidia.spark.rapids.GpuFilterExec (spark330)";
-   "com.nvidia.spark.rapids.GpuOverrides$$anon$204"   -> "com.nvidia.spark.rapids.GpuFilterExec$ (spark3xx-common)";
+   "com.nvidia.spark.rapids.GpuOverrides$$anon$204"   -> "com.nvidia.spark.rapids.GpuFilterExec$ (spark-shared)";
 ```
 
 So first create and `cd` to some other directory `/tmp/jdep330.processed` to massage
@@ -214,8 +228,8 @@ that the source nodes are guaranteed to be from the `<archive>`.
 ```bash
 sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (public)"\2/' \
   /tmp/jdeps330/public.dot > public.dot
-sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark3xx-common)"\2/' \
-  /tmp/jdeps330/spark3xx-common.dot > spark3xx-common.dot
+sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark-shared)"\2/' \
+  /tmp/jdeps330/spark-shared.dot > spark-shared.dot
 sed 's/"\([^(]*\)"\(\s*->.*;\)/"\1 (spark330)"\2/' \
   /tmp/jdeps330/spark330.dot > spark330.dot
 ```
@@ -224,7 +238,7 @@ Next you need to union edges of all three graphs into a single graph to be able
 to analyze cross-archive paths.
 
 ```bash
-cat public.dot spark3xx-common.dot spark330.dot | \
+cat public.dot spark-shared.dot spark330.dot | \
   tr '\n' '\r' | \
   sed 's/}\rdigraph "[^"]*" {\r//g' | \
   tr '\r' '\n' > merged.dot
@@ -245,7 +259,7 @@ GpuTypeColumnVector needs refactoring prior externalization as of the time
 of this writing:
 
 ```bash
-$ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" merged.dot | \
+$ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark-shared)" merged.dot | \
   grep '\[dist=' | grep '(spark330)'
         "org.apache.spark.sql.rapids.GpuFileSourceScanExec (spark330)"  [dist=5.000,
         "com.nvidia.spark.rapids.GpuExec (spark330)"    [dist=3.000,
@@ -255,9 +269,9 @@ $ dijkstra -d -p "com.nvidia.spark.rapids.GpuColumnVector (spark3xx-common)" mer
 RegexReplace could be externalized safely:
 
 ```bash
-$ dijkstra -d -p "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"  merged.dot | grep '\[dist='
-        "org.apache.spark.sql.rapids.RegexReplace (spark3xx-common)"    [dist=0.000];
-        "org.apache.spark.sql.rapids.RegexReplace$ (spark3xx-common)"   [dist=1.000,
+$ dijkstra -d -p "org.apache.spark.sql.rapids.RegexReplace (spark-shared)"  merged.dot | grep '\[dist='
+        "org.apache.spark.sql.rapids.RegexReplace (spark-shared)"    [dist=0.000];
+        "org.apache.spark.sql.rapids.RegexReplace$ (spark-shared)"   [dist=1.000,
 ```
 
 because it is self-contained.
@@ -270,7 +284,7 @@ connected components using `sccmap`
 
 ```bash
 $ sccmap -d -s merged.dot
-2440 nodes, 11897 edges, 637 strong components
+2440 nodes, 11897 edges, 637 strong components  # example output; actual numbers vary
 ```
 
 Review the clusters in the output of `sccmap -d merged.dot`. Find the cluster containing

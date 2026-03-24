@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{ColumnVector, NvtxColor, OrderByArg, Table}
+import ai.rapids.cudf.{ColumnVector, OrderByArg, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq, AutoCloseableSeq}
 
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BoundReference, Expression, NullsFirst, NullsLast, SortOrder}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{ArrayType, BinaryType, DataType, MapType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object SortUtils {
@@ -63,20 +63,25 @@ object SortUtils {
  * you don't want to have to sort the temp columns too, and this provide that.
  * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
  * @param inputSchema The schema of the input data
+ * @param metrics Metrics to inject into bound expressions
  */
 class GpuSorter(
     val sortOrder: Seq[SortOrder],
-    inputSchema: Array[Attribute]) extends Serializable {
+    inputSchema: Array[Attribute],
+    metrics: Map[String, GpuMetric]) extends Serializable {
 
   /**
    * A class that provides convenience methods for sorting batches of data
    * @param sortOrder The unbound sorting order requested (Should be converted to the GPU)
    * @param inputSchema The schema of the input data
+   * @param metrics Metrics to inject into bound expressions
    */
-  def this(sortOrder: Seq[SortOrder], inputSchema: Seq[Attribute]) =
-    this(sortOrder, inputSchema.toArray)
+  def this(sortOrder: Seq[SortOrder], inputSchema: Seq[Attribute],
+      metrics: Map[String, GpuMetric]) =
+    this(sortOrder, inputSchema.toArray, metrics)
 
-  private[this] val boundSortOrder = GpuBindReferences.bindReferences(sortOrder, inputSchema.toSeq)
+  private[this] val boundSortOrder =
+    GpuBindReferences.bindReferences(sortOrder, inputSchema.toSeq, metrics)
 
   private[this] val numInputColumns = inputSchema.length
 
@@ -205,7 +210,7 @@ class GpuSorter(
    * @return a sorted table.
    */
   final def sort(inputBatch: ColumnarBatch, sortTime: GpuMetric): Table = {
-    withResource(new NvtxWithMetrics("sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.SORT, sortTime) {
       withResource(GpuColumnVector.from(inputBatch)) { toSortTbl =>
         toSortTbl.orderBy(cudfOrdering: _*)
       }
@@ -247,7 +252,7 @@ class GpuSorter(
     closeOnExcept(spillableBatches.toSeq) { _ =>
       assert(spillableBatches.nonEmpty)
     }
-    withResource(new NvtxWithMetrics("merge sort", NvtxColor.DARK_GREEN, sortTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.MERGE_SORT, sortTime) {
       if (spillableBatches.size == 1) {
         // Single batch no need for a merge sort
         spillableBatches.pop()
@@ -329,7 +334,7 @@ class GpuSorter(
    * @return a gather map column
    */
   final def computeSortOrder(inputBatch: ColumnarBatch, sortTime: GpuMetric): ColumnVector = {
-    withResource(new NvtxWithMetrics("sort_order", NvtxColor.DARK_GREEN, sortTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.SORT_ORDER, sortTime) {
       withResource(GpuColumnVector.from(inputBatch)) { toSortTbl =>
         toSortTbl.sortOrder(cudfOrdering: _*)
       }
@@ -378,7 +383,7 @@ class GpuSorter(
       // In cases where we don't need the computed columns again this can save some time
       withResource(computeSortOrder(toSort, sortTime)) { gatherMap =>
         withResource(GpuColumnVector.from(inputBatch)) { inputTable =>
-          withResource(new NvtxWithMetrics("gather", NvtxColor.DARK_GREEN, sortTime)) { _ =>
+          NvtxIdWithMetrics(NvtxRegistry.GATHER_SORT, sortTime) {
             inputTable.gather(gatherMap)
           }
         }
@@ -399,11 +404,52 @@ class GpuSorter(
       sortTime: GpuMetric,
       opTime: GpuMetric): ColumnarBatch = {
     RmmRapidsRetryIterator.withRetryNoSplit(inputSbBatch) { _ =>
-      withResource(new NvtxWithMetrics("sort op", NvtxColor.WHITE, opTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.SORT_OP, opTime) {
         withResource(inputSbBatch.getColumnarBatch()) { inputBatch =>
           fullySortBatch(inputBatch, sortTime)
         }
       }
     }
+  }
+}
+
+case class GpuSortOrderMeta(
+   sortOrder: SortOrder,
+   override val conf: RapidsConf,
+   parentOpt: Option[RapidsMeta[_, _, _]],
+   rule: DataFromReplacementRule
+) extends BaseExprMeta[SortOrder](sortOrder, conf, parentOpt, rule) {
+  override def tagExprForGpu(): Unit = {
+    if (isStructType(sortOrder.dataType)) {
+      val nullOrdering = sortOrder.nullOrdering
+      val directionDefaultNullOrdering = sortOrder.direction.defaultNullOrdering
+      val direction = sortOrder.direction.sql
+      if (nullOrdering != directionDefaultNullOrdering) {
+        willNotWorkOnGpu(s"only default null ordering $directionDefaultNullOrdering " +
+          s"for direction $direction is supported for nested types; actual: ${nullOrdering}")
+      }
+    }
+    if (isArrayOfStructType(sortOrder.dataType)) {
+      willNotWorkOnGpu("STRUCT is not supported as a child type for ARRAY, " +
+        s"actual data type: ${sortOrder.dataType}")
+    }
+  }
+
+  // One of the few expressions that are not replaced with a GPU version
+  override def convertToGpuImpl(): Expression =
+    sortOrder.withNewChildren(childExprs.map(_.convertToGpu()))
+
+  private[this] def isStructType(dataType: DataType) = dataType match {
+    case StructType(_) => true
+    case _ => false
+  }
+
+  private[this] def isArrayOfStructType(dataType: DataType) = dataType match {
+    case ArrayType(elementType, _) =>
+      elementType match {
+        case StructType(_) => true
+        case _ => false
+      }
+    case _ => false
   }
 }

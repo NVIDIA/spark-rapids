@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@ import java.nio.{ByteBuffer, ByteOrder}
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
-import ai.rapids.cudf.{MemoryBuffer, NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{RapidsConf, ShimReflectionUtils}
+import ai.rapids.cudf.MemoryBuffer
+import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, ShimReflectionUtils}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
@@ -511,6 +511,14 @@ class RefCountedDirectByteBuffer(
  * A set of util functions used throughout
  */
 object TransportUtils {
+  val addressMethod = {
+    val ret = Class.forName("sun.nio.ch.DirectBuffer")
+      .getDeclaredMethod("address")
+    ret.setAccessible(true)
+    ret
+  }
+
+
   def toHex(value: Long): String = {
     f"0x$value%016X"
   }
@@ -520,21 +528,21 @@ object TransportUtils {
   }
 
   def copyBuffer(src: ByteBuffer, dst: ByteBuffer, size: Int): Unit = {
-    val copyMetaRange = new NvtxRange("Transport.CopyBuffer", NvtxColor.RED)
+    NvtxRegistry.TRANSPORT_COPY_BUFFER.push()
     try {
       val ro = src.asReadOnlyBuffer()
       ro.limit(ro.position() + size) // make sure we only copy size bytes
       // copy from position to remaining = (limit - position)
       dst.put(ro) // bulk put
     } finally {
-      copyMetaRange.close()
+      NvtxRegistry.TRANSPORT_COPY_BUFFER.pop()
     }
   }
 
   def getAddress(byteBuffer: ByteBuffer): Long = synchronized {
     require(byteBuffer.isDirect, "Only direct ByteBuffers supported in getAddress")
-    val db = byteBuffer.asInstanceOf[sun.nio.ch.DirectBuffer]
-    db.address() + byteBuffer.position()
+    val address = addressMethod.invoke(byteBuffer).asInstanceOf[Long]
+    address + byteBuffer.position()
   }
 
   def timeDiffMs(startTimeMs: Long): Long = {

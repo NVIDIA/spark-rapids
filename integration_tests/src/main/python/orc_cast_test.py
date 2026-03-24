@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ def test_casting_among_integer_types(spark_tmp_path, reader_confs, v1_enabled_li
         lambda spark: spark.read.schema(schema_str).orc(data_path),
         conf=all_confs)
 
-non_utc_allow_orc_scan=['ColumnarToRowExec', 'FileScan'] if is_not_utc() else []
+non_utc_allow_orc_scan=['ColumnarToRowExec', 'FileScan', 'FileSourceScanExec'] if is_not_utc() else []
 
 @pytest.mark.parametrize('to_type', ['float', 'double', 'string', 'timestamp'])
 @allow_non_gpu(*non_utc_allow_orc_scan)

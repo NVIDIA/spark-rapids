@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,5 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.errors.QueryExecutionErrors
-
-object RapidsErrorUtils extends RapidsErrorUtilsBase {
-  def sqlArrayIndexNotStartAtOneError(): RuntimeException = {
-    QueryExecutionErrors.invalidIndexOfZeroError(context = null)
-  }
-}
+object RapidsErrorUtils extends RapidsErrorUtils341DBPlusBase
+  with SequenceSizeTooLongErrorBuilder with ArrayInvalidArgumentErrorUtils

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,6 +15,12 @@
  */
 /*** spark-rapids-shim-json-lines
 {"spark": "341db"}
+{"spark": "350db143"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
@@ -24,7 +30,6 @@ import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
-import org.apache.spark.sql.execution.python.PythonUDFRunner
 import org.apache.spark.sql.rapids.execution.python.{GpuArrowPythonWriter, GpuPythonRunnerCommon}
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.StructType
@@ -34,7 +39,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */
 class GpuArrowPythonRunner(
-    funcs: Seq[ChainedPythonFunctions],
+    funcs: Seq[(ChainedPythonFunctions, Long)],
     evalType: Int,
     argOffsets: Array[Array[Int]],
     pythonInSchema: StructType,
@@ -42,9 +47,10 @@ class GpuArrowPythonRunner(
     conf: Map[String, String],
     maxBatchSize: Long,
     override val pythonOutSchema: StructType,
+    argNames: Option[Array[Array[Option[String]]]] = None,
     jobArtifactUUID: Option[String] = None)
-  extends GpuBasePythonRunner[ColumnarBatch](funcs, evalType, argOffsets, jobArtifactUUID)
-    with GpuArrowPythonOutput with GpuPythonRunnerCommon {
+  extends GpuBasePythonRunner[ColumnarBatch](funcs.map(_._1), evalType, argOffsets,
+    jobArtifactUUID) with GpuArrowPythonOutput with GpuPythonRunnerCommon {
 
   protected override def newWriter(
       env: SparkEnv,
@@ -56,7 +62,7 @@ class GpuArrowPythonRunner(
 
       val arrowWriter = new GpuArrowPythonWriter(pythonInSchema, maxBatchSize) {
         override protected def writeUDFs(dataOut: DataOutputStream): Unit = {
-          PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets)
+          WritePythonUDFUtils.writeUDFs(dataOut, funcs, argOffsets, argNames)
         }
       }
       val isInputNonEmpty = inputIterator.nonEmpty

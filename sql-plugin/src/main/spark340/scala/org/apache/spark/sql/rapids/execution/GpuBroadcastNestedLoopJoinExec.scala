@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,21 @@
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
@@ -52,14 +65,14 @@ class GpuBroadcastNestedLoopJoinMeta(
 
     if (isAstCondition) {
       // Try to extract non-ast-able conditions from join conditions
-      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(conditionMeta,
-        left.output, right.output, true)
+      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
+        conditionMeta, left.output, right.output)
 
       // Reconstruct the child with wrapped project node if needed.
       val leftChild =
-        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
+        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left) else left
       val rightChild =
-        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
+        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right) else right
       val postBuildCondition =
         if (gpuBuildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
 
@@ -81,7 +94,7 @@ class GpuBroadcastNestedLoopJoinMeta(
         GpuProjectExec(
           GpuBroadcastNestedLoopJoinExecBase.output(
             join.joinType, left.output, right.output).toList,
-          joinExec)(false)
+          joinExec)
       }
     } else {
       val condition = conditionMeta.map(_.convertToGpu())

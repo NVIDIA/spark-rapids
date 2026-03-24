@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 {"spark": "330db"}
 {"spark": "332db"}
 {"spark": "341db"}
+{"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
-
-import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
@@ -34,7 +34,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.execution.python.{BatchProducer, CombiningIterator, GpuPythonHelper, GpuWindowInPandasExecBase, GroupingIterator}
-import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
+import org.apache.spark.sql.rapids.execution.python.shims.{GpuArrowPythonRunner, PythonArgumentUtils}
 import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -88,7 +88,7 @@ case class GpuWindowInPandasExec(
     val unboundToRefMap = allExpressions.zip(references).toMap
     // Bound the project list for GPU
     GpuBindReferences.bindGpuReferences(
-      projectList.map(_.transform(unboundToRefMap)), child.output)
+      projectList.map(_.transform(unboundToRefMap)), child.output, allMetrics)
   }
 
   // Override internalDoExecuteColumnar so we use the correct GpuArrowPythonRunner
@@ -126,17 +126,7 @@ case class GpuWindowInPandasExec(
     // 4) Filter child output attributes down to only those that are UDF inputs.
     // Also eliminate duplicate UDF inputs. This is similar to how other Python UDF node
     // handles UDF inputs.
-    val dataInputs = new ArrayBuffer[Expression]
-    val argOffsets = inputs.map { input =>
-      input.map { e =>
-        if (dataInputs.exists(_.semanticEquals(e))) {
-          dataInputs.indexWhere(_.semanticEquals(e))
-        } else {
-          dataInputs += e
-          dataInputs.length - 1
-        }
-      }.toArray
-    }.toArray
+    val udfArgs = PythonArgumentUtils.flatten(inputs)
 
     // In addition to UDF inputs, we will prepend window bounds for each UDFs.
     // For bounded windows, we prepend lower bound and upper bound. For unbounded windows,
@@ -162,15 +152,22 @@ case class GpuWindowInPandasExec(
     pyFuncs.indices.foreach { exprIndex =>
       val frameIndex = exprIndex2FrameIndex(exprIndex)
       if (isBounded(frameIndex)) {
-        argOffsets(exprIndex) = Array(lowerBoundIndex(frameIndex), upperBoundIndex(frameIndex)) ++
-            argOffsets(exprIndex).map(_ + windowBoundsInput.length)
+        udfArgs.argOffsets(exprIndex) =
+          Array(lowerBoundIndex(frameIndex), upperBoundIndex(frameIndex)) ++
+            udfArgs.argOffsets(exprIndex).map(_ + windowBoundsInput.length)
+        if (udfArgs.argNames.isDefined) {
+          val argNames = udfArgs.argNames.get
+          val boundsNames: Array[Option[String]] = Array(None, None)
+          argNames(exprIndex) = boundsNames ++ argNames(exprIndex)
+        }
       } else {
-        argOffsets(exprIndex) = argOffsets(exprIndex).map(_ + windowBoundsInput.length)
+        udfArgs.argOffsets(exprIndex) =
+          udfArgs.argOffsets(exprIndex).map(_ + windowBoundsInput.length)
       }
     }
 
     // 7) Building the final input and schema
-    val allInputs = windowBoundsInput ++ dataInputs
+    val allInputs = windowBoundsInput ++ udfArgs.flattenedArgs
     val allInputTypes = allInputs.map(_.dataType)
     val pythonInputSchema = StructType(
       allInputTypes.zipWithIndex.map { case (dt, i) =>
@@ -189,14 +186,17 @@ case class GpuWindowInPandasExec(
     // UDF contains multiple columns.
     val pythonOutputSchema = DataTypeUtilsShim.fromAttributes(udfExpressions.map(_.resultAttribute))
     val childOutput = child.output
+    val localMetrics = allMetrics
 
     // 8) Start processing.
     child.executeColumnar().mapPartitions { inputIter =>
       val context = TaskContext.get()
 
-      val boundDataRefs = GpuBindReferences.bindGpuReferences(dataInputs, childOutput)
+      val boundDataRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs, childOutput,
+        localMetrics)
       // Re-batching the input data by GroupingIterator
-      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput)
+      val boundPartitionRefs = GpuBindReferences.bindGpuReferences(gpuPartitionSpec, childOutput,
+        localMetrics)
       val batchProducer = new BatchProducer(
         new GroupingIterator(inputIter, boundPartitionRefs, numInputRows, numInputBatches))
       val pyInputIterator = batchProducer.asIterator.map { batch =>
@@ -217,13 +217,14 @@ case class GpuWindowInPandasExec(
         val pyRunner = new GpuArrowPythonRunner(
           pyFuncs,
           PythonEvalType.SQL_WINDOW_AGG_PANDAS_UDF,
-          argOffsets,
+          udfArgs.argOffsets,
           pythonInputSchema,
           sessionLocalTimeZone,
           pythonRunnerConf,
           /* The whole group data should be written in a single call, so here is unlimited */
           Int.MaxValue,
-          pythonOutputSchema)
+          pythonOutputSchema,
+          udfArgs.argNames)
 
         val outputIterator = pyRunner.compute(pyInputIterator, context.partitionId(), context)
         new CombiningIterator(batchProducer.getBatchQueue, outputIterator, pyRunner,

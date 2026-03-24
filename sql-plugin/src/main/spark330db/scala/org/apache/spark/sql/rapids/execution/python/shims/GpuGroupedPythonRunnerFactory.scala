@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,17 +20,19 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
-import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType}
+import org.apache.spark.api.python.ChainedPythonFunctions
 import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuGroupedPythonRunnerFactory(
   conf: org.apache.spark.sql.internal.SQLConf,
-  chainedFunc: Seq[ChainedPythonFunctions],
+  chainedFunc: Seq[(ChainedPythonFunctions, Long)],
   argOffsets: Array[Array[Int]],
   dedupAttrs: StructType,
-  pythonOutputSchema: StructType) {
+  pythonOutputSchema: StructType,
+  evalType: Int,
+  argNames: Option[Array[Array[Option[String]]]] = None) {
   // Configs from DB runtime
   val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
   val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
@@ -41,24 +43,26 @@ case class GpuGroupedPythonRunnerFactory(
     if (zeroConfEnabled && maxBytes > 0L) {
       new GpuGroupUDFArrowPythonRunner(
         chainedFunc,
-        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+        evalType,
         argOffsets,
         dedupAttrs,
         sessionLocalTimeZone,
         pythonRunnerConf,
         // The whole group data should be written in a single call, so here is unlimited
         Int.MaxValue,
-        pythonOutputSchema)
+        pythonOutputSchema,
+        argNames)
     } else {
       new GpuArrowPythonRunner(
         chainedFunc,
-        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+        evalType,
         argOffsets,
         dedupAttrs,
         sessionLocalTimeZone,
         pythonRunnerConf,
         Int.MaxValue,
-        pythonOutputSchema)
+        pythonOutputSchema,
+        argNames)
     }
   }
 }

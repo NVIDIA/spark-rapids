@@ -21,7 +21,7 @@ cd api_validation
 sh auditAllVersions.sh
 
 // To run script on particular version we can use profile
-mvn scala:run -P spark311
+mvn scala:run -P spark320
 ```
 
 # Output

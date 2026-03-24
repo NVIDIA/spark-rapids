@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024, NVIDIA CORPORATION.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,11 +14,13 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, with_gpu_session
 from data_gen import *
 from pyspark.sql.types import *
 from marks import *
-from spark_session import is_databricks113_or_later, is_databricks_runtime
+from spark_init_internal import spark_version
+from conftest import is_dataproc_runtime
+from spark_session import is_before_spark_400, is_databricks113_or_later, is_databricks_runtime
 
 def mk_json_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -101,7 +103,6 @@ def test_get_json_object_spark_unit_tests(query):
         lambda spark: spark.createDataFrame(data,schema=schema).select(
             f.get_json_object('jsonStr', query)))
 
-# @pytest.mark.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/10218")
 def test_get_json_object_normalize_non_string_output():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[' { "a": "A" } '],
@@ -122,6 +123,8 @@ def test_get_json_object_normalize_non_string_output():
             f.col('jsonStr'),
             f.get_json_object('jsonStr', '$')))
 
+@pytest.mark.xfail(condition=is_dataproc_runtime(),
+    reason="https://github.com/NVIDIA/spark-rapids/issues/14290")
 def test_get_json_object_quoted_question():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [[r'{"?":"QUESTION"}']]
@@ -271,7 +274,6 @@ def test_get_json_object_white_space_removal():
             f.get_json_object('jsonStr', "$[' a . a ']").alias('space_a_space_dot_space_a_space'),
             ))
 
-
 def test_get_json_object_jni_java_tests():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [['\'abc\''],
@@ -302,9 +304,7 @@ def test_get_json_object_jni_java_tests():
             f.get_json_object('jsonStr', "$.*").alias('w'),
             ))
 
-
-@allow_non_gpu('ProjectExec')
-def test_deep_nested_json():
+def test_get_json_object_deep_nested_json():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [['{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":{"j":{"k":{"l":{"m":{"n":{"o":{"p":{"q":{"r":{"s":{"t":{"u":{"v":{"w":{"x":{"y":{"z":"A"}}'
             ]]
@@ -315,7 +315,7 @@ def test_deep_nested_json():
             ))
 
 @allow_non_gpu('ProjectExec')
-def test_deep_nested_json_fallback():
+def test_get_json_object_deep_nested_json_fallback():
     schema = StructType([StructField("jsonStr", StringType())])
     data = [['{"a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":{"j":{"k":{"l":{"m":{"n":{"o":{"p":{"q":{"r":{"s":{"t":{"u":{"v":{"w":{"x":{"y":{"z":"A"}}'
             ]]
@@ -342,3 +342,54 @@ def test_unsupported_fallback_get_json_object(json_str_pattern):
     assert_gpu_did_fallback('get_json_object(a, b)')
     assert_gpu_did_fallback('get_json_object(\'%s\', b)' % scalar_json)
 
+@pytest.mark.parametrize('data_gen', [StringGen(r'''-?[1-9]\d{0,5}\.\d{1,20}''', nullable=False),
+                                      StringGen(r'''-?[1-9]\d{0,20}\.\d{1,5}''', nullable=False),
+                                      StringGen(r'''-?[1-9]\d{0,5}E-?\d{1,20}''', nullable=False),
+                                      StringGen(r'''-?[1-9]\d{0,20}E-?\d{1,5}''', nullable=False)], ids=idfn)
+def test_get_json_object_floating_normalization(data_gen):
+    normalization = lambda spark: unary_op_df(spark, data_gen).selectExpr(
+                        'a',
+                        'get_json_object(a,"$")'
+                        ).collect()
+    gpu_res = [[row[1]] for row in with_gpu_session(
+        normalization)]
+    cpu_res = [[row[1]] for row in with_cpu_session(normalization)]
+    def json_string_to_float(x):
+        if x == '"-Infinity"':
+            return float('-inf')
+        elif x == '"Infinity"':
+            return float('inf')
+        else:
+            return float(x)
+    for i in range(len(gpu_res)):
+        # verify relatively diff < 1e-9 (default value for is_close)
+        assert math.isclose(json_string_to_float(gpu_res[i][0]), json_string_to_float(cpu_res[i][0]))
+
+
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_get_json_object_basic(ansi):
+    data_gen = StringGen(r'''\{"num_a":[1-9]\d{0,5},"num_b":[1-9]\d{0,5}\}''')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('jsonStr', data_gen)]).selectExpr(
+                'CAST(get_json_object(jsonStr, "$.num_a") AS INTEGER) / CAST(get_json_object(jsonStr, "$.num_b") AS INTEGER) as result'),
+            conf = conf)
+
+@pytest.mark.parametrize('ansi', [True, False], ids=["ANSI", "NO_ANSI"])
+def test_multi_get_json_object_conditional(ansi):
+    """
+    The point of this test is that case/when statements behave differently when an operation under
+    them can have side effects. When this happens the combining code does not combine expressions
+    that might not execute, because there could be exceptions thrown there too. So this purposely
+    causes a case when some can be combined, but others cannot.
+    """
+    data_gen = StringGen(r'''\{"num_a":[1-9]\d{0,5},"num_b":[1-9]\d{0,5},"num_c":[1-9]\d{0,5}\}''')
+    conf={'spark.sql.ansi.enabled': ansi}
+    assert_gpu_and_cpu_are_equal_collect(lambda spark:
+            gen_df(spark, [('jsonStr', data_gen)]).selectExpr(
+                '''CASE
+                    WHEN CAST(get_json_object(jsonStr, "$.num_a") AS INTEGER) / CAST(get_json_object(jsonStr, "$.num_b") AS INTEGER) > 0.5 THEN 1
+                    WHEN CAST(get_json_object(jsonStr, "$.num_c") AS INTEGER) / CAST(get_json_object(jsonStr, "$.num_b") AS INTEGER) > 0.5 THEN 2
+                    ELSE 3
+                END as result'''),
+            conf = conf)

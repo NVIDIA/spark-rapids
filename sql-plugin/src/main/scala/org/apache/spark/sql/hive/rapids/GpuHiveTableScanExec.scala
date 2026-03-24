@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,15 @@
 package org.apache.spark.sql.hive.rapids
 
 import java.net.URI
-import java.util.concurrent.TimeUnit.NANOSECONDS
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.HashSet
 import scala.collection.mutable
 
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, NvtxColor, RegexProgram, Scalar, Schema, Table}
-import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, NvtxWithMetrics, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, RegexProgram, Scalar, Schema, Table}
+import com.nvidia.spark.rapids.{ColumnarPartitionReaderWithPartitionValues, CSVPartitionReaderBase, DateUtils, GpuColumnVector, GpuExec, GpuMetric, HostStringColBufferer, HostStringColBuffererFactory, NvtxIdWithMetrics, NvtxRegistry, PartitionReaderIterator, PartitionReaderWithBytesRead, RapidsConf}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.GpuMetric.{BUFFER_TIME, DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME, DESCRIPTION_FILTER_TIME, DESCRIPTION_GPU_DECODE_TIME, ESSENTIAL_LEVEL, FILTER_TIME, GPU_DECODE_TIME, MODERATE_LEVEL, NUM_OUTPUT_ROWS}
+import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ShimFilePartitionReaderFactory, ShimSparkPlan, SparkShimImpl}
@@ -36,13 +35,13 @@ import org.apache.hadoop.hive.ql.metadata.{Partition => HivePartition}
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.CastSupport
 import org.apache.spark.sql.catalyst.catalog.HiveTableRelation
 import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.catalyst.expressions.{And, Attribute, AttributeMap, AttributeReference, AttributeSeq, AttributeSet, BindReferences, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
+import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.{ExecSubqueryExpression, LeafExecNode, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionDirectory, PartitionedFile}
@@ -50,6 +49,7 @@ import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.execution.rapids.shims.FilePartitionShims
 import org.apache.spark.sql.hive.client.HiveClientImpl
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.{BooleanType, DataType, DecimalType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
@@ -176,7 +176,9 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
     FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
-    "scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "scan time")
+    BUFFER_TIME_BUBBLE -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME_BUBBLE),
+    FILTER_TIME_BUBBLE -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME_BUBBLE),
+    SCAN_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_SCAN_TIME)
   )
 
   private lazy val driverMetrics: mutable.HashMap[String, Long] = mutable.HashMap.empty
@@ -233,7 +235,10 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
     val requestedCols = requestedAttributes.filter(a => !partitionKeys.contains(a.name))
                                            .toList
     val distinctColumns = requestedCols.distinct
-    val distinctFields  = distinctColumns.map(a => tableSchema.apply(a.name))
+    // In hive column names are case-insensitive but the default tableSchema lookup is
+    // case-sensitive
+    val fieldMap = CaseInsensitiveMap(tableSchema.map(f => (f.name, f)).toMap)
+    val distinctFields  = distinctColumns.map(a => fieldMap(a.name))
     StructType(distinctFields)
   }
 
@@ -355,16 +360,16 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val scanTime = gpuLongMetric("scanTime")
+    val scanTime = gpuLongMetric(SCAN_TIME)
     inputRDD.mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {
 
         override def hasNext: Boolean = {
           // The `FileScanRDD` returns an iterator which scans the file during the `hasNext` call.
-          val startNs = System.nanoTime()
-          val res = batches.hasNext
-          scanTime += NANOSECONDS.toMillis(System.nanoTime() - startNs)
-          res
+          scanTime.ns {
+            val res = batches.hasNext
+            res
+          }
         }
 
         override def next(): ColumnarBatch = {
@@ -491,8 +496,7 @@ class GpuHiveDelimitedTextPartitionReader(conf: Configuration,
                            cudfReadDataSchema: Schema,
                            isFirstChunk: Boolean,
                            decodeTime: GpuMetric): Table = {
-    withResource(new NvtxWithMetrics(getFileFormatShortName + " decode",
-      NvtxColor.DARK_GREEN, decodeTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.HIVE_DECODE, decodeTime) {
       // The delimiter is currently hard coded to ^A. This should be able to support any format
       //  but we don't want to test that yet
       val splitTable = withResource(dataBufferer.getColumnAndRelease) { cv =>

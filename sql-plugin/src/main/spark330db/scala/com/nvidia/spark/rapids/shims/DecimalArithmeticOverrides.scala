@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,23 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -49,8 +64,16 @@ object DecimalArithmeticOverrides {
           ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
         (a, conf, p, r) => new BinaryAstExprMeta[Multiply](a, conf, p, r) {
           override def tagExprForGpu(): Unit = {
+            // Check if this Multiply expression is in TRY mode context
+            if (TryModeShim.isTryMode(a)) {
+              willNotWorkOnGpu("try_multiply is not supported on GPU")
+            }
+          }
+
+          override def tagSelfForAst(): Unit = {
+            super.tagSelfForAst();
             if (SQLConf.get.ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-              willNotWorkOnGpu("GPU Multiplication does not support ANSI mode")
+              willNotWorkInAst("GPU AST multiplication does not support ANSI mode")
             }
           }
 
@@ -82,6 +105,13 @@ object DecimalArithmeticOverrides {
           ("rhs", TypeSig.DOUBLE + TypeSig.DECIMAL_128,
               TypeSig.DOUBLE + TypeSig.DECIMAL_128)),
         (a, conf, p, r) => new BinaryExprMeta[Divide](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            // Check if this Divide expression is in TRY mode context
+            if (TryModeShim.isTryMode(a)) {
+              willNotWorkOnGpu("try_divide is not supported on GPU")
+            }
+          }
+
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             a.dataType match {
               case d: DecimalType =>
@@ -112,6 +142,13 @@ object DecimalArithmeticOverrides {
           ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
           ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
         (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
+          override def tagExprForGpu(): Unit = {
+            // Check if this Remainder expression is in TRY mode context
+            if (TryModeShim.isTryMode(a)) {
+              willNotWorkOnGpu("try_mod is not supported on GPU")
+            }
+          }
+
           override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
             if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
               GpuDecimalRemainder(lhs, rhs)

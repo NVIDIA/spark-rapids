@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -79,6 +79,24 @@ trait GpuDeltaCatalogBase extends StagingTableCatalog {
       properties: util.Map[String, String],
       operation: TableCreationModes.CreationMode): StagedTable = {
     new GpuStagedDeltaTableV2(ident, schema, partitions, properties, operation)
+  }
+
+  protected def getWriter(sourceQuery: Option[DataFrame],
+     path: Path,
+     comment: Option[String],
+     schema: Option[StructType],
+     saveMode: SaveMode,
+     catalogTable: CatalogTable): Option[LogicalPlan] = {
+    sourceQuery.map { df =>
+      WriteIntoDelta(
+        DeltaLog.forTable(spark, path),
+        saveMode,
+        new DeltaOptions(catalogTable.storage.properties, spark.sessionState.conf),
+        catalogTable.partitionColumnNames,
+        catalogTable.properties ++ comment.map("comment" -> _),
+        df,
+        schemaInCatalog = schema)
+    }
   }
 
   /**
@@ -164,16 +182,9 @@ trait GpuDeltaCatalogBase extends StagingTableCatalog {
 
     val withDb = verifyTableAndSolidify(tableDesc, None)
 
-    val writer = sourceQuery.map { df =>
-      WriteIntoDelta(
-        DeltaLog.forTable(spark, new Path(loc)),
-        operation.mode,
-        new DeltaOptions(withDb.storage.properties, spark.sessionState.conf),
-        withDb.partitionColumnNames,
-        withDb.properties ++ commentOpt.map("comment" -> _),
-        df,
-        schemaInCatalog = if (newSchema != schema) Some(newSchema) else None)
-    }
+    val schemaInCatalog = if (newSchema != schema) Some(newSchema) else None
+    val writer = getWriter(sourceQuery, new Path(loc), commentOpt, schemaInCatalog, 
+      operation.mode, withDb)
 
     val gpuCreateTableCommand = buildGpuCreateDeltaTableCommand(
       rapidsConf,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,9 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
-{"spark": "330cdh"}
 {"spark": "330db"}
 {"spark": "331"}
 {"spark": "332"}
-{"spark": "332cdh"}
 {"spark": "332db"}
 {"spark": "333"}
 {"spark": "334"}
@@ -28,8 +26,23 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet
 
@@ -39,8 +52,9 @@ import java.util
 import scala.collection.JavaConverters._
 
 import com.nvidia.spark.CurrentBatchIterator
-import com.nvidia.spark.rapids.ParquetCachedBatch
-import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetTimestampNTZShims}
+import com.nvidia.spark.rapids.parquet.ParquetCachedBatch
+import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
+import com.nvidia.spark.rapids.shims.parquet.ParquetTimestampNTZShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.ParquetReadOptions
 import org.apache.parquet.column.page.PageReadStore
@@ -150,7 +164,7 @@ class ShimCurrentBatchIterator(
     if (!missingColumns.contains(cv.getColumn)) {
       if (cv.getColumn.isPrimitive) {
         val column = cv.getColumn
-        val reader = new VectorizedColumnReader(
+        val reader = RapidsVectorizedColumnReader(
           column.descriptor.get,
           column.required,
           pages,

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import re
 
 import pytest
 
 from asserts import *
 from conftest import is_not_utc
 from data_gen import *
-from parquet_write_test import parquet_nested_datetime_gen, parquet_ts_write_options
+from parquet_write_test import parquet_datetime_gen_simple, parquet_nested_datetime_gen, parquet_ts_write_options
 from marks import *
 import pyarrow as pa
 import pyarrow.parquet as pa_pq
@@ -27,7 +28,10 @@ from pyspark.sql.functions import *
 from spark_init_internal import spark_version
 from spark_session import *
 from conftest import is_databricks_runtime, is_dataproc_runtime
+from multithread_file_reader_utils import resource_bounded_multithreaded_reader_conf
 
+# mark this test as ci_1 for mvn verify sanity check in pre-merge CI
+pytestmark = [pytest.mark.premerge_ci_1]
 
 def read_parquet_df(data_path):
     return lambda spark : spark.read.parquet(data_path)
@@ -35,15 +39,19 @@ def read_parquet_df(data_path):
 def read_parquet_sql(data_path):
     return lambda spark : spark.sql('select * from parquet.`{}`'.format(data_path))
 
+datetimeRebaseModeInWriteKey = 'spark.sql.parquet.datetimeRebaseModeInWrite'
+int96RebaseModeInWriteKey = 'spark.sql.parquet.int96RebaseModeInWrite'
+datetimeRebaseModeInReadKey = 'spark.sql.parquet.datetimeRebaseModeInRead'
+int96RebaseModeInReadKey = 'spark.sql.parquet.int96RebaseModeInRead'
 
 rebase_write_corrected_conf = {
-    'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-    'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'
+    datetimeRebaseModeInWriteKey : 'CORRECTED',
+    int96RebaseModeInWriteKey : 'CORRECTED'
 }
 
 rebase_write_legacy_conf = {
-    'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'LEGACY',
-    'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'LEGACY'
+    datetimeRebaseModeInWriteKey : 'LEGACY',
+    int96RebaseModeInWriteKey : 'LEGACY'
 }
 
 # Like the standard map_gens_sample but with timestamps limited
@@ -129,7 +137,6 @@ reader_opt_confs_no_native = [original_parquet_file_reader_conf, multithreaded_p
 
 reader_opt_confs = reader_opt_confs_native + reader_opt_confs_no_native
 
-
 @pytest.mark.parametrize('parquet_gens', [[byte_gen, short_gen, int_gen, long_gen]], ids=idfn)
 @pytest.mark.parametrize('read_func', [read_parquet_df])
 @pytest.mark.parametrize('reader_confs', [coalesce_parquet_file_reader_multithread_filter_conf,
@@ -146,8 +153,8 @@ def test_parquet_read_coalescing_multiple_files(spark_tmp_path, parquet_gens, re
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
@@ -188,17 +195,109 @@ def test_parquet_read_round_trip(spark_tmp_path, parquet_gens, read_func, reader
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
             conf=all_confs)
 
 
+_resource_bounded_pool_conf_matrix = resource_bounded_multithreaded_reader_conf(
+    file_type='parquet',
+    specialized_conf={
+        # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
+        int96RebaseModeInReadKey: 'CORRECTED',
+        datetimeRebaseModeInReadKey: 'CORRECTED'
+    })
+@pytest.mark.parametrize('parquet_gens', parquet_gens_list, ids=idfn)
+@pytest.mark.parametrize('reader_confs', _resource_bounded_pool_conf_matrix, ids=idfn)
+@tz_sensitive_test
+@allow_non_gpu(*non_utc_allow)
+def test_parquet_read_multithread_flow_ctrl_round_trip(spark_tmp_path, parquet_gens, reader_confs):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark : gen_df(spark, gen_list).write.parquet(data_path),
+            conf=rebase_write_corrected_conf)
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf=reader_confs)
+
+# Ensure that the multithreaded reader with resource bounded pool can handle an excessive host
+# memory request that cannot be satisfied by the pool.
+@pytest.mark.parametrize('keep_order', [False, True], ids=idfn)
+@pytest.mark.parametrize('timeout', [0, 10, 1000, 10000], ids=idfn)
+def test_parquet_read_multithread_flow_ctrl_excessive_req(spark_tmp_path, keep_order, timeout):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    with_cpu_session(
+            lambda spark: gen_df(spark, [('a', long_gen)]).write.parquet(data_path),
+            conf=rebase_write_corrected_conf)
+    tiny_pool_conf = {
+        'spark.rapids.sql.multiThreadedRead.memoryLimit.tests.perStagePool': 'true',
+        'spark.rapids.sql.format.parquet.reader.type': 'MULTITHREADED',
+        'spark.rapids.sql.multiThreadedRead.memoryLimit.enabled': 'true',
+        'spark.rapids.sql.multiThreadedRead.numThreads': 64,
+        'spark.rapids.sql.multiThreadedRead.memoryLimit.size': 1 << 10,  # 1KB
+        'spark.rapids.sql.multiThreadedRead.memoryLimit.acquisitionTimeout': timeout,
+        'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': keep_order,
+    }
+    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf=tiny_pool_conf)
+
+
+"""
+This test case addresses the potential deadlock issue that occurs when multiple Parquet scan operators
+are in the same stage and depend on each other for downstream operations. The test creates a bucketed 
+join query where both sides of the join read from the same bucketed Parquet table to reproduce this 
+issue. Without deadlock prevention mechanisms, the deadlock scenario will occur reliably when 
+spark.rapids.sql.multiThreadedRead.memoryLimit.size <= 32KB.
+"""
+_resource_bounded_pool_conf_join = resource_bounded_multithreaded_reader_conf(
+    file_type='parquet',
+    combine_size_conf=[1 << 10, 128 << 20],
+    keep_order_conf=[False, True],
+    reader_type_conf='MULTITHREADED',
+    pool_size_conf=[2, 128],
+    memory_limit_conf=[8 << 10, 32 << 10, 64 << 10],
+    timeout_conf=[50, 1000]
+)
+@pytest.mark.parametrize('reader_confs', _resource_bounded_pool_conf_join, ids=idfn)
+@ignore_order(local=True)
+def test_parquet_read_multithread_flow_ctrl_local_join(spark_tmp_path, reader_confs):
+    num_buckets = 8
+    source_table_name = "source_bucketed_parquet"
+
+    # --- Phase 1: Data Generation ---
+    # Only one bucketed table is created. We add a 'filter_key' column that
+    # will be used to split the source table into two inputs for the join.
+    gen_list = [('key_col', LongGen(min_val=0, max_val=127, nullable=False)),
+                ('val_col', long_gen)]
+    with_cpu_session(
+        lambda spark :
+        gen_df(spark, gen_list, length=2048)
+        .withColumn("filter_key", (rand() * 3).cast("int")) # Values will be 0, 1, or 2
+        .write
+        .format("parquet")
+        .bucketBy(num_buckets, "key_col")
+        .sortBy("key_col")
+        .mode('overwrite')
+        .option("path", spark_tmp_path)
+        .saveAsTable(source_table_name),
+        conf=rebase_write_corrected_conf)
+
+    # --- Phase 2: Read, Filter, and Bucket Join ---
+    # This function reads the source table once, applies two different filters to create
+    # the left and right sides of the join, and then performs the local bucket join.
+    def read_filter_and_join(spark):
+        source_df = spark.table(source_table_name)
+        left_df = source_df.filter(col("filter_key") == 0)
+        right_df = source_df.filter(col("filter_key") == 1)
+        return left_df.join(right_df, "key_col")
+
+    assert_gpu_and_cpu_are_equal_collect(read_filter_and_join, conf=reader_confs)
+
 @allow_non_gpu('FileSourceScanExec')
 @pytest.mark.parametrize('read_func', [read_parquet_df, read_parquet_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.parquet.enabled', 'spark.rapids.sql.format.parquet.read.enabled'])
+@disable_ansi_mode
 def test_parquet_fallback(spark_tmp_path, read_func, disable_conf):
     data_gens = [string_gen,
         byte_gen, short_gen, int_gen, long_gen, boolean_gen] + decimal_gens
@@ -225,8 +324,8 @@ def test_parquet_read_round_trip_binary(std_input_path, read_func, binary_as_str
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.parquet.binaryAsString': binary_as_string,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
@@ -245,8 +344,8 @@ def test_binary_df_read(spark_tmp_path, binary_as_string, read_func, data_gen):
     all_confs = {
         'spark.sql.parquet.binaryAsString': binary_as_string,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead': 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'}
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'}
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path), conf=all_confs)
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -256,8 +355,8 @@ def test_parquet_read_forced_binary_schema(std_input_path, v1_enabled_list):
     all_confs = copy_and_update(reader_opt_confs[0], {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
 
@@ -277,12 +376,93 @@ def test_parquet_read_round_trip_binary_as_string(std_input_path, read_func, rea
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.parquet.binaryAsString': 'true',
         # set the int96 rebase mode values because its LEGACY in databricks which will preclude this op from running on GPU
-        'spark.sql.legacy.parquet.int96RebaseModeInRead' : 'CORRECTED',
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        int96RebaseModeInReadKey : 'CORRECTED',
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # once https://github.com/NVIDIA/spark-rapids/issues/1126 is in we can remove spark.sql.legacy.parquet.datetimeRebaseModeInRead config which is a workaround
     # for nested timestamp/date support
     assert_gpu_and_cpu_are_equal_collect(read_func(data_path),
             conf=all_confs)
+
+def write_mixed_encoding_parquet(spark, path):
+    """
+    Write a Parquet file with mixed dictionary and plain encoded string columns.
+    
+    Creates data with two different patterns:
+    - Repeated strings -> should result in dictionary encoding
+    - Unique long strings -> should result in plain encoding (dictionary too large)
+    
+    The actual encoding used depends on the writer (GPU vs CPU) and row group size.
+    """
+    # Create two DataFrames with different characteristics
+    # DataFrame 1: Repeated strings (should be dictionary encoded)
+    dict_data = [('val' + str(i % 10),) for i in range(20000)]
+    df_dict = spark.createDataFrame(dict_data, ['value'])
+    
+    # DataFrame 2: Unique long strings (should be plain encoded)
+    plain_data = [(f'unique_string_number_{i}_with_lots_of_padding_' + ('x' * 100),) 
+                  for i in range(20000)]
+    df_plain = spark.createDataFrame(plain_data, ['value'])
+    
+    # Union both DataFrames and write to a single file
+    # Set a small row group size to ensure they end up in separate row groups
+    df_combined = df_dict.union(df_plain)
+    df_combined.coalesce(1).write \
+        .option('parquet.block.size', 1024 * 1024) \
+        .parquet(path)
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_parquet_read_mixed_dictionary_plain_encoding_gpu_writer(spark_tmp_path, reader_confs):
+    """
+    Test reading a Parquet file with mixed dictionary and plain encoded string columns.
+    
+    This test generates files with mixed encodings using the GPU parquet writer.
+    The writer makes encoding decisions at the row group level based on data characteristics.
+    
+    We write data with two different patterns:
+    - Repeated strings -> should result in dictionary encoding
+    - Unique long strings -> should result in plain encoding (dictionary too large)
+    
+    The gpu writer will put the different encodings in different row groups.
+    """
+    
+    all_confs = copy_and_update(reader_confs, rebase_write_corrected_conf)
+    
+    # Test with GPU-written file (cuDF writer)
+    gpu_data_path = spark_tmp_path + '/MIXED_ENCODING_DATA_GPU'
+    with_gpu_session(lambda spark: write_mixed_encoding_parquet(spark, gpu_data_path), 
+                     conf=rebase_write_corrected_conf)
+    
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(gpu_data_path),
+        conf=all_confs
+    )
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs, ids=idfn)
+def test_parquet_read_mixed_dictionary_plain_encoding_cpu_writer(spark_tmp_path, reader_confs):
+    """
+    Test reading a Parquet file with mixed dictionary and plain encoded string columns.
+    
+    This test generates files with mixed encodings using the CPU parquet writer.
+    The writer makes encoding decisions at the row group level based on data characteristics.
+    
+    We write data with two different patterns:
+    - Repeated strings -> should result in dictionary encoding
+    - Unique long strings -> should result in plain encoding (dictionary too large)
+    
+    The cpu writer will put the different encodings in the same row group (but different pages).
+    """
+    
+    all_confs = copy_and_update(reader_confs, rebase_write_corrected_conf)
+    
+    # Test with CPU-written file (Spark's built-in parquet writer)
+    cpu_data_path = spark_tmp_path + '/MIXED_ENCODING_DATA_CPU'
+    with_cpu_session(lambda spark: write_mixed_encoding_parquet(spark, cpu_data_path),
+                     conf=rebase_write_corrected_conf)
+    
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(cpu_data_path),
+        conf=all_confs
+    )
 
 parquet_compress_options = ['none', 'uncompressed', 'snappy', 'gzip']
 # zstd is available in spark 3.2.0 and later.
@@ -294,12 +474,19 @@ if not is_before_spark_320():
 @pytest.mark.parametrize('compress', parquet_compress_options)
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs):
+@pytest.mark.parametrize('cpu_decompress', [True, False])
+def test_parquet_compress_read_round_trip(spark_tmp_path, compress, v1_enabled_list, reader_confs, cpu_decompress):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     with_cpu_session(
             lambda spark : binary_op_df(spark, long_gen).write.parquet(data_path),
             conf={'spark.sql.parquet.compression.codec': compress})
     all_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+    if cpu_decompress:
+        all_confs = copy_and_update(all_confs, {
+            'spark.rapids.sql.format.parquet.decompressCpu' : 'true',
+            'spark.rapids.sql.format.parquet.decompressCpu.snappy' : 'true',
+            'spark.rapids.sql.format.parquet.decompressCpu.zstd' : 'true'
+        })
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path),
             conf=all_confs)
@@ -342,18 +529,50 @@ def test_parquet_read_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, parq
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_confs = {'spark.sql.parquet.outputTimestampType': ts_type,
-                   'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write[0],
-                   'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write[1]}
+                   datetimeRebaseModeInWriteKey : ts_rebase_write[0],
+                   int96RebaseModeInWriteKey : ts_rebase_write[1]}
     with_cpu_session(
         lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
         conf=write_confs)
     # The rebase modes in read configs should be ignored and overridden by the same modes in write
     # configs, which are retrieved from the written files.
     read_confs = copy_and_update(reader_confs, {'spark.sql.sources.useV1SourceList': v1_enabled_list,
-                                                'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase_read[0],
-                                                'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase_read[1]})
+                                                datetimeRebaseModeInReadKey : ts_rebase_read[0],
+                                                int96RebaseModeInReadKey : ts_rebase_read[1]})
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path),
+        conf=read_confs)
+
+
+@pytest.mark.skipif(is_not_utc(), reason="LEGACY datetime rebase mode is only supported for UTC timezone")
+@pytest.mark.parametrize('parquet_gens', [parquet_datetime_gen_simple], ids=idfn)
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_read_roundtrip_datetime_with_legacy_rebase_mismatch_files(spark_tmp_path, parquet_gens,
+                                                            reader_confs, v1_enabled_list):
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    data_path2 = spark_tmp_path + '/PARQUET_DATA2'
+    write_confs = {'spark.sql.parquet.datetimeRebaseModeInWrite': 'LEGACY',
+                   'spark.sql.parquet.int96RebaseModeInWrite': 'LEGACY'}
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path),
+        conf=write_confs)
+    # we want to test having multiple files that have the same column with different
+    # types - INT96 and INT64 (TIMESTAMP_MICROS)
+    write_confs2 = {'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
+                   'spark.sql.parquet.int96RebaseModeInWrite': 'CORRECTED',
+                   'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS'}
+    with_cpu_session(
+        lambda spark: gen_df(spark, gen_list).write.parquet(data_path2),
+        conf=write_confs2)
+
+    read_confs = copy_and_update(reader_confs,
+                                {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+                                 'spark.sql.parquet.datetimeRebaseModeInRead': 'LEGACY',
+                                 'spark.sql.parquet.int96RebaseModeInRead': 'LEGACY'})
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path, data_path2).filter("_c0 is not null and _c1 is not null"),
         conf=read_confs)
 
 # This is legacy format, which is totally different from datatime legacy rebase mode.
@@ -479,6 +698,7 @@ def test_parquet_read_buffer_allocation_empty_blocks(spark_tmp_path, v1_enabled_
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read.parquet(data_path).filter("id < 2 or id > 990"),
             conf=all_confs)
+
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -734,7 +954,7 @@ def test_nested_pruning_and_case_insensitive(spark_tmp_path, data_gen, read_sche
     all_confs = copy_and_update(reader_confs, {
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.sql.optimizer.nestedSchemaPruning.enabled': nested_enabled,
-        'spark.sql.legacy.parquet.datetimeRebaseModeInRead': 'CORRECTED'})
+        datetimeRebaseModeInReadKey : 'CORRECTED'})
     # This is a hack to get the type in a slightly less verbose way
     rs = StructGen(read_schema, nullable=False).data_type
     assert_gpu_and_cpu_are_equal_collect(lambda spark : spark.read.schema(rs).parquet(data_path),
@@ -746,6 +966,14 @@ def test_spark_32639(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
+
+@pytest.mark.parametrize('reader_type', ['COALESCING', 'MULTITHREADED', 'PERFILE'])
+def test_parquet_read_empty_arrow(std_input_path, reader_type):
+    conf = {'spark.rapids.sql.format.parquet.reader.type': reader_type}
+    data_path = "%s/empty_arrow.parquet" % (std_input_path)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path),
+        conf=conf)
 
 @pytest.mark.skipif(not is_before_spark_320(), reason='Spark 3.1.x does not need special handling')
 @pytest.mark.skipif(is_dataproc_runtime(), reason='https://github.com/NVIDIA/spark-rapids/issues/8074')
@@ -792,6 +1020,10 @@ def test_parquet_read_nano_as_longs_true(std_input_path):
         'FileSourceScanExec',
         conf=conf)
 
+
+# ProjectExec will fallback to CPU since Multiply expr is not supported with ANSI mode.
+# https://github.com/NVIDIA/spark-rapids/issues/13054
+@allow_non_gpu('ProjectExec')
 def test_many_column_project():
     def _create_wide_data_frame(spark, num_cols):
         schema_dict = {}
@@ -1280,26 +1512,63 @@ def test_parquet_read_case_insensitivity(spark_tmp_path):
     )
 
 
-# test read INT32 as INT8/INT16/Date
-@pytest.mark.parametrize('reader_confs', reader_opt_confs)
-@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
-def test_parquet_int32_downcast(spark_tmp_path, reader_confs, v1_enabled_list):
+def run_test_parquet_int32_downcast(spark_tmp_path,
+                                    reader_confs,
+                                    v1_enabled_list,
+                                    ansi_conf):
+    """
+    This tests whether Parquet files with columns written as INT32 can be
+    read as having INT8, INT16 and DATE columns, with ANSI mode enabled/disabled.
+    """
     data_path = spark_tmp_path + '/PARQUET_DATA'
     write_schema = [("d", date_gen), ('s', short_gen), ('b', byte_gen)]
+
+    # For test setup, write with ANSI disabled.
+    # Otherwise, CAST(d AS INT) will fail on Spark CPU.
     with_cpu_session(
         lambda spark: gen_df(spark, write_schema).selectExpr(
             "cast(d as Int) as d",
             "cast(s as Int) as s",
-            "cast(b as Int) as b").write.parquet(data_path))
+            "cast(b as Int) as b").write.parquet(data_path), conf=ansi_disabled_conf)
 
     read_schema = StructType([StructField("d", DateType()),
                               StructField("s", ShortType()),
                               StructField("b", ByteType())])
     conf = copy_and_update(reader_confs,
-                           {'spark.sql.sources.useV1SourceList': v1_enabled_list})
+                           {'spark.sql.sources.useV1SourceList': v1_enabled_list},
+                           ansi_conf)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
+
+
+@pytest.mark.parametrize('reader_confs', reader_opt_confs)
+@pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
+def test_parquet_int32_downcast_ansi_disabled(spark_tmp_path, reader_confs, v1_enabled_list):
+    """
+    This tests whether Parquet files with columns written as INT32 can be
+    read as having INT8, INT16 and DATE columns, with ANSI mode disabled.
+    """
+    run_test_parquet_int32_downcast(spark_tmp_path,
+                                    reader_confs,
+                                    v1_enabled_list,
+                                    ansi_disabled_conf)
+
+
+def test_parquet_int32_downcast_ansi_enabled(spark_tmp_path):
+    """
+    This is the flipside of test_parquet_int32_downcast_ansi_disabled.
+    This tests whether Parquet files with columns written as INT32 can be
+    read as having INT8, INT16 and DATE columns, now tested with ANSI
+    enabled.
+    A limited combination of test parameters is used to test ANSI enabled,
+    in the interest of brevity.
+    """
+    run_test_parquet_int32_downcast(spark_tmp_path,
+                                    reader_confs=native_parquet_file_reader_conf,
+                                    v1_enabled_list="",
+                                    ansi_conf=ansi_disabled_conf)
+
 
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @pytest.mark.parametrize('v1_enabled_list', ["", "parquet"])
@@ -1335,69 +1604,175 @@ def test_parquet_nested_column_missing(spark_tmp_path, reader_confs, v1_enabled_
         lambda spark: spark.read.schema(read_schema).parquet(data_path),
         conf=conf)
 
-def test_parquet_check_schema_compatibility(spark_tmp_path):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    gen_list = [('int', int_gen), ('long', long_gen), ('dec32', decimal_gen_32bit)]
-    with_cpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(data_path))
+@pytest.mark.parametrize('from_decimal_gen, to_decimal_gen', [
+    # Widening precision and scale by the same amount
+    (DecimalGen(5, 2), DecimalGen(7, 4)),
+    (DecimalGen(5, 2), DecimalGen(10, 7)),
+    (DecimalGen(5, 2), DecimalGen(20, 17)),
+    (DecimalGen(10, 2), DecimalGen(12, 4)),
+    (DecimalGen(10, 2), DecimalGen(20, 12)),
+    (DecimalGen(20, 2), DecimalGen(22, 4)),
+    # Increasing precision by larger amount than scale
+    (DecimalGen(5, 2), DecimalGen(6, 3)),
+    (DecimalGen(5, 2), DecimalGen(12, 5)),
+    (DecimalGen(5, 2), DecimalGen(22, 10)),
+    # Narrowing precision and scale
+    (DecimalGen(7, 4), DecimalGen(5, 2)),
+    (DecimalGen(10, 7), DecimalGen(5, 2)),
+    (DecimalGen(20, 17), DecimalGen(5, 2)),
+    # Narrowing precision
+    (DecimalGen(20, 0), DecimalGen(10, 0)),
+    # Increasing precision and decreasing scale
+    (DecimalGen(5, 4), DecimalGen(7, 2)),
+    (DecimalGen(10, 6), DecimalGen(12, 4)),
+    (DecimalGen(20, 7), DecimalGen(22, 5)),
+    # Increasing the precision and keeping the scale same (increasing the whole number part)
+    (DecimalGen(10, 2), DecimalGen(22, 2)),
+    # Decreasing the scale and keeping the precision same (decreasing the whole number part)
+    (DecimalGen(10, 5), DecimalGen(10, 2)),
+    (DecimalGen(20, 10), DecimalGen(20, 5)),
+    # Increasing precision by a smaller amount than scale
+    (DecimalGen(5, 2), DecimalGen(6, 4)),
+    (DecimalGen(10, 4), DecimalGen(12, 7))
+], ids=idfn)
+def test_parquet_decimal_precision_scale_change(spark_tmp_path, from_decimal_gen, to_decimal_gen):
+    """Test decimal precision and scale changes when reading Parquet files with RAPIDS acceleration."""
+    data_path = f"{spark_tmp_path}/PARQUET_DECIMAL_DATA"
 
-    read_int_as_long = StructType(
-        [StructField('long', LongType()), StructField('int', LongType())])
+    # Write test data with CPU
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, from_decimal_gen)
+        .coalesce(1)
+        .write.parquet(data_path)
+    )
+
+    # Create target schema for reading
+    read_schema = StructType([
+        StructField("a", to_decimal_gen.data_type)
+    ])
+
+    spark_conf = {}
+    # The vectorized Parquet reader throws an exception in some cases where the
+    # read scale differs from the write scale. We disable the vectorized reader,
+    # forcing Spark to use the non-vectorized path for CPU case. This configuration
+    # is ignored by the plugin.
+    spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path), conf=spark_conf)
+
+# These are based on tests from https://issues.apache.org/jira/browse/SPARK-40876
+# Plus more
+@pytest.mark.parametrize('from_gen, to_gen', [
+    (byte_gen, short_gen),
+    (ArrayGen(byte_gen), ArrayGen(short_gen)),
+    (MapGen(ByteGen(nullable=False), byte_gen), MapGen(ShortGen(nullable=False), short_gen)),
+    (byte_gen, int_gen),
+    (ArrayGen(byte_gen), ArrayGen(int_gen)),
+    pytest.param(byte_gen, long_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(ArrayGen(byte_gen), ArrayGen(long_gen), marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(MapGen(ByteGen(nullable=False), byte_gen), MapGen(LongGen(nullable=False), long_gen), marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(byte_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    (short_gen, int_gen),
+    pytest.param(short_gen, long_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(short_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    # Int->Short/Byte isn't a widening conversion but Parquet stores both as INT32 so it just works.
+    (IntegerGen(min_val=-128, max_val=127, special_cases=[]), byte_gen),
+    (IntegerGen(min_val=-32768, max_val=32767, special_cases=[]), short_gen),
+    # Verify that if the values are outside of the allowed range that we overflow in
+    # the same way...
+    (int_gen, byte_gen),
+    (int_gen, short_gen),
+    pytest.param(int_gen, long_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(ArrayGen(ArrayGen(int_gen)), ArrayGen(ArrayGen(long_gen)), marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(int_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    pytest.param(int_gen, date_gen, marks=pytest.mark.skipif(is_databricks_version(12,2) or is_databricks_version(13,3), reason='older databricks versions compute this differently from open source and newer versions')),
+    pytest.param(float_gen, double_gen, marks=pytest.mark.skipif(is_before_spark_400(), reason='CPU does not support this on this version')),
+    # tzinfo=None makes it timestamp_ntz
+    # We don't support reading TimestampNTZ yet, but when we do add it.
+    #pytest.param(DateGen(start=date(1970, 1, 1)), TimestampGen(tzinfo=None), 
+    #    marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark'))
+], ids=idfn)
+def test_parquet_supported_read_type_changes(spark_tmp_path, from_gen, to_gen):
+    data_path = f"{spark_tmp_path}/PARQUET_MAKE_WIDER"
+
+    # Write test data with CPU
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, from_gen)
+        .coalesce(1)
+        .write.parquet(data_path)
+    )
+
+    # Create target schema for reading
+    read_schema = StructType([
+        StructField("a", to_gen.data_type)
+    ])
+
+    spark_conf = {}
+    # The vectorized Parquet reader throws an exception in some cases where the
+    # read scale differs from the write scale. We disable the vectorized reader,
+    # forcing Spark to use the non-vectorized path for CPU case. This configuration
+    # is ignored by the plugin.
+    spark_conf['spark.sql.parquet.enableVectorizedReader'] = 'false'
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(read_schema).parquet(data_path), conf=spark_conf)
+
+# These are based on tests from https://issues.apache.org/jira/browse/SPARK-40876
+# Plus more
+@pytest.mark.parametrize('from_gen, to_gen, conf', [
+    (long_gen, int_gen, {}),
+    (ArrayGen(long_gen), ArrayGen(int_gen), {}),
+    (double_gen, float_gen, {}),
+    (float_gen, long_gen, {}),
+    (long_gen, date_gen, {}),
+    (int_gen, timestamp_gen, {}),
+    # tzinfo=None makes it timestamp_ntz
+    # We don't support reading TimestampNTZ yet, but when we do add it.
+    #pytest.param(int_gen, TimestampGen(tzinfo=None), {}, 
+    #    marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark')),
+    (DateGen(start=date(1600,1,1)), timestamp_gen, {}),
+    # Start with 1970 to avoid issues with CORRECTED vs NOT when writing...
+    (TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)), date_gen, {'spark.sql.parquet.outputTimestampType': 'INT96'}),
+    (TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS'}),
+    (TimestampGen(start=datetime(1970, 1, 1, tzinfo=timezone.utc)), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MILLIS'}),
+    # tzinfo=None makes it timestamp_ntz
+    pytest.param(TimestampGen(start=datetime(1970, 1, 1, tzinfo=None), tzinfo=None), date_gen, {'spark.sql.parquet.outputTimestampType': 'INT96'}, 
+        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark')),
+    pytest.param(TimestampGen(start=datetime(1970, 1, 1, tzinfo=None), tzinfo=None), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MICROS'}, 
+        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark')),
+    pytest.param(TimestampGen(start=datetime(1970, 1, 1, tzinfo=None), tzinfo=None), date_gen, {'spark.sql.parquet.outputTimestampType': 'TIMESTAMP_MILLIS'}, 
+        marks=pytest.mark.skipif(not is_spark_341_or_later(), reason='TimestampNTZType is not supported in this version of pyspark')),
+    (StringGen("\d"), int_gen, {}),
+    (ArrayGen(StringGen("\d")), ArrayGen(int_gen), {}),
+    (MapGen(StringGen("\d", nullable=False), int_gen), MapGen(IntegerGen(nullable=False), int_gen), {}),
+], ids=idfn)
+def test_parquet_unsupported_read_type_changes(spark_tmp_path, from_gen, to_gen, conf):
+    data_path = f"{spark_tmp_path}/PARQUET_MAKE_WORSE"
+
+    # Write test data with CPU
+    with_cpu_session(
+        lambda spark: unary_op_df(spark, from_gen)
+        .coalesce(1)
+        .write.parquet(data_path),
+        conf=conf
+    )
+
+    # Create target schema for reading
+    read_schema = StructType([
+        StructField("a", to_gen.data_type)
+    ])
+
+    # The vectorized Parquet reader throws an exception in some cases where the
+    # read scale differs from the write scale. We disable the vectorized reader,
+    # forcing Spark to use the non-vectorized path for CPU case. This configuration
+    # is ignored by the plugin.
+    spark_conf= copy_and_update(conf, {'spark.sql.parquet.enableVectorizedReader': False})
+
     assert_gpu_and_cpu_error(
-        lambda spark: spark.read.schema(read_int_as_long).parquet(data_path).collect(),
-        conf={},
-        error_message='Parquet column cannot be converted')
-
-    read_dec32_as_dec64 = StructType(
-        [StructField('int', IntegerType()), StructField('dec32', DecimalType(15, 10))])
-    assert_gpu_and_cpu_error(
-        lambda spark: spark.read.schema(read_dec32_as_dec64).parquet(data_path).collect(),
-        conf={},
-        error_message='Parquet column cannot be converted')
-
-
-# For nested types, GPU throws incompatible exception with a different message from CPU.
-def test_parquet_check_schema_compatibility_nested_types(spark_tmp_path):
-    data_path = spark_tmp_path + '/PARQUET_DATA'
-    gen_list = [('array_long', ArrayGen(long_gen)),
-                ('array_array_int', ArrayGen(ArrayGen(int_gen))),
-                ('struct_float', StructGen([('f', float_gen), ('d', double_gen)])),
-                ('struct_array_int', StructGen([('a', ArrayGen(int_gen))])),
-                ('map', map_string_string_gen[0])]
-    with_cpu_session(lambda spark: gen_df(spark, gen_list).coalesce(1).write.parquet(data_path))
-
-    read_array_long_as_int = StructType([StructField('array_long', ArrayType(IntegerType()))])
-    assert_spark_exception(
-        lambda: with_gpu_session(
-            lambda spark: spark.read.schema(read_array_long_as_int).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted')
-
-    read_arr_arr_int_as_long = StructType(
-        [StructField('array_array_int', ArrayType(ArrayType(LongType())))])
-    assert_spark_exception(
-        lambda: with_gpu_session(
-            lambda spark: spark.read.schema(read_arr_arr_int_as_long).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted')
-
-    read_struct_flt_as_dbl = StructType([StructField(
-        'struct_float', StructType([StructField('f', DoubleType())]))])
-    assert_spark_exception(
-        lambda: with_gpu_session(
-            lambda spark: spark.read.schema(read_struct_flt_as_dbl).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted')
-
-    read_struct_arr_int_as_long = StructType([StructField(
-        'struct_array_int', StructType([StructField('a', ArrayType(LongType()))]))])
-    assert_spark_exception(
-        lambda: with_gpu_session(
-            lambda spark: spark.read.schema(read_struct_arr_int_as_long).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted')
-
-    read_map_str_str_as_str_int = StructType([StructField(
-        'map', MapType(StringType(), IntegerType()))])
-    assert_spark_exception(
-        lambda: with_gpu_session(
-            lambda spark: spark.read.schema(read_map_str_str_as_str_int).parquet(data_path).collect()),
-        error_message='Parquet column cannot be converted')
+        lambda spark: spark.read.schema(read_schema).parquet(data_path).collect(), 
+        conf=spark_conf,
+        error_message=re.compile(r"SchemaColumnConvertNotSupportedException|ParquetDecodingException|PARQUET_CONVERSION_FAILURE|(no valid casts are found)|(Unable to create Parquet converter for data type)|(cannot be cast to)|ClassCastException"))
 
 @pytest.mark.skipif(is_before_spark_320() or is_spark_321cdh(), reason='Encryption is not supported before Spark 3.2.0 or Parquet < 1.12')
 @pytest.mark.skipif(os.environ.get('INCLUDE_PARQUET_HADOOP_TEST_JAR', 'false') == 'false', reason='INCLUDE_PARQUET_HADOOP_TEST_JAR is disabled')
@@ -1426,12 +1801,14 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
     assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.parquet(data_path).collect()),
-        error_message='Could not read footer for file')
+        error_message='Could not read footer')  # Common message fragment between all Spark versions.
+                                                # Note that this isn't thrown explicitly by the plugin.
 
     assert_spark_exception(
         lambda: with_gpu_session(
             lambda spark: spark.read.parquet(data_path).collect(), conf=conf),
         error_message='The GPU does not support reading encrypted Parquet files')
+
 
 def test_parquet_read_count(spark_tmp_path):
     parquet_gens = [int_gen, string_gen, double_gen]
@@ -1492,3 +1869,14 @@ def test_parquet_column_name_with_dots(spark_tmp_path, reader_confs):
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`"), conf=all_confs)
     assert_gpu_and_cpu_are_equal_collect(lambda spark: reader(spark).selectExpr("`a.b`.`c.d.e`.`f.g`"),
                                          conf=all_confs)
+
+def test_parquet_partition_batch_row_count_only_splitting(spark_tmp_path):
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    def setup_table(spark):
+        spark.range(1000).withColumn("p", f.lit("x")).coalesce(1)\
+            .write\
+            .partitionBy("p")\
+            .parquet(data_path)
+    with_cpu_session(lambda spark: setup_table(spark))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.read.parquet(data_path).select("p"),
+                                         conf={"spark.rapids.sql.columnSizeBytes": "100"})

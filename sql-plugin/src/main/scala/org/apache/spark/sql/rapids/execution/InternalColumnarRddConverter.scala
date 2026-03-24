@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -661,11 +661,11 @@ object InternalColumnarRddConverter extends Logging {
         s"not currently supported data types for columnar.")
     }
     //This config lets the plugin tag the columnar transition we care about so we know what we got.
-    df.sqlContext.setConf(RapidsConf.EXPORT_COLUMNAR_RDD.key, "true")
+    df.sparkSession.sqlContext.setConf(RapidsConf.EXPORT_COLUMNAR_RDD.key, "true")
     val input = try {
       df.rdd
     } finally {
-      df.sqlContext.setConf(RapidsConf.EXPORT_COLUMNAR_RDD.key, "false")
+      df.sparkSession.sqlContext.setConf(RapidsConf.EXPORT_COLUMNAR_RDD.key, "false")
     }
     var batch: Option[RDD[ColumnarBatch]] = None
     // If we are exporting the data we will see
@@ -690,6 +690,14 @@ object InternalColumnarRddConverter extends Logging {
                 rowConversionRdd.prev match {
                   case c2rRdd: GpuColumnToRowMapPartitionsRDD =>
                     batch = Some(c2rRdd.prev)
+                  case opTimeRdd: GpuOpTimeTrackingRDD[_] =>
+                    opTimeRdd.prev match {
+                      case c2rRdd: GpuColumnToRowMapPartitionsRDD =>
+                        batch = Some(c2rRdd.prev)
+                      case rdd =>
+                        logDebug("Cannot extract columnar RDD directly. " +
+                          s"(column to row not found $rdd)")
+                    }
                   case rdd =>
                     logDebug("Cannot extract columnar RDD directly. " +
                       s"(column to row not found $rdd)")
@@ -715,7 +723,7 @@ object InternalColumnarRddConverter extends Logging {
     val b = batch.getOrElse({
       // We have to fall back to doing a slow transition.
       val converters = new GpuExternalRowToColumnConverter(schema)
-      val conf = new RapidsConf(df.sqlContext.conf)
+      val conf = new RapidsConf(df.sparkSession.sessionState.conf)
       val goal = TargetSize(conf.gpuTargetBatchSizeBytes)
       input.mapPartitions { rowIter =>
         new ExternalRowToColumnarIterator(rowIter, schema, goal, converters)

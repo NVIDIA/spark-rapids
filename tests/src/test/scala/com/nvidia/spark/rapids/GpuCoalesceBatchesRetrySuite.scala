@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -199,7 +199,7 @@ class GpuCoalesceBatchesRetrySuite
       val batches = iter.asInstanceOf[CoalesceIteratorMocks].getBatches()
       assertResult(10)(batches.length)
       batches.foreach(b =>
-        verify(b, times(1)).close()
+        GpuColumnVector.extractBases(b).forall(_.getRefCount == 0)
       )
     }
   }
@@ -310,7 +310,7 @@ class GpuCoalesceBatchesRetrySuite
         NoopMetric,
         NoopMetric,
         "test",
-        TableCompressionCodecConfig(1024)) with CoalesceIteratorMocks {
+        TableCompressionCodecConfig(1024, 1024)) with CoalesceIteratorMocks {
     override def populateCandidateBatches(): Boolean = {
       val lastBatchTag = super.populateCandidateBatches()
       injectError(injectRetry, injectSplitAndRetry)

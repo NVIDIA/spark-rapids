@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,11 +14,11 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from spark_session import is_before_spark_320, is_jvm_charset_utf8
+from spark_session import is_before_spark_320, is_jvm_charset_utf8, is_before_spark_400
 from pyspark.sql.types import *
-from marks import datagen_overrides, allow_non_gpu
+from marks import datagen_overrides, allow_non_gpu, disable_ansi_mode
 import pyspark.sql.functions as f
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
@@ -47,6 +47,8 @@ if_struct_gens_sample = [if_struct_gen,
 if_nested_gens = if_array_gens_sample + if_struct_gens_sample
 
 @pytest.mark.parametrize('data_gen', all_gens + if_nested_gens, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_if_else(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -117,6 +119,8 @@ def test_nanvl(data_gen):
                 f.nanvl(f.lit(float('nan')).cast(data_type), f.col('b'))))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_nvl(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -156,6 +160,8 @@ def test_coalesce_constant_output():
             lambda spark : spark.range(1, 100).selectExpr("4 + coalesce(5, id) as nine"))
 
 @pytest.mark.parametrize('data_gen', all_basic_gens + decimal_gens, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_nvl2(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -169,6 +175,8 @@ def test_nvl2(data_gen):
                 'nvl2(a, {}, c)'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_nullif(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -182,6 +190,8 @@ def test_nullif(data_gen):
                 'nullif(a, {})'.format(null_lit)))
 
 @pytest.mark.parametrize('data_gen', eq_gens_with_decimal_gen, ids=idfn)
+# https://github.com/NVIDIA/spark-rapids/issues/12019
+@disable_ansi_mode
 def test_ifnull(data_gen):
     (s1, s2) = with_cpu_session(
         lambda spark: gen_scalars_for_sql(data_gen, 2, force_no_nulls=not isinstance(data_gen, NullGen)))
@@ -296,3 +306,167 @@ def test_conditional_with_side_effects_unary_minus(data_gen, ansi_enabled):
             'CASE WHEN a > -32768 THEN -a ELSE null END'),
         conf = {'spark.sql.ansi.enabled': ansi_enabled})
 
+_case_when_scalars = [
+    ['True', 'False', 'null', 'True', 'False'],
+    ['CAST(1 AS TINYINT)', 'CAST(2 AS TINYINT)', 'CAST(3 AS TINYINT)', 'CAST(4 AS TINYINT)', 'CAST(5 AS TINYINT)'],
+    ['CAST(1 AS SMALLINT)', 'CAST(2 AS SMALLINT)', 'CAST(3 AS SMALLINT)', 'CAST(4 AS SMALLINT)', 'CAST(5 AS SMALLINT)'],
+    ['1', '2', '3', '4', '5'],
+    ['CAST(1 AS BIGINT)',          'CAST(2 AS BIGINT)',          'CAST(3 AS BIGINT)',          'CAST(4 AS BIGINT)',          'CAST(5 AS BIGINT)'],
+    ['CAST(1.1 AS FLOAT)',         'CAST(2.2 AS FLOAT)',         'CAST(3.3 AS FLOAT)',         'CAST(4.4 AS FLOAT)',         'CAST(5.5 AS FLOAT)'],
+    ['CAST(1.1 AS DOUBLE)',        'CAST(2.2 AS DOUBLE)',        'CAST(3.3 AS DOUBLE)',        'CAST(4.4 AS DOUBLE)',        'CAST(5.5 AS DOUBLE)'],
+    ["'str_value1'",               "'str_value2'",               "'str_value3'",               "'str_value4'",               "'str_else'"],
+    ['null',  'CAST(2.2 AS DECIMAL(7,3))',  'CAST(3.3 AS DECIMAL(7,3))',  'CAST(4.4 AS DECIMAL(7,3))',  'CAST(5.5 AS DECIMAL(7,3))'], # null and decimal(7)
+    ['null',  'CAST(2.2 AS DECIMAL(12,2))',  'CAST(3.3 AS DECIMAL(7,3))',  'CAST(4.4 AS DECIMAL(7,3))',  'CAST(5.5 AS DECIMAL(7,3))'], # decimal(7) and decimal(12)
+    ['CAST(1.1 AS DECIMAL(12,2))', 'CAST(2.2 AS DECIMAL(12,2))', 'CAST(3.3 AS DECIMAL(20,2))', 'CAST(4.4 AS DECIMAL(12,2))', 'CAST(5.5 AS DECIMAL(12,2))'], # decimal(12) and decimal(20)
+    ['CAST(1.1 AS DECIMAL(20,2))', 'CAST(2.2 AS DECIMAL(20,2))', 'CAST(3.3 AS DECIMAL(20,2))', 'CAST(4.4 AS DECIMAL(20,2))', 'CAST(5.5 AS DECIMAL(20,2))'], # decimal(20)
+]
+@pytest.mark.parametrize('case_when_scalars', _case_when_scalars, ids=idfn)
+def test_case_when_all_then_values_are_scalars(case_when_scalars):
+    data_gen = [
+        ("a", boolean_gen),
+        ("b", boolean_gen),
+        ("c", boolean_gen),
+        ("d", boolean_gen),
+        ("e", boolean_gen)
+    ]
+    sql =  """
+            select case
+                when a then {}
+                when b then {}
+                when c then {}
+                when d then {}
+                else {}
+            end
+            from tab
+            """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen),
+        "tab",
+        sql.format(case_when_scalars[0], case_when_scalars[1], case_when_scalars[2], case_when_scalars[3], case_when_scalars[4]),
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+
+# test corner cases:
+#  - when exprs has nulls
+#  - else expr is null
+def test_case_when_all_then_values_are_scalars_with_nulls():
+    bool_rows = [(True, False, False, None),
+                 (False, True, True, None), # the second true will enable `when b then null` branch
+                 (False, False, None, None),
+                 (None, None, True, False),
+                 (False, False, False, False),
+                 (None, None, None, None)]
+    sql =  """
+            select case 
+                when a then 'aaa' 
+                when b then null
+                when c then 'ccc' 
+                when d then 'ddd' 
+                else {}
+            end
+            from tab
+            """
+    sql_without_else =  """
+            select case 
+                when a then cast(1.1 as decimal(7,2))
+                when b then null
+                when c then cast(3.3 as decimal(7,2))
+                when d then cast(4.4 as decimal(7,2))
+            end
+            from tab
+            """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(bool_rows, "a boolean, b boolean, c boolean, d boolean"),
+        "tab",
+        sql.format("'unknown'"),
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(bool_rows, "a boolean, b boolean, c boolean, d boolean"),
+        "tab",
+        sql.format("null"), # set else as null
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: spark.createDataFrame(bool_rows, "a boolean, b boolean, c boolean, d boolean"),
+        "tab",
+        sql_without_else,
+        conf = {'spark.rapids.sql.case_when.fuse': 'true'})
+
+@pytest.mark.parametrize('combine_string_contains_enabled', [True, False])
+def test_combine_string_contains_in_case_when(combine_string_contains_enabled):
+    data_gen = [("c1", string_gen)]
+    sql =  """
+            SELECT
+                CASE
+                     WHEN INSTR(c1, 'a') > 0 THEN 'a'
+                     WHEN INSTR(c1, 'b') > 0 THEN 'b'
+                     WHEN INSTR(c1, 'c') > 0 THEN 'c'
+                     ELSE ''
+                END as output_1,
+                CASE
+                     WHEN INSTR(c1, 'c') > 0 THEN 'c'
+                     WHEN INSTR(c1, 'd') > 0 THEN 'd'
+                     WHEN INSTR(c1, 'e') > 0 THEN 'e'
+                     ELSE ''
+                END as output_2
+            from tab
+            """
+    # spark.rapids.sql.combined.expressions.enabled is true by default
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, data_gen),
+        "tab",
+        sql,
+        { "spark.rapids.sql.expression.combined.GpuContains" : combine_string_contains_enabled}
+    )
+
+
+def test_case_when_with_side_effect_in_else():
+    sql = """
+        SELECT
+            a,
+            CASE
+                WHEN size(a) > 0 THEN NULL
+                ELSE element_at(a, 0)
+            END
+        FROM else_side_effect
+    """
+
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: unary_op_df(spark, SetValuesGen(ArrayType(IntegerType()), [[1, 2, 3]]), 10),
+        "else_side_effect",
+        sql
+    )
+
+_data_gen_for_between = [("c1", string_gen), ("c2", byte_gen), ("c3", short_gen), ("c4", int_gen),
+                         ("c5", long_gen), ("c6", float_gen), ("c7", double_gen)]
+
+# test between expr:  between(x, min, max)
+@pytest.mark.skipif(is_before_spark_400(), reason="Only supports Spark versions: 400 and 400+")
+def test_between_expr():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : gen_df(spark, _data_gen_for_between).selectExpr(
+            "BETWEEN(c1, 'a', NULL)",
+            "BETWEEN(c1, 'a', 'Z')",
+            "BETWEEN(c2, CAST(1 as byte), cast(127 as byte))",
+            "BETWEEN(c3, cast(-1 as short), cast(1024 as short))",
+            "BETWEEN(c4, 2048, 4096)",
+            "BETWEEN(c5, cast(4096 as long), cast(1000000 as long))",
+            "BETWEEN(c6, CAST(1.1 as float), CAST(90000.02 as float))",
+            "BETWEEN(c7, 1.2, 1234576.11)"))
+
+# test between sql:  x between min and max
+def test_between_sql():
+    sql =  """
+        SELECT
+            c1 BETWEEN 'a' AND NULL,
+            c1 BETWEEN 'a' AND 'Z',
+            c2 BETWEEN CAST(1 as byte) AND cast(127 as byte),
+            c3 BETWEEN cast(-1 as short) AND cast(1024 as short),
+            c4 BETWEEN 2048 AND 4096,
+            c5 BETWEEN cast(4096 as long) AND cast(1000000 as long),
+            c6 BETWEEN CAST(1.1 as float) AND CAST(90000.02 as float),
+            c7 BETWEEN 1.2 AND 1234576.11
+        from tab
+    """
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark : gen_df(spark, _data_gen_for_between),
+        "tab",
+        sql)

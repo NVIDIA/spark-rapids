@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * This file was derived from DataSkippingStatsTracker.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -23,7 +23,7 @@ package com.nvidia.spark.rapids.delta
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.delta.shims.ShimJoinedProjection
+import com.nvidia.spark.rapids.delta.shims.{ShimJoinedProjection, StatsExprShim}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -103,9 +103,12 @@ class GpuDeltaTaskStatisticsTracker(
   // This executes the whole statsColExpr in order to compute the final stats value for the file.
   // In order to evaluate it, we have to replace its aggregate functions with the corresponding
   // aggregates' evaluateExpressions that basically just return the results stored in aggBuffer.
-  private val resultExpr: Expression = statsColExpr.transform {
-    case ae: AggregateExpression if ae.aggregateFunction.isInstanceOf[DeclarativeAggregate] =>
-      ae.aggregateFunction.asInstanceOf[DeclarativeAggregate].evaluateExpression
+  private val resultExpr: Expression = {
+    val evaluatedAggs = statsColExpr.transform {
+      case ae: AggregateExpression if ae.aggregateFunction.isInstanceOf[DeclarativeAggregate] =>
+        ae.aggregateFunction.asInstanceOf[DeclarativeAggregate].evaluateExpression
+    }
+    StatsExprShim.unwrapRuntimeReplaceable(evaluatedAggs)
   }
 
   // See resultExpr above
@@ -136,7 +139,9 @@ class GpuDeltaTaskStatisticsTracker(
     submittedFiles.remove(filePath)
   }
 
-  override def newPartition(): Unit = { }
+  override def newPartition(partitionValues: InternalRow): Unit = { }
+
+  override def writersNumber(numWriters: Int): Unit = { }
 
   protected def initializeAggBuf(buffer: SpecificInternalRow): InternalRow =
     initializeStats.target(buffer).apply(EmptyRow)

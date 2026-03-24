@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "321"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "324"}
 {"spark": "330"}
 {"spark": "331"}
 {"spark": "332"}
@@ -27,13 +24,16 @@
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
 import java.io.{ByteArrayOutputStream, InputStream}
 import java.nio.ByteBuffer
 
-import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuColumnVector, NoopMetric, SparkSessionHolder}
+import ai.rapids.cudf.HostMemoryBuffer
+import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuColumnVector, GpuMetric, LocalGpuMetric, NoopMetric, RapidsConf, SlicedSerializedColumnVector, SparkSessionHolder}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.mockito.ArgumentMatchers.{eq => meq}
 import org.mockito.Mockito.{mock, when}
@@ -45,6 +45,7 @@ import org.apache.spark.internal.config
 import org.apache.spark.network.buffer.{ManagedBuffer, NioManagedBuffer}
 import org.apache.spark.serializer.SerializerManager
 import org.apache.spark.sql.rapids.shims.RapidsShuffleThreadedReader
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.{BlockManager, BlockManagerId, ShuffleBlockId}
 
 class InjectedShuffleErrorInTests extends Exception {
@@ -111,7 +112,8 @@ class RapidsShuffleThreadedReaderSuite
       val shuffleId = 22
       val numMaps = 6
       val keyValuePairsPerMap = 10
-      val serializer = new GpuColumnarBatchSerializer(NoopMetric)
+      val serializer = new GpuColumnarBatchSerializer(Map.empty.withDefaultValue(NoopMetric),
+        Array.empty, RapidsConf.ShuffleKudoMode.CPU, false, false)
 
       // Make a mock BlockManager that will return RecordingManagedByteBuffers of data, so that we
       // can ensure retain() and release() are properly called.
@@ -227,5 +229,27 @@ class RapidsShuffleThreadedReaderSuite
     test(s"read() releases resources on error - numThreads=$numReaderThreads") {
       runShuffleRead(numReaderThreads, injectError = true)
     }
+  }
+
+  test("kudo gpu ser writes data size metric") {
+    val metrics: Map[String, GpuMetric] = Map(
+      "dataSize" -> new LocalGpuMetric()
+    ).withDefaultValue(new LocalGpuMetric)
+
+    val serializer = new GpuColumnarBatchSerializer(metrics,
+      Array.empty, RapidsConf.ShuffleKudoMode.GPU, true, false)
+    val byteOutputStream = new ByteArrayOutputStream()
+    val serializationStream = serializer.newInstance().serializeStream(byteOutputStream)
+
+    withResource(HostMemoryBuffer.allocate(128)) { hmb =>
+      withResource(new SlicedSerializedColumnVector(hmb, 0, 128)) { cv =>
+        withResource(new ColumnarBatch(Array(cv))) { batch =>
+          serializationStream.writeKey(0)
+          serializationStream.writeValue(SlicedSerializedColumnVector.incRefCount(batch))
+        }
+      }
+    }
+
+    assert(metrics("dataSize").value == 128)
   }
 }

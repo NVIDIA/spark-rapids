@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ContiguousTable, Cuda, DeviceMemoryBuffer, NvtxColor, NvtxRange}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ContiguousTable, Cuda, DeviceMemoryBuffer}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, CodecType, TableMeta}
@@ -74,17 +74,19 @@ trait TableCompressionCodec {
 /**
  * A small case class used to carry codec-specific settings.
  */
-case class TableCompressionCodecConfig(lz4ChunkSize: Long)
+case class TableCompressionCodecConfig(lz4ChunkSize: Long, zstdChunkSize: Long)
 
-object TableCompressionCodec {
+object TableCompressionCodec extends Logging {
   private val codecNameToId = Map(
     "copy" -> CodecType.COPY,
+    "zstd" -> CodecType.NVCOMP_ZSTD,
     "lz4" -> CodecType.NVCOMP_LZ4)
 
   /** Make a codec configuration object which can be serialized (can be used in tasks) */
   def makeCodecConfig(rapidsConf: RapidsConf): TableCompressionCodecConfig =
     TableCompressionCodecConfig(
-      rapidsConf.shuffleCompressionLz4ChunkSize)
+      rapidsConf.shuffleCompressionLz4ChunkSize,
+      rapidsConf.shuffleCompressionZstdChunkSize)
 
   /** Get a compression codec by short name or fully qualified class name */
   def getCodec(name: String, codecConfigs: TableCompressionCodecConfig): TableCompressionCodec = {
@@ -95,11 +97,14 @@ object TableCompressionCodec {
 
   /** Get a compression codec by ID, using a cache. */
   def getCodec(codecId: Byte, codecConfig: TableCompressionCodecConfig): TableCompressionCodec = {
-    codecId match {
+    val ret = codecId match {
+      case CodecType.NVCOMP_ZSTD => new NvcompZSTDCompressionCodec(codecConfig)
       case CodecType.NVCOMP_LZ4 => new NvcompLZ4CompressionCodec(codecConfig)
       case CodecType.COPY => new CopyCompressionCodec
       case _ => throw new IllegalArgumentException(s"Unknown codec ID: $codecId")
     }
+    logDebug(s"Using codec: ${ret.name}")
+    ret
   }
 }
 
@@ -188,7 +193,7 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long, stream: Cuda.Str
   }
 
   private def compressBatch(): Unit = if (tables.nonEmpty) {
-    withResource(new NvtxRange("batch compress", NvtxColor.ORANGE)) { _ =>
+    NvtxRegistry.BATCH_COMPRESS {
       val startTime = System.nanoTime()
       val compressedTables = compress(tables.toArray, stream)
       results ++= compressedTables
@@ -219,7 +224,7 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long, stream: Cuda.Str
    * @return right-sized compressed tables
    */
   protected def resizeOversizedOutputs(tables: Array[CompressedTable]): Array[CompressedTable] = {
-    withResource(new NvtxRange("copy compressed buffers", NvtxColor.PURPLE)) { _ =>
+    NvtxRegistry.COPY_COMPRESSED_BUFFERS {
       withResource(tables) { _ =>
         tables.safeMap { ct =>
           val newBuffer = if (ct.buffer.getLength > ct.compressedSize) {
@@ -319,7 +324,7 @@ abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long, stream: Cuda.
 
   protected def decompressBatch(): Unit = {
     if (inputBuffers.nonEmpty) {
-      withResource(new NvtxRange("batch decompress", NvtxColor.ORANGE)) { _ =>
+      NvtxRegistry.BATCH_DECOMPRESS {
         val startTime = System.nanoTime()
         val uncompressedBuffers = decompressAsync(inputBuffers.toArray, bufferMetas.toArray, stream)
         results ++= uncompressedBuffers

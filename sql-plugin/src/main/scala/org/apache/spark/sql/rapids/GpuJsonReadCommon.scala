@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-
 package org.apache.spark.sql.rapids
 
 import java.util.Locale
 
-import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar, Schema, Table}
-import com.nvidia.spark.rapids.{ColumnCastUtil, GpuCast, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Schema, Table}
+import com.fasterxml.jackson.core.JsonParser
+import com.nvidia.spark.rapids.{ColumnCastUtil, GpuColumnVector, GpuScalar, GpuTextBasedPartitionReader, NvtxRegistry}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
-import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.JSONUtils
 
 import org.apache.spark.sql.catalyst.json.{GpuJsonUtils, JSONOptions}
 import org.apache.spark.sql.rapids.shims.GpuJsonToStructsShim
@@ -46,8 +46,10 @@ object GpuJsonReadCommon {
       }
     case _: MapType =>
       throw new IllegalArgumentException("MapType is not supported yet for schema conversion")
+    case dt: DecimalType =>
+      builder.addColumn(GpuColumnVector.getNonNestedRapidsType(dt), name, dt.precision)
     case _ =>
-      builder.addColumn(DType.STRING, name)
+      builder.addColumn(GpuColumnVector.getNonNestedRapidsType(dt), name)
   }
 
   /**
@@ -59,205 +61,6 @@ object GpuJsonReadCommon {
     val builder = Schema.builder
     input.foreach(f => populateSchema(f.dataType, f.name, builder))
     builder.build
-  }
-
-  private def isQuotedString(input: ColumnView): ColumnVector = {
-    withResource(Scalar.fromString("\"")) { quote =>
-      withResource(input.startsWith(quote)) { sw =>
-        withResource(input.endsWith(quote)) { ew =>
-          sw.binaryOp(BinaryOp.LOGICAL_AND, ew, DType.BOOL8)
-        }
-      }
-    }
-  }
-
-  private def stripFirstAndLastChar(input: ColumnView): ColumnVector = {
-    withResource(Scalar.fromInt(1)) { one =>
-      val end = withResource(input.getCharLengths) { cc =>
-        withResource(cc.sub(one)) { endWithNulls =>
-          withResource(endWithNulls.isNull) { eIsNull =>
-            eIsNull.ifElse(one, endWithNulls)
-          }
-        }
-      }
-      withResource(end) { _ =>
-        withResource(ColumnVector.fromScalar(one, end.getRowCount.toInt)) { start =>
-          input.substring(start, end)
-        }
-      }
-    }
-  }
-
-  private def undoKeepQuotes(input: ColumnView): ColumnVector = {
-    withResource(isQuotedString(input)) { iq =>
-      withResource(stripFirstAndLastChar(input)) { stripped =>
-        iq.ifElse(stripped, input)
-      }
-    }
-  }
-
-  private def fixupQuotedStrings(input: ColumnView): ColumnVector = {
-    withResource(isQuotedString(input)) { iq =>
-      withResource(stripFirstAndLastChar(input)) { stripped =>
-        withResource(Scalar.fromString(null)) { ns =>
-          iq.ifElse(stripped, ns)
-        }
-      }
-    }
-  }
-
-  private lazy val specialUnquotedFloats =
-    Seq("NaN", "+INF", "-INF", "+Infinity", "Infinity", "-Infinity")
-  private lazy val specialQuotedFloats = specialUnquotedFloats.map(s => '"'+s+'"')
-  private lazy val allSpecialFloats = specialUnquotedFloats ++ specialQuotedFloats
-
-  /**
-   * JSON has strict rules about valid numeric formats. See https://www.json.org/ for specification.
-   *
-   * Spark then has its own rules for supporting NaN and Infinity, which are not
-   * valid numbers in JSON.
-   */
-  private def sanitizeFloats(input: ColumnView, options: JSONOptions): ColumnVector = {
-    // Note that this is not 100% consistent with Spark versions prior to Spark 3.3.0
-    // due to https://issues.apache.org/jira/browse/SPARK-38060
-    // cuDF `isFloat` supports some inputs that are not valid JSON numbers, such as `.1`, `1.`,
-    // and `+1` so we use a regular expression to match valid JSON numbers instead
-    // TODO The majority of this validation needs to move to CUDF so that we can invalidate
-    //  an entire line/row instead of a single field.
-    // https://github.com/NVIDIA/spark-rapids/issues/10534
-    val jsonNumberRegexp = if (options.allowNumericLeadingZeros) {
-      "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
-    } else {
-      "^-?(?:(?:[1-9][0-9]*)|0)(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
-    }
-    val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
-    val isValid = if (options.allowNonNumericNumbers) {
-      withResource(ColumnVector.fromStrings(allSpecialFloats: _*)) { nonNumeric =>
-        withResource(input.matchesRe(prog)) { isJsonNumber =>
-          withResource(input.contains(nonNumeric)) { nonNumeric =>
-            isJsonNumber.or(nonNumeric)
-          }
-        }
-      }
-    } else {
-      input.matchesRe(prog)
-    }
-    val cleaned = withResource(isValid) { _ =>
-      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-        isValid.ifElse(input, nullString)
-      }
-    }
-
-    withResource(cleaned) { _ =>
-      if (options.allowNonNumericNumbers) {
-        // Need to normalize the quotes to non-quoted to parse properly
-        withResource(ColumnVector.fromStrings(specialQuotedFloats: _*)) { quoted =>
-          withResource(ColumnVector.fromStrings(specialUnquotedFloats: _*)) { unquoted =>
-            cleaned.findAndReplaceAll(quoted, unquoted)
-          }
-        }
-      } else {
-        cleaned.incRefCount()
-      }
-    }
-  }
-
-  private def sanitizeInts(input: ColumnView, options: JSONOptions): ColumnVector = {
-    // Integer numbers cannot look like a float, so no `.` The rest of the parsing should
-    // handle this correctly.
-    // TODO The majority of this validation needs to move to CUDF so that we can invalidate
-    //  an entire line/row instead of a single field.
-    // https://github.com/NVIDIA/spark-rapids/issues/10534
-    val jsonNumberRegexp = if (options.allowNumericLeadingZeros) {
-      "^-?[0-9]+$"
-    } else {
-      "^-?(?:(?:[1-9][0-9]*)|0)$"
-    }
-
-    val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
-    withResource(input.matchesRe(prog)) { isValid =>
-      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-        isValid.ifElse(input, nullString)
-      }
-    }
-  }
-
-  private def sanitizeQuotedDecimalInUSLocale(input: ColumnView): ColumnVector = {
-    // The US locale is kind of special in that it will remove the , and then parse the
-    // input normally
-    withResource(stripFirstAndLastChar(input)) { stripped =>
-      withResource(Scalar.fromString(",")) { comma =>
-        withResource(Scalar.fromString("")) { empty =>
-          stripped.stringReplace(comma, empty)
-        }
-      }
-    }
-  }
-
-  private def sanitizeUnquotedDecimal(input: ColumnView, options: JSONOptions): ColumnVector = {
-    // For unquoted decimal values the number has to look like it is floating point before it is
-    // parsed, so this follows that, but without the special cases for INF/NaN
-    // TODO The majority of this validation needs to move to CUDF so that we can invalidate
-    //  an entire line/row instead of a single field.
-    // https://github.com/NVIDIA/spark-rapids/issues/10534
-    val jsonNumberRegexp = if (options.allowNumericLeadingZeros) {
-      "^-?[0-9]+(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
-    } else {
-      "^-?(?:(?:[1-9][0-9]*)|0)(?:\\.[0-9]+)?(?:[eE][\\-\\+]?[0-9]+)?$"
-    }
-    val prog = new RegexProgram(jsonNumberRegexp, CaptureGroups.NON_CAPTURE)
-    withResource(input.matchesRe(prog)) { isValid =>
-      withResource(Scalar.fromNull(DType.STRING)) { nullString =>
-        isValid.ifElse(input, nullString)
-      }
-    }
-  }
-
-  private def sanitizeDecimal(input: ColumnView, options: JSONOptions): ColumnVector = {
-    assert(options.locale == Locale.US)
-    withResource(isQuotedString(input)) { isQuoted =>
-      withResource(sanitizeUnquotedDecimal(input, options)) { unquoted =>
-        withResource(sanitizeQuotedDecimalInUSLocale(input)) { quoted =>
-          isQuoted.ifElse(quoted, unquoted)
-        }
-      }
-    }
-  }
-
-  private def castStringToFloat(input: ColumnView, dt: DType,
-      options: JSONOptions): ColumnVector = {
-    withResource(sanitizeFloats(input, options)) { sanitizedInput =>
-      CastStrings.toFloat(sanitizedInput, false, dt)
-    }
-  }
-
-  private def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector =
-    CastStrings.toDecimal(input, false, false, dt.precision, -dt.scale)
-
-  private def castJsonStringToBool(input: ColumnView): ColumnVector = {
-    // TODO This validation needs to move to CUDF so that we can invalidate
-    //  an entire line/row instead of a single field.
-    // https://github.com/NVIDIA/spark-rapids/issues/10534
-    val isTrue = withResource(Scalar.fromString("true")) { trueStr =>
-      input.equalTo(trueStr)
-    }
-    withResource(isTrue) { _ =>
-      val isFalse = withResource(Scalar.fromString("false")) { falseStr =>
-        input.equalTo(falseStr)
-      }
-      val falseOrNull = withResource(isFalse) { _ =>
-        withResource(Scalar.fromBool(false)) { falseLit =>
-          withResource(Scalar.fromNull(DType.BOOL8)) { nul =>
-            isFalse.ifElse(falseLit, nul)
-          }
-        }
-      }
-      withResource(falseOrNull) { _ =>
-        withResource(Scalar.fromBool(true)) { trueLit =>
-          isTrue.ifElse(trueLit, falseOrNull)
-        }
-      }
-    }
   }
 
   private def dateFormat(options: JSONOptions): Option[String] =
@@ -272,7 +75,7 @@ object GpuJsonReadCommon {
   }
 
   private def nestedColumnViewMismatchTransform(cv: ColumnView,
-      dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
+    dt: DataType): (Option[ColumnView], Seq[AutoCloseable]) = {
     // In the future we should be able to convert strings to maps/etc, but for
     // now we are working around issues where CUDF is not returning a STRING for nested
     // types when asked for it.
@@ -308,42 +111,39 @@ object GpuJsonReadCommon {
     }
   }
 
+  private def convertStringToDate(input: ColumnView, options: JSONOptions): ColumnVector = {
+    withResource(JSONUtils.removeQuotes(input, /*nullifyIfNotQuoted*/ true)) { removedQuotes =>
+      GpuJsonToStructsShim.castJsonStringToDateFromScan(removedQuotes, DType.TIMESTAMP_DAYS,
+        dateFormat(options))
+    }
+  }
+
+  private def convertStringToTimestamp(input: ColumnView, options: JSONOptions): ColumnVector = {
+    withResource(JSONUtils.removeQuotes(input, /*nullifyIfNotQuoted*/ true)) { removedQuotes =>
+      GpuTextBasedPartitionReader.castStringToTimestamp(removedQuotes, timestampFormat(options),
+        DType.TIMESTAMP_MICROSECONDS)
+    }
+  }
+
   private def convertToDesiredType(inputCv: ColumnVector,
       topLevelType: DataType,
       options: JSONOptions): ColumnVector = {
     ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
       Some(nestedColumnViewMismatchTransform)) {
-      case (cv, Some(BooleanType)) if cv.getType == DType.STRING =>
-        castJsonStringToBool(cv)
       case (cv, Some(DateType)) if cv.getType == DType.STRING =>
-        withResource(fixupQuotedStrings(cv)) { fixed =>
-          GpuJsonToStructsShim.castJsonStringToDateFromScan(fixed, DType.TIMESTAMP_DAYS,
-            dateFormat(options))
-        }
+        convertStringToDate(cv, options)
       case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
-        withResource(fixupQuotedStrings(cv)) { fixed =>
-          GpuTextBasedPartitionReader.castStringToTimestamp(fixed, timestampFormat(options),
-            DType.TIMESTAMP_MICROSECONDS)
-        }
-      case (cv, Some(StringType)) if cv.getType == DType.STRING =>
-        undoKeepQuotes(cv)
-      case (cv, Some(dt: DecimalType)) if cv.getType == DType.STRING =>
-        withResource(sanitizeDecimal(cv, options)) { tmp =>
-          castStringToDecimal(tmp, dt)
-        }
-      case (cv, Some(dt)) if (dt == DoubleType || dt == FloatType) && cv.getType == DType.STRING =>
-        castStringToFloat(cv,  GpuColumnVector.getNonNestedRapidsType(dt), options)
-      case (cv, Some(dt))
-        if (dt == ByteType || dt == ShortType || dt == IntegerType || dt == LongType ) &&
-            cv.getType == DType.STRING =>
-        withResource(sanitizeInts(cv, options)) { tmp =>
-          CastStrings.toInteger(tmp, false, GpuColumnVector.getNonNestedRapidsType(dt))
-        }
+        convertStringToTimestamp(cv, options)
       case (cv, Some(dt)) if cv.getType == DType.STRING =>
-        GpuCast.doCast(cv, StringType, dt)
+        // There is an issue with the Schema implementation such that the schema's top level
+        // is never used when passing down data schema from Java to C++.
+        // As such, we have to wrap the current column schema `dt` in a struct schema.
+        val builder = Schema.builder // This is created as a struct schema
+        populateSchema(dt, "", builder)
+        JSONUtils.convertFromStrings(cv, builder.build, options.allowNonNumericNumbers,
+          options.locale == Locale.US)
     }
   }
-
 
   /**
    * Convert the parsed input table to the desired output types
@@ -355,21 +155,60 @@ object GpuJsonReadCommon {
   def convertTableToDesiredType(table: Table,
       desired: StructType,
       options: JSONOptions): Array[ColumnVector] = {
-    val dataTypes = desired.fields.map(_.dataType)
-    dataTypes.zipWithIndex.safeMap {
-      case (dt, i) =>
-        convertToDesiredType(table.getColumn(i), dt, options)
+    NvtxRegistry.JSON_CONVERT_TABLE {
+      val dataTypes = desired.fields.map(_.dataType)
+      dataTypes.zipWithIndex.safeMap {
+        case (dt, i) =>
+          convertToDesiredType(table.getColumn(i), dt, options)
+      }
     }
   }
 
-  def cudfJsonOptions(options: JSONOptions,
-      enableMixedTypes: Boolean): ai.rapids.cudf.JSONOptions = {
+  /**
+   * Convert a strings column into date/time types.
+   * @param inputCv The input column vector
+   * @param topLevelType The desired output data type
+   * @param options JSON options for the conversion
+   * @return The converted column vector
+   */
+  def convertDateTimeType(inputCv: ColumnVector,
+      topLevelType: DataType,
+      options: JSONOptions): ColumnVector = {
+    NvtxRegistry.JSON_CONVERT_DATETIME {
+      ColumnCastUtil.deepTransform(inputCv, Some(topLevelType),
+        Some(nestedColumnViewMismatchTransform)) {
+        case (cv, Some(DateType)) if cv.getType == DType.STRING =>
+          convertStringToDate(cv, options)
+        case (cv, Some(TimestampType)) if cv.getType == DType.STRING =>
+          convertStringToTimestamp(cv, options)
+      }
+    }
+  }
+
+  def cudfJsonOptions(options: JSONOptions): ai.rapids.cudf.JSONOptions = {
+    // This is really ugly, but options.allowUnquotedControlChars is marked as private
+    // and this is the only way I know to get it without even uglier tricks
+    @scala.annotation.nowarn("msg=Java enum ALLOW_UNQUOTED_CONTROL_CHARS in " +
+      "Java enum Feature is deprecated")
+    val allowUnquotedControlChars = options.buildJsonFactory()
+      .isEnabled(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS)
+
+    baseCudfJsonOptionsBuilder()
+      .withNormalizeSingleQuotes(options.allowSingleQuotes)
+      .withLeadingZeros(options.allowNumericLeadingZeros)
+      .withNonNumericNumbers(options.allowNonNumericNumbers)
+      .withUnquotedControlChars(allowUnquotedControlChars)
+      .build()
+  }
+
+  def baseCudfJsonOptionsBuilder(): ai.rapids.cudf.JSONOptions.Builder = {
     ai.rapids.cudf.JSONOptions.builder()
-    .withRecoverWithNull(true)
-    .withMixedTypesAsStrings(enableMixedTypes)
-    .withNormalizeWhitespace(true)
-    .withKeepQuotes(true)
-    .withNormalizeSingleQuotes(options.allowSingleQuotes)
-    .build()
+      .withRecoverWithNull(true)
+      .withMixedTypesAsStrings(true)
+      .withNormalizeWhitespace(true)
+      .withKeepQuotes(true)
+      .withStrictValidation(true)
+      .withCudfPruneSchema(true)
+      .withExperimental(true)
   }
 }

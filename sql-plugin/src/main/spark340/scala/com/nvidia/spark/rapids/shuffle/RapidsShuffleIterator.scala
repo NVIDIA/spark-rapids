@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,23 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shuffle
 
@@ -29,9 +44,7 @@ import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
 import scala.collection
 import scala.collection.mutable
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuSemaphore, RapidsBuffer, RapidsBufferHandle, RapidsConf, ShuffleReceivedBufferCatalog}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.{GpuSemaphore, NvtxRegistry, RapidsConf, RapidsShuffleHandle, ShuffleReceivedBufferCatalog}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
 
@@ -81,7 +94,7 @@ class RapidsShuffleIterator(
    * A result for a successful buffer received
    * @param handle - the shuffle received buffer handle as tracked in the catalog
    */
-  case class BufferReceived(handle: RapidsBufferHandle) extends ShuffleClientResult
+  case class BufferReceived(handle: RapidsShuffleHandle) extends ShuffleClientResult
 
   /**
    * A result for a failed attempt at receiving block metadata, or corresponding batches.
@@ -171,7 +184,7 @@ class RapidsShuffleIterator(
     val (local, remote) = blocksByAddress.partition(ba => ba._1.host == localHost)
 
     (local ++ remote).foreach {
-      case (blockManagerId: BlockManagerId, blockIds: Seq[(BlockId, Long, Int)]) => {
+      case (blockManagerId: BlockManagerId, blockIds: collection.Seq[(BlockId, Long, Int)]) => {
         val shuffleRequestsMapIndex: Seq[BlockIdMapIndex] =
           blockIds.map { case (blockId, _, mapIndex) =>
             /**
@@ -191,7 +204,7 @@ class RapidsShuffleIterator(
                 throw new IllegalArgumentException(
                   s"${blockId.getClass} $blockId is not currently supported")
             }
-          }
+          }.toSeq
 
         val client = try {
           transport.makeClient(blockManagerId)
@@ -217,7 +230,7 @@ class RapidsShuffleIterator(
 
           override def getTaskIds: Array[Long] = taskIds
 
-          def start(expectedBatches: Int): Unit = resolvedBatches.synchronized {
+          override def start(expectedBatches: Int): Unit = resolvedBatches.synchronized {
             if (expectedBatches == 0) {
               throw new IllegalStateException(
                 s"Received an invalid response from shuffle server: " +
@@ -236,13 +249,13 @@ class RapidsShuffleIterator(
           def clientDone: Boolean = clientExpectedBatches > 0 &&
             clientExpectedBatches == clientResolvedBatches
 
-          def batchReceived(handle: RapidsBufferHandle): Boolean = {
+          override def batchReceived(handle: RapidsShuffleHandle): Boolean = {
             resolvedBatches.synchronized {
               if (taskComplete) {
                 false
               } else {
                 batchesInFlight = batchesInFlight - 1
-                withResource(new NvtxRange(s"BATCH RECEIVED", NvtxColor.DARK_GREEN)) { _ =>
+                NvtxRegistry.BATCH_RECEIVED {
                   if (markedAsDone) {
                     throw new IllegalStateException(
                       "This iterator was marked done, but a batched showed up after!!")
@@ -301,8 +314,7 @@ class RapidsShuffleIterator(
       logWarning(s"Iterator for task ${taskAttemptIdStr} closing, " +
           s"but it is not done. Closing ${resolvedBatches.size()} resolved batches!!")
       resolvedBatches.forEach {
-        case BufferReceived(handle) =>
-          GpuShuffleEnv.getReceivedCatalog.removeBuffer(handle)
+        case BufferReceived(handle) => handle.close()
         case _ =>
       }
       // tell the client to cancel pending requests
@@ -328,9 +340,7 @@ class RapidsShuffleIterator(
   }
 
   override def next(): ColumnarBatch = {
-    var cb: ColumnarBatch = null
-    var sb: RapidsBuffer = null
-    val range = new NvtxRange(s"RapidshuffleIterator.next", NvtxColor.RED)
+    NvtxRegistry.RAPIDS_SHUFFLE_ITERATOR_NEXT.push()
 
     // If N tasks downstream are accumulating memory we run the risk OOM
     // On the other hand, if wait here we may not start processing batches that are ready.
@@ -368,19 +378,14 @@ class RapidsShuffleIterator(
 
     result match {
       case Some(BufferReceived(handle)) =>
-        val nvtxRangeAfterGettingBatch = new NvtxRange("RapidsShuffleIterator.gotBatch",
-          NvtxColor.PURPLE)
+        NvtxRegistry.RAPIDS_SHUFFLE_ITERATOR_GOT_BATCH.push()
         try {
-          sb = catalog.acquireBuffer(handle)
-          cb = sb.getColumnarBatch(sparkTypes)
-          metricsUpdater.update(blockedTime, 1, sb.memoryUsedBytes, cb.numRows())
+          val (cb, memoryUsedBytes) = catalog.getColumnarBatchAndRemove(handle, sparkTypes)
+          metricsUpdater.update(blockedTime, 1, memoryUsedBytes, cb.numRows())
+          cb
         } finally {
-          nvtxRangeAfterGettingBatch.close()
-          range.close()
-          if (sb != null) {
-            sb.close()
-          }
-          catalog.removeBuffer(handle)
+          NvtxRegistry.RAPIDS_SHUFFLE_ITERATOR_GOT_BATCH.pop()
+          NvtxRegistry.RAPIDS_SHUFFLE_ITERATOR_NEXT.pop()
         }
       case Some(
         TransferError(blockManagerId, shuffleBlockBatchId, mapIndex, errorMessage, throwable)) =>
@@ -406,6 +411,5 @@ class RapidsShuffleIterator(
       case _ =>
         throw new IllegalStateException(s"Invalid result type $result")
     }
-    cb
   }
 }

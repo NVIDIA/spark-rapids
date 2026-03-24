@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.jni.{Arithmetic, CastStrings, ExceptionWithRowIndex, RoundMode}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -65,6 +66,17 @@ case class GpuToRadians(child: Expression) extends GpuUnaryMathExpression("RADIA
     withResource(Scalar.fromDouble(Math.PI / 180d)) { multiplier =>
       input.getBase.mul(multiplier)
     }
+  }
+}
+
+case class GpuBin(child: Expression) extends GpuUnaryExpression
+  with ImplicitCastInputTypes with Serializable  {
+  override def nullable: Boolean = true
+  override def inputTypes: Seq[AbstractDataType] = Seq(LongType)
+  override def dataType: DataType = StringType
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    CastStrings.fromLongToBinary(input.getBase)
   }
 }
 
@@ -213,7 +225,7 @@ case class GpuCeil(child: Expression, outputType: DataType)
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
                 throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
-                  input, outOfBounds, dt, outputType
+                  input.getBase, outOfBounds, dt, outputType
                 )
               }
             }
@@ -289,7 +301,7 @@ case class GpuFloor(child: Expression, outputType: DataType)
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
                 throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
-                  input, outOfBounds, dt, outputType
+                  input.getBase, outOfBounds, dt, outputType
                 )
               }
             }
@@ -304,8 +316,8 @@ case class GpuLog(child: Expression) extends CudfUnaryMathExpression("LOG") {
   override def unaryOp: UnaryOp = UnaryOp.LOG
   override def outputTypeOverride: DType = DType.FLOAT64
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    withResource(GpuLogarithm.fixUpLhs(input)) { normalized =>
-      super.doColumnar(GpuColumnVector.from(normalized, child.dataType))
+    withResource(GpuLogarithm.nullOutNegatives(input, child.dataType)) { normalized =>
+      super.doColumnar(normalized)
     }
   }
 }
@@ -316,21 +328,22 @@ object GpuLogarithm {
    * Replace negative values with nulls. Note that the caller is responsible for closing the
    * returned GpuColumnVector.
    */
-  def fixUpLhs(input: GpuColumnVector): ColumnVector = {
-    withResource(Scalar.fromDouble(0)) { zero =>
+  def nullOutNegatives(input: GpuColumnVector, dt: DataType): GpuColumnVector = {
+    val ret = withResource(Scalar.fromDouble(0)) { zero =>
       withResource(input.getBase.binaryOp(BinaryOp.LESS_EQUAL, zero, DType.BOOL8)) { zeroOrLess =>
         withResource(Scalar.fromNull(DType.FLOAT64)) { nullScalar =>
           zeroOrLess.ifElse(nullScalar, input.getBase)
         }
       }
     }
+    GpuColumnVector.from(ret, dt)
   }
 
   /**
    * Replace negative values with nulls. Note that the caller is responsible for closing the
    * returned Scalar.
    */
-  def fixUpLhs(input: GpuScalar): GpuScalar = {
+  def nullOutNegatives(input: GpuScalar): GpuScalar = {
     if (input.isValid && input.getValue.asInstanceOf[Double] <= 0) {
       GpuScalar(null, DoubleType)
     } else {
@@ -344,22 +357,37 @@ case class GpuLogarithm(left: Expression, right: Expression)
 
   override def binaryOp: BinaryOp = BinaryOp.LOG_BASE
   override def outputTypeOverride: DType = DType.FLOAT64
+  override def nullable: Boolean = true
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
-      super.doColumnar(GpuColumnVector.from(fixedLhs, left.dataType), rhs)
+    withResource(GpuLogarithm.nullOutNegatives(lhs, left.dataType)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs, right.dataType)) { fixedRhs =>
+        super.doColumnar(fixedLhs, fixedRhs)
+      }
     }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
-      super.doColumnar(fixedLhs, rhs)
+    withResource(GpuLogarithm.nullOutNegatives(lhs)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs, right.dataType)) { fixedRhs =>
+        super.doColumnar(fixedLhs, fixedRhs)
+      }
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuLogarithm.fixUpLhs(lhs)) { fixedLhs =>
-      super.doColumnar(GpuColumnVector.from(fixedLhs, left.dataType), rhs)
+    withResource(GpuLogarithm.nullOutNegatives(lhs, left.dataType)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs)) { fixedRhs =>
+        super.doColumnar(fixedLhs, fixedRhs)
+      }
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuLogarithm.nullOutNegatives(lhs)) { fixedLhs =>
+      withResource(GpuLogarithm.nullOutNegatives(rhs)) { fixedRhs =>
+        super.doColumnar(numRows, fixedLhs, fixedRhs)
+      }
     }
   }
 }
@@ -554,14 +582,22 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt, right.dataType)) { expandedRhs =>
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt)) { expandedRhs =>
       doColumnar(lhs, expandedRhs)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
+      withResource(GpuColumnVector.from(rhs, numRows)) { expandedRhs =>
+        doColumnar(expandedLhs, expandedRhs)
+      }
     }
   }
 }
@@ -575,7 +611,11 @@ abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpressi
 }
 
 // Due to SPARK-39226, the dataType of round-like functions differs by Spark versions.
-abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: DataType)
+abstract class GpuRoundBase(
+    child: Expression,
+    scale: Expression,
+    outputType: DataType,
+    val ansiEnabled: Boolean)
   extends GpuBinaryExpressionArgsAnyScalar with Serializable with ImplicitCastInputTypes {
 
   override def left: Expression = child
@@ -596,7 +636,7 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
       case DecimalType.Fixed(_, s) =>
         // Only needs to perform round when required scale < input scale
         val rounded = if (scaleVal < s) {
-          lhsValue.round(scaleVal, roundMode)
+          Arithmetic.round(lhsValue, scaleVal, roundMode)
         } else {
           lhsValue.incRefCount()
         }
@@ -660,7 +700,17 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
         }
       }
     } else {
-      lhs.round(scale, roundMode)
+      try {
+        Arithmetic.round(lhs, scale, roundMode, ansiEnabled)
+      } catch {
+        // ANSI mode throws ExceptionWithRowIndex if overflow would occur
+        case rowException: ExceptionWithRowIndex =>
+          val errorRowIndex = rowException.getRowIndex
+          val inputValue = ColumnViewUtils.getElementStringFromColumnView(lhs, errorRowIndex)
+          throw new ArithmeticException(
+            s"Rounding $inputValue to scale $scale with mode $roundMode caused " +
+              s"overflow in ANSI mode")
+      }
     }
   }
 
@@ -757,24 +807,32 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
       // just returns the original values
       lhs.incRefCount()
     } else {
-      lhs.round(scale, roundMode)
+      Arithmetic.round(lhs, scale, roundMode)
     }
   }
 
   override def doColumnar(numRows: Int, value: GpuScalar, scale: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(value, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(value, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, scale)
     }
   }
 }
 
-case class GpuBRound(child: Expression, scale: Expression, outputType: DataType) extends
-  GpuRoundBase(child, scale, outputType) {
+case class GpuBRound(
+    child: Expression,
+    scale: Expression,
+    outputType: DataType,
+    override val ansiEnabled: Boolean) extends
+  GpuRoundBase(child, scale, outputType, ansiEnabled) {
   override def roundMode: RoundMode = RoundMode.HALF_EVEN
 }
 
-case class GpuRound(child: Expression, scale: Expression, outputType: DataType) extends
-  GpuRoundBase(child, scale, outputType) {
+case class GpuRound(
+    child: Expression,
+    scale: Expression,
+    outputType: DataType,
+    override val ansiEnabled: Boolean) extends
+  GpuRoundBase(child, scale, outputType, ansiEnabled) {
   override def roundMode: RoundMode = RoundMode.HALF_UP
 }
 
@@ -790,7 +848,7 @@ case class GpuRint(child: Expression) extends CudfUnaryMathExpression("ROUND") {
   override def outputTypeOverride: DType = DType.FLOAT64
 }
 
-private object RoundingErrorUtil {
+object RoundingErrorUtil {
   /**
    * Wrapper of the `cannotChangeDecimalPrecisionError` of RapidsErrorUtils.
    *
@@ -802,19 +860,20 @@ private object RoundingErrorUtil {
    * @param context The error context, default value is "".
    */
   def cannotChangeDecimalPrecisionError(
-      values: GpuColumnVector,
-      outOfBounds: ColumnVector,
+      values: ColumnView,
+      outOfBounds: ColumnView,
       fromType: DecimalType,
       toType: DecimalType,
       context: String = ""): ArithmeticException = {
     val row_id = withResource(outOfBounds.copyToHost()) {hcv =>
-      (0.toLong until outOfBounds.getRowCount())
+      (0.toLong until outOfBounds.getRowCount)
         .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
         .get
     }
     val value = withResource(values.copyToHost()){hcv =>
-      hcv.getDecimal(row_id.toInt, fromType.precision, fromType.scale)
+      hcv.getBigDecimal(row_id)
     }
-    RapidsErrorUtils.cannotChangeDecimalPrecisionError(value, toType)
+    RapidsErrorUtils.cannotChangeDecimalPrecisionError(
+      Decimal(value, fromType.precision, fromType.scale), toType)
   }
 }

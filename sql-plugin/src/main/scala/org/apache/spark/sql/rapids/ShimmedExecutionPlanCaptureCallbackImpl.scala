@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 
 /**
  * Note that the name is prefixed with "Shimmed" such that wildcard rules
- * under unshimmed-common-from-spark311.txt don't get confused and pick this class to be
+ * under unshimmed-common-from-single-shim.txt don't get confused and pick this class to be
  * un-shimmed.
  */
 class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallbackBase {
@@ -205,6 +205,10 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
         executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
   }
 
+  override def contains(gpuPlan: SparkPlan, className: String): Boolean = {
+    containsPlan(gpuPlan, className)
+  }
+
   private def containsExpression(exp: Expression, className: String,
       regexMap: MutableMap[String, Regex] // regex memoization
   ): Boolean = exp.find {
@@ -249,6 +253,5 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     case p =>
       p.children.exists(plan => containsPlanMatching(plan, f))
   }.nonEmpty
-
 }
 

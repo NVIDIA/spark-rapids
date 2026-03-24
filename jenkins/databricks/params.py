@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.
+# Copyright (c) 2021-2024, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,6 +33,8 @@ jar_path = ''
 spark_conf = ''
 # can take comma separated environments, e.g., foo=abc,bar=123,...'
 extra_envs = ''
+# 'nightly' is for nightly CI, 'pre-commit' is for the pre-merge CI
+test_type = 'nightly'
 
 
 def usage():
@@ -51,11 +53,12 @@ def usage():
           ' -n <skipstartingcluster>'
           ' -f <sparkconf>'
           ' -i <sparkinstallver>'
-          ' -e <extraenvs>')
+          ' -e <extraenvs>'
+          ' -m <testtype>')
 
 
 try:
-    opts, script_args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:i:e:',
+    opts, script_args = getopt.getopt(sys.argv[1:], 'hw:t:c:p:l:d:z:m:v:b:j:f:i:e:m:',
                                       ['workspace=',
                                        'token=',
                                        'clusterid=',
@@ -68,7 +71,8 @@ try:
                                        'jarpath=',
                                        'sparkconf=',
                                        'sparkinstallver=',
-                                       'extraenvs='])
+                                       'extraenvs=',
+                                       'testtype='])
 except getopt.GetoptError:
     usage()
     sys.exit(2)
@@ -103,6 +107,8 @@ for opt, arg in opts:
         base_spark_version_to_install_databricks_jars = arg
     elif opt in ('-e', '--extraenvs'):
         extra_envs = arg
+    elif opt in ('-m', '--testtype'):
+        test_type = arg
 
 print('-w is ' + workspace)
 print('-c is ' + clusterid)
@@ -116,3 +122,4 @@ print('-j is ' + jar_path)
 print('-f is ' + spark_conf)
 print('-i is ' + base_spark_version_to_install_databricks_jars)
 print('-e is ' + extra_envs)
+print('-m is ' + test_type)

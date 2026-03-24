@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,14 +15,16 @@
  */
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.{DataTypes, StructField, StructType}
 
 class ExpandExecSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual("group with aggregates",
     createDataFrame, repart = 2) {
+    // There are only 100 integer values in the data generated so we don't need
+    // to worry about an overflow in SUM
     frame => {
       import frame.sparkSession.implicits._
       frame.groupBy($"key")
@@ -54,6 +56,8 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
 
   IGNORE_ORDER_testSparkResultsAreEqual("cube with sum",
     createDataFrame, repart = 2) {
+    // There are only 100 integer values in the data generated so we don't need
+    // to worry about an overflow in SUM
     frame => {
       import frame.sparkSession.implicits._
       frame.cube($"key", $"cat1", $"cat2").sum()
@@ -98,8 +102,8 @@ class ExpandExecSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  IGNORE_ORDER_testSparkResultsAreEqual("sql with different shape grouping expressions",
-    createDataFrame, repart = 2) {
+  IGNORE_ORDER_testSparkResultsAreEqual("sql with different shape " +
+    "grouping expressions", createDataFrame, repart = 2) {
     frame => {
       frame.createOrReplaceTempView("t0")
       val sql =

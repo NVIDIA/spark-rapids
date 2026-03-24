@@ -9,6 +9,8 @@ Documentation on the current release can be found [here](https://nvidia.github.i
 
 To get started and try the plugin out use the [getting started guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/overview.html).
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/spark-rapids)
+
 ## Compatibility
 
 The SQL plugin tries to produce results that are bit for bit identical with Apache Spark.
@@ -32,7 +34,7 @@ or answer a question on the [discussion board](https://github.com/NVIDIA/spark-r
 
 ## Download
 
-The jar files for the most recent release can be retrieved from the [download](docs/download.md)
+The jar files for the most recent release can be retrieved from the [download](https://nvidia.github.io/spark-rapids/docs/download.html)
 page.
 
 ## Building From Source
@@ -59,8 +61,8 @@ access to any of the memory that RMM is holding.
 The Qualification and Profiling tools have been moved to
 [nvidia/spark-rapids-tools](https://github.com/NVIDIA/spark-rapids-tools) repo.
 
-Please refer to [Qualification tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/spark-qualification-tool.html)
-and [Profiling tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/spark-profiling-tool.html)
+Please refer to [Qualification tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/qualification/overview.html)
+and [Profiling tool documentation](https://docs.nvidia.com/spark-rapids/user-guide/latest/profiling/overview.html)
 for more details on how to use the tools.
 
 ## Dependency for External Projects
@@ -73,7 +75,7 @@ as a `provided` dependency.
 <dependency>
     <groupId>com.nvidia</groupId>
     <artifactId>rapids-4-spark_2.12</artifactId>
-    <version>24.04.0-SNAPSHOT</version>
+    <version>26.04.0-SNAPSHOT</version>
     <scope>provided</scope>
 </dependency>
 ```

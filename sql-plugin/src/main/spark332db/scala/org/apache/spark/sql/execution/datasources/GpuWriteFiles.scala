@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,23 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources
 
@@ -29,6 +44,9 @@ import java.util.Date
 
 import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.mapreduce.{TaskAttemptContext, TaskAttemptID, TaskID, TaskType}
+import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 
 import org.apache.spark.{SparkException, TaskContext}
 import org.apache.spark.internal.io.{FileCommitProtocol, SparkHadoopWriterUtils}
@@ -69,7 +87,8 @@ class GpuWriteFilesMeta(
       writeFilesExec.partitionColumns,
       writeFilesExec.bucketSpec,
       writeFilesExec.options,
-      writeFilesExec.staticPartitions
+      writeFilesExec.staticPartitions,
+      conf.outputDebugDumpPrefix
     )
   }
 }
@@ -83,7 +102,8 @@ case class GpuWriteFilesExec(
     partitionColumns: Seq[Attribute],
     bucketSpec: Option[BucketSpec],
     options: Map[String, String],
-    staticPartitions: TablePartitionSpec) extends ShimUnaryExecNode with GpuExec {
+    staticPartitions: TablePartitionSpec,
+    baseOutputDebugPath: Option[String]) extends ShimUnaryExecNode with GpuExec {
 
   override def output: Seq[Attribute] = Seq.empty
 
@@ -127,6 +147,8 @@ case class GpuWriteFilesExec(
     val description = writeFilesSpec.description
     val committer = writeFilesSpec.committer
     val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
+    val localBaseOutputDebugPath = baseOutputDebugPath
+
     rddWithNonEmptyPartitions.mapPartitionsInternal { iterator =>
       val sparkStageId = TaskContext.get().stageId()
       val sparkPartitionId = TaskContext.get().partitionId()
@@ -139,8 +161,8 @@ case class GpuWriteFilesExec(
         sparkAttemptNumber,
         committer,
         iterator,
-        concurrentOutputWriterSpec
-      )
+        concurrentOutputWriterSpec,
+        localBaseOutputDebugPath)
 
       Iterator(ret)
     }
@@ -155,7 +177,7 @@ case class GpuWriteFilesExec(
         s" mismatch:\n$this")
   }
 
-  override protected def stringArgs: Iterator[Any] = Iterator(child)
+  override def stringArgs: Iterator[Any] = Iterator(child)
 }
 
 object GpuWriteFiles {
@@ -182,5 +204,33 @@ object GpuWriteFiles {
     p.collectFirst {
       case w: GpuWriteFilesExec => w
     }
+  }
+
+  /**
+   * Create hadoop task attempt context from current spark task context and given hadoop conf.
+   * <br/>
+   *
+   * Note that the given hadoop conf will be modified to set necessary configs.
+   * @param hadoopConf Hadoop configuration
+   * @return Hadoop task attempt context
+   */
+  def calcHadoopTaskAttemptContext(hadoopConf: Configuration): TaskAttemptContext = {
+    val tc = TaskContext.get()
+    if (tc == null) {
+      throw new IllegalStateException("TaskContext is not available")
+    }
+
+    val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
+    val jobId = SparkHadoopWriterUtils.createJobID(jobTrackerID, tc.stageId())
+    val taskId = new TaskID(jobId, TaskType.MAP, tc.partitionId())
+    val taskAttemptId = new TaskAttemptID(taskId, tc.attemptNumber())
+
+    hadoopConf.set("mapreduce.job.id", jobId.toString)
+    hadoopConf.set("mapreduce.task.id",  taskAttemptId.getTaskID.toString)
+    hadoopConf.set("mapreduce.task.attempt.id", taskAttemptId.toString)
+    hadoopConf.setBoolean("mapreduce.task.ismap", true)
+    hadoopConf.setInt("mapreduce.task.partition", 0)
+
+    new TaskAttemptContextImpl(hadoopConf, taskAttemptId)
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryNode}
 import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy, UnaryExecNode}
 import org.apache.spark.sql.execution.datasources.v2.V2CommandExec
-import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -106,11 +105,11 @@ case class GpuRapidsDeltaWriteExec(child: SparkPlan) extends V2CommandExec
     with UnaryExecNode with GpuExec {
   override def output: Seq[Attribute] = child.output
 
-  lazy val basicMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.basicMetrics
-  lazy val taskMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.taskMetrics
+  lazy val basicMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.basicMetrics
+  lazy val taskMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.taskMetrics
 
   override lazy val allMetrics: Map[String, GpuMetric] =
-    GpuMetric.wrap(basicMetrics ++ taskMetrics)
+    basicMetrics ++ taskMetrics
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // This is just a stub node for planning purposes and does not actually perform

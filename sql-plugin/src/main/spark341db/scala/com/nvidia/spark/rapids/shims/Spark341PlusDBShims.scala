@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "341db"}
+{"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -43,6 +45,9 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
         new ToPrettyStringChecks(),
         (toPrettyString, conf, p, r) => {
           new CastExprMetaBase[ToPrettyString](toPrettyString, conf, p, r) {
+
+            override def needTimeZoneCheck: Boolean = 
+              castNeedsTimeZone(toPrettyString.child.dataType, StringType)
 
             override val toType: StringType.type = StringType
 
@@ -84,7 +89,7 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
           override def noReplacementPossibleMessage(reasons: String): String =
             s"blocks running on GPU because $reasons"
 
-          override def convertToGpu(): GpuExpression =
+          override def convertToGpuImpl(): GpuExpression =
             GpuPythonUDAF(a.name, a.func, a.dataType,
               childExprs.map(_.convertToGpu()),
               a.evalType, a.udfDeterministic, a.resultId)
@@ -104,9 +109,9 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
         (takeExec, conf, p, r) =>
           new SparkPlanMeta[TakeOrderedAndProjectExec](takeExec, conf, p, r) {
             val sortOrder: Seq[BaseExprMeta[SortOrder]] =
-              takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+              takeExec.sortOrder.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
             val projectList: Seq[BaseExprMeta[NamedExpression]] =
-              takeExec.projectList.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+              takeExec.projectList.map(GpuOverrides.wrapExpr(_, this.conf, Some(this)))
             override val childExprs: Seq[BaseExprMeta[_]] = sortOrder ++ projectList
 
             override def convertToGpu(): GpuExec = {
@@ -199,10 +204,15 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
   override def checkCToRWithExecBroadcastAQECoalPart(p: SparkPlan,
       parent: Option[SparkPlan]): Boolean = {
     p match {
-      case ColumnarToRowExec(AQEShuffleReadExec(_: ShuffleQueryStageExec, _, _)) =>
-        parent match {
-          case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast => true
-          case Some(bhnlj: BroadcastNestedLoopJoinExec) if bhnlj.isExecutorBroadcast => true
+      case ColumnarToRowExec(aqe: AQEShuffleReadExec) =>
+        aqe.child match {
+          case _: ShuffleQueryStageExec =>
+            parent match {
+              case Some(bhje: BroadcastHashJoinExec) if bhje.isExecutorBroadcast => true
+              case Some(bhnlj: BroadcastNestedLoopJoinExec)
+                if bhnlj.isExecutorBroadcast => true
+              case _ => false
+            }
           case _ => false
         }
       case _ => false
@@ -217,7 +227,11 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
    */
   override def getShuffleFromCToRWithExecBroadcastAQECoalPart(p: SparkPlan): Option[SparkPlan] = {
     p match {
-      case ColumnarToRowExec(AQEShuffleReadExec(s: ShuffleQueryStageExec, _, _)) => Some(s)
+      case ColumnarToRowExec(aqe: AQEShuffleReadExec) =>
+        aqe.child match {
+          case s: ShuffleQueryStageExec => Some(s)
+          case _ => None
+        }
       case _ => None
     }
   }

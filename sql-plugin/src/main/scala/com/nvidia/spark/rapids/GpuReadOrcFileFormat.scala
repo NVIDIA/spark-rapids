@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -27,6 +26,7 @@ import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
@@ -43,8 +43,7 @@ class GpuReadOrcFileFormat extends OrcFileFormat with GpuReadFileFormatWithMetri
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric],
-      alluxioPathReplacementMap: Option[Map[String, String]] = None)
+      metrics: Map[String, GpuMetric])
     : PartitionedFile => Iterator[InternalRow] = {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
@@ -68,6 +67,7 @@ class GpuReadOrcFileFormat extends OrcFileFormat with GpuReadFileFormatWithMetri
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    val poolConfBuilder = ThreadPoolConfBuilder(fileScan.rapidsConf)
     GpuOrcMultiFilePartitionReaderFactory(
       fileScan.conf,
       broadcastedConf,
@@ -76,6 +76,7 @@ class GpuReadOrcFileFormat extends OrcFileFormat with GpuReadFileFormatWithMetri
       fileScan.readPartitionSchema,
       pushedFilters,
       fileScan.rapidsConf,
+      poolConfBuilder,
       fileScan.allMetrics,
       fileScan.queryUsesInputFile)
   }
@@ -85,7 +86,7 @@ object GpuReadOrcFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     GpuOrcScan.tagSupport(
-      SparkShimImpl.sessionFromPlan(fsse),
+      SparkSessionUtils.sessionFromPlan(fsse),
       fsse.requiredSchema,
       meta
     )

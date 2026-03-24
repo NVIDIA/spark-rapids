@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
-
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.rapids.shims
 
@@ -31,5 +33,11 @@ object FilePartitionShims extends SplitFiles {
         PartitionedFileUtil.getPartitionedFile(f, p.values)
       }
     }
+  }
+
+  def getFiles(p: FilePartition): Array[PartitionedFile] = p.files
+
+  def copyWithFiles(p: FilePartition, newFiles: Array[PartitionedFile]): FilePartition = {
+    p.copy(files = newFiles)
   }
 }

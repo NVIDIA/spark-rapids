@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,11 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{ast, GatherMap, NvtxColor, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ast, GatherMap, OutOfBoundsPolicy, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
@@ -30,12 +31,12 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{ExistenceJoin, FullOuter, InnerLike, JoinType, LeftAnti, LeftExistence, LeftOuter, LeftSemi, RightOuter}
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, IdentityBroadcastMode, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
-import org.apache.spark.sql.types.BooleanType
+import org.apache.spark.sql.types.{BooleanType, DataType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 abstract class GpuBroadcastNestedLoopJoinMetaBase(
@@ -135,12 +136,14 @@ class CrossJoinIterator(
     builtBatch: LazySpillableColumnarBatch,
     stream: Iterator[LazySpillableColumnarBatch],
     targetSize: Long,
+    sizeEstimateThreshold: Double,
     buildSide: GpuBuildSide,
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends AbstractGpuJoinIterator(
-      "Cross join gather",
+      NvtxRegistry.JOIN_GATHER,
       targetSize,
+      sizeEstimateThreshold,
       opTime,
       joinTime) {
   override def close(): Unit = {
@@ -200,15 +203,17 @@ class ConditionalNestedLoopJoinIterator(
     stream: Iterator[LazySpillableColumnarBatch],
     streamAttributes: Seq[Attribute],
     targetSize: Long,
+    sizeEstimateThreshold: Double,
     condition: ast.CompiledExpression,
     opTime: GpuMetric,
     joinTime: GpuMetric)
     extends SplittableJoinIterator(
-      s"$joinType join gather",
+      NvtxRegistry.JOIN_GATHER,
       stream,
       streamAttributes,
       builtBatch,
       targetSize,
+      sizeEstimateThreshold,
       opTime = opTime,
       joinTime = joinTime) {
   override def close(): Unit = {
@@ -278,41 +283,45 @@ class ConditionalNestedLoopJoinIterator(
   private def computeGatherMaps(
       left: Table,
       right: Table,
-      numJoinRows: Option[Long]): Array[GatherMap] = {
+      numJoinRows: Option[Long]): GatherMapsResult = {
     joinType match {
       case _: InnerLike =>
-        numJoinRows.map { rowCount =>
+        val arraysRet = numJoinRows.map { rowCount =>
           left.conditionalInnerJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
           left.conditionalInnerJoinGatherMaps(right, condition)
         }
+        GatherMapsResult(arraysRet(0), arraysRet(1))
       case LeftOuter =>
-        numJoinRows.map { rowCount =>
+        val arraysRet = numJoinRows.map { rowCount =>
           left.conditionalLeftJoinGatherMaps(right, condition, rowCount)
         }.getOrElse {
           left.conditionalLeftJoinGatherMaps(right, condition)
         }
+        GatherMapsResult(arraysRet(0), arraysRet(1))
       case RightOuter =>
-        val maps = numJoinRows.map { rowCount =>
+        // switch the inputs to the join so we can use left join for right
+        val arraysRet = numJoinRows.map { rowCount =>
           right.conditionalLeftJoinGatherMaps(left, condition, rowCount)
         }.getOrElse {
           right.conditionalLeftJoinGatherMaps(left, condition)
         }
-        // Reverse the output of the join, because we expect the right gather map to
-        // always be on the right
-        maps.reverse
+        // Then switch them back
+        GatherMapsResult(arraysRet(1), arraysRet(0))
       case LeftSemi =>
-        numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition, rowCount))
+        val leftGather = numJoinRows.map { rowCount =>
+          left.conditionalLeftSemiJoinGatherMap(right, condition, rowCount)
         }.getOrElse {
-          Array(left.conditionalLeftSemiJoinGatherMap(right, condition))
+          left.conditionalLeftSemiJoinGatherMap(right, condition)
         }
+        GatherMapsResult.makeFromLeft(leftGather)
       case LeftAnti =>
-        numJoinRows.map { rowCount =>
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition, rowCount))
+        val leftGatherer = numJoinRows.map { rowCount =>
+          left.conditionalLeftAntiJoinGatherMap(right, condition, rowCount)
         }.getOrElse {
-          Array(left.conditionalLeftAntiJoinGatherMap(right, condition))
+          left.conditionalLeftAntiJoinGatherMap(right, condition)
         }
+        GatherMapsResult.makeFromLeft(leftGatherer)
       case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
     }
   }
@@ -327,6 +336,7 @@ object GpuBroadcastNestedLoopJoinExecBase {
       stream: Iterator[LazySpillableColumnarBatch],
       streamAttributes: Seq[Attribute],
       targetSize: Long,
+      sizeEstimateThreshold: Double,
       boundCondition: Option[GpuExpression],
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
@@ -336,7 +346,8 @@ object GpuBroadcastNestedLoopJoinExecBase {
       // Semi and anti nested loop joins without a condition are degenerate joins and should have
       // been handled at a higher level rather than calling this method.
       assert(joinType.isInstanceOf[InnerLike], s"Unexpected unconditional join type: $joinType")
-      new CrossJoinIterator(builtBatch, stream, targetSize, buildSide, opTime, joinTime)
+      new CrossJoinIterator(builtBatch, stream, targetSize, sizeEstimateThreshold, buildSide,
+        opTime, joinTime)
     } else {
       if (joinType.isInstanceOf[ExistenceJoin]) {
         if (builtBatch.numCols == 0) {
@@ -347,16 +358,122 @@ object GpuBroadcastNestedLoopJoinExecBase {
             builtBatch, stream, compiledAst, opTime, joinTime)
         }
       } else {
-        val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
-        new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
-          stream, streamAttributes, targetSize, compiledAst,
-          opTime = opTime, joinTime = joinTime)
+        if (isDegenerateLeftOuterJoin(joinType, buildSide, builtBatch, streamAttributes)) {
+          degenerateLeftOuterJoinIterator(stream, streamAttributes, builtBatch,
+            boundCondition.get)
+        } else {
+          val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
+          new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
+            stream, streamAttributes, targetSize, sizeEstimateThreshold, compiledAst,
+            opTime = opTime, joinTime = joinTime)
+        }
       }
     }
     joinIterator.map { cb =>
         numOutputRows += cb.numRows()
         numOutputBatches += 1
         cb
+    }
+  }
+
+  // A degenerate outer join means either the build or stream side has no columns.
+  // This handles degenerate cases for left-outer join with BuildRight and
+  // right-outer join with BuildLeft (which are semantically equivalent - both
+  // keep all stream rows and add nulls from build when no match).
+  private def isDegenerateLeftOuterJoin(joinType: JoinType, side: GpuBuildSide,
+      builtBatch: LazySpillableColumnarBatch, streamAtts: Seq[Attribute]): Boolean = {
+    joinType match {
+      case LeftOuter if side == GpuBuildRight =>
+        // build or stream has no columns
+        builtBatch.numCols == 0 || streamAtts.isEmpty
+      case RightOuter if side == GpuBuildLeft =>
+        // build or stream has no columns
+        builtBatch.numCols == 0 || streamAtts.isEmpty
+      case _ => false
+    }
+  }
+
+  private def degenerateLeftOuterJoinIterator(
+      stream: Iterator[LazySpillableColumnarBatch],
+      streamAttrs: Seq[Attribute],
+      builtBatch: LazySpillableColumnarBatch,
+      boundCondition: GpuExpression): Iterator[ColumnarBatch] = {
+    // Supports both LeftOuter+BuildRight and RightOuter+BuildLeft.
+    // In both cases, all stream rows are kept with nulls from build when no match.
+    if (streamAttrs.isEmpty) { // Stream has no columns
+      new Iterator[ColumnarBatch] with TaskAutoCloseableResource {
+        override def hasNext: Boolean = stream.hasNext
+
+        override def next(): ColumnarBatch = {
+          withResource(stream.next()) { streamSpill =>
+            repeat(streamSpill.numRows)
+          }
+        }
+
+        // Since the stream has no columns, so the matched rows from the build side
+        // are always the same for all the stream rows. Cache it.
+        private val rightMatchedCb: LazySpillableColumnarBatch = use({
+          val filteredBatch = withRetryNoSplit(builtBatch) { _ =>
+            GpuFilter(builtBatch.getBatch, boundCondition, NoopMetric, NoopMetric, NoopMetric)
+          }
+          val matchedBatch = if (filteredBatch.numRows() <= 0) {
+            // no match rows, return one null row
+            filteredBatch.close()
+            val oneNullCols = builtBatch.dataTypes.safeMap { tp =>
+              GpuColumnVector.fromNull(1, tp)
+            }
+            new ColumnarBatch(oneNullCols.asInstanceOf[Array[ColumnVector]], 1)
+          } else {
+            filteredBatch
+          }
+          withResource(matchedBatch) { _ =>
+            LazySpillableColumnarBatch(matchedBatch, "degen nested-loop matched batch")
+          }
+        })
+
+        private val repeat: Int => ColumnarBatch = {
+          if (rightMatchedCb.numCols > 0) {
+            (numRows) => withRetryNoSplit[ColumnarBatch] {
+              withResource(GpuColumnVector.from(rightMatchedCb.getBatch)) { matchedTbl =>
+                // no columns in stream, so the output is equal to repeating the matched
+                // built table "numRows" (the rows number of a stream batch) times.
+                withResource(matchedTbl.repeat(numRows)) { tbl =>
+                  rightMatchedCb.allowSpilling()
+                  GpuColumnVector.from(tbl, rightMatchedCb.dataTypes)
+                }
+              }
+            }
+          } else { // no columns
+            (numRows) => new ColumnarBatch(Array(), (numRows * rightMatchedCb.numRows))
+          }
+        }
+      }
+    } else { // (streamAttrs.nonEmpty && builtBatch.numCols == 0), aka build has no columns.
+      stream.map { scb =>
+        withRetryNoSplit(scb) { _ =>
+          // Build has no columns (but may have rows), so each matched stream row will
+          // match "builtBatch.numRows" times. And keep the notmatched rows unchanged,
+          // aka 1 for the repeat count.
+          val repeatCnts = if (builtBatch.numRows == 0) {
+            // Build side has no rows, so all stream rows should appear once (unmatched)
+            withResource(Scalar.fromInt(1)) { oneScalar =>
+              cudf.ColumnVector.fromScalar(oneScalar, scb.numRows)
+            }
+          } else {
+            withResource(boundCondition.columnarEval(scb.getBatch)) { matched =>
+              withResource(Scalar.fromInt(builtBatch.numRows)) { matchedRowsCnt =>
+                withResource(Scalar.fromInt(1)) { notmatchedRowsCnt =>
+                  matched.getBase.ifElse(matchedRowsCnt, notmatchedRowsCnt)
+                }
+              }
+            }
+          }
+          val retTbl = withResource(repeatCnts) { _ =>
+            withResource(GpuColumnVector.from(scb.getBatch))(_.repeat(repeatCnts))
+          }
+          withResource(retTbl)(_ => GpuColumnVector.from(retTbl, scb.dataTypes))
+        }
+      }
     }
   }
 
@@ -457,7 +574,7 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     BUILD_DATA_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
@@ -493,55 +610,25 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       UnspecifiedDistribution :: BroadcastDistribution(IdentityBroadcastMode) :: Nil
   }
 
-  override def output: Seq[Attribute] = {
-    GpuBroadcastNestedLoopJoinExecBase.output(joinType, left.output, right.output)
+  // Match Spark's BroadcastNestedLoopJoinExec.outputPartitioning
+  override def outputPartitioning: Partitioning = (joinType, gpuBuildSide) match {
+    case (_: InnerLike, _) | (LeftOuter, GpuBuildRight) | (RightOuter, GpuBuildLeft) |
+         (LeftSemi, GpuBuildRight) | (LeftAnti, GpuBuildRight) =>
+      streamed.outputPartitioning
+    case _ => super.outputPartitioning
   }
 
-  protected def makeBroadcastBuiltBatch(
-      broadcastRelation: Broadcast[Any],
-      buildTime: GpuMetric,
-      buildDataSize: GpuMetric): ColumnarBatch = {
-    withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
-      val builtBatch = GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildPlan.schema)
-      buildDataSize += GpuColumnVector.getTotalDeviceMemoryUsed(builtBatch)
-      builtBatch
-    }
+  override def output: Seq[Attribute] = {
+    GpuBroadcastNestedLoopJoinExecBase.output(joinType, left.output, right.output)
   }
 
   protected def computeBroadcastBuildRowCount(
       broadcastRelation: Broadcast[Any],
       buildTime: GpuMetric,
       buildDataSize: GpuMetric): Int = {
-    withResource(new NvtxWithMetrics("build join table", NvtxColor.GREEN, buildTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.BUILD_JOIN_TABLE, buildTime) {
       buildDataSize += 0
       GpuBroadcastHelper.getBroadcastBatchNumRows(broadcastRelation)
-    }
-  }
-
-  protected def makeBuiltBatchInternal(
-      relation: Any,
-      buildTime: GpuMetric,
-      buildDataSize: GpuMetric): ColumnarBatch = {
-    // NOTE: pattern matching doesn't work here because of type-invariance
-    val broadcastRelation = relation.asInstanceOf[Broadcast[Any]]
-    makeBroadcastBuiltBatch(broadcastRelation, buildTime, buildDataSize)
-  }
-
-  final def makeBuiltBatch(
-      relation: Any,
-      buildTime: GpuMetric,
-      buildDataSize: GpuMetric): ColumnarBatch = {
-    buildPlan match {
-      case p: GpuProjectExec =>
-        // Need to manually do project columnar execution other than calling child's
-        // internalDoExecuteColumnar. This is to workaround especial handle to build broadcast
-        // batch.
-        val proj = GpuBindReferences.bindGpuReferencesTiered(
-          postBuildCondition, p.child.output, true)
-        withResource(makeBuiltBatchInternal(relation, buildTime, buildDataSize)) {
-          cb => proj.project(cb)
-        }
-      case _ => makeBuiltBatchInternal(relation, buildTime, buildDataSize)
     }
   }
 
@@ -558,6 +645,16 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     broadcastExchange.executeColumnarBroadcast[Any]()
   }
 
+  private def isUnconditionalJoin(condition: Option[GpuExpression]): Boolean = {
+    condition.forall {
+      case GpuLiteral(true, BooleanType) =>
+        // Spark can generate a degenerate conditional join when the join keys are constants
+        true
+      case GpuAlias(e: GpuExpression, _) => isUnconditionalJoin(Some(e))
+      case _ => false
+    }
+  }
+
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     // Determine which table will be first in the join and bind the references accordingly
     // so the AST column references match the appropriate table.
@@ -567,26 +664,17 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
     val numFirstTableColumns = firstTable.output.size
     val boundCondition = condition.map {
-      GpuBindReferences.bindGpuReference(_, firstTable.output ++ secondTable.output)
+      GpuBindReferences.bindGpuReference(_, firstTable.output ++ secondTable.output, allMetrics)
     }
 
     val broadcastRelation = getBroadcastRelation()
 
-    val joinCondition = boundCondition.orElse {
-      // For outer joins use a true condition if there are any columns in the build side
-      // otherwise use a cross join.
-      val useTrueCondition = joinType match {
-        case LeftOuter if gpuBuildSide == GpuBuildRight => right.output.nonEmpty
-        case RightOuter if gpuBuildSide == GpuBuildLeft => left.output.nonEmpty
-        case _ => false
-      }
-      if (useTrueCondition) Some(GpuLiteral(true)) else None
-    }
-
-    if (joinCondition.isEmpty) {
+    // Sometimes Spark specifies a true condition for a row-count-only join.
+    // This can happen when the join keys are detected to be constant.
+    if (isUnconditionalJoin(boundCondition)) {
       doUnconditionalJoin(broadcastRelation)
     } else {
-      doConditionalJoin(broadcastRelation, joinCondition, numFirstTableColumns)
+      doConditionalJoin(broadcastRelation, boundCondition, numFirstTableColumns)
     }
   }
 
@@ -606,6 +694,37 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
     }
   }
 
+  protected def makeBuiltBatchAndStreamIter(
+      relation: Any,
+      streamIter: Iterator[ColumnarBatch],
+      buildSchema: StructType,
+      buildTime: GpuMetric,
+      buildDataSize: GpuMetric): (ColumnarBatch, Iterator[ColumnarBatch]) = {
+    GpuBroadcastHelper.getBroadcastBuiltBatchAndStreamIter(
+      relation.asInstanceOf[Broadcast[Any]],
+      buildSchema,
+      streamIter,
+      Some(buildTime),
+      Some(buildDataSize))
+  }
+
+  private def buildSidePostProjection: Option[ColumnarBatch => ColumnarBatch] = {
+    buildPlan match {
+      case p: GpuProjectExec =>
+        // Need to manually do project columnar execution other than calling child's
+        // internalDoExecuteColumnar. This is to workaround especial handle to build broadcast
+        // batch.
+        val proj = GpuBindReferences.bindGpuReferencesTiered(
+          postBuildCondition, p.child.output, conf, allMetrics)
+        val fn = (batch: ColumnarBatch) => {
+          withResource(batch)(proj.project)
+        }
+        Some(fn)
+      case _ =>
+        None
+    }
+  }
+
   private def doUnconditionalJoin(relation: Any): RDD[ColumnarBatch] = {
     if (output.isEmpty) {
       doUnconditionalJoinRowCount(relation)
@@ -613,15 +732,10 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
       val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
       val buildTime = gpuLongMetric(BUILD_TIME)
-      val opTime = gpuLongMetric(OP_TIME)
+      val opTime = gpuLongMetric(OP_TIME_LEGACY)
       val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
-      // NOTE: this is a def because we want a brand new `ColumnarBatch` to be returned
-      // per partition (task), since each task is going to be taking ownership
-      // of a columnar batch via `LazySpillableColumnarBatch`.
-      // There are better ways to fix this: https://github.com/NVIDIA/spark-rapids/issues/7642
-      def builtBatch = {
-        makeBuiltBatch(relation, buildTime, buildDataSize)
-      }
+      val localJoinType = joinType
+
       val joinIterator: RDD[ColumnarBatch] = joinType match {
         case ExistenceJoin(_) =>
           doUnconditionalExistenceJoin(relation, buildTime, buildDataSize)
@@ -643,22 +757,51 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
           // Everything else is treated like an unconditional cross join
           val buildSide = gpuBuildSide
           val joinTime = gpuLongMetric(JOIN_TIME)
+          val buildSchema = buildPlan.schema
+          val postProjectionAndClose = buildSidePostProjection
+          val sizeEstimateThreshold = RapidsConf.JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
           streamed.executeColumnar().mapPartitions { streamedIter =>
-            val lazyStream = streamedIter.map { cb =>
+            // Will materialize the stream batch before materializing the build batch.
+            val (buildBatch, bufferedStream) = makeBuiltBatchAndStreamIter(
+              relation,
+              streamedIter,
+              buildSchema,
+              buildTime,
+              buildDataSize)
+            val prjBuildBatch = postProjectionAndClose.map(_(buildBatch)).getOrElse(buildBatch)
+
+            val lazyStream = bufferedStream.map { cb =>
               withResource(cb) { cb =>
                 LazySpillableColumnarBatch(cb, "stream_batch")
               }
             }
-            val spillableBuiltBatch = withResource(builtBatch) {
+            val spillableBuiltBatch = withResource(prjBuildBatch) {
               LazySpillableColumnarBatch(_, "built_batch")
             }
-            new CrossJoinIterator(
-              spillableBuiltBatch,
-              lazyStream,
-              targetSizeBytes,
-              buildSide,
-              opTime = opTime,
-              joinTime = joinTime)
+
+            localJoinType match {
+              case LeftOuter if spillableBuiltBatch.numRows == 0 =>
+                withResource(spillableBuiltBatch) { _ =>
+                  new EmptyOuterNestedLoopJoinIterator(bufferedStream,
+                    spillableBuiltBatch.dataTypes,
+                    isStreamFirst = true)
+                }
+              case RightOuter if spillableBuiltBatch.numRows == 0 =>
+                withResource(spillableBuiltBatch) { _ =>
+                  new EmptyOuterNestedLoopJoinIterator(bufferedStream,
+                    spillableBuiltBatch.dataTypes,
+                    isStreamFirst = false)
+                }
+              case _ =>
+                new CrossJoinIterator(
+                  spillableBuiltBatch,
+                  lazyStream,
+                  targetSizeBytes,
+                  sizeEstimateThreshold,
+                  buildSide,
+                  opTime = opTime,
+                  joinTime = joinTime)
+            }
           }
       }
       joinIterator.map { cb =>
@@ -683,17 +826,18 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
         val spillable = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         withRetry(spillable, RmmRapidsRetryIterator.splitSpillableInHalfByRows) { spillBatch =>
           withResource(spillBatch.getColumnarBatch()) { batch =>
-            GpuColumnVector.incRefCounts(batch)
-            val newCols = new Array[ColumnVector](batch.numCols + 1)
-            (0 until newCols.length - 1).foreach { i =>
-              newCols(i) = batch.column(i)
+            closeOnExcept(GpuColumnVector.incRefCounts(batch)) { _ =>
+              val newCols = new Array[ColumnVector](batch.numCols + 1)
+              (0 until newCols.length - 1).foreach { i =>
+                newCols(i) = batch.column(i)
+              }
+              val existsCol = withResource(Scalar.fromBool(exists)) { existsScalar =>
+                GpuColumnVector.from(cudf.ColumnVector.fromScalar(existsScalar, batch.numRows),
+                  BooleanType)
+              }
+              newCols(batch.numCols) = existsCol
+              new ColumnarBatch(newCols, batch.numRows)
             }
-            val existsCol = withResource(Scalar.fromBool(exists)) { existsScalar =>
-              GpuColumnVector.from(cudf.ColumnVector.fromScalar(existsScalar, batch.numRows),
-                BooleanType)
-            }
-            newCols(batch.numCols) = existsCol
-            new ColumnarBatch(newCols, batch.numRows)
           }
         }
       }
@@ -756,34 +900,39 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
       numFirstTableColumns: Int): RDD[ColumnarBatch] = {
     val buildTime = gpuLongMetric(BUILD_TIME)
     val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
-    // NOTE: this is a def because we want a brand new `ColumnarBatch` to be returned
-    // per partition (task), since each task is going to be taking ownership
-    // of a columnar batch via `LazySpillableColumnarBatch`.
-    // There are better ways to fix this: https://github.com/NVIDIA/spark-rapids/issues/7642
-    def builtBatch: ColumnarBatch = {
-      makeBuiltBatch(relation, buildTime, buildDataSize)
-    }
     val streamAttributes = streamed.output
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val joinTime = gpuLongMetric(JOIN_TIME)
     val nestedLoopJoinType = joinType
     val buildSide = gpuBuildSide
+    val buildSchema = buildPlan.schema
+    val postProjectionAndClose = buildSidePostProjection
+    val sizeEstimateThreshold = RapidsConf.JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
     streamed.executeColumnar().mapPartitions { streamedIter =>
-      val lazyStream = streamedIter.map { cb =>
+      // Will materialize the stream batch before materializing the build batch.
+      val (buildBatch, bufferedStream) = makeBuiltBatchAndStreamIter(
+        relation,
+        streamedIter,
+        buildSchema,
+        buildTime,
+        buildDataSize)
+      val prjBuildBatch = postProjectionAndClose.map(_(buildBatch)).getOrElse(buildBatch)
+
+      val lazyStream = bufferedStream.map { cb =>
         withResource(cb) { cb =>
           LazySpillableColumnarBatch(cb, "stream_batch")
         }
       }
-      val spillableBuiltBatch = withResource(builtBatch) {
+      val spillableBuiltBatch = withResource(prjBuildBatch) {
         LazySpillableColumnarBatch(_, "built_batch")
       }
 
       GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(
         nestedLoopJoinType, buildSide, numFirstTableColumns,
         spillableBuiltBatch,
-        lazyStream, streamAttributes, targetSizeBytes, boundCondition,
+        lazyStream, streamAttributes, targetSizeBytes, sizeEstimateThreshold, boundCondition,
         numOutputRows = numOutputRows,
         numOutputBatches = numOutputBatches,
         opTime = opTime,
@@ -803,13 +952,39 @@ class ConditionalNestedLoopExistenceJoinIterator(
   use(condition)
 
   override def existsScatterMap(leftColumnarBatch: ColumnarBatch): GatherMap = {
-    withResource(
-      new NvtxWithMetrics("existence join scatter map", NvtxColor.ORANGE, joinTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.EXISTENCE_JOIN_SCATTER_MAP, joinTime) {
       withResource(GpuColumnVector.from(leftColumnarBatch)) { leftTab =>
         withResource(GpuColumnVector.from(spillableBuiltBatch.getBatch)) { rightTab =>
           leftTab.conditionalLeftSemiJoinGatherMap(rightTab, condition)
         }
       }
     }
+  }
+}
+
+/** Iterator for producing batches from an outer join where the build-side table is empty. */
+class EmptyOuterNestedLoopJoinIterator(
+    streamIter: Iterator[ColumnarBatch],
+    buildTypes: Array[DataType],
+    isStreamFirst: Boolean) extends Iterator[ColumnarBatch] {
+  override def hasNext: Boolean = streamIter.hasNext
+
+  override def next(): ColumnarBatch = {
+    withResource(streamIter.next()) { streamBatch =>
+      withResource(buildNullBatch(streamBatch.numRows())) { nullBatch =>
+        if (isStreamFirst) {
+          GpuColumnVector.combineColumns(streamBatch, nullBatch)
+        } else {
+          GpuColumnVector.combineColumns(nullBatch, streamBatch)
+        }
+      }
+    }
+  }
+
+  private def buildNullBatch(numRows: Int): ColumnarBatch = {
+    val cols: Array[ColumnVector] = buildTypes.safeMap { dt =>
+      GpuColumnVector.fromNull(numRows, dt)
+    }
+    new ColumnarBatch(cols, numRows)
   }
 }

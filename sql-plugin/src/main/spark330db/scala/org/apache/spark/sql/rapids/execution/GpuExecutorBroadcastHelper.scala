@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,20 @@
 {"spark": "330db"}
 {"spark": "332db"}
 {"spark": "341db"}
+{"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
-import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuColumnVector, GpuMetric, GpuShuffleCoalesceIterator, HostShuffleCoalesceIterator}
+import com.nvidia.spark.rapids.{ConcatAndConsumeAll, GpuCoalesceIterator, GpuColumnVector, GpuMetric, NoopMetric, RequireSingleBatch}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.CoalesceReadOption
+import com.nvidia.spark.rapids.GpuShuffleCoalesceUtils
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -40,6 +45,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * which means they require a format of the data that can be used on the GPU.
  */
 object GpuExecutorBroadcastHelper {
+  import GpuMetric._
 
   // This reads the shuffle data that we have retrieved using `getShuffleRDD` from the shuffle
   // exchange. WARNING: Do not use this method outside of this context. This method can only be
@@ -65,11 +71,29 @@ object GpuExecutorBroadcastHelper {
     // Use the GPU Shuffle Coalesce iterator to concatenate and load batches onto the 
     // host as needed. Since we don't have GpuShuffleCoalesceExec in the plan for the 
     // executor broadcast scenario, we have to use that logic here to efficiently 
-    // grab and release the semaphore while doing I/O
+    // grab and release the semaphore while doing I/O. We wrap this with GpuCoalesceIterator
+    // to ensure this always a single batch for the following step.
+    val shuffleMetrics = Map(
+      CONCAT_TIME -> metricsMap(CONCAT_TIME),
+      OP_TIME_LEGACY -> metricsMap(OP_TIME_LEGACY),
+    ).withDefaultValue(NoopMetric)
+
     val iter = shuffleDataIterator(shuffleData)
-    new GpuShuffleCoalesceIterator(
-      new HostShuffleCoalesceIterator(iter, targetSize, metricsMap),
-      dataTypes, metricsMap).asInstanceOf[Iterator[ColumnarBatch]]
+    new GpuCoalesceIterator(
+      GpuShuffleCoalesceUtils.getGpuShuffleCoalesceIterator(iter, targetSize,
+        dataTypes,
+        CoalesceReadOption(SQLConf.get),
+        shuffleMetrics),
+      dataTypes,
+      RequireSingleBatch,
+      NoopMetric, // numInputRows
+      NoopMetric, // numInputBatches
+      NoopMetric, // numOutputRows
+      NoopMetric, // numOutputBatches
+      NoopMetric, // collectTime
+      metricsMap(CONCAT_TIME), // concatTime
+      metricsMap(OP_TIME_LEGACY), // opTime
+      "GpuBroadcastHashJoinExec").asInstanceOf[Iterator[ColumnarBatch]]
   }
 
   /**

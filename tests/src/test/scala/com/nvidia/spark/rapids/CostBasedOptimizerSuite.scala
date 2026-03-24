@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,18 +18,20 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable.ListBuffer
 
+import com.nvidia.spark.rapids.shims.OperatorsUtilShims
 import org.scalactic.Tolerance
 import org.scalatest.BeforeAndAfter
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.execution.{ProjectExec, SortExec, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.DataTypes
 
 class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
@@ -182,6 +184,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Force section of plan back onto CPU, AQE off") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     logError("Force section of plan back onto CPU, AQE off")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
@@ -284,6 +287,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Force last section of plan back onto CPU, AQE off") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     logError("Force last section of plan back onto CPU, AQE off")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
@@ -327,6 +331,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Avoid move to GPU for trivial projection, AQE on") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     logError("Avoid move to GPU for trivial projection, AQE on")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -347,10 +352,13 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       val df: DataFrame = createQuery(spark)
       df.collect()
 
-      // assert that the top-level projection stayed on the CPU
-      df.queryExecution.executedPlan.asInstanceOf[AdaptiveSparkPlanExec]
-          .executedPlan.asInstanceOf[WholeStageCodegenExec]
-          .child.asInstanceOf[ProjectExec]
+      val cpuProjects = OperatorsUtilShims.findOperators(df.queryExecution.executedPlan,
+        _.isInstanceOf[ProjectExec])
+      val gpuProjects = OperatorsUtilShims.findOperators(df.queryExecution.executedPlan,
+        _.isInstanceOf[GpuProjectExec])
+      // Assert that the top-level projection stayed on the CPU
+      assert(cpuProjects.nonEmpty, "No CPU ProjectExec found in the plan")
+      assert(gpuProjects.isEmpty, "Found GPU ProjectExec in the plan when it should be on CPU")
 
       df
     }, conf)
@@ -358,6 +366,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Avoid move to GPU for trivial projection, AQE off") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     logError("Avoid move to GPU for trivial projection, AQE off")
     val conf = createDefaultConf()
       .set(TRANSITION_TO_CPU_COST, "0.1")
@@ -403,6 +412,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Avoid move to GPU for shuffle, AQE on") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     logError("Avoid move to GPU for shuffle, AQE on")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -424,6 +434,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Avoid move to GPU for shuffle, AQE off") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     logError("Avoid move to GPU for shuffle, AQE off")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
@@ -448,6 +459,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
 
 
   test("keep CustomShuffleReaderExec on GPU") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     logError("keep CustomShuffleReaderExec on GPU")
     // if we force a GPU CustomShuffleReaderExec back onto CPU due to cost then the query will
     // fail because the shuffle already happened on GPU and we end up with an invalid plan
@@ -458,7 +470,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
       .set("spark.rapids.sql.optimizer.gpu.exec.GpuCustomShuffleReaderExec", "99999999")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
-            "RoundRobinPartitioning,HashPartitioning")
+            "RoundRobinPartitioning,HashPartitioning,EmptyRelationExec")
 
     withGpuSparkSession(spark => {
       val df1: DataFrame = createQuery(spark).alias("l")
@@ -472,13 +484,14 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Compute estimated row count nested joins no broadcast") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     logError("Compute estimated row count nested joins no broadcast")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
-            "HashPartitioning")
+            "HashPartitioning,EmptyRelationExec")
 
     val plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
       new ListBuffer[SparkPlanMeta[SparkPlan]]()
@@ -520,12 +533,13 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   test("Compute estimated row count nested joins with broadcast") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/12632")
     logError("Compute estimated row count nested joins with broadcast")
     val conf = createDefaultConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
         "ProjectExec,SortMergeJoinExec,SortExec,Alias,Cast,LessThan,ShuffleExchangeExec," +
-            "RoundRobinPartitioning")
+            "RoundRobinPartitioning,EmptyRelationExec")
 
     val plans: ListBuffer[SparkPlanMeta[SparkPlan]] =
       new ListBuffer[SparkPlanMeta[SparkPlan]]()
@@ -584,7 +598,7 @@ class CostBasedOptimizerSuite extends SparkQueryCompareTestSuite
   }
 
   private def employeeDf(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     Seq(
       ("A", "IT", 1234),
       ("B", "IT", 4321),

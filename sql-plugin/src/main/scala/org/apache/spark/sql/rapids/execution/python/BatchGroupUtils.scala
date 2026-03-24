@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -158,6 +158,7 @@ private[python] object BatchGroupUtils {
    * @param groupingOffsetsInDedup the grouping column indices in the 'dedupAttrs'
    * @param inputRows a metric to record the input rows.
    * @param inputBatches a metric to record the input batches.
+   * @param metrics metrics to inject into bound expressions
    * @return an iterator of the group batches, meaning each batch contains only one group.
    */
   def projectAndGroup(
@@ -166,8 +167,9 @@ private[python] object BatchGroupUtils {
       dedupAttrs: Seq[Attribute],
       groupingOffsetsInDedup: Seq[Int],
       inputRows: GpuMetric,
-      inputBatches: GpuMetric): Iterator[ColumnarBatch] = {
-    val dedupRefs = GpuBindReferences.bindReferences(dedupAttrs, inputAttrs)
+      inputBatches: GpuMetric,
+      metrics: Map[String, GpuMetric]): Iterator[ColumnarBatch] = {
+    val dedupRefs = GpuBindReferences.bindReferences(dedupAttrs, inputAttrs, metrics)
     val dedupIter = inputIter.map { batch =>
       // Close the original input batches.
       withResource(batch) { b =>
@@ -403,23 +405,37 @@ class CombiningIterator(
   private var pendingInput: Option[SpillableColumnarBatch] = None
   Option(TaskContext.get()).foreach(onTaskCompletion(_)(pendingInput.foreach(_.close())))
 
-  // The Python output should line up row for row so we only look at the Python output
-  // iterator and no need to check the `inputPending` who will be consumed when draining
-  // the Python output.
-  override def hasNext: Boolean = pythonOutputIter.hasNext
+  private var nextReadRowsNum: Option[Int] = None
 
-  override def next(): ColumnarBatch = {
+  private def initRowsNumForNextRead(): Unit = if (nextReadRowsNum.isEmpty){
     val numRows = inputBatchQueue.peekBatchNumRows()
     // Updates the expected batch size for next read
     pythonArrowReader.setMinReadTargetNumRows(numRows)
+    nextReadRowsNum = Some(numRows)
+  }
+
+  // The Python output should line up row for row so we only look at the Python output
+  // iterator and no need to check the `pendingInput` who will be consumed when draining
+  // the Python output.
+  override def hasNext: Boolean = {
+    // pythonOutputIter.hasNext may trigger a read, so init the read rows number here.
+    initRowsNumForNextRead()
+    pythonOutputIter.hasNext
+  }
+
+  override def next(): ColumnarBatch = {
+    initRowsNumForNextRead()
     // Reads next batch from Python and combines it with the input batch by the left side.
     withResource(pythonOutputIter.next()) { cbFromPython =>
+      // nextReadRowsNum should be set here after a read.
+      val nextRowsNum = nextReadRowsNum.get
+      nextReadRowsNum = None
       // Here may get a batch has a larger rows number than the current input batch.
-      assert(cbFromPython.numRows() >= numRows,
-        s"Expects >=$numRows rows but got ${cbFromPython.numRows()} from the Python worker")
+      assert(cbFromPython.numRows() >= nextRowsNum,
+        s"Expects >=$nextRowsNum rows but got ${cbFromPython.numRows()} from the Python worker")
       withResource(concatInputBatch(cbFromPython.numRows())) { concated =>
         numOutputBatches += 1
-        numOutputRows += numRows
+        numOutputRows += concated.numRows()
         GpuColumnVector.combineColumns(concated, cbFromPython)
       }
     }
@@ -566,8 +582,10 @@ class CoGroupedIterator(
       schema: Seq[Attribute],
       groupKeys: Seq[Int]): ColumnarBatch = {
 
+    // Using Internal method: groupAttrs are simple attribute selections by index
     val groupAttrs = groupKeys.map(schema(_))
-    val keyRefs = GpuBindReferences.bindGpuReferences(groupAttrs, schema)
+    // No metrics are injected here because the keys are simple attribute references
+    val keyRefs = GpuBindReferences.bindGpuReferencesNoMetrics(groupAttrs, schema)
     val oneRowKeyTable = withResource(GpuProjectExec.project(batch, keyRefs)) { keyBatch =>
       withResource(GpuColumnVector.from(keyBatch)) { keyTable =>
         // The group batch will not be empty, since an empty group will be skipped when

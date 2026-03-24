@@ -18,16 +18,15 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, RmmEventHandler}
 import com.nvidia.spark.rapids.jni.RmmSpark
-import org.mockito.Mockito.spy
+import com.nvidia.spark.rapids.spill.SpillFramework
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
 trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
   private var rmmWasInitialized = false
-  protected var deviceStorage: RapidsDeviceMemoryStore = _
-
   override def beforeEach(): Unit = {
     super.beforeEach()
     SparkSession.getActiveSession.foreach(_.stop())
@@ -37,14 +36,14 @@ trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
       rmmWasInitialized = true
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
-    deviceStorage = spy(new RapidsDeviceMemoryStore())
-    val hostStore = new RapidsHostMemoryStore(Some(1L * 1024 * 1024))
-    deviceStorage.setSpillStore(hostStore)
-    val catalog = new RapidsBufferCatalog(deviceStorage, hostStore)
-    // set these against the singleton so we close them later
-    RapidsBufferCatalog.setDeviceStorage(deviceStorage)
-    RapidsBufferCatalog.setHostStorage(hostStore)
-    RapidsBufferCatalog.setCatalog(catalog)
+    val sc = new SparkConf
+    sc.set(RapidsConf.HOST_SPILL_STORAGE_SIZE.key, "1MB")
+    val conf = new RapidsConf(sc)
+    SpillFramework.shutdown()
+    SpillFramework.initialize(conf)
+
+    RmmSpark.clearEventHandler()
+
     val mockEventHandler = new BaseRmmEventHandler()
     RmmSpark.setEventHandler(mockEventHandler)
     RmmSpark.currentThreadIsDedicatedToTask(1)
@@ -53,11 +52,11 @@ trait RmmSparkRetrySuiteBase extends AnyFunSuite with BeforeAndAfterEach {
 
   override def afterEach(): Unit = {
     super.afterEach()
+    SpillFramework.shutdown()
     SparkSession.getActiveSession.foreach(_.stop())
     SparkSession.clearActiveSession()
     RmmSpark.removeAllCurrentThreadAssociation()
     RmmSpark.clearEventHandler()
-    RapidsBufferCatalog.close()
     GpuSemaphore.shutdown()
     if (rmmWasInitialized) {
       Rmm.shutdown()

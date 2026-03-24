@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package org.apache.spark.sql.rapids
 
-import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 object TestTrampolineUtil {
   def toLogicalPlan(df: DataFrame): LogicalPlan = df.logicalPlan
 
   def toDataFrame(spark: SparkSession, plan: LogicalPlan): DataFrame = {
-    Dataset.ofRows(spark, plan)
+    createDataFrame(spark, plan)
   }
 }

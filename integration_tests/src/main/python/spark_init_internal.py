@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,10 @@
 
 import logging
 import os
+import pytest
 import re
 import stat
-import sys
+import traceback
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -96,6 +97,7 @@ def create_tmp_hive():
     except Exception as e:
         logging.warn(f"Failed to setup the hive scratch dir {path}. Error {e}")
 
+# Entry point into this file
 def pytest_sessionstart(session):
     # initializations that must happen globally once before tests start
     # if xdist in the coordinator, if not xdist in the pytest process
@@ -113,6 +115,7 @@ def pytest_sessionstart(session):
         findspark_init()
 
     import pyspark
+    from py4j.java_gateway import java_import
 
     # Force the RapidsPlugin to be enabled, so it blows up if the classpath is not set properly
     # DO NOT SET ANY OTHER CONFIGS HERE!!!
@@ -120,7 +123,7 @@ def pytest_sessionstart(session):
     # can be reset in the middle of a test if specific operations are done (some types of cast etc)
     _sb = pyspark.sql.SparkSession.builder
     _sb.config('spark.plugins', 'com.nvidia.spark.SQLPlugin') \
-            .config("spark.sql.adaptive.enabled", "false") \
+            .config("spark.sql.adaptive.enabled", "true") \
             .config('spark.sql.queryExecutionListeners', 'org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback')
 
     for key, value in os.environ.items():
@@ -131,10 +134,12 @@ def pytest_sessionstart(session):
 
     if ('PYTEST_XDIST_WORKER' in os.environ):
         wid = os.environ['PYTEST_XDIST_WORKER']
-        _handle_derby_dir(_sb, driver_opts, wid)
         _handle_event_log_dir(_sb, wid)
+        driver_opts += _get_driver_opts_for_worker_logs(_sb, wid)
+        _handle_derby_dir(_sb, driver_opts, wid)
         _handle_ivy_cache_dir(_sb, wid)
     else:
+        driver_opts += _get_driver_opts_for_worker_logs(_sb, 'gw0')
         _sb.config('spark.driver.extraJavaOptions', driver_opts)
         _handle_event_log_dir(_sb, 'gw0')
 
@@ -144,6 +149,14 @@ def pytest_sessionstart(session):
     #TODO catch the ClassNotFound error that happens if the classpath is not set up properly and
     # make it a better error message
     _s.sparkContext.setLogLevel("WARN")
+    java_import(_s._jvm, 'org.apache.spark.rapids.tests.TimeoutSparkListener')
+    # TODO dial down after identifying all long tests
+    # and set exceptions there
+    global default_timeout_seconds
+    global default_dump_threads
+    default_timeout_seconds = 60 * 60
+    default_dump_threads = True
+    _s._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.init(_s._jsc)
     global _spark
     _spark = _s
 
@@ -154,6 +167,45 @@ def _handle_derby_dir(sb, driver_opts, wid):
         os.makedirs(d)
     sb.config('spark.driver.extraJavaOptions', driver_opts + ' -Dderby.system.home={}'.format(d))
 
+def _use_worker_logs():
+    return os.environ.get('USE_WORKER_LOGS') == '1'
+
+# Create a named logger to be used for only logging test name in `log_test_name`
+logger = logging.getLogger('__pytest_worker_logger__')
+def _get_driver_opts_for_worker_logs(_sb, wid):
+    if not _use_worker_logs():
+        logging.info("Not setting worker logs. Worker logs on non-local mode are sent to the location pre-configured "
+                     "by the user")
+        return ""
+
+    current_directory = os.path.abspath(os.path.curdir)
+    log_file = '{}/{}_worker_logs.log'.format(current_directory, wid)
+
+    from conftest import get_std_input_path
+    std_input_path = get_std_input_path()
+    # This is not going to take effect when TEST_PARALLEL=1 as it's set as a conf when calling spark-submit
+    driver_opts = ' -Dlog4j.configuration=file://{}/pytest_log4j.properties '.format(std_input_path) + \
+        ' -Dlogfile={}'.format(log_file)
+
+    # Set up Logging to the WORKERID_worker_logs
+    # Note: This logger is only used for logging the test name in method `log_test_name`.
+    global logger
+    logger.setLevel(logging.INFO)
+    # Create file handler to output logs into corresponding worker log file
+    # This file_handler is modifying the worker_log file that the plugin will also write to
+    # The reason for doing this is to get all test logs in one place from where we can do other analysis
+    # that might be needed in future to look at the execs that were used in our integration tests
+    file_handler = logging.FileHandler(log_file)
+    # Set the formatter for the file handler, we match the formatter from the basicConfig for consistency in logs
+    formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s",
+                                  datefmt="%Y-%m-%d %H:%M:%S")
+
+    file_handler.setFormatter(formatter)
+
+    # Add the file handler to the logger
+    logger.addHandler(file_handler)
+
+    return driver_opts
 
 def _handle_event_log_dir(sb, wid):
     if os.environ.get('SPARK_EVENTLOG_ENABLED', str(True)).lower() in [
@@ -208,3 +260,38 @@ def get_spark_i_know_what_i_am_doing():
 
 def spark_version():
     return _spark.version
+
+@pytest.fixture(scope='function', autouse=_use_worker_logs())
+def log_test_name(request):
+    logger.info("Running test '{}'".format(request.node.nodeid))
+
+
+def _set_job_timeout_and_crash_when_failed(spark_timeout, dump_threads):
+    try:
+        _spark._jvm.org.apache.spark.rapids.tests.TimeoutSparkListener.setSparkJobTimeout(
+            spark_timeout,
+            dump_threads
+        )
+    except Exception as e:
+        logger.error(f"""set_spark_job_timeout: Unusable Spark Driver JVM detected!
+                     Crashing pytest worker to mitigate: {traceback.format_exc()}""")
+        os._exit(os.EX_UNAVAILABLE)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def set_spark_job_timeout(request):
+    logger.debug("set_spark_job_timeout: BEFORE TEST\n")
+    tm = request.node.get_closest_marker("spark_job_timeout")
+    if tm:
+        spark_timeout = tm.kwargs.get('seconds', default_timeout_seconds)
+        dump_threads = tm.kwargs.get('dump_threads', default_dump_threads)
+    else:
+        spark_timeout = default_timeout_seconds
+        dump_threads = default_dump_threads
+    # before the test
+    _set_job_timeout_and_crash_when_failed(spark_timeout, dump_threads)
+    # yield for test
+    yield
+    # after the test
+    _set_job_timeout_and_crash_when_failed(spark_timeout, dump_threads)
+

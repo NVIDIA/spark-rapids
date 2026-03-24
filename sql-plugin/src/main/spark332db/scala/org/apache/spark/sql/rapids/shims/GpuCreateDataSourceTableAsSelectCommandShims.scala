@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,22 +20,39 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
 import java.net.URI
 
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.GpuDataWritingCommand
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.sql._
+import org.apache.spark.sql.{AnalysisException, Row, SaveMode, SparkSession}
 import org.apache.spark.sql.catalyst.catalog._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.command.{CommandUtils, LeafRunnableCommand}
 import org.apache.spark.sql.execution.datasources._
 import org.apache.spark.sql.rapids._
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.{SparkSession => GpuSparkSession}
 import org.apache.spark.sql.sources.BaseRelation
 
 case class GpuCreateDataSourceTableAsSelectCommand(
@@ -45,12 +62,12 @@ case class GpuCreateDataSourceTableAsSelectCommand(
     outputColumnNames: Seq[String],
     origProvider: Class[_])
   extends LeafRunnableCommand {
-  assert(query.resolved)
+  assertInTests(query.resolved)
   override def innerChildren: Seq[LogicalPlan] = query :: Nil
 
   override def run(sparkSession: SparkSession): Seq[Row] = {
-    assert(table.tableType != CatalogTableType.VIEW)
-    assert(table.provider.isDefined)
+    assertInTests(table.tableType != CatalogTableType.VIEW)
+    assertInTests(table.provider.isDefined)
 
     val sessionState = sparkSession.sessionState
     val db = table.identifier.database.getOrElse(sessionState.catalog.getCurrentDatabase)
@@ -62,7 +79,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         s"Expect the table $tableName has been dropped when the save mode is Overwrite")
 
       if (mode == SaveMode.ErrorIfExists) {
-        throw new AnalysisException(s"Table $tableName already exists. You need to drop it first.")
+        throw RapidsErrorUtils.tableOrViewAlreadyExistsError(tableName)
       }
       if (mode == SaveMode.Ignore) {
         // Since the table already exists and the save mode is Ignore, we will just return.
@@ -70,7 +87,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       }
 
       saveDataIntoTable(
-        sparkSession, table, table.storage.locationUri, SaveMode.Append, tableExists = true)
+        TrampolineConnectShims.getActiveSession, table, table.storage.locationUri,
+        SaveMode.Append, tableExists = true)
     } else {
       table.storage.locationUri.foreach { p =>
         GpuDataWritingCommand.assertEmptyRootPath(p, mode, sparkSession.sessionState.newHadoopConf)
@@ -83,7 +101,8 @@ case class GpuCreateDataSourceTableAsSelectCommand(
         table.storage.locationUri
       }
       val result = saveDataIntoTable(
-        sparkSession, table, tableLocation, SaveMode.Overwrite, tableExists = false)
+        TrampolineConnectShims.getActiveSession, table, tableLocation, SaveMode.Overwrite,
+        tableExists = false)
       val newTable = table.copy(
         storage = table.storage.copy(locationUri = tableLocation),
         // We will use the schema of resolved.relation as the schema of the table (instead of
@@ -95,7 +114,7 @@ case class GpuCreateDataSourceTableAsSelectCommand(
 
       result match {
         case _: HadoopFsRelation if table.partitionColumnNames.nonEmpty &&
-          sparkSession.sqlContext.conf.manageFilesourcePartitions =>
+          sparkSession.sessionState.conf.manageFilesourcePartitions =>
           // Need to recover partitions into the metastore so our saved data is visible.
           sessionState.executePlan(
             SparkShimImpl.v1RepairTableCommand(table.identifier)).toRdd
@@ -103,13 +122,13 @@ case class GpuCreateDataSourceTableAsSelectCommand(
       }
     }
 
-    CommandUtils.updateTableStats(sparkSession, table)
+    CommandUtils.updateTableStats(TrampolineConnectShims.getActiveSession, table)
 
     Seq.empty[Row]
   }
 
   private def saveDataIntoTable(
-      session: SparkSession,
+      session: GpuSparkSession,
       table: CatalogTable,
       tableLocation: Option[URI],
       mode: SaveMode,

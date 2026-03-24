@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,8 @@
 package org.apache.spark.sql.rapids
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
+import ai.rapids.cudf.ColumnView.FindOptions
+import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAnyValidTrue
@@ -28,14 +29,14 @@ import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.util.{quoteIdentifier, TypeUtils}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
-import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, MapType, StructField, StructType}
+import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, LongType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
     extends ShimUnaryExpression
     with GpuExpression
     with ShimGetStructField
-    with NullIntolerant {
+    with NullIntolerantShim {
 
   lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]
 
@@ -158,7 +159,7 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, lhs.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
 
@@ -193,14 +194,14 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
 }
 
 case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boolean)
-  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerant {
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
 
   private def keyType = child.dataType.asInstanceOf[MapType].keyType
 
@@ -239,13 +240,13 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -269,7 +270,7 @@ case class GpuGetMapValue(child: Expression, key: Expression, failOnError: Boole
 /** Checks if the array (left) has the element (right)
 */
 case class GpuArrayContains(left: Expression, right: Expression)
-  extends GpuBinaryExpression with NullIntolerant {
+  extends GpuBinaryExpression with NullIntolerantShim {
 
   override def dataType: DataType = BooleanType
 
@@ -297,8 +298,10 @@ case class GpuArrayContains(left: Expression, right: Expression)
     val containsKeyOrNotContainsNull = withResource(notContainsNull) {
       containsResult.or(_)
     }
-    withResource(containsKeyOrNotContainsNull) {
-      containsResult.copyWithBooleanColumnAsValidity(_)
+    withResource(containsKeyOrNotContainsNull) { lcnn =>
+      withResource(Scalar.fromNull(DType.BOOL8)) { nullVal =>
+        lcnn.ifElse(containsResult, nullVal)
+      }
     }
   }
 
@@ -341,6 +344,64 @@ case class GpuArrayContains(left: Expression, right: Expression)
   override def prettyName: String = "array_contains"
 }
 
+class GpuArrayPositionMeta(
+    expr: ArrayPosition,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule) extends BinaryExprMeta[ArrayPosition](expr, conf, parent, rule) {
+
+  override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+    GpuArrayPosition(lhs, rhs)
+  }
+}
+
+case class GpuArrayPosition(left: Expression, right: Expression)
+  extends GpuBinaryExpression with NullIntolerantShim {
+
+  override def dataType: DataType = LongType
+
+  override def prettyName: String = "array_position"
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, numRows)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { left =>
+      doColumnar(left, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    val arrayCol = lhs.getBase
+    val keyScalar = rhs.getBase
+    // 1. `listIndexOf` with `FindOptions.FIND_FIRST` returns the zero-based index of the first
+    //    occurrence of the key in each array if the key is found, otherwise returns -1.
+    // 2. If the key is null, all output are set to null.
+    // 3. If arrayCol[i] is null, output[i] is also null.
+    withResource(arrayCol.listIndexOf(keyScalar, FindOptions.FIND_FIRST)) { zeroBasedPoses =>
+      withResource(Scalar.fromInt(1)) { one =>
+        zeroBasedPoses.add(one, DType.INT64)
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    val arrayCol = lhs.getBase
+    val keyCol = rhs.getBase
+    // 1. `listIndexOf` with `FindOptions.FIND_FIRST` returns the zero-based index of the first
+    //    occurrence of each key in each array if the key is found, otherwise returns -1.
+    // 2. If keyCol[i] is null or arrayCol[i] is null, output[i] is also null.
+    withResource(arrayCol.listIndexOf(keyCol, FindOptions.FIND_FIRST)) { zeroBasedPoses =>
+      withResource(Scalar.fromInt(1)) { one =>
+        zeroBasedPoses.add(one, DType.INT64)
+      }
+    }
+  }
+}
+
 class GpuGetArrayStructFieldsMeta(
      expr: GetArrayStructFields,
      conf: RapidsConf,
@@ -365,7 +426,7 @@ case class GpuGetArrayStructFields(
     numFields: Int,
     containsNull: Boolean) extends GpuUnaryExpression
     with ShimGetArrayStructFields
-    with NullIntolerant {
+    with NullIntolerantShim {
 
   override def dataType: DataType = ArrayType(field.dataType, containsNull)
   override def toString: String = s"$child.${field.name}"

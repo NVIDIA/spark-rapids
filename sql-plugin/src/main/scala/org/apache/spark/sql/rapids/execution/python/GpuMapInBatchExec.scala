@@ -46,7 +46,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
 
   protected val isBarrier: Boolean
 
-  private val pandasFunction = func.asInstanceOf[GpuPythonUDF].func
+  private val udf = func.asInstanceOf[GpuPythonUDF]
 
   override def producedAttributes: AttributeSet = AttributeSet(output)
 
@@ -58,7 +58,7 @@ trait GpuMapInBatchExec extends ShimUnaryExecNode with GpuPythonExecBase {
     val (numInputRows, numInputBatches, numOutputRows, numOutputBatches) = commonGpuMetrics()
 
     val pyInputTypes = child.schema
-    val chainedFunc = Seq(ChainedPythonFunctions(Seq(pandasFunction)))
+    val chainedFunc = Seq((ChainedPythonFunctions(Seq(udf.func)), udf.resultId.id))
     val sessionLocalTimeZone = conf.sessionLocalTimeZone
     val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
     val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)

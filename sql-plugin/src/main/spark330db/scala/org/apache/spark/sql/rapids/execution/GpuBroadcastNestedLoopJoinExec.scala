@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@
 {"spark": "330db"}
 {"spark": "332db"}
 {"spark": "341db"}
+{"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
@@ -34,6 +36,7 @@ import org.apache.spark.sql.execution.{CoalescedPartitionSpec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -58,14 +61,14 @@ class GpuBroadcastNestedLoopJoinMeta(
 
     if (isAstCondition) {
       // Try to extract non-ast-able conditions from join conditions
-      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(conditionMeta,
-        left.output, right.output, true)
+      val (remains, leftExpr, rightExpr) = AstUtil.extractNonAstFromJoinCond(
+        conditionMeta, left.output, right.output)
 
       // Reconstruct the child with wrapped project node if needed.
       val leftChild =
-        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left)(true) else left
+        if (!leftExpr.isEmpty) GpuProjectExec(leftExpr ++ left.output, left) else left
       val rightChild =
-        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right)(true) else right
+        if (!rightExpr.isEmpty) GpuProjectExec(rightExpr ++ right.output, right) else right
       val postBuildCondition =
         if (gpuBuildSide == GpuBuildLeft) leftExpr ++ left.output else rightExpr ++ right.output
 
@@ -88,7 +91,7 @@ class GpuBroadcastNestedLoopJoinMeta(
         GpuProjectExec(
           GpuBroadcastNestedLoopJoinExecBase.output(
             join.joinType, left.output, right.output).toList,
-          joinExec)(false)
+          joinExec)
       }
     } else {
       val condition = conditionMeta.map(_.convertToGpu())
@@ -142,13 +145,13 @@ case class GpuBroadcastNestedLoopJoinExec(
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     BUILD_DATA_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_DATA_SIZE),
     BUILD_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
+    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
   )
 
   def isExecutorBroadcast(): Boolean = {
@@ -221,17 +224,20 @@ case class GpuBroadcastNestedLoopJoinExec(
     }
   }
 
-  override def makeBuiltBatchInternal(
+  override def makeBuiltBatchAndStreamIter(
       relation: Any,
+      streamIter: Iterator[ColumnarBatch],
+      buildSchema: StructType,
       buildTime: GpuMetric,
-      buildDataSize: GpuMetric): ColumnarBatch = {
+      buildDataSize: GpuMetric): (ColumnarBatch, Iterator[ColumnarBatch]) = {
     // NOTE: pattern matching doesn't work here because of type-invariance
     if (isExecutorBroadcast) {
       val rdd = relation.asInstanceOf[RDD[ColumnarBatch]]
-      makeExecutorBuiltBatch(rdd, buildTime, buildDataSize)
+      val builtBatch = makeExecutorBuiltBatch(rdd, buildTime, buildDataSize)
+      (builtBatch, streamIter)
     } else {
-      val broadcastRelation = relation.asInstanceOf[Broadcast[Any]]
-      makeBroadcastBuiltBatch(broadcastRelation, buildTime, buildDataSize)
+      super.makeBuiltBatchAndStreamIter(
+        relation, streamIter, buildSchema, buildTime, buildDataSize)
     }
   }
 

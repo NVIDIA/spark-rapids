@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +30,8 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.function.Function;
+
+import scala.Tuple2;
 
 /**
  * A GPU accelerated version of the Spark ColumnVector.
@@ -133,7 +135,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
     public abstract void close();
 
-    public abstract void copyColumnar(ColumnVector cv, int colNum, int rows);
+    public abstract long copyColumnar(ColumnVector cv, int colNum, int rows);
 
     protected abstract ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex);
 
@@ -205,10 +207,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     @Override
-    public void copyColumnar(ColumnVector cv, int colNum, int rows) {
-      referenceHolders[colNum].addReferences(
-        HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), rows)
-      );
+    public long copyColumnar(ColumnVector cv, int colNum, int rows) {
+      Tuple2<List<ReferenceManager>, Long> copyResult =
+          HostColumnarToGpu.arrowColumnarCopy(cv, builder(colNum), rows);
+      referenceHolders[colNum].addReferences(copyResult._1);
+      return copyResult._2;
     }
 
     public ai.rapids.cudf.ArrowColumnBuilder builder(int i) {
@@ -237,13 +240,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
   public static final class GpuColumnarBatchBuilder extends GpuColumnarBatchBuilderBase {
     private final RapidsHostColumnBuilder[] builders;
     private ai.rapids.cudf.HostColumnVector[] hostColumns;
+    private ai.rapids.cudf.HostColumnVector[] wipHostColumns;
 
     /**
      * A collection of builders for building up columnar data.
      * @param schema the schema of the batch.
-     * @param rows the maximum number of rows in this batch.
+     * @param initialRows the initial number of rows to allocate for this batch.
      */
-    public GpuColumnarBatchBuilder(StructType schema, int rows) {
+    public GpuColumnarBatchBuilder(StructType schema, int initialRows) {
       fields = schema.fields();
       int len = fields.length;
       builders = new RapidsHostColumnBuilder[len];
@@ -252,7 +256,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         for (int i = 0; i < len; i++) {
           StructField field = fields[i];
           builders[i] =
-              new RapidsHostColumnBuilder(convertFrom(field.dataType(), field.nullable()), rows);
+              new RapidsHostColumnBuilder(convertFrom(field.dataType(), field.nullable()), initialRows);
         }
         success = true;
       } finally {
@@ -267,9 +271,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     @Override
-    public void copyColumnar(ColumnVector cv, int colNum, int rows) {
+    public long copyColumnar(ColumnVector cv, int colNum, int rows) {
       if (builders.length > 0) {
-        HostColumnarToGpu.columnarCopy(cv, builder(colNum), fields[colNum].dataType(), rows);
+        return HostColumnarToGpu.columnarCopy(cv, builder(colNum), fields[colNum].dataType(), rows);
+      } else {
+        return 0;
       }
     }
 
@@ -277,32 +283,64 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       return builders[i];
     }
 
+    /**
+     * Capture the current state of all column builders for rollback on OOM.
+     * @return array of snapshots, one per builder
+     */
+    public RapidsHostColumnBuilder.BuilderSnapshot[] captureState() {
+      RapidsHostColumnBuilder.BuilderSnapshot[] snapshots =
+          new RapidsHostColumnBuilder.BuilderSnapshot[builders.length];
+      for (int i = 0; i < builders.length; i++) {
+        if (builders[i] != null) {
+          snapshots[i] = builders[i].captureState();
+        }
+      }
+      return snapshots;
+    }
+
+    /**
+     * Restore all column builders to a previously captured state.
+     * @param snapshots the snapshots captured via {@link #captureState()}
+     */
+    public void restoreState(RapidsHostColumnBuilder.BuilderSnapshot[] snapshots) {
+      if (snapshots == null || snapshots.length != builders.length) {
+        throw new IllegalArgumentException(
+            "Snapshot array must match builders length");
+      }
+      for (int i = 0; i < builders.length; i++) {
+        if (snapshots[i] != null && builders[i] != null) {
+          builders[i].restoreState(snapshots[i]);
+        }
+      }
+    }
+
     @Override
     protected ai.rapids.cudf.ColumnVector buildAndPutOnDevice(int builderIndex) {
       ai.rapids.cudf.ColumnVector cv = builders[builderIndex].buildAndPutOnDevice();
+      builders[builderIndex].close();
       builders[builderIndex] = null;
       return cv;
     }
 
     public HostColumnVector[] buildHostColumns() {
-      HostColumnVector[] vectors = new HostColumnVector[builders.length];
-      try {
-        for (int i = 0; i < builders.length; i++) {
-          vectors[i] = builders[i].build();
+      // buildHostColumns is called from tryBuild, and tryBuild has to be safe to call
+      // multiple times, so if a retry exception happens in this code, we need to pick
+      // up where we left off last time.
+      if (wipHostColumns == null) {
+        wipHostColumns = new HostColumnVector[builders.length];
+      }
+      for (int i = 0; i < builders.length; i++) {
+        if (builders[i] != null && wipHostColumns[i] == null) {
+          wipHostColumns[i] = builders[i].build();
+          builders[i].close();
           builders[i] = null;
-        }
-        HostColumnVector[] result = vectors;
-        vectors = null;
-        return result;
-      } finally {
-        if (vectors != null) {
-          for (HostColumnVector v : vectors) {
-            if (v != null) {
-              v.close();
-            }
-          }
+        } else if (builders[i] == null && wipHostColumns[i] == null) {
+          throw new IllegalStateException("buildHostColumns cannot be called more than once");
         }
       }
+      HostColumnVector[] result = wipHostColumns;
+      wipHostColumns = null;
+      return result;
     }
 
     /**
@@ -327,13 +365,24 @@ public class GpuColumnVector extends GpuColumnVectorBase {
           }
         }
       } finally {
-        if (hostColumns != null) {
-          for (ai.rapids.cudf.HostColumnVector hcv: hostColumns) {
-            if (hcv != null) {
-              hcv.close();
+        try {
+          if (hostColumns != null) {
+            for (ai.rapids.cudf.HostColumnVector hcv : hostColumns) {
+              if (hcv != null) {
+                hcv.close();
+              }
             }
+            hostColumns = null;
           }
-          hostColumns = null;
+        } finally {
+          if (wipHostColumns != null) {
+            for (ai.rapids.cudf.HostColumnVector hcv : wipHostColumns) {
+              if (hcv != null) {
+                hcv.close();
+              }
+            }
+            wipHostColumns = null;
+          }
         }
       }
     }
@@ -514,6 +563,55 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     input.foreach(f -> builder.column(GpuColumnVector.getNonNestedRapidsType(f.dataType()), f.name()));
     return builder.build();
   }
+
+  /**
+   * Converts a list of Spark data types to a cudf schema.
+   * <br/>
+   *
+   * This method correctly handles nested types, but will generate random field names.
+   *
+   * @param dataTypes the list of data types to convert
+   * @return the cudf schema
+   */
+  public static Schema from(DataType[] dataTypes) {
+    Schema.Builder builder = Schema.builder();
+    visit(dataTypes, builder, 0);
+    return builder.build();
+  }
+
+  private static void visit(DataType[] dataTypes, Schema.Builder builder, int level) {
+    for (int idx = 0; idx < dataTypes.length; idx ++) {
+      DataType dt = dataTypes[idx];
+      String name = "_col_" + level + "_" + idx;
+      if (dt instanceof MapType) {
+        // MapType is list of struct in cudf, so need to handle it specially.
+        Schema.Builder listBuilder = builder.addColumn(DType.LIST, name);
+        Schema.Builder structBuilder = listBuilder.addColumn(DType.STRUCT, name + "_map");
+        MapType mt = (MapType) dt;
+        DataType[] structChildren = {mt.keyType(), mt.valueType()};
+        visit(structChildren, structBuilder, level + 1);
+      } else if (dt instanceof BinaryType) {
+        Schema.Builder listBuilder = builder.addColumn(DType.LIST, name);
+        listBuilder.addColumn(DType.UINT8, name + "_bytes");
+      } else {
+        Schema.Builder childBuilder = builder.addColumn(GpuColumnVector.getRapidsType(dt), name);
+        if (dt instanceof ArrayType) {
+          // Array (aka List)
+          DataType[] childType = {((ArrayType) dt).elementType()};
+          visit(childType, childBuilder, level + 1);
+        } else if (dt instanceof StructType) {
+          // Struct
+          StructType st = (StructType) dt;
+          DataType[] childrenTypes = new DataType[st.length()];
+          for (int i = 0; i < childrenTypes.length; i ++) {
+            childrenTypes[i] = st.apply(i).dataType();
+          }
+          visit(childrenTypes, childBuilder, level + 1);
+        }
+      }
+    }
+  }
+
 
   /**
    * Convert a ColumnarBatch to a table. The table will increment the reference count for all of
@@ -784,11 +882,11 @@ public class GpuColumnVector extends GpuColumnVectorBase {
    *
    * @param scalar the input GpuScalar
    * @param count the row number of the output column
-   * @param sparkType the type of the output column
    * @return a GpuColumnVector. It should be closed to avoid memory leak.
    */
-  public static GpuColumnVector from(GpuScalar scalar, int count, DataType sparkType) {
-    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count), sparkType);
+  public static GpuColumnVector from(GpuScalar scalar, int count) {
+    return from(ai.rapids.cudf.ColumnVector.fromScalar(scalar.getBase(), count),
+        scalar.dataType());
   }
 
   /**
@@ -970,8 +1068,9 @@ public class GpuColumnVector extends GpuColumnVectorBase {
       RapidsHostColumnVector[] hostCols = new RapidsHostColumnVector[gpuCols.length];
       try {
         for (int i = 0; i < gpuCols.length; i++) {
-          hostCols[i] = gpuCols[i].copyToHost();
+          hostCols[i] = gpuCols[i].copyToHostAsync(Cuda.DEFAULT_STREAM);
         }
+        Cuda.DEFAULT_STREAM.sync();
       } catch (Exception e) {
         for (RapidsHostColumnVector hostCol : hostCols) {
           if (hostCol != null) {
@@ -988,13 +1087,37 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
   }
 
+    /**
+     * A wrapper method for Table::filter.
+     *
+     * @param batch Input columnar batch to filter. This method will not close it, so it's caller's responsibility to
+     *              close it.
+     * @param mask  A boolean column vector, used to filter rows.
+     * @param dataTypes Data types of `batch`. We add this parameter to avoid repeated allocation of array.
+     * @return Filtered columnar batch.
+     */
+    public static ColumnarBatch filter(ColumnarBatch batch, DataType[] dataTypes, ColumnView mask) {
+        if (dataTypes.length == 0) {
+            try(Scalar s = mask.sum(DType.INT64)) {
+                int numRows = Math.toIntExact(s.getLong());
+                return new ColumnarBatch(new ColumnVector[0], numRows);
+            }
+        } else {
+            try(Table cudfTable = GpuColumnVector.from(batch)) {
+                try(Table filteredTable = cudfTable.filter(mask)) {
+                    return GpuColumnVector.from(filteredTable, dataTypes);
+                }
+            }
+        }
+    }
+
   private final ai.rapids.cudf.ColumnVector cudfCv;
 
   /**
    * Take an INT32 column vector and return a host side int array.  Don't use this for anything
    * too large.  Note that this ignores validity totally.
    */
-  public static int[] toIntArray(ai.rapids.cudf.ColumnVector vec) {
+  public static int[] toIntArray(ai.rapids.cudf.ColumnView vec) {
     assert vec.getType() == DType.INT32;
     int rowCount = (int)vec.getRowCount();
     int[] output = new int[rowCount];
@@ -1038,6 +1161,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   public static long getTotalDeviceMemoryUsed(ColumnarBatch batch) {
     long sum = 0;
+    if (batch.numCols() == 1 && batch.column(0) instanceof GpuPackedTableColumn) {
+      // this is a special case for a packed batch
+      return ((GpuPackedTableColumn) batch.column(0)).getTableBuffer().getLength();
+    }
     if (batch.numCols() > 0) {
       if (batch.column(0) instanceof WithTableBuffer) {
         WithTableBuffer wtb = (WithTableBuffer) batch.column(0);
@@ -1084,6 +1211,7 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     return sum;
   }
 
+
   public final ai.rapids.cudf.ColumnVector getBase() {
     return cudfCv;
   }
@@ -1092,6 +1220,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
 
   public final RapidsHostColumnVector copyToHost() {
     return new RapidsHostColumnVector(type, cudfCv.copyToHost());
+  }
+
+  public final RapidsHostColumnVector copyToHostAsync(Cuda.Stream stream) {
+    return new RapidsHostColumnVector(type, cudfCv.copyToHostAsync(stream));
   }
 
   public final RapidsNullSafeHostColumnVector copyToNullSafeHost() {

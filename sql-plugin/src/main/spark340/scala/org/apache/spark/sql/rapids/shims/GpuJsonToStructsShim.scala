@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,23 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -41,7 +56,7 @@ object GpuJsonToStructsShim {
         // legacy behavior
         withResource(Scalar.fromString(" ")) { space =>
           withResource(input.strip(space)) { trimmed =>
-            GpuCast.castStringToDate(trimmed)
+            GpuCast.castStringToDate(trimmed, ansiMode = false)
           }
         }
       case Some(f) =>
@@ -59,7 +74,7 @@ object GpuJsonToStructsShim {
       case None =>
         // legacy behavior
         withResource(input.strip()) { trimmed =>
-          GpuCast.castStringToDateAnsi(trimmed, ansiMode =
+          GpuCast.castStringToDate(trimmed, ansiMode =
             GpuOverrides.getTimeParserPolicy == ExceptionTimeParserPolicy)
         }
       case Some(f) =>

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@
 {"spark": "330db"}
 {"spark": "332db"}
 {"spark": "341db"}
+{"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 
@@ -66,6 +67,7 @@ class GpuBroadcastHashJoinMeta(
       joinCondition,
       left,
       right,
+      join.isNullAwareAntiJoin,
       join.isExecutorBroadcast)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
@@ -80,19 +82,20 @@ case class GpuBroadcastHashJoinExec(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan, 
+    right: SparkPlan,
+    isNullAwareAntiJoin: Boolean,
     executorBroadcast: Boolean)
       extends GpuBroadcastHashJoinExecBase(
-      leftKeys, rightKeys, joinType, buildSide, condition, left, right) {
+      leftKeys, rightKeys, joinType, buildSide, condition, left, right, isNullAwareAntiJoin) {
   import GpuMetric._
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
     NUM_INPUT_ROWS -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_ROWS),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES),
-    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME)
+    CONCAT_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_CONCAT_TIME),
   )
 
   override def requiredChildDistribution: Seq[Distribution] = {
@@ -139,7 +142,7 @@ case class GpuBroadcastHashJoinExec(
 
     val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
     closeOnExcept(bufferedStreamIter) { _ =>
-      withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
+      NvtxRegistry.JOIN_FIRST_STREAM_BATCH {
         if (bufferedStreamIter.hasNext) {
           bufferedStreamIter.head
         } else {
@@ -155,11 +158,12 @@ case class GpuBroadcastHashJoinExec(
   private[this] def doColumnarExecutorBroadcastJoin(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
 
     // Get all the broadcast data from the shuffle coalesced into a single partition 
     val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions))
@@ -169,16 +173,42 @@ case class GpuBroadcastHashJoinExec(
     val rdd = streamedPlan.executeColumnar()
     val localBuildSchema = buildPlan.schema
     val localBuildOutput = buildPlan.output
+    val localIsNullAwareAntiJoin = isNullAwareAntiJoin
     rdd.mapPartitions { it =>
       val (builtBatch, streamIter) =
         getExecutorBuiltBatchAndStreamIter(
           buildRelation,
           localBuildSchema,
           localBuildOutput,
-          new CollectTimeIterator("executor broadcast join stream", it, streamTime),
+          new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime),
           allMetrics)
-      // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
+      if (localIsNullAwareAntiJoin) {
+        // This is to support the null-aware anti join for the LeftAnti join with
+        // BuildRight. See the config "spark.sql.optimizeNullAwareAntiJoin".
+        // Spark already executes all the check for the requirements, e.g. join type,
+        // build side, keys length == 1. So no need to do it here again.
+        // This will cover mainly 3 cases as below, similar as what Spark does.
+        if (builtBatch.numRows() == 0) {
+          // Build side is empty, return the stream iterator directly.
+          withResource(builtBatch)(_ => streamIter)
+        } else if (closeOnExcept(builtBatch)(GpuHashJoin.anyNullInKey(_, boundBuildKeys))) {
+          // Spark will return an empty iterator if any nulls in the right table
+          withResource(builtBatch)(_ => Iterator.empty)
+        } else {
+          // Nulls will be filtered out
+          val nullFilteredStreamIter = streamIter.map { cb =>
+            GpuHashJoin.filterNullsWithRetryAndClose(
+              SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+              boundStreamKeys)
+          }
+          doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
+            numOutputBatches, opTime, joinTime)
+        }
+      } else {
+        // builtBatch will be closed in doJoin
+        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
+          joinTime)
+      }
     }
   }
 

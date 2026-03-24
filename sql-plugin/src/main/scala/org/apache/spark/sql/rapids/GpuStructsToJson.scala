@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, StructsToJson}
 import org.apache.spark.sql.catalyst.json.GpuJsonUtils
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.types.{DataType, DateType, StringType, StructType, TimestampType}
+import org.apache.spark.sql.types.{DataType, DateType, MapType, StringType, TimestampType}
 
 class GpuStructsToJsonMeta(
     expr: StructsToJson,
@@ -67,8 +67,16 @@ class GpuStructsToJsonMeta(
       }
     }
 
-    if (LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy) {
+    if ((hasDates || hasTimestamps) && LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy) {
       willNotWorkOnGpu("LEGACY timeParserPolicy is not supported in GpuJsonToStructs")
+    }
+
+    val hasNonStringMapKey = TrampolineUtil.dataTypeExistsRecursively(expr.child.dataType, {
+      case mt: MapType if !mt.keyType.isInstanceOf[StringType] => true
+      case _ => false
+    })
+    if (hasNonStringMapKey) {
+      willNotWorkOnGpu("Only strings are supported as keys for Maps")
     }
   }
 
@@ -83,7 +91,7 @@ case class GpuStructsToJson(
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
     val ignoreNullFields = options.getOrElse("ignoreNullFields", SQLConf.get.getConfString(
       SQLConf.JSON_GENERATOR_IGNORE_NULL_FIELDS.key)).toBoolean
-    GpuCast.castStructToJsonString(input.getBase, child.dataType.asInstanceOf[StructType].fields,
+    GpuCast.castToString(input.getBase, child.dataType,
       new CastOptions(legacyCastComplexTypesToString = false, ansiMode = false,
         stringToDateAnsiMode = false, castToJsonString = true,
         ignoreNullFieldsInStructs = ignoreNullFields))

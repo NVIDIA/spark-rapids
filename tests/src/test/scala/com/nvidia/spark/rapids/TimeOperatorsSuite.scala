@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,7 +64,11 @@ class TimeOperatorsSuite extends SparkQueryCompareTestSuite {
 
   testBothCpuGpuExpectedException[RuntimeException](
     "Test timestamp_micros from long near Long.minValue: long overflow",
-    e => e.getMessage.contains("ArithmeticException"),
+    e => if (isSpark400OrLater) {
+           e.getMessage.contains("EXPRESSION_DECODING_FAILED")
+         } else {
+           e.getMessage.contains("ArithmeticException")
+         },
     longTimestampMicrosLongOverflowDf) {
     frame => frame.selectExpr("timestamp_micros(longs)")
   }

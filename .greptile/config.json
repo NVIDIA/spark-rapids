@@ -1,0 +1,113 @@
+{
+  "strictness": 3,
+  "commentTypes": ["logic", "syntax", "style"],
+  "ignoreKeywords": "DO NOT REVIEW\n[bot]",
+  "ignorePatterns": "*.generated.*\n**/target/**\n**/src/test/resources/data/**\n**/*.parquet\n**/*.orc\n**/*.avro",
+
+  "instructions": "Spark plugin for GPU-accelerated data processing using RAPIDS cuDF. Maven-based, Scala/Java with Python integration tests. Key modules: sql-plugin/, shuffle-plugin/, iceberg/, delta-lake/, tests/, integration_tests/. Version-specific shims at sql-plugin/src/main/spark{VERSION}/.",
+
+  "rules": [
+    {
+      "id": "gpu-resource-arm",
+      "rule": "GPU resources must use withResource() or closeOnExcept() from Arm.scala. Never use bare .close() on GPU resources.",
+      "scope": ["sql-plugin/src/**", "shuffle-plugin/src/**"],
+      "severity": "high"
+    },
+    {
+      "id": "oom-retry-handling",
+      "rule": "GPU memory-allocating code must be wrapped in withRetry/withRetryNoSplit from RmmRapidsRetryIterator. The retry function must be idempotent. Input should be SpillableColumnarBatch before entering retry.",
+      "scope": ["sql-plugin/src/**", "shuffle-plugin/src/**"],
+      "severity": "high"
+    },
+    {
+      "id": "shuffle-partition-size",
+      "rule": "Enforce the 2GB per-partition size limit in shuffle code. Flag unbounded buffer growth.",
+      "scope": ["shuffle-plugin/src/**", "sql-plugin/src/**/shuffle/**"],
+      "severity": "high"
+    },
+    {
+      "id": "host-device-transfer",
+      "rule": "Avoid unnecessary host-device memory copies. Keep data on GPU between consecutive operations.",
+      "scope": ["sql-plugin/src/**", "shuffle-plugin/src/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "null-check-native",
+      "rule": "Null-check cuDF native objects and results from aggregations/joins that may be empty.",
+      "scope": ["sql-plugin/src/**"],
+      "severity": "high"
+    },
+    {
+      "id": "decimal-precision",
+      "rule": "Check decimal precision/scale for overflow. Must match Apache Spark behavior for DECIMAL128.",
+      "scope": ["sql-plugin/src/**"],
+      "severity": "high"
+    },
+    {
+      "id": "timestamp-timezone",
+      "rule": "Maintain TIMESTAMP_NTZ vs TIMESTAMP_LTZ distinction. Verify timezone conversions.",
+      "scope": ["sql-plugin/src/**"],
+      "severity": "high"
+    },
+    {
+      "id": "deadlock-prevention",
+      "rule": "No nested locks without documented ordering. Review synchronization in shuffle writers and GPU semaphore acquisition.",
+      "scope": ["sql-plugin/src/**", "shuffle-plugin/src/**"],
+      "severity": "high"
+    },
+    {
+      "id": "gpu-fallback-declaration",
+      "rule": "New GPU operators must declare fallback behavior in GpuOverrides with a clear log message for unsupported types.",
+      "scope": ["sql-plugin/src/**/GpuOverrides.scala", "sql-plugin/src/**/rapids/**", "sql-plugin/src/main/spark*/**"],
+      "severity": "high"
+    },
+    {
+      "id": "shim-consistency",
+      "rule": "Spark API changes must be shimmed for all supported versions. Verify shim classes override all required methods.",
+      "scope": ["sql-plugin/src/**/shims/**", "sql-plugin/src/main/spark*/**"],
+      "severity": "high"
+    },
+    {
+      "id": "shim-json-annotation",
+      "rule": "Every shim-specific source file must have a spark-rapids-shim-json-lines comment block after the copyright header listing supported Spark versions.",
+      "scope": ["sql-plugin/src/main/spark*/**"],
+      "severity": "high"
+    },
+    {
+      "id": "iceberg-correctness",
+      "rule": "Handle schema evolution, partition spec changes, metadata consistency, and merge-on-read delete files correctly.",
+      "scope": ["iceberg/**", "sql-plugin/src/**/iceberg/**"],
+      "severity": "high"
+    },
+    {
+      "id": "delta-dml-correctness",
+      "rule": "Verify row-level change tracking, commit protocol adherence, and conflict resolution in merge/update/delete.",
+      "scope": ["delta-lake/**", "sql-plugin/src/**/delta/**"],
+      "severity": "high"
+    },
+    {
+      "id": "test-resource-cleanup",
+      "rule": "Tests must clean up GPU resources and SparkSession in afterAll/afterEach to prevent cascading failures.",
+      "scope": ["tests/**", "integration_tests/**", "shuffle-plugin/src/test/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "no-flaky-test-patterns",
+      "rule": "No hardcoded Thread.sleep, order-dependent tests, or non-deterministic data without fixed seeds.",
+      "scope": ["tests/**", "integration_tests/**", "sql-plugin/src/test/**", "shuffle-plugin/src/test/**"],
+      "severity": "medium"
+    },
+    {
+      "id": "upstream-dependency-boundary",
+      "rule": "Code touching JNI calls (cudf/spark-rapids-jni), private API interfaces (spark-rapids-private), or hybrid execution paths (spark-rapids-hybrid/Gluten) may break from concurrent upstream SNAPSHOT changes. Review for assumptions about upstream behavior.",
+      "scope": ["sql-plugin/src/**", "shuffle-plugin/src/**"],
+      "severity": "high"
+    },
+    {
+      "id": "dependency-alignment",
+      "rule": "Verify dependency version alignment across all build profiles and shaded JAR consistency.",
+      "scope": ["pom.xml", "**/pom.xml", "build/**"],
+      "severity": "medium"
+    }
+  ]
+}

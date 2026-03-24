@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,190 +16,82 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.NvtxColor
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsConf.LORE_SKIP_DUMPING_PLAN
 import com.nvidia.spark.rapids.filecache.FileCacheConf
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpRDD}
+import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
+import org.apache.hadoop.fs.Path
 
+import org.apache.spark.{Partition, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.LocationPreservingMapPartitionsRDD
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.{Alias, AttributeReference, Expression, ExprId}
 import org.apache.spark.sql.catalyst.plans.QueryPlan
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.exchange.Exchange
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.GpuTaskMetrics
+import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec}
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-sealed class MetricsLevel(val num: Integer) extends Serializable {
-  def >=(other: MetricsLevel): Boolean =
-    num >= other.num
-}
+/**
+ * Generic RDD wrapper that tracks the wall time spent because of this RDD and its descendants.
+ * The wall time contains two parts:
+ *
+ * 1. (Shallow Part) the time spent on doing this RDD's own work
+ * 2. (Deep Part) the time spent on doing the children RDDs' work
+ *
+ * Since most time spent on RDD is by invoking the next() and hasNext() of the iterator
+ * returned by compute(), we wrap the iterator to track the time spent. By doing this we can easily
+ * track the sum of the two parts. But to calculate the Shallow Part (opTimeMetric), we need to
+ * exclude the time spent on children RDDs. That's why we need to pass in the
+ * descendantOpTimeMetrics, which contains all its descendants' shallow
+ * time.
+ */
+class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
+    val prev: RDD[T],
+    opTimeMetric: GpuMetric,
+    descendantOpTimeMetrics: Seq[GpuMetric]) extends RDD[T](prev) {
 
-object MetricsLevel {
-  def apply(str: String): MetricsLevel = str match {
-    case "ESSENTIAL" => GpuMetric.ESSENTIAL_LEVEL
-    case "MODERATE" => GpuMetric.MODERATE_LEVEL
-    case _ => GpuMetric.DEBUG_LEVEL
-  }
-}
+  override def compute(split: Partition, context: TaskContext): Iterator[T] = {
+    val childIterator = firstParent[T].compute(split, context)
+    
+    // Create wrapper iterator that tracks opTime excluding child opTime
+    new Iterator[T] {
+      override def hasNext: Boolean = {
+        if (descendantOpTimeMetrics.nonEmpty) {
+          opTimeMetric.ns(descendantOpTimeMetrics) {
+            childIterator.hasNext
+          }
+        } else {
+          opTimeMetric.ns {
+            childIterator.hasNext
+          }
+        }
+      }
 
-object GpuMetric extends Logging {
-  // Metric names.
-  val BUFFER_TIME = "bufferTime"
-  val COPY_BUFFER_TIME = "copyBufferTime"
-  val GPU_DECODE_TIME = "gpuDecodeTime"
-  val NUM_INPUT_ROWS = "numInputRows"
-  val NUM_INPUT_BATCHES = "numInputBatches"
-  val NUM_OUTPUT_ROWS = "numOutputRows"
-  val NUM_OUTPUT_BATCHES = "numOutputBatches"
-  val PARTITION_SIZE = "partitionSize"
-  val NUM_PARTITIONS = "numPartitions"
-  val OP_TIME = "opTime"
-  val COLLECT_TIME = "collectTime"
-  val CONCAT_TIME = "concatTime"
-  val SORT_TIME = "sortTime"
-  val AGG_TIME = "computeAggTime"
-  val JOIN_TIME = "joinTime"
-  val FILTER_TIME = "filterTime"
-  val BUILD_DATA_SIZE = "buildDataSize"
-  val BUILD_TIME = "buildTime"
-  val STREAM_TIME = "streamTime"
-  val NUM_TASKS_FALL_BACKED = "numTasksFallBacked"
-  val READ_FS_TIME = "readFsTime"
-  val WRITE_BUFFER_TIME = "writeBufferTime"
-  val FILECACHE_FOOTER_HITS = "filecacheFooterHits"
-  val FILECACHE_FOOTER_HITS_SIZE = "filecacheFooterHitsSize"
-  val FILECACHE_FOOTER_MISSES = "filecacheFooterMisses"
-  val FILECACHE_FOOTER_MISSES_SIZE = "filecacheFooterMissesSize"
-  val FILECACHE_DATA_RANGE_HITS = "filecacheDataRangeHits"
-  val FILECACHE_DATA_RANGE_HITS_SIZE = "filecacheDataRangeHitsSize"
-  val FILECACHE_DATA_RANGE_MISSES = "filecacheDataRangeMisses"
-  val FILECACHE_DATA_RANGE_MISSES_SIZE = "filecacheDataRangeMissesSize"
-  val FILECACHE_FOOTER_READ_TIME = "filecacheFooterReadTime"
-  val FILECACHE_DATA_RANGE_READ_TIME = "filecacheDataRangeReadTime"
-
-  // Metric Descriptions.
-  val DESCRIPTION_BUFFER_TIME = "buffer time"
-  val DESCRIPTION_COPY_BUFFER_TIME = "copy buffer time"
-  val DESCRIPTION_GPU_DECODE_TIME = "GPU decode time"
-  val DESCRIPTION_NUM_INPUT_ROWS = "input rows"
-  val DESCRIPTION_NUM_INPUT_BATCHES = "input columnar batches"
-  val DESCRIPTION_NUM_OUTPUT_ROWS = "output rows"
-  val DESCRIPTION_NUM_OUTPUT_BATCHES = "output columnar batches"
-  val DESCRIPTION_PARTITION_SIZE = "partition data size"
-  val DESCRIPTION_NUM_PARTITIONS = "partitions"
-  val DESCRIPTION_OP_TIME = "op time"
-  val DESCRIPTION_COLLECT_TIME = "collect batch time"
-  val DESCRIPTION_CONCAT_TIME = "concat batch time"
-  val DESCRIPTION_SORT_TIME = "sort time"
-  val DESCRIPTION_AGG_TIME = "aggregation time"
-  val DESCRIPTION_JOIN_TIME = "join time"
-  val DESCRIPTION_FILTER_TIME = "filter time"
-  val DESCRIPTION_BUILD_DATA_SIZE = "build side size"
-  val DESCRIPTION_BUILD_TIME = "build time"
-  val DESCRIPTION_STREAM_TIME = "stream time"
-  val DESCRIPTION_NUM_TASKS_FALL_BACKED = "number of sort fallback tasks"
-  val DESCRIPTION_READ_FS_TIME = "time to read fs data"
-  val DESCRIPTION_WRITE_BUFFER_TIME = "time to write data to buffer"
-  val DESCRIPTION_FILECACHE_FOOTER_HITS = "cached footer hits"
-  val DESCRIPTION_FILECACHE_FOOTER_HITS_SIZE = "cached footer hits size"
-  val DESCRIPTION_FILECACHE_FOOTER_MISSES = "cached footer misses"
-  val DESCRIPTION_FILECACHE_FOOTER_MISSES_SIZE = "cached footer misses size"
-  val DESCRIPTION_FILECACHE_DATA_RANGE_HITS = "cached data hits"
-  val DESCRIPTION_FILECACHE_DATA_RANGE_HITS_SIZE = "cached data hits size"
-  val DESCRIPTION_FILECACHE_DATA_RANGE_MISSES = "cached data misses"
-  val DESCRIPTION_FILECACHE_DATA_RANGE_MISSES_SIZE = "cached data misses size"
-  val DESCRIPTION_FILECACHE_FOOTER_READ_TIME = "cached footer read time"
-  val DESCRIPTION_FILECACHE_DATA_RANGE_READ_TIME = "cached data read time"
-
-  def unwrap(input: GpuMetric): SQLMetric = input match {
-    case w :WrappedGpuMetric => w.sqlMetric
-    case i => throw new IllegalArgumentException(s"found unsupported GpuMetric ${i.getClass}")
-  }
-
-  def unwrap(input: Map[String, GpuMetric]): Map[String, SQLMetric] = input.collect {
-    // remove the metrics that are not registered
-    case (k, w) if w != NoopMetric => (k, unwrap(w))
-  }
-
-  def wrap(input: SQLMetric): GpuMetric = WrappedGpuMetric(input)
-
-  def wrap(input: Map[String, SQLMetric]): Map[String, GpuMetric] = input.map {
-    case (k, v) => (k, wrap(v))
-  }
-
-  def ns[T](metrics: GpuMetric*)(f: => T): T = {
-    val start = System.nanoTime()
-    try {
-      f
-    } finally {
-      val taken = System.nanoTime() - start
-      metrics.foreach(_.add(taken))
+      override def next(): T = {
+        if (descendantOpTimeMetrics.nonEmpty) {
+          opTimeMetric.ns(descendantOpTimeMetrics) {
+            childIterator.next()
+          }
+        } else {
+          opTimeMetric.ns {
+            childIterator.next()
+          }
+        }
+      }
     }
   }
 
-  object DEBUG_LEVEL extends MetricsLevel(0)
-  object MODERATE_LEVEL extends MetricsLevel(1)
-  object ESSENTIAL_LEVEL extends MetricsLevel(2)
-}
+  override def getPartitions: Array[Partition] = firstParent[T].partitions
 
-sealed abstract class GpuMetric extends Serializable {
-  def value: Long
-  def set(v: Long): Unit
-  def +=(v: Long): Unit
-  def add(v: Long): Unit
-
-  final def ns[T](f: => T): T = {
-    val start = System.nanoTime()
-    try {
-      f
-    } finally {
-      add(System.nanoTime() - start)
-    }
-  }
-}
-
-object NoopMetric extends GpuMetric {
-  override def +=(v: Long): Unit = ()
-  override def add(v: Long): Unit = ()
-  override def set(v: Long): Unit = ()
-  override def value: Long = 0
-}
-
-final case class WrappedGpuMetric(sqlMetric: SQLMetric) extends GpuMetric {
-  def +=(v: Long): Unit = sqlMetric.add(v)
-  def add(v: Long): Unit = sqlMetric.add(v)
-  override def set(v: Long): Unit = sqlMetric.set(v)
-  override def value: Long = sqlMetric.value
-}
-
-/** A GPU metric class that just accumulates into a variable without implicit publishing. */
-final class LocalGpuMetric extends GpuMetric {
-  private var lval = 0L
-  override def value: Long = lval
-  override def set(v: Long): Unit = { lval = v }
-  override def +=(v: Long): Unit = { lval += v }
-  override def add(v: Long): Unit = { lval += v }
-}
-
-class CollectTimeIterator[T](
-    nvtxName: String,
-    it: Iterator[T],
-    collectTime: GpuMetric) extends Iterator[T] {
-  override def hasNext: Boolean = {
-    withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
-      it.hasNext
-    }
-  }
-
-  override def next(): T = {
-    withResource(new NvtxWithMetrics(nvtxName, NvtxColor.BLUE, collectTime)) { _ =>
-      it.next
-    }
-  }
+  override def getPreferredLocations(split: Partition): Seq[String] =
+    firstParent[T].preferredLocations(split)
 }
 
 object GpuExec {
@@ -211,10 +103,14 @@ object GpuExec {
   val TASK_METRICS_TAG = new TreeNodeTag[GpuTaskMetrics]("gpu_task_metrics")
 }
 
-trait GpuExec extends SparkPlan {
+trait GpuExec extends SparkPlan with Logging {
   import GpuMetric._
+
+  lazy val enableOpTimeTrackingRdd =
+    RapidsConf.OP_TIME_TRACKING_RDD_ENABLED.get(conf)
+
   def sparkSession: SparkSession = {
-    SparkShimImpl.sessionFromPlan(this)
+    SparkSessionUtils.sessionFromPlan(this)
   }
 
   /**
@@ -246,30 +142,23 @@ trait GpuExec extends SparkPlan {
    */
   def outputBatching: CoalesceGoal = null
 
-  private [this] lazy val metricsConf = MetricsLevel(RapidsConf.METRICS_LEVEL.get(conf))
+  @transient private [this] lazy val metricFactory = new GpuMetricFactory(
+    MetricsLevel(RapidsConf.METRICS_LEVEL.get(conf)), sparkContext)
 
-  private [this] def createMetricInternal(level: MetricsLevel, f: => SQLMetric): GpuMetric = {
-    if (level >= metricsConf) {
-      WrappedGpuMetric(f)
-    } else {
-      NoopMetric
-    }
-  }
+  def createMetric(level: MetricsLevel, name: String): GpuMetric =
+    metricFactory.create(level, name)
 
-  protected def createMetric(level: MetricsLevel, name: String): GpuMetric =
-    createMetricInternal(level, SQLMetrics.createMetric(sparkContext, name))
+  def createNanoTimingMetric(level: MetricsLevel, name: String): GpuMetric =
+    metricFactory.createNanoTiming(level, name)
 
-  protected def createNanoTimingMetric(level: MetricsLevel, name: String): GpuMetric =
-    createMetricInternal(level, SQLMetrics.createNanoTimingMetric(sparkContext, name))
+  def createSizeMetric(level: MetricsLevel, name: String): GpuMetric =
+    metricFactory.createSize(level, name)
 
-  protected def createSizeMetric(level: MetricsLevel, name: String): GpuMetric =
-    createMetricInternal(level, SQLMetrics.createSizeMetric(sparkContext, name))
+  def createAverageMetric(level: MetricsLevel, name: String): GpuMetric =
+    metricFactory.createAverage(level, name)
 
-  protected def createAverageMetric(level: MetricsLevel, name: String): GpuMetric =
-    createMetricInternal(level, SQLMetrics.createAverageMetric(sparkContext, name))
-
-  protected def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
-    createMetricInternal(level, SQLMetrics.createTimingMetric(sparkContext, name))
+  def createTimingMetric(level: MetricsLevel, name: String): GpuMetric =
+    metricFactory.createTiming(level, name)
 
   protected def createFileCacheMetrics(): Map[String, GpuMetric] = {
     if (FileCacheConf.FILECACHE_ENABLED.get(conf)) {
@@ -305,7 +194,8 @@ trait GpuExec extends SparkPlan {
 
   lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
-    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES)) ++
+    NUM_OUTPUT_BATCHES -> createMetric(outputBatchesLevel, DESCRIPTION_NUM_OUTPUT_BATCHES),
+    OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW)) ++
       additionalMetrics
 
   def gpuLongMetric(name: String): GpuMetric = allMetrics(name)
@@ -362,16 +252,129 @@ trait GpuExec extends SparkPlan {
   def getTaskMetrics: Option[GpuTaskMetrics] =
     this.getTagValue(GpuExec.TASK_METRICS_TAG)
 
+  /**
+   * Get OP_TIME_NEW metrics from child GpuExec operators to exclude them from this
+   * operator's OP_TIME_NEW. Recursively collects all descendant
+   * OP_TIME_NEW metrics and deduplicates them
+   */
+  def getDescendantOpTimeMetrics: Seq[GpuMetric] = {
+
+    def collectChildOpTimeMetricsRecursive(
+        plan: SparkPlan, visited: Set[SparkPlan]): Set[GpuMetric] = {
+      if (visited.contains(plan)) {
+        // Avoid infinite recursion and duplicate collection for shared operators
+        Set.empty
+      } else {
+        val newVisited = visited + plan
+        plan match {
+          case gpuExec: GpuExec =>
+            val currentMetric = gpuExec.getOpTimeNewMetric.toSet
+            // Log warning if the expected metric is not found
+            if (currentMetric.isEmpty) {
+              logWarning(s"${gpuExec.getClass.getSimpleName} " +
+                s"returned empty metrics in getOpTimeNewMetric")
+            }
+            // Recursively collect from children
+            val childMetrics = {
+              // Why use Exchange instead of GpuShuffleExchangeExecBase?
+              // Because classes like delta.GpuOptimizeWriteExchangeExec also extends Exchange
+              if (gpuExec.isInstanceOf[Exchange] ||
+                gpuExec.isInstanceOf[GpuCustomShuffleReaderExec]) {
+                Set.empty
+              } else {
+                gpuExec.children.flatMap { child =>
+                  collectChildOpTimeMetricsRecursive(child, newVisited)
+                }.toSet
+              }
+            }
+            currentMetric ++ childMetrics
+          case other =>
+            if (other.isInstanceOf[Exchange]) {
+              // Do not recurse into Exchange children
+              Set.empty
+            } else {
+              // For non-GPU operators, still recurse into their children
+              plan.children.flatMap { child =>
+                collectChildOpTimeMetricsRecursive(child, newVisited)
+              }.toSet
+            }
+        }
+      }
+    }
+
+    // Start recursive collection from direct children
+    val allChildMetrics = children.flatMap { child =>
+      collectChildOpTimeMetricsRecursive(child, Set.empty)
+    }.toSet
+
+    allChildMetrics.toSeq
+  }
+
+  // For GpuShuffleExchangeExecBase and GpuCustomShuffleReaderExec,
+  // we want the op time metrics to be called:
+  // - "op time (shuffle write partition)" for shuffle write, and
+  // - "op time (shuffle read)" for shuffle read.
+  // That's why we have this separate method to get the metric.
+  def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW)
+
+  protected def wrapWithTimeTrackingRDD[T: scala.reflect.ClassTag](rdd: RDD[T]): RDD[T] = {
+    // Wrap with GpuOpTimeTrackingRDD using OP_TIME_NEW metric
+    getOpTimeNewMetric match {
+      case Some(opTimeNewMetric) if enableOpTimeTrackingRdd =>
+        val descendantOpTimeMetrics =
+          if (this.isInstanceOf[Exchange]
+            || this.isInstanceOf[GpuCustomShuffleReaderExec]) {
+            // for shuffle, we do not want to exclude child opTime any more, because
+            // that's beyond current stage
+            Seq.empty
+          } else {
+            getDescendantOpTimeMetrics
+          }
+        new GpuOpTimeTrackingRDD(rdd, opTimeNewMetric, descendantOpTimeMetrics)
+      case _ => rdd
+    }
+  }
+
   final override def doExecuteColumnar(): RDD[ColumnarBatch] = {
-    val orig = internalDoExecuteColumnar()
+    this.dumpLoreMetaInfo()
+    // this is the core of op time new
+    val origin = wrapWithTimeTrackingRDD(internalDoExecuteColumnar())
+    val wrappedForLORE = this.dumpLoreRDD(origin)
+
     val metrics = getTaskMetrics
     metrics.map { gpuMetrics =>
       // This is ugly, but it reduces the need to change all exec nodes, so we are doing it here
-      LocationPreservingMapPartitionsRDD(orig) { iter =>
+      LocationPreservingMapPartitionsRDD(wrappedForLORE) { iter =>
         gpuMetrics.makeSureRegistered()
         iter
       }
-    }.getOrElse(orig)
+    }.getOrElse(wrappedForLORE)
+  }
+
+  override def stringArgs: Iterator[Any] = super.stringArgs ++ loreArgs
+
+  protected def loreArgs: Iterator[String] = {
+    val loreIdStr = loreIdOf(this).map(id => s"[loreId=$id]")
+    val lorePathStr = getTagValue(LORE_DUMP_PATH_TAG).map(path => s"[lorePath=$path]")
+    val loreRDDInfoStr = getTagValue(LORE_DUMP_RDD_TAG).map(info => s"[loreRDDInfo=$info]")
+
+    List(loreIdStr, lorePathStr, loreRDDInfoStr).flatten.iterator
+  }
+
+  private def dumpLoreMetaInfo(): Unit = {
+    if (!LORE_SKIP_DUMPING_PLAN.get(conf)) {
+      getTagValue(LORE_DUMP_PATH_TAG).foreach { rootPath =>
+        GpuLore.dumpPlan(this, new Path(rootPath))
+      }
+    }
+  }
+
+  protected def dumpLoreRDD(inner: RDD[ColumnarBatch]): RDD[ColumnarBatch] = {
+    getTagValue(LORE_DUMP_RDD_TAG).map { info =>
+      val rdd = new GpuLoreDumpRDD(info, inner)
+      rdd.saveMeta()
+      rdd
+    }.getOrElse(inner)
   }
 
   protected def internalDoExecuteColumnar(): RDD[ColumnarBatch]

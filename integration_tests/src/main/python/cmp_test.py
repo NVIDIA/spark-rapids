@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -300,6 +300,8 @@ non_utc_allow_for_date_add_interval = ['ProjectExec', 'FilterExec'] if is_not_ut
 @pytest.mark.parametrize('op', ['>', '<'])
 @allow_non_gpu(*non_utc_allow_for_date_add_interval)
 def test_empty_filter(op, spark_tmp_path):
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf = {'spark.sql.adaptive.enabled': 'false'}
 
     def do_it(spark):
         df = spark.createDataFrame([(14, "Tom"), (23, "Alice"), (16, "Bob")], ["age", "name"])
@@ -313,7 +315,7 @@ def test_empty_filter(op, spark_tmp_path):
         curDate.createOrReplaceTempView("empty_filter_test_curDate")
         spark.sql("select current_date, ((select last(current_date) from empty_filter_test_curDate) + interval 1 day) as test from empty_filter_test_curDate").createOrReplaceTempView("empty_filter_test2")
         return spark.sql(f"select * from empty_filter_test2 where test {op} current_date")
-    assert_gpu_and_cpu_are_equal_collect(do_it)
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=conf)
 
 def test_nondeterministic_filter():
     assert_gpu_and_cpu_are_equal_collect(

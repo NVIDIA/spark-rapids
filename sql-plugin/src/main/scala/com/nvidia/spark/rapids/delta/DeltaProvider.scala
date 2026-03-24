@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,27 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.nvidia.spark.rapids.{AppendDataExecV1Meta, AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, CreatableRelationProviderRule, ExecRule, GpuExec, OverwriteByExpressionExecV1Meta, RunnableCommandRule, ShimLoaderTemp, SparkPlanMeta}
+import com.nvidia.spark.rapids.{
+  AppendDataExecV1Meta, 
+  AtomicCreateTableAsSelectExecMeta, 
+  AtomicReplaceTableAsSelectExecMeta, 
+  CreatableRelationProviderRule, 
+  ExecRule, 
+  ExprRule, 
+  GpuExec, 
+  OverwriteByExpressionExecV1Meta, 
+  RunnableCommandRule, 
+  ShimLoaderTemp, 
+  SparkPlanMeta
+}
 
-import org.apache.spark.sql.Strategy
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.connector.catalog.{StagingTableCatalog, SupportsWrite}
-import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan}
+import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan, SparkStrategy}
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
 /** Probe interface to determine which Delta Lake provider to use. */
@@ -41,7 +54,9 @@ trait DeltaProvider {
   def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]]
 
-  def getStrategyRules: Seq[Strategy]
+  def getStrategyRules: Seq[SparkStrategy]
+
+  def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
 
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean
 
@@ -49,7 +64,7 @@ trait DeltaProvider {
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
 
-  def getReadFileFormat(format: FileFormat): FileFormat
+  def getReadFileFormat(relation: HadoopFsRelation): FileFormat
 
   def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean
 
@@ -78,6 +93,20 @@ trait DeltaProvider {
   def convertToGpu(
       cpuExec: OverwriteByExpressionExecV1,
       meta: OverwriteByExpressionExecV1Meta): GpuExec
+
+  /**
+   * Returns true if deletion vector predicates can be pushed down to the scan.
+   */
+  def canPushDVPredicateDownToScan(conf: SQLConf): Boolean = false
+
+  /**
+   * Pushes down deletion vector predicates to the scan if possible
+   */
+  def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = plan
+
+  def pruneFileMetadata(plan: SparkPlan): SparkPlan = plan
+
+  def isDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = false
 }
 
 object DeltaProvider {
@@ -97,7 +126,7 @@ object NoDeltaProvider extends DeltaProvider {
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = Map.empty
 
-  override def getStrategyRules: Seq[Strategy] = Nil
+  override def getStrategyRules: Seq[SparkStrategy] = Nil
 
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = false
 
@@ -106,7 +135,7 @@ object NoDeltaProvider extends DeltaProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit =
     throw new IllegalStateException("unsupported format")
 
-  override def getReadFileFormat(format: FileFormat): FileFormat =
+  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat =
     throw new IllegalStateException("unsupported format")
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = false

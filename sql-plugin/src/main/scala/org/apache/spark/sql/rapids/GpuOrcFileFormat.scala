@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.time.ZoneId
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.shims.OrcShims
 import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
@@ -33,6 +34,7 @@ import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object GpuOrcFileFormat extends Logging {
@@ -78,19 +80,31 @@ object GpuOrcFileFormat extends Logging {
         "If bloom filter is not required, unset \"orc.bloom.filter.columns\"")
     }
 
-    // For date type, timezone needs to be checked also. This is because JVM timezone and UTC
-    // timezone offset is considered when getting [[java.sql.date]] from
-    // [[org.apache.spark.sql.execution.datasources.DaysWritable]] object
-    // which is a subclass of [[org.apache.hadoop.hive.serde2.io.DateWritable]].
     val types = schema.map(_.dataType).toSet
-    if (types.exists(GpuOverrides.isOrContainsDateOrTimestamp(_))) {
-      if (!GpuOverrides.isUTCTimezone()) {
-        meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
-          s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
-          s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
-      }
+    val hasBools = schema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, t =>
+        t.isInstanceOf[BooleanType])
     }
 
+    if (!meta.conf.orcReadIgnoreWriterTimezone) {
+      // For timestamp type, timezone needs to be checked.
+      // This is because JVM timezone and UTC timezone offset is considered when
+      // reading timestamp type from ORC file.
+      if (types.exists(GpuOverrides.isOrContainsTimestamp)) {
+        if (!GpuOverrides.isUTCTimezone()) {
+          meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
+            s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
+            s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
+        }
+      }
+    } else {
+      // Ignore the write timezones in the stripe footers, we support, skip the checks.
+    }
+
+    if (hasBools && !meta.conf.isOrcBoolTypeEnabled) {
+      meta.willNotWorkOnGpu("Nullable Booleans can not work in certain cases with ORC writer." +
+        "See https://github.com/rapidsai/cudf/issues/6763")
+    }
     FileFormatChecks.tag(meta, schema, OrcFormatType, WriteFileOp)
 
     val sqlConf = spark.sessionState.conf
@@ -112,7 +126,7 @@ object GpuOrcFileFormat extends Logging {
 
     val orcOptions = new OrcOptions(options, sqlConf)
     orcOptions.compressionCodec match {
-      case "NONE" | "SNAPPY" | "ZSTD" =>
+      case "NONE" | "SNAPPY" | "ZSTD" | "ZLIB" =>
       case c => meta.willNotWorkOnGpu(s"compression codec $c is not supported")
     }
 
@@ -159,7 +173,8 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
                             options: Map[String, String],
                             dataSchema: StructType): ColumnarOutputWriterFactory = {
 
-    val orcOptions = new OrcOptions(options, sparkSession.sessionState.conf)
+    val sqlConf = sparkSession.sessionState.conf
+    val orcOptions = new OrcOptions(options, sqlConf)
 
     val conf = job.getConfiguration
 
@@ -170,11 +185,21 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
     conf.asInstanceOf[JobConf]
       .setOutputFormat(classOf[org.apache.orc.mapred.OrcOutputFormat[OrcStruct]])
 
+    val asyncOutputWriteEnabled = RapidsConf.ENABLE_ASYNC_OUTPUT_WRITE.get(sqlConf)
+    // holdGpuBetweenBatches is on by default if asyncOutputWriteEnabled is on
+    val holdGpuBetweenBatches = RapidsConf.ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK.get(sqlConf)
+      .getOrElse(asyncOutputWriteEnabled)
+    val orcStripeSizeRows = RapidsConf.TEST_ORC_STRIPE_SIZE_ROWS.get(sqlConf)
+
     new ColumnarOutputWriterFactory {
       override def newInstance(path: String,
                                dataSchema: StructType,
-                               context: TaskAttemptContext): ColumnarOutputWriter = {
-        new GpuOrcWriter(path, dataSchema, context)
+                               context: TaskAttemptContext,
+          statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+                               debugOutputPath: Option[String],
+        fileIO: RapidsFileIO): ColumnarOutputWriter = {
+        new GpuOrcWriter(path, dataSchema, context, statsTrackers, debugOutputPath,
+          holdGpuBetweenBatches, orcStripeSizeRows, asyncOutputWriteEnabled, fileIO)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -193,15 +218,26 @@ class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
   }
 }
 
-class GpuOrcWriter(override val path: String,
-                   dataSchema: StructType,
-                   context: TaskAttemptContext)
-  extends ColumnarOutputWriter(context, dataSchema, "ORC", true) {
+class GpuOrcWriter(
+    override val path: String,
+    dataSchema: StructType,
+    context: TaskAttemptContext,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+    debugOutputPath: Option[String],
+    holdGpuBetweenBatches: Boolean,
+    orcStripeSizeRows: Option[Integer],
+    useAsyncWrite: Boolean,
+    fileIO: RapidsFileIO)
+  extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, true,
+    statsTrackers, debugOutputPath, holdGpuBetweenBatches, useAsyncWrite, fileIO) {
 
   override val tableWriter: TableWriter = {
     val builder = SchemaUtils
-      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema)
+      .writerOptionsFromSchema(ORCWriterOptions.builder(), dataSchema, nullable = false)
       .withCompressionType(CompressionType.valueOf(OrcConf.COMPRESS.getString(conf)))
+    orcStripeSizeRows.foreach { ss =>
+      builder.withStripeSizeRows(ss)
+    }
     Table.writeORCChunked(builder.build(), this)
   }
 }

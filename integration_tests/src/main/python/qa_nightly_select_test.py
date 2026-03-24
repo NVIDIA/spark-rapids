@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from qa_nightly_sql import *
 import pytest
 from spark_session import with_cpu_session, is_jvm_charset_utf8
-from marks import approximate_float, ignore_order, incompat, qarun, allow_non_gpu
+from marks import approximate_float, ignore_order, incompat, qarun, allow_non_gpu, disable_ansi_mode
 from data_gen import copy_and_update, non_utc_allow
 
 def num_stringDf(spark):
@@ -155,6 +155,7 @@ _first_last_qa_conf = copy_and_update(_qa_conf, {
     # some of the first/last tests need a single partition to work reliably when run on a large cluster.
     'spark.sql.shuffle.partitions': '1'})
 
+@disable_ansi_mode
 @approximate_float
 @incompat
 @qarun
@@ -167,6 +168,7 @@ def test_select(sql_query_line, pytestconfig):
         with_cpu_session(num_stringDf)
         assert_gpu_and_cpu_are_equal_collect(lambda spark: spark.sql(sql_query), conf=_qa_conf)
 
+@disable_ansi_mode
 @ignore_order
 @approximate_float
 @incompat
@@ -201,6 +203,7 @@ def test_select_join(sql_query_line, pytestconfig):
 @ignore_order(local=True)
 @qarun
 @pytest.mark.parametrize('sql_query_line', SELECT_PRE_ORDER_SQL, ids=idfn)
+@disable_ansi_mode
 def test_select_first_last(sql_query_line, pytestconfig):
     sql_query = sql_query_line[0]
     if sql_query:

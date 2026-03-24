@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,10 @@ import org.scalatest.Ignore
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.{col, lower, upper}
 import org.apache.spark.sql.rapids.GpuRegExpUtils
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
  /*
  * Different versions of Java support different versions of Unicode.
@@ -79,7 +80,7 @@ object CudfIncompatibleCodepoints {
                                   List(),
 
                                   // java 17, unicode 13
-                                  List(42952, 42954, 42998))
+                                  List(411, 612, 42952, 42954, 42998))
 
   val lowercaseIncompatible = Array[List[Int]](
                                   // Java 8 / unicode 6.2
@@ -162,13 +163,13 @@ object TestCodepoints {
 
   // all unicode codepoints valid for this particular version of Java/Unicode.
   def validCodepointCharsDF(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     validCodepoints.toDF("indices", "strings")
   }
 
   // codepoint chars that we know should be working.  known issues in cudf are filtered out here
   def uppercaseCompatibleCharsDF(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     val version = getUnicodeIncompatibleIndex()
     val utf8Chars = (validCodepointIndices diff
       CudfIncompatibleCodepoints.uppercaseIncompatible(version)).map(i => i.toChar.toString)
@@ -177,7 +178,7 @@ object TestCodepoints {
 
   // codepoint chars that we know should be working.  known issues in cudf are filtered out here
   def lowercaseCompatibleCharsDF(session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     val version = getUnicodeIncompatibleIndex()
     val utf8Chars = (validCodepointIndices diff
       CudfIncompatibleCodepoints.lowercaseIncompatible(version)).map(i => i.toChar.toString)
@@ -207,7 +208,8 @@ class RegExpUtilsSuite extends AnyFunSuite {
       "aa|bb|cc|dd" -> Seq("aa", "bb", "cc", "dd"),
       "(aa|bb)|(cc|dd)" -> Seq("aa", "bb", "cc", "dd"),
       "aa|bb|cc|dd|ee" -> Seq("aa", "bb", "cc", "dd", "ee"),
-      "aa|bb|cc|dd|ee|ff" -> Seq("aa", "bb", "cc", "dd", "ee", "ff")
+      "aa|bb|cc|dd|ee|ff" -> Seq("aa", "bb", "cc", "dd", "ee", "ff"),
+      "a\n|b\t|c\r" -> Seq("a\n", "b\t", "c\r")
     )
 
     regexChoices.foreach { case (pattern, choices) =>
@@ -272,13 +274,13 @@ class StringOperatorsDiagnostics extends SparkQueryCompareTestSuite {
 
         val codepoint = TestCodepoints.validCodepointIndices(i)
         print(f"(${codepoint.toChar.toString} $codepoint[$codepoint%04x]) ($cpu_str ")
-        print(f"${cpu_str.map(_.toInt.formatted("%d")).mkString(",")}")
+        print(f"${cpu_str.map(c => "%d".format(c.toInt)).mkString(",")}")
         print("[")
-        print(f"${cpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
+        print(f"${cpu_str.map(c => "%04x".format(c.toInt)).mkString(",")}")
         print(f"]) ($gpu_str ")
-        print(f"${gpu_str.map(_.toInt.formatted("%d")).mkString(",")}")
+        print(f"${gpu_str.map(c => "%d".format(c.toInt)).mkString(",")}")
         print("[");
-        print(f"${gpu_str.map(_.toInt.formatted("%04x")).mkString(",")}")
+        print(f"${gpu_str.map(c => "%04x".format(c.toInt)).mkString(",")}")
         println("])");
       }
     }

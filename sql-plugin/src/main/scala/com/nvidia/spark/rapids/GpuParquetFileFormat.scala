@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,9 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.jni.DateTimeRebase
+import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.shims._
+import com.nvidia.spark.rapids.shims.parquet._
 import org.apache.hadoop.mapreduce.{Job, OutputCommitter, TaskAttemptContext}
 import org.apache.parquet.hadoop.{ParquetOutputCommitter, ParquetOutputFormat}
 import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
@@ -35,6 +37,7 @@ import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
+import org.apache.spark.sql.rapids.ColumnarWriteTaskStatsTracker
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -248,6 +251,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
 
     ParquetTimestampNTZShims.setupTimestampNTZConfig(conf, sqlConf)
 
+    ParquetVariantShims.setupParquetVariantConfig(conf, sqlConf)
+
     // Sets compression scheme
     conf.set(ParquetOutputFormat.COMPRESSION, parquetOptions.compressionCodecClassName)
 
@@ -271,13 +276,22 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           s"Set Parquet option ${ParquetOutputFormat.JOB_SUMMARY_LEVEL} to NONE.")
     }
 
+    val asyncOutputWriteEnabled = RapidsConf.ENABLE_ASYNC_OUTPUT_WRITE.get(sqlConf)
+    // holdGpuBetweenBatches is on by default if asyncOutputWriteEnabled is on
+    val holdGpuBetweenBatches = RapidsConf.ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK.get(sqlConf)
+      .getOrElse(asyncOutputWriteEnabled)
+
     new ColumnarOutputWriterFactory {
         override def newInstance(
           path: String,
           dataSchema: StructType,
-          context: TaskAttemptContext): ColumnarOutputWriter = {
+          context: TaskAttemptContext,
+          statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+          debugOutputPath: Option[String],
+          fileIO: RapidsFileIO): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
-          dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled)
+          dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled,
+          statsTrackers, debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled, fileIO)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -299,8 +313,14 @@ class GpuParquetWriter(
     dateRebaseMode: DateTimeRebaseMode,
     timestampRebaseMode: DateTimeRebaseMode,
     context: TaskAttemptContext,
-    parquetFieldIdEnabled: Boolean)
-  extends ColumnarOutputWriter(context, dataSchema, "Parquet", true) {
+    parquetFieldIdEnabled: Boolean,
+    statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
+    debugDumpPath: Option[String],
+    holdGpuBetweenBatches: Boolean,
+    useAsyncWrite: Boolean,
+    fileIO: RapidsFileIO)
+  extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, true,
+    statsTrackers, debugDumpPath, holdGpuBetweenBatches, useAsyncWrite, fileIO) {
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
@@ -321,7 +341,7 @@ class GpuParquetWriter(
         new GpuColumnVector(cv.dataType, deepTransformColumn(cv.getBase, cv.dataType))
             .asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
       }
-      new ColumnarBatch(transformedCols)
+      new ColumnarBatch(transformedCols, batch.numRows())
     }
   }
 
@@ -382,6 +402,7 @@ class GpuParquetWriter(
     val writeContext = new ParquetWriteSupport().init(conf)
     val builder = SchemaUtils
       .writerOptionsFromSchema(ParquetWriterOptions.builder(), dataSchema,
+        nullable = false,
         ParquetOutputTimestampType.INT96 == SQLConf.get.parquetOutputTimestampType,
         parquetFieldIdEnabled)
       .withMetadata(writeContext.getExtraMetaData)

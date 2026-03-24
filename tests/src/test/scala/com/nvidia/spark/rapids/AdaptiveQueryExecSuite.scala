@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package com.nvidia.spark.rapids
 
 import java.io.File
 
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.shims.{OperatorsUtilShims, SparkShimImpl}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.{Dataset, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{Dataset, Row, SaveMode}
 import org.apache.spark.sql.execution.{LocalTableScanExec, PartialReducerPartitionSpec, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, AdaptiveSparkPlanHelper, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.command.DataWritingCommandExec
@@ -32,6 +32,7 @@ import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{ExecutionPlanCaptureCallback, GpuFileSourceScanExec}
 import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuJoinExec}
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
 
 class AdaptiveQueryExecSuite
@@ -81,6 +82,7 @@ class AdaptiveQueryExecSuite
     collect(plan) {
       case j: GpuShuffledHashJoinExec => j
       case j: GpuShuffledSymmetricHashJoinExec => j
+      case j: GpuShuffledAsymmetricHashJoinExec => j
     }
   }
 
@@ -100,7 +102,7 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 join skewData2 ON key1 = key2")
       val shuffleExchanges =
-          PlanUtils.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
+          OperatorsUtilShims.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
               .map(_.asInstanceOf[ShuffleQueryStageExec])
       assert(shuffleExchanges.length === 2)
       val stats = shuffleExchanges.map(_.getRuntimeStatistics)
@@ -426,8 +428,10 @@ class AdaptiveQueryExecSuite
         s"Expected to capture exactly one plan: ${capturedPlans.mkString("\n")}")
       val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(capturedPlans.head)
 
-      val transition = executedPlan
-          .asInstanceOf[GpuColumnarToRowExec]
+      // find the first occurrence (last node) of GpuColumnarToRowExec in the plan 
+      // and assert the metrics
+      val transition = OperatorsUtilShims.findOperators(
+        executedPlan, _.isInstanceOf[GpuColumnarToRowExec]).head.asInstanceOf[GpuColumnarToRowExec]
 
       // because we are calling collect, AvoidAdaptiveTransitionToRow will not bypass
       // GpuColumnarToRowExec so we should see accurate metrics
@@ -494,12 +498,13 @@ class AdaptiveQueryExecSuite
   }
 
   test("Change merge join to broadcast join without local shuffle reader") {
+    skipIfAnsiEnabled("https://github.com/NVIDIA/spark-rapids/issues/11552")
     logError("Change merge join to broadcast join without local shuffle reader")
 
     val conf = new SparkConf()
       .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
       .set(SQLConf.LOCAL_SHUFFLE_READER_ENABLED.key, "true")
-      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "400")
+      .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "50")
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "50")
       // disable DemoteBroadcastHashJoin rule from removing BHJ due to empty partitions
       .set(SQLConf.NON_EMPTY_PARTITION_RATIO_FOR_BROADCAST_JOIN.key, "0")
@@ -601,12 +606,15 @@ class AdaptiveQueryExecSuite
   test("SPARK-35585: Support propagate empty relation through project/filter") {
     logError("SPARK-35585: Support propagate empty relation through project/filter")
     assumeSpark320orLater
-
+    // There is difference in Spark plans between 3.2.x-3.5.x and 4.0+
+    // Spark 4.0+ has EmptyRelationExec, but 3.2.x-3.5.x has LocalTableScanExec as the
+    // root node of the plan.
+    // Issue to support EmptyRelationExec:https://github.com/NVIDIA/spark-rapids/issues/11100
     val conf = new SparkConf()
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
-          "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning")
+          "DataWritingCommandExec,ShuffleExchangeExec,HashPartitioning,EmptyRelationExec")
 
     withGpuSparkSession(spark => {
       testData(spark)
@@ -614,13 +622,21 @@ class AdaptiveQueryExecSuite
       val (plan1, adaptivePlan1) = runAdaptiveAndVerifyResult(spark,
         "SELECT key FROM testData WHERE key = 0 ORDER BY key, value")
       assert(findTopLevelSort(plan1).size == 1)
-      assert(stripAQEPlan(adaptivePlan1).isInstanceOf[LocalTableScanExec])
+      // Check for either LocalTableScanExec (pre-4.0) or EmptyRelationExec (4.0+)
+      val strippedPlan1 = stripAQEPlan(adaptivePlan1)
+      assert(strippedPlan1.isInstanceOf[LocalTableScanExec] ||
+            strippedPlan1.getClass.getSimpleName.equals("EmptyRelationExec"),
+            s"Expected empty relation plan, but got: ${strippedPlan1}")
 
       val (plan2, adaptivePlan2) = runAdaptiveAndVerifyResult(spark,
         "SELECT key FROM (SELECT * FROM testData WHERE value = 'no_match' ORDER BY key)" +
             " WHERE key > rand()")
       assert(findTopLevelSort(plan2).size == 1)
-      assert(stripAQEPlan(adaptivePlan2).isInstanceOf[LocalTableScanExec])
+      // Check for either LocalTableScanExec (pre-4.0) or EmptyRelationExec (4.0+)
+      val strippedPlan2 = stripAQEPlan(adaptivePlan2)
+      assert(strippedPlan2.isInstanceOf[LocalTableScanExec] ||
+            strippedPlan2.getClass.getSimpleName.equals("EmptyRelationExec"),
+            s"Expected empty relation plan, but got: ${strippedPlan2}")
     }, conf)
   }
 
@@ -653,15 +669,14 @@ class AdaptiveQueryExecSuite
       .set(SQLConf.ADVISORY_PARTITION_SIZE_IN_BYTES.key, "800")
 
     withGpuSparkSession(spark => {
-      import spark.implicits._
 
       spark
           .range(0, 1000, 1, 10)
           .select(
-            when('id < 250, 249)
-                .when('id >= 750, 1000)
-                .otherwise('id).as("key1"),
-            'id as "value1")
+            when(col("id") < 250, 249)
+                .when(col("id") >= 750, 1000)
+                .otherwise(col("id")).as("key1"),
+            col("id") as "value1")
           .createOrReplaceTempView("skewData1")
 
       // note that the skew amount here has been modified compared to the original Spark test to
@@ -670,9 +685,9 @@ class AdaptiveQueryExecSuite
       spark
           .range(0, 1000, 1, 10)
           .select(
-            when('id < 500, 249)
-                .otherwise('id).as("key2"),
-            'id as "value2")
+            when(col("id") < 500, 249)
+                .otherwise(col("id")).as("key2"),
+            col("id") as "value2")
           .createOrReplaceTempView("skewData2")
 
       // invoke the test function

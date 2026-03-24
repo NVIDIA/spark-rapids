@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,8 @@
 {"spark": "330db"}
 {"spark": "332db"}
 {"spark": "341db"}
+{"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
@@ -26,6 +28,7 @@ import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType}
+import org.apache.spark.unsafe.types.UTF8String
 
 class RapidsErrorUtilsBase extends RapidsErrorUtilsFor330plus {
 
@@ -83,5 +86,9 @@ class RapidsErrorUtilsBase extends RapidsErrorUtilsFor330plus {
 
   override def intervalDivByZeroError(origin: Origin): ArithmeticException = {
     QueryExecutionErrors.intervalDividedByZeroError(origin.context)
+  }
+
+  def invalidInputSyntaxForBooleanError(s: UTF8String): RuntimeException = {
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s, null)
   }
 }

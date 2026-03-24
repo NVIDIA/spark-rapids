@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,10 +17,11 @@ import pytest
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_equal
 from conftest import is_not_utc
 from data_gen import *
+from pyspark import StorageLevel
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330
+from spark_session import with_cpu_session, with_gpu_session, is_before_spark_330, is_spark_350_or_351
 from join_test import create_df
-from marks import incompat, allow_non_gpu, ignore_order
+from marks import incompat, allow_non_gpu, allow_non_gpu_conditional, ignore_order, disable_ansi_mode
 import pyspark.mllib.linalg as mllib
 import pyspark.ml.linalg as ml
 
@@ -66,12 +67,14 @@ all_gen = [StringGen(), ByteGen(), ShortGen(), IntegerGen(), LongGen(),
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order
 def test_cache_join(data_gen, enable_vectorized_conf):
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf=copy_and_update(enable_vectorized_conf, {"spark.sql.adaptive.enabled": "false"})
     def do_join(spark):
         left, right = create_df(spark, data_gen, 500, 500)
         cached = left.join(right, left.a == right.r_a, 'Inner').cache()
         cached.count() # populates cache
         return cached
-    assert_gpu_and_cpu_are_equal_collect(do_join, conf=enable_vectorized_conf)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf=conf)
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
@@ -122,13 +125,15 @@ def test_cache_partial_load(data_gen, enable_vectorized_conf):
 @allow_non_gpu('CollectLimitExec')
 @ignore_order
 def test_cache_reverse_order(enable_vectorized_conf):
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf=copy_and_update(enable_vectorized_conf, {"spark.sql.adaptive.enabled": "false"})
     col0 = StructGen([['child0', StructGen([['child1', byte_gen]])]])
     col1 = StructGen([['child0', byte_gen]])
     def partial_return():
         def partial_return_cache(spark):
             return two_col_df(spark, col0, col1).select(f.col("a"), f.col("b")).cache().select(f.col("b"), f.col("a"))
         return partial_return_cache
-    assert_gpu_and_cpu_are_equal_collect(partial_return(), conf=enable_vectorized_conf)
+    assert_gpu_and_cpu_are_equal_collect(partial_return(), conf=conf)
 
 @allow_non_gpu('CollectLimitExec')
 def test_cache_diff_req_order(spark_tmp_path):
@@ -222,6 +227,8 @@ def test_cache_cpu_gpu_mixed(data_gen, enable_vectorized_conf):
                                         # i.e. 'extract(years from d) will actually convert the
                                         # entire interval to year
                                         ("make_interval(y,m,w,d,h,min,s) as d", ["cast(extract(years from d) as long)", "extract(months from d)", "extract(seconds from d)"])])
+# https://github.com/NVIDIA/spark-rapids/issues/12700
+@disable_ansi_mode
 def test_cache_additional_types(enable_vectorized, with_x_session, select_expr):
     def with_cache(cache):
         select_expr_df, select_expr_project = select_expr
@@ -360,3 +367,87 @@ def test_inmem_cache_count():
 @pytest.mark.parametrize('with_x_session', [with_gpu_session, with_cpu_session])
 def test_batch_no_cols(with_x_session):
     function_to_test_on_df(with_x_session, lambda spark: unary_op_df(spark, int_gen).drop("a"), lambda df: df.count(), test_conf={})
+
+@ignore_order(local=True)
+@allow_non_gpu("ShuffleExchangeExec", "ColumnarToRowExec")
+@allow_non_gpu_conditional(is_spark_350_or_351(), "InMemoryTableScanExec")
+@pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+def test_aqe_cache_version_specific_behavior(data_gen, enable_vectorized_conf):
+    """
+    Test InMemoryTableScan + AQE behavior across Spark versions.
+    - Spark 3.2.0-3.4.x: InMemoryTableScan works on GPU
+    - Spark 3.5.0-3.5.1: InMemoryTableScan disabled by default due to missing InMemoryTableScanLike trait
+    - Spark 3.5.2+: InMemoryTableScan works on GPU with proper trait support
+    """
+
+    def do_it(spark):
+        df1 = unary_op_df(spark, data_gen).orderBy('a').cache()
+        df2 = unary_op_df(spark, data_gen).withColumnRenamed("a", "r_a").cache()
+        df1.count()
+        df2.count()
+        return df1.join(df2, df1.a == df2.r_a, 'Outer')
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=enable_vectorized_conf)
+
+@ignore_order(local=True)
+@allow_non_gpu("CollectLimitExec", "ShuffleExchangeExec", "ColumnarToRowExec")
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@allow_non_gpu_conditional(is_spark_350_or_351(), "InMemoryTableScanExec")
+def test_persist_with_groupby_join_version_specific(enable_vectorized_conf):
+    """
+    Expected behavior:
+    - Spark 3.2.0-3.4.x: InMemoryTableScan works on GPU
+    - Spark 3.5.0-3.5.1: InMemoryTableScan falls back to CPU due to missing InMemoryTableScanLike trait
+    - Spark 3.5.2+: InMemoryTableScan works on GPU with proper trait support
+    """
+
+    def do_it(spark):
+        df = spark.range(0, 1000, 1, 2).select(
+            f.col("id").alias("_1"),
+            f.col("id").alias("_2")
+        )
+
+        ee = df.select(
+            f.col("_1").alias("src"),
+            f.col("_2").alias("dst")
+        ).persist(StorageLevel.MEMORY_AND_DISK)
+        ee.count()
+
+        minNbrs1 = ee.groupBy("src").agg(
+            f.min(f.col("dst")).alias("min_number")
+        ).persist(StorageLevel.MEMORY_AND_DISK)
+        minNbrs1.count()
+
+        ee.join(minNbrs1, "src")
+
+        return ee.join(minNbrs1, "src")
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=enable_vectorized_conf)
+
+@ignore_order(local=True)
+# Ensure base allow list is a tuple to satisfy pytest hook concatenation
+@allow_non_gpu("")
+@pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
+@allow_non_gpu_conditional(is_spark_350_or_351(), "InMemoryTableScanExec")
+def test_cached_groupby_sum_version_specific(enable_vectorized_conf):
+    """
+    Validate aggregation on a cached query works without errors across Spark versions.
+    Expected behavior:
+    - Spark 3.5.0-3.5.1: InMemoryTableScan falls back to CPU by default
+    - Spark 3.5.2+: InMemoryTableScan works on GPU
+    """
+
+    def do_it(spark):
+        spark.sql(
+            """
+            SELECT id, value FROM VALUES (1, 10.0), (2, 20.0) AS t(id, value)
+            """).createOrReplaceTempView("t_simple")
+
+        df = spark.sql("""SELECT SUM(value) AS s FROM t_simple GROUP BY id""").cache()
+
+        # Populate the cache
+        df.count()
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(do_it, conf=enable_vectorized_conf)

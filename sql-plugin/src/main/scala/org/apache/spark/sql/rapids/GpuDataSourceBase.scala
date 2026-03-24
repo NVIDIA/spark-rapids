@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ package org.apache.spark.sql.rapids
 
 import java.util.{Locale, ServiceConfigurationError, ServiceLoader}
 
-import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids.GpuParquetFileFormat
@@ -41,10 +40,9 @@ import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.execution.datasources.v2.orc.OrcDataSourceV2
-import org.apache.spark.sql.execution.streaming._
 import org.apache.spark.sql.execution.streaming.sources.{RateStreamProvider, TextSocketSourceProvider}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.shims.SchemaUtilsShims
+import org.apache.spark.sql.rapids.shims.{FileStreamSinkShims, RapidsErrorUtils, SchemaUtilsShims}
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.util.{HadoopFSUtils, ThreadUtils, Utils}
@@ -144,8 +142,8 @@ abstract class GpuDataSourceBase(
             }
             inferredOpt
           }.getOrElse {
-            throw new AnalysisException(s"Failed to resolve the schema for $format for " +
-              s"the partition column: $partitionColumn. It must be specified manually.")
+            throw RapidsErrorUtils.
+              partitionColumnNotSpecifiedError(format.toString, partitionColumn)
           }
         }
         StructType(partitionFields)
@@ -162,8 +160,7 @@ abstract class GpuDataSourceBase(
         caseInsensitiveOptions - "path",
         SparkShimImpl.filesFromFileIndex(tempFileIndex))
     }.getOrElse {
-      throw new AnalysisException(
-        s"Unable to infer schema for $format. It must be specified manually.")
+      throw RapidsErrorUtils.dataSchemaNotSpecifiedError(format.toString)
     }
 
     // We just print a waring message if the data schema and partition schema have the duplicate
@@ -201,29 +198,25 @@ abstract class GpuDataSourceBase(
       case (dataSource: RelationProvider, None) =>
         dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions)
       case (_: SchemaRelationProvider, None) =>
-        throw new AnalysisException(s"A schema needs to be specified when using $className.")
+        throw RapidsErrorUtils.schemaNotSpecifiedForSchemaRelationProviderError(className)
       case (dataSource: RelationProvider, Some(schema)) =>
         val baseRelation =
           dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions)
         if (!DataType.equalsIgnoreCompatibleNullability(baseRelation.schema, schema)) {
-          throw new AnalysisException(
-            "The user-specified schema doesn't match the actual schema: " +
-            s"user-specified: ${schema.toDDL}, actual: ${baseRelation.schema.toDDL}. If " +
-            "you're using DataFrameReader.schema API or creating a table, please do not " +
-            "specify the schema. Or if you're scanning an existed table, please drop " +
-            "it and re-create it.")
+          throw RapidsErrorUtils.userSpecifiedSchemaMismatchActualSchemaError(schema,
+            baseRelation.schema)
         }
         baseRelation
 
       // We are reading from the results of a streaming query. Load files from the metadata log
       // instead of listing them using HDFS APIs.
       case (format: FileFormat, _)
-          if FileStreamSink.hasMetadata(
+          if FileStreamSinkShims.hasMetadata(
             caseInsensitiveOptions.get("path").toSeq ++ paths,
             newHadoopConfiguration(),
             sparkSession.sessionState.conf) =>
         val basePath = new Path((caseInsensitiveOptions.get("path").toSeq ++ paths).head)
-        val fileCatalog = new MetadataLogFileIndex(sparkSession, basePath,
+        val fileCatalog = FileStreamSinkShims.newMetadataLogFileIndex(sparkSession, basePath,
           caseInsensitiveOptions, userSpecifiedSchema)
         val dataSchema = userSpecifiedSchema.orElse {
           // Remove "path" option so that it is not added to the paths returned by
@@ -233,9 +226,8 @@ abstract class GpuDataSourceBase(
             caseInsensitiveOptions - "path",
             SparkShimImpl.filesFromFileIndex(fileCatalog))
         }.getOrElse {
-          throw new AnalysisException(
-            s"Unable to infer schema for $format at ${fileCatalog.allFiles().mkString(",")}. " +
-                "It must be specified manually")
+          throw RapidsErrorUtils.
+            dataSchemaNotSpecifiedError(format.toString, fileCatalog.allFiles().mkString(","))
         }
 
         HadoopFsRelation(
@@ -248,7 +240,7 @@ abstract class GpuDataSourceBase(
 
       // This is a non-streaming file based datasource.
       case (format: FileFormat, _) =>
-        val useCatalogFileIndex = sparkSession.sqlContext.conf.manageFilesourcePartitions &&
+        val useCatalogFileIndex = sparkSession.sessionState.conf.manageFilesourcePartitions &&
           catalogTable.isDefined && catalogTable.get.tracksPartitionsInCatalog &&
           catalogTable.get.partitionColumnNames.nonEmpty
         val (fileCatalog, dataSchema, partitionSchema) = if (useCatalogFileIndex) {
@@ -276,8 +268,7 @@ abstract class GpuDataSourceBase(
           caseInsensitiveOptions)(sparkSession)
 
       case _ =>
-        throw new AnalysisException(
-          s"$className is not a valid Spark SQL Data Source.")
+        throw RapidsErrorUtils.invalidDataSourceError(className)
     }
 
     relation match {
@@ -367,6 +358,19 @@ object GpuDataSourceBase extends Logging {
     "org.apache.spark.sql.sources.HadoopFsRelationProvider",
     "org.apache.spark.Logging")
 
+  private def handleServiceConfigError(e: ServiceConfigurationError, context: String): Unit = {
+    val cause = e.getCause
+    if (cause.isInstanceOf[NoClassDefFoundError]) {
+      val className = cause.getMessage.replaceAll("/", ".")
+      if (spark2RemovedClasses.contains(className)) {
+        throw new ClassNotFoundException(
+          "Detected an incompatible DataSourceRegister. Please remove the " +
+            s"incompatible library from classpath or upgrade it. Error: ${e.getMessage}", e)
+      }
+    }
+    logWarning(s"Skipping broken DataSourceRegister provider$context: ${e.getMessage}")
+  }
+
   def lookupDataSourceWithFallback(className: String, conf: SQLConf): Class[_] = {
     val cls = GpuDataSourceBase.lookupDataSource(className, conf)
     // `providingClass` is used for resolving data source relation for catalog tables.
@@ -400,79 +404,92 @@ object GpuDataSourceBase extends Logging {
     val loader = Utils.getContextOrSparkClassLoader
     val serviceLoader = ServiceLoader.load(classOf[DataSourceRegister], loader)
 
-    try {
-      serviceLoader.asScala.filter(_.shortName().equalsIgnoreCase(provider1)).toList match {
-        // the provider format did not match any given registered aliases
-        case Nil =>
+    // ServiceLoader iteration can throw ServiceConfigurationError if an incompatible
+    // or broken DataSourceRegister provider is on the classpath. Use a manual loop
+    // to skip broken providers and continue iteration.
+    // hasNext() and next() are handled separately because hasNext() can also
+    // throw ServiceConfigurationError.
+    val providers = {
+      val buf = new scala.collection.mutable.ListBuffer[DataSourceRegister]()
+      val iter = serviceLoader.iterator()
+      var done = false
+      while (!done) {
+        val hasMore = try {
+          iter.hasNext
+        } catch {
+          case e: ServiceConfigurationError =>
+            // Assume more entries may exist;
+            // let next() advance past the broken entry.
+            handleServiceConfigError(e, " (hasNext)")
+            true
+        }
+        if (!hasMore) {
+          done = true
+        } else {
           try {
-            Try(loader.loadClass(provider1)).orElse(Try(loader.loadClass(provider2))) match {
-              case Success(dataSource) =>
-                // Found the data source using fully qualified path
-                dataSource
-              case Failure(error) =>
-                if (provider1.startsWith("org.apache.spark.sql.hive.orc")) {
-                  throw new AnalysisException(
-                    "Hive built-in ORC data source must be used with Hive support enabled. " +
-                    "Please use the native ORC data source by setting 'spark.sql.orc.impl' to " +
-                    "'native'")
-                } else if (provider1.toLowerCase(Locale.ROOT) == "avro" ||
-                  provider1 == "com.databricks.spark.avro" ||
-                  provider1 == "org.apache.spark.sql.avro") {
-                  throw new AnalysisException(
-                    s"Failed to find data source: $provider1. Avro is built-in but external data " +
-                    "source module since Spark 2.4. Please deploy the application as per " +
-                    "the deployment section of \"Apache Avro Data Source Guide\".")
-                } else if (provider1.toLowerCase(Locale.ROOT) == "kafka") {
-                  throw new AnalysisException(
-                    s"Failed to find data source: $provider1. Please deploy the application as " +
-                    "per the deployment section of " +
-                    "\"Structured Streaming + Kafka Integration Guide\".")
-                } else {
-                  throw new ClassNotFoundException(
-                    s"Failed to find data source: $provider1. Please find packages at " +
-                      "http://spark.apache.org/third-party-projects.html",
-                    error)
-                }
+            val provider = iter.next()
+            if (provider.shortName().equalsIgnoreCase(provider1)) {
+              buf += provider
             }
           } catch {
-            case e: NoClassDefFoundError => // This one won't be caught by Scala NonFatal
-              // NoClassDefFoundError's class name uses "/" rather than "." for packages
-              val className = e.getMessage.replaceAll("/", ".")
-              if (spark2RemovedClasses.contains(className)) {
-                throw new ClassNotFoundException(s"$className was removed in Spark 2.0. " +
-                  "Please check if your library is compatible with Spark 2.0", e)
+            case e: ServiceConfigurationError =>
+              handleServiceConfigError(e, "")
+          }
+        }
+      }
+      buf.toList
+    }
+
+    providers match {
+      // the provider format did not match any given registered aliases
+      case Nil =>
+        try {
+          Try(loader.loadClass(provider1)).orElse(Try(loader.loadClass(provider2))) match {
+            case Success(dataSource) =>
+              // Found the data source using fully qualified path
+              dataSource
+            case Failure(error) =>
+              if (provider1.startsWith("org.apache.spark.sql.hive.orc")) {
+                throw RapidsErrorUtils.orcNotUsedWithHiveEnabledError()
+              } else if (provider1.toLowerCase(Locale.ROOT) == "avro" ||
+                provider1 == "com.databricks.spark.avro" ||
+                provider1 == "org.apache.spark.sql.avro") {
+                throw RapidsErrorUtils.failedToFindAvroDataSourceError(provider1)
+              } else if (provider1.toLowerCase(Locale.ROOT) == "kafka") {
+                throw RapidsErrorUtils.failedToFindKafkaDataSourceError(provider1)
               } else {
-                throw e
+                throw new ClassNotFoundException(
+                  s"Failed to find data source: $provider1. Please find packages at " +
+                    "http://spark.apache.org/third-party-projects.html",
+                  error)
               }
           }
-        case head :: Nil =>
-          // there is exactly one registered alias
-          head.getClass
-        case sources =>
-          // There are multiple registered aliases for the input. If there is single datasource
-          // that has "org.apache.spark" package in the prefix, we use it considering it is an
-          // internal datasource within Spark.
-          val sourceNames = sources.map(_.getClass.getName)
-          val internalSources = sources.filter(_.getClass.getName.startsWith("org.apache.spark"))
-          if (internalSources.size == 1) {
-            logWarning(s"Multiple sources found for $provider1 (${sourceNames.mkString(", ")}), " +
-              s"defaulting to the internal datasource (${internalSources.head.getClass.getName}).")
-            internalSources.head.getClass
-          } else {
-            throw new AnalysisException(s"Multiple sources found for $provider1 " +
-              s"(${sourceNames.mkString(", ")}), please specify the fully qualified class name.")
-          }
-      }
-    } catch {
-      case e: ServiceConfigurationError if e.getCause.isInstanceOf[NoClassDefFoundError] =>
-        // NoClassDefFoundError's class name uses "/" rather than "." for packages
-        val className = e.getCause.getMessage.replaceAll("/", ".")
-        if (spark2RemovedClasses.contains(className)) {
-          throw new ClassNotFoundException(s"Detected an incompatible DataSourceRegister. " +
-            "Please remove the incompatible library from classpath or upgrade it. " +
-            s"Error: ${e.getMessage}", e)
+        } catch {
+          case e: NoClassDefFoundError => // This one won't be caught by Scala NonFatal
+            // NoClassDefFoundError's class name uses "/" rather than "." for packages
+            val className = e.getMessage.replaceAll("/", ".")
+            if (spark2RemovedClasses.contains(className)) {
+              throw new ClassNotFoundException(s"$className was removed in Spark 2.0. " +
+                "Please check if your library is compatible with Spark 2.0", e)
+            } else {
+              throw e
+            }
+        }
+      case head :: Nil =>
+        // there is exactly one registered alias
+        head.getClass
+      case sources =>
+        // There are multiple registered aliases for the input. If there is single datasource
+        // that has "org.apache.spark" package in the prefix, we use it considering it is an
+        // internal datasource within Spark.
+        val sourceNames = sources.map(_.getClass.getName)
+        val internalSources = sources.filter(_.getClass.getName.startsWith("org.apache.spark"))
+        if (internalSources.size == 1) {
+          logWarning(s"Multiple sources found for $provider1 (${sourceNames.mkString(", ")}), " +
+            s"defaulting to the internal datasource (${internalSources.head.getClass.getName}).")
+          internalSources.head.getClass
         } else {
-          throw e
+          throw RapidsErrorUtils.findMultipleDataSourceError(provider1, sourceNames)
         }
     }
   }
@@ -513,7 +530,7 @@ object GpuDataSourceBase extends Logging {
           }
 
           if (checkEmptyGlobPath && globResult.isEmpty) {
-            throw new AnalysisException(s"Path does not exist: $globPath")
+            throw RapidsErrorUtils.dataPathNotExistError(globPath.toString)
           }
 
           globResult
@@ -527,7 +544,7 @@ object GpuDataSourceBase extends Logging {
         ThreadUtils.parmap(nonGlobPaths, "checkPathsExist", numThreads) { path =>
           val fs = path.getFileSystem(hadoopConf)
           if (!fs.exists(path)) {
-            throw new AnalysisException(s"Path does not exist: $path")
+            throw RapidsErrorUtils.dataPathNotExistError(path.toString)
           }
         }
       } catch {

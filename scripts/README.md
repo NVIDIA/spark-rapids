@@ -13,7 +13,7 @@ steps can be helpful in narrowing down which files in the changeset are directly
     a77ae27f15  [SPARK-41442][SQL][FOLLOWUP] SQLMetric should not expose -1 value as it's invalid
    ```
 3. Run the following command from spark-rapids project-root, and you should get a file called 
-  `audit-plugin.log` at location pointed by `$WORKSPACE`. 
+  `audit-plugin.log` at location pointed by `$WORKSPACE`. The environment variables must be absolute paths.
    ```
    WORKSPACE=~/workspace SPARK_TREE=~/workspace/spark COMMIT_DIFF_LOG=~/workspace/commits.log 
    ./scripts/prioritize-commits.sh

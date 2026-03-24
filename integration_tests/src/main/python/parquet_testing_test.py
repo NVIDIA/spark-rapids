@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, NVIDIA CORPORATION.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ from data_gen import copy_and_update, non_utc_allow
 from marks import allow_non_gpu
 from pathlib import Path
 import pytest
-from spark_session import is_before_spark_330, is_spark_350_or_later
+from spark_session import is_before_spark_330, is_spark_350_or_later, is_spark_411_or_later
 import warnings
 
 _rebase_confs = {
@@ -73,11 +73,17 @@ else:
     _error_files["lz4_raw_compressed.parquet"] = "Exception"
     _error_files["lz4_raw_compressed_larger.parquet"] = "Exception"
 
+if is_spark_411_or_later():
+    # XFAIL null_list.parquet for Spark 4.1.0+ due to https://github.com/NVIDIA/spark-rapids/issues/14242
+    # Before Spark 4.1.0, infers array<int>  type for the null_list.parquet,
+    # After Spark 4.1.0+, infers array<void> type for the null_list.parquet
+    _xfail_files["null_list.parquet"] = "https://github.com/NVIDIA/spark-rapids/issues/14242"
+
 def hdfs_glob(path_str, pattern):
     """
     Finds hdfs files by checking the input path with glob pattern
 
-    :param path_str: hdfs path to check 
+    :param path_str: hdfs path to check
     :type path_str: str
     :return: generator of matched files
     """
@@ -96,7 +102,7 @@ def glob(path_str, pattern):
     Finds files by checking the input path with glob pattern.
     Support local file system and hdfs
 
-    :param path_str: input path to check 
+    :param path_str: input path to check
     :type path_str: str
     :return: generator of matched files
     """

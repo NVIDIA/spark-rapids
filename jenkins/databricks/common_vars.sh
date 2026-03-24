@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,59 @@ if [ -n "$EXTRA_ENVS" ]; then
 fi
 
 SPARK_VER=${SPARK_VER:-$(< /databricks/spark/VERSION)}
-export SPARK_SHIM_VER=${SPARK_SHIM_VER:-spark${SPARK_VER//.}db}
+
+# Print DB runtime version details
+if [[ -f /databricks/BUILDINFO ]]; then
+    echo "DB runtime version details:"
+    cat /databricks/BUILDINFO
+else
+    echo "No /databricks/BUILDINFO file found"
+fi
+
+# Extract Databricks version from deployed configs.
+# spark.databricks.clusterUsageTags.sparkVersion is set automatically on Databricks
+# notebooks but not when running Spark manually.
+#
+# At the OS level the DBR version can be obtailed via
+# 1. DATABRICKS_RUNTIME_VERSION environment set by Databricks, e.g., 12.2
+# 2. File at /databricks/DBR_VERSION created by Databricks, e.g., 12.2
+# 3. The value for Spark conf in file /databricks/common/conf/deploy.conf created by Databricks,
+#    e.g. 12.2.x-gpu-ml-scala2.12
+#
+# For cases 1 and 2 append '.' for version matching in 3XYdb SparkShimServiceProvider
+#
+DBR_VERSION=/databricks/DBR_VERSION
+DB_DEPLOY_CONF=/databricks/common/conf/deploy.conf
+if [[ -n "${DATABRICKS_RUNTIME_VERSION}" ]]; then
+  export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion="${DATABRICKS_RUNTIME_VERSION}."
+elif [[ -f $DBR_VERSION || -f $DB_DEPLOY_CONF ]]; then
+  DB_VER="$(< ${DBR_VERSION})." || \
+    DB_VER=$(grep spark.databricks.clusterUsageTags.sparkVersion $DB_DEPLOY_CONF | sed -e 's/.*"\(.*\)".*/\1/')
+  # if we did not error out on reads we should have at least four characters "x.y."
+  if (( ${#DB_VER} < 4 )); then
+      echo >&2 "Unable to determine Databricks version, unexpected length of: ${DB_VER}"
+      exit 1
+  fi
+  export PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion=$DB_VER
+else
+  cat << EOF
+This node does not define
+- DATABRICKS_RUNTIME_VERSION environment,
+- Files containing version information: $DBR_VERSION, $DB_DEPLOY_CONF
+
+Proceeding assuming a non-Databricks environment.
+EOF
+
+fi
+
+# TODO make this standard going forward
+if [[ "$SPARK_VER" == '3.5.0' || "$SPARK_VER" == '4.0.0' ]]; then
+    DB_VER_SUFFIX="${PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion//./}"
+else
+    DB_VER_SUFFIX=""
+fi
+
+export SPARK_SHIM_VER=${SPARK_SHIM_VER:-"spark${SPARK_VER//.}db${DB_VER_SUFFIX}"}
 
 # Setup SPARK_HOME if need
 if [[ -z "$SPARK_HOME" ]]; then
@@ -31,7 +83,7 @@ fi
 
 # Set PYSPARK_PYTHON to keep the version of driver/workers python consistent.
 export PYSPARK_PYTHON=${PYSPARK_PYTHON:-"$(which python)"}
-# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB11.3
+# Get Python version (major.minor). i.e., python3.8 for DB10.4 and python3.9 for DB12.2
 PYTHON_VERSION=$(${PYSPARK_PYTHON} -c 'import sys; print("python{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 # Set the path of python site-packages, packages were installed here by 'jenkins/databricks/setup.sh'.
 PYTHON_SITE_PACKAGES=${PYTHON_SITE_PACKAGES:-"$HOME/.local/lib/${PYTHON_VERSION}/site-packages"}

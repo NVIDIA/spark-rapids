@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,19 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 
-import org.apache.spark.TaskContext
-import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.JoinType
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti}
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode}
-import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class GpuBroadcastHashJoinMetaBase(
@@ -58,6 +54,7 @@ abstract class GpuBroadcastHashJoinMetaBase(
   override def tagPlanForGpu(): Unit = {
     GpuHashJoin.tagJoin(this, join.joinType, buildSide, join.leftKeys, join.rightKeys,
       conditionMeta)
+    GpuHashJoin.tagBuildSide(this, join.joinType, buildSide)
     val Seq(leftChild, rightChild) = childPlans
     val buildSideMeta = buildSide match {
       case GpuBuildLeft => leftChild
@@ -104,13 +101,23 @@ abstract class GpuBroadcastHashJoinExecBase(
     buildSide: GpuBuildSide,
     override val condition: Option[Expression],
     left: SparkPlan,
-    right: SparkPlan) extends ShimBinaryExecNode with GpuHashJoin {
+    right: SparkPlan,
+    isNullAwareAntiJoin: Boolean) extends ShimBinaryExecNode with GpuHashJoin {
   import GpuMetric._
+
+  // Same checks as Spark
+  if (isNullAwareAntiJoin) {
+    require(leftKeys.length == 1, "leftKeys length should be 1")
+    require(rightKeys.length == 1, "rightKeys length should be 1")
+    require(joinType == LeftAnti, "joinType must be LeftAnti.")
+    require(buildSide == GpuBuildRight, "buildSide must be BuildRight.")
+    require(condition.isEmpty, "null aware anti join optimize condition should be empty.")
+  }
 
   override val outputRowsLevel: MetricsLevel = ESSENTIAL_LEVEL
   override val outputBatchesLevel: MetricsLevel = MODERATE_LEVEL
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
 
@@ -123,6 +130,8 @@ abstract class GpuBroadcastHashJoinExecBase(
         UnspecifiedDistribution :: BroadcastDistribution(mode) :: Nil
     }
   }
+
+  override def outputPartitioning: Partitioning = streamedPlan.outputPartitioning
 
   def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] =>
@@ -137,64 +146,54 @@ abstract class GpuBroadcastHashJoinExecBase(
     throw new IllegalStateException(
       "GpuBroadcastHashJoin does not support row-based processing")
 
-  /**
-   * Gets the ColumnarBatch for the build side and the stream iterator by
-   * acquiring the GPU only after first stream batch has been streamed to GPU.
-   *
-   * `broadcastRelation` represents the broadcasted build side table on the host. The code
-   * in this function peaks at the stream side, after having wrapped it in a closeable
-   * buffered iterator, to cause the stream side to produce the first batch. This delays
-   * acquiring the semaphore until after the stream side performs all the steps needed
-   * (including IO) to produce that first batch. Once the first stream batch is produced,
-   * the build side is materialized to the GPU (while holding the semaphore).
-   *
-   * TODO: This could try to trigger the broadcast materialization on the host before
-   *   getting started on the stream side (e.g. call `broadcastRelation.value`).
-   */
-  private def getBroadcastBuiltBatchAndStreamIter(
-      broadcastRelation: Broadcast[Any],
-      buildSchema: StructType,
-      streamIter: Iterator[ColumnarBatch],
-      coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
-
-    val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
-    closeOnExcept(bufferedStreamIter) { _ =>
-      withResource(new NvtxRange("first stream batch", NvtxColor.RED)) { _ =>
-        if (bufferedStreamIter.hasNext) {
-          bufferedStreamIter.head
-        } else {
-          GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        }
-      }
-
-      val buildBatch =
-        GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
-      (buildBatch, bufferedStreamIter)
-    }
-  }
-
   protected def doColumnarBroadcastJoin(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
+    val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
 
     val broadcastRelation = broadcastExchange.executeColumnarBroadcast[Any]()
 
     val rdd = streamedPlan.executeColumnar()
     val buildSchema = buildPlan.schema
+    val localIsNullAwareAntiJoin = isNullAwareAntiJoin
     rdd.mapPartitions { it =>
       val (builtBatch, streamIter) =
-        getBroadcastBuiltBatchAndStreamIter(
+        GpuBroadcastHelper.getBroadcastBuiltBatchAndStreamIter(
           broadcastRelation,
           buildSchema,
-          new CollectTimeIterator("broadcast join stream", it, streamTime),
-          allMetrics)
-      // builtBatch will be closed in doJoin
-      doJoin(builtBatch, streamIter, targetSize, numOutputRows, numOutputBatches, opTime, joinTime)
+          new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime))
+      if (localIsNullAwareAntiJoin) {
+        // This is to support the null-aware anti join for the LeftAnti join with
+        // BuildRight. See the config "spark.sql.optimizeNullAwareAntiJoin".
+        // Spark already executes all the check for the requirements, e.g. join type,
+        // build side, keys length == 1. So no need to do it here again.
+        // This will cover mainly 3 cases as below, similar as what Spark does.
+        if (builtBatch.numRows() == 0) {
+          // Build side is empty, return the stream iterator directly.
+          withResource(builtBatch)(_ => streamIter)
+        } else if (closeOnExcept(builtBatch)(GpuHashJoin.anyNullInKey(_, boundBuildKeys))) {
+          // Spark will return an empty iterator if any nulls in the right table
+          withResource(builtBatch)(_ => Iterator.empty)
+        } else {
+          // Nulls will be filtered out
+          val nullFilteredStreamIter = streamIter.map { cb =>
+            GpuHashJoin.filterNullsWithRetryAndClose(
+              SpillableColumnarBatch(cb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
+              boundStreamKeys)
+          }
+          doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
+            numOutputBatches, opTime, joinTime)
+        }
+      } else {
+        // builtBatch will be closed in doJoin
+        doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
+          joinTime)
+      }
     }
   }
 

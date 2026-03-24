@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.delta.delta23x
 
 import com.nvidia.spark.rapids.{AtomicCreateTableAsSelectExecMeta, AtomicReplaceTableAsSelectExecMeta, GpuExec, GpuOverrides, GpuReadParquetFileFormat, RunnableCommandRule, SparkPlanMeta}
-import com.nvidia.spark.rapids.delta.DeltaIOProvider
+import com.nvidia.spark.rapids.delta.Delta2xProviderBase
 
 import org.apache.spark.sql.delta.DeltaParquetFileFormat
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.{IS_ROW_DELETED_COLUMN_NAME, ROW_INDEX_COLUMN_NAME}
@@ -26,11 +26,11 @@ import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, Upd
 import org.apache.spark.sql.delta.rapids.DeltaRuntimeShim
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.command.RunnableCommand
-import org.apache.spark.sql.execution.datasources.FileFormat
+import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
 
-object Delta23xProvider extends DeltaIOProvider {
+object Delta23xProvider extends Delta2xProviderBase {
 
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
@@ -72,8 +72,8 @@ object Delta23xProvider extends DeltaIOProvider {
     }
   }
 
-  override def getReadFileFormat(format: FileFormat): FileFormat = {
-    val cpuFormat = format.asInstanceOf[DeltaParquetFileFormat]
+  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+    val cpuFormat = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
     GpuDelta23xParquetFileFormat(cpuFormat.metadata, cpuFormat.isSplittable)
   }
 

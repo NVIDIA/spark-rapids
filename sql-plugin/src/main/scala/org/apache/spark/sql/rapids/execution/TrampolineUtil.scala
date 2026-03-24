@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
 
 package org.apache.spark.sql.rapids.execution
 
+import java.util.concurrent.{ScheduledExecutorService, ThreadPoolExecutor}
+
+import org.apache.hadoop.conf.Configuration
 import org.json4s.JsonAST
 
 import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
@@ -26,6 +29,7 @@ import org.apache.spark.internal.config
 import org.apache.spark.internal.config.EXECUTOR_ID
 import org.apache.spark.io.CompressionCodec
 import org.apache.spark.memory.TaskMemoryManager
+import org.apache.spark.scheduler.SparkListenerEvent
 import org.apache.spark.security.CryptoStreamUtils
 import org.apache.spark.serializer.{JavaSerializer, SerializerManager}
 import org.apache.spark.sql.{AnalysisException, SparkSession}
@@ -33,16 +37,18 @@ import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.physical.BroadcastMode
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
-import org.apache.spark.util.{ShutdownHookManager, Utils}
+import org.apache.spark.util.{ShutdownHookManager, ThreadUtils, Utils}
 
 object TrampolineUtil {
   def doExecuteBroadcast[T](child: SparkPlan): Broadcast[T] = child.doExecuteBroadcast()
 
-  def isSupportedRelation(mode: BroadcastMode): Boolean = 
+  def isSupportedRelation(mode: BroadcastMode): Boolean =
     ShimTrampolineUtil.isSupportedRelation(mode)
 
   def unionLikeMerge(left: DataType, right: DataType): DataType =
@@ -97,7 +103,7 @@ object TrampolineUtil {
   }
 
   /** Shuts down and cleans up any existing Spark session */
-  def cleanupAnyExistingSession(): Unit = SparkSession.cleanupAnyExistingSession()
+  def cleanupAnyExistingSession(): Unit = TrampolineConnectShims.cleanupAnyExistingSession()
 
   def asNullable(dt: DataType): DataType = dt.asNullable
 
@@ -110,7 +116,10 @@ object TrampolineUtil {
    * @param amountSpilled amount of memory spilled in bytes
    */
   def incTaskMetricsMemoryBytesSpilled(amountSpilled: Long): Unit = {
-    Option(TaskContext.get).foreach(_.taskMetrics().incMemoryBytesSpilled(amountSpilled))
+    Option(TaskContext.get).foreach { tc =>
+      tc.taskMetrics().incMemoryBytesSpilled(amountSpilled)
+      GpuTaskMetrics.get.recordSpillToHost(amountSpilled)
+    }
   }
 
   /**
@@ -119,7 +128,13 @@ object TrampolineUtil {
    * @param amountSpilled amount of memory spilled in bytes
    */
   def incTaskMetricsDiskBytesSpilled(amountSpilled: Long): Unit = {
-    Option(TaskContext.get).foreach(_.taskMetrics().incDiskBytesSpilled(amountSpilled))
+    Option(TaskContext.get).foreach(tc => {
+      val metrics = tc.taskMetrics()
+      if (metrics != null) {
+        metrics.incDiskBytesSpilled(amountSpilled)
+      }
+      GpuTaskMetrics.get.recordSpillToDisk(amountSpilled)
+    })
   }
 
   /**
@@ -153,9 +168,6 @@ object TrampolineUtil {
     TaskContext.get.taskMemoryManager()
   }
 
-  /** Throw a Spark analysis exception */
-  def throwAnalysisException(msg: String) = throw new AnalysisException(msg)
-
   /** Set the task context for the current thread */
   def setTaskContext(tc: TaskContext): Unit = TaskContext.setTaskContext(tc)
 
@@ -175,7 +187,7 @@ object TrampolineUtil {
   }
 
   def getSparkConf(spark: SparkSession): SQLConf = {
-    spark.sqlContext.conf
+    spark.sessionState.conf
   }
 
   def setExecutorEnv(sc: SparkContext, key: String, value: String): Unit = {
@@ -217,4 +229,39 @@ object TrampolineUtil {
         1
     }
   }
+
+  def newDaemonCachedThreadPool(
+      prefix: String,
+      maxThreadNumber: Int,
+      keepAliveSeconds: Int = 60): ThreadPoolExecutor = {
+    // We want to utilize the ThreadUtils class' ThreadPoolExecutor creation
+    // which gives us important Hadoop config variables that are needed for the
+    // Unity Catalog authentication
+    ThreadUtils.newDaemonCachedThreadPool(prefix, maxThreadNumber, keepAliveSeconds)
+  }
+
+  def newDaemonSingleThreadScheduledExecutor(threadName: String): ScheduledExecutorService = {
+    ThreadUtils.newDaemonSingleThreadScheduledExecutor(threadName)
+  }
+
+  def postEvent(sc: SparkContext, sparkEvent: SparkListenerEvent): Unit = {
+    sc.listenerBus.post(sparkEvent)
+  }
+
+  def getSparkHadoopUtilConf: Configuration = SparkHadoopUtil.get.conf
+
+  def markTaskFailed(ctx: TaskContext, error: Throwable): Unit = {
+    ctx.markTaskFailed(error)
+  }
+
+  /** Get the key for spark.shuffle.service.enabled config (which is private[spark]) */
+  def shuffleServiceEnabledKey: String = config.SHUFFLE_SERVICE_ENABLED.key
 }
+
+/**
+ * This class is to only be used to throw errors specific to the
+ * RAPIDS Accelerator or errors mirroring Spark where a raw
+ * AnalysisException is thrown directly rather than via an error
+ * utility class (this should be rare).
+ */
+class RapidsAnalysisException(msg: String) extends AnalysisException(msg)

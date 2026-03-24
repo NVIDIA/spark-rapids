@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,6 +29,11 @@ import random
 
 pytestmark = pytest.mark.nightly_resource_consuming_test
 
+conf_key_parquet_datetimeRebaseModeInWrite = 'spark.sql.parquet.datetimeRebaseModeInWrite'
+conf_key_parquet_int96RebaseModeInWrite = 'spark.sql.parquet.int96RebaseModeInWrite'
+conf_key_parquet_datetimeRebaseModeInRead = 'spark.sql.parquet.datetimeRebaseModeInRead'
+conf_key_parquet_int96RebaseModeInRead = 'spark.sql.parquet.int96RebaseModeInRead'
+
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
 original_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type': 'PERFILE'}
@@ -37,8 +42,8 @@ coalesce_parquet_file_reader_conf={'spark.rapids.sql.format.parquet.reader.type'
 reader_opt_confs = [original_parquet_file_reader_conf, multithreaded_parquet_file_reader_conf,
         coalesce_parquet_file_reader_conf]
 parquet_decimal_struct_gen= StructGen([['child'+str(ind), sub_gen] for ind, sub_gen in enumerate(decimal_gens)])
-writer_confs={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
-              'spark.sql.legacy.parquet.int96RebaseModeInWrite': 'CORRECTED'}
+writer_confs={conf_key_parquet_datetimeRebaseModeInWrite: 'CORRECTED',
+              conf_key_parquet_int96RebaseModeInWrite: 'CORRECTED'}
 
 parquet_basic_gen =[byte_gen, short_gen, int_gen, long_gen, float_gen, double_gen,
                     string_gen, boolean_gen, date_gen, TimestampGen(), binary_gen]
@@ -96,6 +101,25 @@ def test_write_round_trip(spark_tmp_path, parquet_gens):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     assert_gpu_and_cpu_writes_are_equal_collect(
             lambda spark, path: gen_df(spark, gen_list).coalesce(1).write.parquet(path),
+            lambda spark, path: spark.read.parquet(path),
+            data_path,
+            conf=writer_confs)
+
+@pytest.mark.parametrize('gen', [ByteGen(nullable=False),
+    ShortGen(nullable=False),
+    IntegerGen(nullable=False),
+    LongGen(nullable=False),
+    FloatGen(nullable=False),
+    DoubleGen(nullable=False),
+    BooleanGen(nullable=False),
+    StringGen(nullable=False),
+    StructGen([('b', LongGen(nullable=False))], nullable=False)], ids=idfn)
+@allow_non_gpu(*non_utc_allow)
+def test_write_round_trip_nullable_struct(spark_tmp_path, gen):
+    gen_for_struct = StructGen([('c', gen)], nullable=True)
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    assert_gpu_and_cpu_writes_are_equal_collect(
+            lambda spark, path: unary_op_df(spark, gen_for_struct, num_slices=1).write.parquet(path),
             lambda spark, path: spark.read.parquet(path),
             data_path,
             conf=writer_confs)
@@ -158,8 +182,8 @@ def test_write_ts_millis(spark_tmp_path, ts_type, ts_rebase):
         lambda spark, path: unary_op_df(spark, gen).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
         data_path,
-        conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
-              'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase,
+        conf={conf_key_parquet_datetimeRebaseModeInWrite: ts_rebase,
+              conf_key_parquet_int96RebaseModeInWrite: ts_rebase,
               'spark.sql.parquet.outputTimestampType': ts_type})
 
 
@@ -224,6 +248,10 @@ def test_all_null_int96(spark_tmp_path):
     class AllNullTimestampGen(TimestampGen):
         def start(self, rand):
             self._start(rand, lambda : None)
+
+        def _cache_repr(self):
+            return super()._cache_repr() + '(all_nulls)'
+
     data_path = spark_tmp_path + '/PARQUET_DATA'
     confs = copy_and_update(writer_confs, {'spark.sql.parquet.outputTimestampType': 'INT96'})
     assert_gpu_and_cpu_writes_are_equal_collect(
@@ -281,8 +309,8 @@ def test_write_sql_save_table(spark_tmp_path, parquet_gens, spark_tmp_table_fact
 
 def writeParquetUpgradeCatchException(spark, df, data_path, spark_tmp_table_factory, int96_rebase, datetime_rebase, ts_write):
     spark.conf.set('spark.sql.parquet.outputTimestampType', ts_write)
-    spark.conf.set('spark.sql.legacy.parquet.datetimeRebaseModeInWrite', datetime_rebase)
-    spark.conf.set('spark.sql.legacy.parquet.int96RebaseModeInWrite', int96_rebase) # for spark 310
+    spark.conf.set(conf_key_parquet_datetimeRebaseModeInWrite, datetime_rebase)
+    spark.conf.set(conf_key_parquet_int96RebaseModeInWrite, int96_rebase) # for spark 310
     with pytest.raises(Exception) as e_info:
         df.coalesce(1).write.format("parquet").mode('overwrite').option("path", data_path).saveAsTable(spark_tmp_table_factory.get())
     assert e_info.match(r".*SparkUpgradeException.*")
@@ -405,16 +433,81 @@ def test_parquet_writeLegacyFormat_fallback(spark_tmp_path, spark_tmp_table_fact
             'DataWritingCommandExec',
             conf=all_confs)
 
-@ignore_order
-@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
-def test_buckets_write_fallback(spark_tmp_path, spark_tmp_table_factory):
+@ignore_order(local=True)
+def test_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    assert_gpu_fallback_write(
-            lambda spark, path: spark.range(10e4).write.bucketBy(4, "id").sortBy("id").format('parquet').mode('overwrite').option("path", path).saveAsTable(spark_tmp_table_factory.get()),
-            lambda spark, path: spark.read.parquet(path),
-            data_path,
-            'DataWritingCommandExec')
+    gen_list = [["id", int_gen], ["data", long_gen]]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list).selectExpr("id % 100 as b_id", "data").write
+            .bucketBy(4, "b_id").format('parquet').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=writer_confs)
 
+
+def test_buckets_write_correctness(spark_tmp_path, spark_tmp_table_factory):
+    cpu_path = spark_tmp_path + '/PARQUET_DATA/CPU'
+    gpu_path = spark_tmp_path + '/PARQUET_DATA/GPU'
+    gen_list = [["id", int_gen], ["data", long_gen]]
+    num_buckets = 4
+
+    def do_bucketing_write(spark, path):
+        df = gen_df(spark, gen_list).selectExpr("id % 100 as b_id", "data")
+        df.write.bucketBy(num_buckets, "b_id").format('parquet').mode('overwrite') \
+            .option("path", path).saveAsTable(spark_tmp_table_factory.get())
+
+    def read_single_bucket(path, bucket_id):
+        # Bucket Id string format: f"_$id%05d" + ".c$fileCounter%03d".
+        # fileCounter is always 0 in this test. For example '_00002.c000' is for
+        # bucket id being 2.
+        # We leverage this bucket segment in the file path to filter rows belong
+        # to a bucket.
+        bucket_segment = '_' + "{}".format(bucket_id).rjust(5, '0') + '.c000'
+        return with_cpu_session(
+            lambda spark: spark.read.parquet(path)
+                .withColumn('file_name', f.input_file_name())
+                .filter(f.col('file_name').contains(bucket_segment))
+                .selectExpr('b_id', 'data')  # need to drop the file_name column for comparison.
+                .collect())
+
+    with_cpu_session(lambda spark: do_bucketing_write(spark, cpu_path), writer_confs)
+    with_gpu_session(lambda spark: do_bucketing_write(spark, gpu_path), writer_confs)
+    cur_bucket_id = 0
+    while cur_bucket_id < num_buckets:
+        # Verify the result bucket by bucket
+        ret_cpu = read_single_bucket(cpu_path, cur_bucket_id)
+        ret_gpu = read_single_bucket(gpu_path, cur_bucket_id)
+        assert_equal_with_local_sort(ret_cpu, ret_gpu)
+        cur_bucket_id += 1
+
+@ignore_order(local=True)
+@allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec, SortExec')
+def test_buckets_write_fallback_unsupported_types(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [["id", binary_gen], ["data", long_gen]]
+    assert_gpu_fallback_write(
+        lambda spark, path: gen_df(spark, gen_list).selectExpr("id as b_id", "data").write
+            .bucketBy(4, "b_id").format('parquet').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        'DataWritingCommandExec',
+        conf=writer_confs)
+
+@ignore_order(local=True)
+def test_partitions_and_buckets_write_round_trip(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    gen_list = [["id", int_gen], ["data", long_gen]]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list)
+            .selectExpr("id % 5 as b_id", "id % 10 as p_id", "data").write
+            .partitionBy("p_id")
+            .bucketBy(4, "b_id").format('parquet').mode('overwrite').option("path", path)
+            .saveAsTable(spark_tmp_table_factory.get()),
+        lambda spark, path: spark.read.parquet(path),
+        data_path,
+        conf=writer_confs)
 
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
@@ -475,8 +568,8 @@ def test_write_map_nullable(spark_tmp_path):
 def test_parquet_write_fails_legacy_datetime(spark_tmp_path, data_gen, ts_write, ts_rebase_write):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
-                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write,
-                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write}
+                 conf_key_parquet_datetimeRebaseModeInWrite: ts_rebase_write,
+                 conf_key_parquet_int96RebaseModeInWrite: ts_rebase_write}
     def writeParquetCatchException(spark, data_gen, data_path):
         with pytest.raises(Exception) as e_info:
             unary_op_df(spark, data_gen).coalesce(1).write.parquet(data_path)
@@ -494,12 +587,12 @@ def test_parquet_write_roundtrip_datetime_with_legacy_rebase(spark_tmp_path, dat
                                                              ts_rebase_write, ts_rebase_read):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.outputTimestampType': ts_write,
-                 'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase_write[0],
-                 'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase_write[1],
+                 conf_key_parquet_datetimeRebaseModeInWrite: ts_rebase_write[0],
+                 conf_key_parquet_int96RebaseModeInWrite: ts_rebase_write[1],
                  # The rebase modes in read configs should be ignored and overridden by the same
                  # modes in write configs, which are retrieved from the written files.
-                 'spark.sql.legacy.parquet.datetimeRebaseModeInRead': ts_rebase_read[0],
-                 'spark.sql.legacy.parquet.int96RebaseModeInRead': ts_rebase_read[1]}
+                 conf_key_parquet_datetimeRebaseModeInRead: ts_rebase_read[0],
+                 conf_key_parquet_int96RebaseModeInRead: ts_rebase_read[1]}
     assert_gpu_and_cpu_writes_are_equal_collect(
         lambda spark, path: unary_op_df(spark, data_gen).coalesce(1).write.parquet(path),
         lambda spark, path: spark.read.parquet(path),
@@ -528,7 +621,8 @@ def test_non_empty_ctas(spark_tmp_path, spark_tmp_table_factory, allow_non_empty
             spark.sql("CREATE TABLE {} LOCATION '{}/ctas' AS SELECT * FROM {}".format(
                 ctas_with_existing_name, data_path, src_name))
         except pyspark.sql.utils.AnalysisException as e:
-            if allow_non_empty or e.desc.find('non-empty directory') == -1:
+            description = e._desc if (is_spark_400_or_later() or is_databricks_version_or_later(14, 3)) else e.desc
+            if allow_non_empty or description.find('non-empty directory') == -1:
                 raise e
     with_gpu_session(test_it, conf)
 
@@ -601,6 +695,27 @@ def test_write_daytime_interval(spark_tmp_path):
             data_path,
             conf=writer_confs)
 
+
+hold_gpu_configs = [True, False]
+@pytest.mark.parametrize('hold_gpu', hold_gpu_configs, ids=idfn)
+def test_async_writer(spark_tmp_path, hold_gpu):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    num_rows = 2048
+    num_cols = 10
+    parquet_gen = [int_gen for _ in range(num_cols)]
+    gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gen)]
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        lambda spark, path: gen_df(spark, gen_list, length=num_rows).write.parquet(path),
+        lambda spark, path: spark.read.parquet(path).orderBy([('_c' + str(i)) for i in range(num_cols)]),
+        data_path,
+        copy_and_update(
+            writer_confs,
+            {"spark.rapids.sql.asyncWrite.queryOutput.enabled": "true",
+             "spark.rapids.sql.batchSizeBytes": 4 * num_cols * 100,  # 100 rows per batch
+             "spark.rapids.sql.queryOutput.holdGpuInTask": hold_gpu}
+        ))
+
+
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="is only supported in Spark 320+")
 def test_concurrent_writer(spark_tmp_path):
@@ -613,7 +728,9 @@ def test_concurrent_writer(spark_tmp_path):
         data_path,
         copy_and_update(
             # 26 > 25, will not fall back to single writer
-            {"spark.sql.maxConcurrentOutputFileWriters": 26}
+            # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+            {"spark.sql.maxConcurrentOutputFileWriters": 26,
+             'spark.sql.adaptive.enabled': 'false'}
         ))
 
 
@@ -756,8 +873,8 @@ def test_dynamic_partitioned_parquet_write(spark_tmp_table_factory, spark_tmp_pa
     )
 
 def hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase, func):
-    conf={'spark.sql.legacy.parquet.datetimeRebaseModeInWrite': ts_rebase,
-          'spark.sql.legacy.parquet.int96RebaseModeInWrite': ts_rebase}
+    conf={conf_key_parquet_datetimeRebaseModeInWrite: ts_rebase,
+          conf_key_parquet_int96RebaseModeInWrite: ts_rebase}
 
     def create_table(spark, path):
         tmp_table = spark_tmp_table_factory.get()
@@ -794,7 +911,8 @@ def test_hive_timestamp_value(spark_tmp_table_factory, spark_tmp_path, ts_rebase
 @pytest.mark.parametrize('max_concurrent_writers', [0, 100, 20])
 def test_write_with_planned_write_enabled(spark_tmp_path, planned_write_enabled, max_concurrent_writers):
     data_path = spark_tmp_path + '/PARQUET_DATA'
-    conf = {}
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf = {'spark.sql.adaptive.enabled': 'false'}
     if planned_write_enabled != "":
         conf = copy_and_update(conf, {"spark.sql.optimizer.plannedWrite.enabled": planned_write_enabled})
     if max_concurrent_writers != 0:

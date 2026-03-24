@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import scala.collection.mutable.HashMap
 
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.filecache.FileCacheLocalityManager
-import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, PartitionedFileUtilsShim, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{GpuDataSourceRDD, PartitionedFileUtilsShim, SparkShimImpl, StaticPartitionShims}
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.rdd.RDD
@@ -63,7 +63,6 @@ import org.apache.spark.util.collection.BitSet
  *                               off in GpuTransitionOverrides if InputFileName,
  *                               InputFileBlockStart, or InputFileBlockLength are used
  * @param disableBucketedScan Disable bucketed scan based on physical query plan.
- * @param alluxioPathsMap Map containing mapping of DFS scheme to Alluxio scheme
  */
 case class GpuFileSourceScanExec(
     @transient relation: HadoopFsRelation,
@@ -76,9 +75,9 @@ case class GpuFileSourceScanExec(
     tableIdentifier: Option[TableIdentifier],
     disableBucketedScan: Boolean = false,
     queryUsesInputFile: Boolean = false,
-    alluxioPathsMap: Option[Map[String, String]],
     requiredPartitionSchema: Option[StructType] = None)(@transient val rapidsConf: RapidsConf)
     extends GpuDataSourceScanExec with GpuExec {
+
   import GpuMetric._
 
   override val output: Seq[Attribute] = requiredPartitionSchema.map { requiredPartSchema =>
@@ -91,12 +90,6 @@ case class GpuFileSourceScanExec(
   }.getOrElse(originalOutput)
 
   val readPartitionSchema = requiredPartitionSchema.getOrElse(relation.partitionSchema)
-
-  // this is set only when we either explicitly replaced a path for CONVERT_TIME
-  // or when TASK_TIME if one of the paths will be replaced.
-  // If reading large s3 files on a cluster with slower disks,
-  // should update this to None and read directly from s3 to get faster.
-  private var alluxioPathReplacementMap: Option[Map[String, String]] = alluxioPathsMap
 
   @transient private val gpuFormat = relation.fileFormat match {
     case g: GpuReadFileFormatWithMetrics => g
@@ -115,6 +108,10 @@ case class GpuFileSourceScanExec(
   }
 
   private lazy val driverMetrics: HashMap[String, Long] = HashMap.empty
+
+  private var prefetchEagerly = false
+
+  def applyEagerPrefetch(): Unit = prefetchEagerly = true
 
   /**
    * Send the driver-side metrics. Before calling this function, selectedPartitions has
@@ -135,31 +132,7 @@ case class GpuFileSourceScanExec(
     val startTime = System.nanoTime()
     val pds = relation.location.listFiles(
         partitionFilters.filterNot(isDynamicPruningFilter), dataFilters)
-    if (AlluxioCfgUtils.isAlluxioPathsToReplaceTaskTime(rapidsConf, relation.fileFormat)) {
-      // if should directly read from s3, should set `alluxioPathReplacementMap` as None
-      if (AlluxioUtils.shouldReadDirectlyFromS3(rapidsConf, pds)) {
-        alluxioPathReplacementMap = None
-      } else {
-        // this is not ideal, here we check to see if we will replace any paths, which is an
-        // extra iteration through paths
-        alluxioPathReplacementMap = AlluxioUtils.checkIfNeedsReplaced(rapidsConf, pds,
-          relation.sparkSession.sparkContext.hadoopConfiguration,
-          relation.sparkSession.conf)
-      }
-    } else if (AlluxioCfgUtils.isAlluxioAutoMountTaskTime(rapidsConf, relation.fileFormat)) {
-      // if should directly read from s3, should set `alluxioPathReplacementMap` as None
-      if (AlluxioUtils.shouldReadDirectlyFromS3(rapidsConf, pds)) {
-        alluxioPathReplacementMap = None
-      } else {
-        alluxioPathReplacementMap = AlluxioUtils.autoMountIfNeeded(rapidsConf, pds,
-          relation.sparkSession.sparkContext.hadoopConfiguration,
-          relation.sparkSession.conf)
-      }
-    }
-
-    logDebug(s"File listing and possibly replace with Alluxio path " +
-      s"took: ${System.nanoTime() - startTime}")
-
+    logDebug(s"File listing took: ${System.nanoTime() - startTime}")
     setFilesNumAndSizeMetric(pds, true)
     val timeTakenMs = NANOSECONDS.toMillis(
       (System.nanoTime() - startTime) + optimizerMetadataTimeNs)
@@ -286,6 +259,7 @@ case class GpuFileSourceScanExec(
 
   override lazy val metadata: Map[String, String] = {
     def seqToString(seq: Seq[Any]) = seq.mkString("[", ", ", "]")
+
     val location = relation.location
     val locationDesc =
       location.getClass.getSimpleName +
@@ -298,13 +272,12 @@ case class GpuFileSourceScanExec(
         "PartitionFilters" -> seqToString(partitionFilters),
         "PushedFilters" -> seqToString(pushedDownFilters),
         "DataFilters" -> seqToString(dataFilters),
-        "Location" -> locationDesc)
-
-
+        "Location" -> locationDesc,
+        "Eager_IO_Prefetch" -> prefetchEagerly.toString)
 
     relation.bucketSpec.map { spec =>
       val bucketedKey = "Bucketed"
-      if (bucketedScan){
+      if (bucketedScan) {
         val numSelectedBuckets = optionalBucketSet.map { b =>
           b.cardinality()
         } getOrElse {
@@ -314,7 +287,7 @@ case class GpuFileSourceScanExec(
         metadata ++ Map(
           bucketedKey -> "true",
           "SelectedBucketsCount" -> (s"$numSelectedBuckets out of ${spec.numBuckets}" +
-            optionalNumCoalescedBuckets.map { b => s" (Coalesced to $b)"}.getOrElse("")))
+            optionalNumCoalescedBuckets.map { b => s" (Coalesced to $b)" }.getOrElse("")))
       } else if (!relation.sparkSession.sessionState.conf.bucketingEnabled) {
         metadata + (bucketedKey -> "false (disabled by configuration)")
       } else if (disableBucketedScan) {
@@ -369,8 +342,7 @@ case class GpuFileSourceScanExec(
           options = relation.options,
           hadoopConf =
             relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options),
-          metrics = allMetrics,
-          alluxioPathReplacementMap)
+          metrics = allMetrics)
         Some(reader)
       } else {
         None
@@ -380,7 +352,7 @@ case class GpuFileSourceScanExec(
       createBucketedReadRDD(relation.bucketSpec.get, readFile, dynamicallySelectedPartitions,
         relation)
     } else {
-      createNonBucketedReadRDD(readFile, dynamicallySelectedPartitions, relation)
+      createNonBucketedReadRDD(readFile, relation)
     }
     sendDriverMetrics()
     readRDD
@@ -417,6 +389,7 @@ case class GpuFileSourceScanExec(
   }
 
   override lazy val allMetrics = Map(
+    OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
     NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
     NUM_OUTPUT_BATCHES -> createMetric(MODERATE_LEVEL, DESCRIPTION_NUM_OUTPUT_BATCHES),
     "numFiles" -> createMetric(ESSENTIAL_LEVEL, "number of files read"),
@@ -424,12 +397,41 @@ case class GpuFileSourceScanExec(
     "filesSize" -> createSizeMetric(ESSENTIAL_LEVEL, "size of files read"),
     GPU_DECODE_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_GPU_DECODE_TIME),
     BUFFER_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_BUFFER_TIME),
-    FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME)
+    FILTER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME),
+    SCHEDULE_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SCHEDULE_TIME),
+    BUFFER_TIME_BUBBLE -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_BUFFER_TIME_BUBBLE),
+    FILTER_TIME_BUBBLE -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_FILTER_TIME_BUBBLE),
+    SCHEDULE_TIME_BUBBLE -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_SCHEDULE_TIME_BUBBLE),
+    DELETION_VECTOR_SCATTER_TIME -> createNanoTimingMetric(MODERATE_LEVEL,
+      DESCRIPTION_DELETION_VECTOR_SCATTER_TIME),
+    DELETION_VECTOR_SIZE -> createSizeMetric(MODERATE_LEVEL, DESCRIPTION_DELETION_VECTOR_SIZE)
   ) ++ fileCacheMetrics ++ {
     relation.fileFormat match {
       case _: GpuReadParquetFileFormat | _: GpuOrcFileFormat =>
-        Map(READ_FS_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_READ_FS_TIME),
-          WRITE_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_WRITE_BUFFER_TIME))
+        val bf = Map.newBuilder[String, GpuMetric]
+        bf += READ_FS_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_READ_FS_TIME)
+        bf += WRITE_BUFFER_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+          DESCRIPTION_WRITE_BUFFER_TIME)
+        if (rapidsConf.isParquetMultiThreadReadEnabled) {
+          // Track the task number of multithreaded asynchronous I/O workloads
+          bf += "numPartedFiles" -> createMetric(DEBUG_LEVEL, "number of PartitionedFiles")
+        }
+        if (relation.fileFormat.isInstanceOf[GpuReadParquetFileFormat]) {
+          // Track the actual data size read from the file system, excluding data being pruned
+          // by meta-level pruning.
+          bf += "readBufferSize" -> createSizeMetric(DEBUG_LEVEL, "size of read buffer")
+        }
+        if (ExternalSource.isSupportedFormat(relation.fileFormat.getClass)) {
+          // This metric is used to post the time spent in generating the `skip_row` column
+          // in Delta Lake 3.3.0+
+          bf += "isRowDeletedColumnGenTime" ->
+            createNanoTimingMetric(ESSENTIAL_LEVEL, "time skiprow gen")
+          // This metric is used to post the time spent in generating the `row_index` column
+          // in Delta Lake 3.3.0+
+          bf += "rowIndexColumnGenTime" ->
+              createNanoTimingMetric(ESSENTIAL_LEVEL, "time row index gen")
+        }
+        bf.result()
       case _ =>
         Map.empty[String, GpuMetric]
     }
@@ -437,7 +439,7 @@ case class GpuFileSourceScanExec(
     // Tracking scan time has overhead, we can't afford to do it for each row, and can only do
     // it for each batch.
     if (supportsColumnar) {
-      Some("scanTime" -> createTimingMetric(ESSENTIAL_LEVEL, "scan time"))
+      Some(SCAN_TIME -> createNanoTimingMetric(ESSENTIAL_LEVEL, DESCRIPTION_SCAN_TIME))
     } else {
       None
     }
@@ -464,16 +466,16 @@ case class GpuFileSourceScanExec(
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-    val scanTime = gpuLongMetric("scanTime")
+    val scanTime = gpuLongMetric(SCAN_TIME)
     inputRDD.asInstanceOf[RDD[ColumnarBatch]].mapPartitionsInternal { batches =>
       new Iterator[ColumnarBatch] {
 
         override def hasNext: Boolean = {
           // The `FileScanRDD` returns an iterator which scans the file during the `hasNext` call.
-          val startNs = System.nanoTime()
-          val res = batches.hasNext
-          scanTime += NANOSECONDS.toMillis(System.nanoTime() - startNs)
-          res
+          scanTime.ns {
+            val res = batches.hasNext
+            res
+          }
         }
 
         override def next(): ColumnarBatch = {
@@ -547,24 +549,23 @@ case class GpuFileSourceScanExec(
    *
    * @param readFile an optional function to read each (part of a) file. Used when
    *                 not using the small file optimization.
-   * @param selectedPartitions Hive-style partition that are part of the read.
    * @param fsRelation [[HadoopFsRelation]] associated with the read.
    */
   private def createNonBucketedReadRDD(
       readFile: Option[(PartitionedFile) => Iterator[InternalRow]],
-      selectedPartitions: Array[PartitionDirectory],
       fsRelation: HadoopFsRelation): RDD[InternalRow] = {
-    val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
-    val maxSplitBytes =
-      FilePartition.maxSplitBytes(fsRelation.sparkSession, selectedPartitions)
-    logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
-      s"open cost is considered as scanning $openCostInBytes bytes.")
+    val partitions = StaticPartitionShims.getStaticPartitions(fsRelation).getOrElse {
+      val openCostInBytes = fsRelation.sparkSession.sessionState.conf.filesOpenCostInBytes
+      val maxSplitBytes =
+        FilePartition.maxSplitBytes(fsRelation.sparkSession, dynamicallySelectedPartitions)
+      logInfo(s"Planning scan with bin packing, max size: $maxSplitBytes bytes, " +
+        s"open cost is considered as scanning $openCostInBytes bytes.")
 
-    val splitFiles = FilePartitionShims.splitFiles(selectedPartitions, relation, maxSplitBytes)
+      val splitFiles = FilePartitionShims.splitFiles(dynamicallySelectedPartitions, relation,
+        maxSplitBytes)
 
-    val partitions =
       FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
-
+    }
     getFinalRDD(readFile, partitions)
   }
 
@@ -576,19 +577,19 @@ case class GpuFileSourceScanExec(
     val prunedPartitions = requiredPartitionSchema.map { partSchema =>
       val idsAndTypes = partSchema.map(f => (relation.partitionSchema.indexOf(f), f.dataType))
       partitions.map { p =>
-        val partFiles = p.files.map { pf =>
+        val partFiles = FilePartitionShims.getFiles(p).map { pf =>
           val prunedPartValues = idsAndTypes.map { case (id, dType) =>
             pf.partitionValues.get(id, dType)
           }
           pf.copy(partitionValues = InternalRow.fromSeq(prunedPartValues))
         }
-        p.copy(files = partFiles)
+        FilePartitionShims.copyWithFiles(p, partFiles)
       }
     }.getOrElse(partitions)
 
     // Update the preferred locations based on the file cache locality
     val locatedPartitions = prunedPartitions.map { partition =>
-      val newFiles = partition.files.map { partFile =>
+      val newFiles = FilePartitionShims.getFiles(partition).map { partFile =>
         val cacheLocations = FileCacheLocalityManager.get.getLocations(partFile.filePath.toString)
         if (cacheLocations.nonEmpty) {
           val newLocations = cacheLocations ++ partFile.locations
@@ -597,7 +598,7 @@ case class GpuFileSourceScanExec(
           partFile
         }
       }
-      partition.copy(files = newFiles)
+      FilePartitionShims.copyWithFiles(partition, newFiles)
     }
 
     if (isPerFileReadEnabled) {
@@ -606,7 +607,7 @@ case class GpuFileSourceScanExec(
         requiredSchema, fileFormat = Some(relation.fileFormat))
     } else {
       logDebug(s"Using Datasource RDD, files are: " +
-        s"${prunedPartitions.flatMap(_.files).mkString(",")}")
+        s"${prunedPartitions.flatMap(FilePartitionShims.getFiles).mkString(",")}")
       // note we use the v2 DataSourceRDD instead of FileScanRDD so we don't have to copy more code
       GpuDataSourceRDD(relation.sparkSession.sparkContext, locatedPartitions, readerFactory)
     }
@@ -617,6 +618,9 @@ case class GpuFileSourceScanExec(
     // here we are making an optimization to read more then 1 file at a time on the CPU side
     // if they are small files before sending it down to the GPU
     val hadoopConf = relation.sparkSession.sessionState.newHadoopConfWithOptions(relation.options)
+    if (prefetchEagerly) {
+      hadoopConf.setBoolean("rapids.sql.scan.prefetch", prefetchEagerly)
+    }
     val broadcastedHadoopConf =
       relation.sparkSession.sparkContext.broadcast(new SerializableConfiguration(hadoopConf))
     gpuFormat.createMultiFileReaderFactory(
@@ -643,16 +647,14 @@ case class GpuFileSourceScanExec(
       optionalNumCoalescedBuckets,
       QueryPlan.normalizePredicates(dataFilters, originalOutput),
       None,
-      queryUsesInputFile,
-      alluxioPathsMap = alluxioPathsMap)(rapidsConf)
+      queryUsesInputFile)(rapidsConf)
   }
-
 }
 
 object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val cls = meta.wrapped.relation.fileFormat.getClass
-    if (cls == classOf[CSVFileFormat]) {
+    if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
       GpuReadCSVFileFormat.tagSupport(meta)
     } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
       GpuReadOrcFileFormat.tagSupport(meta)
@@ -667,9 +669,10 @@ object GpuFileSourceScanExec {
     }
   }
 
-  def convertFileFormat(format: FileFormat): FileFormat = {
+  def convertFileFormat(relation: HadoopFsRelation): FileFormat = {
+    val format = relation.fileFormat
     val cls = format.getClass
-    if (cls == classOf[CSVFileFormat]) {
+    if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
       new GpuReadCSVFileFormat
     } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
       new GpuReadOrcFileFormat
@@ -678,7 +681,7 @@ object GpuFileSourceScanExec {
     } else if (cls == classOf[JsonFileFormat]) {
       new GpuReadJsonFileFormat
     } else if (ExternalSource.isSupportedFormat(cls)) {
-      ExternalSource.getReadFileFormat(format)
+      ExternalSource.getReadFileFormat(relation)
     } else {
       throw new IllegalArgumentException(s"${cls.getCanonicalName} is not supported")
     }

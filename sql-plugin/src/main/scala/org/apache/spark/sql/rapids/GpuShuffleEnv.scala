@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,17 +19,18 @@ package org.apache.spark.sql.rapids
 import java.util.Locale
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.shims.ShuffleManagerShimUtils
 
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.internal.Logging
 
 class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   private var shuffleCatalog: ShuffleBufferCatalog = _
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
-
-  private lazy val conf = SparkEnv.get.conf
+  private var multithreadedCatalog: MultithreadedShuffleBufferCatalog = _
 
   private lazy val isRapidsShuffleConfigured: Boolean = {
+    val conf = SparkEnv.get.conf
     conf.contains("spark.shuffle.manager") &&
       conf.get("spark.shuffle.manager") == GpuShuffleEnv.RAPIDS_SHUFFLE_CLASS
   }
@@ -44,12 +45,34 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
     }
   }
 
-  def init(diskBlockManager: RapidsDiskBlockManager): Unit = {
+  def init(): Unit = {
     if (isRapidsShuffleConfigured) {
       shuffleCatalog =
-          new ShuffleBufferCatalog(RapidsBufferCatalog.singleton, diskBlockManager)
+          new ShuffleBufferCatalog()
       shuffleReceivedBufferCatalog =
-          new ShuffleReceivedBufferCatalog(RapidsBufferCatalog.singleton)
+          new ShuffleReceivedBufferCatalog()
+      // Initialize MultithreadedShuffleBufferCatalog for MULTITHREADED mode when:
+      // 1. skipMerge is enabled
+      // 2. External Shuffle Service is disabled (ESS cannot access in-memory catalog)
+      // 3. Off-heap memory limits are enabled (prevents OOM from unbounded buffer growth)
+      if (rapidsConf.isMultiThreadedShuffleManagerMode) {
+        if (!rapidsConf.isMultithreadedShuffleSkipMergeEnabled) {
+          logInfo("MultithreadedShuffleBufferCatalog disabled - " +
+            "spark.rapids.shuffle.multithreaded.skipMerge is false")
+        } else if (GpuShuffleEnv.isExternalShuffleEnabled) {
+          logWarning("MultithreadedShuffleBufferCatalog disabled - " +
+            "External Shuffle Service (ESS) is enabled. ESS cannot access in-memory catalog. " +
+            "Disable ESS (spark.shuffle.service.enabled=false) to use skipMerge feature.")
+        } else if (!rapidsConf.offHeapLimitEnabled) {
+          logWarning("MultithreadedShuffleBufferCatalog disabled - " +
+            "spark.rapids.memory.host.offHeapLimit.enabled is false. " +
+            "Without off-heap memory limits, shuffle buffers could grow unbounded and cause OOM. " +
+            "Set spark.rapids.memory.host.offHeapLimit.enabled=true to use skipMerge feature.")
+        } else {
+          multithreadedCatalog = new MultithreadedShuffleBufferCatalog()
+          logInfo("MultithreadedShuffleBufferCatalog enabled (ESS disabled, off-heap limits on)")
+        }
+      }
     }
   }
 
@@ -57,8 +80,12 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
 
   def getReceivedCatalog: ShuffleReceivedBufferCatalog = shuffleReceivedBufferCatalog
 
+  def getMultithreadedCatalog: Option[MultithreadedShuffleBufferCatalog] = {
+    Option(multithreadedCatalog)
+  }
+
   def getShuffleFetchTimeoutSeconds: Long = {
-    conf.getTimeAsSeconds("spark.network.timeout", "120s")
+    SparkEnv.get.conf.getTimeAsSeconds("spark.network.timeout", "120s")
   }
 }
 
@@ -69,6 +96,16 @@ object GpuShuffleEnv extends Logging {
   }
 
   val RAPIDS_SHUFFLE_CLASS: String = ShimLoader.getRapidsShuffleManagerClass
+
+  /**
+   * Check if the RAPIDS shuffle manager is configured via spark.shuffle.manager
+   * and matches the current shim. This check doesn't require the shuffle manager
+   * to be instantiated yet.
+   */
+  def isRapidsShuffleConfigured(sparkConf: SparkConf): Boolean = {
+    sparkConf.contains("spark.shuffle.manager") &&
+      sparkConf.get("spark.shuffle.manager") == RAPIDS_SHUFFLE_CLASS
+  }
 
   @volatile private var env: GpuShuffleEnv = _
 
@@ -99,34 +136,68 @@ object GpuShuffleEnv extends Logging {
     conf.getBoolean("spark.authenticate", false)
   }
 
+  // Returns true if the order-independent (row-based) checksum feature is enabled.
+  // This Spark 4.1+ feature (SPARK-51756, SPARK-53575) computes row-based checksums
+  // in shuffle writers to detect non-deterministic output across task retries.
+  // Not yet supported by the RAPIDS Shuffle Manager (would require GPU-side checksum).
+  // Note: this is different from the older spark.shuffle.checksum.enabled (since Spark 3.2)
+  // which is for IO-level corruption diagnosis and IS supported by RAPIDS shuffle.
+  def isRowBasedChecksumEnabled: Boolean = {
+    val conf = SparkEnv.get.conf
+    conf.getBoolean(
+      "spark.sql.shuffle.orderIndependentChecksum.enabled", false) ||
+    conf.getBoolean(
+      "spark.sql.shuffle.orderIndependentChecksum.enableFullRetryOnMismatch", false)
+  }
+
   //
   // The actual instantiation of the RAPIDS Shuffle Manager is lazy, and
   // this forces the initialization when we know we are ready in the driver and executor.
   //
   def initShuffleManager(): Unit = {
-    SparkEnv.get.shuffleManager match {
-      case rapidsShuffleManager: RapidsShuffleManagerLike =>
-        rapidsShuffleManager.initialize
-      case _ =>
-        throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager")
+    val shuffleManager = SparkEnv.get.shuffleManager
+    if (ShuffleManagerShimUtils.eagerlyInitialized) {
+      // skip deferred init
+    } else {
+      shuffleManager match {
+        case rapidsShuffleManager: RapidsShuffleManagerLike =>
+          rapidsShuffleManager.initialize
+        case _ =>
+          val rsmLoaderViaShuffleManager = shuffleManager.getClass.getSuperclass.getInterfaces
+            .collectFirst {
+              case c if c.getName == classOf[RapidsShuffleManagerLike].getName => c.getClassLoader
+            }
+          val rsmLoaderDirect = classOf[RapidsShuffleManagerLike].getClassLoader
+  
+          throw new IllegalStateException(s"Cannot initialize the RAPIDS Shuffle Manager " +
+            s"${shuffleManager}! Expected: an instance of RapidsShuffleManagerLike loaded by " +
+            s"${rsmLoaderDirect}. Actual: ${shuffleManager} tagged with RapidsShuffleManagerLike " +
+            s"loaded by: ${rsmLoaderViaShuffleManager}"
+          )
+      }
     }
   }
 
   def isRapidsShuffleAvailable(conf: RapidsConf): Boolean = {
     // the driver has `mgr` defined when this is checked
     val sparkEnv = SparkEnv.get
-    val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[RapidsShuffleManagerLike]
-    if (isRapidsManager) {
-      validateRapidsShuffleManager(sparkEnv.shuffleManager.getClass.getName)
+    if (sparkEnv == null) {
+      // we may hit this in some tests that don't need to use the RAPIDS shuffle manager.
+      false
+    } else {
+      val isRapidsManager = sparkEnv.shuffleManager.isInstanceOf[RapidsShuffleManagerLike]
+      if (isRapidsManager) {
+        validateRapidsShuffleManager(sparkEnv.shuffleManager.getClass.getName)
+      }
+      // executors have `env` defined when this is checked
+      // in tests
+      val isConfiguredInEnv = Option(env).exists(_.isRapidsShuffleConfigured)
+      (isConfiguredInEnv || isRapidsManager) &&
+        (conf.isMultiThreadedShuffleManagerMode ||
+          (conf.isGPUShuffle && !isExternalShuffleEnabled &&
+            !isSparkAuthenticateEnabled)) &&
+        conf.isSqlExecuteOnGPU
     }
-    // executors have `env` defined when this is checked
-    // in tests
-    val isConfiguredInEnv = Option(env).exists(_.isRapidsShuffleConfigured)
-    (isConfiguredInEnv || isRapidsManager) &&
-      (conf.isMultiThreadedShuffleManagerMode ||
-        (conf.isGPUShuffle && !isExternalShuffleEnabled &&
-          !isSparkAuthenticateEnabled)) &&
-      conf.isSqlExecuteOnGPU
   }
 
   def useGPUShuffle(conf: RapidsConf): Boolean = {
@@ -147,11 +218,14 @@ object GpuShuffleEnv extends Logging {
     env.getCatalog
   }
 
+  def getMultithreadedCatalog: Option[MultithreadedShuffleBufferCatalog] = {
+    Option(env).flatMap(_.getMultithreadedCatalog)
+  }
+
   private def validateRapidsShuffleManager(shuffManagerClassName: String): Unit = {
-    val shuffleManagerStr = ShimLoader.getRapidsShuffleManagerClass
-    if (shuffManagerClassName != shuffleManagerStr) {
+    if (shuffManagerClassName != RAPIDS_SHUFFLE_CLASS) {
       throw new IllegalStateException(s"RapidsShuffleManager class mismatch (" +
-          s"${shuffManagerClassName} != $shuffleManagerStr). " +
+          s"${shuffManagerClassName} != $RAPIDS_SHUFFLE_CLASS). " +
           s"Check that configuration setting spark.shuffle.manager is correct for the Spark " +
           s"version being used.")
     }
@@ -161,9 +235,9 @@ object GpuShuffleEnv extends Logging {
   // Functions below only get called from the executor
   //
 
-  def init(conf: RapidsConf, diskBlockManager: RapidsDiskBlockManager): Unit = {
+  def init(conf: RapidsConf): Unit = {
     val shuffleEnv = new GpuShuffleEnv(conf)
-    shuffleEnv.init(diskBlockManager)
+    shuffleEnv.init()
     env = shuffleEnv
   }
 

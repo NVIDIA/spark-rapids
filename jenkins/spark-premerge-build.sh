@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2023, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,13 +27,16 @@ elif [[ $# -gt 1 ]]; then
     exit 1
 fi
 
-CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda11'}
+CUDA_CLASSIFIER=${CUDA_CLASSIFIER:-'cuda12'}
 CLASSIFIER=${CLASSIFIER:-"$CUDA_CLASSIFIER"} # default as CUDA_CLASSIFIER for compatibility
 MVN_CMD="mvn -Dmaven.wagon.http.retryHandler.count=3"
 MVN_BUILD_ARGS="-Drat.skip=true -Dmaven.scaladoc.skip -Dmaven.scalastyle.skip=true -Dcuda.version=$CLASSIFIER"
 
 mvn_verify() {
     echo "Run mvn verify..."
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+    java -version
 
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
@@ -49,9 +52,16 @@ mvn_verify() {
     for version in "${SPARK_SHIM_VERSIONS_NOSNAPSHOTS_TAIL[@]}"
     do
         echo "Spark version: $version"
-        # build and run unit tests on one specific version for each sub-version (e.g. 320, 330) except base version
+        # build and run unit tests on one specific version for each sub-version (e.g. 330) except base version
         # separate the versions to two ci stages (mvn_verify, ci_2) for balancing the duration
-        if [[ "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}" =~ "$version" ]]; then
+        match=1
+        for element in "${SPARK_SHIM_VERSIONS_PREMERGE_UT_1[@]}"; do
+            if [[ "$element" == "$version" ]]; then
+                match=0
+                break
+            fi
+        done
+        if [[ $match == 0 ]]; then
             env -u SPARK_HOME \
               $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
             # Run filecache tests
@@ -70,7 +80,7 @@ mvn_verify() {
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_UTF8[@]}"
     do
         echo "Spark version (regex): $version"
-        env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version test $MVN_BUILD_ARGS \
+        env -u SPARK_HOME LC_ALL="en_US.UTF-8" $MVN_CMD $MVN_URM_MIRROR -Dbuildver=$version package $MVN_BUILD_ARGS \
           -Dpytest.TEST_TAGS='' \
           -DwildcardSuites=com.nvidia.spark.rapids.ConditionalsSuite,com.nvidia.spark.rapids.RegularExpressionSuite,com.nvidia.spark.rapids.RegularExpressionTranspilerSuite
     done
@@ -78,21 +88,24 @@ mvn_verify() {
     # Here run Python integration tests tagged with 'premerge_ci_1' only, that would help balance test duration and memory
     # consumption from two k8s pods running in parallel, which executes 'mvn_verify()' and 'ci_2()' respectively.
     $MVN_CMD -B $MVN_URM_MIRROR $PREMERGE_PROFILES clean verify -Dpytest.TEST_TAGS="premerge_ci_1" \
-        -Dpytest.TEST_TYPE="pre-commit" -Dpytest.TEST_PARALLEL=4 -Dcuda.version=$CLASSIFIER
+        -Dpytest.TEST_TYPE="pre-commit" -Dcuda.version=$CLASSIFIER
 
     # The jacoco coverage should have been collected, but because of how the shade plugin
     # works and jacoco we need to clean some things up so jacoco will only report for the
     # things we care about
-    SPK_VER=${JACOCO_SPARK_VER:-"311"}
+    SPK_VER=${JACOCO_SPARK_VER:-"330"}
     mkdir -p target/jacoco_classes/
     FILE=$(ls dist/target/rapids-4-spark_2.12-*.jar | grep -v test | xargs readlink -f)
     UDF_JAR=$(ls ./udf-compiler/target/spark${SPK_VER}/rapids-4-spark-udf_2.12-*-spark${SPK_VER}.jar | grep -v test | xargs readlink -f)
     pushd target/jacoco_classes/
-    jar xf $FILE com org rapids spark3xx-common "spark${JACOCO_SPARK_VER:-311}/"
+    jar xf $FILE com org rapids spark-shared "spark${JACOCO_SPARK_VER:-330}/"
     # extract the .class files in udf jar and replace the existing ones in spark3xx-ommon and spark$SPK_VER
     # because the class files in udf jar will be modified in aggregator's shade phase
     jar xf "$UDF_JAR" com/nvidia/spark/udf
-    rm -rf com/nvidia/shaded/ org/openucx/ spark3xx-common/com/nvidia/spark/udf/ spark${SPK_VER}/com/nvidia/spark/udf/
+    rm -rf com/nvidia/shaded/ \
+      org/openucx/ spark-shared/com/nvidia/spark/udf/ \
+      spark${SPK_VER}/com/nvidia/spark/udf/ \
+      spark${SPK_VER}/META-INF/versions/*
     popd
 
     # Triggering here until we change the jenkins file
@@ -106,10 +119,17 @@ mvn_verify() {
     do
         TZ=$tz ./integration_tests/run_pyspark_from_build.sh -m tz_sensitive_test
     done
+
+    # test Hybrid feature
+    source "${WORKSPACE}/jenkins/hybrid_execution.sh"
+    if hybrid_prepare ; then
+        LOAD_HYBRID_BACKEND=1 ./integration_tests/run_pyspark_from_build.sh -m hybrid_test
+    fi
 }
 
 rapids_shuffle_smoke_test() {
-    echo "Run rapids_shuffle_smoke_test..."
+    local SPARK_VER=${1:-${SPARK_VER}}
+    echo "Run rapids_shuffle_smoke_test for Spark version: $SPARK_VER..."
 
     # basic ucx check
     ucx_info -d
@@ -120,38 +140,11 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/start-master.sh -h $SPARK_MASTER_HOST
     $SPARK_HOME/sbin/spark-daemon.sh start org.apache.spark.deploy.worker.Worker 1 $SPARK_MASTER
 
-    invoke_shuffle_integration_test() {
-      # check out what else is on the GPU
-      nvidia-smi
-
-      # because the RapidsShuffleManager smoke tests work against a standalone cluster
-      # we do not want the integration tests to launch N different applications, just one app
-      # is what is expected.
-      TEST_PARALLEL=0 \
-      PYSP_TEST_spark_master=$SPARK_MASTER \
-        PYSP_TEST_spark_cores_max=2 \
-        PYSP_TEST_spark_executor_cores=1 \
-        PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.$SHUFFLE_SPARK_SHIM.RapidsShuffleManager \
-        PYSP_TEST_spark_rapids_memory_gpu_minAllocFraction=0 \
-        PYSP_TEST_spark_rapids_memory_gpu_maxAllocFraction=0.1 \
-        PYSP_TEST_spark_rapids_memory_gpu_allocFraction=0.1 \
-        ./integration_tests/run_pyspark_from_build.sh -m shuffle_test
-    }
-
     # using UCX shuffle
-    # The UCX_TLS=^posix config is removing posix from the list of memory transports
-    # so that IPC regions are obtained using SysV API instead. This was done because of
-    # itermittent test failures. See: https://github.com/NVIDIA/spark-rapids/issues/6572
-    PYSP_TEST_spark_rapids_shuffle_mode=UCX \
-    PYSP_TEST_spark_executorEnv_UCX_ERROR_SIGNALS="" \
-    PYSP_TEST_spark_executorEnv_UCX_TLS="^posix" \
-        invoke_shuffle_integration_test
+    invoke_shuffle_integration_test UCX ./integration_tests/run_pyspark_from_build.sh premerge $SPARK_VER
 
     # using MULTITHREADED shuffle
-    PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 \
-    PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 \
-        invoke_shuffle_integration_test
+    invoke_shuffle_integration_test MULTITHREADED ./integration_tests/run_pyspark_from_build.sh premerge $SPARK_VER
 
     $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     $SPARK_HOME/sbin/stop-master.sh
@@ -159,10 +152,13 @@ rapids_shuffle_smoke_test() {
 
 ci_2() {
     echo "Run premerge ci 2 testings..."
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+    java -version
+
     $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=5
 
     # Download a Scala 2.12 build of spark
     prepare_spark $SPARK_VER 2.12
@@ -184,29 +180,33 @@ ci_2() {
 
 ci_scala213() {
     echo "Run premerge ci (Scala 2.13) testing..."
-    cd scala2.13
-    ln -sf ../jenkins jenkins
-
-    # Download a Scala 2.13 version of Spark
-    prepare_spark 3.3.0 2.13
+    export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+    update-java-alternatives --set $JAVA_HOME
+    java -version
 
     # build Scala 2.13 versions
     for version in "${SPARK_SHIM_VERSIONS_PREMERGE_SCALA213[@]}"
     do
         echo "Spark version (Scala 2.13): $version"
         env -u SPARK_HOME \
-            $MVN_CMD -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
+            $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$version clean install $MVN_BUILD_ARGS -Dpytest.TEST_TAGS=''
         # Run filecache tests
         env -u SPARK_HOME SPARK_CONF=spark.rapids.filecache.enabled=true \
-            $MVN_CMD -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
+            $MVN_CMD -f scala2.13/ -B $MVN_URM_MIRROR -Dbuildver=$version test -rf tests $MVN_BUILD_ARGS -Dpytest.TEST_TAGS='' \
             -DwildcardSuites=org.apache.spark.sql.rapids.filecache.FileCacheIntegrationSuite
     done
 
-    $MVN_CMD -U -B $MVN_URM_MIRROR clean package $MVN_BUILD_ARGS -DskipTests=true
-    cd .. # Run integration tests in the project root dir to leverage test cases and resource files
+    # Download a Scala 2.13 version of Spark (use Spark 4.0.1 for Spark 4 shuffle testing)
+    # don't leak the new version here, it's only for use within this function
+    local SPARK_VER=4.0.1
+    local buildver="${SPARK_VER//./}"
+    prepare_spark $SPARK_VER 2.13
+
+    # We are going to run integration tests against Spark 4.0.1
+    $MVN_CMD -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$buildver clean package $MVN_BUILD_ARGS -DskipTests=true
+
     export TEST_TAGS="not premerge_ci_1"
     export TEST_TYPE="pre-commit"
-    export TEST_PARALLEL=5
     # SPARK_HOME (and related) must be set to a Spark built with Scala 2.13
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         ./integration_tests/run_pyspark_from_build.sh
@@ -216,19 +216,22 @@ ci_scala213() {
     # export 'LC_ALL' to set locale with UTF-8 so regular expressions are enabled
     SPARK_HOME=$SPARK_HOME PYTHONPATH=$PYTHONPATH \
         LC_ALL="en_US.UTF-8" TEST="regexp_test.py" ./integration_tests/run_pyspark_from_build.sh
+
+    # Trigger the RapidsShuffleManager tests for scala 2.13
+    rapids_shuffle_smoke_test $SPARK_VER
 }
 
 prepare_spark() {
-    spark_ver=${1:-'3.1.1'}
+    spark_version=${1:-'3.3.0'}
     scala_ver=${2:-'2.12'}
 
     ARTF_ROOT="$(pwd)/.download"
     rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
     # Download a full version of spark
-    . jenkins/hadoop-def.sh $spark_ver $scala_ver
-    wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$spark_ver/spark-$spark_ver-$BIN_HADOOP_VER.tgz
+    . jenkins/hadoop-def.sh $spark_version $scala_ver
+    wget -P $ARTF_ROOT $SPARK_REPO/org/apache/spark/$spark_version/spark-$spark_version-$BIN_HADOOP_VER.tgz
 
-    export SPARK_HOME="$ARTF_ROOT/spark-$spark_ver-$BIN_HADOOP_VER"
+    export SPARK_HOME="$ARTF_ROOT/spark-$spark_version-$BIN_HADOOP_VER"
     export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
     tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && rm -f $SPARK_HOME.tgz
     # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
@@ -240,15 +243,9 @@ prepare_spark() {
 nvidia-smi
 
 . jenkins/version-def.sh
+. jenkins/shuffle-common.sh
 
 PREMERGE_PROFILES="-Ppre-merge"
-
-# If possible create '~/.m2' cache from pre-created m2 tarball to minimize the impact of unstable network connection.
-# Please refer to job 'update_premerge_m2_cache' on Blossom about building m2 tarball details.
-M2_CACHE_TAR=${M2_CACHE_TAR:-"/home/jenkins/agent/m2_cache/premerge_m2_cache.tar"}
-if [ -s "$M2_CACHE_TAR" ] ; then
-    tar xf $M2_CACHE_TAR -C ~/
-fi
 
 case $BUILD_TYPE in
 

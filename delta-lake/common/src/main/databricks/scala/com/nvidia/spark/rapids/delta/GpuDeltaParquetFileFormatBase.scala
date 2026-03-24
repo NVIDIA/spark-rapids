@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.databricks.sql.transaction.tahoe.{DeltaColumnMapping, DeltaColumnMappingMode, NoMapping}
-import com.nvidia.spark.rapids.{GpuMetric, GpuParquetMultiFilePartitionReaderFactory, GpuReadParquetFileFormat}
+import com.databricks.sql.transaction.tahoe.{DeltaColumnMapping, DeltaColumnMappingMode, NameMapping, NoMapping}
+import com.databricks.sql.transaction.tahoe.schema.SchemaMergingUtils
+import com.nvidia.spark.rapids.{GpuMetric, GpuReadParquetFileFormat, ThreadPoolConfBuilder}
+import  com.nvidia.spark.rapids.parquet.GpuParquetMultiFilePartitionReaderFactory
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -27,7 +29,7 @@ import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{MetadataBuilder, StructType}
 import org.apache.spark.util.SerializableConfiguration
 
 abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
@@ -35,13 +37,25 @@ abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
   val referenceSchema: StructType
 
   def prepareSchema(inputSchema: StructType): StructType = {
-    DeltaColumnMapping.createPhysicalSchema(inputSchema, referenceSchema, columnMappingMode)
+    val schema = DeltaColumnMapping.createPhysicalSchema(
+      inputSchema, referenceSchema, columnMappingMode)
+    if (columnMappingMode == NameMapping) {
+      SchemaMergingUtils.transformColumns(schema) { (_, field, _) =>
+        field.copy(metadata = new MetadataBuilder()
+          .withMetadata(field.metadata)
+          .remove(DeltaColumnMapping.PARQUET_FIELD_ID_METADATA_KEY)
+          .build())
+      }
+    } else {
+      schema
+    }
   }
 
   override def createMultiFileReaderFactory(
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    val poolConfBuilder = ThreadPoolConfBuilder(fileScan.rapidsConf)
     GpuParquetMultiFilePartitionReaderFactory(
       fileScan.conf,
       broadcastedConf,
@@ -50,9 +64,9 @@ abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
       prepareSchema(fileScan.readPartitionSchema),
       pushedFilters,
       fileScan.rapidsConf,
+      poolConfBuilder,
       fileScan.allMetrics,
-      fileScan.queryUsesInputFile,
-      fileScan.alluxioPathsMap)
+      fileScan.queryUsesInputFile)
   }
 
   override def buildReaderWithPartitionValuesAndMetrics(
@@ -63,8 +77,7 @@ abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric],
-      alluxioPathReplacementMap: Option[Map[String, String]])
+      metrics: Map[String, GpuMetric])
   : PartitionedFile => Iterator[InternalRow] = {
     super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
@@ -74,8 +87,7 @@ abstract class GpuDeltaParquetFileFormatBase extends GpuReadParquetFileFormat {
       filters,
       options,
       hadoopConf,
-      metrics,
-      alluxioPathReplacementMap)
+      metrics)
   }
 
   override def supportFieldName(name: String): Boolean = {

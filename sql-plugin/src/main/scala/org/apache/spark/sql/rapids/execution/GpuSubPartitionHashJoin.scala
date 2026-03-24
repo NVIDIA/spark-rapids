@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,14 @@ package org.apache.spark.sql.rapids.execution
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{GpuBatchUtils, GpuColumnVector, GpuExpression, GpuHashPartitioningBase, GpuMetric, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.{GpuBatchUtils, GpuColumnVector, GpuExpression, GpuHashPartitioner, GpuMetric, NvtxRegistry, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.InnerLike
+import org.apache.spark.sql.rapids.{GpuHashExpression, GpuMurmur3Hash}
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -87,7 +88,8 @@ class GpuBatchSubPartitioner(
     inputBoundKeys: Seq[GpuExpression],
     numPartitions: Int,
     hashSeed: Int,
-    name: String = "GpuBatchSubPartitioner") extends AutoCloseable with Logging {
+    name: String = "GpuBatchSubPartitioner") extends GpuHashPartitioner
+  with AutoCloseable with Logging {
 
   private var isNotInited = true
   private var numCurBatches = 0
@@ -95,6 +97,8 @@ class GpuBatchSubPartitioner(
   private val realNumPartitions = Math.max(2, numPartitions)
   private val pendingParts =
     Array.fill(realNumPartitions)(ArrayBuffer.empty[SpillableColumnarBatch])
+
+  override protected val hashFunc: GpuHashExpression = GpuMurmur3Hash(inputBoundKeys, hashSeed)
 
   /** The actual count of partitions */
   def partitionsCount: Int = realNumPartitions
@@ -177,11 +181,21 @@ class GpuBatchSubPartitioner(
       if (gpuBatch.numRows() > 0 && gpuBatch.numCols() > 0) {
         val types = GpuColumnVector.extractTypes(gpuBatch)
         // 1) Hash partition on the batch
-        val partedTable = GpuHashPartitioningBase.hashPartitionAndClose(
-          gpuBatch, inputBoundKeys, realNumPartitions, "Sub-Hash Calculate", hashSeed)
+        val partedTable = hashPartitionAndClose(gpuBatch, realNumPartitions,
+            NvtxRegistry.SUB_JOIN_PART)
+        val (spillBatch, partitions) = withResource(partedTable) { _ =>
+          // Convert to SpillableColumnarBatch for the following retry.
+          (SpillableColumnarBatch(GpuColumnVector.from(partedTable.getTable, types),
+            SpillPriorities.ACTIVE_BATCHING_PRIORITY),
+            partedTable.getPartitions)
+        }
         // 2) Split into smaller tables according to partitions
-        val subTables = withResource(partedTable) { _ =>
-          partedTable.getTable.contiguousSplit(partedTable.getPartitions.tail: _*)
+        val subTables = RmmRapidsRetryIterator.withRetryNoSplit(spillBatch) { _ =>
+          withResource(spillBatch.getColumnarBatch()) { cb =>
+            withResource(GpuColumnVector.from(cb)) { tbl =>
+              tbl.contiguousSplit(partitions.tail: _*)
+            }
+          }
         }
         // 3) Make each smaller table spillable and cache them in the queue
         withResource(subTables) { _ =>
@@ -444,7 +458,7 @@ class GpuSubPartitionPairIterator(
     val realNumPartitions = computeNumPartitions(bigBuildBatches)
     // build partitioner
     val buildIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigBuildBatches.toSeq)
-      .map(_.getColumnarBatch())
+      .map(scb => withResource(scb){_.getColumnarBatch()})
     bigBuildBatches.clear()
     buildSubPartitioner.safeClose(new Exception())
     buildSubPartitioner = new GpuBatchSubPartitioner(buildIt, boundBuildKeys,
@@ -453,7 +467,7 @@ class GpuSubPartitionPairIterator(
 
     // stream partitioner
     val streamIt = GpuSubPartitionHashJoin.safeIteratorFromSeq(bigStreamBatches.toSeq)
-      .map(_.getColumnarBatch())
+      .map(scb => withResource(scb){_.getColumnarBatch()})
     bigStreamBatches.clear()
     streamSubPartitioner.safeClose(new Exception())
     streamSubPartitioner = new GpuBatchSubPartitioner(streamIt, boundStreamKeys,
@@ -551,7 +565,7 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
   def doJoinBySubPartition(
       builtIter: Iterator[ColumnarBatch],
       streamIter: Iterator[ColumnarBatch],
-      targetSize: Long,
+      joinOptions: JoinOptions,
       numPartitions: Int,
       numOutputRows: GpuMetric,
       numOutputBatches: GpuMetric,
@@ -563,7 +577,7 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
       s"in task ${TaskContext.get().taskAttemptId()}")
 
     new BaseSubHashJoinIterator(builtIter, boundBuildKeys, streamIter,
-        boundStreamKeys, numPartitions, targetSize, opTime) {
+        boundStreamKeys, numPartitions, joinOptions.targetSize, opTime) {
 
       private[this] def canOptimizeOut(pair: PartitionPair): Boolean = {
         val (build, stream) = pair.get
@@ -592,7 +606,7 @@ trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
             }
           }
           // Leverage the original join iterators
-          val joinIter = doJoin(buildCb, streamIter, targetSize, 
+          val joinIter = doJoin(buildCb, streamIter, joinOptions,
             numOutputRows, numOutputBatches, opTime, joinTime)
           Some(joinIter)
         }

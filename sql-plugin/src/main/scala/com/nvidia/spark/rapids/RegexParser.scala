@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,14 @@
 package com.nvidia.spark.rapids
 
 import java.sql.SQLException
+import java.util.regex.{Pattern, PatternSyntaxException}
 
 import scala.collection.mutable.ListBuffer
 
 import com.nvidia.spark.rapids.GpuOverrides.regexMetaChars
 import com.nvidia.spark.rapids.RegexParser.toReadableString
+
+import org.apache.spark.unsafe.types.UTF8String
 
 /**
  * Regular expression parser based on a Pratt Parser design.
@@ -51,6 +54,9 @@ class RegexParser(pattern: String) {
   private var pos = 0
 
   def parse(): RegexAST = {
+    // Validate if the pattern is compatible with Java, as this would throw an error otherwise
+    Pattern.compile(pattern)
+
     val ast = parseUntil(() => eof())
     if (!eof()) {
       throw new RegexUnsupportedException("Failed to parse full regex. Last character parsed was",
@@ -72,7 +78,7 @@ class RegexParser(pattern: String) {
     sequence
   }
 
-  def parseReplacementBase(): RegexAST = {
+  private def parseReplacementBase(): RegexAST = {
       consume() match {
         case '\\' =>
           parseBackrefOrEscaped()
@@ -642,7 +648,7 @@ object RegexParser {
       val ast = parser.parse()
       isRegExpString(ast)
     } catch {
-      case _: RegexUnsupportedException =>
+      case _: RegexUnsupportedException | _: PatternSyntaxException =>
         // if we cannot parse it then assume that it might be valid regexp
         true
     }
@@ -719,6 +725,21 @@ class CudfRegexTranspiler(mode: RegexMode) {
     (cudfRegex.toRegexString, replacement.map(_.toRegexString))
   }
 
+  def getTranspiledAST(
+      regex: RegexAST,
+      extractIndex: Option[Int],
+      repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
+
+    // if we have a replacement, parse the replacement string using the regex parser to account
+    // for backrefs
+    val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
+
+    // validate that the regex is supported by cuDF
+    val cudfRegex = transpile(regex, extractIndex, replacement, None)
+
+    (cudfRegex, replacement)
+  }
+
   /**
    * Parse Java regular expression and translate into cuDF regular expression in AST form.
    *
@@ -733,14 +754,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
       repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
     // parse the source regular expression
     val regex = new RegexParser(pattern).parse()
-    // if we have a replacement, parse the replacement string using the regex parser to account
-    // for backrefs
-    val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
-
-    // validate that the regex is supported by cuDF
-    val cudfRegex = transpile(regex, extractIndex, replacement, None)
-
-    (cudfRegex, replacement)
+    getTranspiledAST(regex, extractIndex, repl)
   }
 
   def transpileToSplittableString(e: RegexAST): Option[String] = {
@@ -774,6 +788,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
+  @scala.annotation.tailrec
   private def isRepetition(e: RegexAST, checkZeroLength: Boolean): Boolean = {
     e match {
       case RegexRepetition(_, _) if !checkZeroLength => true
@@ -838,24 +853,15 @@ class CudfRegexTranspiler(mode: RegexMode) {
   // from Java 8 documention: a line terminator is a 1 to 2 character sequence that marks
   // the end of a line of an input character sequence.
   // this method produces a RegexAST which outputs a regular expression to match any possible
-  // combination of line terminators
-  private def lineTerminatorMatcher(exclude: Set[Char], excludeCRLF: Boolean,
-      capture: Boolean): RegexAST = {
-    val terminatorChars = new ListBuffer[RegexCharacterClassComponent]()
-    terminatorChars ++= lineTerminatorChars.filter(!exclude.contains(_)).map(RegexChar)
-
-    if (terminatorChars.size == 0 && excludeCRLF) {
+  // combination of line terminators.
+  // Cudf added support to identify \n, \r, \u0085, \u2028, \u2029 as line break characters
+  // when EXT_NEWLINE flag is set. See issue: https://github.com/NVIDIA/spark-rapids/issues/11554
+  private def lineTerminatorMatcher(excludeCRLF: Boolean, capture: Boolean): RegexAST = {
+    if (excludeCRLF) {
       RegexEmpty()
-    } else if (terminatorChars.size == 0) {
+    } else {
       RegexGroup(capture = capture, RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n'))),
           None)
-    } else if (excludeCRLF) {
-      RegexGroup(capture = capture,
-        RegexCharacterClass(negated = false, characters = terminatorChars),
-        None
-      )
-    } else {
-      RegexGroup(capture = capture, RegexParser.parse("\r|\u0085|\u2028|\u2029|\r\n"), None)
     }
   }
 
@@ -1085,20 +1091,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // line terminator sequences, so we just output the anchor and we are finished
               // for example: \r$ -> \r$ (no transpilation)
               RegexChar('$')
-            case Some(RegexChar(ch)) if lineTerminatorChars.contains(ch) =>
-              // when using any other line terminator character, you can match any of the other
-              // line terminator characters individually as part of the line anchor match.
-              // for example: \n$ -> \n[\r\u0085\u2028\u2029]?$
-              if (mode == RegexReplaceMode) {
-                replacement match {
-                  case Some(rr) => rr.appendBackref(rr.numCaptureGroups + 1)
-                  case _ =>
-                }
-              }
-              RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(Set(ch), true,
-                    mode == RegexReplaceMode), SimpleQuantifier('?')),
-                RegexChar('$')))
             case Some(RegexEscaped('b')) | Some(RegexEscaped('B')) =>
               throw new RegexUnsupportedException(
                       "Regex sequences with \\b or \\B not supported around $", regex.position)
@@ -1111,8 +1103,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 }
               }
               RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(Set.empty, false,
-                    mode == RegexReplaceMode), SimpleQuantifier('?')),
+                RegexRepetition(lineTerminatorMatcher(excludeCRLF = false,
+                    capture = mode == RegexReplaceMode), SimpleQuantifier('?')),
                 RegexChar('$')))
           }
         case '^' if mode == RegexSplitMode =>
@@ -1351,48 +1343,33 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // when the previous character is a line anchor ($), the JVM has special handling
               // when matching against line terminator characters
               case Some(RegexChar('$')) | Some(RegexEscaped('Z')) =>
-                val j = r.lastIndexWhere {
-                  case RegexEmpty() => false
-                  case _ => true
-                }
                 part match {
                   case RegexGroup(capture, RegexSequence(
                       ListBuffer(RegexCharacterClass(true, parts))), _)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(ListBuffer(lineTerminatorMatcher(Set.empty, true, capture),
-                        RegexChar('$')))
                     popBackrefIfNecessary(capture)
                   case RegexGroup(capture, RegexCharacterClass(true, parts), _)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(ListBuffer(lineTerminatorMatcher(Set.empty, true, capture),
-                        RegexChar('$')))
                     popBackrefIfNecessary(capture)
                   case RegexCharacterClass(true, parts)
                       if parts.forall(!isBeginOrEndLineAnchor(_)) =>
-                    r(j) = RegexSequence(
-                      ListBuffer(lineTerminatorMatcher(Set.empty, true, false), RegexChar('$')))
                     popBackrefIfNecessary(false)
-                  case RegexChar(ch) if ch == '\n' =>
+                  case RegexChar(ch) if lineTerminatorChars.contains(ch) =>
                     // what's really needed here is negative lookahead, but that is not
                     // supported by cuDF
                     // in this case: $\n would transpile to (?!\r)\n$
-                    throw new RegexUnsupportedException("Regex sequence $\\n is not supported",
+                    throw new RegexUnsupportedException(s"Regex sequence $$\\$ch is not supported",
                       part.position)
-                  case RegexChar(ch) if "\r\u0085\u2028\u2029".contains(ch) =>
-                    r(j) = RegexSequence(
-                      ListBuffer(
-                        rewrite(part, replacement, None, flags),
-                        RegexSequence(ListBuffer(
-                          RegexRepetition(lineTerminatorMatcher(Set(ch), true, false),
-                            SimpleQuantifier('?')), RegexChar('$')))))
-                    popBackrefIfNecessary(false)
                   case RegexEscaped('z') =>
-                    // \Z\z or $\z transpiles to $
-                    r(j) = RegexChar('$')
-                    popBackrefIfNecessary(false)
-                  case RegexEscaped(a) if "bB".contains(a) =>
+                    // since \z is not supported by cudf
+                    // we need to transpile $\z to $(?![\r\n\u0085\u2028\u2029])
+                    // however, cudf doesn't support negative look ahead
+                    throw new RegexUnsupportedException("Regex sequence $\\z is not supported",
+                      part.position)
+                  case RegexEscaped(a) if "bBsSdDwWaAf".contains(a) =>
                     throw new RegexUnsupportedException(
-                      "Regex sequences with \\b or \\B not supported around $", part.position)
+                      s"Regex sequences with \\$a are not supported around end-of-line markers " +
+                        "like $ or \\Z at position", part.position)
                   case _ =>
                     r.append(rewrite(part, replacement, last, flags))
                 }
@@ -1640,6 +1617,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
   }
 
+  @scala.annotation.tailrec
   private def isEntirely(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
     regex match {
       case RegexSequence(parts) if parts.nonEmpty =>
@@ -1664,6 +1642,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
     })
   }
 
+  @scala.annotation.tailrec
   private def beginsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
     regex match {
       case RegexSequence(parts) if parts.nonEmpty =>
@@ -1679,6 +1658,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   }
 
+  @scala.annotation.tailrec
   private def endsWith(regex: RegexAST, f: RegexAST => Boolean): Boolean = {
     regex match {
       case RegexSequence(parts) if parts.nonEmpty =>
@@ -1752,7 +1732,7 @@ sealed case class RegexSequence(parts: ListBuffer[RegexAST]) extends RegexAST {
 }
 
 sealed case class RegexGroup(capture: Boolean, term: RegexAST,
-    val lookahead: Option[RegexLookahead])
+    lookahead: Option[RegexLookahead])
     extends RegexAST {
   def this(capture: Boolean, term: RegexAST) = {
     this(capture, term, None)
@@ -1969,7 +1949,7 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
     this.position = Some(position)
   }
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString(): String = s"$$$num"
+  override def toRegexString: String = s"$$$num"
 }
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
@@ -2006,5 +1986,171 @@ class RegexUnsupportedException(message: String, index: Option[Int])
       case Some(i) => s"$message near index $i"
       case _ => message
     }
+  }
+}
+
+sealed trait RegexOptimizationType
+object RegexOptimizationType {
+  case class StartsWith(literal: String) extends RegexOptimizationType
+  case class Contains(literal: String) extends RegexOptimizationType
+  case class PrefixRange(literal: String, length: Int, rangeStart: Int, rangeEnd: Int) 
+    extends RegexOptimizationType
+  case class MultipleContains(literals: Seq[UTF8String]) extends RegexOptimizationType
+  case object NoOptimization extends RegexOptimizationType
+}
+
+object RegexRewrite {
+
+  @scala.annotation.tailrec
+  private def removeBrackets(astLs: collection.Seq[RegexAST]): collection.Seq[RegexAST] = {
+    astLs match {
+      case collection.Seq(RegexGroup(_, RegexSequence(terms), None)) => removeBrackets(terms)
+      case _ => astLs
+    }
+  }
+
+  /* 
+   * Extracts the prefix range pattern info from the given AST sequence.
+   * 
+   * @param astLs The AST sequence to extract the prefix range pattern from.
+   * @return Some(prefix, length, start, end) if astLs is a `prefix[start-end]{x}` pattern
+   * None otherwise. start and end are the code points of the start and end characters.
+   */
+  private def getPrefixRangePattern(astLs: collection.Seq[RegexAST]): 
+      Option[(String, Int, Int, Int)] = {
+    val haveLiteralPrefix = isLiteralString(astLs.dropRight(1))
+    val endsWithRange = astLs.lastOption match {
+      case Some(ast) => removeBrackets(collection.Seq(ast)) match {
+        case collection.Seq(RegexRepetition(
+            RegexCharacterClass(false, ListBuffer(RegexCharacterRange(a,b))), 
+            quantifier)) => {
+          val (start, end) = (a, b) match {
+            case (RegexChar(start), RegexChar(end)) => (start, end)
+            case _ => return None
+          }
+          val length = quantifier match {
+            // In Rlike, contains [a-b]{minLen,maxLen} pattern is equivalent to contains 
+            // [a-b]{minLen} because the matching will return the result once it finds the 
+            // minimum match so y here is unnecessary.
+            case QuantifierVariableLength(minLen, _) => minLen
+            case QuantifierFixedLength(len) => len
+            case SimpleQuantifier(ch) => ch match {
+              case '*' | '?' => 0
+              case '+' => 1
+              case _ => return None
+            }
+            case _ => return None
+          }
+          // Convert start and end to code points
+          Some((length, start.toInt, end.toInt))
+        }
+        case _ => None
+      }
+      case _ => None
+    }
+    (haveLiteralPrefix, endsWithRange) match {
+      case (true, Some((length, start, end))) => {
+        val prefix = RegexCharsToString(astLs.dropRight(1))
+        Some((prefix, length, start, end))
+      }
+      case _ => None
+    }
+  }
+
+  private def isLiteralString(astLs: collection.Seq[RegexAST]): Boolean = {
+    removeBrackets(astLs).forall {
+      case RegexChar(ch) => !regexMetaChars.contains(ch)
+      case _ => false
+    }
+  }
+
+  private def getMultipleContainsLiterals(ast: RegexAST): Seq[UTF8String] = {
+    ast match {
+      case RegexGroup(_, term, _) => getMultipleContainsLiterals(term)
+      case RegexChoice(RegexSequence(parts), ls) if isLiteralString(parts) => {
+        getMultipleContainsLiterals(ls) match {
+          case Seq() => Seq.empty
+          case literals => UTF8String.fromString(RegexCharsToString(parts)) +: literals
+        }
+      }
+      case RegexSequence(parts) if (isLiteralString(parts)) => 
+          Seq(UTF8String.fromString(RegexCharsToString(parts)))
+      case _ => Seq.empty
+    }
+  }
+
+  private def isWildcard(ast: RegexAST): Boolean = {
+    ast match {
+      case RegexRepetition(RegexChar('.'), SimpleQuantifier('*')) => true
+      case RegexSequence(parts) if parts.forall(isWildcard) => true
+      case RegexGroup(_, term, _) if isWildcard(term) => true
+      case _ => false
+    }
+  }
+
+  private def stripLeadingWildcards(astLs: collection.Seq[RegexAST]): 
+      collection.Seq[RegexAST] = {
+    astLs.dropWhile(isWildcard)
+  }
+
+  private def stripTailingWildcards(astLs: collection.Seq[RegexAST]): 
+      collection.Seq[RegexAST] = {
+    astLs.reverse.dropWhile(isWildcard).reverse
+  }
+
+  private def RegexCharsToString(chars: collection.Seq[RegexAST]): String = {
+    removeBrackets(chars).map {
+      case RegexChar(ch) => ch
+      case _ => throw new IllegalArgumentException("Invalid character")
+    }.mkString
+  }
+
+  /**
+   * Matches the given regex ast to a regex optimization type for regex rewrite
+   * optimization.
+   *
+   * @param ast Abstract Syntax Tree parsed from a regex pattern.
+   * @return The `RegexOptimizationType` for the given pattern.
+   */
+  def matchSimplePattern(ast: RegexAST): RegexOptimizationType = {
+    val astLs = ast match {
+      case RegexSequence(_) => ast.children()
+      case _ => Seq(ast)
+    }
+    val noTailingWildcards = stripTailingWildcards(astLs)
+    if (noTailingWildcards.headOption.exists(
+        ast => ast == RegexChar('^') || ast == RegexEscaped('A'))) {
+      val possibleLiteral = noTailingWildcards.drop(1)
+      if (isLiteralString(possibleLiteral)) {
+        return RegexOptimizationType.StartsWith(RegexCharsToString(possibleLiteral))
+      }
+    }
+
+    val noStartsWithAst = removeBrackets(stripLeadingWildcards(noTailingWildcards))
+
+    // Check if the pattern is a contains literal pattern
+    if (isLiteralString(noStartsWithAst)) {
+      // literal or .*(literal).* => contains literal
+      return RegexOptimizationType.Contains(RegexCharsToString(noStartsWithAst))
+    }
+
+    // Check if the pattern is a multiple contains literal pattern (e.g. "abc|def|ghi")
+    if (noStartsWithAst.length == 1) {
+      val containsLiterals = getMultipleContainsLiterals(noStartsWithAst.head)
+      if (!containsLiterals.isEmpty) {
+        return RegexOptimizationType.MultipleContains(containsLiterals)
+      }
+    }
+
+    // Check if the pattern is a prefix range pattern (e.g. "abc[a-z]{3}")
+    val prefixRangeInfo = getPrefixRangePattern(noStartsWithAst)
+    if (prefixRangeInfo.isDefined) {
+      val (prefix, length, start, end) = prefixRangeInfo.get
+      // (literal[a-b]{x,y}) => prefix range pattern
+      return RegexOptimizationType.PrefixRange(prefix, length, start, end)
+    }
+    
+    // return NoOptimization if the pattern is not a simple pattern and use cuDF
+    RegexOptimizationType.NoOptimization
   }
 }

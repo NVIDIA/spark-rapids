@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,18 +17,19 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.ExistenceJoin
 import org.apache.spark.sql.catalyst.plans.logical.{BROADCAST, HintInfo, Join, JoinHint}
 import org.apache.spark.sql.rapids.TestTrampolineUtil
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.BooleanType
 
 class JoinsSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual2("Test broadcast hash join with ops", longsDf, nonZeroLongsDf,
     conf=new SparkConf()
-      .set("spark.sql.autoBroadcastJoinThreshold", "10MB")) {
+      .set("spark.sql.autoBroadcastJoinThreshold", "10MB"),
+    assumeCondition = ignoreAnsi("https://github.com/NVIDIA/spark-rapids/issues/12700")) {
     (A, B) => A.join(B, (A("longs") - A("more_longs")) === (B("longs") - B("more_longs")))
   }
 

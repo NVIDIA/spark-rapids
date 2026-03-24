@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024, NVIDIA CORPORATION.
+# Copyright (c) 2021-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-import pyspark.sql.functions as f
-from marks import ignore_order
+from marks import disable_ansi_mode, ignore_order
+from pyspark.sql import functions as f
 
 @pytest.mark.parametrize('data_gen', all_gen, ids=idfn)
 # Many Spark versions have issues sorting large decimals,
@@ -42,6 +42,7 @@ pre_pro_sqls = [
 @pytest.mark.parametrize('sql', pre_pro_sqls, ids=["distinct_agg", "cube", "rollup"])
 def test_expand_pre_project(sql):
     def get_df(spark):
-        return three_col_df(spark, short_gen, int_gen, string_gen)
+        # Limit the range of the Integer to avoid overflow issues in ANSI mode
+        return three_col_df(spark, short_gen, IntegerGen(min_val=-1000, max_val=1000, special_cases=[]), string_gen)
 
     assert_gpu_and_cpu_are_equal_sql(get_df, "pre_pro", sql)

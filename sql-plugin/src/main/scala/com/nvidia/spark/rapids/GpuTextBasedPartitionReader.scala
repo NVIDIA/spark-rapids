@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,22 @@
 
 package com.nvidia.spark.rapids
 
+import java.nio.charset.{Charset, StandardCharsets}
 import java.time.DateTimeException
 import java.util
 import java.util.Optional
 
 import scala.collection.mutable.ListBuffer
 
-import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, NvtxColor, NvtxRange, RegexProgram, Scalar, Schema, Table}
+import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+import org.apache.hadoop.io.Text
 import org.apache.hadoop.io.compress.CompressionCodecFactory
 
 import org.apache.spark.TaskContext
@@ -37,7 +40,7 @@ import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{ExceptionTimeParserPolicy, GpuToTimestamp, LegacyTimeParserPolicy}
-import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -51,9 +54,24 @@ trait LineBufferer extends AutoCloseable {
   def getLength: Long
 
   /**
+   * Get the numnber of lines currently added to this that were not filtered out.
+   */
+  def getNumLines: Int
+
+  /**
    * Add a new line of bytes to the data to process.
    */
   def add(line: Array[Byte], offset: Int, len: Int): Unit
+
+  def isWhiteSpace(b: Byte): Boolean = {
+    b == ' ' || b == '\t' || b == '\r' || b == '\n'
+  }
+
+  def isEmpty(line: Array[Byte], lineOffset: Int, lineLen: Int): Boolean = {
+    (0 until lineLen).forall { idx =>
+      isWhiteSpace(line(lineOffset + idx))
+    }
+  }
 }
 
 /**
@@ -65,17 +83,40 @@ trait LineBuffererFactory[BUFF <: LineBufferer] {
 
 object HostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
   override def createBufferer(estimatedSize: Long,
+                              lineSeparatorInRead: Array[Byte]): HostLineBufferer =
+    new HostLineBufferer(estimatedSize, lineSeparatorInRead, false)
+}
+
+object FilterEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
+  override def createBufferer(estimatedSize: Long,
       lineSeparatorInRead: Array[Byte]): HostLineBufferer =
-    new HostLineBufferer(estimatedSize, lineSeparatorInRead)
+    new HostLineBufferer(estimatedSize, lineSeparatorInRead, true)
+}
+
+/**
+ * Factory for CSV reading that filters empty lines using Java String.trim() compatible whitespace
+ * (all chars <= 0x20). This matches Spark CPU's CSVExprUtils.filterCommentAndEmpty behavior which
+ * uses line.trim.nonEmpty to filter blank lines.
+ */
+object FilterCsvEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
+  override def createBufferer(estimatedSize: Long,
+      lineSeparatorInRead: Array[Byte]): HostLineBufferer =
+    new HostLineBufferer(estimatedSize, lineSeparatorInRead, true) {
+      // Match Java's String.trim() which treats all chars <= '\u0020' as whitespace.
+      override def isWhiteSpace(b: Byte): Boolean = (b & 0xFF) <= 0x20
+    }
 }
 
 /**
  * Buffer the lines in a single HostMemoryBuffer with the separator inserted inbetween each of
  * the lines.
  */
-class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer {
+class HostLineBufferer(size: Long,
+                       separator: Array[Byte],
+                       filterEmpty: Boolean) extends LineBufferer {
   private var buffer = HostMemoryBuffer.allocate(size)
   private var location: Long = 0
+  private var numLines: Int = 0
 
   def grow(needed: Long): Unit = {
     val newSize = math.max(buffer.getLength * 2, needed)
@@ -88,20 +129,21 @@ class HostLineBufferer(size: Long, separator: Array[Byte]) extends LineBufferer 
 
   override def getLength: Long = location
 
-  override def add(line: Array[Byte], lineOffset: Int, lineLen: Int): Unit = {
-    val newTotal = location + lineLen + separator.length
-    if (newTotal > buffer.getLength) {
-      grow(newTotal)
-    }
+  override def getNumLines: Int = numLines
 
-    // Can have an empty line, do not write this to buffer but add the separator
-    // and totalRows
-    if (lineLen != 0) {
+  override def add(line: Array[Byte], lineOffset: Int, lineLen: Int): Unit = {
+    // Empty lines are filtered out
+    if (!filterEmpty || !isEmpty(line, lineOffset, lineLen)) {
+      numLines += 1
+      val newTotal = location + lineLen + separator.length
+      if (newTotal > buffer.getLength) {
+        grow(newTotal)
+      }
       buffer.setBytes(location, line, lineOffset, lineLen)
       location = location + lineLen
+      buffer.setBytes(location, separator, 0, separator.length)
+      location = location + separator.length
     }
-    buffer.setBytes(location, separator, 0, separator.length)
-    location = location + separator.length
   }
 
   def getBufferAndRelease: HostMemoryBuffer = {
@@ -139,10 +181,13 @@ class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBuff
 
   override def getLength: Long = dataLocation
 
+  override def getNumLines: Int = numRows
+
   override def add(line: Array[Byte], lineOffset: Int, lineLen: Int): Unit = {
     if (numRows + 1 > rowsAllocated) {
       val newRowsAllocated = math.min(rowsAllocated * 2, Int.MaxValue - 1)
-      val tmpBuffer = HostMemoryBuffer.allocate((newRowsAllocated + 1) * DType.INT32.getSizeInBytes)
+      val tmpBuffer =
+        HostMemoryBuffer.allocate((newRowsAllocated + 1) * DType.INT32.getSizeInBytes)
       tmpBuffer.copyFromHostBuffer(0, offsetsBuffer, 0, offsetsBuffer.getLength)
       offsetsBuffer.close()
       offsetsBuffer = tmpBuffer
@@ -157,9 +202,7 @@ class HostStringColBufferer(size: Long, separator: Array[Byte]) extends LineBuff
         dataBuffer = newBuff
       }
     }
-    if (lineLen != 0) {
-      dataBuffer.setBytes(dataLocation, line, lineOffset, lineLen)
-    }
+    dataBuffer.setBytes(dataLocation, line, lineOffset, lineLen)
     offsetsBuffer.setInt(numRows * DType.INT32.getSizeInBytes, dataLocation.toInt)
     dataLocation += lineLen
     numRows += 1
@@ -328,7 +371,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric],
-    bufferFactory: FACT)
+    bufferFactory: FACT,
+    charset: Charset = StandardCharsets.UTF_8)
   extends PartitionReader[ColumnarBatch] with ScanWithMetrics {
   import GpuMetric._
 
@@ -358,8 +402,21 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     }
   }
 
+  private lazy val toUTF8Bytes: Text => (Array[Byte], Int) =
+    if (GpuCSVScan.isUTF8Charset(charset)) {
+      // Already utf8, return it directly
+      line => (line.getBytes, line.getLength)
+    } else {
+      // Do the decoding and encoding on CPU now, but better support the translation on GPU.
+      line => {
+        val utf8Bytes = new String(line.getBytes, 0, line.getLength, charset)
+          .getBytes(StandardCharsets.UTF_8)
+        (utf8Bytes, utf8Bytes.length)
+      }
+    }
+
   private def readPartFile(): (BUFF, Long) = {
-    withResource(new NvtxRange("Buffer file split", NvtxColor.YELLOW)) { _ =>
+    NvtxRegistry.BUFFER_FILE_SPLIT_TEXT {
       isFirstChunkForIterator = false
       val separator = lineSeparatorInRead.getOrElse(Array('\n'.toByte))
       var succeeded = false
@@ -370,9 +427,9 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
         while (lineReader.hasNext
           && totalRows != maxRowsPerChunk
           && totalSize <= maxBytesPerChunk /* soft limit and returns at least one row */) {
-          val line = lineReader.next()
-          hmb.add(line.getBytes, 0, line.getLength)
-          totalRows += 1
+          val (lineBytes, bytesLen) = toUTF8Bytes(lineReader.next())
+          hmb.add(lineBytes, 0, bytesLen)
+          totalRows = hmb.getNumLines
           totalSize = hmb.getLength
         }
         //Indicate this is the last chunk
@@ -388,7 +445,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   }
 
   private def readBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxRange(getFileFormatShortName + " readBatch", NvtxColor.GREEN)) { _ =>
+    NvtxRegistry.FILE_FORMAT_READ_BATCH {
       val isFirstChunk = partFile.start == 0 && isFirstChunkForIterator
       val table = readToTable(isFirstChunk)
       try {
@@ -421,6 +478,17 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           }
         }))
     GpuColumnVector.from(dataSchemaWithStrings)
+  }
+
+  // accessible to children for OOM unit tests
+  protected def castToOutputTypesWithRetryAndClose(table: Table,
+      readSchema: StructType): Table = {
+    val stbl = closeOnExcept(table) { _ =>
+      SpillableTable(table, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    }
+    withRetryNoSplit(stbl) { attempt =>
+      withResource(attempt.getTable())(castTableToDesiredTypes(_, readSchema))
+    }
   }
 
   def castTableToDesiredTypes(table: Table, readSchema: StructType): Table = {
@@ -489,9 +557,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           isFirstChunk, metrics(GPU_DECODE_TIME))
 
         // parse boolean and numeric columns that were read as strings
-        val castTable = withResource(table) { _ =>
-          castTableToDesiredTypes(table, newReadDataSchema)
-        }
+        val castTable =
+          castToOutputTypesWithRetryAndClose(table, newReadDataSchema)
 
         handleResult(newReadDataSchema, castTable)
       }
@@ -601,7 +668,14 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     //  val cols = (0 until  table.getNumberOfColumns).map(i => table.getColumn(i))
     //  Some(new Table(cols: _*))
     // }
-    Some(table)
+    if (table.getRowCount == 0) {
+      // CSV reader can return empty table, close it and return None
+      // E.g.: CSV file with only header and no data rows, empty table will be returned
+      table.close()
+      None
+    } else {
+      Some(table)
+    }
   }
 
   override def next(): Boolean = {

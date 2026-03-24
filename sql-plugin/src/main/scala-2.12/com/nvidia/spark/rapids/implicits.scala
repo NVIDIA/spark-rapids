@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,15 @@
 
 package com.nvidia.spark.rapids
 
-import scala.collection
+import scala.annotation.tailrec
 import scala.collection.generic.CanBuildFrom
 import scala.collection.mutable
 import scala.reflect.ClassTag
+import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.vectorized.ColumnarBatch
+
 
 /**
  * RapidsPluginImplicits, adds implicit functions for ColumnarBatch, Seq, Seq[AutoCloseable],
@@ -64,26 +66,6 @@ object RapidsPluginImplicits {
     }
   }
 
-  implicit class RapidsBufferColumn(rapidsBuffer: RapidsBuffer) {
-
-    /**
-     * safeFree: Is an implicit on RapidsBuffer class that tries to free the resource, if an
-     * Exception was thrown prior to this free, it adds the new exception to the suppressed
-     * exceptions, otherwise just throws
-     *
-     * @param e Exception which we don't want to suppress
-     */
-    def safeFree(e: Throwable = null): Unit = {
-      if (rapidsBuffer != null) {
-        try {
-          rapidsBuffer.free()
-        } catch {
-          case suppressed: Throwable if e != null => e.addSuppressed(suppressed)
-        }
-      }
-    }
-  }
-
   implicit class AutoCloseableSeq[A <: AutoCloseable](val in: collection.SeqLike[A, _]) {
     /**
      * safeClose: Is an implicit on a sequence of AutoCloseable classes that tries to close each
@@ -110,32 +92,37 @@ object RapidsPluginImplicits {
         throw closeException
       }
     }
-  }
 
-  implicit class RapidsBufferSeq[A <: RapidsBuffer](val in: collection.SeqLike[A, _]) {
     /**
-     * safeFree: Is an implicit on a sequence of RapidsBuffer classes that tries to free each
-     * element of the sequence, even if prior free calls fail. In case of failure in any of the
-     * free calls, an Exception is thrown containing the suppressed exceptions (getSuppressed),
-     * if any.
+     * Consumes elements in this collection by `block`.
+     *
+     * If any exception happens during consumption, unconsumed elements will be closed.
+     * If exception happens when closing an unconsumed element, previous exceptions will be added
+     * as suppressed exception.
+     *
+     * @param block Code block to consume one element.
      */
-    def safeFree(error: Throwable = null): Unit = if (in != null) {
-      var freeException: Throwable = null
-      in.foreach { element =>
-        if (element != null) {
-          try {
-            element.free()
-          } catch {
-            case e: Throwable if error != null => error.addSuppressed(e)
-            case e: Throwable if freeException == null => freeException = e
-            case e: Throwable => freeException.addSuppressed(e)
-          }
+    def safeConsume(block: A => Unit): Unit = {
+      consumeOne(in.iterator, block, None)
+    }
+
+    @tailrec
+    private def consumeOne(elements: Iterator[A],
+                           block: A => Unit,
+                           prevException: Option[Throwable]): Unit = {
+      if (elements.hasNext) {
+        val head = elements.next()
+        Try {
+          block(head)
+        } match {
+          case Success(_) =>
+            consumeOne(elements, block, prevException)
+          case Failure(e) =>
+            prevException.foreach(e.addSuppressed)
+            consumeOne(elements, _.close(), Some(e))
         }
-      }
-      if (freeException != null) {
-        // an exception happened while we were trying to safely free
-        // resources, throw the exception to alert the caller
-        throw freeException
+      } else {
+        prevException.foreach(e => throw e)
       }
     }
   }
@@ -144,11 +131,14 @@ object RapidsPluginImplicits {
     def safeClose(e: Throwable = null): Unit = if (in != null) {
       in.toSeq.safeClose(e)
     }
-  }
 
-  implicit class RapidsBufferArray[A <: RapidsBuffer](val in: Array[A]) {
-    def safeFree(e: Throwable = null): Unit = if (in != null) {
-      in.toSeq.safeFree(e)
+    /**
+     * See [[AutoCloseableSeq.safeConsume]] for more details.
+     *
+     * @param block Consume an element.
+     */
+    def safeConsume(block: A => Unit): Unit = {
+      in.toSeq.safeConsume(block)
     }
   }
 

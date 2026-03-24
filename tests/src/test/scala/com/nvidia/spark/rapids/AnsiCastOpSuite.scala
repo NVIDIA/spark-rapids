@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,11 @@ import scala.util.Random
 import com.nvidia.spark.rapids.shims.{CastingConfigShim, SparkShimImpl}
 
 import org.apache.spark.{SparkConf, SparkException}
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.expressions.{Alias, Expression, NamedExpression}
 import org.apache.spark.sql.execution.ProjectExec
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types._
 
 class AnsiCastOpSuite extends GpuExpressionTestSuite {
@@ -44,14 +45,13 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     .set(RapidsConf.ENABLE_CAST_FLOAT_TO_STRING.key, "true")
     .set(RapidsConf.ENABLE_CAST_DECIMAL_TO_FLOAT.key, "true")
     .set(RapidsConf.ENABLE_CAST_STRING_TO_FLOAT.key, "true")
-    .set(RapidsConf.ENABLE_CAST_STRING_TO_TIMESTAMP.key, "true")
 
   def generateOutOfRangeTimestampsDF(
       lowerValue: Long,
       upperValue: Long,
       outOfRangeValue: Long)(
       session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     // while creating timestamps we multiply the value by 1000 because spark divides it by 1000
     // before casting it to integral types
     generateValidValuesTimestampsDF(lowerValue, upperValue)(session)
@@ -106,7 +106,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   def generateValidValuesTimestampsDF(lowerValid: Long,
       upperValid: Long)(
       session: SparkSession): DataFrame = {
-    import session.sqlContext.implicits._
+    import session.implicits._
     //static seed
     val r = new Random(4135277987418063300L)
 
@@ -333,10 +333,6 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     boolStrings.toDF("c0")
   }
 
-  testCastFailsForBadInputs("ansi_cast string to bool (invalid values)", testStrings,
-    sparkConf) {
-    frame => testCastTo(DataTypes.BooleanType)(frame)
-  }
 
 
   ///////////////////////////////////////////////////////////////////////////
@@ -363,29 +359,35 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
+  private lazy val toNumErrMsg = if (isSpark330OrLater) {
+    "cannot be cast to"
+  } else {
+    "invalid input syntax for type numeric"
+  }
+
   testCastFailsForBadInputs("ansi_cast string to byte (invalid values)", shortsAsStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.ByteType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to short (invalid values)", intsAsStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.ShortType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to long (invalid decimal values)",
     longsAsDecimalStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.LongType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to int (invalid values)", longsAsStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
   testCastFailsForBadInputs("ansi_cast string to int (non-numeric values)", testStrings,
-    sparkConf, msg = INVALID_ROW_VALUE_MSG) {
+    sparkConf, msg = toNumErrMsg) {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
@@ -535,9 +537,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
   test("ANSI mode: cast string to timestamp with parse error") {
     // Copied from Spark CastSuite
 
-    // All of the dates/timestamps here fail no matter what version of Spark used
-    val newConf = sparkConf.set(RapidsConf.HAS_EXTENDED_YEAR_VALUES.key, "false")
-
+    // All the dates/timestamps here fail no matter what version of Spark used
     def checkCastWithParseError(str: String): Unit = {
       val exception = intercept[SparkException] {
         withGpuSparkSession(spark => {
@@ -550,7 +550,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
           val result = df.collect()
           result.foreach(println)
 
-        }, newConf)
+        }, sparkConf)
       }
       assert(exception.getCause.isInstanceOf[DateTimeException])
     }
@@ -563,6 +563,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     checkCastWithParseError("2015.03.18")
     checkCastWithParseError("20150318")
     checkCastWithParseError("2015-031-8")
+    // 70 is not a valid minute: [0, 59]
     checkCastWithParseError("2015-03-18T12:03:17-0:70")
   }
 

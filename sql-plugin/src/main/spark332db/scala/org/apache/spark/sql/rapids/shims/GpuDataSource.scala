@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,20 +20,37 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids
 
+import com.nvidia.spark.rapids.shims.LogicalPlanShims
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.sql._
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable}
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.{CalendarIntervalType, StructType}
 
@@ -79,9 +96,7 @@ case class GpuDataSource(
     PartitioningUtils.validatePartitionColumn(data.schema, partitionColumns, caseSensitive)
 
     val fileIndex = catalogTable.map(_.identifier).map { tableIdent =>
-      sparkSession.table(tableIdent).queryExecution.analyzed.collect {
-        case LogicalRelation(t: HadoopFsRelation, _, _, _) => t.location
-      }.head
+      LogicalPlanShims.getLocations(sparkSession.table(tableIdent).queryExecution.analyzed).head
     }
 
     // For partitioned relation r, r.schema's column ordering can be different from the column
@@ -118,14 +133,16 @@ case class GpuDataSource(
       data: LogicalPlan,
       outputColumnNames: Seq[String]): BaseRelation = {
 
-    val outputColumns = DataWritingCommand.logicalPlanOutputWithNames(data, outputColumnNames)
-    if (outputColumns.map(_.dataType).exists(_.isInstanceOf[CalendarIntervalType])) {
-      throw QueryCompilationErrors.cannotSaveIntervalIntoExternalStorageError()
-    }
-
     val format = originalProvidingInstance()
     if (!format.isInstanceOf[FileFormat]) {
       throw new IllegalArgumentException(s"Original provider does not extend FileFormat: $format")
+    }
+
+    val outputColumns = DataWritingCommand.logicalPlanOutputWithNames(data, outputColumnNames)
+    outputColumns.toStructType.foreach { field =>
+      if (field.dataType.isInstanceOf[CalendarIntervalType]) {
+        throw QueryCompilationErrors.dataTypeUnsupportedByDataSourceError(format.toString, field)
+      }
     }
 
     val cmd = planForWritingFileFormat(format.asInstanceOf[FileFormat], mode, data)

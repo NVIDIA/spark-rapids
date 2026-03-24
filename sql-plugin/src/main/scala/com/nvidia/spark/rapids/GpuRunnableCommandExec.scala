@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,8 @@ import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.{SparkSession => GpuSparkSession}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
@@ -39,16 +40,16 @@ import org.apache.spark.util.SerializableConfiguration
  * An extension of `RunnableCommand` that allows columnar execution.
  */
 trait GpuRunnableCommand extends RunnableCommand with ShimUnaryCommand {
-  lazy val basicMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.basicMetrics
-  lazy val taskMetrics: Map[String, SQLMetric] = GpuWriteJobStatsTracker.taskMetrics
+  lazy val basicMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.basicMetrics
+  lazy val taskMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.taskMetrics
 
-  override lazy val metrics: Map[String, SQLMetric] = basicMetrics ++ taskMetrics
+  override lazy val metrics: Map[String, SQLMetric] = GpuMetric.unwrap(basicMetrics ++ taskMetrics)
 
   override final def run(sparkSession: SparkSession): Seq[Row] =
     throw new UnsupportedOperationException(
       s"${getClass.getCanonicalName} does not support row-based execution")
 
-  def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch]
+  def runColumnar(sparkSession: GpuSparkSession, child: SparkPlan): Seq[ColumnarBatch]
 
   def gpuWriteJobStatsTracker(
       hadoopConf: Configuration): GpuWriteJobStatsTracker = {
@@ -82,10 +83,9 @@ object GpuRunnableCommand {
       if (fs.exists(filePath) &&
           fs.getFileStatus(filePath).isDirectory &&
           fs.listStatus(filePath).length != 0) {
-        TrampolineUtil.throwAnalysisException(
-          s"CREATE-TABLE-AS-SELECT cannot create table with location to a non-empty directory " +
-              s"${tablePath} . To allow overwriting the existing non-empty directory, " +
-              s"set '$allowNonEmptyLocationInCTASKey' to true.")
+        throw RapidsErrorUtils.
+          createTableAsSelectWithNonEmptyDirectoryError(tablePath.toString,
+            allowNonEmptyLocationInCTASKey)
       }
     }
   }
@@ -124,7 +124,7 @@ case class GpuRunnableCommandExec(cmd: GpuRunnableCommand, child: SparkPlan)
   override def executeCollect(): Array[InternalRow] = throw new UnsupportedOperationException(
     s"${getClass.getCanonicalName} does not support row-based execution")
 
-  override def executeToIterator: Iterator[InternalRow] = throw new UnsupportedOperationException(
+  override def executeToIterator(): Iterator[InternalRow] = throw new UnsupportedOperationException(
     s"${getClass.getCanonicalName} does not support row-based execution")
 
   override def executeTake(limit: Int): Array[InternalRow] =

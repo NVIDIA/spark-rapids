@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +21,10 @@ import java.lang.management.ManagementFactory
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{Cuda, Rmm, RmmEventHandler}
+import com.nvidia.spark.rapids.spill.SpillableDeviceStore
 import com.sun.management.HotSpotDiagnosticMXBean
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
  * RMM event handler to trigger spilling from the device memory store.
@@ -34,8 +34,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
  *                            depleting the device store
  */
 class DeviceMemoryEventHandler(
-    catalog: RapidsBufferCatalog,
-    store: RapidsDeviceMemoryStore,
+    store: SpillableDeviceStore,
     oomDumpDir: Option[String],
     maxFailedOOMRetries: Int) extends RmmEventHandler with Logging {
 
@@ -92,8 +91,8 @@ class DeviceMemoryEventHandler(
      * from cuDF. If we succeed, cuDF resets `retryCount`, and so the new count sent to us
      * must be <= than what we saw last, so we can reset our tracking.
      */
-    def resetIfNeeded(retryCount: Int, storeSpillableSize: Long): Unit = {
-      if (storeSpillableSize != 0 || retryCount <= retryCountLastSynced) {
+    def resetIfNeeded(retryCount: Int, couldSpill: Boolean): Unit = {
+      if (couldSpill || retryCount <= retryCountLastSynced) {
         reset()
       }
     }
@@ -114,9 +113,6 @@ class DeviceMemoryEventHandler(
       s"onAllocFailure invoked with invalid retryCount $retryCount")
 
     try {
-      val storeSize = store.currentSize
-      val storeSpillableSize = store.currentSpillableSize
-
       val attemptMsg = if (retryCount > 0) {
         s"Attempt ${retryCount}. "
       } else {
@@ -124,12 +120,13 @@ class DeviceMemoryEventHandler(
       }
 
       val retryState = oomRetryState.get()
-      retryState.resetIfNeeded(retryCount, storeSpillableSize)
 
-      logInfo(s"Device allocation of $allocSize bytes failed, device store has " +
-        s"$storeSize total and $storeSpillableSize spillable bytes. $attemptMsg" +
-        s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes. ")
-      if (storeSpillableSize == 0) {
+      val amountSpilled = store.spill(allocSize)
+      retryState.resetIfNeeded(retryCount, amountSpilled > 0)
+      logInfo(s"Device allocation of $allocSize bytes failed. " +
+        s"Device store spilled $amountSpilled bytes. $attemptMsg" +
+        s"Total RMM allocated is ${Rmm.getTotalBytesAllocated} bytes.")
+      if (amountSpilled == 0) {
         if (retryState.shouldTrySynchronizing(retryCount)) {
           Cuda.deviceSynchronize()
           logWarning(s"[RETRY ${retryState.getRetriesSoFar}] " +
@@ -149,13 +146,6 @@ class DeviceMemoryEventHandler(
           false
         }
       } else {
-        val targetSize = Math.max(storeSpillableSize - allocSize, 0)
-        logDebug(s"Targeting device store size of $targetSize bytes")
-        val maybeAmountSpilled = catalog.synchronousSpill(store, targetSize, Cuda.DEFAULT_STREAM)
-        maybeAmountSpilled.foreach { amountSpilled =>
-          logInfo(s"Spilled $amountSpilled bytes from the device store")
-          TrampolineUtil.incTaskMetricsMemoryBytesSpilled(amountSpilled)
-        }
         true
       }
     } catch {
@@ -170,6 +160,14 @@ class DeviceMemoryEventHandler(
   override def getDeallocThresholds: Array[Long] = null
 
   override def onAllocThreshold(totalAllocated: Long): Unit = {
+  }
+
+  /**
+   * Called after every device memory allocation when RMM debug mode is enabled.
+   * Used for retry coverage tracking.
+   */
+  override def onAllocated(size: Long): Unit = {
+    AllocationRetryCoverageTracker.checkDeviceAllocation()
   }
 
   override def onDeallocThreshold(totalAllocated: Long): Unit = {

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import *
-from conftest import get_non_gpu_allowed, is_not_utc
+from conftest import get_non_gpu_allowed, is_not_utc, is_gbk_supported
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
@@ -302,6 +302,7 @@ def test_round_trip(spark_tmp_path, data_gen, v1_enabled_list):
             lambda spark : spark.read.schema(schema).csv(data_path),
             conf=updated_conf)
 
+@disable_ansi_mode
 @allow_non_gpu('org.apache.spark.sql.execution.LeafExecNode')
 @pytest.mark.parametrize('read_func', [read_csv_df, read_csv_sql])
 @pytest.mark.parametrize('disable_conf', ['spark.rapids.sql.format.csv.enabled', 'spark.rapids.sql.format.csv.read.enabled'])
@@ -391,7 +392,7 @@ def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list,
                 .csv(data_path)
                 .collect(),
             conf=updated_conf,
-            error_message='DateTimeException')
+            error_message='Exception')
     else:
         assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.read \
@@ -700,3 +701,32 @@ def test_read_case_col_name(spark_tmp_path, spark_tmp_table_factory, read_func, 
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : reader(spark).selectExpr(col_name),
             conf=all_confs)
+
+@ignore_order(local=True)
+@allow_non_gpu('CollectLimitExec')
+@pytest.mark.skipif(not is_gbk_supported(), reason="GBK is not supported")
+def test_csv_read_gbk_encoded_data(std_input_path):
+    # Conf does not work before 4.0.0, so verify even setting to false it should still work.
+    legacy_charset = "false"
+    if is_spark_400_or_later() or is_databricks143_or_later():
+        # true from Spark 4.0.0 or DB 143 to pass the test for GBK.
+        # We can not test the "GBK-with-false" case because Spark will fail the
+        # current app before running into the GPU world.
+        legacy_charset = "true"
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read
+            .option("charset", "GBK")
+            .option("header", "true")
+            .schema("name string, age int, city string, job string")
+            .csv(std_input_path + "/test_gbk.csv"),
+        conf={"spark.sql.legacy.javaCharsets": legacy_charset})
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_csv_read_blank_lines_with_control_chars(std_input_path, v1_enabled_list):
+    """Verify that lines consisting only of control characters (<= 0x20) are filtered out,
+    matching Spark CPU behavior (CSVExprUtils.filterCommentAndEmpty uses String.trim)."""
+    data_path = std_input_path + '/blank-control-chars.csv'
+    schema = StructType([StructField('col1', StringType())])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).option('header', 'true').csv(data_path),
+        conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})

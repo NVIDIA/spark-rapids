@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,11 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{GpuColumnVector, RmmRapidsRetryIterator}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.{CloseableBufferedIterator, GpuColumnVector, GpuMetric, GpuSemaphore, NvtxIdWithMetrics, NvtxRegistry, RmmRapidsRetryIterator}
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 
-import org.apache.spark.SparkContext
+import org.apache.spark.{SparkContext, TaskContext}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.StructType
@@ -46,8 +45,9 @@ object GpuBroadcastHelper {
     broadcastRelation.value match {
       case broadcastBatch: SerializeConcatHostBuffersDeserializeBatch =>
         RmmRapidsRetryIterator.withRetryNoSplit {
-          withResource(new NvtxRange("getBroadcastBatch", NvtxColor.YELLOW)) { _ =>
-            broadcastBatch.batch.getColumnarBatch()
+          NvtxRegistry.GET_BROADCAST_BATCH {
+            val spillable = broadcastBatch.batch
+            spillable.getColumnarBatch()
           }
         }
       case v if SparkShimImpl.isEmptyRelation(v) =>
@@ -93,6 +93,46 @@ object GpuBroadcastHelper {
         }
       case v if SparkShimImpl.isEmptyRelation(v) => sc.emptyRDD
       case t => throw new IllegalStateException(s"Invalid broadcast batch received $t")
+    }
+  }
+
+  /**
+   * Gets the ColumnarBatch for the build side and the stream iterator by
+   * acquiring the GPU only after first stream batch has been streamed to GPU.
+   *
+   * `broadcastRelation` represents the broadcasted build side table on the host. The code
+   * in this function peaks at the stream side, after having wrapped it in a closeable
+   * buffered iterator, to cause the stream side to produce the first batch. This delays
+   * acquiring the semaphore until after the stream side performs all the steps needed
+   * (including IO) to produce that first batch. Once the first stream batch is produced,
+   * the build side is materialized to the GPU (while holding the semaphore).
+   */
+  def getBroadcastBuiltBatchAndStreamIter(
+      broadcastRelation: Broadcast[Any],
+      buildSchema: StructType,
+      streamIter: Iterator[ColumnarBatch],
+      buildTime: Option[GpuMetric] = None,
+      buildDataSize: Option[GpuMetric] = None): (ColumnarBatch, Iterator[ColumnarBatch]) = {
+
+    val bufferedStreamIter = new CloseableBufferedIterator(streamIter)
+    closeOnExcept(bufferedStreamIter) { _ =>
+      // Extract the build-side row count helping to trigger the broadcast materialization
+      // on the host before acquiring the semaphore.
+      broadcastRelation.value
+
+      NvtxRegistry.FIRST_STREAM_BATCH {
+        if (bufferedStreamIter.hasNext) {
+          bufferedStreamIter.head
+        } else {
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        }
+      }
+
+      val batch = NvtxIdWithMetrics(NvtxRegistry.BUILD_JOIN_TABLE, buildTime.toSeq: _*) {
+        GpuBroadcastHelper.getBroadcastBatch(broadcastRelation, buildSchema)
+      }
+      buildDataSize.foreach(_.add(GpuColumnVector.getTotalDeviceMemoryUsed(batch)))
+      (batch, bufferedStreamIter)
     }
   }
 }

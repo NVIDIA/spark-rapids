@@ -11,6 +11,7 @@
 .generated-mima*
 .idea_modules/
 .idea/
+.mvn/
 .metals/
 .project
 .pydevproject
@@ -35,3 +36,5 @@ scalastyle-output.xml
 scalastyle.txt
 target/
 cufile.log
+cudf_log.txt
+build/*.class

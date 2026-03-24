@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, NVIDIA CORPORATION.
+# Copyright (c) 2022-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_co
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_before_spark_350, is_jvm_charset_utf8, is_databricks_runtime, spark_version
+from spark_session import is_before_spark_320, is_before_spark_350, is_before_spark_400, is_jvm_charset_utf8, is_databricks_runtime, spark_version, with_cpu_session, with_gpu_session
 
 if not is_jvm_charset_utf8():
     pytestmark = [pytest.mark.regexp, pytest.mark.skip(reason=str("Current locale doesn't support UTF-8, regexp support is disabled"))]
@@ -444,6 +444,39 @@ def test_regexp_like():
                 'regexp_like(a, "a[bc]d")'),
         conf=_regexp_conf)
 
+def test_rlike_rewrite_optimization():
+    gen = mk_str_gen('[ab\n]{3,6}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a',
+                'rlike(a, "(abb)(.*)")',
+                'rlike(a, "abb(.*)")',
+                'rlike(a, "(.*)(abb)(.*)")',
+                'rlike(a, "^(abb)(.*)")',
+                'rlike(a, "^abb")',
+                'rlike(a, "^.*(aaa)")',
+                'rlike(a, "\\\\A(abb)(.*)")',
+                'rlike(a, "\\\\Aabb")',
+                'rlike(a, "^(abb)\\\\Z")',
+                'rlike(a, "^abb$")',
+                'rlike(a, "ab(.*)cd")',
+                'rlike(a, "^^abb")',
+                'rlike(a, "(.*)(.*)abb")',
+                'rlike(a, "(.*).*abb.*(.*).*")',
+                'rlike(a, ".*^abb$")',
+                'rlike(a, "ab[a-c]{3}")',
+                'rlike(a, "a[a-c]{1,3}")',
+                'rlike(a, "a[a-c]{1,}")',
+                'rlike(a, "a[a-c]+")',
+                'rlike(a, "(ab)([a-c]{1})")',
+                'rlike(a, "(ab[a-c]{1})")',
+                'rlike(a, "(aaa|bbb|ccc)")',
+                'rlike(a, ".*.*(aaa|bbb).*.*")',
+                'rlike(a, "^.*(aaa|bbb|ccc)")',
+                'rlike(a, "aaa|bbb")',
+                'rlike(a, "aaa|(bbb|ccc)")'),
+        conf=_regexp_conf)
+
 def test_regexp_replace_character_set_negated():
     gen = mk_str_gen('[abcd]{0,3}[\r\n]{0,2}[abcd]{0,3}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -563,6 +596,7 @@ def test_character_classes():
             ),
         conf=_regexp_conf)
 
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10641")
 def test_regexp_choice():
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
@@ -761,6 +795,15 @@ def test_rlike_fallback_empty_group():
     assert_gpu_fallback_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'a rlike "a()?"'),
+            'RLike',
+        conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RLike')
+def test_rlike_fallback_empty_pattern():
+    gen = mk_str_gen('[abcd]{1,3}')
+    assert_gpu_fallback_collect(
+            lambda spark: unary_op_df(spark, gen).selectExpr(
+                'a rlike ""'),
             'RLike',
         conf=_regexp_conf)
 
@@ -969,14 +1012,16 @@ def test_regexp_replace_simple(regexp_enabled):
             'REGEXP_REPLACE(a, "ab", "PROD")',
             'REGEXP_REPLACE(a, "ae", "PROD")',
             'REGEXP_REPLACE(a, "bc", "PROD")',
-            'REGEXP_REPLACE(a, "fa", "PROD")'
+            'REGEXP_REPLACE(a, "fa", "PROD")',
+            'REGEXP_REPLACE(a, "a\n", "PROD")',
+            'REGEXP_REPLACE(a, "\n", "PROD")'
         ),
         conf=conf
     )
 
 @pytest.mark.parametrize("regexp_enabled", ['true', 'false'])
 def test_regexp_replace_multi_optimization(regexp_enabled):
-    gen = mk_str_gen('[abcdef]{0,2}')
+    gen = mk_str_gen('[abcdef\t\n\a]{0,3}')
 
     conf = { 'spark.rapids.sql.regexp.enabled': regexp_enabled }
 
@@ -989,7 +1034,9 @@ def test_regexp_replace_multi_optimization(regexp_enabled):
             'REGEXP_REPLACE(a, "aa|bb|cc|dd", "PROD")',
             'REGEXP_REPLACE(a, "(aa|bb)|(cc|dd)", "PROD")',
             'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee", "PROD")',
-            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")'
+            'REGEXP_REPLACE(a, "aa|bb|cc|dd|ee|ff", "PROD")',
+            'REGEXP_REPLACE(a, "a\n|b\a|c\t", "PROD")',
+            'REGEXP_REPLACE(a, "a\ta|b\nb", "PROD")'
         ),
         conf=conf
     )
@@ -1054,6 +1101,34 @@ def test_regexp_memory_ok():
             'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
         }
     )
+
+def test_illegal_regexp_exception():
+        gen = mk_str_gen('[abcdef]{0,5}')
+
+        def run_test(spark):
+            return unary_op_df(spark, gen).selectExpr(
+                'REGEXP_REPLACE(a, "a{", "bb")',
+                'REGEXP_REPLACE(a, "\\}\\,\\{", "}>>{")'
+            ).collect()
+
+        # Test CPU and GPU separately with appropriate error messages
+        with pytest.raises(Exception) as excinfo:
+            with_cpu_session(run_test, conf=_regexp_conf)
+        cpu_error = str(excinfo.value)
+
+        with pytest.raises(Exception) as excinfo:
+            with_gpu_session(run_test, conf=_regexp_conf)
+        gpu_error = str(excinfo.value)
+
+        # Check appropriate error patterns for each,
+        # Spark 4.0 uses different error message format
+        if is_before_spark_400():
+            assert "Illegal" in cpu_error and "Illegal" in gpu_error
+        else:
+            # TODO: We should throw same error message for both CPU and GPU.
+            # issue: https://github.com/NVIDIA/spark-rapids/issues/6012
+            assert "INVALID_PARAMETER_VALUE.PATTERN" in cpu_error
+            assert "Illegal" in gpu_error # GPU still uses old format
 
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids/issues/9731')
 def test_re_replace_all():

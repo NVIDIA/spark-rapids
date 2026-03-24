@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,10 +27,9 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.util.MapData
 import org.apache.spark.sql.types._
 
-class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite
-    with RmmSparkRetrySuiteBase {
+class InternalColumnarRDDConverterSuite extends RmmSparkRetrySuiteBase {
 
-  def compareMapAndMapDate[K,V](map: collection.Map[K, V], mapData: MapData): Assertion = {
+  def compareMapAndMapDate[K, V](map: collection.Map[K, V], mapData: MapData): Assertion = {
     assert(map.size == mapData.numElements())
     val outputMap = mutable.Map[Any, Any]()
     // Only String now, TODO: support other data types in Map
@@ -66,12 +65,12 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite
   }
 
   test("transform boolean, byte, short, int, float, long, double, date, timestamp data" +
-      " back and forth between Row and Columnar") {
+    " back and forth between Row and Columnar") {
     val schema = StructType(Seq(
       StructField("Boolean", BooleanType),
       StructField("BinaryNotNull", BooleanType, nullable = false),
       StructField("Byte", ByteType),
-      StructField("ByteNotNull",ByteType, nullable = false),
+      StructField("ByteNotNull", ByteType, nullable = false),
       StructField("Short", ShortType),
       StructField("ShortNotNull", ShortType, nullable = false),
       StructField("Int", IntegerType),
@@ -86,8 +85,8 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite
       StructField("DateNotNull", DateType, nullable = false),
       StructField("Timestamp", TimestampType),
       StructField("TimestampNotNull", TimestampType, nullable = false),
-      StructField("Decimal", DecimalType(20,10)),
-      StructField("DecimalNotNull", DecimalType(20,10), nullable = false)
+      StructField("Decimal", DecimalType(20, 10)),
+      StructField("DecimalNotNull", DecimalType(20, 10), nullable = false)
     ))
     val numRows = 100
     val rows = GpuBatchUtilsSuite.createExternalRows(schema, numRows)
@@ -113,7 +112,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite
             } else {
               if (f.dataType.isInstanceOf[DecimalType]) {
                 assert(input.get(i) == output.get(i, f.dataType)
-                    .asInstanceOf[Decimal].toJavaBigDecimal)
+                  .asInstanceOf[Decimal].toJavaBigDecimal)
               } else {
                 assert(input.get(i) == output.get(i, f.dataType))
               }
@@ -272,7 +271,7 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite
               assert(outputStructRow.isNullAt(2))
             } else {
               assert(inputStructRow.getSeq(2) sameElements outputStructRow.getArray(2)
-                  .toDoubleArray())
+                .toDoubleArray())
             }
           }
         }
@@ -280,7 +279,11 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite
       }
     }
   }
+}
 
+// these tests are separated out because they are really just spark tests, and they should skip
+// the initialization done in `RmmSparkRetrySuiteBase`
+class InternalColumnarRDDConverterSparkSessionSuite extends SparkQueryCompareTestSuite {
   test("InternalColumnarRddConverter should extractRDDTable RDD[ColumnarBatch]") {
     withGpuSparkSession(spark => {
       val path = TestResourceFinder.getResourcePath("disorder-read-schema.parquet")
@@ -308,5 +311,4 @@ class InternalColumnarRDDConverterSuite extends SparkQueryCompareTestSuite
       assert(result.forall(_ == true))
     }, new SparkConf().set("spark.rapids.sql.test.allowedNonGpu", "DeserializeToObjectExec"))
   }
-
 }

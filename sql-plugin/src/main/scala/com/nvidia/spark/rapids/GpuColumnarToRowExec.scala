@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,14 @@ package com.nvidia.spark.rapids
 import scala.annotation.tailrec
 import scala.collection.mutable.Queue
 
-import ai.rapids.cudf.{Cuda, HostColumnVector, NvtxColor, Table}
+import ai.rapids.cudf.{HostColumnVector, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RowConversion
-import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
+import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, ShimUnaryExecNode}
 
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
@@ -51,7 +52,7 @@ class AcceleratedColumnarToRowIterator(
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
   // This only works on fixedWidth types for now...
-  assert(schema.forall(attr => UnsafeRow.isFixedLength(attr.dataType)))
+  assertInTests(schema.forall(attr => UnsafeRow.isFixedLength(attr.dataType)))
   // We want to remap the rows to improve packing.  This means that they should be sorted by
   // the largest alignment to the smallest.
 
@@ -115,7 +116,7 @@ class AcceleratedColumnarToRowIterator(
     // but it is more efficient.
     numOutputRows += scb.numRows()
     if (scb.numRows() > 0) {
-      withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
+      NvtxIdWithMetrics(NvtxRegistry.COLUMNAR_TO_ROW_BATCH, opTime) {
         val it = RmmRapidsRetryIterator.withRetry(scb, splitSpillableInHalfByRows) { attempt =>
           withResource(attempt.getColumnarBatch()) { attemptCb =>
             withResource(rearrangeRows(attemptCb)) { table =>
@@ -133,7 +134,8 @@ class AcceleratedColumnarToRowIterator(
             }
           }
         }
-        assert(it.hasNext, "Got an unexpected empty iterator after setting up batch with retry")
+        assertInTests(
+          it.hasNext, "Got an unexpected empty iterator after setting up batch with retry")
         it.foreach { rowsCvList =>
           withResource(rowsCvList) { _ =>
             rowsCvList.foreach { rowsCv =>
@@ -172,7 +174,7 @@ class AcceleratedColumnarToRowIterator(
   }
 
   private def fetchNextBatch(): Option[SpillableColumnarBatch] = {
-    withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE, streamTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.COLUMNAR_TO_ROW_FETCH, streamTime) {
       if (batches.hasNext) {
         // Make it spillable once getting a columnar batch.
         val spillBatch = closeOnExcept(batches.next()) { cb =>
@@ -261,7 +263,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
         val sDevCb = SpillableColumnarBatch(devCb, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
         cb = withRetryNoSplit(sDevCb) { _ =>
           withResource(sDevCb.getColumnarBatch()) { devCb =>
-            withResource(new NvtxWithMetrics("ColumnarToRow: batch", NvtxColor.RED, opTime)) { _ =>
+            NvtxIdWithMetrics(NvtxRegistry.COLUMNAR_TO_ROW_BATCH, opTime) {
               new ColumnarBatch(GpuColumnVector.extractColumns(devCb).safeMap(toHost),
                 devCb.numRows())
             }
@@ -284,7 +286,7 @@ class ColumnarToRowIterator(batches: Iterator[ColumnarBatch],
   }
 
   private def fetchNextBatch(): Option[ColumnarBatch] = {
-    withResource(new NvtxWithMetrics("ColumnarToRow: fetch", NvtxColor.BLUE, streamTime)) { _ =>
+    NvtxIdWithMetrics(NvtxRegistry.COLUMNAR_TO_ROW_FETCH, streamTime) {
       while (batches.hasNext) {
         numInputBatches += 1
         val devCb = batches.next()
@@ -349,27 +351,30 @@ case class GpuColumnarToRowExec(
   // Override the original metrics to remove NUM_OUTPUT_BATCHES, which makes no sense.
   override lazy val allMetrics: Map[String, GpuMetric] = Map(
     NUM_OUTPUT_ROWS -> createMetric(outputRowsLevel, DESCRIPTION_NUM_OUTPUT_ROWS),
-    OP_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME),
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
+    OP_TIME_NEW -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW),
     STREAM_TIME -> createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_STREAM_TIME),
     NUM_INPUT_BATCHES -> createMetric(DEBUG_LEVEL, DESCRIPTION_NUM_INPUT_BATCHES))
 
   override def doExecute(): RDD[InternalRow] = {
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numInputBatches = gpuLongMetric(NUM_INPUT_BATCHES)
-    val opTime = gpuLongMetric(OP_TIME)
+    val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val streamTime = gpuLongMetric(STREAM_TIME)
 
     val f = GpuColumnarToRowExec.makeIteratorFunc(child.output, numOutputRows, numInputBatches,
       opTime, streamTime)
 
     val cdata = child.executeColumnar()
-    if (exportColumnarRdd) {
+    val rdd = if (exportColumnarRdd) {
       // If we are exporting columnar rdd we need an easy way for the code that walks the
       // RDDs to know where the columnar to row transition is happening.
       GpuColumnToRowMapPartitionsRDD.mapPartitions(cdata, f)
     } else {
       cdata.mapPartitions(f)
     }
+
+    rdd
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
@@ -389,7 +394,9 @@ object GpuColumnarToRowExec {
     // Check if the current CUDA device architecture exceeds Pascal.
     // i.e. CUDA compute capability > 6.x.
     // Reference:  https://developer.nvidia.com/cuda-gpus
-    Cuda.getComputeCapabilityMajor > 6
+    //Cuda.getComputeCapabilityMajor > 6
+    // https://github.com/NVIDIA/spark-rapids/issues/10062, at least until we can debug and fix it.
+    false
   }
 
   def makeIteratorFunc(

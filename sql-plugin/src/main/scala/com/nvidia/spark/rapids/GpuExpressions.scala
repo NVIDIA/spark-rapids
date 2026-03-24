@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.shims.{ShimBinaryExpression, ShimExpression, Shim
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
-import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.{DataType, StringType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -52,6 +52,20 @@ object GpuExpressionsUtils {
         "implemented and should have been disabled")
   }
 
+  case class NullVecKey(d: DataType, n: Int)
+
+  // accessOrder = true makes it LRU
+  class NullVecCache
+    extends java.util.LinkedHashMap[NullVecKey, GpuColumnVector](100, 0.75f, true) {
+
+    override def clear(): Unit = {
+      super.values().forEach(_.close())
+      super.clear()
+    }
+  }
+
+  val cachedNullVectors = ThreadLocal.withInitial[NullVecCache](() => new NullVecCache)
+
   /**
    * Tries to resolve a `GpuColumnVector` from a Scala `Any`.
    *
@@ -73,7 +87,19 @@ object GpuExpressionsUtils {
   def resolveColumnVector(any: Any, numRows: Int): GpuColumnVector = {
     withResourceIfAllowed(any) {
       case c: GpuColumnVector => c.incRefCount()
-      case s: GpuScalar => GpuColumnVector.from(s, numRows, s.dataType)
+      case s: GpuScalar =>
+        if (!s.isValid) {
+          val key = NullVecKey(s.dataType, numRows)
+          if (!cachedNullVectors.get.containsKey(key)) {
+            cachedNullVectors.get.put(key,
+              GpuColumnVector.from(s, numRows))
+          }
+
+          val ret = cachedNullVectors.get.get(key)
+          ret.incRefCount()
+        } else {
+          GpuColumnVector.from(s, numRows)
+        }
       case other =>
         throw new IllegalArgumentException(s"Cannot resolve a ColumnVector from the value:" +
           s" $other. Please convert it to a GpuScalar or a GpuColumnVector before returning.")
@@ -182,7 +208,7 @@ trait GpuExpression extends Expression {
    * If this returns true then tiered project will stop looking to combine expressions when
    * this is seen.
    */
-  def disableTieredProjectCombine: Boolean = hasSideEffects
+  def disableTieredProjectCombine: Boolean = false
 
   /**
    * Whether an expression itself is non-deterministic when its "deterministic" is false,
@@ -399,7 +425,7 @@ trait CudfBinaryExpression extends GpuBinaryExpression {
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }

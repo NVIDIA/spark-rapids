@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,19 @@
 
 package com.nvidia.spark.rapids
 
-import java.util.concurrent.{ThreadFactory, TimeUnit}
+import java.util.concurrent.ThreadFactory
 
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
 import ai.rapids.cudf._
+import com.nvidia.spark.rapids.jni.DeviceAttr
+import com.nvidia.spark.rapids.jni.RmmSpark
+import com.nvidia.spark.rapids.spill.SpillFramework
 
-import org.apache.spark.{SparkEnv, TaskContext}
+import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
+import org.apache.spark.network.util.ByteUnit
 import org.apache.spark.resource.ResourceInformation
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuShuffleEnv
@@ -50,6 +54,10 @@ object GpuDeviceManager extends Logging {
    */
   def getNumCores: Int = numCores
 
+  private var memorySize = 0L
+
+  def getMemorySize: Long = memorySize
+
   // Memory resource used only for cudf::chunked_pack to allocate scratch space
   // during spill to host. This is done to set aside some memory for this operation
   // from the beginning of the job.
@@ -68,6 +76,30 @@ object GpuDeviceManager extends Logging {
    * Exposes the device id used while initializing the RMM pool
    */
   def getDeviceId(): Option[Int] = deviceId
+
+  // For testing purposes only - allows forcing integrated GPU behavior
+  private var forceIntegratedGpu: Option[Boolean] = None
+
+  /**
+   * For testing: force integrated GPU behavior regardless of actual hardware
+   */
+  def setForceIntegratedGpuForTesting(force: Boolean): Unit = {
+    forceIntegratedGpu = Some(force)
+  }
+
+  /**
+   * For testing: reset forced integrated GPU behavior
+   */
+  def resetForceIntegratedGpuForTesting(): Unit = {
+    forceIntegratedGpu = None
+  }
+
+  /**
+   * Check if we should treat the GPU as integrated (for testing or actual hardware)
+   */
+  private def isIntegratedGpu: Boolean = {
+    forceIntegratedGpu.getOrElse(DeviceAttr.isIntegratedGPU == 1)
+  }
 
   @volatile private var poolSizeLimit = 0L
 
@@ -169,24 +201,18 @@ object GpuDeviceManager extends Logging {
     chunkedPackMemoryResource = None
     poolSizeLimit = 0L
 
-    RapidsBufferCatalog.close()
+    SpillFramework.shutdown()
+
+    // If we close RMM resources in the shutdown hook in `MemoryCleaner`, will
+    // get segment fault, so close them here before shutdown hook starts.
+    // We assume all RMM resources should be closed at this point, or leaks occurs,
+    // because all Spark tasks/jobs are done at this point.
+    MemoryCleaner.cleanAllRmmBlockers()
+
+    RmmSpark.clearEventHandler()
+    Rmm.clearEventHandler()
     GpuShuffleEnv.shutdown()
-    // try to avoid segfault on RMM shutdown
-    val timeout = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
-    var isFirstTime = true
-    while (Rmm.getTotalBytesAllocated > 0 && System.nanoTime() < timeout) {
-      if (isFirstTime) {
-        logWarning("Waiting for outstanding RMM allocations to be released...")
-        isFirstTime = false
-      }
-      Thread.sleep(10)
-    }
-    if (System.nanoTime() >= timeout) {
-      val remaining = Rmm.getTotalBytesAllocated
-      if (remaining > 0) {
-        logWarning(s"Shutting down RMM even though there are outstanding allocations $remaining")
-      }
-    }
+
     Rmm.shutdown()
     singletonMemoryInitialized = Uninitialized
   }
@@ -216,18 +242,31 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def toMB(x: Long): Double = x / 1024 / 1024.0
+  private def toMiB(x: Long): Double = x / 1024 / 1024.0
 
-  private def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
+  /**
+   * Compute RMM pool size based on configuration and GPU memory info.
+   * Visible for testing.
+   */
+  def computeRmmPoolSize(conf: RapidsConf, info: CudaMemInfo): Long = {
     def truncateToAlignment(x: Long): Long = x & ~511L
+
+    // For integrated GPUs, we treat memory as shared between CPU and GPU
+    // The available GPU memory is physical_total * integratedGpuMemoryFraction
+    val availableGpuTotal = if (isIntegratedGpu) {
+      (info.total * conf.integratedGpuMemoryFraction).toLong
+    } else {
+      info.total
+    }
+    logInfo(s"availableGpuTotal: ${toMiB(availableGpuTotal)} MiB")
 
     // No checks when rmmExactAlloc is given. We are just going to go with the amount requested
     // with the proper alignment (which is a requirement for some allocators). This is because
     // it is for testing and we assume that the tests know what they are doing. If the conf becomes
     // public, then we need to do some more work.
     conf.rmmExactAlloc.map(truncateToAlignment).getOrElse {
-      val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * info.total).toLong)
-      val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * info.total).toLong)
+      val minAllocation = truncateToAlignment((conf.rmmAllocMinFraction * availableGpuTotal).toLong)
+      val maxAllocation = truncateToAlignment((conf.rmmAllocMaxFraction * availableGpuTotal).toLong)
       val reserveAmount =
         if (conf.isUCXShuffleManagerMode && conf.rmmPool.equalsIgnoreCase("ASYNC")) {
           // When using the async allocator, UCX calls `cudaMalloc` directly to allocate the
@@ -236,35 +275,43 @@ object GpuDeviceManager extends Logging {
         } else {
           conf.rmmAllocReserve
         }
+      val availableFree = Math.min(info.free, availableGpuTotal)
+      logInfo(s"availableGpuFree: ${toMiB(availableFree)} MiB")
       var poolAllocation = truncateToAlignment(
-        (conf.rmmAllocFraction * (info.free - reserveAmount)).toLong)
+        (conf.rmmAllocFraction * (availableFree - reserveAmount)).toLong)
+      val errorPhrase = "The pool allocation of " +
+        s"${toMiB(poolAllocation)} MiB (gpu.free: ${toMiB(availableFree)}," +
+        s"${RapidsConf.RMM_ALLOC_FRACTION}: (=${conf.rmmAllocFraction}," +
+        s"${RapidsConf.RMM_ALLOC_RESERVE}: ${reserveAmount} => " +
+        s"(gpu.free - reserve) * allocFraction = ${toMiB(poolAllocation)}) was "
       if (poolAllocation < minAllocation) {
-        throw new IllegalArgumentException(s"The pool allocation of " +
-            s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
-            s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was less than " +
-            s"the minimum allocation of ${toMB(minAllocation)} (calculated from " +
-            s"${RapidsConf.RMM_ALLOC_MIN_FRACTION} (=${conf.rmmAllocMinFraction}) " +
-            s"and ${toMB(info.total)} MB total memory)")
+        throw new IllegalArgumentException(errorPhrase +
+            s"less than allocation of ${toMiB(minAllocation)} MiB (gpu.total: " +
+            s"${toMiB(availableGpuTotal)} MiB, ${RapidsConf.RMM_ALLOC_MIN_FRACTION}: " +
+            s"${conf.rmmAllocMinFraction} => gpu.total *" +
+            s"minAllocFraction = ${toMiB(minAllocation)} MiB). Please ensure that the GPU has " +
+            s"enough free memory, or adjust configuration accordingly.")
       }
       if (maxAllocation < poolAllocation) {
-        throw new IllegalArgumentException(s"The pool allocation of " +
-            s"${toMB(poolAllocation)} MB (calculated from ${RapidsConf.RMM_ALLOC_FRACTION} " +
-            s"(=${conf.rmmAllocFraction}) and ${toMB(info.free)} MB free memory) was more than " +
-            s"the maximum allocation of ${toMB(maxAllocation)} (calculated from " +
-            s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocMaxFraction}) " +
-            s"and ${toMB(info.total)} MB total memory)")
+        throw new IllegalArgumentException(errorPhrase +
+            s"more than allocation of ${toMiB(maxAllocation)} MiB (gpu.total: " +
+            s"${toMiB(availableGpuTotal)} MiB, ${RapidsConf.RMM_ALLOC_MAX_FRACTION}: " +
+            s"${conf.rmmAllocMaxFraction} => gpu.total *" +
+            s"maxAllocFraction = ${toMiB(maxAllocation)} MiB). Please ensure that pool " +
+            s"allocation does not exceed maximum allocation and adjust configuration accordingly.")
       }
       if (reserveAmount >= maxAllocation) {
-        throw new IllegalArgumentException(s"RMM reserve memory (${toMB(reserveAmount)} MB) " +
-            s"larger than maximum pool size (${toMB(maxAllocation)} MB). Check the settings for " +
+        throw new IllegalArgumentException(s"RMM reserve memory (${toMiB(reserveAmount)} MB) " +
+            s"larger than maximum pool size (${toMiB(maxAllocation)} MB). Check the settings for " +
             s"${RapidsConf.RMM_ALLOC_MAX_FRACTION} (=${conf.rmmAllocFraction}) and " +
             s"${RapidsConf.RMM_ALLOC_RESERVE} (=$reserveAmount)")
       }
       val adjustedMaxAllocation = truncateToAlignment(maxAllocation - reserveAmount)
       if (poolAllocation > adjustedMaxAllocation) {
-        logWarning(s"RMM pool allocation (${toMB(poolAllocation)} MB) does not leave enough free " +
-            s"memory for reserve memory (${toMB(reserveAmount)} MB), lowering the pool size to " +
-            s"${toMB(adjustedMaxAllocation)} MB to accommodate the requested reserve amount.")
+        logWarning(s"RMM pool allocation (${toMiB(poolAllocation)} MB) does not leave enough " +
+          s"free memory for reserve memory (${toMiB(reserveAmount)} MB), lowering the pool " +
+          s"size to ${toMiB(adjustedMaxAllocation)} MB to " +
+          s"accommodate the requested reserve amount.")
         poolAllocation = adjustedMaxAllocation
       }
 
@@ -272,10 +319,83 @@ object GpuDeviceManager extends Logging {
     }
   }
 
-  private def initializeRmm(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
-    if (!Rmm.isInitialized) {
-      val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
+  private var memoryEventHandler: DeviceMemoryEventHandler = _
 
+  private def initializeSpillAndMemoryEvents(conf: RapidsConf): Unit = {
+    SpillFramework.initialize(conf)
+
+    memoryEventHandler = new DeviceMemoryEventHandler(
+      SpillFramework.stores.deviceStore,
+      conf.gpuOomDumpDir,
+      conf.gpuOomMaxRetries)
+
+    if (conf.sparkRmmStateEnable) {
+      val debugLoc = if (conf.sparkRmmDebugLocation.isEmpty) {
+        null
+      } else {
+        conf.sparkRmmDebugLocation
+      }
+      // Enable RMM debug mode if retry coverage tracking is enabled, to get onAllocated callbacks
+      val enableDebug = AllocationRetryCoverageTracker.ENABLED
+      RmmSpark.setEventHandler(memoryEventHandler, debugLoc, enableDebug)
+    } else {
+      logWarning("SparkRMM retry has been disabled")
+      Rmm.setEventHandler(memoryEventHandler)
+    }
+  }
+
+  /**
+   * Parse the rmm allocation mode from the config, and return it as an Int,
+   * see "RmmAllocationMode" for supported types.
+   * (Visible for tests)
+   */
+  def rmmModeFromConf(
+      conf: RapidsConf,
+      features: Option[ArrayBuffer[String]] = None): Int = {
+    // Old config warning
+    val oldPoolConfKey = "spark.rapids.memory.gpu.pooling.enabled"
+    if (conf.rapidsConfMap.containsKey(oldPoolConfKey)) {
+      logWarning(s"Found '$oldPoolConfKey' is being used, but it will be ignored " +
+        s"since it is completely dropped now.")
+    }
+
+    var init = conf.rmmPool match {
+      case c if "default".equalsIgnoreCase(c) =>
+        if (Cuda.isPtdsEnabled) {
+          logWarning("Configuring the DEFAULT allocator with a CUDF built for " +
+            "Per-Thread Default Stream (PTDS). This is known to be unstable! " +
+            "We recommend you use the ARENA allocator when PTDS is enabled.")
+        }
+        features.foreach(_ += "POOLED")
+        RmmAllocationMode.POOL
+      case c if "arena".equalsIgnoreCase(c) =>
+        features.foreach(_ += "ARENA")
+        RmmAllocationMode.ARENA
+      case c if "async".equalsIgnoreCase(c) =>
+        features.foreach(_ += "ASYNC")
+        RmmAllocationMode.CUDA_ASYNC
+      case c if "none".equalsIgnoreCase(c) =>
+        // Pooling is disabled.
+        RmmAllocationMode.CUDA_DEFAULT
+      case c =>
+        throw new IllegalArgumentException(s"RMM pool set to '$c' is not supported.")
+    }
+
+    if (conf.isUvmEnabled) {
+      // Enable managed memory only if async allocator is not used.
+      if ((init & RmmAllocationMode.CUDA_ASYNC) == 0) {
+        features.foreach(_ += "UVM")
+        init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
+      } else {
+        throw new IllegalArgumentException(
+          "CUDA Unified Memory is not supported in CUDA_ASYNC allocation mode");
+      }
+    }
+    init
+  }
+
+  private def initializeRmmGpuPool(gpuId: Int, conf: RapidsConf): Unit = {
+    if (!Rmm.isInitialized) {
       val poolSize = conf.chunkedPackPoolSize
       chunkedPackMemoryResource =
         if (poolSize > 0) {
@@ -291,46 +411,9 @@ object GpuDeviceManager extends Logging {
 
       val info = Cuda.memGetInfo()
       val poolAllocation = computeRmmPoolSize(conf, info)
-      var init = RmmAllocationMode.CUDA_DEFAULT
-      val features = ArrayBuffer[String]()
-      if (conf.isPooledMemEnabled) {
-        init = conf.rmmPool match {
-          case c if "default".equalsIgnoreCase(c) =>
-            if (Cuda.isPtdsEnabled) {
-              logWarning("Configuring the DEFAULT allocator with a CUDF built for " +
-                  "Per-Thread Default Stream (PTDS). This is known to be unstable! " +
-                  "We recommend you use the ARENA allocator when PTDS is enabled.")
-            }
-            features += "POOLED"
-            init | RmmAllocationMode.POOL
-          case c if "arena".equalsIgnoreCase(c) =>
-            features += "ARENA"
-            init | RmmAllocationMode.ARENA
-          case c if "async".equalsIgnoreCase(c) =>
-            features += "ASYNC"
-            init | RmmAllocationMode.CUDA_ASYNC
-          case c if "none".equalsIgnoreCase(c) =>
-            // Pooling is disabled.
-            init
-          case c =>
-            throw new IllegalArgumentException(s"RMM pool set to '$c' is not supported.")
-        }
-      } else if (!"none".equalsIgnoreCase(conf.rmmPool)) {
-        logWarning("RMM pool is disabled since spark.rapids.memory.gpu.pooling.enabled is set " +
-          "to false; however, this configuration is deprecated and the behavior may change in a " +
-          "future release.")
-      }
-
-      if (conf.isUvmEnabled) {
-        // Enable managed memory only if async allocator is not used.
-        if ((init & RmmAllocationMode.CUDA_ASYNC) == 0) {
-          features += "UVM"
-          init = init | RmmAllocationMode.CUDA_MANAGED_MEMORY
-        } else {
-          throw new IllegalArgumentException(
-            "CUDA Unified Memory is not supported in CUDA_ASYNC allocation mode");
-        }
-      }
+      memorySize = poolAllocation
+      val features = new ArrayBuffer[String](3 /* 1.pool type, 2.uvm mode, 3.log sink */)
+      var init = rmmModeFromConf(conf, Some(features))
 
       val logConf: Rmm.LogConf = conf.rmmDebugLocation match {
         case c if "none".equalsIgnoreCase(c) => null
@@ -348,7 +431,7 @@ object GpuDeviceManager extends Logging {
       deviceId = Some(gpuId)
 
       logInfo(s"Initializing RMM${features.mkString(" ", " ", "")} " +
-          s"pool size = ${toMB(poolAllocation)} MB on gpuId $gpuId")
+          s"pool size = ${toMiB(poolAllocation)} MB on gpuId $gpuId")
 
       if (Cuda.isPtdsEnabled()) {
         logInfo("Using per-thread default stream")
@@ -379,80 +462,149 @@ object GpuDeviceManager extends Logging {
         }
       }
 
-      RapidsBufferCatalog.init(conf)
-      GpuShuffleEnv.init(conf, RapidsBufferCatalog.getDiskBlockManager())
     }
   }
 
-  private def initializeOffHeapLimits(gpuId: Int, rapidsConf: Option[RapidsConf]): Unit = {
-    val conf = rapidsConf.getOrElse(new RapidsConf(SparkEnv.get.conf))
-    val setCuioDefaultResource = conf.pinnedPoolCuioDefault
-    val (pinnedSize, nonPinnedLimit) = if (conf.offHeapLimitEnabled) {
-      logWarning("OFF HEAP MEMORY LIMITS IS ENABLED. " +
-          "THIS IS EXPERIMENTAL FOR NOW USE WITH CAUTION")
-      val perTaskOverhead = conf.perTaskOverhead
-      val totalOverhead = perTaskOverhead * GpuDeviceManager.numCores
-      val confPinnedSize = conf.pinnedPoolSize
-      val confLimit = conf.offHeapLimit
-      // TODO the min limit size of overhead + 1 GiB is arbitrary and we should have some
-      ///  better tests to see what an ideal value really should be.
-      val minMemoryLimit = totalOverhead + (1024 * 1024 * 1024)
+  private def initializePinnedPoolAndOffHeapLimits(gpuId: Int, conf: RapidsConf,
+                                                   sparkConf: SparkConf): Unit = {
+    val (pinnedSize, nonPinnedLimit) = getPinnedPoolAndOffHeapLimits(
+      conf, sparkConf, Cuda.getDeviceCount)
+    // disable the cuDF provided default pinned pool for now
+    if (!PinnedMemoryPool.configureDefaultCudfPinnedPoolSize(0L)) {
+      // This is OK in tests because they don't unload/reload our shared
+      // library, and in prod it would be nice to know about it.
+      logWarning("The default cuDF host pool was already configured")
+    }
+    if (!PinnedMemoryPool.isInitialized && pinnedSize > 0) {
+      logInfo(s"Initializing pinned memory pool (${pinnedSize / 1024 / 1024.0} MiB)")
+      PinnedMemoryPool.initialize(pinnedSize, gpuId, conf.pinnedPoolCuioDefault)
+    }
+    // Host memory limits must be set after the pinned memory pool is initialized
+    HostAlloc.initialize(nonPinnedLimit)
+    // Fill the MULTITHREAD_READ_MEMORY_LIMIT_SIZE with the 90% of the total OFF_HEAP memory
+    // if it is not set already.
+    if (conf.multiThreadReadMemoryLimit == 0) {
+      sparkConf.set(RapidsConf.MULTITHREAD_READ_MEMORY_LIMIT_SIZE.key,
+        (0.9 * (pinnedSize + nonPinnedLimit)).toLong.toString)
+    }
+  }
 
+  // visible for testing
+  def getPinnedPoolAndOffHeapLimits(conf: RapidsConf, sparkConf: SparkConf, deviceCount: Int,
+      memCheck: MemoryChecker =
+      MemoryCheckerImpl): (Long, Long) = {
+    val perTaskOverhead = conf.perTaskOverhead
+    val totalOverhead = perTaskOverhead * GpuDeviceManager.numCores
+    val confPinnedSize = conf.pinnedPoolSize
+    val confLimit = conf.offHeapLimit
+    val confLimitEnabled = conf.offHeapLimitEnabled
+    // This min limit of 4GB is somewhat arbitrary, but based on some testing which showed
+    // that the previous minimum of 15 MB * num cores was too little for certain benchmark
+    // queries to complete, whereas this limit was sufficient.
+    val minMemoryLimit = 4L * 1024 * 1024 * 1024
+
+    val executorOverheadKey = "spark.executor.memoryOverhead"
+    val pysparkOverheadKey = "spark.executor.pyspark.memory"
+    val heapSizeKey = "spark.executor.memory"
+    val sparkOffHeapEnabledKey = "spark.memory.offHeap.enabled"
+    val sparkOffHeapSizeKey = "spark.memory.offHeap.size"
+
+    def toBytes = ConfHelper.byteFromString(_, ByteUnit.BYTE)
+
+    val executorOverhead = sparkConf.getOption(executorOverheadKey).map(toBytes)
+    val pysparkOverhead = toBytes(sparkConf.get(pysparkOverheadKey, "0"))
+    val heapSize = toBytes(sparkConf.get(heapSizeKey, "1g"))
+    val sparkOffHeapEnabled = sparkConf.getBoolean(sparkOffHeapEnabledKey, defaultValue = false)
+    val sparkOffHeapSize = if (sparkOffHeapEnabled) {
+      toBytes(sparkConf.get(sparkOffHeapSizeKey, "0"))
+    } else {
+      0L
+    }
+
+    if (confLimitEnabled) {
       val memoryLimit = if (confLimit.isDefined) {
+        if (executorOverhead.isEmpty) {
+          logWarning(s"$executorOverheadKey is not set")
+        }
+        logInfo(s"using configured ${RapidsConf.OFF_HEAP_LIMIT_SIZE} of ${confLimit.get}")
         confLimit.get
-      } else if (confPinnedSize > 0) {
-        // TODO 1 GiB above the pinned size probably should change, we are using it to match the
-        //  old behavior for the pool, but that is not great and we want to have hard evidence
-        //  for a better value before just picking something else that is arbitrary
-        val ret = confPinnedSize + (1024 * 1024 * 1024)
-        logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set using " +
-            s"${RapidsConf.PINNED_POOL_SIZE} + 1 GiB instead for memory limit " +
-            s"${ret / 1024 / 1024.0} MiB")
-        ret
       } else {
-        // We don't have pinned or a conf limit set, so go with the min
-        logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set and neither is " +
-            s"${RapidsConf.PINNED_POOL_SIZE}. Using the minimum memory size for the limit " +
-            s"which is ${RapidsConf.TASK_OVERHEAD_SIZE} * cores (${GpuDeviceManager.numCores}) " +
-            s"+ 1 GiB => ${minMemoryLimit / 1024 / 1024.0} MiB")
-        minMemoryLimit
-      }
-
-      val finalMemoryLimit = if (memoryLimit < minMemoryLimit) {
-        logWarning(s"The memory limit ${memoryLimit / 1024 / 1024.0} MiB " +
-            s"is smaller than the minimum limit size ${minMemoryLimit / 1024 / 1024.0} MiB " +
-            s"using the minimum instead")
-        minMemoryLimit
-      } else {
-        memoryLimit
+        // in case we cannot query the host for available memory due to environmental
+        // constraints, we can fall back to minMemoryLimit via saying there's no available
+        lazy val availableHostMemory = if (isIntegratedGpu) {
+          (memCheck.getAvailableMemoryBytes(conf).getOrElse(0L) * (1.0 -
+          conf.integratedGpuMemoryFraction)).toLong
+        } else {
+          memCheck.getAvailableMemoryBytes(conf).getOrElse(0L)
+        }
+        val hostMemUsageFraction = .8
+        // Spark calculates the total mem to allocate to the job as
+        // val totalMemMiB =
+        //      executorMemoryMiB + memoryOverheadMiB + memoryOffHeapMiB + pysparkMemToUseMiB
+        // and RAPIDS uses memory from the overhead portion here. Therefore, if the overhead is
+        // set we can just use that, otherwise we can infer it from the above as
+        // val memoryOverheadMiB =
+        //      totalMemMiB - executorMemoryMiB - memoryOffHeapMiB - pysparkMemToUseMiB
+        // where totalMemMiB is instead derived from the actual mem limits we can observe
+        // directly from the system
+        lazy val basedOnHostMemory = (hostMemUsageFraction * ((1.0 * availableHostMemory /
+          deviceCount) - heapSize - pysparkOverhead - sparkOffHeapSize)).toLong
+        if (executorOverhead.isDefined) {
+          val basedOnConfiguredOverhead = executorOverhead.get
+          logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we derived " +
+            s"a memory limit from ($executorOverheadKey = ${executorOverhead.get}")
+          if (basedOnConfiguredOverhead < minMemoryLimit) {
+            logWarning(s"memory limit $basedOnConfiguredOverhead is less than the minimum of " +
+              s"$minMemoryLimit; using the latter")
+            if (minMemoryLimit > basedOnHostMemory) {
+              logWarning(s"the amount of available memory detected on the host is " +
+                s"$availableHostMemory, based off of which we computed a limit of " +
+                s"$basedOnHostMemory, which is less than the minimum $minMemoryLimit, " +
+                s"so we are using the minimum $minMemoryLimit")
+            }
+            minMemoryLimit
+          } else {
+            basedOnConfiguredOverhead
+          }
+        } else {
+          logWarning(s"${RapidsConf.OFF_HEAP_LIMIT_SIZE} is not set; we used " +
+            s"memory limit derived from ($hostMemUsageFraction * (estimated available " +
+            s"host memory / device count) - $heapSizeKey - $pysparkOverheadKey - " +
+            s"$sparkOffHeapSizeKey) = ($hostMemUsageFraction * ($availableHostMemory / " +
+            s"$deviceCount) - $heapSize - $pysparkOverhead - $sparkOffHeapSize) = " +
+            s"$basedOnHostMemory")
+          if (basedOnHostMemory < minMemoryLimit) {
+            logWarning(s"the memory limit, $basedOnHostMemory, based on the available " +
+              s"host memory of $availableHostMemory, is less than the minimum of " +
+              s"$minMemoryLimit; using the latter $minMemoryLimit")
+            minMemoryLimit
+          } else {
+            basedOnHostMemory
+          }
+        }
       }
 
       // Now we need to know the pinned vs non-pinned limits
-      val pinnedLimit = if (confPinnedSize + totalOverhead <= finalMemoryLimit) {
+      val pinnedLimit = if (confPinnedSize + totalOverhead <= memoryLimit) {
         confPinnedSize
       } else {
-        val ret = finalMemoryLimit - totalOverhead
+        val ret = memoryLimit - totalOverhead
         logWarning(s"The configured pinned memory ${confPinnedSize / 1024 / 1024.0} MiB " +
             s"plus the overhead ${totalOverhead / 1024 / 1024.0} MiB " +
-            s"is larger than the off heap limit ${finalMemoryLimit / 1024 / 1024.0} MiB " +
+            s"is larger than the off heap limit ${memoryLimit / 1024 / 1024.0} MiB " +
             s"dropping pinned memory to ${ret / 1024 / 1024.0} MiB")
         ret
       }
-      val nonPinnedLimit = finalMemoryLimit - totalOverhead - pinnedLimit
+      val nonPinnedLimit = memoryLimit - totalOverhead - pinnedLimit
       logWarning(s"Off Heap Host Memory configured to be " +
           s"${pinnedLimit / 1024 / 1024.0} MiB pinned, " +
           s"${nonPinnedLimit / 1024 / 1024.0} MiB non-pinned, and " +
           s"${totalOverhead / 1024 / 1024.0} MiB of untracked overhead.")
       (pinnedLimit, nonPinnedLimit)
+
     } else {
-      (conf.pinnedPoolSize, -1L)
+      (confPinnedSize, -1L)
     }
-    if (!PinnedMemoryPool.isInitialized && pinnedSize > 0) {
-      logInfo(s"Initializing pinned memory pool (${pinnedSize / 1024 / 1024.0} MiB)")
-      PinnedMemoryPool.initialize(pinnedSize, gpuId, setCuioDefaultResource)
-    }
-    // Host memory limits must be set after the pinned memory pool is initialized
-    HostAlloc.initialize(nonPinnedLimit)
   }
 
   /**
@@ -473,8 +625,14 @@ object GpuDeviceManager extends Logging {
             "Cannot initialize memory due to previous shutdown failing")
         } else if (singletonMemoryInitialized == Uninitialized) {
           val gpu = gpuId.getOrElse(findGpuAndAcquire())
-          initializeRmm(gpu, rapidsConf)
-          initializeOffHeapLimits(gpu, rapidsConf)
+          val sparkConf = SparkEnv.get.conf
+          val conf = rapidsConf.getOrElse(new RapidsConf(sparkConf))
+          initializePinnedPoolAndOffHeapLimits(gpu, conf, sparkConf)
+          initializeRmmGpuPool(gpu, conf)
+          // we want to initialize this last because we want to take advantage
+          // of pinned memory if it is configured
+          initializeSpillAndMemoryEvents(conf)
+          GpuShuffleEnv.init(conf)
           singletonMemoryInitialized = Initialized
         }
       }

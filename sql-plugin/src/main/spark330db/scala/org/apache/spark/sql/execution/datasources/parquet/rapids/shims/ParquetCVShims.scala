@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,10 @@
 {"spark": "341"}
 {"spark": "341db"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
+{"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.parquet
 
@@ -43,7 +47,7 @@ object ParquetCVShims {
     val defaultValue = if (sparkSchema != null) {
       getExistenceDefaultValues(sparkSchema)
     } else null
-    new ParquetColumnVector(column, vector, capacity, memoryMode, missingColumns, isTopLevel,
+    ShimParquetColumnVector(column, vector, capacity, memoryMode, missingColumns, isTopLevel, 
       defaultValue)
   }
 }

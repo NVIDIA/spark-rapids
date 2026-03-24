@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 package org.apache.spark.sql.rapids.execution.python
 
-import scala.collection.mutable.ArrayBuffer
-
 import ai.rapids.cudf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
@@ -31,9 +30,9 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, Partitioning}
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.rapids.execution.python.shims.GpuArrowPythonRunner
-import org.apache.spark.sql.rapids.shims.{ArrowUtilsShim, DataTypeUtilsShim}
-import org.apache.spark.sql.types.{DataType, StructField, StructType}
+import org.apache.spark.sql.rapids.execution.python.shims.{GpuGroupedPythonRunnerFactory, PythonArgumentUtils}
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
+import org.apache.spark.sql.types.{StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -75,15 +74,15 @@ case class GpuAggregateInPandasExec(
   }
 
   private def collectFunctions(udf: GpuPythonFunction):
-  (ChainedPythonFunctions, Seq[Expression]) = {
+  ((ChainedPythonFunctions, Long), Seq[Expression]) = {
     udf.children match {
       case Seq(u: GpuPythonFunction) =>
-        val (chained, children) = collectFunctions(u)
-        (ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), children)
+        val ((chained, _), children) = collectFunctions(u)
+        ((ChainedPythonFunctions(chained.funcs ++ Seq(udf.func)), udf.resultId.id), children)
       case children =>
         // There should not be any other UDFs, or the children can't be evaluated directly.
-        assert(children.forall(_.find(_.isInstanceOf[GpuPythonFunction]).isEmpty))
-        (ChainedPythonFunctions(Seq(udf.func)), udf.children)
+        assertInTests(children.forall(_.find(_.isInstanceOf[GpuPythonFunction]).isEmpty))
+        ((ChainedPythonFunctions(Seq(udf.func)), udf.resultId.id), udf.children)
     }
   }
 
@@ -109,8 +108,6 @@ case class GpuAggregateInPandasExec(
     val (mNumInputRows, mNumInputBatches, mNumOutputRows, mNumOutputBatches) = commonGpuMetrics()
 
     lazy val isPythonOnGpuEnabled = GpuPythonHelper.isPythonOnGpuEnabled(conf)
-    val sessionLocalTimeZone = conf.sessionLocalTimeZone
-    val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
     val childOutput = child.output
     val resultExprs = resultExpressions
 
@@ -118,23 +115,10 @@ case class GpuAggregateInPandasExec(
 
     // Filter child output attributes down to only those that are UDF inputs.
     // Also eliminate duplicate UDF inputs.
-    val allInputs = new ArrayBuffer[Expression]
-    val dataTypes = new ArrayBuffer[DataType]
-    val argOffsets = inputs.map { input =>
-      input.map { e =>
-        val pos = allInputs.indexWhere(_.semanticEquals(e))
-        if (pos >= 0) {
-          pos
-        } else {
-          allInputs += e
-          dataTypes += e.dataType
-          allInputs.length - 1
-        }
-      }.toArray
-    }.toArray
+    val udfArgs = PythonArgumentUtils.flatten(inputs)
 
     // Schema of input rows to the python runner
-    val aggInputSchema = StructType(dataTypes.zipWithIndex.map { case (dt, i) =>
+    val aggInputSchema = StructType(udfArgs.flattenedTypes.zipWithIndex.map { case (dt, i) =>
       StructField(s"_$i", dt)
     }.toArray)
 
@@ -150,8 +134,10 @@ case class GpuAggregateInPandasExec(
       // First projects the input batches to (groupingExpressions + allInputs), which is minimum
       // necessary for the following processes.
       // Doing this can reduce the data size to be split, probably getting a better performance.
-      val groupingRefs = GpuBindReferences.bindGpuReferences(gpuGroupingExpressions, childOutput)
-      val pyInputRefs = GpuBindReferences.bindGpuReferences(allInputs.toSeq, childOutput)
+      val groupingRefs = GpuBindReferences.bindGpuReferences(gpuGroupingExpressions,
+        childOutput, allMetrics)
+      val pyInputRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs,
+        childOutput, allMetrics)
       val miniIter = inputIter.map { batch =>
         mNumInputBatches += 1
         mNumInputRows += batch.numRows()
@@ -161,7 +147,8 @@ case class GpuAggregateInPandasExec(
       }
 
       // Second splits into separate group batches.
-      val miniAttrs = (gpuGroupingExpressions ++ allInputs).asInstanceOf[Seq[Attribute]]
+      val miniAttrs =
+        (gpuGroupingExpressions ++ udfArgs.flattenedArgs).asInstanceOf[Seq[Attribute]]
       val keyConverter = (groupedBatch: ColumnarBatch) => {
         // No `safeMap` because here does not increase the ref count.
         // (`Seq.indices.map()` is NOT lazy, so it is safe to be used to slice the columns.)
@@ -204,27 +191,23 @@ case class GpuAggregateInPandasExec(
         }
       }
 
+      val runnerFactory = GpuGroupedPythonRunnerFactory(conf, pyFuncs, udfArgs.argOffsets,
+        aggInputSchema, DataTypeUtilsShim.fromAttributes(pyOutAttributes),
+        PythonEvalType.SQL_GROUPED_AGG_PANDAS_UDF, udfArgs.argNames)
+
       // Third, sends to Python to execute the aggregate and returns the result.
       if (pyInputIter.hasNext) {
         // Launch Python workers only when the data is not empty.
-        val pyRunner = new GpuArrowPythonRunner(
-          pyFuncs,
-          PythonEvalType.SQL_GROUPED_AGG_PANDAS_UDF,
-          argOffsets,
-          aggInputSchema,
-          sessionLocalTimeZone,
-          pythonRunnerConf,
-          // The whole group data should be written in a single call, so here is unlimited
-          Int.MaxValue,
-          DataTypeUtilsShim.fromAttributes(pyOutAttributes))
-
+        val pyRunner = runnerFactory.getRunner()
         val pyOutputIterator = pyRunner.compute(pyInputIter, context.partitionId(), context)
 
         val combinedAttrs = gpuGroupingExpressions.map(_.toAttribute) ++ pyOutAttributes
-        val resultRefs = GpuBindReferences.bindGpuReferences(resultExprs, combinedAttrs)
+        val resultRefs = GpuBindReferences.bindGpuReferences(resultExprs, combinedAttrs,
+          allMetrics)
         // Gets the combined batch for each group and projects for the output.
-        new CombiningIterator(batchProducer.getBatchQueue, pyOutputIterator, pyRunner,
-            mNumOutputRows, mNumOutputBatches).map { combinedBatch =>
+        new CombiningIterator(batchProducer.getBatchQueue, pyOutputIterator,
+            pyRunner.asInstanceOf[GpuArrowOutput], mNumOutputRows,
+            mNumOutputBatches).map { combinedBatch =>
           withResource(combinedBatch) { batch =>
             GpuProjectExec.project(batch, resultRefs)
           }

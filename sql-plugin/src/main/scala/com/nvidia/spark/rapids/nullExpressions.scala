@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ast, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
@@ -122,6 +122,11 @@ case class GpuIsNull(child: Expression) extends GpuUnaryExpression with Predicat
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
     input.getBase.isNull
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    new ast.UnaryOperation(ast.UnaryOperator.IS_NULL,
+      child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+  }
 }
 
 case class GpuIsNotNull(child: Expression) extends GpuUnaryExpression with Predicate {
@@ -131,6 +136,12 @@ case class GpuIsNotNull(child: Expression) extends GpuUnaryExpression with Predi
 
   override def doColumnar(input: GpuColumnVector): ColumnVector =
     input.getBase.isNotNull
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    new ast.UnaryOperation(ast.UnaryOperator.NOT,
+      new ast.UnaryOperation(ast.UnaryOperator.IS_NULL,
+        child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)))
+  }
 }
 
 case class GpuIsNan(child: Expression) extends GpuUnaryExpression with Predicate {
@@ -291,7 +302,7 @@ case class GpuNaNvl(left: Expression, right: Expression) extends GpuBinaryExpres
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(lhs, numRows, left.dataType)) { expandedLhs =>
+    withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }
@@ -301,4 +312,55 @@ case class GpuNaNvl(left: Expression, right: Expression) extends GpuBinaryExpres
   // Access to AbstractDataType is not allowed, and not really needed here
 //  override def inputTypes: Seq[AbstractDataType] =
 //    Seq(TypeCollection(DoubleType, FloatType), TypeCollection(DoubleType, FloatType))
+}
+
+object NullUtilities {
+  /**
+   * Return a null row at "i" if either "dataCol[i]" or "nullFlagCol[i]" are null, otherwise
+   * return the row from the "dataCol".
+   */
+  def mergeNulls(dataCol: ColumnVector, nullFlagCol: ColumnView): ColumnVector = {
+    withResource(nullFlagCol.isNull) { isNull =>
+      // if we have at least 1 null, we need to merge nulls, else
+      // it is a noop
+      val needsToChange = withResource(isNull.any) { tmp =>
+        tmp.isValid && tmp.getBoolean
+      }
+      if (needsToChange) {
+        withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
+          isNull.ifElse(nullScalar, dataCol)
+        }
+      } else {
+        dataCol.incRefCount()
+      }
+    }
+  }
+
+  /**
+   * Return a null row at "i" if either "dataCol[i]", "nullFlagCol1[i]" or "nullFlagCol2[i]"
+   * are null, otherwise return the row from the "dataCol".
+   */
+  def mergeNulls(dataCol: ColumnVector,
+                 nullFlagCol1: ColumnView,
+                 nullFlagCol2: ColumnView): ColumnVector = {
+    val nullFlag = withResource(nullFlagCol1.isNull) { isNull1 =>
+      withResource(nullFlagCol2.isNull) { isNull2 =>
+        isNull1.or(isNull2)
+      }
+    }
+    withResource(nullFlag) { _ =>
+      // if we have at least 1 null, we need to merge nulls, else
+      // it is a noop
+      val needsToChange = withResource(nullFlag.any) { tmp =>
+        tmp.isValid && tmp.getBoolean
+      }
+      if (needsToChange) {
+        withResource(Scalar.fromNull(dataCol.getType)) { nullScalar =>
+          nullFlag.ifElse(nullScalar, dataCol)
+        }
+      } else {
+        dataCol.incRefCount()
+      }
+    }
+  }
 }

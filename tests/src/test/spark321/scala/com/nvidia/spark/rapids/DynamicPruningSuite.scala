@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,6 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "321"}
-{"spark": "322"}
-{"spark": "323"}
-{"spark": "324"}
 {"spark": "330"}
 {"spark": "331"}
 {"spark": "332"}
@@ -27,6 +24,8 @@
 {"spark": "340"}
 {"spark": "341"}
 {"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
@@ -65,7 +64,7 @@ class DynamicPruningSuite
               // NOTE: We remove the AdaptiveSparkPlanExec since we can't re-run the new plan
               // under AQE because that fundamentally requires some rewrite and stage
               // ordering which we can't do for this test.
-              case GpuSubqueryBroadcastExec(name, index, buildKeys, child) =>
+              case GpuSubqueryBroadcastExec(name, Seq(index), buildKeys, child) =>
                 val newChild = child match {
                   case a @ AdaptiveSparkPlanExec(_, _, _, _, _) =>
                     (new GpuTransitionOverrides()).apply(ColumnarToRowExec(a.executedPlan))
@@ -88,11 +87,11 @@ class DynamicPruningSuite
       case BroadcastQueryStageExec(id, plan, _canonicalized) =>
         val newPlan = replaceSubquery(plan)
         BroadcastQueryStageExec(id, newPlan, _canonicalized)
-      case g @ GpuFileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs, quif, apm, rps) =>
+      case g @ GpuFileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs, quif, rps) =>
         val newPartitionFilters = updatePartitionFilters(pf)
         val rc = g.rapidsConf
         GpuFileSourceScanExec(r, o, rs, newPartitionFilters,
-          obs, oncb, df, ti, dbs, quif, apm, rps)(rc)
+          obs, oncb, df, ti, dbs, quif, rps)(rc)
       case FileSourceScanExec(r, o, rs, pf, obs, oncb, df, ti, dbs) =>
         val newPartitionFilters = updatePartitionFilters(pf)
         FileSourceScanExec(r, o, rs, newPartitionFilters, obs, oncb, df, ti, dbs)

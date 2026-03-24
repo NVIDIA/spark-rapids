@@ -5,6 +5,1536 @@ nav_order: 15
 ---
 Below are archived releases for RAPIDS Accelerator for Apache Spark.
 
+## Release v25.12.0
+### Hardware Requirements:
+
+The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Hopper and Blackwell generation datacenter GPUs.  The plugin jar is tested on the following GPUs:
+
+	GPU Models: NVIDIA V100, T4, A10, A100, L4, H100 and B100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 22.04, Ubuntu 24.04, Rocky Linux 8 and Rocky Linux 9
+
+	NVIDIA Driver*: R525+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+        Scala 2.12: Spark 3.3.x to Spark 3.5.x
+        Scala 2.13: Spark 3.5.0+, 4.0.0, 4.0.1
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+		Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+		GCP Dataproc 2.3
+
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 1.2
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v25.12.0
+
+| Processor | Scala Version | Download Jar | Download Signature | Download From Maven |
+|-----------|---------------|--------------|--------------------|---------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v25.12.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.12.0/rapids-4-spark_2.12-25.12.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.12.0/rapids-4-spark_2.12-25.12.0.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;25.12.0&lt;/version&gt;<br/>&lt;/dependency&gt;</pre> |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v25.12.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.12.0/rapids-4-spark_2.13-25.12.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.12.0/rapids-4-spark_2.13-25.12.0.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;25.12.0&lt;/version&gt;<br/>&lt;/dependency&gt;</pre> |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v25.12.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.12.0/rapids-4-spark_2.12-25.12.0-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.12.0/rapids-4-spark_2.12-25.12.0-cuda12-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;25.12.0&lt;/version&gt;<br/>    &lt;classifier&gt;cuda12-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v25.12.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.12.0/rapids-4-spark_2.13-25.12.0-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.12.0/rapids-4-spark_2.13-25.12.0-cuda12-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;25.12.0&lt;/version&gt;<br/>    &lt;classifier&gt;cuda12-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+
+This package is built against CUDA 12.9. It is tested on V100, T4, A10, A100, L4, H100 and GB100 GPUs with 
+CUDA 12.9.  
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-25.12.0.jar.asc rapids-4-spark_2.12-25.12.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-25.12.0.jar.asc rapids-4-spark_2.13-25.12.0.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Iceberg enhancements including DML operations (delete, update, merge) for merge-on-read tables, partition transforms (year/month/day/hour/truncate), and write operations enabled by default.
+* Delta Lake clustered tables DML support including update, merge, and delete operations with deletion vector enabled GPU by default.
+* Join improvements including support for left-outer joins with no columns, new join strategies with logging and heuristic configurations, and improved gather map ordering.
+* CSV support for GBK encoded data.
+* Refine GpuTaskMetrics over the spill framework.
+* Fix race condition due to premature disk handle exposure.
+
+Note: There is a known issue in the 25.12.0 release when decompressing gzip files on H100 GPUs.
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+## Release v25.10.0
+### Hardware Requirements:
+
+The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Hopper and Blackwell generation datacenter GPUs.  The plugin jar is tested on the following GPUs:
+
+	GPU Models: NVIDIA V100, T4, A10, A100, L4, H100 and B100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 22.04, Ubuntu 24.04, Rocky Linux 8 and Rocky Linux 9
+
+	NVIDIA Driver*: R525+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3, 3.4.4
+		Apache Spark 3.5.0, 3.5.1, 3.5.2, 3.5.3, 3.5.4, 3.5.5, 3.5.6
+		Apache Spark 4.0.0, 4.0.1 
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+		Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+		GCP Dataproc 2.3
+
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 1.2
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v25.10.0
+
+| Processor | Scala Version | Download Jar | Download Signature | Download From Maven |
+|-----------|---------------|--------------|--------------------|---------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v25.10.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.10.0/rapids-4-spark_2.12-25.10.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.10.0/rapids-4-spark_2.12-25.10.0.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;25.10.0&lt;/version&gt;<br/>&lt;/dependency&gt;</pre> |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v25.10.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.10.0/rapids-4-spark_2.13-25.10.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.10.0/rapids-4-spark_2.13-25.10.0.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;25.10.0&lt;/version&gt;<br/>&lt;/dependency&gt;</pre> |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v25.10.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.10.0/rapids-4-spark_2.12-25.10.0-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.10.0/rapids-4-spark_2.12-25.10.0-cuda12-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;25.10.0&lt;/version&gt;<br/>    &lt;classifier&gt;cuda12-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v25.10.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.10.0/rapids-4-spark_2.13-25.10.0-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.10.0/rapids-4-spark_2.13-25.10.0-cuda12-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;25.10.0&lt;/version&gt;<br/>    &lt;classifier&gt;cuda12-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+
+This package is built against CUDA 12.9. It is tested on V100, T4, A10, A100, L4, H100 and GB100 GPUs with 
+CUDA 12.9.  
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-25.10.0.jar.asc rapids-4-spark_2.12-25.10.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-25.10.0.jar.asc rapids-4-spark_2.13-25.10.0.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Delta Lake liquid clustering read/write/optimize support
+* Delta Lake optimize support
+* Delta Lake deletion vector support with two caveats: need to set `useMetadataRowIndex=false` and deletion vector support will fall back to the CPU when using the coalescing file reader (these limitations to be removed in a future release)
+* Iceberg insert operations support and improved write job statistics tracking
+* Improved performance for stddev and variance operations in hash based group by aggregations
+* Support for uuid
+* Added Spark 4.0.1 support
+* Added CUDA 13 support, in addition to CUDA 12 support. 
+
+Note: There is a known issue in the 25.10.0 release when decompressing gzip files on H100 GPUs.
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+## Release v25.08.0
+### Hardware Requirements:
+
+The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Hopper and Blackwell generation datacenter GPUs.  The plugin jar is tested on the following GPUs:
+
+	GPU Models: NVIDIA V100, T4, A10, A100, L4, H100 and B100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
+
+	NVIDIA Driver*: R525+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3, 3.4.4
+		Apache Spark 3.5.0, 3.5.1, 3.5.2, 3.5.3, 3.5.4, 3.5.5, 3.5.6
+		Apache Spark 4.0.0
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+		Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+		GCP Dataproc 2.3
+
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 1.2
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v25.08.0
+
+| Processor | Scala Version | Download Jar                                                                                                                                                 | Download Signature                                                                                                                             |
+|-----------|---------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v25.08.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.08.0/rapids-4-spark_2.12-25.08.0.jar)                         | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.08.0/rapids-4-spark_2.12-25.08.0.jar.asc)                         |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v25.08.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.08.0/rapids-4-spark_2.13-25.08.0.jar)                         | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.08.0/rapids-4-spark_2.13-25.08.0.jar.asc)                         |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v25.08.0](https://edge.urm.nvidia.com/artifactory/sw-spark-maven/com/nvidia/rapids-4-spark_2.12/25.08.0/rapids-4-spark_2.12-25.08.0.jar) | [Signature](https://edge.urm.nvidia.com/artifactory/sw-spark-maven/com/nvidia/rapids-4-spark_2.12/25.08.0/rapids-4-spark_2.12-25.08.0.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v25.08.0](https://edge.urm.nvidia.com/artifactory/sw-spark-maven/com/nvidia/rapids-4-spark_2.13/25.08.0/rapids-4-spark_2.13-25.08.0.jar)                                | [Signature](https://edge.urm.nvidia.com/artifactory/sw-spark-maven/com/nvidia/rapids-4-spark_2.12/25.08.0/rapids-4-spark_2.12-25.08.0.jar.asc)                                    |
+
+This package is built against CUDA 12.9. It is tested on V100, T4, A10, A100, L4, H100 and GB100 GPUs with
+CUDA 12.9.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+  `gpg --verify rapids-4-spark_2.12-25.08.0.jar.asc rapids-4-spark_2.12-25.08.0.jar`
+* Verify the signature for Scala 2.13 jar:
+  `gpg --verify rapids-4-spark_2.13-25.08.0.jar.asc rapids-4-spark_2.13-25.08.0.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Spark 4.0 support, including ANSI mode support for multiply, AVG and SUM aggregations with improved performance.  Compatibility with Spark 4.0 exception handling and type casting.
+* Support for Spark Connect in Spark 3.5.6 and Spark 4.0
+* Delta Lake 3.3.x open source support with read, update, merge, delete, optimized write and auto compact functionality.  Read is supported without deletion vectors.
+* Iceberg S3 tables support
+* Support scalar * scalar overload function for enhanced mathematical operations
+* Improved expression combining and side-effect checking for GpuCaseWhen operations
+* Better Parquet type conversion for improved data processing
+* Improved memory management with fixes for memory leaks and overflow handling
+* Performance optimizations for GPU kernel usage and aggregation operations
+* Stability improvements and bug fixes for production workloads
+
+Note: There is a known issue in the 25.08.0 release when decompressing gzip files on H100 GPUs.
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v25.06.0
+### Hardware Requirements:
+
+The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Hopper and Blackwell generation datacenter GPUs.  The plugin jar is tested on the following GPUs:
+
+	GPU Models: NVIDIA V100, T4, A10, A100, L4, H100 and B100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3, 3.4.4
+		Apache Spark 3.5.0, 3.5.1, 3.5.2, 3.5.3, 3.5.4, 3.5.5, 3.5.6
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+		Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+		GCP Dataproc 2.3
+
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 1.2
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v25.06.0
+
+| Processor | Scala Version | Download Jar                                                                                                                                      | Download Signature                                                                                                                  |
+|-----------|---------------|---------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v25.06.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.06.0/rapids-4-spark_2.12-25.06.0.jar)              | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.06.0/rapids-4-spark_2.12-25.06.0.jar.asc)              |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v25.06.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.06.0/rapids-4-spark_2.13-25.06.0.jar)              | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.06.0/rapids-4-spark_2.13-25.06.0.jar.asc)              |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v25.06.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.06.0/rapids-4-spark_2.12-25.06.0-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.06.0/rapids-4-spark_2.12-25.06.0-cuda12-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v25.06.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.06.0/rapids-4-spark_2.13-25.06.0-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.06.0/rapids-4-spark_2.13-25.06.0-cuda12-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4, H100 and GB100 GPUs with
+CUDA 11.8 and CUDA 12.8.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+  `gpg --verify rapids-4-spark_2.12-25.06.0.jar.asc rapids-4-spark_2.12-25.06.0.jar`
+* Verify the signature for Scala 2.13 jar:
+  `gpg --verify rapids-4-spark_2.13-25.06.0.jar.asc rapids-4-spark_2.13-25.06.0.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Support functions that have time zones with daylight savings transitions
+* Support Spark Connect for Spark 3.5.6+ (Spark Connect is supported for Spark 3.4-3.5.5 if the plugin jar is built with a single shim)
+* Support for Iceberg 1.6.1 on Spark 3.5.x for read with deletions
+* Support array_distinct
+* Support bit_count
+* Support bitwise aggregate functions (bit_and, bit_or and bit_xor) in groupby and reduction
+* Support conv
+* Support sha1
+* Introduce more metrics for troubleshooting (max writers number, memory bookkeepings)
+* Fix a GPU Out-of-memory bug when spark.speculation is on
+* Fix a get_json_object bug when encounter some special pattern path
+
+Note: There is a known issue in the 25.06.0 release when decompressing gzip files on H100 GPUs.
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v25.04.0
+### Hardware Requirements:
+
+The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Hopper and Blackwell generation datacenter GPUs.  The plugin jar is tested on the following GPUs:
+
+	GPU Models: NVIDIA V100, T4, A10, A100, L4, H100 and B100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3, 3.4.4
+		Apache Spark 3.5.0, 3.5.1, 3.5.2, 3.5.3, 3.5.4, 3.5.5, 3.5.6
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+		Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 1.2
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v25.04.0
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v25.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.04.0/rapids-4-spark_2.12-25.04.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.04.0/rapids-4-spark_2.12-25.04.0.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v25.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.04.0/rapids-4-spark_2.13-25.04.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.04.0/rapids-4-spark_2.13-25.04.0.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v25.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.04.0/rapids-4-spark_2.12-25.04.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.04.0/rapids-4-spark_2.12-25.04.0-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v25.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.04.0/rapids-4-spark_2.13-25.04.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.04.0/rapids-4-spark_2.13-25.04.0-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4, H100 and GB100 GPUs with
+CUDA 11.8 and CUDA 12.8.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+  `gpg --verify rapids-4-spark_2.12-25.04.0.jar.asc rapids-4-spark_2.12-25.04.0.jar`
+* Verify the signature for Scala 2.13 jar:
+  `gpg --verify rapids-4-spark_2.13-25.04.0.jar.asc rapids-4-spark_2.13-25.04.0.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Support approx_count_distinct
+* Support group by on binary type
+* Support ArrayPosition function
+* Support Databricks 14.3 ML LTS (without support for Deletion Vector reads in Delta Lake)
+* Support Slice
+* Enable Hive text writer
+* Refine split-retry logs when out of memory happens to expose the real reason
+* Allow BigSizedJoinIterator#buildPartitioner to produce more sub-partitions to avoid CudfColumnSizeOverflowException
+
+Note: There is a known issue in the 25.04.0 release when decompressing gzip files on H100 GPUs.
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v25.02.1
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4, H100 and B100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3, 3.4.4
+		Apache Spark 3.5.0, 3.5.1, 3.5.2, 3.5.3, 3.5.4, 3.5.5
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v25.02.1
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v25.02.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.02.1/rapids-4-spark_2.12-25.02.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.02.1/rapids-4-spark_2.12-25.02.1.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v25.02.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.02.1/rapids-4-spark_2.13-25.02.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.02.1/rapids-4-spark_2.13-25.02.1.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v25.02.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.02.1/rapids-4-spark_2.12-25.02.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.02.1/rapids-4-spark_2.12-25.02.1-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v25.02.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.02.1/rapids-4-spark_2.13-25.02.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.02.1/rapids-4-spark_2.13-25.02.1-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-25.02.1.jar.asc rapids-4-spark_2.12-25.02.1.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-25.02.1.jar.asc rapids-4-spark_2.13-25.02.1.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Support the Spark functions Bin and TruncDate
+* Support group-limit optimization for ROW_NUMBER
+* Improve Spark metrics: Print the batch size information to executor log
+* Refine filter push down to avoid double evaluation
+* Grab the GPU Semaphore when reading cached batch data with the GPU to avoid a GPU OOM case
+* Add an option to disable measuring buffer copy to improve large shuffle large partition serialization
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
+* Upgraded statically linked CUDA toolkit to 12.8, which includes support for GB100 GPUs
+
+Note: There is a known issue in the 25.02.1 release when decompressing gzip files on H100 GPUs.
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v25.02.0
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3, 3.4.4
+		Apache Spark 3.5.0, 3.5.1, 3.5.2, 3.5.3, 3.5.4
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v25.02.0
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v25.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.02.0/rapids-4-spark_2.12-25.02.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.02.0/rapids-4-spark_2.12-25.02.0.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v25.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.02.0/rapids-4-spark_2.13-25.02.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.02.0/rapids-4-spark_2.13-25.02.0.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v25.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.02.0/rapids-4-spark_2.12-25.02.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/25.02.0/rapids-4-spark_2.12-25.02.0-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v25.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.02.0/rapids-4-spark_2.13-25.02.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/25.02.0/rapids-4-spark_2.13-25.02.0-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-25.02.0.jar.asc rapids-4-spark_2.12-25.02.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-25.02.0.jar.asc rapids-4-spark_2.13-25.02.0.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Support the Spark functions Bin and TruncDate
+* Support group-limit optimization for ROW_NUMBER
+* Improve Spark metrics: Print the batch size information to executor log
+* Refine filter push down to avoid double evaluation
+* Grab the GPU Semaphore when reading cached batch data with the GPU to avoid a GPU OOM case
+* Add an option to disable measuring buffer copy to improve large shuffle large partition serialization
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
+
+Note: There is a known issue in the 25.02.0 release when decompressing gzip files on H100 GPUs.
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.12.1
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3, 3.4.4
+		Apache Spark 3.5.0, 3.5.1, 3.5.2, 3.5.3, 3.5.4
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.12.1
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.12.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.12.1/rapids-4-spark_2.12-24.12.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.12.1/rapids-4-spark_2.12-24.12.1.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.12.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.12.1/rapids-4-spark_2.13-24.12.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.12.1/rapids-4-spark_2.13-24.12.1.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.12.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.12.1/rapids-4-spark_2.12-24.12.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.12.1/rapids-4-spark_2.12-24.12.1-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.12.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.12.1/rapids-4-spark_2.13-24.12.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.12.1/rapids-4-spark_2.13-24.12.1-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.12.1.jar.asc rapids-4-spark_2.12-24.12.1.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.12.1.jar.asc rapids-4-spark_2.13-24.12.1.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Add repartition-based algorithm fallback in hash aggregate  
+* Support Spark function months_between
+* Support asynchronous writing for Parquet files
+* Add retry support to improve sub hash-join stability
+* Improve JSON scan and from_json
+* Improved performance for CASE WHEN statements comparing a string column against multiple values
+* Falling back to the CPU for ORC boolean writes by the GPU due to a bug in cudf's ORC writer
+* Fix a device memory leak in timestamp operator in `incompatibleDateFormats` case
+* Fix a host memory leak in GpuBroadcastNestedLoopJoinExecBase when `spillableBuiltBatch` is 0
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
+
+Note: There is a known issue in the 24.12.1 release when decompressing gzip files on H100 GPUs.
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.12.0
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+        GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018.
+    Tested on Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
+
+        NVIDIA Driver*: R470+
+
+        Runtime:
+                Scala 2.12, 2.13
+                Python, Java Virtual Machine (JVM) compatible with your spark-version.
+
+                * Check the Spark documentation for Python and Java version compatibility with your specific
+                Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+        Supported Spark versions:
+                Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+                Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+                Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3
+                Apache Spark 3.5.0, 3.5.1, 3.5.2
+
+        Supported Databricks runtime versions for Azure and AWS:
+                Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+                Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+                Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+
+        Supported Dataproc versions (Debian/Ubuntu/Rocky):
+                GCP Dataproc 2.1
+                GCP Dataproc 2.2
+
+        Supported Dataproc Serverless versions:
+                Spark runtime 1.1 LTS
+                Spark runtime 2.0
+                Spark runtime 2.1
+                Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.12.0
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.12.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.12.0/rapids-4-spark_2.12-24.12.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.12.0/rapids-4-spark_2.12-24.12.0.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.12.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.12.0/rapids-4-spark_2.13-24.12.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.12.0/rapids-4-spark_2.13-24.12.0.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.12.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.12.0/rapids-4-spark_2.12-24.12.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.12.0/rapids-4-spark_2.12-24.12.0-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.12.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.12.0/rapids-4-spark_2.13-24.12.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.12.0/rapids-4-spark_2.13-24.12.0-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.12.0.jar.asc rapids-4-spark_2.12-24.12.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.12.0.jar.asc rapids-4-spark_2.13-24.12.0.jar`
+
+The output of signature verify:
+
+        gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Add repartition-based algorithm fallback in hash aggregate
+* Support Spark function months_between
+* Support asynchronous writing for Parquet files
+* Add retry support to improve sub hash-join stability
+* Improve JSON scan and from_json
+* Improved performance for CASE WHEN statements comparing a string column against multiple values
+* Falling back to the CPU for ORC boolean writes by the GPU due to a bug in cudf's ORC writer
+* Fix a device memory leak in timestamp operator in `incompatibleDateFormats` case
+* Fix a host memory leak in GpuBroadcastNestedLoopJoinExecBase when `spillableBuiltBatch` is 0
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
+
+Note: There is a known issue in the 24.12.0 release when decompressing gzip files on H100 GPUs.
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.10.1
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+    OS: Spark RAPIDS is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    Tested on Ubuntu 20.04, Ubuntu 22.04, Rocky Linux 8 and Rocky Linux 9
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3
+		Apache Spark 3.5.0, 3.5.1, 3.5.2
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.10.1
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.10.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.10.1/rapids-4-spark_2.12-24.10.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.10.1/rapids-4-spark_2.12-24.10.1.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.10.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.10.1/rapids-4-spark_2.13-24.10.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.10.1/rapids-4-spark_2.13-24.10.1.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.10.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.10.1/rapids-4-spark_2.12-24.10.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.10.1/rapids-4-spark_2.12-24.10.1-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.10.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.10.1/rapids-4-spark_2.13-24.10.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.10.1/rapids-4-spark_2.13-24.10.1-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.10.1.jar.asc rapids-4-spark_2.12-24.10.1.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.10.1.jar.asc rapids-4-spark_2.13-24.10.1.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Optimize scheduling policy for GPU Semaphore
+* Support distinct join for right outer joins
+* Support MinBy and MaxBy for non-float ordering  
+* Support ArrayJoin expression
+* Optimize Expand and Aggregate expression performance
+* Improve JSON related expressions
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
+
+Note: There is a known issue in the 24.10.1 release when decompressing gzip files on H100 GPUs.  
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.10.0
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3
+		Apache Spark 3.5.0, 3.5.1, 3.5.2
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.10.0
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.10.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.10.0/rapids-4-spark_2.12-24.10.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.10.0/rapids-4-spark_2.12-24.10.0.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.10.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.10.0/rapids-4-spark_2.13-24.10.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.10.0/rapids-4-spark_2.13-24.10.0.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.10.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.10.0/rapids-4-spark_2.12-24.10.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.10.0/rapids-4-spark_2.12-24.10.0-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.10.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.10.0/rapids-4-spark_2.13-24.10.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.10.0/rapids-4-spark_2.13-24.10.0-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.10.0.jar.asc rapids-4-spark_2.12-24.10.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.10.0.jar.asc rapids-4-spark_2.13-24.10.0.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Optimize scheduling policy for GPU Semaphore
+* Support distinct join for right outer joins
+* Support MinBy and MaxBy for non-float ordering  
+* Support ArrayJoin expression
+* Optimize Expand and Aggregate expression performance
+* Improve JSON related expressions
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
+
+Note: There is a known issue in the 24.10.0 release when decompressing gzip files on H100 GPUs.  
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.08.1
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3
+		Apache Spark 3.5.0, 3.5.1
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions (Debian/Ubuntu/Rocky):
+		GCP Dataproc 2.1
+		GCP Dataproc 2.2
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.08.1
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.08.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.08.1/rapids-4-spark_2.12-24.08.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.08.1/rapids-4-spark_2.12-24.08.1.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.08.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.08.1/rapids-4-spark_2.13-24.08.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.08.1/rapids-4-spark_2.13-24.08.1.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.08.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.08.1/rapids-4-spark_2.12-24.08.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.08.1/rapids-4-spark_2.12-24.08.1-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.08.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.08.1/rapids-4-spark_2.13-24.08.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.08.1/rapids-4-spark_2.13-24.08.1-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.08.1.jar.asc rapids-4-spark_2.12-24.08.1.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.08.1.jar.asc rapids-4-spark_2.13-24.08.1.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Support timezones with daylight savings shifts
+* Improve metrics in Spark UI
+* Refactor Parquet decode microkernels and support load balancing RLE runs
+* Improve get_json performance
+* Support dynamic scan filtering
+* Improve UCX shuffle 
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
+
+Note: There is a known issue in the 24.08.1 release when decompressing gzip files on H100 GPUs.  
+Please find more details in [issue-16661](https://github.com/rapidsai/cudf/issues/16661).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.06.1
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3
+		Apache Spark 3.5.0, 3.5.1
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions (Debian/Ubuntu):
+		GCP Dataproc 2.0
+		GCP Dataproc 2.1
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+		Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.06.1
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.06.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.06.1/rapids-4-spark_2.12-24.06.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.06.1/rapids-4-spark_2.12-24.06.1.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.06.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.06.1/rapids-4-spark_2.13-24.06.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.06.1/rapids-4-spark_2.13-24.06.1.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.06.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.06.1/rapids-4-spark_2.12-24.06.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.06.1/rapids-4-spark_2.12-24.06.1-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.06.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.06.1/rapids-4-spark_2.13-24.06.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.06.1/rapids-4-spark_2.13-24.06.1-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.06.1.jar.asc rapids-4-spark_2.12-24.06.1.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.06.1.jar.asc rapids-4-spark_2.13-24.06.1.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Improve support for Unity Catalog on Databricks
+* Added support for parse_url PATH
+* Added support for array_filter
+* Added support for Spark 3.4.3
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.06.0
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+        GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+        OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
+
+        NVIDIA Driver*: R470+
+
+        Runtime: 
+                Scala 2.12, 2.13
+                Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+                * Check the Spark documentation for Python and Java version compatibility with your specific 
+                Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+        Supported Spark versions:
+                Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+                Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+                Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3
+                Apache Spark 3.5.0, 3.5.1
+
+        Supported Databricks runtime versions for Azure and AWS:
+                Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+                Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+                Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+
+        Supported Dataproc versions (Debian/Ubuntu):
+                GCP Dataproc 2.0
+                GCP Dataproc 2.1
+
+        Supported Dataproc Serverless versions:
+                Spark runtime 1.1 LTS
+                Spark runtime 2.0
+                Spark runtime 2.1
+                Spark runtime 2.2
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.06.0
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.06.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.06.0/rapids-4-spark_2.12-24.06.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.06.0/rapids-4-spark_2.12-24.06.0.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.06.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.06.0/rapids-4-spark_2.13-24.06.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.06.0/rapids-4-spark_2.13-24.06.0.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.06.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.06.0/rapids-4-spark_2.12-24.06.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.06.0/rapids-4-spark_2.12-24.06.0-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.06.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.06.0/rapids-4-spark_2.13-24.06.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.06.0/rapids-4-spark_2.13-24.06.0-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.06.0.jar.asc rapids-4-spark_2.12-24.06.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.06.0.jar.asc rapids-4-spark_2.13-24.06.0.jar`
+
+The output of signature verify:
+
+        gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* Improve support for Unity Catalog on Databricks
+* Added support for parse_url PATH
+* Added support for array_filter
+* Added support for Spark 3.4.3
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases)
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.04.1
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2
+		Apache Spark 3.5.0, 3.5.1
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions (Debian/Ubuntu):
+		GCP Dataproc 2.0
+		GCP Dataproc 2.1
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.04.1
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.04.1/rapids-4-spark_2.12-24.04.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.04.1/rapids-4-spark_2.12-24.04.1.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.04.1/rapids-4-spark_2.13-24.04.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.04.1/rapids-4-spark_2.13-24.04.1.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.04.1/rapids-4-spark_2.12-24.04.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.04.1/rapids-4-spark_2.12-24.04.1-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.04.1/rapids-4-spark_2.13-24.04.1-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.04.1/rapids-4-spark_2.13-24.04.1-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.04.1.jar.asc rapids-4-spark_2.12-24.04.1.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.04.1.jar.asc rapids-4-spark_2.13-24.04.1.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* New functionality and performance improvements for this release include:
+* Performance improvements for S3 reading. 
+Refer to perfio.s3.enabled in [advanced_configs](./additional-functionality/advanced_configs.md) for more details.
+* Performance improvements when doing a joins on unique keys.
+* Enhanced decompression kernels for zstd and snappy.
+* Enhanced Parquet reading performance with modular kernels.
+* Added compatibility with Spark version 3.5.1.
+* Deprecated support for Databricks 10.4 ML LTS.
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.04.0
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2
+		Apache Spark 3.5.0, 3.5.1
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions (Debian/Ubuntu):
+		GCP Dataproc 2.0
+		GCP Dataproc 2.1
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.04.0
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.04.0/rapids-4-spark_2.12-24.04.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.04.0/rapids-4-spark_2.12-24.04.0.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.04.0/rapids-4-spark_2.13-24.04.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.04.0/rapids-4-spark_2.13-24.04.0.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.04.0/rapids-4-spark_2.12-24.04.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.04.0/rapids-4-spark_2.12-24.04.0-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.04.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.04.0/rapids-4-spark_2.13-24.04.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.04.0/rapids-4-spark_2.13-24.04.0-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.04.0.jar.asc rapids-4-spark_2.12-24.04.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.04.0.jar.asc rapids-4-spark_2.13-24.04.0.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+* New functionality and performance improvements for this release include:
+* Performance improvements for S3 reading. 
+Refer to perfio.s3.enabled in [advanced_configs](./additional-functionality/advanced_configs.md) for more details.
+* Performance improvements when doing a joins on unique keys.
+* Enhanced decompression kernels for zstd and snappy.
+* Enhanced Parquet reading performance with modular kernels.
+* Added compatibility with Spark version 3.5.1.
+* Deprecated support for Databricks 10.4 ML LTS.
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+## Release v24.02.0
+### Hardware Requirements:
+
+The plugin is tested on the following architectures:
+
+	GPU Models: NVIDIA V100, T4, A10/A100, L4 and H100 GPUs
+
+### Software Requirements:
+
+	OS: Ubuntu 20.04, Ubuntu 22.04, CentOS 7, or Rocky Linux 8
+
+	NVIDIA Driver*: R470+
+
+	Runtime: 
+		Scala 2.12, 2.13
+		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+
+		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
+
+	Supported Spark versions:
+		Apache Spark 3.2.0, 3.2.1, 3.2.2, 3.2.3, 3.2.4
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3
+		Apache Spark 3.4.0, 3.4.1, 3.4.2
+		Apache Spark 3.5.0
+	
+	Supported Databricks runtime versions for Azure and AWS:
+		Databricks 10.4 ML LTS (GPU, Scala 2.12, Spark 3.2.1)
+		Databricks 11.3 ML LTS (GPU, Scala 2.12, Spark 3.3.0)
+		Databricks 12.2 ML LTS (GPU, Scala 2.12, Spark 3.3.2)
+		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
+	
+	Supported Dataproc versions:
+		GCP Dataproc 2.0
+		GCP Dataproc 2.1
+	
+	Supported Dataproc Serverless versions:
+		Spark runtime 1.1 LTS
+		Spark runtime 2.0
+		Spark runtime 2.1
+
+*Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
+for your hardware's minimum driver version.
+
+*For Cloudera and EMR support, please refer to the
+[Distributions](https://docs.nvidia.com/spark-rapids/user-guide/latest/faq.html#which-distributions-are-supported) section of the FAQ.
+
+### RAPIDS Accelerator's Support Policy for Apache Spark
+The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
+
+### Download RAPIDS Accelerator for Apache Spark v24.02.0
+
+| Processor | Scala Version | Download Jar | Download Signature |
+|-----------|---------------|--------------|--------------------|
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0.jar.asc) |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0.jar.asc) |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/24.02.0/rapids-4-spark_2.12-24.02.0-cuda11-arm64.jar.asc) |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v24.02.0](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0-cuda11-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/24.02.0/rapids-4-spark_2.13-24.02.0-cuda11-arm64.jar.asc) |
+
+This package is built against CUDA 11.8. It is tested on V100, T4, A10, A100, L4 and H100 GPUs with 
+CUDA 11.8 through CUDA 12.0.
+
+### Verify signature
+* Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
+* Import the public key: `gpg --import PUB_KEY`
+* Verify the signature for Scala 2.12 jar:
+    `gpg --verify rapids-4-spark_2.12-24.02.0.jar.asc rapids-4-spark_2.12-24.02.0.jar`
+* Verify the signature for Scala 2.13 jar:
+    `gpg --verify rapids-4-spark_2.13-24.02.0.jar.asc rapids-4-spark_2.13-24.02.0.jar`
+
+The output of signature verify:
+
+	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
+
+### Release Notes
+New functionality and performance improvements for this release include:
+* Discontinued support for Nvidia GPUs based on Pascal architecture.
+* Set get_json_object functionality to disabled by default.
+* Implemented string comparison in AST expressions.
+* Expanded timezone support to include options beyond UTC.
+* Optional checksums for cached files in the file cache.
+* Introduced support for Databricks 13.3 ML LTS.
+* Added support for parse_url functionality.
+* Introducing Lazy Quantifier support for regular expression functions.
+* Added support for the format_number function.
+* Enhanced batching support for row-based bounded window functions.
+* For updates on RAPIDS Accelerator Tools, please visit [this link](https://github.com/NVIDIA/spark-rapids-tools/releases).
+
+For a detailed list of changes, please refer to the
+[CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
 ## Release v23.12.2
 ### Hardware Requirements:
 

@@ -1,7 +1,7 @@
 ---
 layout: page
-title: NVTX Ranges
-nav_order: 3
+title: NVTX Profiling
+nav_order: 4
 parent: Developer Overview
 ---
 # Using NVTX Ranges with the RAPIDS Plugin for Spark
@@ -46,13 +46,15 @@ You should have a *.qdrep file once the trace completes. This can now be opened 
 If you are in Java or Scala land you can do the following:
 
 ```
-val nvtxRange = new NvtxRange(<name of the range>, NvtxColor.YELLOW)
+val nvtxRange = new NvtxRangeWithDoc(<NvtxId>, NvtxColor.YELLOW)
 try {
   // the code you want to profile
 } finally {
   nvtxRange.close()
 }
 ```
+See [nvtx_ranges.md](nvtx_ranges.md) for documentation on existing ranges and registering a new range.
+
 In C++ land:
 ```
 gdf_nvtx_range_push_hex("write_orc_all", 0xffff0000);

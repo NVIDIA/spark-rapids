@@ -16,20 +16,20 @@
 
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.JSONOptions
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.sql.catalyst.json.rapids.JsonPartitionReader
+import org.apache.spark.sql.rapids.GpuJsonReadCommon
 import org.apache.spark.sql.types._
 
 class JsonScanRetrySuite extends RmmSparkRetrySuiteBase {
   test("test simple retry") {
-    val bufferer = HostLineBuffererFactory.createBufferer(100, Array('\n'.toByte))
+    val bufferer = FilterEmptyHostLineBuffererFactory.createBufferer(100, Array('\n'.toByte))
     bufferer.add("{\"a\": 1, \"b\": 2".getBytes, 0, 14)
 
     val cudfSchema = GpuColumnVector.from(StructType(Seq(StructField("a", IntegerType),
       StructField("b", IntegerType))))
-    val opts = JSONOptions.builder().withLines(true).build()
+    val opts = GpuJsonReadCommon.baseCudfJsonOptionsBuilder().withLines(true).build()
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
     val table = JsonPartitionReader.readToTable(bufferer, cudfSchema, NoopMetric,

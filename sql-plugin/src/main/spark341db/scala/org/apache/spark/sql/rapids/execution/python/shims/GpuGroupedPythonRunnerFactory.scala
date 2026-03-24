@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "341db"}
+{"spark": "350db143"}
+{"spark": "400db173"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
@@ -24,41 +26,45 @@ import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-//TODO is this needed? we already have a similar version in spark330db
 case class GpuGroupedPythonRunnerFactory(
   conf: org.apache.spark.sql.internal.SQLConf,
-  chainedFunc: Seq[ChainedPythonFunctions],
+  chainedFunc: Seq[(ChainedPythonFunctions, Long)],
   argOffsets: Array[Array[Int]],
   dedupAttrs: StructType,
-  pythonOutputSchema: StructType) {
+  pythonOutputSchema: StructType,
+  evalType: Int,
+  argNames: Option[Array[Array[Option[String]]]] = None) {
   // Configs from DB runtime
   val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
   val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
+  val isArrowBatchSlicingEnabled = conf.pythonArrowBatchSlicingEnabled
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
   val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
   def getRunner(): GpuBasePythonRunner[ColumnarBatch] = {
-    if (zeroConfEnabled && maxBytes > 0L) {
+    if (isArrowBatchSlicingEnabled || (zeroConfEnabled && maxBytes > 0L)) {
       new GpuGroupUDFArrowPythonRunner(
         chainedFunc,
-        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+        evalType,
         argOffsets,
         dedupAttrs,
         sessionLocalTimeZone,
         pythonRunnerConf,
         // The whole group data should be written in a single call, so here is unlimited
         Int.MaxValue,
-        pythonOutputSchema)
+        pythonOutputSchema,
+        argNames)
     } else {
       new GpuArrowPythonRunner(
         chainedFunc,
-        PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF,
+        evalType,
         argOffsets,
         dedupAttrs,
         sessionLocalTimeZone,
         pythonRunnerConf,
         Int.MaxValue,
-        pythonOutputSchema)
+        pythonOutputSchema,
+        argNames)
     }
   }
 }

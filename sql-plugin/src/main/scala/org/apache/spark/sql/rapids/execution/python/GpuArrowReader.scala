@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,12 @@ package org.apache.spark.sql.rapids.execution.python
 
 import java.io.DataInputStream
 
-import ai.rapids.cudf.{ArrowIPCOptions, HostBufferProvider, HostMemoryBuffer, NvtxColor, NvtxRange, StreamedTableReader, Table}
+import ai.rapids.cudf.{ArrowIPCOptions, HostBufferProvider, HostMemoryBuffer, StreamedTableReader, Table}
+import com.nvidia.spark.rapids.{GpuSemaphore, NvtxRegistry}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.GpuSemaphore
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
@@ -62,10 +63,11 @@ trait GpuArrowOutput {
   protected def toBatch(table: Table): ColumnarBatch
 
   /**
-   * Default to `Int.MaxValue` to try to read as many as possible.
+   * Default to minimum one between "arrowMaxRecordsPerBatch" and 10000.
    * Change it by calling `setMinReadTargetNumRows` before a reading.
    */
-  private var minReadTargetNumRows: Int = Int.MaxValue
+  private var minReadTargetNumRows: Int = math.min(
+    SQLConf.get.arrowMaxRecordsPerBatch, 10000)
 
   def newGpuArrowReader: GpuArrowReader = new GpuArrowReader
 
@@ -88,7 +90,7 @@ trait GpuArrowOutput {
 
     final def readNext(): ColumnarBatch = {
       val table =
-        withResource(new NvtxRange("read python batch", NvtxColor.DARK_GREEN)) { _ =>
+        NvtxRegistry.READ_PYTHON_BATCH {
           // The GpuSemaphore is acquired in a callback
           tableReader.getNextIfAvailable(minReadTargetNumRows)
         }

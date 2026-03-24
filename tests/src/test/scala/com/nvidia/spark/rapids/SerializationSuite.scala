@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,17 @@ package com.nvidia.spark.rapids
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 
-import ai.rapids.cudf.Table
+import ai.rapids.cudf.{Rmm, RmmAllocationMode, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.commons.lang3.SerializationUtils
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastExchangeExecBase, SerializeBatchDeserializeHostBuffer, SerializeConcatHostBuffersDeserializeBatch}
 import org.apache.spark.sql.types.{DoubleType, FloatType, IntegerType, StringType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -33,12 +36,17 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 class SerializationSuite extends AnyFunSuite
   with BeforeAndAfterAll {
 
+
   override def beforeAll(): Unit = {
-    RapidsBufferCatalog.setDeviceStorage(new RapidsDeviceMemoryStore())
+    super.beforeAll()
+    Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
+    SpillFramework.initialize(new RapidsConf(new SparkConf))
   }
 
   override def afterAll(): Unit = {
-    RapidsBufferCatalog.close()
+    super.afterAll()
+    SpillFramework.shutdown()
+    Rmm.shutdown()
   }
 
   private def buildBatch(): ColumnarBatch = {
@@ -94,7 +102,7 @@ class SerializationSuite extends AnyFunSuite
     val attrs = GpuColumnVector.extractTypes(gpuBatch).map(t => AttributeReference("", t)())
     if (gpuBatch.numRows() == 0 && gpuBatch.numCols == 0) {
       GpuBroadcastExchangeExecBase.makeBroadcastBatch(
-        Array.empty, Seq.empty, NoopMetric, NoopMetric, NoopMetric)
+        Array.empty, Seq.empty, NoopMetric, NoopMetric, NoopMetric, SQLConf.get)
     } else if (gpuBatch.numCols() == 0) {
       new SerializeConcatHostBuffersDeserializeBatch(
         null,
@@ -105,7 +113,7 @@ class SerializationSuite extends AnyFunSuite
       val buffer = createDeserializedHostBuffer(gpuBatch)
       // makeBroadcastBatch consumes `buffer`
       GpuBroadcastExchangeExecBase.makeBroadcastBatch(
-        Array(buffer), attrs, NoopMetric, NoopMetric, NoopMetric)
+        Array(buffer), attrs, NoopMetric, NoopMetric, NoopMetric, SQLConf.get)
     }
   }
 
@@ -170,7 +178,7 @@ class SerializationSuite extends AnyFunSuite
       withResource(toHostBatch(gpuBatch)) { expectedHostBatch =>
         val broadcast = makeBroadcastBatch(gpuBatch)
         withBroadcast(broadcast) { _ =>
-          withResource(broadcast.batch.getColumnarBatch()) { materialized =>
+          withResource(broadcast.batch.getColumnarBatch) { materialized =>
             TestUtils.compareBatches(gpuBatch, materialized)
           }
           // the host batch here is obtained from the GPU batch since
@@ -193,12 +201,12 @@ class SerializationSuite extends AnyFunSuite
       batches.foreach { gpuExpected =>
         val broadcast = makeBroadcastBatch(gpuExpected)
         withBroadcast(broadcast) { _ =>
-          withResource(broadcast.batch.getColumnarBatch()) { gpuBatch =>
+          withResource(broadcast.batch.getColumnarBatch) { gpuBatch =>
             TestUtils.compareBatches(gpuExpected, gpuBatch)
           }
           // clone via serialization after manifesting the GPU batch
           withBroadcast(SerializationUtils.clone(broadcast)) { clonedObj =>
-            withResource(clonedObj.batch.getColumnarBatch()) { gpuClonedBatch =>
+            withResource(clonedObj.batch.getColumnarBatch) { gpuClonedBatch =>
               TestUtils.compareBatches(gpuExpected, gpuClonedBatch)
             }
             // try to clone it again from the cloned object
@@ -214,12 +222,12 @@ class SerializationSuite extends AnyFunSuite
       batches.foreach { gpuExpected =>
         val broadcast = makeBroadcastBatch(gpuExpected)
         withBroadcast(broadcast) { _ =>
-          withResource(broadcast.batch.getColumnarBatch()) { gpuBatch =>
+          withResource(broadcast.batch.getColumnarBatch) { gpuBatch =>
             TestUtils.compareBatches(gpuExpected, gpuBatch)
           }
           // clone via serialization after manifesting the GPU batch
           withBroadcast(SerializationUtils.clone(broadcast)) { clonedObj =>
-            withResource(clonedObj.batch.getColumnarBatch()) { gpuClonedBatch =>
+            withResource(clonedObj.batch.getColumnarBatch) { gpuClonedBatch =>
               TestUtils.compareBatches(gpuExpected, gpuClonedBatch)
             }
             // try to clone it again from the cloned object
@@ -234,12 +242,12 @@ class SerializationSuite extends AnyFunSuite
     withResource(buildBatch()) { gpuExpected =>
       val broadcast = makeBroadcastBatch(gpuExpected)
       withBroadcast(broadcast) { _ =>
-        withResource(broadcast.batch.getColumnarBatch()) { gpuBatch =>
+        withResource(broadcast.batch.getColumnarBatch) { gpuBatch =>
           TestUtils.compareBatches(gpuExpected, gpuBatch)
         }
         // clone via serialization after manifesting the GPU batch
         withBroadcast(SerializationUtils.clone(broadcast)) { clonedObj =>
-          withResource(clonedObj.batch.getColumnarBatch()) { gpuClonedBatch =>
+          withResource(clonedObj.batch.getColumnarBatch) { gpuClonedBatch =>
             TestUtils.compareBatches(gpuExpected, gpuClonedBatch)
           }
           // try to clone it again from the cloned object
@@ -263,7 +271,7 @@ class SerializationSuite extends AnyFunSuite
         broadcast.doReadObject(inputStream)
 
         // use it now
-        withResource(broadcast.batch.getColumnarBatch()) { gpuBatch =>
+        withResource(broadcast.batch.getColumnarBatch) { gpuBatch =>
           TestUtils.compareBatches(gpuExpected, gpuBatch)
         }
       }
@@ -275,7 +283,7 @@ class SerializationSuite extends AnyFunSuite
       val broadcast = makeBroadcastBatch(gpuExpected)
       withBroadcast(broadcast) { _ =>
         // materialize
-        withResource(broadcast.batch.getColumnarBatch()) { cb =>
+        withResource(broadcast.batch.getColumnarBatch) { cb =>
           TestUtils.compareBatches(gpuExpected, cb)
         }
 
@@ -292,7 +300,7 @@ class SerializationSuite extends AnyFunSuite
         assertResult(before)(broadcast.batch) // it is the same as before
 
         // use it now
-        withResource(broadcast.batch.getColumnarBatch()) { gpuBatch =>
+        withResource(broadcast.batch.getColumnarBatch) { gpuBatch =>
           TestUtils.compareBatches(gpuExpected, gpuBatch)
         }
       }
@@ -311,7 +319,7 @@ class SerializationSuite extends AnyFunSuite
           .deserialize[SerializeConcatHostBuffersDeserializeBatch](
             inputStream)) { materialized =>
           // this materializes a new batch from what was deserialized
-          withResource(materialized.batch.getColumnarBatch()) { gpuBatch =>
+          withResource(materialized.batch.getColumnarBatch) { gpuBatch =>
             TestUtils.compareBatches(gpuExpected, gpuBatch)
           }
         }

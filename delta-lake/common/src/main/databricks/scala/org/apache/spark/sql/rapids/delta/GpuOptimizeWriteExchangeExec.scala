@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2025, NVIDIA CORPORATION.
  *
  * This file was derived from OptimizeWriteExchange.scala
  * in the Delta Lake project at https://github.com/delta-io/delta
@@ -26,7 +26,9 @@ import scala.concurrent.Future
 import scala.concurrent.duration.Duration
 
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
-import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning}
+import com.nvidia.spark.rapids.{GpuColumnarBatchSerializer, GpuExec, GpuMetric, GpuPartitioning, GpuRoundRobinPartitioning, RapidsConf}
+import com.nvidia.spark.rapids.GpuMetric.{OP_TIME_NEW_SHUFFLE_READ, OP_TIME_NEW_SHUFFLE_WRITE}
+import com.nvidia.spark.rapids.GpuMetric.{DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ, DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE, MODERATE_LEVEL}
 import com.nvidia.spark.rapids.delta.RapidsDeltaSQLConf
 
 import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
@@ -39,6 +41,7 @@ import org.apache.spark.sql.execution.{CoalescedPartitionSpec, ShufflePartitionS
 import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.execution.metric.{SQLMetrics, SQLShuffleReadMetricsReporter, SQLShuffleWriteMetricsReporter}
 import org.apache.spark.sql.rapids.execution.{GpuShuffleExchangeExecBase, ShuffledBatchRDD}
+import org.apache.spark.sql.rapids.execution.GpuShuffleExchangeExecBase.createAdditionalExchangeMetrics
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.ThreadUtils
 
@@ -71,25 +74,18 @@ case class GpuOptimizeWriteExchangeExec(
   private[sql] lazy val readMetrics =
     SQLShuffleReadMetricsReporter.createShuffleReadMetrics(sparkContext)
 
-  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
-    "dataSize" -> createSizeMetric(ESSENTIAL_LEVEL, "data size"),
-    "dataReadSize" -> createSizeMetric(MODERATE_LEVEL, "data read size"),
-    "rapidsShuffleSerializationTime" ->
-        createNanoTimingMetric(DEBUG_LEVEL, "rs. serialization time"),
-    "rapidsShuffleDeserializationTime" ->
-        createNanoTimingMetric(DEBUG_LEVEL, "rs. deserialization time"),
-    "rapidsShuffleWriteTime" ->
-        createNanoTimingMetric(ESSENTIAL_LEVEL, "rs. shuffle write time"),
-    "rapidsShuffleCombineTime" ->
-        createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle combine time"),
-    "rapidsShuffleWriteIoTime" ->
-        createNanoTimingMetric(DEBUG_LEVEL, "rs. shuffle write io time"),
-    "rapidsShuffleReadTime" ->
-        createNanoTimingMetric(ESSENTIAL_LEVEL, "rs. shuffle read time")
-  ) ++ GpuMetric.wrap(readMetrics) ++ GpuMetric.wrap(writeMetrics)
+  override lazy val additionalMetrics : Map[String, GpuMetric] = {
+    createAdditionalExchangeMetrics(this) ++
+      GpuMetric.wrap(readMetrics) ++
+      GpuMetric.wrap(writeMetrics)
+  }
 
   override lazy val allMetrics: Map[String, GpuMetric] = {
     Map(
+      OP_TIME_NEW_SHUFFLE_WRITE ->
+        createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE),
+      OP_TIME_NEW_SHUFFLE_READ ->
+        createNanoTimingMetric(MODERATE_LEVEL, DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ),
       PARTITION_SIZE -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_PARTITION_SIZE),
       NUM_PARTITIONS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_PARTITIONS),
       NUM_OUTPUT_ROWS -> createMetric(ESSENTIAL_LEVEL, DESCRIPTION_NUM_OUTPUT_ROWS),
@@ -97,8 +93,14 @@ case class GpuOptimizeWriteExchangeExec(
     ) ++ additionalMetrics
   }
 
+  override def getOpTimeNewMetric: Option[GpuMetric] = allMetrics.get(OP_TIME_NEW_SHUFFLE_READ)
+
   private lazy val serializer: Serializer =
-    new GpuColumnarBatchSerializer(gpuLongMetric("dataSize"))
+    new GpuColumnarBatchSerializer(allMetrics,
+      child.output.map(_.dataType).toArray,
+      RapidsConf.ShuffleKudoMode.withName(RapidsConf.SHUFFLE_KUDO_WRITE_MODE.get(child.conf)),
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_ENABLED.get(child.conf),
+      RapidsConf.SHUFFLE_KUDO_SERIALIZER_MEASURE_BUFFER_COPY_ENABLED.get(child.conf))
 
   @transient lazy val inputRDD: RDD[ColumnarBatch] = child.executeColumnar()
 
@@ -112,6 +114,10 @@ case class GpuOptimizeWriteExchangeExec(
 
 
   @transient lazy val shuffleDependency: ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
+    // Get OP_TIME_NEW metrics from all descendants for exclusion (with deduplication)
+    val descendantOpTimeMetrics = getDescendantOpTimeMetrics
+    val opTimeNewShuffleWriteMetric = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
+    
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
       child.output,
@@ -122,7 +128,9 @@ case class GpuOptimizeWriteExchangeExec(
       useMultiThreadedShuffle=partitioning.usesMultiThreadedShuffle,
       metrics=allMetrics,
       writeMetrics=writeMetrics,
-      additionalMetrics=additionalMetrics)
+      additionalMetrics=additionalMetrics,
+      opTimeNewShuffleWrite=opTimeNewShuffleWriteMetric,
+      descendantOpTimeMetrics=descendantOpTimeMetrics)
     metrics("numPartitions").set(dep.partitioner.numPartitions)
     val executionId = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     SQLMetrics.postDriverMetricUpdates(

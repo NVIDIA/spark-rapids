@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.concurrent.atomic.AtomicInteger
+
 import scala.annotation.tailrec
 import scala.collection.mutable
 
@@ -24,11 +26,12 @@ import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
+import com.nvidia.spark.rapids.SplitReason.SplitReason
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, CpuSplitAndRetryOOM, GpuRetryOOM, GpuSplitAndRetryOOM, RmmSpark, RmmSparkThreadState}
+import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
-import org.apache.spark.sql.internal.SQLConf
 
 object RmmRapidsRetryIterator extends Logging {
 
@@ -294,6 +297,11 @@ object RmmRapidsRetryIterator extends Logging {
     item
   }
 
+  /** Co-work with AutoCloseableSeqInternal to print the total size information when OOM */
+  trait SizeProvider {
+    def sizeInBytes: Long
+  }
+
   /**
    * AutoCloseable wrapper on Seq[T], returning a Seq[T] that can be closed.
    *
@@ -311,6 +319,15 @@ object RmmRapidsRetryIterator extends Logging {
     override def iterator: Iterator[T] = ts.iterator
 
     override def apply(idx: Int): T = ts.apply(idx)
+
+    override def toString(): String = {
+      val totalSize = ts.map {
+        case sp: SizeProvider => sp.sizeInBytes
+        case _ => 0L
+      }.sum
+      s"AutoCloseableSeqInternal totalSize:$totalSize with ${length} elements, inner:\n" +
+        s"[${ts.mkString("; ")}]"
+    }
   }
 
   /**
@@ -359,10 +376,9 @@ object RmmRapidsRetryIterator extends Logging {
      * splitting a collection of batches into smaller collections to be attempted separately,
      * likely reducing GPU memory that needs to be manifested while calling `.next`.
      *
-     * @param isFromGpuOom true if the split happened because of a GPU OOM. Otherwise it was a
-     *                     CPU off heap OOM.
+     * @param splitReason the reason for the split
      */
-    def split(isFromGpuOom: Boolean): Unit
+    def split(splitReason: SplitReason): Unit
 
     override def next(): K
 
@@ -381,11 +397,15 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def hasNext: Boolean = !wasCalledSuccessfully
 
-    override def split(isFromGpuOom: Boolean): Unit = {
-      if (isFromGpuOom) {
-        throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
-      } else {
-        throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+    override def split(splitReason: SplitReason): Unit = {
+      splitReason match {
+        case SplitReason.CPU_OOM =>
+          throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+        case SplitReason.GPU_OOM =>
+          throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
+        case SplitReason.CUDF_OVERFLOW =>
+          throw new IllegalStateException("CUDF String column overflow caused split, but current "
+            + "spliterator does not support splitting.")
       }
     }
 
@@ -449,19 +469,59 @@ object RmmRapidsRetryIterator extends Logging {
 
     override def hasNext: Boolean = input.hasNext || attemptStack.nonEmpty
 
-    override def split(isFromGpuOom: Boolean): Unit = {
+    override def split(splitReason: SplitReason): Unit = {
       // If `split` OOMs, we are already the last thread standing
       // there is likely not much we can do, and for now we don't handle
       // this OOM
       if (splitPolicy == null) {
-        if (isFromGpuOom) {
-          throw new GpuSplitAndRetryOOM("GPU OutOfMemory: could not split inputs and retry")
-        } else {
-          throw new CpuSplitAndRetryOOM("CPU OutOfMemory: could not split inputs and retry")
+        val message = s"could not split inputs and retry. " +
+          s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+          s"The current attempt: " +
+          s"{${attemptStack.head}}"
+        splitReason match {
+          case SplitReason.GPU_OOM => throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: $message")
+          case SplitReason.CPU_OOM => throw new CpuSplitAndRetryOOM(s"CPU OutOfMemory: $message")
+          case SplitReason.CUDF_OVERFLOW =>
+            throw new IllegalStateException("CUDF String column overflow caused split," +
+              s" but splitPolicy not set. The current attempt: ${attemptStack.head}")
         }
       }
-      // splitPolicy must take ownership of the argument
-      val splitted = splitPolicy(attemptStack.pop())
+      val curAttempt = attemptStack.pop()
+      // Get the info before running the split, since the attempt may be closed after splitting.
+      val attemptAsString = closeOnExcept(curAttempt)(_.toString)
+      val splitted = try {
+        // splitPolicy must take ownership of the argument
+        splitPolicy(curAttempt)
+      } catch {
+          // We only care about OOM exceptions and wrap it by a new exception with the
+          // same type to provide more context for the OOM.
+          // This looks a little odd, because we can not change the type of root exception.
+          // Otherwise, some unit tests will fail due to the wrong exception type returned.
+        case go: GpuRetryOOM =>
+          throw new GpuRetryOOM(
+            s"GPU OutOfMemory: " +
+              s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+              s"Could not split the current attempt: {$attemptAsString}"
+          ).initCause(go)
+        case go: GpuSplitAndRetryOOM =>
+          throw new GpuSplitAndRetryOOM(
+            s"GPU OutOfMemory: " +
+              s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+              s"Could not split the current attempt: {$attemptAsString}"
+          ).initCause(go)
+        case co: CpuRetryOOM =>
+          throw new CpuRetryOOM(
+            s"CPU OutOfMemory: " +
+              s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+              s"Could not split the current attempt: {$attemptAsString}"
+          ).initCause(co)
+        case co: CpuSplitAndRetryOOM =>
+          throw new CpuSplitAndRetryOOM(
+            s"CPU OutOfMemory: " +
+              s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
+              s"Could not split the current attempt: {$attemptAsString}"
+          ).initCause(co)
+      }
       // the splitted sequence needs to be inserted in reverse order
       // so we try the first item first.
       splitted.reverse.foreach(attemptStack.push)
@@ -507,13 +567,21 @@ object RmmRapidsRetryIterator extends Logging {
       attemptIter: Spliterator[K])
       extends RmmRapidsRetryIterator[T, K](attemptIter) {
 
-    override def hasNext: Boolean = super.hasNext
+    override def hasNext: Boolean = {
+      try {
+        RetryStateTracker.enterRetryBlock()
+        super.hasNext
+      } finally {
+        RetryStateTracker.exitRetryBlock()
+      }
+    }
 
     override def next(): K = {
       if (!hasNext) {
         throw new NoSuchElementException("Closed called on an empty iterator.")
       }
       try {
+        RetryStateTracker.enterRetryBlock()
         super.next()
       } catch {
         case t: Throwable =>
@@ -521,6 +589,8 @@ object RmmRapidsRetryIterator extends Logging {
           // we close our attempts (which includes the item we last attempted)
           attemptIter.close()
           throw t
+      } finally {
+        RetryStateTracker.exitRetryBlock()
       }
     }
   }
@@ -537,8 +607,6 @@ object RmmRapidsRetryIterator extends Logging {
       extends Iterator[K] {
     // We want to be sure that retry will work in all cases
     TaskRegistryTracker.registerThreadForRetry()
-    // used to figure out if we should inject an OOM (only for tests)
-    private val config = Option(SQLConf.get).map(new RapidsConf(_))
 
     // this is true if an OOM was injected (only for tests)
     private var injectedOOM = false
@@ -561,52 +629,71 @@ object RmmRapidsRetryIterator extends Logging {
       }
     }
 
-    override def next(): K = {
+    override def next(): K = try {
       // this is set on the first exception, and we add suppressed if there are others
       // during the retry attempts
       var lastException: Throwable = null
       var firstAttempt: Boolean = true
       var result: Option[K] = None
-      var doSplit = false
-      var isFromGpuOom = true
+      var splitReason = SplitReason.NONE
       while (result.isEmpty && attemptIter.hasNext) {
+        RetryStateTracker.setCurThreadRetrying(!firstAttempt)
         if (!firstAttempt) {
           // call thread block API
           try {
+            threadCountBlockedUntilReady.incrementAndGet()
             RmmSpark.blockThreadUntilReady()
           } catch {
             case _: GpuSplitAndRetryOOM =>
-              doSplit = true
-              isFromGpuOom = true
+              splitReason = SplitReason.GPU_OOM
             case _: CpuSplitAndRetryOOM =>
-              doSplit = true
-              isFromGpuOom = false
+              splitReason = SplitReason.CPU_OOM
+          } finally {
+            threadCountBlockedUntilReady.decrementAndGet()
           }
         }
         firstAttempt = false
-        if (doSplit) {
-          attemptIter.split(isFromGpuOom)
+        if (splitReason != SplitReason.NONE) {
+          preSplitLogging()
+          attemptIter.split(splitReason)
         }
-        doSplit = false
+        splitReason = SplitReason.NONE
         try {
           // call the user's function
-          config.foreach {
-            case rapidsConf if !injectedOOM && rapidsConf.testRetryOOMInjectionMode.numOoms > 0 =>
+          RapidsConf.testRetryOOMInjectionMode() match {
+            case mode if !injectedOOM && mode.numOoms > 0 =>
               injectedOOM = true
               // ensure we have associated our thread with the running task, as
               // `forceRetryOOM` requires a prior association.
-              RmmSpark.currentThreadIsDedicatedToTask(TaskContext.get().taskAttemptId())
-              val injectConf = rapidsConf.testRetryOOMInjectionMode
-              if (injectConf.withSplit) {
-                RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
-                          injectConf.numOoms,
-                          injectConf.oomInjectionFilter.ordinal,
-                          injectConf.skipCount)
+              var threadAssociated = true
+              if (!RmmSpark.isThreadWorkingOnTaskAsPoolThread) {
+                // If RmmSpark isn't aware of this thread, we are going to
+                // try to find the TaskContext and use it to register it for a taskID.
+                // However, TaskContext is not going to work for a pool thread that isn't
+                // managed by Spark, so we are going to skip registration, and skip the OOM.
+                // This is a temporary workaround, see:
+                // https://github.com/NVIDIA/spark-rapids/issues/13098
+                threadAssociated = false
+                Option(TaskContext.get()).foreach { tc =>
+                  threadAssociated = true
+                  RmmSpark.currentThreadIsDedicatedToTask(tc.taskAttemptId())
+                }
+              }
+              if (threadAssociated) {
+                if (mode.withSplit) {
+                  RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                } else {
+                  RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
+                    mode.numOoms,
+                    mode.oomInjectionFilter.ordinal,
+                    mode.skipCount)
+                }
               } else {
-                RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId,
-                  injectConf.numOoms,
-                  injectConf.oomInjectionFilter.ordinal,
-                  injectConf.skipCount)
+                log.warn("pool thread not registered with RmmSpark, cannot inject OOM. See " +
+                  "https://github.com/NVIDIA/spark-rapids/issues/13098")
               }
             case _ => ()
           }
@@ -614,18 +701,38 @@ object RmmRapidsRetryIterator extends Logging {
           clearInjectedOOMIfNeeded()
         } catch {
           case ex: Throwable =>
+            log.info("got a throwable in RmmRapidsRetryIterator.next():", ex)
             // handle a retry as the top-level exception
             val (topLevelIsRetry, topLevelIsSplit, isGpuOom) = isRetryOrSplitAndRetry(ex)
-            doSplit = topLevelIsSplit
-            isFromGpuOom = isGpuOom
+            if (topLevelIsSplit) {
+              if (isGpuOom) {
+                splitReason = SplitReason.GPU_OOM
+              } else {
+                splitReason = SplitReason.CPU_OOM
+              }
+              logInfo("splitReason is set " +
+                s"to ${splitReason} after checking isRetryOrSplitAndRetry, related exception:",
+                ex)
+            }
 
             // handle any retries that are wrapped in a different top-level exception
             var causedByRetry = false
             if (!topLevelIsRetry) {
               val (cbRetry, cbSplit, isGpuOom) = causedByRetryOrSplit(ex)
               causedByRetry = cbRetry
-              doSplit = doSplit || cbSplit
-              isFromGpuOom = isGpuOom
+              if (!(splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM)) {
+                if (cbSplit) {
+                  if (isGpuOom) {
+                    splitReason = SplitReason.GPU_OOM
+                  } else {
+                    splitReason = SplitReason.CPU_OOM
+                  }
+                }
+                if (splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM) {
+                  logInfo(s"splitReason is set to ${splitReason} after checking " +
+                    s"causedByRetryOrSplit, related exception:", ex)
+                }
+              }
             }
 
             clearInjectedOOMIfNeeded()
@@ -639,7 +746,9 @@ object RmmRapidsRetryIterator extends Logging {
             if (!topLevelIsRetry && !causedByRetry) {
               if (isOrCausedByColumnSizeOverflow(ex)) {
                 // CUDF column size overflow? Attempt split-retry.
-                doSplit = true
+                splitReason = SplitReason.CUDF_OVERFLOW
+                logInfo(s"splitReason is set to ${splitReason} after checking " +
+                  s"isOrCausedByColumnSizeOverflow, related exception:", ex)
               } else {
                 // we want to throw early here, since we got an exception
                 // we were not prepared to handle
@@ -654,6 +763,8 @@ object RmmRapidsRetryIterator extends Logging {
         throw lastException
       }
       result.get
+    } finally {
+      RetryStateTracker.clearCurThreadRetrying()
     }
   }
 
@@ -743,6 +854,68 @@ object RmmRapidsRetryIterator extends Logging {
     (target: AutoCloseableTargetSize) => {
       splitTargetSizeInHalfInternal(target, false)
   }
+
+  /**
+   * Log memory footprint when GPU OOM or CPU OOM happens.
+   */
+  val BOOKKEEP_MEMORY: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep")
+  // track the callstack for each memory allocation, don't enable it unless really needed
+  val BOOKKEEP_MEMORY_CALLSTACK: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.bookkeep.callstack")
+  // By default, only print first time to avoid too much log
+  val PRE_SPLIT_PRINT_ALL: Boolean =
+    java.lang.Boolean.getBoolean("ai.rapids.memory.preSplit.printAll")
+  var preSplitPrinted = false
+
+  val threadCountBlockedUntilReady: AtomicInteger = new AtomicInteger(0)
+
+  private def preSplitLogging(): Unit = synchronized { // use synchronized to keep neat
+    if (!preSplitPrinted || PRE_SPLIT_PRINT_ALL) {
+      log.info(s"Current threadCountBlockedUntilReady pre split: " +
+        s"${threadCountBlockedUntilReady.get()}")
+
+      logSpillFrameworkSummary()
+      if (BOOKKEEP_MEMORY) {
+        logMemoryBookkeeping()
+      }
+      logStacktrace()
+      preSplitPrinted = true
+    }
+  }
+
+  private def logSpillFrameworkSummary(): Unit = {
+    // print spillable status
+    logInfo(SpillFramework.getHostStoreSpillableSummary)
+    logInfo(SpillFramework.getDeviceStoreSpillableSummary)
+  }
+
+  // For GPU/CPU SplitAndRetryOOM, we are very interested what each task is doing when one
+  // of the tasks try to split and retry (in the context of WithRetryNoSplit).
+  private def logStacktrace(): Unit = {
+    val sb = new StringBuilder("<<Jstack Details>>\n\n")
+    Thread.getAllStackTraces.forEach((thread: Thread, stackTrace: Array[StackTraceElement])
+    => {
+      // Print the thread name and its state
+      sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
+        s"- Thread ID: ${thread.getId}\n")
+      // Print the stack trace for this thread
+      for (element <- stackTrace) {
+        sb.append(s"\tat $element")
+      }
+      sb.append("\n\n")
+    })
+    logInfo(sb.toString())
+  }
+
+  private def logMemoryBookkeeping(): Unit = { // use synchronized to keep neat
+    // print host memory bookkeeping
+    logInfo(HostAlloc.getHostAllocBookkeepSummary())
+
+    // print device memory bookkeeping
+    // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
+    // logInfo(BaseDeviceMemoryBuffer.getDeviceMemoryBookkeepSummary)
+  }
 }
 
 /**
@@ -754,4 +927,72 @@ object RmmRapidsRetryIterator extends Logging {
  */
 case class AutoCloseableTargetSize(targetSize: Long, minSize: Long) extends AutoCloseable {
   override def close(): Unit = ()
+}
+
+/**
+ * This leverages a ThreadLocal of boolean to track if a task thread is currently
+ * executing a retry. And the boolean state will be used by all the
+ * `GpuExpressionRetryable`s to determine if the context is safe to retry the evaluation.
+ */
+object RetryStateTracker {
+  private val localIsRetrying = new ThreadLocal[java.lang.Boolean]()
+  // Track if the current thread is executing inside a retry framework block (withRetry*).
+  // Use a depth counter to correctly handle nested retry blocks.
+  private val localRetryBlockDepth = new ThreadLocal[java.lang.Integer]()
+  // Gate retry-block tracking behind the retry coverage debug flag to avoid overhead when unused.
+  private val trackRetryBlock: Boolean = AllocationRetryCoverageTracker.ENABLED
+
+  def isCurThreadRetrying: Boolean = {
+    val ret = localIsRetrying.get()
+    ret != null && ret
+  }
+
+  /**
+   * True if the current thread is executing inside a retry framework block (e.g. withRetry).
+   */
+  def isInRetryBlock: Boolean = {
+    if (!trackRetryBlock) {
+      false
+    } else {
+      val depth = localRetryBlockDepth.get()
+      depth != null && depth.intValue() > 0
+    }
+  }
+
+  def setCurThreadRetrying(retrying: Boolean): Unit = localIsRetrying.set(retrying)
+
+  def clearCurThreadRetrying(): Unit = localIsRetrying.remove()
+
+  /**
+   * Mark entering a retry framework block on the current thread.
+   */
+  def enterRetryBlock(): Unit = {
+    if (trackRetryBlock) {
+      val depth = localRetryBlockDepth.get()
+      if (depth == null) {
+        localRetryBlockDepth.set(1)
+      } else {
+        localRetryBlockDepth.set(depth.intValue() + 1)
+      }
+    }
+  }
+
+  /**
+   * Mark leaving a retry framework block on the current thread.
+   */
+  def exitRetryBlock(): Unit = {
+    if (trackRetryBlock) {
+      val depth = localRetryBlockDepth.get()
+      if (depth == null || depth.intValue() <= 1) {
+        localRetryBlockDepth.remove()
+      } else {
+        localRetryBlockDepth.set(depth.intValue() - 1)
+      }
+    }
+  }
+}
+
+object SplitReason extends Enumeration {
+  type SplitReason = Value
+  val GPU_OOM, CPU_OOM, CUDF_OVERFLOW, NONE = Value
 }

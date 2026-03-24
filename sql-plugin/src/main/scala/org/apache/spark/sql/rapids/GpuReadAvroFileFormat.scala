@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import com.nvidia.spark.rapids.{GpuMetric, GpuReadFileFormatWithMetrics, PartitionReaderIterator, RapidsConf, SparkPlanMeta}
-import com.nvidia.spark.rapids.shims.SparkShimImpl
+import com.nvidia.spark.rapids.{GpuMetric, GpuReadFileFormatWithMetrics, PartitionReaderIterator, RapidsConf, SparkPlanMeta, ThreadPoolConfBuilder}
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.broadcast.Broadcast
@@ -27,6 +26,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
@@ -47,8 +47,7 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       filters: Seq[Filter],
       options: Map[String, String],
       hadoopConf: Configuration,
-      metrics: Map[String, GpuMetric],
-      alluxioPathReplacementMap: Option[Map[String, String]] = None)
+      metrics: Map[String, GpuMetric])
     : PartitionedFile => Iterator[InternalRow] = {
     val sqlConf = sparkSession.sessionState.conf
     val broadcastedHadoopConf =
@@ -73,6 +72,7 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       broadcastedConf: Broadcast[SerializableConfiguration],
       pushedFilters: Array[Filter],
       fileScan: GpuFileSourceScanExec): PartitionReaderFactory = {
+    val poolConfBuilder = ThreadPoolConfBuilder(fileScan.rapidsConf)
     GpuAvroMultiFilePartitionReaderFactory(
       fileScan.relation.sparkSession.sessionState.conf,
       fileScan.rapidsConf,
@@ -83,6 +83,7 @@ class GpuReadAvroFileFormat extends AvroFileFormat with GpuReadFileFormatWithMet
       new AvroOptions(fileScan.relation.options, broadcastedConf.value.value),
       fileScan.allMetrics,
       pushedFilters,
+      poolConfBuilder,
       fileScan.queryUsesInputFile)
   }
 }
@@ -91,7 +92,7 @@ object GpuReadAvroFileFormat {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     GpuAvroScan.tagSupport(
-      SparkShimImpl.sessionFromPlan(fsse),
+      SparkSessionUtils.sessionFromPlan(fsse),
       fsse.requiredSchema,
       fsse.relation.options,
       meta

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,10 @@
 import pytest
 from pyspark import BarrierTaskContext, TaskContext
 
-from conftest import is_at_least_precommit_run
-from spark_session import is_databricks_runtime, is_before_spark_330, is_before_spark_350, is_spark_341
+from conftest import is_at_least_precommit_run, is_databricks_runtime
+from spark_session import (is_before_spark_330, is_before_spark_331, is_before_spark_350,
+                           is_databricks133_or_later, is_databricks143_or_later,
+                           is_spark_400_or_later, is_spark_411_or_later)
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -25,14 +27,14 @@ try:
 except Exception as e:
     if is_at_least_precommit_run():
         raise AssertionError("incorrect pandas version during required testing " + str(e))
-    pytestmark = pytest.mark.skip(reason=str(e))
+    pytestmark += pytest.mark.skip(reason=str(e))
 
 try:
     require_minimum_pyarrow_version()
 except Exception as e:
     if is_at_least_precommit_run():
         raise AssertionError("incorrect pyarrow version during required testing " + str(e))
-    pytestmark = pytest.mark.skip(reason=str(e))
+    pytestmark += pytest.mark.skip(reason=str(e))
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
@@ -47,8 +49,18 @@ from typing import Iterator, Tuple
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
     'spark.rapids.sql.exec.WindowInPandasExec': 'true',
-    'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true'
+    # ArrowWindowPythonExec is the new name for WindowInPandasExec in Spark 4.1+
+    'spark.rapids.sql.exec.ArrowWindowPythonExec': 'true',
+    'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true',
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    'spark.sql.adaptive.enabled': 'false'
 }
+
+# From Spark 41x, Spark uses stricter checker by default,
+# this is a workaround solution to pass some cases,
+# e.g.: Int64 + Int64 can cause overflow, and thus fail when use stricter checker on Spark 411
+arrow_udf_conf_unsafe = copy_and_update(arrow_udf_conf,
+                                        {'spark.sql.execution.pandas.convertToArrowArraySafely': 'false'})
 
 data_gens_nested_for_udf = arrow_array_gens + arrow_struct_gens
 
@@ -67,8 +79,10 @@ def test_pandas_math_udf(data_gen):
     my_udf = f.pandas_udf(add, returnType=LongType())
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4).select(
-                my_udf(f.col('a') - 3, f.col('b'))),
-            conf=arrow_udf_conf)
+                my_udf(f.col('a'), f.col('b'))),
+            # use unsafe mode to avoid overflow
+            # int64 + int64 can overflow when return type is long type
+            conf=arrow_udf_conf_unsafe)
 
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
@@ -81,7 +95,9 @@ def test_iterator_math_udf(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4).select(
                 my_udf(f.col('a'), f.col('b'))),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            # int64 + int64 can overflow when return type is long type
+            conf=arrow_udf_conf_unsafe)
 
 
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
@@ -136,7 +152,7 @@ def test_group_aggregate_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen)\
                     .groupBy('a')\
                     .agg(pandas_sum(f.col('b'))),
-            conf=arrow_udf_conf)
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
@@ -175,8 +191,10 @@ pre_cur_win = Window\
 low_upper_win = Window.partitionBy('a').orderBy('b').rowsBetween(-3, 3)
 
 running_win_param = pytest.param(pre_cur_win, marks=pytest.mark.xfail(
-    condition=is_databricks_runtime() and is_spark_341(),
-    reason='DB13.3 wrongly uses RunningWindowFunctionExec to evaluate a PythonUDAF and it will fail even on CPU'))
+    condition=is_databricks133_or_later(),
+    reason="DB13.3 and 14.3 wrongly use RunningWindowFunctionExec to evaluate a PythonUDAF \
+and it will fail even on CPU"))
+
 udf_windows = [no_part_win, unbounded_win, cur_follow_win, running_win_param, low_upper_win]
 window_ids = ['No_Partition', 'Unbounded', 'Unbounded_Following', 'Unbounded_Preceding',
               'Lower_Upper']
@@ -197,7 +215,8 @@ def test_window_aggregate_udf(data_gen, window):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen).select(
             pandas_sum(f.col('b')).over(window)),
-        conf=arrow_udf_conf)
+        # use unsafe mode to avoid overflow
+        conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order
@@ -266,7 +285,8 @@ def test_group_apply_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen)\
                     .groupBy('a')\
                     .applyInPandas(pandas_add, schema="a long, b long"),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
@@ -293,7 +313,8 @@ def test_map_apply_udf(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4)\
                     .mapInPandas(pandas_filter, schema="a long, b long"),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
@@ -392,8 +413,11 @@ def test_map_arrow_apply_udf(data_gen):
         conf=conf)
 
 
+map_in_pandas_node_name = 'MapInArrowExec' if is_spark_400_or_later() or is_databricks143_or_later() \
+    else 'PythonMapInArrowExec'
+
 @pytest.mark.parametrize('data_type', ['string', 'binary'], ids=idfn)
-@allow_non_gpu('PythonMapInArrowExec')
+@allow_non_gpu(map_in_pandas_node_name)
 @pytest.mark.skipif(is_before_spark_350(), reason='spark.sql.execution.arrow.useLargeVarTypes is introduced in Pyspark 3.5.0')
 def test_map_arrow_large_var_types_fallback(data_type):
     def filter_func(iterator):
@@ -414,7 +438,7 @@ def test_map_arrow_large_var_types_fallback(data_type):
     assert_gpu_fallback_collect(
         lambda spark: binary_op_df(spark, data_gen, num_slices=4) \
             .mapInArrow(filter_func, schema=f"a {data_type}, b {data_type}"),
-        "PythonMapInArrowExec",
+        map_in_pandas_node_name,
         conf=conf)
 
 
@@ -432,11 +456,15 @@ def test_map_pandas_udf_with_empty_partitions():
                     reason='mapInPandas with barrier mode is introduced by Pyspark 3.5.0')
 @pytest.mark.parametrize('is_barrier', [True, False], ids=idfn)
 def test_map_in_pandas_with_barrier_mode(is_barrier):
+    # The "tc" here can be either a BarrierTaskContext or TaskContext on DB14.3,
+    # not sure any special change made by DB.
+    tc_types = (BarrierTaskContext, TaskContext) if is_databricks143_or_later() else BarrierTaskContext
+
     def func(iterator):
         tc = TaskContext.get()
         assert tc is not None
         if is_barrier:
-            assert isinstance(tc, BarrierTaskContext)
+            assert isinstance(tc, tc_types)
         else:
             assert not isinstance(tc, BarrierTaskContext)
 
@@ -451,11 +479,15 @@ def test_map_in_pandas_with_barrier_mode(is_barrier):
                     reason='mapInArrow with barrier mode is introduced by Pyspark 3.5.0')
 @pytest.mark.parametrize('is_barrier', [True, False], ids=idfn)
 def test_map_in_arrow_with_barrier_mode(is_barrier):
+    # The "tc" here can be either a BarrierTaskContext or TaskContext on DB14.3,
+    # not sure any special change made by DB.
+    tc_types = (BarrierTaskContext, TaskContext) if is_databricks143_or_later() else BarrierTaskContext
+
     def func(iterator):
         tc = TaskContext.get()
         assert tc is not None
         if is_barrier:
-            assert isinstance(tc, BarrierTaskContext)
+            assert isinstance(tc, tc_types)
         else:
             assert not isinstance(tc, BarrierTaskContext)
 
@@ -464,3 +496,49 @@ def test_map_in_arrow_with_barrier_mode(is_barrier):
 
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.range(0, 10, 1, 1).mapInArrow(func, "id long", is_barrier))
+
+
+def test_pandas_udf_rows_only():
+    def add_one(a):
+        return a + 1
+    my_udf = f.pandas_udf(add_one, returnType=IntegerType())
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, int_gen, num_slices=4, length=52345)
+            .select(my_udf(f.lit(0))),
+        conf=arrow_udf_conf)
+
+
+# Python UDFs support nondeterministic expressions from Spark 3.3.1.
+# See https://github.com/apache/spark/commit/1a01a492c051bb861c480f224a3c310e133e4d01
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_331(),
+                    reason='Nondeterministic expressions are supported from Spark 3.3.1')
+def test_pandas_math_udf_with_rand():
+    def add(rand_value):
+        return rand_value
+    my_udf = f.pandas_udf(add, returnType=IntegerType())
+    assert_gpu_and_cpu_are_equal_collect(
+        # Ensure there is only one partition to make the output comparable.
+        lambda spark: unary_op_df(spark, int_gen, length=10, num_slices=1).select(
+            my_udf(f.rand(42))),
+        conf=arrow_udf_conf_unsafe)
+
+
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_spark_411_or_later(),
+                    reason='iterator.DataFrame in group-map is supported from 4.1.X')
+def test_apply_in_pandas_iterator_basic():
+    # group_map udf accepts an iterator and returns an iterator
+    def sum_udf(batches: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
+        total = 0
+        for batch in batches:
+            total += batch["v"].sum()
+        yield pd.DataFrame({"v": [total]})
+
+    def test_func(spark):
+        df = spark.createDataFrame(
+            [(1, 11), (1, 22), (2, 33), (2, 55), (2, 100)], ("id", "v")
+        )
+        return df.groupby("id").applyInPandas(sum_udf, schema="v long")
+
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=arrow_udf_conf_unsafe)

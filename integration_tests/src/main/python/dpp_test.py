@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024, NVIDIA CORPORATION.
+# Copyright (c) 2021-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ from pyspark.sql.types import IntegerType
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
 from conftest import spark_tmp_table_factory
 from data_gen import *
-from marks import ignore_order, allow_non_gpu
-from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime, is_databricks113_or_later
+from marks import ignore_order, allow_non_gpu, datagen_overrides
+from spark_session import is_before_spark_320, with_cpu_session, is_before_spark_312, is_databricks_runtime, is_databricks113_or_later, is_databricks_version_or_later
 
 # non-positive values here can produce a degenerative join, so here we ensure that most values are
 # positive to ensure the join will produce rows. See https://github.com/NVIDIA/spark-rapids/issues/10147
@@ -167,10 +167,17 @@ _statements = [
     '''
 ]
 
+# On some Databricks versions (>=14.3), some query plans include a `CollectLimitExec`,
+# when filtering partitions.  This exec falls back to CPU.  These tests allow for `CollectLimit` to
+# run on the CPU, if everything else in the plan execute as expected.
+# Further details are furnished at https://github.com/NVIDIA/spark-rapids/issues/11764.
+dpp_fallback_execs=["CollectLimitExec"] if is_databricks_version_or_later(14,3) else []
 
 # When BroadcastExchangeExec is available on filtering side, and it can be reused:
 # DynamicPruningExpression(InSubqueryExec(value, GpuSubqueryBroadcastExec)))
 @ignore_order
+@allow_non_gpu(*dpp_fallback_execs)
+@datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10147")
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
@@ -241,6 +248,7 @@ def test_dpp_bypass(spark_tmp_table_factory, store_format, s_index, aqe_enabled)
 # then Spark will plan an extra Aggregate to collect filtering values:
 # DynamicPruningExpression(InSubqueryExec(value, SubqueryExec(Aggregate(...))))
 @ignore_order
+@allow_non_gpu(*dpp_fallback_execs)
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('s_index', list(range(len(_statements))), ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
@@ -280,10 +288,11 @@ def test_dpp_skip(spark_tmp_table_factory, store_format, s_index, aqe_enabled):
         non_exist_classes='DynamicPruningExpression',
         conf=dict(_dpp_fallback_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
+dpp_like_any_fallback_execs=['FilterExec', 'CollectLimitExec'] if is_databricks_version_or_later(14,3) else ['FilterExec']
 
 # GPU verification on https://issues.apache.org/jira/browse/SPARK-34436
 @ignore_order
-@allow_non_gpu('FilterExec')
+@allow_non_gpu(*dpp_like_any_fallback_execs)
 @pytest.mark.parametrize('store_format', ['parquet', 'orc'], ids=idfn)
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
@@ -320,6 +329,8 @@ def test_dpp_like_any(spark_tmp_table_factory, store_format, aqe_enabled):
         exist_classes,
         conf=dict(_exchange_reuse_conf + [('spark.sql.adaptive.enabled', aqe_enabled)]))
 
+
+@allow_non_gpu(*dpp_fallback_execs)
 # Test handling DPP expressions from a HashedRelation that rearranges columns
 @pytest.mark.parametrize('aqe_enabled', [
     'false',
@@ -350,6 +361,8 @@ def test_dpp_from_swizzled_hash_keys(spark_tmp_table_factory, aqe_enabled):
                                ("spark.rapids.sql.castStringToTimestamp.enabled", "true"),
                                ("spark.rapids.sql.hasExtendedYearValues", "false")]))
 
+
+@allow_non_gpu("EmptyRelationExec")  # 'EmptyRelationExec' is introduced from Spark 400
 # Test handling DPP subquery that could broadcast EmptyRelation rather than a GPU serialized batch
 @pytest.mark.parametrize('aqe_enabled', [
     'false',

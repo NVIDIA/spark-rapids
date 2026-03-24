@@ -2,7 +2,7 @@
 
 We have a stand-alone example that you can run in the [integration tests](../integration_tests).
 The example is based off of the mortgage dataset you can download
-[here](http://www.fanniemae.com/portal/funding-the-market/data/loan-performance-data.html)
+[here](https://capitalmarkets.fanniemae.com/credit-risk-transfer/single-family-credit-risk-transfer/fannie-mae-single-family-loan-performance-data)
 and the code is in the `com.nvidia.spark.rapids.tests.mortgage` package.
 
 ## Unit Tests
@@ -44,9 +44,9 @@ and the the
 
 #### Running Unit Tests Against Specific Apache Spark Versions
 You can run the unit tests against different versions of Spark using the different profiles. The
-default version runs against Spark 3.1.1, to run against a specific version use a buildver property:
+default version runs against Spark 3.3.0, to run against a specific version use a buildver property:
 
-- `-Dbuildver=311` (Spark 3.1.1)
+- `-Dbuildver=330` (Spark 3.3.0)
 - `-Dbuildver=350` (Spark 3.5.0)
 
 etc

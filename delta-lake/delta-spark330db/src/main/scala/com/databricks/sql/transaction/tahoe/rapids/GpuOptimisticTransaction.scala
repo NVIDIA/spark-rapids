@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2025, NVIDIA CORPORATION.
  *
  * This file was derived from OptimisticTransaction.scala and TransactionalWrite.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
@@ -32,7 +32,7 @@ import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta._
-import com.nvidia.spark.rapids.shims.ParquetFieldIdShims
+import com.nvidia.spark.rapids.shims.parquet.ParquetFieldIdShims
 import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.fs.Path
 
@@ -203,7 +203,7 @@ class GpuOptimisticTransaction(
       val empty2NullPlan = convertEmptyToNullIfNeeded(queryPhysicalPlan,
         partitioningColumns, constraints)
       val optimizedPlan =
-        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize)
+        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize, writeOptions)
       val planWithInvariants = addInvariantChecks(optimizedPlan, constraints)
       val physicalPlan = convertToGpu(planWithInvariants)
 
@@ -220,8 +220,8 @@ class GpuOptimisticTransaction(
         val serializableHadoopConf = new SerializableConfiguration(hadoopConf)
         val basicWriteJobStatsTracker = new BasicColumnarWriteJobStatsTracker(
           serializableHadoopConf,
-          BasicWriteJobStatsTracker.metrics)
-        registerSQLMetrics(spark, basicWriteJobStatsTracker.driverSideMetrics)
+          GpuMetric.wrap(BasicWriteJobStatsTracker.metrics))
+        registerSQLMetrics(spark, GpuMetric.unwrap(basicWriteJobStatsTracker.driverSideMetrics))
         statsTrackers.append(basicWriteJobStatsTracker)
         gpuRapidsWrite.foreach { grw =>
           val tracker = new GpuWriteJobStatsTracker(serializableHadoopConf,
@@ -261,8 +261,9 @@ class GpuOptimisticTransaction(
           bucketSpec = None,
           statsTrackers = optionalStatsTracker.toSeq ++ identityTracker.toSeq ++ statsTrackers,
           options = options,
-          rapidsConf.stableSort,
-          rapidsConf.concurrentWriterPartitionFlushSize)
+          useStableSort = rapidsConf.stableSort,
+          concurrentWriterPartitionFlushSize = rapidsConf.concurrentWriterPartitionFlushSize,
+          baseDebugOutputPath = rapidsConf.outputDebugDumpPrefix)
       } catch {
         case s: SparkException =>
           // Pull an InvariantViolationException up to the top level if it was the root cause.

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright (c) 2020-2024, NVIDIA CORPORATION.
+  Copyright (c) 2020-2026, NVIDIA CORPORATION.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shim-deps-parent_2.12</artifactId>
-        <version>24.04.0-SNAPSHOT</version>
+        <version>26.04.0-SNAPSHOT</version>
         <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-sql_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark SQL Plugin</name>
     <description>The RAPIDS SQL plugin for Apache Spark</description>
-    <version>24.04.0-SNAPSHOT</version>
+    <version>26.04.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>sql-plugin</rapids.module>
@@ -38,6 +38,11 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>me.bechberger</groupId>
+            <artifactId>ap-loader-all</artifactId>
+            <version>${ap.loader.version}</version>
+        </dependency>
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>spark-rapids-jni</artifactId>
@@ -77,32 +82,39 @@
             <artifactId>flatbuffers-java</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-bundled-guava</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-core</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.apache.spark</groupId>
             <artifactId>spark-avro_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
-            <!-- Used for Alluxio mounting -->
-            <groupId>org.alluxio</groupId>
-            <artifactId>alluxio-shaded-client</artifactId>
+            <groupId>org.roaringbitmap</groupId>
+            <artifactId>RoaringBitmap</artifactId>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>rapids-4-spark-hybrid_${scala.binary.version}</artifactId>
+            <version>${spark-rapids-hybrid.version}</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
+    <!-- #if scala-2.13 --><!--
+    <profiles>
+        <profile>
+            <id>release400</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>400</value>
+                </property>
+            </activation>
+        </profile>
+    </profiles>
+    --><!-- #endif scala-2.13 -->
     <build>
         <resources>
           <resource>

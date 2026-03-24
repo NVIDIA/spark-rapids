@@ -1,4 +1,4 @@
-# Copyright (c) 2023, NVIDIA CORPORATION.
+# Copyright (c) 2023-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -84,11 +84,15 @@ def extract_partition_cols(gen_list):
 @inject_oom
 @pytest.mark.parametrize('file_format', file_formats)
 @pytest.mark.parametrize('key', gen_list_dict.keys())
-def test_col_size_exceeding_cudf_limit(spark_tmp_path, file_format, key):
+@pytest.mark.parametrize('reader_type', ['AUTO', 'COALESCING', 'MULTITHREADED', 'PERFILE'])
+def test_col_size_exceeding_cudf_limit(spark_tmp_path, file_format, key, reader_type):
     gen_list = gen_list_dict[key]
     partition_cols = extract_partition_cols(gen_list)
     gen = StructGen(gen_list, nullable=False)
     data_path = spark_tmp_path + '/PART_DATA/' + key
+    new_conf=copy_and_update(conf, {'spark.rapids.sql.format.parquet.reader.type': reader_type,
+        'spark.rapids.sql.format.orc.reader.type': reader_type,
+        'spark.rapids.sql.format.avro.reader.type': reader_type})
     with_cpu_session(
         lambda spark: gen_df(spark, gen, length=5000).coalesce(1).write.partitionBy(partition_cols).format(file_format)
         .save(data_path))
