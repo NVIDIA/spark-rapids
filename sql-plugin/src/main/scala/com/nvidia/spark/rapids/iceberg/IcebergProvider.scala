@@ -66,7 +66,7 @@ object IcebergProvider {
     }
   }
 
-  // (Spark major.minor.patch, Iceberg major.minor) -> shim sub-package
+  // (Spark feature.major.patch, Iceberg major.minor) -> shim sub-package
   private val sparkIcebergToShim: Map[(String, String), String] = Map(
     ("3.5.0", "1.6") -> "iceberg16x",
     ("3.5.1", "1.6") -> "iceberg16x",
