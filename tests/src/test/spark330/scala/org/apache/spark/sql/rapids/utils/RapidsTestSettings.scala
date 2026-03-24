@@ -114,7 +114,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-21258: complex object in combination with spilling", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
     .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", ADJUST_UT("Replaced by testRapids version for GPU execution"))
   enableSuite[RapidsDateExpressionsSuite]
-    .exclude("unsupported fmt fields for trunc/date_trunc results null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13757"))
     .exclude("SPARK-31896: Handle am-pm timestamp parsing when hour is missing", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13758"))
     .exclude("SPARK-33498: GetTimestamp,UnixTimestamp,ToUnixTimestamp with parseError", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13759"))
     .exclude("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp", ADJUST_UT("Replaced by modified version without intercept[Exception] part"))
@@ -216,7 +215,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsMergedParquetReadSchemaSuite]
   enableSuite[RapidsGeneratorFunctionSuite]
   enableSuite[RapidsSQLQuerySuite]
-    .exclude("SPARK-6743: no columns from cache", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14098"))
     .exclude("aggregation with codegen updates peak execution memory", WONT_FIX_ISSUE("Codegen and memory metrics not applicable for GPU"))
     .exclude("external sorting updates peak execution memory", WONT_FIX_ISSUE("Memory metrics implementation differs on GPU"))
     .exclude("run sql directly on files", ADJUST_UT("Replaced by testRapids version that expects \"Path does not exist\" instead of \"Hive built-in ORC data source must be used with Hive support\" because there's a spark-hive jar in the CLASSPATH in our UT running"))
@@ -225,8 +223,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-17515: CollectLimit.execute() should perform per-partition limits", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14109"))
     .exclude("SPARK-19650: An action on a Command should not trigger a Spark job", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14110"))
     .exclude("SPARK-31594: Do not display the seed of rand/randn with no argument in output schema", ADJUST_UT("Replaced by testRapids version with a correct regex expression to match the projectExplainOutput, randn isn't supported now. See https://github.com/NVIDIA/spark-rapids/issues/11613"))
-    .exclude("normalize special floating numbers in subquery", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14116"))
-    .exclude("SPARK-33677: LikeSimplification should be skipped if pattern contains any escapeChar", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14117"))
     .exclude("SPARK-33593: Vector reader got incorrect data with binary partition value", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14118"))
     .exclude("SPARK-33084: Add jar support Ivy URI in SQL -- jar contains udf class", ADJUST_UT("Replaced by testRapids version that uses testFile() to access Spark test resources instead of getContextClassLoader"))
     .exclude("SPARK-33482: Fix FileScan canonicalization", ADJUST_UT("Replaced by testRapids version using V1 sources with AQE and broadcast disabled to assert ReusedExchangeExec directly"))

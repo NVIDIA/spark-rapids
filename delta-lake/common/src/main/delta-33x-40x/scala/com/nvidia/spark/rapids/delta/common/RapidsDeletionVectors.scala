@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.delta.common
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.metadata.BlockMetaData
 
@@ -26,8 +27,9 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.internal.MDC
 import org.apache.spark.sql.delta._
 import org.apache.spark.sql.delta.actions._
-import org.apache.spark.sql.delta.deletionvectors.{RapidsDeletionVectorStore, RapidsDeletionVectorStoredBitmap}
+import org.apache.spark.sql.delta.deletionvectors.{RapidsDeletionVectorStore, RapidsDeletionVectorStoredBitmap, RoaringBitmapArray, StoredBitmap}
 import org.apache.spark.sql.delta.logging.DeltaLogKeys
+import org.apache.spark.sql.delta.storage.dv.HadoopFileSystemDVStore
 import org.apache.spark.sql.sources._
 
 object RapidsDeletionVectors extends Logging {
@@ -128,7 +130,34 @@ object RapidsDeletionVectors extends Logging {
     }
   }
 
-  def getRowGroupMetadata(blocks: Seq[BlockMetaData]): (Array[Long], Array[Int]) = {
+  def loadScalaBitmap(
+      conf: Configuration,
+      dvDescriptorOpt: Option[String],
+      filterTypeOpt: Option[RowIndexFilterType],
+      tablePath: String): RoaringBitmapArray = {
+    if (dvDescriptorOpt.isDefined && filterTypeOpt.isDefined) {
+      val dvDesc = DeletionVectorDescriptor.deserializeFromBase64(dvDescriptorOpt.get)
+
+      // The filter type should always be IF_CONTAINED for deletion vectors
+      // as the bitmap represents the rows to be deleted.
+      // See [[RowIndexFilterType]] for more details.
+      filterTypeOpt.get match {
+        case RowIndexFilterType.IF_CONTAINED =>
+          val dvStore = new HadoopFileSystemDVStore(conf)
+          StoredBitmap.create(dvDesc, new Path(tablePath)).load(dvStore)
+        case unexpectedFilterType => throw new IllegalStateException(
+          s"Unexpected row index filter type for Deletion Vectors. " +
+            s"Expected: ${RowIndexFilterType.IF_CONTAINED}; Actual: ${unexpectedFilterType}")
+      }
+    } else if (dvDescriptorOpt.isDefined || filterTypeOpt.isDefined) {
+      throw new IllegalStateException(
+        "Both dvDescriptorOpt and filterTypeOpt must be defined together or both absent.")
+    } else {
+      new RoaringBitmapArray()
+    }
+  }
+
+  def getRowGroupMetadata(blocks: collection.Seq[BlockMetaData]): (Array[Long], Array[Int]) = {
     val rowGroupOffsets = blocks.map(_.getRowIndexOffset)
     if (rowGroupOffsets.find(offset => offset < 0).isDefined) {
       throw new IllegalStateException("Found invalid row group offset")

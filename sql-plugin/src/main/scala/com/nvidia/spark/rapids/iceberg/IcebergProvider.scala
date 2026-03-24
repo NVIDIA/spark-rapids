@@ -57,11 +57,11 @@ object IcebergProvider {
       // exists in iceberg <= 1.9 and was removed in 1.10.
       try {
         ShimReflectionUtils.loadClass(
-          "org.apache.iceberg.data.IdentityPartitionConverters")
-        "com.nvidia.spark.rapids.iceberg.iceberg19x"
+          "org.apache.iceberg.actions.ComputePartitionStats")
+        "com.nvidia.spark.rapids.iceberg.iceberg110x"
       } catch {
         case _: ClassNotFoundException | _: LinkageError =>
-          "com.nvidia.spark.rapids.iceberg.iceberg110x"
+          "com.nvidia.spark.rapids.iceberg.iceberg19x"
       }
     } else {
       // Spark 3.5.0-3.5.3 ships with iceberg 1.6.x
