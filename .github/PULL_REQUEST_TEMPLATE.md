@@ -70,5 +70,5 @@ Not all of these items may be relevant to every PR, so please check only those t
 If generative AI tooling has been used in the process of authoring this patch, please include the
 phrase: 'Generated-by: ' followed by the name of the tool and its version.
 If no, write 'No'.
-Please refer to the ASF Generative Tooling Guidance (https://www.apache.org/legal/generative-tooling.html) for details.
+Please refer to the RAPIDS project's contribution guidelines for guidance on AI-assisted authorship.
 -->

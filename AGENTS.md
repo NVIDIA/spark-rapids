@@ -8,7 +8,7 @@ This document provides context for AI coding agents (Claude Code, GitHub Copilot
 - **Never bypass CI** — do not use `--no-verify`, skip pre-commit hooks, or disable checks
 - **Never invent new public APIs** without explicit instruction
 - **GPU resource hygiene** — all GPU resources (`ColumnarBatch`, `GpuColumnVector`, `DeviceMemoryBuffer`) must be managed with `withResource`/`closeOnExcept`, never bare `.close()`
-- **Do not modify `GpuOverrides` registry** without updating corresponding shim files
+- **Do not modify GPU operator implementations** without verifying that all relevant Spark version shims are updated consistently
 - **Sign-off required** — all commits must use `git commit -s` for DCO compliance
 - **No rebase during review** — if a PR is under review, do not rebase; merge the base branch instead to preserve reviewer comment context
 - **Scala 2.13 sync** — after modifying any `pom.xml`, run `./build/make-scala-version-build-files.sh 2.13`
@@ -84,7 +84,7 @@ spark-rapids/
 
 - **Line width**: 100 characters max (enforced by scalastyle)
 - **Indentation**: 2 spaces
-- **License header**: Apache 2.0 SPDX header required on all source files
+- **License header**: Apache 2.0 license header required on all source files
 - **Resource management**: Use ARM pattern from `Arm.scala`:
   ```scala
   // GOOD
