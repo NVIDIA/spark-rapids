@@ -593,7 +593,13 @@ class RowToColumnarIterator(
   // Carries a failed row across batch boundaries when OOM interrupted conversion.
   private var pendingRow: InternalRow = _
 
-  override def hasNext: Boolean = pendingRow != null || rowIter.hasNext
+  override def hasNext: Boolean = {
+    if (pendingRow != null) return true
+    val start = System.nanoTime()
+    val result = rowIter.hasNext
+    streamTime += System.nanoTime() - start
+    result
+  }
 
   override def next(): ColumnarBatch = {
     if (!hasNext) {

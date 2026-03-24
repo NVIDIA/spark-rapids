@@ -93,9 +93,19 @@
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
         </dependency>
+        <!--
+            Placeholders for iceberg shims per Spark shim:
+            If a Shim needs only 1 it uses rapids.iceberg.artifactId2 = rapids.iceberg.artifactId
+        -->
         <dependency>
             <groupId>com.nvidia</groupId>
             <artifactId>${rapids.iceberg.artifactId}_${scala.binary.version}</artifactId>
+            <version>${project.version}</version>
+            <classifier>${spark.version.classifier}</classifier>
+        </dependency>
+        <dependency>
+            <groupId>com.nvidia</groupId>
+            <artifactId>${rapids.iceberg.artifactId2}_${scala.binary.version}</artifactId>
             <version>${project.version}</version>
             <classifier>${spark.version.classifier}</classifier>
         </dependency>

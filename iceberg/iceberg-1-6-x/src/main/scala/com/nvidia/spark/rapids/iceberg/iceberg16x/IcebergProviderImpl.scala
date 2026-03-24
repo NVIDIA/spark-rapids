@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,8 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "411"}
-spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution.python.shims
+package com.nvidia.spark.rapids.iceberg.iceberg16x
 
-/**
- * Shim for window bound type config key.
- * In Spark 4.1.x, the config key changed from "pandas_window_bound_types" to "window_bound_types".
- */
-object WindowBoundTypeConfShims {
-  val windowBoundTypeConf: String = "window_bound_types"
-}
+import com.nvidia.spark.rapids.iceberg.IcebergProviderBase
+
+class IcebergProviderImpl extends IcebergProviderBase

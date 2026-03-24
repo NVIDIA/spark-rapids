@@ -1543,15 +1543,14 @@ abstract class GpuTruncDateTime(fmtStr: Option[String]) extends GpuBinaryExpress
   }
 
   protected def truncate(datetimeCol: GpuColumnVector, fmtVal: GpuScalar): ColumnVector = {
-    // fmtVal is unused, as it was extracted to `fmtStr` before.
     fmtStr match {
       case Some(fmt) => DateTimeUtils.truncate(datetimeCol.getBase, fmt)
-      case None => throw new IllegalArgumentException("Invalid format string.")
+      case None =>
+        GpuColumnVector.columnVectorFromNull(datetimeCol.getRowCount.toInt, dataType)
     }
   }
 
   protected def truncate(numRows: Int, datetimeVal: GpuScalar, fmtVal: GpuScalar): ColumnVector = {
-    // fmtVal is unused, as it was extracted to `fmtStr` before.
     fmtStr match {
       case Some(fmt) =>
         withResource(ColumnVector.fromScalar(datetimeVal.getBase, 1)) { datetimeCol =>
@@ -1566,7 +1565,7 @@ abstract class GpuTruncDateTime(fmtStr: Option[String]) extends GpuBinaryExpress
             }
           }
         }
-      case None => throw new IllegalArgumentException("Invalid format string.")
+      case None => GpuColumnVector.columnVectorFromNull(numRows, dataType)
     }
   }
 }

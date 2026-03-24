@@ -313,6 +313,9 @@ def is_databricks133():
 def is_databricks143_or_later():
     return is_databricks_version_or_later(14, 3)
 
+def is_databricks173_or_later():
+    return is_databricks_version_or_later(17, 3)
+
 def supports_delta_lake_deletion_vectors():
     if is_databricks_runtime():
         return is_databricks122_or_later()
