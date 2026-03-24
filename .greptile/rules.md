@@ -43,6 +43,11 @@ Null-check cuDF native objects and results from aggregations/joins that may be e
 
 New operators must declare fallback in `GpuOverrides` with clear log messages for unsupported types.
 
+CPU fallback declarations must:
+- Include a test that verifies the fallback triggers correctly
+- Log at INFO level with a message explaining why the fallback occurred
+- Be covered by integration tests using `assert_gpu_fallback_collect`
+
 ## Spark Version Compatibility
 
 Shim all Spark API interactions for supported versions. Shims live at `sql-plugin/src/main/spark{VERSION}/`. Avoid removed/relocated internal APIs.
@@ -56,6 +61,8 @@ spark-rapids-shim-json-lines ***/
 ```
 The canonical location for a file shared by multiple shims is `src/main/<lowest_buildver>/`.
 
+When modifying a shim file, verify that all related shim versions are updated consistently. Pre-merge CI only tests selected shims — inconsistencies in untested shims will only surface in nightly builds.
+
 ## Iceberg
 
 Code in `iceberg/` and `sql-plugin/src/**/iceberg/**`. Handle schema evolution, partition spec changes, metadata consistency, and merge-on-read delete files correctly.
@@ -64,12 +71,37 @@ Code in `iceberg/` and `sql-plugin/src/**/iceberg/**`. Handle schema evolution, 
 
 Code in `delta-lake/` and `sql-plugin/src/**/delta/`. Verify row-level tracking, commit protocol, and conflict resolution for DML operations.
 
+## Configuration Changes
+
+New `RapidsConf` keys must:
+- Have clear documentation strings explaining purpose and impact
+- Include sensible defaults that match existing behavior
+- Be mentioned in the PR description
+
+## Performance Validation
+
+Choose the right benchmark strategy based on the scope of the change:
+
+| Change Type | Recommended Benchmark |
+|---|---|
+| Specific expression or operator (e.g., LIKE, CAST) | Targeted micro-benchmark with representative data |
+| Columnar processing or memory layout | Columnar micro-benchmark (e.g., ColumnarToRow) |
+| Framework-level change (scheduling, shuffle, spill) | Real-world benchmark (NDS / TPC-DS) |
+| Micro-benchmark shows regression | Escalate to real-world benchmark for context |
+
+Guidelines:
+- Do NOT use NDS to validate expression-level changes — NDS may not exercise the affected code path sufficiently (e.g., NDS has very few LIKE operations)
+- Distinguish planning-time vs runtime performance impact and measure each appropriately
+- Run benchmarks multiple times to confirm results are outside noise range
+- Cover edge cases: empty tables, skewed partitions, max-size batches
+- Report absolute numbers and relative delta with variance
 
 ## Test Quality
 
 - Clean up GPU resources and SparkSession in afterAll/afterEach
 - No hardcoded Thread.sleep, order-dependent tests, or unseeded random data
 - Cover: nulls, empty batches, single-row, max-size batches, CPU/GPU fallback paths
+- Integration tests must verify GPU execution using `assert_gpu_and_cpu_are_equal_collect` or `assert_gpu_fallback_collect` — do not write tests that silently run on CPU only
 
 ## Pre-merge CI Coverage Gaps
 
@@ -88,6 +120,17 @@ spark-rapids depends on nightly SNAPSHOT artifacts from several upstream repos. 
 - **spark-rapids-hybrid (Gluten)**: Hybrid CPU/GPU execution bridge. Upstream Gluten changes can break the hybrid execution path.
 
 When reviewing code that touches these integration boundaries (JNI calls, private API interfaces, hybrid execution paths), consider whether the code depends on upstream behavior that may be changing concurrently.
+
+Changes to upstream SNAPSHOT dependency versions must be highlighted in the PR description with rationale.
+
+### Cross-repo Review Guidance (cuDF / spark-rapids-jni)
+
+The `patternRepositories` config enables cross-repo context lookup. When reviewing code that calls into cuDF or JNI, verify:
+
+- **cuDF column API usage**: Check `rapidsai/cudf` for the correct function signatures, null handling semantics, and ownership transfer rules. cuDF column operations may have different null propagation than Spark SQL expects.
+- **JNI memory ownership**: When a JNI call returns a native pointer (e.g., `ColumnVector` from `spark-rapids-jni`), verify whether the caller or callee owns the memory. Double-free and use-after-free are common bugs at this boundary.
+- **cuDF kernel semantics**: GPU kernel behavior for edge cases (NaN, overflow, empty input) may differ from Spark CPU behavior. Cross-reference the cuDF implementation when the spark-rapids code relies on specific cuDF behavior for correctness.
+- **API version alignment**: cuDF and spark-rapids-jni are SNAPSHOT dependencies. If a PR depends on a newly added upstream API, flag whether the upstream change has been merged or is still in-flight.
 
 ## Build
 

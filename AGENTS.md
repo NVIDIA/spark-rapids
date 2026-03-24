@@ -1,0 +1,169 @@
+# spark-rapids Development Guide for AI Agents
+
+This document provides context for AI coding agents (Claude Code, GitHub Copilot, etc.) working on the spark-rapids project.
+
+## Safety Rules
+
+- **Minimal diffs only** — do not reformat, reorganize imports, or refactor code outside the scope of the task
+- **Never bypass CI** — do not use `--no-verify`, skip pre-commit hooks, or disable checks
+- **Never invent new public APIs** without explicit instruction
+- **GPU resource hygiene** — all GPU resources (`ColumnarBatch`, `GpuColumnVector`, `DeviceMemoryBuffer`) must be managed with `withResource`/`closeOnExcept`, never bare `.close()`
+- **Do not modify `GpuOverrides` registry** without updating corresponding shim files
+
+## Build Commands
+
+```bash
+# Full build (skip tests)
+mvn clean verify -DskipTests
+
+# Build specific module
+mvn clean verify -DskipTests -pl sql-plugin
+
+# Unit tests (default shim)
+mvn test -pl tests
+
+# Unit tests for specific Spark version
+mvn test -pl tests -Dbuildver=341
+
+# Integration tests (requires running Spark cluster with GPU)
+cd integration_tests
+pytest -v src/main/python/
+
+# Run a specific integration test
+pytest -v src/main/python/string_test.py::test_like
+
+# Pre-merge build versions (check pom.xml for current list)
+mvn verify -Dbuildver=320
+mvn verify -Dbuildver=341
+
+# Scalastyle check
+mvn scalastyle:check
+
+# Build all supported shims (slow)
+mvn clean verify -DskipTests -Dbuildall
+```
+
+## Project Structure
+
+```
+spark-rapids/
+├── sql-plugin/                    # Core GPU acceleration plugin
+│   ├── src/main/scala/            # Main Scala sources
+│   │   └── com/nvidia/spark/rapids/
+│   │       ├── GpuOverrides.scala       # GPU operator registry & fallback rules
+│   │       ├── RapidsConf.scala         # Configuration keys & defaults
+│   │       ├── Arm.scala                # Resource management (withResource/closeOnExcept)
+│   │       ├── RmmRapidsRetryIterator.scala  # OOM retry framework
+│   │       ├── SpillableColumnarBatch.scala  # Spillable GPU batch wrapper
+│   │       ├── GpuSemaphore.scala       # GPU access semaphore
+│   │       └── spill/SpillFramework.scala    # Spill-to-host/disk framework
+│   └── src/main/spark{VERSION}/   # Spark version-specific shims
+│       └── scala/                 #   e.g., spark320/, spark341/, spark400/
+├── sql-plugin-api/                # Plugin API definitions
+├── shuffle-plugin/                # GPU shuffle optimization
+├── tests/                         # Scala unit tests
+├── integration_tests/             # Python integration tests (pytest)
+│   └── src/main/python/
+│       ├── asserts.py             # GPU vs CPU comparison assertions
+│       └── data_gen.py            # Seeded test data generation
+├── delta-lake/                    # Delta Lake integration
+├── iceberg/                       # Apache Iceberg integration
+├── udf-compiler/                  # UDF compilation support
+├── datagen/                       # Test data generation utilities
+├── tools/                         # Profiling and debugging tools
+└── docs/                          # Documentation
+```
+
+## Coding Conventions
+
+### Scala/Java
+
+- **Line width**: 100 characters max (enforced by scalastyle)
+- **Indentation**: 2 spaces
+- **License header**: Apache 2.0 SPDX header required on all source files
+- **Resource management**: Use ARM pattern from `Arm.scala`:
+  ```scala
+  // GOOD
+  withResource(GpuColumnVector.from(batch)) { col =>
+    process(col)
+  }
+
+  // GOOD — caller owns on success
+  closeOnExcept(new ColumnarBatch(...)) { batch =>
+    populateBatch(batch)
+    batch  // returned to caller, not closed
+  }
+
+  // BAD — leak on exception
+  val col = GpuColumnVector.from(batch)
+  val result = process(col)  // if this throws, col leaks
+  col.close()
+  ```
+
+- **OOM retry**: Wrap GPU-allocating code:
+  ```scala
+  withRetryNoSplit(spillableBatch) { attempt =>
+    withResource(attempt.getColumnarBatch()) { batch =>
+      doGpuWork(batch)
+    }
+  }
+  ```
+
+- **Error handling**: Prefer `withResource` chains over try/finally
+
+### Shim Files
+
+- Place shared shim files at `src/main/<lowest_buildver>/`
+- Every shim file must have `spark-rapids-shim-json-lines` annotation listing compatible versions
+- When modifying a shim, update ALL relevant versions
+
+### Python Integration Tests
+
+- Use `assert_gpu_and_cpu_are_equal_collect` to compare GPU vs CPU results
+- Use `assert_gpu_fallback_collect` to verify expected fallback behavior
+- Use `data_gen.py` for reproducible test data with seeds
+- No external data dependencies — generate all test data in-test
+
+## Common Patterns
+
+### GPU Operator Registration
+
+New GPU operators are registered in `GpuOverrides.scala`:
+```scala
+GpuOverrides.expr[MyExpression](
+  "Description of what this does on GPU",
+  ExprChecks.unaryProject(
+    TypeSig.commonCudf,  // output types
+    TypeSig.all,         // Spark output types
+    TypeSig.commonCudf,  // input types
+    TypeSig.all),        // Spark input types
+  (expr, conf, parent, rule) => new UnaryExprMeta[MyExpression](expr, conf, parent, rule) {
+    override def convertToGpu(child: Expression): GpuExpression =
+      GpuMyExpression(child)
+  })
+```
+
+### CPU Fallback
+
+When a GPU operator cannot handle certain inputs:
+```scala
+override def tagExprForGpu(): Unit = {
+  if (someUnsupportedCondition) {
+    willNotWorkOnGpu("reason for fallback")
+  }
+}
+```
+
+### Spill Management
+
+```scala
+// Wrap batch for spill support
+val spillable = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+
+// Use within retry
+withRetryNoSplit(spillable) { attempt =>
+  withResource(attempt.getColumnarBatch()) { batch =>
+    // GPU work here
+  }
+}
+```
