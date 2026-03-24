@@ -9,6 +9,10 @@ This document provides context for AI coding agents (Claude Code, GitHub Copilot
 - **Never invent new public APIs** without explicit instruction
 - **GPU resource hygiene** — all GPU resources (`ColumnarBatch`, `GpuColumnVector`, `DeviceMemoryBuffer`) must be managed with `withResource`/`closeOnExcept`, never bare `.close()`
 - **Do not modify `GpuOverrides` registry** without updating corresponding shim files
+- **Sign-off required** — all commits must use `git commit -s` for DCO compliance
+- **No rebase during review** — if a PR is under review, do not rebase; merge the base branch instead to preserve reviewer comment context
+- **Scala 2.13 sync** — after modifying any `pom.xml`, run `./build/make-scala-version-build-files.sh 2.13`
+- **PR title tags** — use `[databricks]` to trigger Databricks CI, `[skip ci]` for doc-only changes
 
 ## Build Commands
 
