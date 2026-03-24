@@ -272,7 +272,7 @@ class _PbBuilder:
     def sfixed64(self, name, number, gen=None, default=None):
         return PbScalarFieldSpec(name, number, PbScalarKind.SFIXED64, gen=gen, default=default)
 
-    def float(self, name, number, gen=None, default=None):
+    def float(self, name, number, gen=None, default=None):  # noqa: A003
         return PbScalarFieldSpec(name, number, PbScalarKind.FLOAT, gen=gen, default=default)
 
     def double(self, name, number, gen=None, default=None):
@@ -281,7 +281,7 @@ class _PbBuilder:
     def string(self, name, number, gen=None, default=None):
         return PbScalarFieldSpec(name, number, PbScalarKind.STRING, gen=gen, default=default)
 
-    def bytes(self, name, number, gen=None, default=None):
+    def bytes(self, name, number, gen=None, default=None):  # noqa: A003
         return PbScalarFieldSpec(name, number, PbScalarKind.BYTES, gen=gen, default=default)
 
     def enum_type(self, name, values):
@@ -567,10 +567,8 @@ class ProtobufValueGenerator:
         if field_spec.cardinality == PbCardinality.REPEATED:
             length = self._rand.randint(field_spec.min_len, field_spec.max_len)
             return [self.generate_message(field_spec.fields, force_present=True) for _ in range(length)]
-        child_value = self.generate_message(field_spec.fields, force_present=(field_spec.cardinality == PbCardinality.REQUIRED))
-        if field_spec.cardinality == PbCardinality.REQUIRED and child_value is None:
-            return {}
-        return child_value
+        # force_present=True guarantees generate_message never returns None for required fields
+        return self.generate_message(field_spec.fields, force_present=(field_spec.cardinality == PbCardinality.REQUIRED))
 
 
 class ProtobufSparkAdapter:

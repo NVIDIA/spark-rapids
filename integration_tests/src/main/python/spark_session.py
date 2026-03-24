@@ -393,7 +393,7 @@ def is_protobuf_runtime_available():
     for cls in candidates:
         try:
             if loader is not None:
-                jvm.java.lang.Class.forName(cls, True, loader)
+                jvm.java.lang.Class.forName(cls, False, loader)
             else:
                 jvm.java.lang.Class.forName(cls)
             return True

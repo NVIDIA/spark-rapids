@@ -46,8 +46,8 @@
 #   To run all tests, including Avro tests:
 #     INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh
 #
-#   To run protobuf tests with explicit jars (comma or colon separated):
-#     PROTOBUF_JARS=/path/to/spark-protobuf.jar:/path/to/protobuf-java.jar \
+#   To run protobuf tests (spark-protobuf bundles protobuf-java; no extra jar needed):
+#     PROTOBUF_JARS=~/.m2/repository/org/apache/spark/spark-protobuf_2.12/3.5.1/spark-protobuf_2.12-3.5.1.jar \
 #       ./run_pyspark_from_build.sh -m protobuf_test
 #
 #   To run a specific test:

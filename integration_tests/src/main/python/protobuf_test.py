@@ -92,7 +92,13 @@ def _setup_protobuf_desc(spark_tmp_path, desc_name, build_fn):
 
 def _call_from_protobuf(from_protobuf_fn, col, message_name,
                          desc_path, desc_bytes, options=None):
-    """Call from_protobuf using the right API variant."""
+    """Call from_protobuf using the right API variant.
+
+    Spark 3.5+ PySpark exposes `binaryDescriptorSet` as a keyword parameter.
+    Spark 3.4 only has the path-based API. We detect which variant is available
+    by inspecting the function signature rather than checking the Spark version,
+    so this works correctly even if backports change the parameter name boundary.
+    """
     sig = inspect.signature(from_protobuf_fn)
     if "binaryDescriptorSet" in sig.parameters:
         kw = dict(binaryDescriptorSet=bytearray(desc_bytes))
@@ -152,8 +158,19 @@ def _write_bytes_to_hadoop_path(spark, path_str, data_bytes):
 
 
 def _new_proto2_file(spark, name):
-    """Create a proto2 FileDescriptorProto builder with common defaults."""
-    D = spark.sparkContext._jvm.com.google.protobuf.DescriptorProtos
+    """Create a proto2 FileDescriptorProto builder with common defaults.
+
+    Tries the unshaded `com.google.protobuf` path first (available when a standalone
+    protobuf-java.jar is on the driver classpath).  Falls back to the path shaded inside
+    spark-protobuf itself (`org.sparkproject.spark_protobuf.protobuf`), which is always
+    present when spark-protobuf_*.jar is loaded.
+    """
+    jvm = spark.sparkContext._jvm
+    try:
+        D = jvm.com.google.protobuf.DescriptorProtos
+        D.FileDescriptorProto.newBuilder()  # probe: JavaPackage stubs raise here
+    except Exception:
+        D = jvm.org.sparkproject.spark_protobuf.protobuf.DescriptorProtos
     fd = D.FileDescriptorProto.newBuilder() \
         .setName(name) \
         .setPackage("test")
@@ -790,6 +807,63 @@ def test_from_protobuf_nested_enum_invalid_permissive_nulls_sibling_fields(
             decoded.getField("id").alias("id"),
             decoded.getField("detail").getField("status").alias("status"),
             decoded.getField("name").alias("name")).orderBy("idx")
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_default_with_enum_descriptor_set_bytes(spark):
+    """Build a descriptor combining a proto2 default-value field and an enum field.
+
+    Used to verify that PERMISSIVE-mode row nulling due to an invalid enum does not
+    partially apply proto2 defaults: the entire struct must be null, not a struct
+    whose default-valued fields are populated and whose enum field is null.
+    """
+    return _build_proto2_descriptor(spark, "default_with_enum.proto", [
+        _msg("WithDefaultAndEnum", [
+            _field("count", 1, "INT32", default=42),
+            _field("status", 2, "ENUM", type_name=".test.WithDefaultAndEnum.Status"),
+        ], enums=[
+            _enum("Status", [("UNKNOWN", 0), ("ACTIVE", 1), ("INACTIVE", 2)]),
+        ]),
+    ])
+
+
+@_xfail_gpu_protobuf
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_default_permissive_invalid_enum_nulls_default_field(
+        spark_tmp_path, from_protobuf_fn):
+    """Proto2 default values must not appear when PERMISSIVE nulls a row due to invalid enum.
+
+    Row 0: count absent, enum valid (ACTIVE=1)  -> count decodes to default 42.
+    Row 1: count present (100), enum invalid (99) -> entire struct is null in PERMISSIVE,
+           count is null (not 42) and status is null.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "default_with_enum.desc",
+        _build_default_with_enum_descriptor_set_bytes)
+    message_name = "test.WithDefaultAndEnum"
+
+    # count absent, status=ACTIVE(1): count should default to 42
+    row_valid_enum = _encode_tag(2, 0) + _encode_varint(1)
+    # count=100, status=99 (unknown): entire struct null in PERMISSIVE
+    row_invalid_enum = (
+        _encode_tag(1, 0) + _encode_varint(100) +
+        _encode_tag(2, 0) + _encode_varint(99)
+    )
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(0, row_valid_enum), (1, row_invalid_enum)],
+            schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            f.col("idx"),
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("count").alias("count"),
+            decoded.getField("status").alias("status")).orderBy("idx")
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
@@ -2064,6 +2138,49 @@ def test_from_protobuf_fixed_integers(spark_tmp_path, from_protobuf_fn):
         return df.select(
             decoded.getField("fx32").alias("fx32"),
             decoded.getField("fx64").alias("fx64"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_unsigned_int_descriptor_set_bytes(spark):
+    """Build a descriptor for unsigned varint integer fields (uint32, uint64)."""
+    return _build_proto2_descriptor(spark, "unsigned_int.proto", [
+        _msg("WithUnsignedInts", [
+            _field("u32", 1, "UINT32"),
+            _field("u64", 2, "UINT64"),
+        ]),
+    ])
+
+
+@_xfail_gpu_protobuf
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_unsigned_integers(spark_tmp_path, from_protobuf_fn):
+    """Test decoding uint32 and uint64 fields.
+
+    uint32 maps to Spark IntegerType and uint64 to LongType. Values are kept
+    non-negative so they fit within both the unsigned wire encoding and the
+    signed Spark column type.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "unsigned_int.desc", _build_unsigned_int_descriptor_set_bytes)
+    message_name = "test.WithUnsignedInts"
+
+    data_gen = pb.as_datagen([
+        pb.uint32("u32", 1, gen=IntegerGen(min_val=0,
+                                           special_cases=[0, 1, 2147483647])),
+        pb.uint64("u64", 2, gen=LongGen(min_val=0,
+                                        special_cases=[0, 1, 9223372036854775807])),
+    ])
+
+    def run_on_spark(spark):
+        df = gen_df(spark, data_gen)
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("u32").alias("u32"),
+            decoded.getField("u64").alias("u64"),
         )
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
