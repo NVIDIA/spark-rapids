@@ -46,9 +46,9 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 case class GpuIntegralDivide(
     left: Expression,
     right: Expression,
-    failOnError: Boolean = SQLConf.get.ansiEnabled,
-    override val origin: Origin = CurrentOrigin.get)
-    extends GpuIntegralDivideParent(left, right) with GpuArithmeticOriginMixin
+    failOnError: Boolean = SQLConf.get.ansiEnabled)(
+    @transient override val origin: Origin = CurrentOrigin.get)
+    extends GpuIntegralDivideParent(left, right)
 
 object GpuDecimalDivide {
   def apply(left: Expression, right: Expression, dataType: DecimalType): GpuDecimalDivide = {
@@ -93,16 +93,16 @@ case class GpuDecimalMultiply(
 case class GpuAdd(
     left: Expression,
     right: Expression,
-    failOnError: Boolean,
-    override val origin: Origin = CurrentOrigin.get)
-    extends GpuAddBase with GpuArithmeticOriginMixin
+    failOnError: Boolean)(
+    @transient override val origin: Origin = CurrentOrigin.get)
+    extends GpuAddBase
 
 case class GpuSubtract(
     left: Expression,
     right: Expression,
-    failOnError: Boolean,
-    override val origin: Origin = CurrentOrigin.get)
-    extends GpuSubtractBase with GpuArithmeticOriginMixin
+    failOnError: Boolean)(
+    @transient override val origin: Origin = CurrentOrigin.get)
+    extends GpuSubtractBase
 
 case class GpuRemainder(
     left: Expression,

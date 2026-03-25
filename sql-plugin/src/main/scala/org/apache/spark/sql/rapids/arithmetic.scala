@@ -35,44 +35,6 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/**
- * Mixin for GPU arithmetic case classes that carry `origin` as a
- * constructor parameter. Overrides `equals`/`hashCode` to exclude
- * `origin`, matching Spark's convention that `TreeNode.origin` does
- * not participate in expression identity.
- *
- * Convention: `origin` must be the LAST constructor parameter.
- */
-trait GpuArithmeticOriginMixin { self: Product =>
-  override def hashCode(): Int = {
-    val n = productArity - 1
-    var h = scala.util.hashing.MurmurHash3.productSeed
-    var i = 0
-    while (i < n) {
-      h = scala.util.hashing.MurmurHash3.mix(h, productElement(i).##)
-      i += 1
-    }
-    scala.util.hashing.MurmurHash3.finalizeHash(h, n)
-  }
-
-  override def canEqual(that: Any): Boolean =
-    that.getClass == this.getClass
-
-  override def equals(other: Any): Boolean = other match {
-    case that: Product
-        if canEqual(that) && that.canEqual(this)
-          && productArity == that.productArity =>
-      val n = productArity - 1
-      var i = 0
-      while (i < n) {
-        if (productElement(i) != that.productElement(i)) return false
-        i += 1
-      }
-      true
-    case _ => false
-  }
-}
-
 object AddOverflowChecks {
   def basicOpOverflowCheck(
       lhs: BinaryOperable,
@@ -774,9 +736,9 @@ object GpuDivModLike {
 case class GpuMultiply(
     left: Expression,
     right: Expression,
-    failOnError: Boolean = SQLConf.get.ansiEnabled,
-    override val origin: Origin = CurrentOrigin.get)
-    extends CudfBinaryArithmetic with GpuArithmeticOriginMixin {
+    failOnError: Boolean = SQLConf.get.ansiEnabled)(
+    @transient override val origin: Origin = CurrentOrigin.get)
+    extends CudfBinaryArithmetic {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType multiplies need to be handled by GpuDecimalMultiply")
 
@@ -1139,9 +1101,9 @@ object DecimalDivideChecks {
 }
 
 case class GpuDivide(left: Expression, right: Expression,
-    failOnError: Boolean = SQLConf.get.ansiEnabled,
-    override val origin: Origin = CurrentOrigin.get)
-    extends GpuDivModLike with GpuArithmeticOriginMixin {
+    failOnError: Boolean = SQLConf.get.ansiEnabled)(
+    @transient override val origin: Origin = CurrentOrigin.get)
+    extends GpuDivModLike {
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType divides need to be handled by GpuDecimalDivide")
 

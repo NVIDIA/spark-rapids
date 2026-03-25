@@ -211,9 +211,9 @@ trait GpuAddSub extends CudfBinaryArithmetic {
 case class GpuAdd(
     left: Expression,
     right: Expression,
-    failOnError: Boolean,
-    override val origin: Origin = CurrentOrigin.get)
-    extends GpuAddBase with GpuAddSub with GpuArithmeticOriginMixin {
+    failOnError: Boolean)(
+    @transient override val origin: Origin = CurrentOrigin.get)
+    extends GpuAddBase with GpuAddSub {
 
   def do128BitOperation(
       castLhs: ColumnView,
@@ -226,9 +226,9 @@ case class GpuAdd(
 case class GpuSubtract(
     left: Expression,
     right: Expression,
-    failOnError: Boolean,
-    override val origin: Origin = CurrentOrigin.get)
-    extends GpuSubtractBase with GpuAddSub with GpuArithmeticOriginMixin {
+    failOnError: Boolean)(
+    @transient override val origin: Origin = CurrentOrigin.get)
+    extends GpuSubtractBase with GpuAddSub {
   def do128BitOperation(
       castLhs: ColumnView,
       castRhs: ColumnView,
@@ -519,9 +519,9 @@ case class GpuDecimalMultiply(
 case class GpuIntegralDivide(
     left: Expression,
     right: Expression,
-    failOnError: Boolean = SQLConf.get.ansiEnabled,
-    override val origin: Origin = CurrentOrigin.get)
-    extends GpuIntegralDivideParent(left, right) with GpuArithmeticOriginMixin {
+    failOnError: Boolean = SQLConf.get.ansiEnabled)(
+    @transient override val origin: Origin = CurrentOrigin.get)
+    extends GpuIntegralDivideParent(left, right) {
   assert(!left.dataType.isInstanceOf[DecimalType] ||
          !right.dataType.isInstanceOf[DecimalType],
     "DecimalType integral divides need to be handled by GpuIntegralDecimalDivide")

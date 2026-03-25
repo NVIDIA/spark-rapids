@@ -1629,7 +1629,7 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression = {
           // No need for overflow checking on the GpuAdd in Double as Double handles overflow
           // the same in all modes.
-          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), false))
+          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), false)())
         }
       }),
     expr[Log2](
@@ -1941,7 +1941,7 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuAdd(lhs, rhs, ansiEnabled, origin = a.origin)
+          GpuAdd(lhs, rhs, ansiEnabled)(a.origin)
       }),
     expr[Subtract](
       "Subtraction",
@@ -1970,7 +1970,7 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuSubtract(lhs, rhs, ansiEnabled, origin = a.origin)
+          GpuSubtract(lhs, rhs, ansiEnabled)(a.origin)
       }),
     expr[And](
       "Logical AND",
