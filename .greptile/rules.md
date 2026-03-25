@@ -52,16 +52,9 @@ CPU fallback declarations must:
 
 Shim all Spark API interactions for supported versions. Shims live at `sql-plugin/src/main/spark{VERSION}/`. Avoid removed/relocated internal APIs.
 
-Every shim-specific source file must have a `spark-rapids-shim-json-lines` comment block after the copyright header:
-```
-/*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "340"}
-spark-rapids-shim-json-lines ***/
-```
-The canonical location for a file shared by multiple shims is `src/main/<lowest_buildver>/`.
+Each shimmed source file has a `spark-rapids-shim-json-lines` annotation after the copyright header that controls which build profiles include it. Files **without** the annotation compile for all versions. The canonical location is `src/main/<lowest_buildver>/` (alphabetically earliest version the file supports). See `AGENTS.md` "Shim Layer Architecture" for full details.
 
-When modifying a shim file, verify that all related shim versions are updated consistently. Pre-merge CI only tests selected shims — inconsistencies in untested shims will only surface in nightly builds.
+When modifying a shim file, verify that all related shim versions are updated consistently — the same logical change may need different adaptations per version. Pre-merge CI only tests selected shims — inconsistencies in untested shims will only surface in nightly builds.
 
 ## Iceberg
 

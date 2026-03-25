@@ -114,11 +114,36 @@ spark-rapids/
 
 - **Error handling**: Prefer `withResource` chains over try/finally
 
-### Shim Files
+### Shim Layer Architecture
 
-- Place shared shim files at `src/main/<lowest_buildver>/`
-- Every shim file must have `spark-rapids-shim-json-lines` annotation listing compatible versions
-- When modifying a shim, update ALL relevant versions
+The plugin supports multiple Spark versions via a shim layer.
+Each shimmed source file controls which Spark versions it applies
+to via a JSON annotation block after the copyright header:
+
+```
+/*** spark-rapids-shim-json-lines
+{"spark": "321"}
+{"spark": "330"}
+{"spark": "330db"}
+spark-rapids-shim-json-lines ***/
+```
+
+**Key rules:**
+- The annotation controls which build profiles include the file.
+  Files **without** the annotation compile for **all** versions.
+- By convention the file lives under the alphabetically earliest
+  version directory it supports:
+  `sql-plugin/src/main/<lowest_buildver>/scala/...`
+- When modifying a shim, update ALL related Spark version shims
+  (the same logical change may need different adaptations per
+  version — do not blindly copy-paste).
+- `db` suffix (e.g., `330db`, `341db`) = Databricks-specific shim.
+- **Scala 2.12 vs 2.13**: `sql-plugin` shims work identically for
+  both Scala versions. After modifying any `pom.xml`, run
+  `./build/make-scala-version-build-files.sh 2.13` to sync.
+- **Delta Lake** uses version-specific Maven modules instead of the
+  JSON annotation (e.g., `delta-20x/`, `delta-spark330db/`). Each
+  module compiles only for its target Spark+Delta combination.
 
 ### Python Integration Tests
 
