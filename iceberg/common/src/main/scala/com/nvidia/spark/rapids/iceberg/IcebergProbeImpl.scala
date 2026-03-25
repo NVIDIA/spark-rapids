@@ -16,8 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{ShimLoader, ShimReflectionUtils, SparkShimVersion}
-
+import com.nvidia.spark.rapids.ShimReflectionUtils
 import org.apache.iceberg.IcebergBuild
 
 class IcebergProbeImpl extends IcebergProbe {
@@ -39,40 +38,24 @@ class IcebergProbeImpl extends IcebergProbe {
     commitToVersion.getOrElse(commitId, commitId)
   }
 
-  // (Spark feature.major.patch, Iceberg major.minor) -> shim sub-package
-  private val sparkIcebergToShim: Map[(String, String), String] = Map(
-    ("3.5.0", "1.6") -> "iceberg16x",
-    ("3.5.1", "1.6") -> "iceberg16x",
-    ("3.5.2", "1.6") -> "iceberg16x",
-    ("3.5.3", "1.6") -> "iceberg16x",
-    ("3.5.4", "1.9") -> "iceberg19x",
-    ("3.5.4", "1.10") -> "iceberg110x",
-    ("3.5.5", "1.9") -> "iceberg19x",
-    ("3.5.5", "1.10") -> "iceberg110x",
-    ("3.5.6", "1.9") -> "iceberg19x",
-    ("3.5.6", "1.10") -> "iceberg110x",
-    ("3.5.7", "1.9") -> "iceberg19x",
-    ("3.5.7", "1.10") -> "iceberg110x",
-    ("3.5.8", "1.9") -> "iceberg19x",
-    ("3.5.8", "1.10") -> "iceberg110x"
+  // Iceberg major.minor -> shim sub-package
+  private val icebergVersionToShim: Map[String, String] = Map(
+    "1.6" -> "iceberg16x",
+    "1.9" -> "iceberg19x",
+    "1.10" -> "iceberg110x"
   )
 
   override def shimPackage: String = {
-    val sparkVersion = ShimLoader.getShimVersion match {
-      case SparkShimVersion(major, minor, patch) => s"$major.$minor.$patch"
-      case v => v.toString
-    }
     val version = getDetectedVersion
     val icebergParts = version.split("\\.")
     if (icebergParts.length < 2) {
       throw new UnsupportedOperationException(
-        s"Unrecognized Iceberg version: $version on Spark $sparkVersion")
+        s"Unrecognized Iceberg version: $version")
     }
     val icebergMajorMinor = s"${icebergParts(0)}.${icebergParts(1)}"
-    val key = (sparkVersion, icebergMajorMinor)
-    val subpackage = sparkIcebergToShim.getOrElse(key,
+    val subpackage = icebergVersionToShim.getOrElse(icebergMajorMinor,
       throw new UnsupportedOperationException(
-        s"Unsupported Spark/Iceberg combination: Spark $sparkVersion, Iceberg $version"))
+        s"Unsupported Iceberg version: $version"))
     s"com.nvidia.spark.rapids.iceberg.$subpackage"
   }
 
