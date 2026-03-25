@@ -2808,7 +2808,10 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         "the GPU Delta Lake scans. The result of the scan will contain only the rows " +
         "that are not deleted according to the deletion vector. When false, " +
         "the deletion vectors will be materialized as a boolean column and " +
-        "the GPU filter operator will process it together with other filters.")
+        "the GPU filter operator will process it together with other filters. " +
+        "This setting is effective only when " +
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex is true. " +
+        "Otherwise, this setting is fixed to false regardless of its actual value.")
       .internal()
       .booleanConf
       .createWithDefault(true)
