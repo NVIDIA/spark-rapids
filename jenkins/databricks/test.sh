@@ -63,6 +63,19 @@ source jenkins/databricks/setup.sh
 source jenkins/databricks/common_vars.sh
 
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
+
+# For Spark 4.x (Scala 2.13), the upstream base shim is 350 (Spark 3.5.0).
+# For Spark 3.x (Scala 2.12), the upstream base shim is 330 (Spark 3.3.0).
+if [[ "$BASE_SPARK_VERSION" == 4.* ]]; then
+    UPSTREAM_SPARK_VERSION="3.5.0"
+    UPSTREAM_SHIM_VER="spark350"
+    UPSTREAM_SPARK_SCALA_SUFFIX="-scala2.13"
+else
+    UPSTREAM_SPARK_VERSION="3.3.0"
+    UPSTREAM_SHIM_VER="spark330"
+    UPSTREAM_SPARK_SCALA_SUFFIX=""
+fi
+
 WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 
 IS_SPARK_321_OR_LATER=0
@@ -93,12 +106,12 @@ run_pyarrow_tests() {
 if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
     # Run two-shim smoke test with the base Spark build
     if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
-        if [[ ! -d $HOME/spark-3.3.0-bin-hadoop3 ]]; then
+        if [[ ! -d $HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} ]]; then
             # DBFS cache for Spark
             DBFS_CACHE_DIR=${DBFS_CACHE_DIR:-"/dbfs/cached_jars"}
-            JAR_FILE_NAME=${JAR_FILE_NAME:-"spark-3.3.0-bin-hadoop3.tgz"}
+            JAR_FILE_NAME=${JAR_FILE_NAME:-"spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX}.tgz"}
             SPARK_CACHE_FILE=${SPARK_CACHE_FILE:-"$DBFS_CACHE_DIR/$JAR_FILE_NAME"}
-            SPARK_URL=${SPARK_URL:-"https://archive.apache.org/dist/spark/spark-3.3.0/$JAR_FILE_NAME"}
+            SPARK_URL=${SPARK_URL:-"https://archive.apache.org/dist/spark/spark-${UPSTREAM_SPARK_VERSION}/$JAR_FILE_NAME"}
             # Create cache directory if it doesn't exist
             mkdir -p "$DBFS_CACHE_DIR"
             # Check if file exists in DBFS cache
@@ -118,9 +131,9 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             tar xf "/tmp/$JAR_FILE_NAME" -C $HOME
             rm -f "/tmp/$JAR_FILE_NAME"
         fi
-        SPARK_HOME=$HOME/spark-3.3.0-bin-hadoop3 \
+        SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
         SPARK_SHELL_SMOKE_TEST=1 \
-        PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.spark330.RapidsShuffleManager \
+        PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${UPSTREAM_SHIM_VER}.RapidsShuffleManager \
             bash integration_tests/run_pyspark_from_build.sh
     fi
     bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
