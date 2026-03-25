@@ -577,6 +577,7 @@ class RowToColumnarIterator(
     localGoal: CoalesceSizeGoal,
     batchSizeBytes: Long,
     converters: GpuRowToColumnConverter,
+    enableRetry: Boolean = true,
     numInputRows: GpuMetric = NoopMetric,
     numOutputRows: GpuMetric = NoopMetric,
     numOutputBatches: GpuMetric = NoopMetric,
@@ -594,11 +595,14 @@ class RowToColumnarIterator(
   private var pendingRow: InternalRow = _
 
   override def hasNext: Boolean = {
-    if (pendingRow != null) return true
-    val start = System.nanoTime()
-    val result = rowIter.hasNext
-    streamTime += System.nanoTime() - start
-    result
+    if (pendingRow != null) {
+      true
+    } else {
+      val start = System.nanoTime()
+      val result = rowIter.hasNext
+      streamTime += System.nanoTime() - start
+      result
+    }
   }
 
   override def next(): ColumnarBatch = {
@@ -625,10 +629,10 @@ class RowToColumnarIterator(
   }
 
   /**
-   * Core conversion loop inside a single RMM retry block (so host allocations
-   * throw retryable OOMs instead of fatal OutOfMemoryError).
+   * Core conversion loop. When retry is enabled, runs inside a single RMM retry block
+   * so host allocations throw retryable OOMs instead of fatal OutOfMemoryError.
    *
-   * OOM strategy:
+   * OOM strategy (retry enabled):
    *  - Has rows to emit (and not RequireSingleBatch) → emit partial batch, save failed row
    *  - No rows yet + RetryOOM → block until memory freed, then while loop retries
    *  - No rows yet + SplitAndRetryOOM → propagate (can't split a single row)
@@ -637,33 +641,44 @@ class RowToColumnarIterator(
     var rowCount = 0
     var byteCount: Double = 0
 
-    RmmRapidsRetryIterator.withRetryBlock {
-      while (hasNext && (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
-        val snapshots = builders.captureState()
-        var row: InternalRow = null
-        try {
-          row = nextRow()
-          byteCount += converters.convert(row, builders)
-          rowCount += 1
-        } catch {
-          case oom @ (_: CpuRetryOOM | _: CpuSplitAndRetryOOM |
-                      _: GpuRetryOOM | _: GpuSplitAndRetryOOM) =>
-            builders.restoreState(snapshots)
-            if (rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike]) {
-              // Emit partial batch. This also handles SplitAndRetryOOM: emitting
-              // a smaller batch IS the right response to memory pressure, and
-              // tryBuild() has its own withRetryNoSplit to handle GPU OOM.
-              if (row != null) pendingRow = copyRow(row)
-              return (rowCount, byteCount)
-            }
-            // No rows to emit — must retry or fail.
-            oom match {
-              case _: CpuSplitAndRetryOOM | _: GpuSplitAndRetryOOM => throw oom
-              case _ =>
+    if (enableRetry) {
+      var batchDone = false
+      RmmRapidsRetryIterator.withRetryBlock {
+        while (!batchDone && hasNext &&
+            (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
+          val snapshots = builders.captureState()
+          var row: InternalRow = null
+          try {
+            row = nextRow()
+            byteCount += converters.convert(row, builders)
+            rowCount += 1
+          } catch {
+            case oom @ (_: CpuRetryOOM | _: CpuSplitAndRetryOOM |
+                        _: GpuRetryOOM | _: GpuSplitAndRetryOOM) =>
+              builders.restoreState(snapshots)
+              if (rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike]) {
+                // Emit partial batch. This also handles SplitAndRetryOOM: emitting
+                // a smaller batch IS the right response to memory pressure, and
+                // tryBuild() has its own withRetryNoSplit to handle GPU OOM.
                 if (row != null) pendingRow = copyRow(row)
-                RmmRapidsRetryIterator.blockUntilMemoryFreed()
-            }
+                batchDone = true
+              } else {
+                // No rows to emit — must retry or fail.
+                oom match {
+                  case _: CpuSplitAndRetryOOM | _: GpuSplitAndRetryOOM => throw oom
+                  case _ =>
+                    if (row != null) pendingRow = copyRow(row)
+                    RmmRapidsRetryIterator.blockUntilMemoryFreed()
+                }
+              }
+          }
         }
+      }
+    } else {
+      while (hasNext && (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
+        val row = nextRow()
+        byteCount += converters.convert(row, builders)
+        rowCount += 1
       }
     }
     (rowCount, byteCount)
@@ -970,8 +985,9 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
       val converters = new GpuRowToColumnConverter(localSchema)
       val conf = new RapidsConf(child.conf)
       val batchSizeBytes = conf.gpuTargetBatchSizeBytes
+      val enableR2cRetry = conf.isR2cRetryEnabled
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
-        localSchema, localGoal, batchSizeBytes, converters,
+        localSchema, localGoal, batchSizeBytes, converters, enableR2cRetry,
         numInputRows, numOutputRows, numOutputBatches, streamTime, opTime))
     }
   }
