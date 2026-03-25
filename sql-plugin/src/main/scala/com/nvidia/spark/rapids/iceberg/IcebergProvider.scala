@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{GpuExec, GpuExpression, ScanRule, ShimLoader, ShimLoaderTemp, ShimReflectionUtils, SparkPlanMeta, SparkShimVersion, StaticInvokeMeta, VersionUtils}
+import com.nvidia.spark.rapids.{GpuExec, GpuExpression, ScanRule, ShimLoader, ShimLoaderTemp, SparkPlanMeta, SparkShimVersion, StaticInvokeMeta, VersionUtils}
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
@@ -37,74 +37,36 @@ trait IcebergProvider {
   def convertToGpuPlan[P <: SparkPlan, M <: SparkPlanMeta[P]](cpuExec: P, meta: M): GpuExec
 }
 
-object IcebergProvider {
-  def apply(): IcebergProvider = ShimLoaderTemp.newIcebergProvider()
+/**
+ * Probe to detect the Iceberg version at runtime.
+ * Loaded via ShimReflectionUtils with a fixed class name (independent of shimPackage).
+ */
+trait IcebergProbe {
+  def getDetectedVersion: String
+  def shimPackage: String
+  def getProvider: IcebergProvider
+}
 
+object IcebergProvider {
   val cpuBatchQueryScanClassName: String = "org.apache.iceberg.spark.source.SparkBatchQueryScan"
   val cpuCopyOnWriteScanClassName: String = "org.apache.iceberg.spark.source.SparkCopyOnWriteScan"
 
-  // Iceberg 1.9.0 is the only release where IcebergBuild.version() does not return a
-  // valid version (it returns "unspecified", fixed in 1.9.1). Identify it by its
-  // known release commit ID.
-  private val ICEBERG_190_COMMIT = "7dbafb438ee1e68d0047bebcb587265d7d87d8a1"
+  private lazy val probe: IcebergProbe =
+    ShimLoaderTemp.newIcebergProbe()
+
+  def apply(): IcebergProvider = probe.getProvider
 
   /**
    * Returns the exact Iceberg version string (e.g. "1.6.1", "1.9.2", "1.10.1")
-   * from the runtime jar via IcebergBuild.version().
-   *
-   * Falls back to commit ID matching for iceberg 1.9.0 (which has a known bug
-   * where version() returns "unspecified").
+   * detected from the runtime jar.
    */
-  lazy val detectedVersion: String = {
-    val clazz = ShimReflectionUtils.loadClass("org.apache.iceberg.IcebergBuild")
-    val version = clazz.getMethod("version").invoke(null).asInstanceOf[String]
-    if (version.matches("\\d+\\.\\d+\\.\\d+.*")) {
-      version
-    } else {
-      val commitId = clazz.getMethod("gitCommitId").invoke(null).asInstanceOf[String]
-      if (commitId == ICEBERG_190_COMMIT) "1.9.0" else version
-    }
-  }
-
-  // (Spark feature.major.patch, Iceberg major.minor) -> shim sub-package
-  private val sparkIcebergToShim: Map[(String, String), String] = Map(
-    ("3.5.0", "1.6") -> "iceberg16x",
-    ("3.5.1", "1.6") -> "iceberg16x",
-    ("3.5.2", "1.6") -> "iceberg16x",
-    ("3.5.3", "1.6") -> "iceberg16x",
-    ("3.5.4", "1.9") -> "iceberg19x",
-    ("3.5.4", "1.10") -> "iceberg110x",
-    ("3.5.5", "1.9") -> "iceberg19x",
-    ("3.5.5", "1.10") -> "iceberg110x",
-    ("3.5.6", "1.9") -> "iceberg19x",
-    ("3.5.6", "1.10") -> "iceberg110x",
-    ("3.5.7", "1.9") -> "iceberg19x",
-    ("3.5.7", "1.10") -> "iceberg110x",
-    ("3.5.8", "1.9") -> "iceberg19x",
-    ("3.5.8", "1.10") -> "iceberg110x"
-  )
+  lazy val detectedVersion: String = probe.getDetectedVersion
 
   /**
    * Returns the version-specific sub-package for the current Spark + Iceberg combination.
-   * Used by both [[ShimLoaderTemp]] and [[ShimUtils]] to load the correct shim classes.
+   * Used by [[ShimUtils]] to load the correct shim classes.
    */
-  lazy val shimPackage: String = {
-    val sparkVersion = ShimLoader.getShimVersion match {
-      case SparkShimVersion(major, minor, patch) => s"$major.$minor.$patch"
-      case v => v.toString
-    }
-    val icebergParts = detectedVersion.split("\\.")
-    if (icebergParts.length < 2) {
-      throw new UnsupportedOperationException(
-        s"Unrecognized Iceberg version: $detectedVersion on Spark $sparkVersion")
-    }
-    val icebergMajorMinor = s"${icebergParts(0)}.${icebergParts(1)}"
-    val key = (sparkVersion, icebergMajorMinor)
-    val subpackage = sparkIcebergToShim.getOrElse(key,
-      throw new UnsupportedOperationException(
-        s"Unsupported Spark/Iceberg combination: Spark $sparkVersion, Iceberg $detectedVersion"))
-    s"com.nvidia.spark.rapids.iceberg.$subpackage"
-  }
+  lazy val shimPackage: String = probe.shimPackage
 
   def isSupportedSparkVersion(): Boolean = {
     ShimLoader.getShimVersion match {
