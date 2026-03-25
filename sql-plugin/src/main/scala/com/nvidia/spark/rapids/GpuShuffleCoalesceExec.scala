@@ -430,12 +430,12 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
     } else {
       withResource(columns.safeMap(_.spillableKudoTable.makeKudoTable)) { kudoTables =>
         val dataBufSize = kudoTables.map { table =>
-          table.getHeader.getTotalDataLen + table.getHeader.getSerializedSize
+          table.getHeader.getTotalDataLen.toLong + table.getHeader.getSerializedSize
         }.sum
         val offsetsBufSize = 8 * (kudoTables.length + 1)
         withResource(KudoBuffers(HostMemoryBuffer.allocate(dataBufSize),
           HostMemoryBuffer.allocate(offsetsBufSize))) { case KudoBuffers(dataHost, offsetsHost) =>
-          var currentOffset = 0
+          var currentOffset = 0L
           kudoTables.zipWithIndex.foreach { case (table, i) =>
             offsetsHost.setLong(i * 8L, currentOffset)
             table.getHeader.writeTo(dataHost, currentOffset)
