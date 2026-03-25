@@ -1,8 +1,8 @@
 # spark-rapids Code Review Rules
 
 For full coding conventions, build commands, project structure,
-and shim layer architecture, see [AGENTS.md](../AGENTS.md) — the
-single source of truth for all AI-facing project documentation.
+and shim layer architecture, see `AGENTS.md` at the repo root —
+the single source of truth for all AI-facing project docs.
 
 The rules below are concise review-time reminders. AGENTS.md has
 the authoritative details and code examples.
@@ -43,11 +43,16 @@ GPU-allocating code must use retry handlers from
 
 ## Spark Version Compatibility
 
-See `AGENTS.md` "Shim Layer Architecture" for full details on
-`spark-rapids-shim-json-lines` annotations, directory conventions,
-Databricks shims, Scala 2.12/2.13, and Delta Lake modules.
+Each shimmed source file has a `spark-rapids-shim-json-lines`
+annotation controlling which build profiles include it. Files
+without the annotation compile for all versions. By convention
+the file lives under the alphabetically earliest version
+directory (e.g., `sql-plugin/src/main/spark321/`). `db` suffix
+means Databricks-specific shim. Delta Lake uses per-version
+Maven modules (`delta-20x/`, `delta-spark330db/`) instead.
 
-When modifying a shim, verify all related versions are updated.
+When modifying a shim, verify all related versions are updated
+— the same change may need different adaptations per version.
 Pre-merge CI only tests selected shims — inconsistencies in
 untested shims surface only in nightly builds.
 
