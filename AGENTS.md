@@ -36,6 +36,14 @@ cd integration_tests
 # Run a specific integration test
 TEST=src/main/python/string_test.py::test_like ./run_pyspark_from_build.sh
 
+# Delta Lake integration tests (requires delta-lake module JAR)
+cd integration_tests
+./run_pyspark_from_build.sh --delta_lake
+
+# Iceberg integration tests (requires iceberg module JAR)
+cd integration_tests
+./run_pyspark_from_build.sh --iceberg
+
 # Pre-merge build versions (check pom.xml for current list)
 mvn verify -Dbuildver=320
 mvn verify -Dbuildver=341

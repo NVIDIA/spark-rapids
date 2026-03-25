@@ -47,27 +47,9 @@ spark-rapids is a GPU acceleration plugin for Apache Spark. It translates Spark 
 - Suggestions to add comments or documentation to code that is self-explanatory
 - Minor refactoring preferences
 
-## Key Files Reference
+## Further Reference
 
-Paths below are relative to
-`sql-plugin/src/main/scala/com/nvidia/spark/rapids/` unless
-otherwise noted.
-
-| File | Purpose |
-|------|---------|
-| `GpuOverrides.scala` | GPU operator registry and fallback rules |
-| `RapidsConf.scala` | Configuration keys and defaults |
-| `Arm.scala` | Resource management patterns (withResource/closeOnExcept) |
-| `RmmRapidsRetryIterator.scala` | OOM retry framework |
-| `SpillableColumnarBatch.scala` | Spillable GPU batch wrapper |
-| `GpuSemaphore.scala` | GPU access semaphore |
-| `integration_tests/.../asserts.py` | GPU vs CPU comparison test assertions |
-
-## Build & Test
-
-```bash
-mvn clean verify -DskipTests           # Build
-mvn test -pl tests                      # Unit tests
-mvn test -pl tests -Dbuildver=<VER>     # Tests for a specific Spark version (e.g., 341)
-cd integration_tests && ./run_pyspark_from_build.sh  # Integration tests
-```
+For coding conventions, build commands, project structure, shim
+layer architecture, and common patterns, see
+[AGENTS.md](../AGENTS.md) — the single source of truth for all
+AI-facing project documentation.
