@@ -429,9 +429,9 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
       new ColumnarBatch(Array.empty, totalRowsNum)
     } else {
       withResource(columns.safeMap(_.spillableKudoTable.makeKudoTable)) { kudoTables =>
-        val dataBufSize = kudoTables.map { table =>
-          table.getHeader.getTotalDataLen.toLong + table.getHeader.getSerializedSize
-        }.sum
+        val dataBufSize = kudoTables.foldLeft(0L) { (acc, table) =>
+          acc + table.getHeader.getTotalDataLen + table.getHeader.getSerializedSize
+        }
         val offsetsBufSize = 8L * (kudoTables.length + 1)
         withResource(KudoBuffers(HostMemoryBuffer.allocate(dataBufSize),
           HostMemoryBuffer.allocate(offsetsBufSize))) { case KudoBuffers(dataHost, offsetsHost) =>
