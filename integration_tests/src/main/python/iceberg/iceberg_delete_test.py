@@ -110,7 +110,6 @@ def do_delete_test(spark_tmp_table_factory, delete_sql_func, data_gen_func=None,
 
 
 # This requires reading of _partition field, which is a struct
-@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
@@ -135,7 +134,6 @@ def _do_test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition
 
 
 # This requires reading of _partition field, which is a struct
-@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
@@ -150,7 +148,6 @@ def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col
 
 
 # This requires reading of _partition field, which is a struct
-@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
@@ -445,7 +442,6 @@ def test_iceberg_delete_mor_fallback_writedelta_disabled(spark_tmp_table_factory
 
 
 
-@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
@@ -491,7 +487,6 @@ def test_delete_aqe(spark_tmp_table_factory, update_mode, partition_col_sql):
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
-@allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
