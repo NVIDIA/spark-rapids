@@ -50,15 +50,14 @@ object IcebergProvider {
   lazy val shimPackage: String = {
     if (VersionUtils.cmpSparkVersion(3, 5, 4) >= 0) {
       // Spark 3.5.4+ ships with iceberg 1.9.x or 1.10.x.
-      // Probe the iceberg-spark-runtime jar: IdentityPartitionConverters
-      // exists in iceberg <= 1.9 and was removed in 1.10.
+      // Probe for a class added in iceberg 1.10.
       try {
         ShimReflectionUtils.loadClass(
-          "org.apache.iceberg.data.IdentityPartitionConverters")
-        "com.nvidia.spark.rapids.iceberg.iceberg19x"
+          "org.apache.iceberg.actions.ComputePartitionStats")
+        "com.nvidia.spark.rapids.iceberg.iceberg110x"
       } catch {
         case _: ClassNotFoundException | _: LinkageError =>
-          "com.nvidia.spark.rapids.iceberg.iceberg110x"
+          "com.nvidia.spark.rapids.iceberg.iceberg19x"
       }
     } else {
       // Spark 3.5.0-3.5.3 ships with iceberg 1.6.x
