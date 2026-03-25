@@ -432,7 +432,7 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
         val dataBufSize = kudoTables.map { table =>
           table.getHeader.getTotalDataLen.toLong + table.getHeader.getSerializedSize
         }.sum
-        val offsetsBufSize = 8 * (kudoTables.length + 1)
+        val offsetsBufSize = 8L * (kudoTables.length + 1)
         withResource(KudoBuffers(HostMemoryBuffer.allocate(dataBufSize),
           HostMemoryBuffer.allocate(offsetsBufSize))) { case KudoBuffers(dataHost, offsetsHost) =>
           var currentOffset = 0L
