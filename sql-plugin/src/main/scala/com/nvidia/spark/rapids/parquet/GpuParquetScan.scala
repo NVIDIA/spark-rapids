@@ -3456,7 +3456,7 @@ abstract class AbstractParquetTableReader(
 
   private[this] lazy val splitsString = splits.mkString("; ")
 
-  protected val resources: Seq[AutoCloseable] = Seq(reader) ++ buffers
+  protected def resources: Seq[AutoCloseable] = Seq(reader) ++ buffers
 
   override def hasNext: Boolean = reader.hasNext
 
