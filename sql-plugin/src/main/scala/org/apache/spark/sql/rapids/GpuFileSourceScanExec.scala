@@ -654,16 +654,16 @@ case class GpuFileSourceScanExec(
 object GpuFileSourceScanExec {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val cls = meta.wrapped.relation.fileFormat.getClass
-    if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
+    if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.tagSupportForGpuFileSourceScan(meta)
+    } else if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
       GpuReadCSVFileFormat.tagSupport(meta)
     } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
       GpuReadOrcFileFormat.tagSupport(meta)
-    } else if (cls == classOf[ParquetFileFormat]) {
+    } else if (classOf[ParquetFileFormat].isAssignableFrom(cls)) {
       GpuReadParquetFileFormat.tagSupport(meta)
-    } else if (cls == classOf[JsonFileFormat]) {
+    } else if (classOf[JsonFileFormat].isAssignableFrom(cls)) {
       GpuReadJsonFileFormat.tagSupport(meta)
-    } else if (ExternalSource.isSupportedFormat(cls)) {
-      ExternalSource.tagSupportForGpuFileSourceScan(meta)
     } else {
       meta.willNotWorkOnGpu(s"unsupported file format: ${cls.getCanonicalName}")
     }
@@ -672,16 +672,16 @@ object GpuFileSourceScanExec {
   def convertFileFormat(relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat = {
     val format = relation.fileFormat
     val cls = format.getClass
-    if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
+    if (ExternalSource.isSupportedFormat(cls)) {
+      ExternalSource.getReadFileFormat(relation, rapidsConf)
+    } else if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
       new GpuReadCSVFileFormat
     } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
       new GpuReadOrcFileFormat
-    } else if (cls == classOf[ParquetFileFormat]) {
+    } else if (classOf[ParquetFileFormat].isAssignableFrom(cls)) {
       new GpuReadParquetFileFormat
-    } else if (cls == classOf[JsonFileFormat]) {
+    } else if (classOf[JsonFileFormat].isAssignableFrom(cls)) {
       new GpuReadJsonFileFormat
-    } else if (ExternalSource.isSupportedFormat(cls)) {
-      ExternalSource.getReadFileFormat(relation, rapidsConf)
     } else {
       throw new IllegalArgumentException(s"${cls.getCanonicalName} is not supported")
     }
