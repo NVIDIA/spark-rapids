@@ -95,6 +95,9 @@ Guidelines:
 - Run benchmarks multiple times to confirm results are outside noise range
 - Cover edge cases: empty tables, skewed partitions, max-size batches
 - Report absolute numbers and relative delta with variance
+- Verify that test settings are reasonable: GPU type, cluster size,
+  data size, data distribution, and test query should be
+  representative of the target workload
 
 ## Test Quality
 

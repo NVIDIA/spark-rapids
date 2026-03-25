@@ -6,7 +6,7 @@ This document provides context for AI coding agents (Claude Code, GitHub Copilot
 
 - **Minimal diffs only** — do not reformat, reorganize imports, or refactor code outside the scope of the task
 - **Never bypass CI** — do not use `--no-verify`, skip pre-commit hooks, or disable checks
-- **Never invent new public APIs** without explicit instruction
+- **Never invent new user-facing configuration or integration contracts** without explicit instruction
 - **GPU resource hygiene** — all GPU resources (`ColumnarBatch`, `GpuColumnVector`, `DeviceMemoryBuffer`) must be managed with `withResource`/`closeOnExcept`, never bare `.close()`
 - **Do not modify GPU operator implementations** without verifying that all relevant Spark version shims are updated consistently
 - **Sign-off required** — all commits must use `git commit -s` for DCO compliance
@@ -31,10 +31,10 @@ mvn test -pl tests -Dbuildver=341
 
 # Integration tests (requires running Spark cluster with GPU)
 cd integration_tests
-pytest -v src/main/python/
+./run_pyspark_from_build.sh
 
 # Run a specific integration test
-pytest -v src/main/python/string_test.py::test_like
+TEST=src/main/python/string_test.py::test_like ./run_pyspark_from_build.sh
 
 # Pre-merge build versions (check pom.xml for current list)
 mvn verify -Dbuildver=320
@@ -82,8 +82,7 @@ spark-rapids/
 
 ### Scala/Java
 
-- **Line width**: 100 characters max (enforced by scalastyle)
-- **Indentation**: 2 spaces
+- **Coding style**: Enforced by `scalastyle-config.xml` — run `mvn scalastyle:check` to validate
 - **License header**: Apache 2.0 license header required on all source files
 - **Resource management**: Use ARM pattern from `Arm.scala`:
   ```scala
@@ -127,6 +126,7 @@ spark-rapids/
 - Use `assert_gpu_fallback_collect` to verify expected fallback behavior
 - Use `data_gen.py` for reproducible test data with seeds
 - No external data dependencies — generate all test data in-test
+- No formal Python style checker configured yet; follow existing code conventions
 
 ## Common Patterns
 
