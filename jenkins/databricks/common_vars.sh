@@ -67,7 +67,7 @@ EOF
 fi
 
 # TODO make this standard going forward
-if [[ "$SPARK_VER" == '3.5.0' ]]; then
+if [[ "$SPARK_VER" == '3.5.0' || "$SPARK_VER" == '4.0.0' ]]; then
     DB_VER_SUFFIX="${PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion//./}"
 else
     DB_VER_SUFFIX=""

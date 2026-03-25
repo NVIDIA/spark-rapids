@@ -578,6 +578,7 @@ class RowToColumnarIterator(
     localGoal: CoalesceSizeGoal,
     batchSizeBytes: Long,
     converters: GpuRowToColumnConverter,
+    enableRetry: Boolean = false,
     numInputRows: GpuMetric = NoopMetric,
     numOutputRows: GpuMetric = NoopMetric,
     numOutputBatches: GpuMetric = NoopMetric,
@@ -591,10 +592,15 @@ class RowToColumnarIterator(
   private var totalOutputRows: Long = 0
   private lazy val rowCopyProjection: UnsafeProjection = UnsafeProjection.create(localSchema)
 
-  override def hasNext: Boolean = rowIter.hasNext
+  override def hasNext: Boolean = {
+    val start = System.nanoTime()
+    val result = rowIter.hasNext
+    streamTime += System.nanoTime() - start
+    result
+  }
 
   override def next(): ColumnarBatch = {
-    if (!rowIter.hasNext) {
+    if (!hasNext) {
       throw new NoSuchElementException
     }
     buildBatch()
@@ -608,7 +614,6 @@ class RowToColumnarIterator(
         if (localSchema.fields.isEmpty) {
           // if there are no columns then we just default to a small number
           // of rows for the first batch
-          // TODO do we even need to allocate anything here?
           targetRows = 1024
           initialRows = targetRows
         } else {
@@ -623,18 +628,30 @@ class RowToColumnarIterator(
         var rowCount = 0
         // Double because validity can be < 1 byte, and this is just an estimate anyways
         var byteCount: Double = 0
-        val converter = new RetryableRowConverter(builders, rowCopyProjection)
-        // read at least one row
-        while (rowIter.hasNext &&
-            (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
-          converter.attempt(rowIter.next())
-          val bytesWritten = withRetryNoSplit {
-            withRestoreOnRetry(converter) {
-              converters.convert(converter.currentRow, builders)
+
+        if (enableRetry) {
+          val converter = new RetryableRowConverter(builders, rowCopyProjection)
+          // read at least one row
+          while (rowIter.hasNext &&
+              (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
+            converter.attempt(rowIter.next())
+            val bytesWritten = withRetryNoSplit {
+              withRestoreOnRetry(converter) {
+                converters.convert(converter.currentRow, builders)
+              }
             }
+            byteCount += bytesWritten
+            rowCount += 1
           }
-          byteCount += bytesWritten
-          rowCount += 1
+        } else {
+          // Disabling R2C retry only removes the per-row retry wrapper around convert().
+          // The final builders.tryBuild(rowCount) call below still uses withRetryNoSplit.
+          while (rowIter.hasNext &&
+              (rowCount == 0 || rowCount < targetRows && byteCount < targetSizeBytes)) {
+            val row = rowIter.next()
+            byteCount += converters.convert(row, builders)
+            rowCount += 1
+          }
         }
 
         // enforce RequireSingleBatch limit
@@ -990,8 +1007,9 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
       val converters = new GpuRowToColumnConverter(localSchema)
       val conf = new RapidsConf(child.conf)
       val batchSizeBytes = conf.gpuTargetBatchSizeBytes
+      val enableR2cRetry = conf.isR2cRetryEnabled
       rowBased.mapPartitions(rowIter => new RowToColumnarIterator(rowIter,
-        localSchema, localGoal, batchSizeBytes, converters,
+        localSchema, localGoal, batchSizeBytes, converters, enableR2cRetry,
         numInputRows, numOutputRows, numOutputBatches, streamTime, opTime))
     }
   }

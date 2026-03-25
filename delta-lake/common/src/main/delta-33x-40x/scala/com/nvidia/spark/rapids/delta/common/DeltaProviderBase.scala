@@ -35,7 +35,6 @@ import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, SaveIntoDataSourceCommand}
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.execution.datasources.v2.rapids.{GpuAtomicCreateTableAsSelectExec, GpuAtomicReplaceTableAsSelectExec}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.sources.CreatableRelationProvider
 import org.apache.spark.sql.types._
@@ -102,12 +101,13 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     }
   }
 
-  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+  override def getReadFileFormat(
+      relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat = {
     val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    toGpuParquetFileFormat(relation.sparkSession.sessionState.conf, fmt)
+    toGpuParquetFileFormat(rapidsConf, fmt)
   }
 
-  protected def toGpuParquetFileFormat(conf: SQLConf, fmt: DeltaParquetFileFormat): FileFormat
+  protected def toGpuParquetFileFormat(conf: RapidsConf, fmt: DeltaParquetFileFormat): FileFormat
 
   override def convertToGpu(
     cpuExec: AtomicCreateTableAsSelectExec,
@@ -138,16 +138,11 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       InvalidateCacheShims.getInvalidateCache(cpuExec.invalidateCache))
   }
 
-  override def canPushDVPredicateDownToScan(conf: SQLConf): Boolean = {
-    val useMetadataRowIndex = conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
-    // Creating a RapidsConf might be expensive in some cases, but this is temporary
-    // until we support the non-useMetadataRowIndex code path for the cuDF-based DV-aware reader.
-    // Once we support both code paths, we can remove the conf check and just rely on the RapidsConf
-    // checks.
-    val rapidsConf = new RapidsConf(conf)
-    useMetadataRowIndex &&
-      rapidsConf.isDeltaDeletionVectorPredicatePushdownEnabled &&
-      rapidsConf.isParquetPerFileReadEnabled
+  override def canPushDVPredicateDownToScan(conf: RapidsConf): Boolean = {
+    val dvConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
+    val useMetadataRowIndex = conf.getStr(dvConf.key)
+      .getOrElse(dvConf.defaultValueString).toBoolean
+    useMetadataRowIndex && conf.isDeltaDeletionVectorPredicatePushdownEnabled
   }
 
   override def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
@@ -187,7 +182,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       dvFilter @ GpuFilterExec(condition,
       dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
         if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
-          !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
+          !outputList.flatMap(_.references).exists(_.name == "_metadata") &&
+          inputList.exists(_.name == "_metadata") =>
         dvRoot.withNewChildren(Seq(
           dvFilter.withNewChildren(Seq(
             dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
@@ -212,7 +208,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     maybeDVScan.map {
       case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _))) =>
         condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
-          inputList.exists(_.name == "_metadata") && !outputList.exists(_.name == "_metadata")
+          inputList.exists(_.name == "_metadata") &&
+          !outputList.flatMap(_.references).exists(_.name == "_metadata")
       case _ =>
         false
     }.getOrElse(false)

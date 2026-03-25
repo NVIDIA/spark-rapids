@@ -522,12 +522,17 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
-      if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
-        rapidsShuffleHeartbeatManager =
-          new RapidsShuffleHeartbeatManager(
-            conf.shuffleTransportEarlyStartHeartbeatInterval,
-            conf.shuffleTransportEarlyStartHeartbeatTimeout)
-      }
+    }
+    // Use isRapidsShuffleConfigured (SparkConf-only, no SparkEnv dependency) to gate
+    // heartbeat manager creation. On Spark 4.x, DriverPlugin.init is called before SparkEnv
+    // is fully initialized, causing isRapidsShuffleAvailable to return false and leaving
+    // rapidsShuffleHeartbeatManager null while executors still send RapidsExecutorStartupMsg.
+    if (GpuShuffleEnv.isRapidsShuffleConfigured(sparkConf) &&
+        GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
+      rapidsShuffleHeartbeatManager =
+        new RapidsShuffleHeartbeatManager(
+          conf.shuffleTransportEarlyStartHeartbeatInterval,
+          conf.shuffleTransportEarlyStartHeartbeatTimeout)
     }
 
     FileCacheLocalityManager.init(sc)
@@ -655,11 +660,16 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           numCores)
         if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           GpuShuffleEnv.initShuffleManager()
-          if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
-            logInfo("Initializing shuffle manager heartbeats")
-            rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
-            rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
-          }
+        }
+        // Mirror the driver-side fix: use isRapidsShuffleConfigured (SparkConf-only) so
+        // heartbeat endpoint creation does not depend on SparkEnv being initialized.
+        if (GpuShuffleEnv.isRapidsShuffleConfigured(sparkConf) &&
+            GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
+          logInfo("Initializing shuffle manager heartbeats")
+          rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+          rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
+        }
+        if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           // Initialize ShuffleCleanupEndpoint for MULTITHREADED mode when
           // MultithreadedShuffleBufferCatalog is enabled (skipMerge=true, ESS disabled,
           // off-heap limits on). Uses same condition as GpuShuffleEnv.init.
