@@ -1010,9 +1010,11 @@ trait SchemaBase {
 }
 
 /**
- * A common trait for the extra information for different file format
+ * A common trait for the extra information for different file format.
  */
-trait ExtraInfo
+trait ExtraInfo extends AutoCloseable {
+  override def close(): Unit = {}
+}
 
 /**
  * A single block info of a file,
@@ -1084,10 +1086,10 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     clippedBlocks.iterator.buffered
   private[this] val inputMetrics = TaskContext.get.taskMetrics().inputMetrics
 
-  private case class CurrentChunkMeta(
+  protected case class CurrentChunkMeta(
     clippedSchema: SchemaBase,
     readSchema: StructType,
-    currentChunk: Seq[(Path, DataBlockBase)],
+    currentChunk: Seq[SingleDataBlockInfo],
     numTotalRows: Long,
     rowsPerPartition: Array[Long],
     allPartValues: Array[InternalRow],
@@ -1273,49 +1275,100 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    */
   def startNewBufferRetry: Unit = ()
 
+  /**
+   * Hook called after the copy phase (readPartFiles) completes, before GPU decode.
+   * Subclasses override to perform additional per-batch preparation using the copied buffer
+   * The returned [[CurrentChunkMeta]] replaces the input for all subsequent decode operations.
+   * Default implementation returns the meta unchanged.
+   */
+  protected def prepareForDecode(meta: CurrentChunkMeta): CurrentChunkMeta = meta
+
+  /**
+   * Hook called when constructing the partition-values iterator to determine the number of
+   * alive rows per partition after any row-level filtering (e.g. filtering deleted rows).
+   * Subclasses override to adjust the given raw row counts.
+   * Default implementation returns rawRowsPerPartition unchanged.
+   *
+   * [[prepareForDecode]] must be called before this method so that any subclass hooks populated
+   * necessary metadata in [[CurrentChunkMeta]].
+   *
+   * @param rawRowsPerPartition raw row counts per partition from batch assembly
+   * @param allPartValues partition values per partition entry
+   * @param extraInfo extra info for the current batch (may be cast to a subtype)
+   */
+  protected def getRowsPerPartition(
+      rawRowsPerPartition: Array[Long],
+      allPartValues: Array[InternalRow],
+      extraInfo: ExtraInfo): Array[Long] = rawRowsPerPartition
+
   private def readBatch(): Iterator[ColumnarBatch] = {
     NvtxRegistry.FILE_FORMAT_READ_BATCH {
       val currentChunkMeta = populateCurrentBlockChunk()
-      val batchIter = if (currentChunkMeta.clippedSchema.isEmpty) {
-        // not reading any data, so return a degenerate ColumnarBatch with the row count
-        if (currentChunkMeta.numTotalRows == 0) {
-          EmptyGpuColumnarBatchIterator
-        } else {
-          val rows = currentChunkMeta.numTotalRows.toInt
-          // Someone is going to process this data, even if it is just a row count
-          GpuSemaphore.acquireIfNecessary(TaskContext.get())
-          val nullColumns = currentChunkMeta.readSchema.safeMap(f =>
-            GpuColumnVector.fromNull(rows, f.dataType).asInstanceOf[SparkVector])
-          val emptyBatch = new ColumnarBatch(nullColumns.toArray, rows)
-          new SingleGpuColumnarBatchIterator(emptyBatch)
-        }
-      } else {
-        val colTypes = currentChunkMeta.readSchema.fields.map(f => f.dataType)
-        if (currentChunkMeta.currentChunk.isEmpty) {
-          CachedGpuBatchIterator(EmptyTableReader, colTypes)
-        } else {
-          val dataBuffer = readPartFiles(currentChunkMeta.currentChunk,
-            currentChunkMeta.clippedSchema)
-          if (dataBuffer.length == 0) {
-            dataBuffer.close()
-            CachedGpuBatchIterator(EmptyTableReader, colTypes)
-          } else {
-            startNewBufferRetry
-            RmmRapidsRetryIterator.withRetryNoSplit(dataBuffer) { _ =>
-              val dataBuf = dataBuffer.getDataHostBuffer()
-              val tableReader = readBufferToTablesAndClose(dataBuf, dataBuf.getLength,
-                currentChunkMeta.clippedSchema, currentChunkMeta.readSchema,
-                currentChunkMeta.extraInfo)
-              CachedGpuBatchIterator(tableReader, colTypes)
-            }
-          }
+      val (batchIter, effectiveMeta, effectiveRows) = readBatchData(currentChunkMeta)
+      new GpuColumnarBatchWithPartitionValuesIterator(batchIter, effectiveMeta.allPartValues,
+        effectiveRows,
+        partitionSchema, maxGpuColumnSizeBytes).map { withParts =>
+        withResource(withParts) { _ =>
+          finalizeOutputBatch(withParts, effectiveMeta.extraInfo)
         }
       }
-      new GpuColumnarBatchWithPartitionValuesIterator(batchIter, currentChunkMeta.allPartValues,
-        currentChunkMeta.rowsPerPartition, partitionSchema,
-        maxGpuColumnSizeBytes).map { withParts =>
-        withResource(withParts) { _ =>
-          finalizeOutputBatch(withParts, currentChunkMeta.extraInfo)
+    }
+  }
+
+  /**
+   * Reads the data for the current batch and returns a triple of (batch iterator,
+   * effective [[CurrentChunkMeta]], effective rows-per-partition). The effective meta
+   * reflects any changes made by [[prepareForDecode]], and the rows-per-partition array
+   * is the result of [[getRowsPerPartition]] so callers do not need to invoke it again.
+   */
+  private def readBatchData(
+      meta: CurrentChunkMeta): (Iterator[ColumnarBatch], CurrentChunkMeta, Array[Long]) = {
+    if (meta.clippedSchema.isEmpty) {
+      // not reading any data, so return a degenerate ColumnarBatch with the row count.
+      // Still call prepareForDecode so subclass hooks are available to getRowsPerPartition.
+      val decodeMeta = prepareForDecode(meta)
+      // Compute effective row count.
+      val effectiveRowsPerPartition = getRowsPerPartition(
+        decodeMeta.rowsPerPartition, decodeMeta.allPartValues, decodeMeta.extraInfo)
+      val totalRows = effectiveRowsPerPartition.sum.toInt
+      val iter = try {
+        if (totalRows == 0) {
+          EmptyGpuColumnarBatchIterator
+        } else {
+          // Someone is going to process this data, even if it is just a row count
+          GpuSemaphore.acquireIfNecessary(TaskContext.get())
+          val nullColumns = decodeMeta.readSchema.safeMap(f =>
+            GpuColumnVector.fromNull(totalRows, f.dataType).asInstanceOf[SparkVector])
+          val emptyBatch = new ColumnarBatch(nullColumns.toArray, totalRows)
+          new SingleGpuColumnarBatchIterator(emptyBatch)
+        }
+      } finally {
+        // No decode phase in the empty-schema path, so close extraInfo resources directly.
+        decodeMeta.extraInfo.close()
+      }
+      (iter, decodeMeta, effectiveRowsPerPartition)
+    } else {
+      val colTypes = meta.readSchema.fields.map(f => f.dataType)
+      if (meta.currentChunk.isEmpty) {
+        (CachedGpuBatchIterator(EmptyTableReader, colTypes), meta, meta.rowsPerPartition)
+      } else {
+        val dataBuffer = readPartFiles(meta.currentChunk, meta.clippedSchema)
+        if (dataBuffer.length == 0) {
+          dataBuffer.close()
+          (CachedGpuBatchIterator(EmptyTableReader, colTypes), meta, meta.rowsPerPartition)
+        } else {
+          val decodeMeta = closeOnExcept(dataBuffer) { _ => prepareForDecode(meta) }
+          val effectiveRows = getRowsPerPartition(
+            decodeMeta.rowsPerPartition, decodeMeta.allPartValues, decodeMeta.extraInfo)
+          startNewBufferRetry
+          val iter = RmmRapidsRetryIterator.withRetryNoSplit(
+              Seq[AutoCloseable](dataBuffer, decodeMeta.extraInfo)) { _ =>
+            val dataBuf = dataBuffer.getDataHostBuffer()
+            val tableReader = readBufferToTablesAndClose(dataBuf, dataBuf.getLength,
+              decodeMeta.clippedSchema, decodeMeta.readSchema, decodeMeta.extraInfo)
+            CachedGpuBatchIterator(tableReader, colTypes)
+          }
+          (iter, decodeMeta, effectiveRows)
         }
       }
     }
@@ -1328,14 +1381,14 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    * @return the HostMemoryBuffer
    */
   private def readPartFiles(
-      blocks: Seq[(Path, DataBlockBase)],
+      blocks: Seq[SingleDataBlockInfo],
       clippedSchema: SchemaBase): SpillableHostBuffer = {
 
     NvtxIdWithMetrics(NvtxRegistry.BUFFER_FILE_SPLIT, metrics("bufferTime")) {
       // ugly but we want to keep the order
       val filesAndBlocks = LinkedHashMap[Path, ArrayBuffer[DataBlockBase]]()
-      blocks.foreach { case (path, block) =>
-        filesAndBlocks.getOrElseUpdate(path, new ArrayBuffer[DataBlockBase]) += block
+      blocks.foreach { b =>
+        filesAndBlocks.getOrElseUpdate(b.filePath, new ArrayBuffer[DataBlockBase]) += b.dataBlock
       }
       val tasks = new java.util.ArrayList[Future[AsyncResult[(Seq[DataBlockBase], Long)]]]()
 
@@ -1437,8 +1490,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
    *
    * @return [[CurrentChunkMeta]]
    */
-  private def populateCurrentBlockChunk(): CurrentChunkMeta = {
-    val currentChunk = new ArrayBuffer[(Path, DataBlockBase)]
+  protected def populateCurrentBlockChunk(): CurrentChunkMeta = {
+    val currentChunk = new ArrayBuffer[SingleDataBlockInfo]
     var numRows: Long = 0
     var numBytes: Long = 0
     var numChunkBytes: Long = 0
@@ -1500,10 +1553,9 @@ abstract class MultiFileCoalescingPartitionReaderBase(
             }
 
             val nextBlock = blockIterator.next()
-            val nextTuple = (nextBlock.filePath, nextBlock.dataBlock)
-            currentChunk += nextTuple
-            numRows += currentChunk.last._2.getRowCount
-            numChunkBytes += currentChunk.last._2.getReadDataSize
+            currentChunk += nextBlock
+            numRows += currentChunk.last.dataBlock.getRowCount
+            numChunkBytes += currentChunk.last.dataBlock.getReadDataSize
             numBytes += estimatedBytes
             readNextBatch()
           }

@@ -345,7 +345,9 @@ case class ParquetFileInfoWithBlockMeta(filePath: Path, blocks: collection.Seq[B
   }
 }
 
-private case class BlockMetaWithPartFile(meta: ParquetFileInfoWithBlockMeta, file: PartitionedFile)
+private[rapids] case class BlockMetaWithPartFile(
+    meta: ParquetFileInfoWithBlockMeta,
+    file: PartitionedFile)
 
 /**
  * A parquet compatible stream that allows reading from a HostMemoryBuffer to Parquet.
@@ -1284,6 +1286,40 @@ abstract class AbstractGpuParquetMultiFilePartitionReaderFactory(
   }
 
   /**
+   * Reads footer metadata for all files in preparation for a coalescing read.
+   * Handles missing/corrupt files according to [[ignoreMissingFiles]] / [[ignoreCorruptFiles]]
+   * and performs the footer reads in parallel when [[numFilesFilterParallel]] > 0.
+   */
+  protected def readBlockMetasForCoalescing(
+      files: Array[PartitionedFile],
+      conf: Configuration,
+      poolConf: ThreadPoolConf): Array[BlockMetaWithPartFile] = {
+    if (numFilesFilterParallel > 0) {
+      val tc = TaskContext.get()
+      val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
+      files.grouped(numFilesFilterParallel).map { fileGroup =>
+        // we need to copy the Hadoop Configuration because filter push down can mutate it,
+        // which can affect other threads.
+        threadPool.submit(
+          new CoalescingFilterRunner(footerReadType, tc, fileGroup, new Configuration(conf),
+            filters, readDataSchema))
+      }.toArray.flatMap { future =>
+        future.get().data
+      }
+    } else {
+      // We need to copy the Hadoop Configuration because filter push down can mutate it. In
+      // this case we are serially iterating through the files so each one mutating it serially
+      // doesn't affect the filter of the other files. We just need to make sure it's copied
+      // once so other tasks don't modify the same conf.
+      val hadoopConf = new Configuration(conf)
+      files.map { file =>
+        filterBlocksForCoalescingReader(footerReadType, file,
+          hadoopConf, filters, readDataSchema)
+      }
+    }
+  }
+
+  /**
    * Build the PartitionReader for coalescing reading
    *
    * @param files files to be read
@@ -1298,29 +1334,7 @@ abstract class AbstractGpuParquetMultiFilePartitionReaderFactory(
 
     metrics.getOrElse(FILTER_TIME, NoopMetric).ns {
       metrics.getOrElse(SCAN_TIME, NoopMetric).ns {
-        val metaAndFilesArr = if (numFilesFilterParallel > 0) {
-          val tc = TaskContext.get()
-          val threadPool = MultiFileReaderThreadPool.getOrCreateThreadPool(poolConf)
-          files.grouped(numFilesFilterParallel).map { fileGroup =>
-            // we need to copy the Hadoop Configuration because filter push down can mutate it,
-            // which can affect other threads.
-            threadPool.submit(
-              new CoalescingFilterRunner(footerReadType, tc, fileGroup, new Configuration(conf),
-                filters, readDataSchema))
-          }.toArray.flatMap { future =>
-            future.get().data
-          }
-        } else {
-          // We need to copy the Hadoop Configuration because filter push down can mutate it. In
-          // this case we are serially iterating through the files so each one mutating it serially
-          // doesn't affect the filter of the other files. We just need to make sure it's copied
-          // once so other tasks don't modify the same conf.
-          val hadoopConf = new Configuration(conf)
-          files.map { file =>
-            filterBlocksForCoalescingReader(footerReadType, file,
-              hadoopConf, filters, readDataSchema)
-          }
-        }
+        val metaAndFilesArr = readBlockMetasForCoalescing(files, conf, poolConf)
         metaAndFilesArr.foreach { metaAndFile =>
           val singleFileInfo = metaAndFile.meta
           clippedBlocks ++= singleFileInfo.blocks.map(block =>
@@ -2300,55 +2314,45 @@ case class ParquetSingleDataBlockMeta(
   extraInfo: ParquetExtraInfo) extends SingleDataBlockInfo
 
 /**
- * A PartitionReader that can read multiple Parquet files up to the certain size. It will
- * coalesce small files together and copy the block data in a separate thread pool to speed
- * up processing the small files before sending down to the GPU.
+ * Abstract base class for coalescing Parquet partition readers.
  *
- * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
- * in memory that contains just the column chunks that are needed. This avoids sending
- * unnecessary data to the GPU and saves GPU memory.
+ * Provides all the Parquet-specific block-copy machinery shared between the plain coalescing
+ * reader and the Delta-aware coalescing reader: header/footer writing, block-split predicate,
+ * batch runner, and the [[populateCurrentBlockChunk]] template method with the
+ * [[augmentChunkMeta]] extension point.
+ *
+ * Both [[MultiFileParquetPartitionReader]] and the Delta-aware coalescing reader extend this
+ * class. Neither extends the other.
  *
  * @param conf the Hadoop configuration
- * @param splits the partitioned files to read
  * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
  *                      to only contain the column chunks to be read
  * @param isSchemaCaseSensitive whether schema is case sensitive
- * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data
- * @param debugDumpAlways whether to debug dump always or only on errors
  * @param maxReadBatchSizeRows soft limit on the maximum number of rows the reader reads per batch
  * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
  * @param targetBatchSizeBytes the target size of a batch
  * @param maxGpuColumnSizeBytes the maximum size of a GPU column
- * @param useChunkedReader whether to read Parquet by chunks or read all at once
- * @param maxChunkedReaderMemoryUsageSizeBytes soft limit on the number of bytes of internal memory
- *                                             usage that the reader will use
  * @param execMetrics metrics
  * @param partitionSchema Schema of partitions.
  * @param poolConf thread pool configuration.
  * @param ignoreMissingFiles Whether to ignore missing files
  * @param ignoreCorruptFiles Whether to ignore corrupt files
  */
-class MultiFileParquetPartitionReader(
+abstract class MultiFileCoalescingParquetPartitionReaderBase(
     override val fileIO: RapidsFileIO,
     override val conf: Configuration,
-    splits: Array[PartitionedFile],
     clippedBlocks: Seq[ParquetSingleDataBlockMeta],
     override val isSchemaCaseSensitive: Boolean,
-    debugDumpPrefix: Option[String],
-    debugDumpAlways: Boolean,
     maxReadBatchSizeRows: Integer,
     maxReadBatchSizeBytes: Long,
     targetBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
-    useChunkedReader: Boolean,
-    maxChunkedReaderMemoryUsageSizeBytes: Long,
     override val compressCfg: CpuCompressionConfig,
     override val execMetrics: Map[String, GpuMetric],
     partitionSchema: StructType,
     poolConf: ThreadPoolConf,
     ignoreMissingFiles: Boolean,
-    ignoreCorruptFiles: Boolean,
-    useFieldId: Boolean)
+    ignoreCorruptFiles: Boolean)
   extends MultiFileCoalescingPartitionReaderBase(conf, clippedBlocks,
     partitionSchema, maxReadBatchSizeRows, maxReadBatchSizeBytes, maxGpuColumnSizeBytes,
     poolConf, execMetrics)
@@ -2452,27 +2456,10 @@ class MultiFileParquetPartitionReader(
 
   override final def getFileFormatShortName: String = "Parquet"
 
-  private var currentTargetBatchSize = targetBatchSizeBytes
+  protected var currentTargetBatchSize = targetBatchSizeBytes
 
   override final def startNewBufferRetry: Unit = {
     currentTargetBatchSize = targetBatchSizeBytes
-  }
-
-  override def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer, dataSize: Long,
-      clippedSchema: SchemaBase, readDataSchema: StructType,
-      extraInfo: ExtraInfo): GpuDataProducer[Table] = {
-
-    val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
-
-    // About to start using the GPU
-    GpuSemaphore.acquireIfNecessary(TaskContext.get())
-
-    MakeParquetTableProducer(useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
-      conf, currentTargetBatchSize, parseOpts,
-      Array(dataBuffer), metrics,
-      extraInfo.dateRebaseMode, extraInfo.timestampRebaseMode,
-      extraInfo.hasInt96Timestamps, isSchemaCaseSensitive, useFieldId, readDataSchema,
-      clippedSchema, splits, debugDumpPrefix, debugDumpAlways)
   }
 
   override def writeFileHeader(buffer: HostMemoryBuffer, bContext: BatchContext): Long = {
@@ -2506,6 +2493,97 @@ class MultiFileParquetPartitionReader(
       }
     }
     (buffer, finalSize)
+  }
+
+  /**
+   * Template method: assembles the current block chunk via the base-class implementation, then
+   * calls [[augmentChunkMeta]] so subclasses can augment the resulting [[CurrentChunkMeta]]
+   * without duplicating the assembly loop.
+   */
+  final override def populateCurrentBlockChunk(): CurrentChunkMeta = {
+    val meta = super.populateCurrentBlockChunk()
+    augmentChunkMeta(meta)
+  }
+
+  /**
+   * Extension point called after each batch is assembled by [[populateCurrentBlockChunk]].
+   * Subclasses override this to inject additional per-batch metadata (e.g. DV entries) into
+   * the returned [[CurrentChunkMeta]] without touching the assembly loop.
+   * Default implementation returns the meta unchanged.
+   */
+  protected def augmentChunkMeta(meta: CurrentChunkMeta): CurrentChunkMeta = meta
+}
+
+/**
+ * A PartitionReader that can read multiple Parquet files up to the certain size. It will
+ * coalesce small files together and copy the block data in a separate thread pool to speed
+ * up processing the small files before sending down to the GPU.
+ *
+ * Efficiently reading a Parquet split on the GPU requires re-constructing the Parquet file
+ * in memory that contains just the column chunks that are needed. This avoids sending
+ * unnecessary data to the GPU and saves GPU memory.
+ *
+ * @param conf the Hadoop configuration
+ * @param splits the partitioned files to read
+ * @param clippedBlocks the block metadata from the original Parquet file that has been clipped
+ *                      to only contain the column chunks to be read
+ * @param isSchemaCaseSensitive whether schema is case sensitive
+ * @param debugDumpPrefix a path prefix to use for dumping the fabricated Parquet data
+ * @param debugDumpAlways whether to debug dump always or only on errors
+ * @param maxReadBatchSizeRows soft limit on the maximum number of rows the reader reads per batch
+ * @param maxReadBatchSizeBytes soft limit on the maximum number of bytes the reader reads per batch
+ * @param targetBatchSizeBytes the target size of a batch
+ * @param maxGpuColumnSizeBytes the maximum size of a GPU column
+ * @param useChunkedReader whether to read Parquet by chunks or read all at once
+ * @param maxChunkedReaderMemoryUsageSizeBytes soft limit on the number of bytes of internal memory
+ *                                             usage that the reader will use
+ * @param execMetrics metrics
+ * @param partitionSchema Schema of partitions.
+ * @param poolConf thread pool configuration.
+ * @param ignoreMissingFiles Whether to ignore missing files
+ * @param ignoreCorruptFiles Whether to ignore corrupt files
+ */
+class MultiFileParquetPartitionReader(
+    fileIO: RapidsFileIO,
+    conf: Configuration,
+    splits: Array[PartitionedFile],
+    clippedBlocks: Seq[ParquetSingleDataBlockMeta],
+    isSchemaCaseSensitive: Boolean,
+    debugDumpPrefix: Option[String],
+    debugDumpAlways: Boolean,
+    maxReadBatchSizeRows: Integer,
+    maxReadBatchSizeBytes: Long,
+    targetBatchSizeBytes: Long,
+    maxGpuColumnSizeBytes: Long,
+    useChunkedReader: Boolean,
+    maxChunkedReaderMemoryUsageSizeBytes: Long,
+    compressCfg: CpuCompressionConfig,
+    execMetrics: Map[String, GpuMetric],
+    partitionSchema: StructType,
+    poolConf: ThreadPoolConf,
+    ignoreMissingFiles: Boolean,
+    ignoreCorruptFiles: Boolean,
+    useFieldId: Boolean)
+  extends MultiFileCoalescingParquetPartitionReaderBase(fileIO, conf, clippedBlocks,
+    isSchemaCaseSensitive, maxReadBatchSizeRows, maxReadBatchSizeBytes, targetBatchSizeBytes,
+    maxGpuColumnSizeBytes, compressCfg, execMetrics, partitionSchema, poolConf,
+    ignoreMissingFiles, ignoreCorruptFiles) {
+
+  override def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer, dataSize: Long,
+      clippedSchema: SchemaBase, readDataSchema: StructType,
+      extraInfo: ExtraInfo): GpuDataProducer[Table] = {
+
+    val parseOpts = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
+
+    // About to start using the GPU
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
+
+    MakeParquetTableProducer(useChunkedReader, maxChunkedReaderMemoryUsageSizeBytes,
+      conf, currentTargetBatchSize, parseOpts,
+      Array(dataBuffer), metrics,
+      extraInfo.dateRebaseMode, extraInfo.timestampRebaseMode,
+      extraInfo.hasInt96Timestamps, isSchemaCaseSensitive, useFieldId, readDataSchema,
+      clippedSchema, splits, debugDumpPrefix, debugDumpAlways)
   }
 }
 
