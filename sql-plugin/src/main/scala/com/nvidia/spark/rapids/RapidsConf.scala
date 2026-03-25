@@ -2808,11 +2808,10 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         "the GPU Delta Lake scans. The result of the scan will contain only the rows " +
         "that are not deleted according to the deletion vector. When false, " +
         "the deletion vectors will be materialized as a boolean column and " +
-        "the GPU filter operator will process it together with other filters. " +
-        "Currently only the PERFILE reader is supported.")
+        "the GPU filter operator will process it together with other filters.")
       .internal()
       .booleanConf
-      .createWithDefault(false)
+      .createWithDefault(true)
 
   val ENABLE_HASH_FUNCTION_IN_PARTITIONING =
     conf("spark.rapids.sql.partitioning.hashFunction.enabled")
