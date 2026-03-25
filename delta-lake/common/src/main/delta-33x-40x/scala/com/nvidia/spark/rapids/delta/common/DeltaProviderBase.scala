@@ -142,13 +142,10 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     val useMetadataRowIndex = conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX)
     // Creating a RapidsConf might be expensive in some cases, but this is temporary
     // until we support the non-useMetadataRowIndex code path for the cuDF-based DV-aware reader.
-    // Once we support both code paths, we can remove the conf check and just rely on the RapidsConf
-    // checks.
+    // The DV-aware reader requires useMetadataRowIndex=true;
+    // the useMetadataRowIndex=false code path is not yet supported.
     val rapidsConf = new RapidsConf(conf)
-    useMetadataRowIndex &&
-      rapidsConf.isDeltaDeletionVectorPredicatePushdownEnabled &&
-      (rapidsConf.isParquetPerFileReadEnabled ||
-        rapidsConf.isParquetMultiThreadReadEnabled)
+    useMetadataRowIndex && rapidsConf.isDeltaDeletionVectorPredicatePushdownEnabled
   }
 
   override def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
@@ -188,7 +185,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       dvFilter @ GpuFilterExec(condition,
       dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
         if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
-          !outputList.exists(_.name == "_metadata") && inputList.exists(_.name == "_metadata") =>
+          !outputList.flatMap(_.references).exists(_.name == "_metadata") &&
+          inputList.exists(_.name == "_metadata") =>
         dvRoot.withNewChildren(Seq(
           dvFilter.withNewChildren(Seq(
             dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
@@ -213,7 +211,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     maybeDVScan.map {
       case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _))) =>
         condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
-          inputList.exists(_.name == "_metadata") && !outputList.exists(_.name == "_metadata")
+          inputList.exists(_.name == "_metadata") &&
+          !outputList.flatMap(_.references).exists(_.name == "_metadata")
       case _ =>
         false
     }.getOrElse(false)
