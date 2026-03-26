@@ -17,16 +17,17 @@
 package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids.{
-  AppendDataExecV1Meta, 
-  AtomicCreateTableAsSelectExecMeta, 
-  AtomicReplaceTableAsSelectExecMeta, 
-  CreatableRelationProviderRule, 
-  ExecRule, 
-  ExprRule, 
-  GpuExec, 
-  OverwriteByExpressionExecV1Meta, 
-  RunnableCommandRule, 
-  ShimLoaderTemp, 
+  AppendDataExecV1Meta,
+  AtomicCreateTableAsSelectExecMeta,
+  AtomicReplaceTableAsSelectExecMeta,
+  CreatableRelationProviderRule,
+  ExecRule,
+  ExprRule,
+  GpuExec,
+  OverwriteByExpressionExecV1Meta,
+  RapidsConf,
+  RunnableCommandRule,
+  ShimLoaderTemp,
   SparkPlanMeta
 }
 
@@ -36,7 +37,6 @@ import org.apache.spark.sql.execution.{FileSourceScanExec, SparkPlan, SparkStrat
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation}
 import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec, OverwriteByExpressionExecV1}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.sources.CreatableRelationProvider
 
 /** Probe interface to determine which Delta Lake provider to use. */
@@ -64,7 +64,7 @@ trait DeltaProvider {
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
 
-  def getReadFileFormat(relation: HadoopFsRelation): FileFormat
+  def getReadFileFormat(relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat
 
   def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean
 
@@ -97,7 +97,7 @@ trait DeltaProvider {
   /**
    * Returns true if deletion vector predicates can be pushed down to the scan.
    */
-  def canPushDVPredicateDownToScan(conf: SQLConf): Boolean = false
+  def canPushDVPredicateDownToScan(conf: RapidsConf): Boolean = false
 
   /**
    * Pushes down deletion vector predicates to the scan if possible
@@ -135,7 +135,7 @@ object NoDeltaProvider extends DeltaProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit =
     throw new IllegalStateException("unsupported format")
 
-  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat =
+  override def getReadFileFormat(relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat =
     throw new IllegalStateException("unsupported format")
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = false

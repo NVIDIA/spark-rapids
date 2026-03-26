@@ -98,6 +98,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-20x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <!-- #if scala-2.12 --><!--
@@ -123,6 +124,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -146,6 +148,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -169,6 +172,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -192,6 +196,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -215,6 +220,7 @@
                 <module>delta-lake/delta-21x</module>
                 <module>delta-lake/delta-22x</module>
                 <module>delta-lake/delta-23x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -235,6 +241,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -255,6 +262,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -275,6 +283,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -295,6 +304,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -315,6 +325,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-24x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         --><!-- #endif scala-2.12 -->
@@ -341,6 +352,7 @@
             <modules>
                 <module>shim-deps/databricks</module>
                 <module>delta-lake/delta-spark332db</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -363,6 +375,7 @@
             <modules>
                 <module>shim-deps/databricks</module>
                 <module>delta-lake/delta-spark341db</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -385,6 +398,7 @@
             <modules>
                 <module>shim-deps/databricks</module>
                 <module>delta-lake/delta-spark350db143</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         --><!-- #endif scala-2.12 -->
@@ -499,6 +513,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -524,6 +539,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -549,6 +565,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -574,6 +591,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -599,6 +617,7 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
@@ -628,6 +647,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-40x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -650,6 +670,7 @@
             <modules>
                 <module>shim-deps/databricks</module>
                 <module>delta-lake/delta-stub</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -670,6 +691,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-40x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -690,6 +712,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-40x</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <profile>
@@ -710,6 +733,7 @@
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
+                <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
         <!-- #endif scala-2.13 -->
@@ -914,7 +938,7 @@
         support all spark versions. In spark versions that we don't support, the aggregator
         includes rapids-4-spark-sql, otherwise it includes actual iceberg integration artifact.
         -->
-        <rapids.iceberg.artifactId>rapids-4-spark-sql</rapids.iceberg.artifactId>
+        <rapids.iceberg.artifactId>rapids-4-spark-iceberg-stub</rapids.iceberg.artifactId>
         <rapids.iceberg.artifactId2>${rapids.iceberg.artifactId}</rapids.iceberg.artifactId2>
         <spark33x.iceberg.artifact.suffix>3.3</spark33x.iceberg.artifact.suffix>
         <spark33x.iceberg.version>1.6.1</spark33x.iceberg.version>
@@ -925,6 +949,7 @@
         <iceberg.16x.version>1.6.1</iceberg.16x.version>
         <iceberg.19x.version>1.9.2</iceberg.19x.version>
         <iceberg.110x.version>1.10.1</iceberg.110x.version>
+        <iceberg.version>${iceberg.16x.version}</iceberg.version>
         <!--
             If true, disables verification that all Shims be built as of one and the same git
             commit hash. Do not use for CI!
@@ -1078,7 +1103,7 @@
             <dependency>
                 <groupId>org.apache.iceberg</groupId>
                 <artifactId>iceberg-spark-runtime-${iceberg.artifact.suffix}_${scala.binary.version}</artifactId>
-                <version>${iceberg.16x.version}</version>
+                <version>${iceberg.version}</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
