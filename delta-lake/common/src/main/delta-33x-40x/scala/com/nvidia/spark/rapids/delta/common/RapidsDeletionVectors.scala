@@ -130,6 +130,18 @@ object RapidsDeletionVectors extends Logging {
     }
   }
 
+  /**
+   * Convenience overload for callers that have already verified the filter type is
+   * [[RowIndexFilterType.IF_CONTAINED]] and only carry the descriptor string.
+   */
+  def loadDeletionVector(
+      fileIO: RapidsFileIO,
+      dvDescriptorOpt: Option[String],
+      tablePath: String): HostMemoryBuffer =
+    loadDeletionVector(fileIO, dvDescriptorOpt,
+      dvDescriptorOpt.map(_ => RowIndexFilterType.IF_CONTAINED),
+      tablePath)
+
   def loadScalaBitmap(
       conf: Configuration,
       dvDescriptorOpt: Option[String],
