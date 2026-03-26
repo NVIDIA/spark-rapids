@@ -669,11 +669,11 @@ object GpuFileSourceScanExec {
     }
   }
 
-  def convertFileFormat(relation: HadoopFsRelation): FileFormat = {
+  def convertFileFormat(relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat = {
     val format = relation.fileFormat
     val cls = format.getClass
     if (ExternalSource.isSupportedFormat(cls)) {
-      ExternalSource.getReadFileFormat(relation)
+      ExternalSource.getReadFileFormat(relation, rapidsConf)
     } else if (classOf[CSVFileFormat].isAssignableFrom(cls)) {
       new GpuReadCSVFileFormat
     } else if (GpuOrcFileFormat.isSparkOrcFormat(cls)) {
