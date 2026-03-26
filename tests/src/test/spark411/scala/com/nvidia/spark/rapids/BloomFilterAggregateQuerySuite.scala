@@ -19,7 +19,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 class BloomFilterAggregateQuerySuiteSpark411 extends BloomFilterAggregateQuerySuiteBase {
 

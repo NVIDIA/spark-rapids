@@ -47,12 +47,12 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.FunctionIdentifier
 import org.apache.spark.sql.catalyst.expressions.{BloomFilterMightContain, Expression, ExpressionInfo}
 import org.apache.spark.sql.catalyst.expressions.aggregate.BloomFilterAggregate
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 trait BloomFilterAggregateQuerySuiteBase extends SparkQueryCompareTestSuite {
   val bloomFilterEnabledConf = new SparkConf()
