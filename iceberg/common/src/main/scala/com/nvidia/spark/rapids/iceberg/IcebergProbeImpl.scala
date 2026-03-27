@@ -16,10 +16,19 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.ShimReflectionUtils
+import com.nvidia.spark.rapids.{ShimLoader, ShimReflectionUtils, SparkShimVersion, VersionUtils}
 import org.apache.iceberg.IcebergBuild
 
 class IcebergProbeImpl extends IcebergProbe {
+
+  override def isSupportedSparkVersion(): Boolean = {
+    ShimLoader.getShimVersion match {
+      case _: SparkShimVersion =>
+        VersionUtils.cmpSparkVersion(3, 5, 0) >= 0 &&
+        VersionUtils.cmpSparkVersion(4, 1, 0) < 0
+      case _ => false
+    }
+  }
   // Git commit ID -> version for all supported Iceberg releases.
   // Commit IDs are from iceberg-build.properties embedded in each release jar.
   // https://github.com/apache/iceberg/releases
