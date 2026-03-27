@@ -48,7 +48,7 @@ import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterF
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
-import org.apache.spark.sql.execution.datasources.v2.GpuDelteWritingSparkTask.filterByOperation
+import org.apache.spark.sql.execution.datasources.v2.GpuDelteWritingSparkTask.{filterByInsertLikeOperations, filterByOperation}
 import org.apache.spark.sql.execution.metric.{CustomMetrics, SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{LongAccumulator, Utils}
@@ -233,31 +233,6 @@ case class GpuOverwriteByExpressionExec(
 }
 
 /**
- * Physical plan node for replacing data in a v2 table.
- *
- * Used by copy-on-write operations like DELETE to replace rows in the table.
- * Rows are read, filtered, and rewritten.
- */
-case class GpuReplaceDataExec(
-                               inner: SparkPlan,
-                               refreshCache: () => Unit,
-                               write: GpuWrite) extends GpuV2ExistingTableWriteExec {
-
-  override def supportsColumnar: Boolean = false
-
-  override def query: SparkPlan = inner
-
-  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    throw new IllegalStateException(
-      "GpuReplaceDataExec does not support columnar execution")
-  }
-
-  override protected def withNewChildInternal(newChild: SparkPlan): GpuReplaceDataExec = {
-    copy(inner = newChild)
-  }
-}
-
-/**
  * Physical plan node for writing delta (position deletes) in a v2 table.
  *
  * Used by merge-on-read operations like DELETE to write position delete files.
@@ -421,7 +396,7 @@ case class GpuDeltaWritingSparkTask(
           }
         }
 
-        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        val insertFilter = filterByInsertLikeOperations(batch)
         withResource(insertFilter) { _ =>
           withResource(rowProjection.project(batch)) { rows =>
             val filteredRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
@@ -512,7 +487,7 @@ case class GpuDeltaWithMetadataWritingSparkTask(
       }
 
       if (rowProjection != null) {
-        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        val insertFilter = filterByInsertLikeOperations(batch)
         withResource(insertFilter) { _ =>
           withResource(rowProjection.project(batch)) { rows =>
             val filterRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
@@ -532,6 +507,25 @@ object GpuDelteWritingSparkTask {
   private[v2] def filterByOperation(batch: ColumnarBatch, op: Int): CudfColumnVector = {
     withResource(CudfScalar.fromInt(op)) { cudfOp =>
       batch.column(0).asInstanceOf[GpuColumnVector].getBase.equalTo(cudfOp)
+    }
+  }
+
+  // Spark 4.0 added REINSERT_OPERATION (4) for MOR updates. Rows with this op code
+  // should be treated the same as INSERT_OPERATION (3) -- they are new data rows.
+  private val REINSERT_OPERATION_VALUE = 4
+
+  private[v2] def filterByInsertLikeOperations(batch: ColumnarBatch): CudfColumnVector = {
+    val opCol = batch.column(0).asInstanceOf[GpuColumnVector].getBase
+    val insertMatch = withResource(CudfScalar.fromInt(INSERT_OPERATION)) { s =>
+      opCol.equalTo(s)
+    }
+    withResource(insertMatch) { _ =>
+      val reinsertMatch = withResource(CudfScalar.fromInt(REINSERT_OPERATION_VALUE)) { s =>
+        opCol.equalTo(s)
+      }
+      withResource(reinsertMatch) { _ =>
+        insertMatch.or(reinsertMatch)
+      }
     }
   }
 }

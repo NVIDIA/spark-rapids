@@ -22,8 +22,8 @@ from data_gen import gen_df, copy_and_update
 from iceberg import (create_iceberg_table, iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
                      get_full_table_name, iceberg_write_enabled_conf)
-from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
-from spark_session import with_gpu_session, with_cpu_session, is_iceberg_supported_spark
+from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
+from spark_session import with_gpu_session, with_cpu_session, is_iceberg_supported_spark, is_spark_400_or_later
 
 pytestmark = [
     pytest.mark.skipif(not is_iceberg_supported_spark(),
@@ -153,6 +153,7 @@ def test_ctas_partitioned_table(spark_tmp_table_factory, partition_col_sql):
     pytest.param("_c8", id="identity(date)"),
     pytest.param("_c10", id="identity(decimal)"),
 ])
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_ctas_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
     _do_test_ctas_partitioned_table(spark_tmp_table_factory, partition_col_sql)
@@ -214,6 +215,7 @@ def test_ctas_fallback_when_conf_disabled(spark_tmp_table_factory,
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec',  'ShuffleExchangeExec', 'ProjectExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_ctas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
         "format-version": "2"
@@ -237,6 +239,7 @@ def test_ctas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
 @ignore_order(local=True)
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
         "format-version": "2"
@@ -262,6 +265,7 @@ def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
 @allow_non_gpu('AtomicCreateTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_ctas_from_values(spark_tmp_table_factory,
                           partition_table):
     table_prop = {
@@ -299,6 +303,7 @@ def test_ctas_from_values(spark_tmp_table_factory,
     pytest.param(None, id="unpartitioned"),
     pytest.param("year(_c9)", id="triple_datetime_transforms"),
 ])
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_ctas_aqe(spark_tmp_table_factory, partition_col_sql):
     """
     Test CTAS with multiple partition transforms on the same column with AQE enabled.

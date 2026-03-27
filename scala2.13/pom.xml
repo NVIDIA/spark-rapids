@@ -960,6 +960,7 @@
         <iceberg.19x.version>1.9.2</iceberg.19x.version>
         <iceberg.110x.version>1.10.1</iceberg.110x.version>
         <iceberg.runtime.version>${iceberg.16x.version}</iceberg.runtime.version>
+        <iceberg.version>${iceberg.16x.version}</iceberg.version>
         <!--
             If true, disables verification that all Shims be built as of one and the same git
             commit hash. Do not use for CI!
