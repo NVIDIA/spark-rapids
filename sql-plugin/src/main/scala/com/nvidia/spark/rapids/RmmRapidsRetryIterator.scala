@@ -202,7 +202,11 @@ object RmmRapidsRetryIterator extends Logging {
    */
   def withRetryBlock[T](fn: => T): T = {
     RmmSpark.currentThreadStartRetryBlock()
-    try fn finally RmmSpark.currentThreadEndRetryBlock()
+    try {
+      fn
+    } finally {
+      RmmSpark.currentThreadEndRetryBlock()
+    }
   }
 
   /**
