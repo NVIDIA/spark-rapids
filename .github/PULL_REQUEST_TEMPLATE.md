@@ -33,6 +33,7 @@ Check the items below by putting "x" in the brackets for what is done.
 Not all of these items may be relevant to every PR, so please check only those that apply.
 -->
 
+- [ ] I have reviewed my PR using AI tools _and_ by myself.
 - [ ] This PR has added documentation for new or modified features or behaviors.
 - [ ] This PR has added new tests or modified existing tests to cover new code paths.
       (Please explain in the PR description how the new code paths are tested, such as names of the new/existing tests that cover them.)
