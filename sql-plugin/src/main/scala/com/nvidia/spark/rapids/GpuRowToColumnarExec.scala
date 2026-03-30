@@ -660,14 +660,18 @@ class RowToColumnarIterator(
                 // Emit partial batch. This also handles SplitAndRetryOOM: emitting
                 // a smaller batch IS the right response to memory pressure, and
                 // tryBuild() has its own withRetryNoSplit to handle GPU OOM.
-                if (row != null) pendingRow = copyRow(row)
+                if (row != null) {
+                  pendingRow = copyRow(row)
+                }
                 batchDone = true
               } else {
                 // No rows to emit — must retry or fail.
                 oom match {
                   case _: CpuSplitAndRetryOOM | _: GpuSplitAndRetryOOM => throw oom
                   case _ =>
-                    if (row != null) pendingRow = copyRow(row)
+                    if (row != null) {
+                      pendingRow = copyRow(row)
+                    }
                     RmmRapidsRetryIterator.blockUntilMemoryFreed()
                 }
               }
