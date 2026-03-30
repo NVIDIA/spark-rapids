@@ -42,13 +42,14 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{GpuProjectingColumnarBatch, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, INSERT_OPERATION, UPDATE_OPERATION}
+import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, UPDATE_OPERATION}
 import org.apache.spark.sql.catalyst.util.WriteDeltaProjections
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, DeltaWriter, PhysicalWriteInfoImpl, Write, WriterCommitMessage}
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
-import org.apache.spark.sql.execution.datasources.v2.GpuDelteWritingSparkTask.{filterByInsertLikeOperations, filterByOperation}
+import com.nvidia.spark.rapids.shims.DeltaInsertFilter
+import org.apache.spark.sql.execution.datasources.v2.GpuDelteWritingSparkTask.filterByOperation
 import org.apache.spark.sql.execution.metric.{CustomMetrics, SQLMetric, SQLMetrics}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{LongAccumulator, Utils}
@@ -396,7 +397,7 @@ case class GpuDeltaWritingSparkTask(
           }
         }
 
-        val insertFilter = filterByInsertLikeOperations(batch)
+        val insertFilter = DeltaInsertFilter.filterInsertRows(batch)
         withResource(insertFilter) { _ =>
           withResource(rowProjection.project(batch)) { rows =>
             val filteredRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
@@ -487,7 +488,7 @@ case class GpuDeltaWithMetadataWritingSparkTask(
       }
 
       if (rowProjection != null) {
-        val insertFilter = filterByInsertLikeOperations(batch)
+        val insertFilter = DeltaInsertFilter.filterInsertRows(batch)
         withResource(insertFilter) { _ =>
           withResource(rowProjection.project(batch)) { rows =>
             val filterRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
@@ -507,25 +508,6 @@ object GpuDelteWritingSparkTask {
   private[v2] def filterByOperation(batch: ColumnarBatch, op: Int): CudfColumnVector = {
     withResource(CudfScalar.fromInt(op)) { cudfOp =>
       batch.column(0).asInstanceOf[GpuColumnVector].getBase.equalTo(cudfOp)
-    }
-  }
-
-  // Spark 4.0 added REINSERT_OPERATION (4) for MOR updates. Rows with this op code
-  // should be treated the same as INSERT_OPERATION (3) -- they are new data rows.
-  private val REINSERT_OPERATION_VALUE = 4
-
-  private[v2] def filterByInsertLikeOperations(batch: ColumnarBatch): CudfColumnVector = {
-    val opCol = batch.column(0).asInstanceOf[GpuColumnVector].getBase
-    val insertMatch = withResource(CudfScalar.fromInt(INSERT_OPERATION)) { s =>
-      opCol.equalTo(s)
-    }
-    withResource(insertMatch) { _ =>
-      val reinsertMatch = withResource(CudfScalar.fromInt(REINSERT_OPERATION_VALUE)) { s =>
-        opCol.equalTo(s)
-      }
-      withResource(reinsertMatch) { _ =>
-        insertMatch.or(reinsertMatch)
-      }
     }
   }
 }
