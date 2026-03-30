@@ -139,9 +139,11 @@ object DateUtils {
    *
    * cuDF issue https://github.com/rapidsai/cudf/issues/4160 (closed 2020-02)
    * previously blocked the following; "a" -> "%p" is now supported.
-   * Still unsupported (single-letter Java formats not yet mapped):
-   * "hh" -> "%I" (12 hour clock)
-   * "DDD" -> "%j" (Day of the year)
+   * Not yet mapped to cuDF specifiers:
+   * "hh" -> "%I" (12-hour clock) — NOTE: "hh" is not in
+   *   unsupportedWord, so it silently passes through as a literal
+   *   instead of being rejected. This is a pre-existing gap.
+   * "DDD" -> "%j" (day of year) — blocked by unsupportedWord
    *
    * @param format Java time format string
    * @param parseString True if we're parsing a string
