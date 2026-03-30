@@ -48,7 +48,8 @@ class IcebergProbeImpl extends IcebergProbe with Logging {
 
   override def getDetectedVersion: String = {
     val sourceLocation = Option(classOf[IcebergBuild].getProtectionDomain.getCodeSource)
-      .map(_.getLocation.toString)
+      .flatMap(cs => Option(cs.getLocation))
+      .map(_.toString)
       .getOrElse("unknown")
     val commitId = IcebergBuild.gitCommitId()
     val version = commitToVersion.getOrElse(commitId,
