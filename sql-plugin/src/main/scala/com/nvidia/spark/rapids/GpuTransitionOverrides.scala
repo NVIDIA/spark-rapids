@@ -805,7 +805,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       GpuOverrides.logDuration(rapidsConf.shouldExplain,
         t => f"GPU plan transition optimization took $t%.2f ms") {
         var updatedPlan = DeltaProvider().pruneFileMetadata(plan)
-        if (DeltaProvider().canPushDVPredicateDownToScan(plan.conf)) {
+        if (DeltaProvider().canPushDVPredicateDownToScan(rapidsConf)) {
           updatedPlan = DeltaProvider().pushDVPredicateDownToScan(updatedPlan)
         }
         updatedPlan = insertHashOptimizeSorts(updatedPlan)
