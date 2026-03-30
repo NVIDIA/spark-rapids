@@ -138,7 +138,7 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
     val df2 = sql("SELECT rand(1L)")
     assert(df2.schema.head.name === "rand(1)")
     checkIfSeedExistsInExplain(df2)
-    // GPU doesn't support randn now. See https://github.com/NVIDIA/spark-rapids/issues/11613 
+    // GPU doesn't support randn now. See https://github.com/NVIDIA/spark-rapids/issues/11613
     // val df3 = sql("SELECT randn()")
     // assert(df3.schema.head.name === "randn()")
     // checkIfSeedExistsInExplain(df3)
@@ -212,9 +212,9 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
         // GPU-specific: Access CommandResultExec's innerChildren to get the actual command plan
         import org.apache.spark.sql.execution.CommandResultExec
         import scala.collection.mutable.ArrayBuffer
-        
+
         val insertCmds = new ArrayBuffer[GpuInsertIntoHadoopFsRelationCommand]()
-        
+
         def findInsertCmd(plan: Any): Unit = plan match {
           case CommandResultExec(_, commandPlan, _) =>
             // CommandResultExec stores the actual command in commandPhysicalPlan (innerChildren)
@@ -235,9 +235,9 @@ class RapidsSQLQuerySuite extends SQLQuerySuite with RapidsSQLTestsTrait {
             node.children.foreach(findInsertCmd)
           case _ =>
         }
-        
+
         findInsertCmd(insert.queryExecution.executedPlan)
-        
+
         if (insertCmds.nonEmpty) {
           insertCmds.head.partitionColumns.map(_.name).foreach(name => assert(name == "CAL_DT"))
         } else {

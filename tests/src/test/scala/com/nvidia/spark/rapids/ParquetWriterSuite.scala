@@ -133,7 +133,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
           .map(f => f.getAbsolutePath())
           .filter(p => p.endsWith("parquet"))
           .map(p => {
-            assertRowCount50 (spark.read.parquet(p).count()) 
+            assertRowCount50 (spark.read.parquet(p).count())
           })
       })
     } finally {
@@ -159,7 +159,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
           .map(f => f.getAbsolutePath())
           .filter(p => p.endsWith("parquet"))
           .map(p => {
-            assertRowCount50 (spark.read.parquet(p).count()) 
+            assertRowCount50 (spark.read.parquet(p).count())
           })
       })
     } finally {

@@ -21,7 +21,7 @@ import org.apache.spark.unsafe.types.UTF8String
 
 class RegularExpressionRewriteSuite extends AnyFunSuite {
 
-  private def verifyRewritePattern(patterns: Seq[String], 
+  private def verifyRewritePattern(patterns: Seq[String],
       excepted: Seq[RegexOptimizationType]): Unit = {
     val results = patterns.map { pattern =>
       val ast = new RegexParser(pattern).parse()
@@ -32,18 +32,18 @@ class RegularExpressionRewriteSuite extends AnyFunSuite {
 
   test("regex rewrite startsWith") {
     import RegexOptimizationType._
-    val patterns = Seq("^abc.*", raw"\A(abc).*", "^(abc).*def", raw"\Aabc.*(.*).*", "^abc.*(.*).*", 
+    val patterns = Seq("^abc.*", raw"\A(abc).*", "^(abc).*def", raw"\Aabc.*(.*).*", "^abc.*(.*).*",
         raw"^(abc)\Z")
-    val excepted = Seq(StartsWith("abc"), StartsWith("abc"), NoOptimization, StartsWith("abc"), 
+    val excepted = Seq(StartsWith("abc"), StartsWith("abc"), NoOptimization, StartsWith("abc"),
         StartsWith("abc"), NoOptimization)
     verifyRewritePattern(patterns, excepted)
   }
 
   test("regex rewrite contains") {
     import RegexOptimizationType._
-    val patterns = Seq(".*abc.*", ".*(abc).*", "^.*(abc).*$", "^.*(.*)(abc).*.*", 
+    val patterns = Seq(".*abc.*", ".*(abc).*", "^.*(abc).*$", "^.*(.*)(abc).*.*",
         raw".*\w.*\Z", raw".*..*\Z", "^(.*)(abc)")
-    val excepted = Seq(Contains("abc"), Contains("abc"), NoOptimization, NoOptimization, 
+    val excepted = Seq(Contains("abc"), Contains("abc"), NoOptimization, NoOptimization,
         NoOptimization, NoOptimization, NoOptimization)
     verifyRewritePattern(patterns, excepted)
   }

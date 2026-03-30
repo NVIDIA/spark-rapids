@@ -404,11 +404,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
           doAnswer { _ =>
             callCount += 1
             // send 1 buffer length
-            if (callCount > 1){
-              false
-            } else {
-              true
-            }
+            callCount <= 1
           }.when(bssSuccess).hasMoreSends
 
           // if something else can be handled we don't throw, and re-queue

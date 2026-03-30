@@ -228,7 +228,7 @@ object GpuDeviceManager extends Logging {
    * We expect the plugin to be run with 1 GPU per executor.
    */
   def initializeFromTask(): Unit = {
-    if (threadGpuInitialized.get() == false) {
+    if (!threadGpuInitialized.get()) {
       val resources = getResourcesFromTaskContext
       val conf = new RapidsConf(SparkEnv.get.conf)
       if (rmmTaskInitEnabled) {

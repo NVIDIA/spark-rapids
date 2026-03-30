@@ -62,6 +62,7 @@ import org.apache.hadoop.hive.common.io.DiskRangeList
 import org.apache.orc.{DataReader, OrcProto, StripeInformation}
 import org.apache.orc.impl.DataReaderProperties
 
+// scalastyle:off no.clone
 abstract class GpuOrcDataReaderBase(
     props: DataReaderProperties,
     conf: Configuration,
@@ -285,10 +286,11 @@ abstract class GpuOrcDataReaderBase(
     }
   }
 
-  // [Scala 2.13] This is needed because org.apache.orc.DataReader defines a public clone() method 
+  // [Scala 2.13] This is needed because org.apache.orc.DataReader defines a public clone() method
   // which should be overidden here as a public member. The Scala 2.13 compiler enforces this now
   // which was a bug in the compiler previously.
   override def clone(): DataReader = {
     super.clone().asInstanceOf[DataReader]
   }
 }
+// scalastyle:on no.clone

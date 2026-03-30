@@ -28,11 +28,11 @@ import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 
 /**
  * Utility object for handling InMemoryTableScan version differences.
- * For Spark 3.5.0 and 3.5.1, we disable InMemoryTableScan by default due to 
+ * For Spark 3.5.0 and 3.5.1, we disable InMemoryTableScan by default due to
  * missing InMemoryTableScanLike trait.
  */
 object InMemoryTableScanUtils {
-  
+
   /**
    * Modifies the InMemoryTableScan rule to be disabled by default for Spark 3.5.0-3.5.1.
    */

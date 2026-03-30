@@ -68,6 +68,6 @@ trait HiveProviderCmdShims extends HiveProvider {
   ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
 
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
-      RunnableCommandRule[_ <: RunnableCommand]] = 
+      RunnableCommandRule[_ <: RunnableCommand]] =
     Map.empty
 }

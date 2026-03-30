@@ -250,7 +250,7 @@ abstract class GpuShuffleExchangeExecBase(
   lazy val shuffleDependencyColumnar : ShuffleDependency[Int, ColumnarBatch, ColumnarBatch] = {
     val descendantOpTimeMetrics = getDescendantOpTimeMetrics
     val opTimeNewShuffleWrite = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
-    
+
     GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputBatchRDD,
       child.output,

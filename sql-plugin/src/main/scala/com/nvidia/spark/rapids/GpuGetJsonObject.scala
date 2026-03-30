@@ -120,7 +120,7 @@ object JsonPathParser extends RegexParsers {
     }
   }
 
-  def convertToJniObject(instructions: List[PathInstruction]): 
+  def convertToJniObject(instructions: List[PathInstruction]):
       Array[JSONUtils.PathInstructionJni] = {
     instructions.map { instruction =>
       val (tpe, name, index) = unzipInstruction(instruction)

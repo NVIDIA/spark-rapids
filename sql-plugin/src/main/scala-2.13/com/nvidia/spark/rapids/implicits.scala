@@ -206,7 +206,7 @@ object RapidsPluginImplicits {
           success = true
         } finally {
           if (!success) {
-            val res = b.result() 
+            val res = b.result()
             res match {
               // B is erased at this point, even if ClassTag is used
               // @ unchecked suppresses a warning that the type of B
@@ -289,7 +289,7 @@ object RapidsPluginImplicits {
           success = true
         } finally {
           if (!success) {
-            val res = b.result() 
+            val res = b.result()
             res match {
               case a: Array[AutoCloseable] => a.safeClose()
             }

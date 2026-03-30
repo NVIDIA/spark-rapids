@@ -55,7 +55,7 @@ object GpuExpressionWithSideEffectUtils {
    * @param nullsAsFalse when true, null values are considered false.
    * @param col the input being evaluated.
    * @return boolean. When nullsAsFalse is set, it returns True if none of the rows is true;
-   *         Otherwise, returns true if at least one row exists and all rows are false.   
+   *         Otherwise, returns true if at least one row exists and all rows are false.
    */
   def isAllFalse(col: GpuColumnVector, nullsAsFalse: Boolean = true): Boolean = {
     assert(BooleanType == col.dataType())

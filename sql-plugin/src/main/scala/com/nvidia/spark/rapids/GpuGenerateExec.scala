@@ -108,7 +108,7 @@ class GpuStackMeta(
 
   override val childExprs: Seq[BaseExprMeta[_]] = stack.children
       .map(GpuOverrides.wrapExpr(_, conf, Some(this)))
-  
+
   override def convertToGpuImpl(): GpuExpression = {
     // There is no need to implement convertToGpu() here, because GpuGenerateExec will handle
     // stack logic in terms of GpuExpandExec, no convertToGpu() will be called during the process

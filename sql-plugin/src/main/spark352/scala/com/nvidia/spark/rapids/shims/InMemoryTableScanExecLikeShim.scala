@@ -43,7 +43,7 @@ import org.apache.spark.sql.execution.columnar.{InMemoryRelation, InMemoryTableS
  */
 trait InMemoryTableScanExecLikeShim extends InMemoryTableScanLike with LeafExecNode {
   def attributes: Seq[Attribute]
-  def predicates: Seq[Expression]  
+  def predicates: Seq[Expression]
   def relation: InMemoryRelation
 
   override def isMaterialized: Boolean = relation.cacheBuilder.isCachedColumnBuffersLoaded

@@ -46,7 +46,7 @@ class LazyCompiledCondition(
   @volatile private var compiledBuildRight: CompiledExpression = _
   @volatile private var compiledBuildLeft: CompiledExpression = _
   @volatile private var transformedConditionBuildLeft: GpuExpression = _
-  
+
   /**
    * Get the compiled AST for when the right side is the build side.
    *
@@ -75,7 +75,7 @@ class LazyCompiledCondition(
    *
    * In this configuration, cudf join APIs receive (rightTable, leftTable) due to the swap
    * in BuildLeft variants. We need the AST to map:
-   * - AST LEFT table references → rightTable (stream side)  
+   * - AST LEFT table references → rightTable (stream side)
    * - AST RIGHT table references → leftTable (build side)
    *
    * We achieve this by transforming the bound condition from leftOutput ++ rightOutput

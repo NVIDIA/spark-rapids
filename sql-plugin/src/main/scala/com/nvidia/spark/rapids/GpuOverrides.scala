@@ -3159,7 +3159,7 @@ object GpuOverrides extends Logging {
             TypeSig.all))),
       (in, conf, p, r) => new ExprMeta[MapZipWith](in, conf, p, r) {
         override def convertToGpuImpl(): GpuExpression = {
-          GpuMapZipWith(childExprs.head.convertToGpu(), 
+          GpuMapZipWith(childExprs.head.convertToGpu(),
           childExprs(1).convertToGpu(), childExprs(2).convertToGpu())
         }
       }),

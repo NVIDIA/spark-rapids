@@ -24,14 +24,14 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
 /**
  * RAPIDS test suite for CSV schema evolution without header.
- * 
+ *
  * Tests CSV file reading with schema changes:
  * - Add columns (schema evolution)
  * - Hide columns (schema projection)
  * - Type upcast (Byte→Short→Int→Long, Float→Double→Decimal, etc.)
  */
-class RapidsCSVReadSchemaSuite 
-  extends CSVReadSchemaSuite 
+class RapidsCSVReadSchemaSuite
+  extends CSVReadSchemaSuite
   with RapidsSQLTestsTrait {
   // All tests from CSVReadSchemaSuite are inherited and will be run on GPU.
   // Exclusions for known issues will be added in RapidsTestSettings if needed.
@@ -39,11 +39,11 @@ class RapidsCSVReadSchemaSuite
 
 /**
  * RAPIDS test suite for CSV schema evolution with header enabled.
- * 
+ *
  * Same as RapidsCSVReadSchemaSuite but with header option enabled.
  */
-class RapidsHeaderCSVReadSchemaSuite 
-  extends HeaderCSVReadSchemaSuite 
+class RapidsHeaderCSVReadSchemaSuite
+  extends HeaderCSVReadSchemaSuite
   with RapidsSQLTestsTrait {
   // All tests from HeaderCSVReadSchemaSuite are inherited and will be run on GPU.
   // Exclusions for known issues will be added in RapidsTestSettings if needed.
@@ -51,7 +51,7 @@ class RapidsHeaderCSVReadSchemaSuite
 
 /**
  * RAPIDS test suite for JSON schema evolution.
- * 
+ *
  * Tests JSON file reading with schema changes:
  * - Add/hide columns (at end or in the middle)
  * - Add/hide nested columns
@@ -67,12 +67,12 @@ class RapidsJsonReadSchemaSuite
 
 /**
  * RAPIDS test suite for ORC schema evolution (non-vectorized reader).
- * 
+ *
  * Tests ORC file reading with schema changes:
  * - Add/hide columns (at end or in the middle)
  * - Add/hide nested columns
  * - Change column position
- * 
+ *
  * Note: This suite disables vectorized ORC reader.
  */
 class RapidsOrcReadSchemaSuite
@@ -84,13 +84,13 @@ class RapidsOrcReadSchemaSuite
 
 /**
  * RAPIDS test suite for ORC schema evolution (vectorized reader).
- * 
+ *
  * Tests ORC file reading with schema changes using vectorized reader:
  * - Add/hide columns (at end or in the middle)
  * - Add/hide nested columns
  * - Change column position
  * - Type upcast (Boolean, Byte→Short→Int→Long, Float→Double)
- * 
+ *
  * Note: This suite enables vectorized ORC reader.
  */
 class RapidsVectorizedOrcReadSchemaSuite
@@ -102,13 +102,13 @@ class RapidsVectorizedOrcReadSchemaSuite
 
 /**
  * RAPIDS test suite for ORC schema evolution with schema merging enabled.
- * 
+ *
  * Tests ORC file reading with schema merging across multiple files:
  * - Add/hide columns (at end or in the middle)
  * - Add/hide nested columns
  * - Change column position
  * - Type upcast (Boolean, Byte→Short→Int→Long, Float→Double)
- * 
+ *
  * Note: This suite enables ORC schema merging.
  */
 class RapidsMergedOrcReadSchemaSuite
@@ -120,12 +120,12 @@ class RapidsMergedOrcReadSchemaSuite
 
 /**
  * RAPIDS test suite for Parquet schema evolution (non-vectorized reader).
- * 
+ *
  * Tests Parquet file reading with schema changes:
  * - Add/hide columns (at end or in the middle)
  * - Add/hide nested columns
  * - Change column position
- * 
+ *
  * Note: This suite disables vectorized Parquet reader.
  */
 class RapidsParquetReadSchemaSuite
@@ -137,12 +137,12 @@ class RapidsParquetReadSchemaSuite
 
 /**
  * RAPIDS test suite for Parquet schema evolution (vectorized reader).
- * 
+ *
  * Tests Parquet file reading with schema changes using vectorized reader:
  * - Add/hide columns (at end or in the middle)
  * - Add/hide nested columns
  * - Change column position
- * 
+ *
  * Note: This suite enables vectorized Parquet reader.
  */
 class RapidsVectorizedParquetReadSchemaSuite
@@ -154,12 +154,12 @@ class RapidsVectorizedParquetReadSchemaSuite
 
 /**
  * RAPIDS test suite for Parquet schema evolution with schema merging enabled.
- * 
+ *
  * Tests Parquet file reading with schema merging across multiple files:
  * - Add/hide columns (at end or in the middle)
  * - Add/hide nested columns
  * - Change column position
- * 
+ *
  * Note: This suite enables Parquet schema merging.
  */
 class RapidsMergedParquetReadSchemaSuite

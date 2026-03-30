@@ -74,7 +74,7 @@ class RapidsCachingReader[K, C](
       val blocksForRapidsTransport =
           new ArrayBuffer[(BlockManagerId, Seq[(BlockId, Long, Int)])]()
       var cachedBatchIterator: Iterator[ColumnarBatch] = Iterator.empty
-      val blocksByAddressMap: Map[BlockManagerId, Seq[(BlockId, Long, Int)]] = 
+      val blocksByAddressMap: Map[BlockManagerId, Seq[(BlockId, Long, Int)]] =
           blocksByAddress.toMap
       var numCachedBlocks: Int = 0
 

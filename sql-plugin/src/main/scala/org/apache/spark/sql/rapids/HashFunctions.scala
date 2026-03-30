@@ -65,7 +65,7 @@ case class GpuSha1(child: Expression)
         }
       }
     }
-    withResource(normalizedStringCV) { normalizedStringCV => 
+    withResource(normalizedStringCV) { normalizedStringCV =>
       withResource(ColumnVector.sha1Hash(normalizedStringCV)) { fullResult =>
         // necessary because cudf treats nulls as "" for hashing
         fullResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, normalizedStringCV)

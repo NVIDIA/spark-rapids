@@ -24,9 +24,9 @@ import org.apache.spark.internal.config.ConfigEntry
 
 object RapidsPrivateUtil {
 
-  private lazy val extraConfigs = 
+  private lazy val extraConfigs =
     getPrivateConfigs("spark-rapids-extra-configs-classes", isStartup = false)
-  private lazy val extraStartupConfigs = 
+  private lazy val extraStartupConfigs =
     getPrivateConfigs("spark-rapids-extra-startup-configs-classes", isStartup = true)
 
   val commonConfigKeys = List("filecache.enabled")

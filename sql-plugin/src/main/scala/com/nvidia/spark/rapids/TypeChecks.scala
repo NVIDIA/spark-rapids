@@ -1461,9 +1461,9 @@ object ToPrettyStringChecks {
   private val BINARY_STYLE_KEY = "spark.sql.binaryOutputStyle"
 }
 
-/** 
+/**
  * This class is just restricting the 'to' dataType to a StringType in the CastChecks class
- */ 
+ */
 class ToPrettyStringChecks extends CastChecks {
   import ToPrettyStringChecks.BINARY_STYLE_KEY
 

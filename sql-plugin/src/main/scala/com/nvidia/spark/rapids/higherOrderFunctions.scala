@@ -708,7 +708,7 @@ case class GpuMapZipExpression(
   override def children: Seq[Expression] = Seq(leftMap, rightMap)
 
   @transient lazy val MapType(leftKeyType, leftValueType, leftValueContainsNull) = leftMap.dataType
-  @transient lazy val MapType(rightKeyType, rightValueType, rightValueContainsNull) 
+  @transient lazy val MapType(rightKeyType, rightValueType, rightValueContainsNull)
   = rightMap.dataType
 
   @transient lazy val keyType =
@@ -773,12 +773,12 @@ trait GpuMapTwoArgumentHigherOrderFunction extends GpuTwoArgumentHigherOrderFunc
       }
       withResource(keyCol) { keyCol =>
         val val1Col = withResource(
-          keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX).getChildColumnView(0)) 
+          keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX).getChildColumnView(0))
           { valueView =>
           valueView.copyToColumnVector()
         }
         val val2Col = withResource(
-          keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX).getChildColumnView(1)) 
+          keyValuePairColumn.getChildColumnView(GpuMapUtils.VALUE_INDEX).getChildColumnView(1))
          { valueView =>
           valueView.copyToColumnVector()
         }
@@ -792,7 +792,7 @@ trait GpuMapTwoArgumentHigherOrderFunction extends GpuTwoArgumentHigherOrderFunc
         }
       }
     }
-    
+
     // Get the original map structure for reconstruction
     val zippedMap = withResource(GpuProjectExec.project(inputBatch, Seq(mapZipExpr))) {
       projectedBatch =>
@@ -800,11 +800,11 @@ trait GpuMapTwoArgumentHigherOrderFunction extends GpuTwoArgumentHigherOrderFunc
           projectedTable.getColumn(0).copyToColumnVector()
         }
     }
-    
+
     val lambdaBatch = withResource(moddedTable) { moddedTable =>
       GpuColumnVector.from(moddedTable, inputToLambda.toArray)
     }
-    
+
     (lambdaBatch, zippedMap)
   }
 }
@@ -823,7 +823,7 @@ case class GpuMapZipWith(
   @transient lazy val keyType =
     TypeCoercion.findCommonTypeDifferentOnlyInNullFlags(keyType1, keyType2).get
 
-  override def dataType: DataType = MapType(keyType, function.dataType, 
+  override def dataType: DataType = MapType(keyType, function.dataType,
     valueContainsNull1 || valueContainsNull2)
 
   override def prettyName: String = "map_zip_with"

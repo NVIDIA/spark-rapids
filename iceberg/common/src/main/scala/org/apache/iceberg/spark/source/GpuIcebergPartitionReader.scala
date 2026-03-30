@@ -39,7 +39,7 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
     private val metrics: Map[String, GpuMetric],
 ) extends PartitionReader[ColumnarBatch] {
   private var inited = false
-  
+
   private lazy val table = task.cpuPartition.table()
   private lazy val fileIO = table.io()
   private lazy val rapidsFileIO = new IcebergFileIO(fileIO)

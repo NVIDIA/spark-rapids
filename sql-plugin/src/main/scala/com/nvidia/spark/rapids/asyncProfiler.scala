@@ -73,7 +73,7 @@ object AsyncProfilerOnExecutor extends Logging {
   private var epochScheduler: Option[ScheduledExecutorService] = None
   private var epochTask: Option[ScheduledFuture[_]] = None
   private var isShutdown = false
-  
+
   // Epoch tracking for same stage multiple executions
   private val stageEpochCounters = new ConcurrentHashMap[Int, Int]() // stageId -> epochCount
 
@@ -115,15 +115,15 @@ object AsyncProfilerOnExecutor extends Logging {
       val taskContext = TaskContext.get
       val stageId = taskContext.stageId()
       val taskId = taskContext.taskAttemptId()
-      
+
       // Track this task
       runningTasks.put(taskId, stageId)
-      
+
       // Add task completion listener to clean up tracking
       taskContext.addTaskCompletionListener[Unit] { _ =>
         runningTasks.remove(taskId)
       }
-      
+
       log.debug(s"Task $taskId from stage $stageId started, " +
         s"total running tasks: ${runningTasks.size()}")
     })
@@ -157,7 +157,7 @@ object AsyncProfilerOnExecutor extends Logging {
         thread
       })
       epochScheduler = Some(scheduler)
-      
+
       val task = scheduler.scheduleAtFixedRate(
         () => {
           try {
@@ -172,18 +172,18 @@ object AsyncProfilerOnExecutor extends Logging {
         TimeUnit.SECONDS
       )
       epochTask = Some(task)
-      
+
       log.info(s"Started stage epoch scheduler with interval ${stageEpochInterval}s")
     }
   }
-  
+
   /**
    * Stops the epoch scheduler.
    */
   private def stopEpochScheduler(): Unit = {
     epochTask.foreach(_.cancel(false))
     epochTask = None
-    
+
     epochScheduler.foreach { scheduler =>
       scheduler.shutdown()
       try {
@@ -198,7 +198,7 @@ object AsyncProfilerOnExecutor extends Logging {
     }
     epochScheduler = None
   }
-  
+
   /**
    * Determines which stage should be the current epoch based on running task counts
    * and switches profiling if necessary. The dominant stage must have more than
@@ -208,26 +208,26 @@ object AsyncProfilerOnExecutor extends Logging {
     if (isShutdown || asyncProfiler.isEmpty) {
       return
     }
-    
+
     // Count running tasks per stage
     val stageTaskCounts = mutable.HashMap[Int, Int]()
     runningTasks.values().asScala.foreach { stageId =>
       stageTaskCounts(stageId) = stageTaskCounts.getOrElse(stageId, 0) + 1
     }
-    
+
     if (stageTaskCounts.isEmpty) {
       log.debug("No running tasks, keeping current profiling stage")
       return
     }
-    
+
     val totalTasks = stageTaskCounts.values.sum
     val (dominantStage, taskCount) = stageTaskCounts.maxBy(_._2)
     val dominantRatio = taskCount.toDouble / totalTasks
-    
+
     log.debug(s"Stage task counts: ${stageTaskCounts.toMap}, " +
       s"dominant stage: $dominantStage with $taskCount/$totalTasks tasks " +
       s"(${(dominantRatio * 100).toInt}%)")
-    
+
     // Only switch if the dominant stage has more than half of all running tasks
     if (dominantRatio > 0.5) {
       // Switch to the dominant stage if it's different from current
@@ -237,7 +237,7 @@ object AsyncProfilerOnExecutor extends Logging {
             log.info(s"Switching profiling from stage $currentProfilingStage " +
               s"to stage $dominantStage (has $taskCount/$totalTasks tasks, " +
               s"${(dominantRatio * 100).toInt}%)")
-            
+
             closeLastProfiler()
             currentProfilingStage = dominantStage
             startProfilingForStage(dominantStage)
@@ -250,7 +250,7 @@ object AsyncProfilerOnExecutor extends Logging {
         s"(requires >50%)")
     }
   }
-  
+
   /**
    * Starts profiling for the specified stage.
    */
@@ -261,7 +261,7 @@ object AsyncProfilerOnExecutor extends Logging {
         val currentEpoch = stageEpochCounters.compute(stageId, (_, currentCount) => {
           currentCount + 1
         }) - 1
-        
+
         val filePath = {
           if (needMoveFile) {
             // if the asyncProfilerPathPrefix is non-local, we first write to a temp file
@@ -344,9 +344,9 @@ object AsyncProfilerOnExecutor extends Logging {
 
               val baseFileName = s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
                 s"-stage-$currentProfilingStage-epoch-$currentEpoch.jfr"
-              val outPath = new Path(asyncProfilerPrefix.get, 
+              val outPath = new Path(asyncProfilerPrefix.get,
                 if (jfrCompressionEnabled) baseFileName + ".gz" else baseFileName)
-              
+
               val hadoopConf = pluginCtx.ask(ProfileInitMsg(executorId, outPath.toString))
                 .asInstanceOf[SerializableConfiguration].value
               val fs = outPath.getFileSystem(hadoopConf)
@@ -360,7 +360,7 @@ object AsyncProfilerOnExecutor extends Logging {
                 } else {
                   // If compression fails, copy the original file
                   log.warn("JFR compression failed, copying uncompressed file")
-                  fs.copyFromLocalFile(new Path(tempFilePath.toString), 
+                  fs.copyFromLocalFile(new Path(tempFilePath.toString),
                     new Path(asyncProfilerPrefix.get, baseFileName))
                 }
               } else {
@@ -381,7 +381,7 @@ object AsyncProfilerOnExecutor extends Logging {
                   s"async-profiler-app-${getAppId}-exec-${pluginCtx.executorID()}" +
                     s"-stage-$currentProfilingStage-epoch-$currentEpoch.jfr")
                 val compressedPath = Paths.get(originalPath.toString + ".gz")
-                
+
                 if (compressJfrFile(originalPath, compressedPath)) {
                   originalPath.toFile.delete() // delete original file after successful compression
                 } else {

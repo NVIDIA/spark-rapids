@@ -43,14 +43,14 @@ abstract class BridgeUnsafeProjection {
  * Falls back to direct expression evaluation when code generation fails.
  * Shares the same append logic as GpuCpuBridgeExpression.
  */
-class InterpretedBridgeUnsafeProjection(expressions: Seq[Expression]) 
+class InterpretedBridgeUnsafeProjection(expressions: Seq[Expression])
   extends BridgeUnsafeProjection {
-  
+
   // Create optimized append functions once for each expression
   private val appendFunctions = expressions.map { expr =>
     BridgeUnsafeProjection.createOptimizedAppendFunction(expr.dataType, expr.nullable)
   }
-  
+
   override def apply(rows: Iterator[InternalRow],
     builders: Array[RapidsHostColumnBuilder]): Unit = {
     rows.foreach { row =>
@@ -70,7 +70,7 @@ object BridgeUnsafeProjection
 
   override protected def createCodeGeneratedObject(in: Seq[Expression]): BridgeUnsafeProjection = {
     // Just call generate directly - let any exceptions propagate naturally
-    // The CodeGeneratorWithInterpretedFallback base class will catch exceptions 
+    // The CodeGeneratorWithInterpretedFallback base class will catch exceptions
     // and fall back to createInterpretedObject
     BridgeGenerateUnsafeProjection.generate(in, SQLConf.get.subexpressionEliminationEnabled)
   }
@@ -83,62 +83,62 @@ object BridgeUnsafeProjection
    * Creates an optimized append function for the specific data type and nullability.
    * Similar to how TypeConverter generates specialized functions, this avoids the overhead
    * of evaluating the data type on every append operation.
-   * 
+   *
    * This is SHARED code used by both:
    * - InterpretedBridgeUnsafeProjection (when codegen fails)
    * - GpuCpuBridgeExpression (for the existing interpreted evaluation path)
    */
-  def createOptimizedAppendFunction(dataType: DataType, 
+  def createOptimizedAppendFunction(dataType: DataType,
     nullable: Boolean): (Any, RapidsHostColumnBuilder) => Unit = {
     import com.nvidia.spark.rapids.GpuRowToColumnConverter
     import org.apache.spark.sql.catalyst.expressions.SpecificInternalRow
-    
+
     dataType match {
       // Primitive types - generate specialized functions
       case BooleanType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Boolean])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Boolean])
-      
+
       case ByteType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Byte])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Byte])
-      
+
       case ShortType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Short])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Short])
-      
+
       case IntegerType | DateType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Int])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Int])
-      
+
       case LongType | TimestampType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Long])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Long])
-      
+
       case FloatType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Float])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Float])
-      
+
       case DoubleType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Double])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Double])
-      
+
       case StringType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else {
             val utf8String = value.asInstanceOf[UTF8String]
             builder.appendUTF8String(utf8String.getBytes)
@@ -147,47 +147,47 @@ object BridgeUnsafeProjection
           val utf8String = value.asInstanceOf[UTF8String]
           builder.appendUTF8String(utf8String.getBytes)
         }
-      
+
       case BinaryType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) {
-            builder.appendNull() 
+            builder.appendNull()
           } else {
             builder.appendByteList(value.asInstanceOf[Array[Byte]])
           }
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.appendByteList(value.asInstanceOf[Array[Byte]])
-      
+
       case _: DecimalType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) {
-            builder.appendNull() 
+            builder.appendNull()
           } else {
             builder.append(value.asInstanceOf[Decimal].toJavaBigDecimal)
           }
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Decimal].toJavaBigDecimal)
-      
+
       case _: YearMonthIntervalType =>
         // YearMonthIntervalType is stored as Int (number of months)
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Int])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Int])
-      
+
       case _: DayTimeIntervalType =>
         // DayTimeIntervalType is stored as Long (number of microseconds)
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
+        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) =>
           if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Long])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
+        else (value: Any, builder: RapidsHostColumnBuilder) =>
           builder.append(value.asInstanceOf[Long])
-      
+
       case _ =>
         // For complex types or unsupported types, fall back to TypeConverter
         // Only pay the SpecificInternalRow overhead when we actually need it
         val converter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
         val resultRow = new SpecificInternalRow(Array(dataType))
-        
+
         (value: Any, builder: RapidsHostColumnBuilder) => {
           resultRow.update(0, value)
           converter.append(resultRow, 0, builder)
@@ -250,7 +250,7 @@ object BridgeGenerateUnsafeProjection extends
    */
   private def canSupportDirectCodegen(dataType: DataType): Boolean = {
     dataType match {
-      case BooleanType | ByteType | ShortType | IntegerType | DateType | 
+      case BooleanType | ByteType | ShortType | IntegerType | DateType |
            LongType | TimestampType | FloatType | DoubleType | StringType |
            BinaryType | _: DecimalType | NullType => true
       case ArrayType(elementType, _) => canSupportDirectCodegen(elementType)
@@ -283,10 +283,10 @@ object BridgeGenerateUnsafeProjection extends
       valueVar: String,
       isNullVar: String,
       builderRef: String): String = {
-    
+
     dataType match {
-      case BooleanType | ByteType | ShortType | IntegerType | DateType | 
-           LongType | TimestampType | FloatType | DoubleType | 
+      case BooleanType | ByteType | ShortType | IntegerType | DateType |
+           LongType | TimestampType | FloatType | DoubleType |
            _: YearMonthIntervalType | _: DayTimeIntervalType =>
         if (nullable) {
           s"""
@@ -299,7 +299,7 @@ object BridgeGenerateUnsafeProjection extends
         } else {
           s"$builderRef.append($valueVar);"
         }
-        
+
       case StringType =>
         if (nullable) {
           s"""
@@ -312,7 +312,7 @@ object BridgeGenerateUnsafeProjection extends
         } else {
           s"$builderRef.appendUTF8String($valueVar.getBytes());"
         }
-        
+
       case BinaryType =>
         if (nullable) {
           s"""
@@ -325,7 +325,7 @@ object BridgeGenerateUnsafeProjection extends
         } else {
           s"$builderRef.appendByteList($valueVar);"
         }
-        
+
       case _: DecimalType =>
         if (nullable) {
           s"""
@@ -338,21 +338,21 @@ object BridgeGenerateUnsafeProjection extends
         } else {
           s"$builderRef.append($valueVar.toJavaBigDecimal());"
         }
-      
+
       case NullType =>
         s"$builderRef.appendNull();"
-      
+
       case ArrayType(elementType, containsNull) =>
-        generateArrayAppendCode(ctx, elementType, containsNull, nullable, valueVar, 
+        generateArrayAppendCode(ctx, elementType, containsNull, nullable, valueVar,
           isNullVar, builderRef)
-        
+
       case structType: StructType =>
         generateStructAppendCode(ctx, structType, nullable, valueVar, isNullVar, builderRef)
-        
+
       case MapType(keyType, valueType, valueContainsNull) =>
-        generateMapAppendCode(ctx, keyType, valueType, valueContainsNull, nullable, 
+        generateMapAppendCode(ctx, keyType, valueType, valueContainsNull, nullable,
           valueVar, isNullVar, builderRef)
-      
+
       case _ =>
         // This should never be reached due to canSupportDirectCodegen check
         // But if it is, throw an exception that will trigger interpreted fallback
@@ -361,7 +361,7 @@ object BridgeGenerateUnsafeProjection extends
           s"`canSupportDirectCodegen` check should have prevented this.")
     }
   }
-  
+
   private def generateArrayAppendCode(
       ctx: CodegenContext,
       elementType: DataType,
@@ -370,26 +370,26 @@ object BridgeGenerateUnsafeProjection extends
       valueVar: String,
       isNullVar: String,
       builderRef: String): String = {
-    
+
     val arrayVar = ctx.freshName("array")
     val numElementsVar = ctx.freshName("numElements")
     val iVar = ctx.freshName("i")
     val childBuilderVar = ctx.freshName("childBuilder")
     val elementVar = ctx.freshName("element")
     val elementIsNullVar = ctx.freshName("elementIsNull")
-    
+
     // Generate code to append each element
     // generateBuilderAppendCode now throws for unsupported types instead of returning null
     val elementAppendCode = generateBuilderAppendCode(ctx, elementType, containsNull,
       elementVar, elementIsNullVar, childBuilderVar)
-    
+
     val loopBody = s"""
        |boolean $elementIsNullVar = $arrayVar.isNullAt($iVar);
-       |${CodeGenerator.javaType(elementType)} $elementVar = 
+       |${CodeGenerator.javaType(elementType)} $elementVar =
        |  ${CodeGenerator.getValue(arrayVar, elementType, iVar)};
        |$elementAppendCode
      """.stripMargin
-    
+
     val nullCheck = if (nullable) {
       s"""
          |if ($isNullVar || $valueVar == null) {
@@ -399,9 +399,9 @@ object BridgeGenerateUnsafeProjection extends
     } else {
       ""
     }
-    
+
     val closeNullCheck = if (nullable) "}" else ""
-    
+
     s"""
        |$nullCheck
        |  org.apache.spark.sql.catalyst.util.ArrayData $arrayVar = $valueVar;
@@ -414,7 +414,7 @@ object BridgeGenerateUnsafeProjection extends
        |$closeNullCheck
      """.stripMargin
   }
-  
+
   private def generateStructAppendCode(
       ctx: CodegenContext,
       structType: StructType,
@@ -422,29 +422,29 @@ object BridgeGenerateUnsafeProjection extends
       valueVar: String,
       isNullVar: String,
       builderRef: String): String = {
-    
+
     val structVar = ctx.freshName("struct")
-    
+
     // Generate code for each field
     // generateBuilderAppendCode now throws for unsupported types instead of returning null
     val fieldAppends = structType.fields.zipWithIndex.map { case (field, idx) =>
       val fieldBuilderVar = ctx.freshName(s"fieldBuilder$idx")
       val fieldValueVar = ctx.freshName(s"fieldValue$idx")
       val fieldIsNullVar = ctx.freshName(s"fieldIsNull$idx")
-      
+
       val fieldAppendCode = generateBuilderAppendCode(ctx, field.dataType, field.nullable,
         fieldValueVar, fieldIsNullVar, fieldBuilderVar)
-      
+
       s"""
-         |${classOf[RapidsHostColumnBuilder].getName} $fieldBuilderVar = 
+         |${classOf[RapidsHostColumnBuilder].getName} $fieldBuilderVar =
          |  $builderRef.getChild($idx);
          |boolean $fieldIsNullVar = $structVar.isNullAt($idx);
-         |${CodeGenerator.javaType(field.dataType)} $fieldValueVar = 
+         |${CodeGenerator.javaType(field.dataType)} $fieldValueVar =
          |  ${CodeGenerator.getValue(structVar, field.dataType, idx.toString)};
          |$fieldAppendCode
        """.stripMargin
     }.mkString("\n")
-    
+
     val nullCheck = if (nullable) {
       s"""
          |if ($isNullVar || $valueVar == null) {
@@ -454,9 +454,9 @@ object BridgeGenerateUnsafeProjection extends
     } else {
       ""
     }
-    
+
     val closeNullCheck = if (nullable) "}" else ""
-    
+
     s"""
        |$nullCheck
        |  org.apache.spark.sql.catalyst.InternalRow $structVar = $valueVar;
@@ -465,7 +465,7 @@ object BridgeGenerateUnsafeProjection extends
        |$closeNullCheck
      """.stripMargin
   }
-  
+
   private def generateMapAppendCode(
       ctx: CodegenContext,
       keyType: DataType,
@@ -475,7 +475,7 @@ object BridgeGenerateUnsafeProjection extends
       valueVar: String,
       isNullVar: String,
       builderRef: String): String = {
-    
+
     val mapVar = ctx.freshName("map")
     val numElementsVar = ctx.freshName("numElements")
     val iVar = ctx.freshName("i")
@@ -488,28 +488,28 @@ object BridgeGenerateUnsafeProjection extends
     val valueElemVar = ctx.freshName("valueElem")
     val keyIsNullVar = ctx.freshName("keyIsNull")
     val valueIsNullVar = ctx.freshName("valueIsNull")
-    
+
     // Generate code to append key
     val keyAppendCode = generateBuilderAppendCode(ctx, keyType, false, // keys are never null
       keyVar, keyIsNullVar, keyBuilderVar)
-    
+
     // Generate code to append value
     val valueAppendCode = generateBuilderAppendCode(ctx, valueType, valueContainsNull,
       valueElemVar, valueIsNullVar, valueBuilderVar)
-    
-    
+
+
     val loopBody = s"""
        |boolean $keyIsNullVar = $keysVar.isNullAt($iVar);
-       |${CodeGenerator.javaType(keyType)} $keyVar = 
+       |${CodeGenerator.javaType(keyType)} $keyVar =
        |  ${CodeGenerator.getValue(keysVar, keyType, iVar)};
        |$keyAppendCode
        |boolean $valueIsNullVar = $valuesVar.isNullAt($iVar);
-       |${CodeGenerator.javaType(valueType)} $valueElemVar = 
+       |${CodeGenerator.javaType(valueType)} $valueElemVar =
        |  ${CodeGenerator.getValue(valuesVar, valueType, iVar)};
        |$valueAppendCode
        |$structBuilderVar.endStruct();
      """.stripMargin
-    
+
     val nullCheck = if (nullable) {
       s"""
          |if ($isNullVar || $valueVar == null) {
@@ -519,9 +519,9 @@ object BridgeGenerateUnsafeProjection extends
     } else {
       ""
     }
-    
+
     val closeNullCheck = if (nullable) "}" else ""
-    
+
     s"""
        |$nullCheck
        |  org.apache.spark.sql.catalyst.util.MapData $mapVar = $valueVar;
@@ -529,9 +529,9 @@ object BridgeGenerateUnsafeProjection extends
        |  org.apache.spark.sql.catalyst.util.ArrayData $keysVar = $mapVar.keyArray();
        |  org.apache.spark.sql.catalyst.util.ArrayData $valuesVar = $mapVar.valueArray();
        |  ${classOf[RapidsHostColumnBuilder].getName} $structBuilderVar = $builderRef.getChild(0);
-       |  ${classOf[RapidsHostColumnBuilder].getName} $keyBuilderVar = 
+       |  ${classOf[RapidsHostColumnBuilder].getName} $keyBuilderVar =
        |    $structBuilderVar.getChild(0);
-       |  ${classOf[RapidsHostColumnBuilder].getName} $valueBuilderVar = 
+       |  ${classOf[RapidsHostColumnBuilder].getName} $valueBuilderVar =
        |    $structBuilderVar.getChild(1);
        |  for (int $iVar = 0; $iVar < $numElementsVar; $iVar++) {
        |    $loopBody
@@ -568,34 +568,34 @@ object BridgeGenerateUnsafeProjection extends
         s"Cannot generate code for types: ${unsupportedTypes.mkString(", ")}. " +
         "Falling back to interpreted evaluation.")
     }
-    
+
     val ctx = newCodeGenContext()
 
     // Generate code to evaluate all expressions with subexpression elimination
     val exprEvals = ctx.generateExpressions(expressions, subexpressionEliminationEnabled)
-    
+
     // Evaluate all subexpressions once
     val evalSubexpr = ctx.subexprFunctionsCode
-    
+
     // Generate append code for each expression
-    val appendCodes = expressions.zip(exprEvals).zipWithIndex.map { 
+    val appendCodes = expressions.zip(exprEvals).zipWithIndex.map {
       case ((expr, exprEval), idx) =>
         // Generate builder append code with fallback to GpuRowToColumnConverter
         val directAppendCode = generateBuilderAppendCode(ctx,
-          expr.dataType, expr.nullable, exprEval.value.toString, 
+          expr.dataType, expr.nullable, exprEval.value.toString,
           exprEval.isNull.toString, s"builders[$idx]")
-        
+
         s"""
            |${exprEval.code}
            |$directAppendCode
          """.stripMargin
     }
-    
+
     val processRowBody = Seq(
       s"$evalSubexpr",
       appendCodes.mkString("\n")
     )
-    
+
     // Split into multiple methods if needed to avoid 64KB method size limit
     val loopBody = ctx.splitExpressions(
       expressions = processRowBody,

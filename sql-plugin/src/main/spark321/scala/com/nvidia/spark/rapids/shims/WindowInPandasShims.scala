@@ -48,6 +48,6 @@ import org.apache.spark.sql.execution.python.WindowInPandasExec
  * Trait providing getWindowExpressions method for versions where WindowInPandasExec exists.
  */
 trait WindowInPandasShims {
-  def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] = 
+  def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] =
     winPy.windowExpression
 }

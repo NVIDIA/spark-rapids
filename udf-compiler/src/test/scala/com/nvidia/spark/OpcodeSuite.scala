@@ -859,6 +859,7 @@ class OpcodeSuite extends AnyFunSuite {
     checkEquiv(result, ref)
   }
 
+  // scalastyle:off if.redundant
   test("Conditional simplification - if (c) true else false => c") {
     val myudf: (Int) => Boolean = i => {
       if (i < 20) true else false
@@ -881,6 +882,7 @@ class OpcodeSuite extends AnyFunSuite {
     checkEquiv(result, ref)
     assert(!result.queryExecution.analyzed.toString.contains("if"))
   }
+  // scalastyle:on if.redundant
 
   test("LDC_W opcode") {
     val myudf: () => String = () => {

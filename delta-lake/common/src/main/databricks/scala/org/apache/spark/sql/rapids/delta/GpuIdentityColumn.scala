@@ -35,11 +35,7 @@ object GpuIdentityColumn {
       return None
     }
     val identityInfo = schema.filter(f => highWaterMarks.contains(f.name)).map { f =>
-      val useMax = if (f.metadata.getLong("delta.identity.step") <= 0) {
-        false
-      } else {
-        true
-      }
+      val useMax = f.metadata.getLong("delta.identity.step") > 0
       f.name -> useMax
     }
     assert(identityInfo.size == highWaterMarks.size,

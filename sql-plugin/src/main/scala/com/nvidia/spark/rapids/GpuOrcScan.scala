@@ -981,7 +981,7 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
     val ret = (nextMeta.requestedMapping, curMeta.requestedMapping) match {
       case (None, None) => true
       case (Some(cols1), Some(cols2)) =>
-        if (cols1.sameElements(cols2)) true else false
+        cols1.sameElements(cols2)
       case (_, _) => {
         false
       }

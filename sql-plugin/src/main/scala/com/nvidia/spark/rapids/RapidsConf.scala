@@ -2427,8 +2427,8 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .createWithDefault(false)
 
   // ["NEVER", "ALWAYS", "ONFAILURE"]
-  private val KudoDebugModes = 
-    DumpOption.values.map(_.toString.toUpperCase(java.util.Locale.ROOT)).toSet 
+  private val KudoDebugModes =
+    DumpOption.values.map(_.toString.toUpperCase(java.util.Locale.ROOT)).toSet
 
   val SHUFFLE_KUDO_SERIALIZER_DEBUG_MODE = conf("spark.rapids.shuffle.kudo.serializer.debug.mode")
     .doc("Debug mode for Kudo serializer for the shuffle. If Always, it will dump the " +
@@ -2442,7 +2442,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     .checkValues(KudoDebugModes)
     .createWithDefault("NEVER")
 
-  val SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX = 
+  val SHUFFLE_KUDO_SERIALIZER_DEBUG_DUMP_PREFIX =
     conf("spark.rapids.shuffle.kudo.serializer.debug.dump.path.prefix")
     .doc("The path prefix to use for the kudo tables when using Kudo serializer for the shuffle.")
     .internal()
@@ -2957,8 +2957,8 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
 
   // A java property that is set to true when we are running in tests.
   // We will use this property to check for oom injection configs in SQLConf, and to turn on
-  // the rapids-specific assertInTests function, only if we are running tests. 
-  // This is set to true in integration_tests/run_pyspark_from_build.sh, and in the 
+  // the rapids-specific assertInTests function, only if we are running tests.
+  // This is set to true in integration_tests/run_pyspark_from_build.sh, and in the
   // pom for both scalatest and javatest.
   lazy val runningTests = {
     val res = System.getProperty("com.nvidia.spark.rapids.runningTests", "false")

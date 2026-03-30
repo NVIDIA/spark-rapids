@@ -39,13 +39,13 @@ import org.apache.spark.sql.execution.datasources.v2.GpuMergeRowsExec.{GpuDiscar
 
 /**
  * Abstract base meta class for MergeRows Instruction expressions.
- * 
+ *
  * Instructions (Keep, Discard, Split) are expressions used in MergeRowsExec that
  * contain:
  * - A condition expression to evaluate
  * - Output expressions (Seq[Seq[Expression]]) to project when the condition is
  *   true. Each Seq[Expression] represents one set of output columns
- * 
+ *
  * This base class handles the common logic of wrapping child expressions and
  * converting them to GPU.
  */
@@ -58,7 +58,7 @@ abstract class InstructionExprMeta[INPUT <: Instruction](
 
 /**
  * Meta class for Keep instruction.
- * 
+ *
  * Keep instructions represent MATCHED and NOT MATCHED clauses that keep/update
  * rows. They evaluate a condition and project output expressions for matching rows.
  */
@@ -78,7 +78,7 @@ class GpuKeepInstructionMeta(
 
 /**
  * Meta class for Discard instruction.
- * 
+ *
  * Discard instructions represent MATCHED clauses that delete rows.
  * They evaluate a condition to determine which rows to discard.
  */
@@ -97,7 +97,7 @@ class GpuDiscardInstructionMeta(
 
 /**
  * Meta class for Split instruction.
- * 
+ *
  * Split instructions represent clauses that can produce multiple output rows from
  * a single input row. They evaluate a condition and can generate multiple sets of
  * output expressions.
@@ -122,7 +122,7 @@ class GpuSplitInstructionMeta(
 
 /**
  * Meta class for MergeRowsExec.
- * 
+ *
  * MergeRowsExec is a regular physical plan executor (like ProjectExec, FilterExec)
  * that processes merge row logic - it's not a table-specific V2 command.
  */

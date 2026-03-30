@@ -192,7 +192,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       import spark.implicits._
       val df = (1 to 1024).map(_.toString).toDF("a")
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", {col("a") === "500"}, 1024))
-      withAllDevicePair(testRangePartitioningPpd(spark, df, "a", 
+      withAllDevicePair(testRangePartitioningPpd(spark, df, "a",
           {col("a").startsWith("10")}, 1024))
       withAllDevicePair(testOutOfRangePpd(spark, df, {col("a").isNull}))
     })
@@ -216,7 +216,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
           .toDF("a")
       val equalsPredicate = {col("a") === Date.valueOf("1970-01-01").toLocalDate.plusDays(500)}
       val greaterThanPredicate = {col("a") > Date.valueOf("1970-01-01").toLocalDate.plusDays(1000)}
-      val outOfRangePredicate = 
+      val outOfRangePredicate =
           {col("a") === Date.valueOf("1970-01-01").toLocalDate.plusDays(2000)}
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", equalsPredicate, 1024))
       withAllDevicePair(testRangePartitioningPpd(spark, df, "a", greaterThanPredicate, 1024))
@@ -268,7 +268,7 @@ class ParquetFilterSuite extends SparkQueryCompareTestSuite {
       val df1 = Seq(Some(1), None).toDF("col.dots")
       withAllDevicePair(testDotsInNamePpd(spark, df1, "`col.dots` IS NOT NULL"))
       val df2 = (1 to 1024).toDF("col.dots")
-      withAllDevicePair(testRangePartitioningPpd(spark, df2, "`col.dots`", 
+      withAllDevicePair(testRangePartitioningPpd(spark, df2, "`col.dots`",
           {col("`col.dots`") === 500}, 1024))
       withAllDevicePair(testOutOfRangePpd(spark, df2, {col("`col.dots`") === 0}))
     })

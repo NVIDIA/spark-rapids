@@ -33,7 +33,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * to run while keeping the overall plan on the GPU.
  *
  * This expression:
- * 1. Takes GPU column data from its GPU expression children  
+ * 1. Takes GPU column data from its GPU expression children
  * 2. Copies the data to host memory
  * 3. Evaluates the CPU expression tree on the host data
  * 4. Copies the results back to GPU memory
@@ -47,7 +47,7 @@ case class GpuCpuBridgeExpression(
     gpuInputs: Seq[Expression],
     cpuExpression: Expression,
     outputDataType: DataType,
-    outputNullable: Boolean) extends GpuExpression with ShimExpression 
+    outputNullable: Boolean) extends GpuExpression with ShimExpression
     with Logging with GpuBind with GpuMetricsInjectable {
 
   override def children: Seq[Expression] = gpuInputs ++ Seq(cpuExpression)
@@ -105,7 +105,7 @@ case class GpuCpuBridgeExpression(
   }
 
   @transient private lazy val resultType = GpuColumnVector.convertFrom(dataType, nullable)
-  
+
   // Thread-local projection for code generation path
   // Each thread gets its own projection to avoid internal memory reuse conflicts
   // while allowing reuse across batches within a thread.
@@ -123,7 +123,7 @@ case class GpuCpuBridgeExpression(
       }
       createCodeGeneratedProjection()
     })
-  
+
   @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =
     createEvaluationFunction()
 
@@ -133,7 +133,7 @@ case class GpuCpuBridgeExpression(
       // Handle empty batch case
       return GpuColumnVector.fromNull(numRows, dataType)
     }
-    
+
     // Time the entire CPU bridge operation from the SparkPlan perspective
     GpuMetric.nsOption(cpuBridgeWaitTime) {
       // Currently sequential processing only
@@ -142,7 +142,7 @@ case class GpuCpuBridgeExpression(
       evaluateSequentially(batch)
     }
   }
-  
+
   /**
    * Evaluate the expression sequentially (single-threaded).
    */
@@ -173,9 +173,9 @@ case class GpuCpuBridgeExpression(
 
   /**
    * Creates an evaluation function for the CPU expression.
-   * Takes an iterator of rows and the expected row count, produces a complete 
+   * Takes an iterator of rows and the expected row count, produces a complete
    * GpuColumnVector result.
-   * 
+   *
    * Uses code generation by default. If codegen fails, Spark's CodeGeneratorWithInterpretedFallback
    * will automatically create an InterpretedBridgeUnsafeProjection instead.
    */
@@ -185,7 +185,7 @@ case class GpuCpuBridgeExpression(
         // Get thread-local projection - each thread has its own to avoid memory conflicts
         // but the projection is reused across batches within the same thread for performance
         val projection = threadLocalProjection.get()
-        
+
         // Stream through the iterator without caching - preserves memory efficiency
         projection.apply(rowIterator, Array(builder))
 
@@ -196,9 +196,9 @@ case class GpuCpuBridgeExpression(
       }
     }
   }
-  
+
   /**
-   * Creates a code-generated projection for the CPU expression using a 
+   * Creates a code-generated projection for the CPU expression using a
    * modified version of Spark's code generation.
    * This provides much better performance than interpreted evaluation.
    */

@@ -334,7 +334,7 @@ class RapidsShuffleClient(
     val ptrs = new ArrayBuffer[PendingTransferRequest](allTables)
     (0 until allTables).foreach { i =>
       val tableMeta = ShuffleMetadata.copyTableMetaToHeap(metaResponse.tableMetas(i))
-     
+
       // We check the uncompressedSize to make sure we don't request a 0-sized buffer
       // from a peer. We treat such a corner case as a degenerate batch
       if (tableMeta.bufferMeta() != null && tableMeta.bufferMeta().uncompressedSize() > 0) {
@@ -371,7 +371,7 @@ class RapidsShuffleClient(
    * @param tx live transaction for these bounce buffers, it should be closed in this function
    * @param bufferReceiveState state management objects for live transfer requests
    */
-  def doHandleBounceBufferReceive(tx: Transaction, 
+  def doHandleBounceBufferReceive(tx: Transaction,
       bufferReceiveState: BufferReceiveState): Unit = {
     try {
       withResource(tx) { _ =>

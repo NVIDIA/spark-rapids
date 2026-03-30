@@ -62,7 +62,7 @@ abstract class RapidsShuffleWriter[K, V]()
       extends ShuffleWriter[K, V]
         with Logging {
   protected var myMapStatus: Option[MapStatus] = None
-  
+
   // Track all ShuffleMapOutputWriters created during write
   // Needed for proper cleanup on error or for partial files
   protected val mapOutputWriters = new ArrayBuffer[ShuffleMapOutputWriter]()
@@ -98,7 +98,7 @@ abstract class RapidsShuffleWriter[K, V]()
       }
     }
   }
-  
+
   private def cleanupTempData(): Unit = {
     // Abort all map output writers to clean up temp files
     mapOutputWriters.foreach { writer =>

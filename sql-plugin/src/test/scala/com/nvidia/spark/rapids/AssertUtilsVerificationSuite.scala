@@ -32,7 +32,7 @@ class AssertUtilsVerificationSuite extends AnyFunSuite {
       executed = true
       true
     }, "This assertion should execute in test mode")
-    
+
     // Verify the assertion body was actually executed
     assert(executed, "assertInTests body should have been executed in test environment")
   }
@@ -54,18 +54,18 @@ class AssertUtilsVerificationSuite extends AnyFunSuite {
   test("verify test environment is correctly detected") {
     // Verify the property that gates test assertions is set
     val runningTests = System.getProperty("com.nvidia.spark.rapids.runningTests")
-    assert(runningTests == "true", 
+    assert(runningTests == "true",
       s"com.nvidia.spark.rapids.runningTests property should be 'true' but was: $runningTests")
   }
 
   test("verify iterator assertion pattern works") {
     // Simulate the problematic iterator pattern
     val iter = Iterator(1, 2, 3)
-    
+
     // This should NOT consume the iterator in production,
     // but SHOULD verify it has elements in test mode
     assertInTests(iter.hasNext, "Iterator should have elements")
-    
+
     // Iterator should still have all elements
     assert(iter.next() == 1)
     assert(iter.next() == 2)
@@ -74,31 +74,31 @@ class AssertUtilsVerificationSuite extends AnyFunSuite {
 
   test("verify expensive operation pattern works") {
     var expensiveOpCount = 0
-    
+
     def expensiveOperation(): Boolean = {
       expensiveOpCount += 1
       true
     }
-    
+
     // This should call the expensive operation in tests
     assertInTests(expensiveOperation())
-    
+
     // Verify it was called
     assert(expensiveOpCount == 1, "Expensive operation should be called in test mode")
   }
 
   test("verify collection traversal pattern works") {
     val largeCollection = (1 to 1000).toSeq
-    
+
     // This should traverse the collection, and fail at the last element
     assertThrows[AssertionError] {
-      assertInTests(largeCollection.forall(i => i > 0 && i < 1000), 
+      assertInTests(largeCollection.forall(i => i > 0 && i < 1000),
         "All elements should be positive and less than 1000")
     }
-    
+
     // This should traverse the collection, and not fail
     assertInTests(largeCollection.forall(i => i > 0), "All elements should be positive")
-    
+
     // No exception thrown means it worked
   }
 }

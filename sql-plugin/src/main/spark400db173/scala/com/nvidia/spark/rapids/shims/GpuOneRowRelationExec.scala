@@ -34,7 +34,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * GPU version of OneRowRelationExec.
  * OneRowRelationExec is used for queries like "SELECT 1" that have no FROM clause.
  * It produces a single row with no columns.
- * 
+ *
  * This GPU version produces a single ColumnarBatch with one row and zero columns,
  * which uses no GPU memory since there are no actual columns.
  */

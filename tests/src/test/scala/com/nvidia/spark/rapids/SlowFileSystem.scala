@@ -36,10 +36,10 @@ class SlowFileSystem extends FileSystem {
 
   override def initialize(uri: URI, conf: Configuration): Unit = {
     super.initialize(uri, conf)
-    
+
     // Get the write delay from configuration
     writeDelayMs = conf.getLong("slowfs.write.delay.ms", 100L)
-    
+
     // Create the underlying local filesystem
     val localFs = FileSystem.getLocal(conf)
     wrappedFs = localFs
@@ -73,9 +73,9 @@ class SlowFileSystem extends FileSystem {
       replication: Short,
       blockSize: Long,
       progress: Progressable): FSDataOutputStream = {
-    
+
     if (isSlowfsPath(f)) {
-      val underlying = wrappedFs.create(convertPath(f), permission, overwrite, 
+      val underlying = wrappedFs.create(convertPath(f), permission, overwrite,
         bufferSize, replication, blockSize, progress)
       new FSDataOutputStream(new SlowOutputStream(underlying, writeDelayMs), null)
     } else {

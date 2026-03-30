@@ -141,7 +141,7 @@ case class GpuOptimizeWriteExchangeExec(
     // Get OP_TIME_NEW metrics from all descendants for exclusion (with deduplication)
     val descendantOpTimeMetrics = getDescendantOpTimeMetrics
     val opTimeNewShuffleWriteMetric = allMetrics.get(OP_TIME_NEW_SHUFFLE_WRITE)
-    
+
     val dep = GpuShuffleExchangeExecBase.prepareBatchShuffleDependency(
       inputRDD,
       child.output,

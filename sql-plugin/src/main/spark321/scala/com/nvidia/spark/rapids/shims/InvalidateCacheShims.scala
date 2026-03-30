@@ -50,7 +50,7 @@ import org.apache.spark.sql.connector.catalog.{Identifier, Table, TableCatalog}
  */
 object InvalidateCacheShims {
   type InvalidateCacheType = (TableCatalog, Table, Identifier) => Unit
-  
+
   def getInvalidateCache(
       cpuInvalidateCache: (TableCatalog, Table, Identifier) => Unit): InvalidateCacheType = {
     cpuInvalidateCache

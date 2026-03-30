@@ -167,8 +167,8 @@ class RegularExpressionParserSuite extends AnyFunSuite {
 
   test("repetition with group containing simple repetition") {
     assert(parse("(3?)+") ===
-      RegexSequence(ListBuffer(RegexRepetition(RegexGroup(capture = true, 
-          RegexSequence(ListBuffer(RegexRepetition(RegexChar('3'), 
+      RegexSequence(ListBuffer(RegexRepetition(RegexGroup(capture = true,
+          RegexSequence(ListBuffer(RegexRepetition(RegexChar('3'),
           SimpleQuantifier('?')))), None),SimpleQuantifier('+')))))
   }
 
@@ -240,13 +240,13 @@ class RegularExpressionParserSuite extends AnyFunSuite {
             RegexGroup(capture = true, RegexChoice(RegexSequence(ListBuffer(
               RegexGroup(capture = true, RegexSequence(ListBuffer(
                 RegexRepetition(RegexCharacterClass(negated = false, ListBuffer(
-                  RegexCharacterRange(RegexChar('0'), RegexChar('9')))), 
+                  RegexCharacterRange(RegexChar('0'), RegexChar('9')))),
                 SimpleQuantifier('+')))), None))),
               RegexChoice(RegexSequence(ListBuffer(
                 RegexGroup(capture = true, RegexSequence(ListBuffer(
                   RegexRepetition(
                     RegexCharacterClass(negated = false, ListBuffer(
-                      RegexCharacterRange(RegexChar('0'), RegexChar('9')))), 
+                      RegexCharacterRange(RegexChar('0'), RegexChar('9')))),
                     SimpleQuantifier('*')), RegexEscaped('.'),
                 RegexRepetition(
                     RegexCharacterClass(negated = false, ListBuffer(
@@ -282,7 +282,7 @@ class RegularExpressionParserSuite extends AnyFunSuite {
                 ListBuffer(RegexChar('n'), RegexChar('N'))))))), None),
     RegexChar('$'))))
   }
-  
+
   private def parse(pattern: String): RegexAST = {
     new RegexParser(pattern).parse()
   }

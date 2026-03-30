@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.random.PoissonSampler
 
+// scalastyle:off no.clone
 class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
                         numOutputRows: GpuMetric, numOutputBatches: GpuMetric, opTime: GpuMetric)
   extends PoissonSampler[ColumnarBatch](fraction, useGapSamplingIfPossible) {
@@ -30,6 +31,7 @@ class GpuPoissonSampler(fraction: Double, useGapSamplingIfPossible: Boolean,
   override def clone: PoissonSampler[ColumnarBatch] =
     new GpuPoissonSampler(fraction, useGapSamplingIfPossible,
       numOutputRows, numOutputBatches, opTime)
+  // scalastyle:on no.clone
 
   override def sample(batchIterator: Iterator[ColumnarBatch]): Iterator[ColumnarBatch] = {
     if (fraction <= 0.0) {

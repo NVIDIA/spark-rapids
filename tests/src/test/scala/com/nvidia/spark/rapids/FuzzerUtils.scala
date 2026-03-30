@@ -67,7 +67,7 @@ object FuzzerUtils {
       rowCount: Int,
       options: FuzzerOptions = DEFAULT_OPTIONS,
       seed: Long = 0): ColumnarBatch = {
-    
+
     // Check if schema contains nested types
     val hasNestedTypes = schema.fields.exists { field =>
       field.dataType match {
@@ -75,7 +75,7 @@ object FuzzerUtils {
         case _ => false
       }
     }
-    
+
     if (hasNestedTypes) {
       // Use Row-based approach for nested types
       createColumnarBatchFromRows(schema, rowCount, options, seed)
@@ -84,7 +84,7 @@ object FuzzerUtils {
       createColumnarBatchWithBuilder(schema, rowCount, options, seed)
     }
   }
-  
+
   /**
    * Creates a ColumnarBatch using GpuColumnarBatchBuilder (for primitive types only)
    */
@@ -177,7 +177,7 @@ object FuzzerUtils {
     }
     builders.build(rowCount)
   }
-  
+
   /**
    * Creates a ColumnarBatch from Rows (supports nested types)
    */
@@ -190,8 +190,8 @@ object FuzzerUtils {
     val rows = (0 until rowCount).map { _ =>
       generateRow(schema.fields, rand, options)
     }
-    
-    // Convert rows to columnar batch using cuDF column builders    
+
+    // Convert rows to columnar batch using cuDF column builders
     val columns = schema.fields.safeMap { field =>
       val columnData = rows.map(row => {
         val idx = schema.fieldIndex(field.name)
@@ -208,7 +208,7 @@ object FuzzerUtils {
       }
     }
   }
-  
+
   /**
    * Builds a cuDF column from Scala data
    */
@@ -217,7 +217,7 @@ object FuzzerUtils {
       data: Seq[Any],
       nullable: Boolean): ai.rapids.cudf.ColumnVector = {
     import ai.rapids.cudf.{ColumnVector => CudfColumnVector}
-    
+
     dataType match {
       case LongType =>
         val values = data.map(v => if (v == null) null else Long.box(v.asInstanceOf[Long]))
@@ -263,14 +263,14 @@ object FuzzerUtils {
         // Map is represented as list<struct<key, value>> in cuDF
         // Build it using fromLists by converting each map to a list of struct data
         import ai.rapids.cudf.HostColumnVector
-        
+
         val structType = new HostColumnVector.StructType(true, Seq(
           createHostColumnType(keyType, false),  // Keys are not nullable
           createHostColumnType(valueType, valueContainsNull)
         ).asJava)
-        
+
         val listType = new HostColumnVector.ListType(nullable, structType)
-        
+
         val javaLists = data.map { v =>
           if (v == null) null
           else {
@@ -287,7 +287,7 @@ object FuzzerUtils {
         throw new IllegalArgumentException(s"Unsupported data type: $dataType")
     }
   }
-  
+
   /**
    * Creates a HostColumnVector type descriptor for lists
    */
@@ -301,7 +301,7 @@ object FuzzerUtils {
       listNullable,
       createHostColumnType(elementType, elementNullable))
   }
-  
+
   /**
    * Creates a HostColumnVector type descriptor for any data type
    */
@@ -309,7 +309,7 @@ object FuzzerUtils {
       dataType: DataType,
       nullable: Boolean): ai.rapids.cudf.HostColumnVector.DataType = {
     import ai.rapids.cudf.{DType, HostColumnVector}
-    
+
     dataType match {
       case LongType => new HostColumnVector.BasicType(nullable, DType.INT64)
       case IntegerType => new HostColumnVector.BasicType(nullable, DType.INT32)
@@ -320,7 +320,7 @@ object FuzzerUtils {
       case _ => throw new IllegalArgumentException(s"Unsupported type: $dataType")
     }
   }
-  
+
   /**
    * Boxes primitive values for Java interop
    */

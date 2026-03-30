@@ -65,7 +65,7 @@ class RapidsLocalDiskShuffleExecutorComponents(sparkConf: SparkConf)
       throw new IllegalStateException(
         "Executor components must be initialized before getting writers.")
     }
-    
+
     new RapidsLocalDiskShuffleMapOutputWriter(
       shuffleId,
       mapTaskId,

@@ -244,7 +244,7 @@ class ShuffleBufferCatalog extends Logging {
     if (entries == null) {
       throw new NoSuchElementException(s"unknown shuffle block $blockId")
     }
-    entries.synchronized { 
+    entries.synchronized {
       entries.map(bufferIdToHandle.get).map { case (_, meta) =>
         meta
       }

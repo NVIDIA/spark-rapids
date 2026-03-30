@@ -52,7 +52,7 @@ import org.apache.spark.sql.rapids._
 import org.apache.spark.sql.rapids.shims.{GpuDivideDTInterval, GpuMultiplyDTInterval}
 
 object DayTimeIntervalShims {
-  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = 
+  def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     // TimeAdd moved to TimeAddShims to handle version differences
     TimeAddShims.exprs ++ Seq(
     GpuOverrides.expr[Abs](

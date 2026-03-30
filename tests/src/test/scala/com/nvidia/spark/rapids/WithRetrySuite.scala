@@ -44,7 +44,7 @@ class WithRetrySuite
       spy(SpillableColumnarBatch(cb, -1))
     }
   }
-  
+
   private var rmmWasInitialized = false
 
   override def beforeEach(): Unit = {

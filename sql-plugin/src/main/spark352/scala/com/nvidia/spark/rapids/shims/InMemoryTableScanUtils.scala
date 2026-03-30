@@ -40,7 +40,7 @@ import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
  * For Spark 3.5.2+, InMemoryTableScanLike trait exists so we can safely enable GPU support.
  */
 object InMemoryTableScanUtils {
-  
+
   /**
    * Gets the InMemoryTableScan rule for Spark 3.5.2+.
    * Returns the original rule since InMemoryTableScanLike trait is available.

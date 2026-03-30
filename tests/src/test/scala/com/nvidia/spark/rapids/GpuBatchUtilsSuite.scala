@@ -325,7 +325,7 @@ object GpuBatchUtilsSuite {
   }
 
   private def createExternalRowValues(i: Int, r: Random, fields: Array[StructField]): Array[Any] = {
-    val values: Array[Any] = fields.map { field => 
+    val values: Array[Any] = fields.map { field =>
         createValueForType(i, r, field.dataType, field.nullable, isInternal = false)
     }
     values

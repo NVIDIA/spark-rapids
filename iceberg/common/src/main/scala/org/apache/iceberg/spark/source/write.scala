@@ -81,7 +81,7 @@ class GpuCopyOnWriteOperation(write: GpuSparkWrite, cpuBatchWrite: BatchWrite)
 class GpuPositionDeltaBatchWrite(write: GpuSparkPositionDeltaWrite,
                                  cpuBatchWrite: DeltaBatchWrite)
   extends DeltaBatchWrite {
-  
+
 
   override def commit(messages: Array[WriterCommitMessage]): Unit = {
     // Delegate to CPU PositionDeltaBatchWrite's commit method

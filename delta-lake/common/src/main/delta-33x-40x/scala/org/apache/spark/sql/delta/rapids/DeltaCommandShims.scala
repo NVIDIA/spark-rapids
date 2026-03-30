@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 
 /**
  * Trait to abstract version-specific Spark API differences between Delta 3.3.x and 4.0.x.
- * 
+ *
  * Key API differences handled:
  * 1. SparkSession types: Spark 4.0 split SparkSession to support both classic and connect
  *    execution modes. It introduced:
@@ -35,22 +35,22 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
  * 3. Column creation: Spark 3.x uses new Column(expr), Spark 4.0 uses DFUDFShims.exprToColumn().
  */
 trait DeltaCommandShims {
-  
+
   /**
    * Type alias for the version-specific SparkSession type used in the shimming layer.
    * This type is used when:
    * 1. Casting the SparkSession parameter inside run() method body
    * 2. As parameter type for shim methods (toOperationSparkSession, recacheByPlan)
-   * 
+   *
    */
   type ShimSparkSession <: SparkSession
-  
+
   /**
    * Type alias for the version-specific SparkSession type used for internal operations.
    * This is the SparkSession type used within command execution for operations like:
    * - Creating DataFrames from LogicalPlans (via createDataFrame method)
    * - Utility operations (splitMetadataAndDataPredicates, createSetTransaction)
-   * 
+   *
    * Version mapping:
    * - Delta 3.3.x (Spark 3.x): org.apache.spark.sql.SparkSession
    * - Delta 4.0.x (Spark 4.0): org.apache.spark.sql.classic.SparkSession (ClassicSparkSession)

@@ -229,7 +229,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
         hasInt96Timestamps = true,
         blockFirstRowIndices,
       )
-      
+
       (parquetFileInfo, fileReadSchema)
     }
   }

@@ -314,12 +314,12 @@ case class GpuDeleteCommand(
         numBytesRemoved,
         changeFileBytes = changeFileBytes,
         scanTimeMs,
-        rewriteTimeMs, 
+        rewriteTimeMs,
         // We don't support deletion vectors
         numDeletionVectorsAdded = 0,
         numDeletionVectorsRemoved = 0,
         numDeletionVectorsUpdated = 0)
-        
+
     )
 
     DMLUtils.TaggedCommitData(deleteActions)

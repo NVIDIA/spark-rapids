@@ -30,7 +30,7 @@ import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 class RapidsDataFrameSetOperationsSuite
     extends DataFrameSetOperationsSuite
     with RapidsSQLTestsBaseTrait {
-  
+
   import testImplicits._
 
   testRapids(
@@ -58,30 +58,30 @@ class RapidsDataFrameSetOperationsSuite
         df2.count()
 
         val union = df1.union(df2)
-        
+
         // Check GpuInMemoryTableScanExec exists and supports columnar
         // Note: Unlike CPU, GPU always supports columnar regardless of
         // CACHE_VECTORIZED_READER_ENABLED configuration
         checkGpuPlanExists(union.queryExecution.executedPlan,
           _.isInstanceOf[GpuInMemoryTableScanExec])
-        
+
         // Check GpuUnionExec exists and supports columnar
-        checkGpuPlanExists(union.queryExecution.executedPlan, 
+        checkGpuPlanExists(union.queryExecution.executedPlan,
           _.isInstanceOf[GpuUnionExec])
-        
+
         // Verify query results
         checkAnswer(union, Row(1) :: Row(2) :: Row(3) :: Row(4) :: Row(5) :: Row(6) :: Nil)
 
         // Test union with cached and non-cached DataFrames
         val mixedUnion = df1.union(Seq(7, 8, 9).toDF("k"))
-        
+
         // GpuUnionExec should exist and handle mixed scenarios
         val unionExec = mixedUnion.queryExecution.executedPlan.collect {
           case p: GpuUnionExec => p
         }
         assert(unionExec.nonEmpty, "GpuUnionExec should exist in the plan")
         assert(unionExec.forall(_.supportsColumnar), "GpuUnionExec should support columnar")
-        
+
         // Verify query results
         checkAnswer(mixedUnion,
           Row(1) :: Row(2) :: Row(3) :: Row(7) :: Row(8) :: Row(9) :: Nil)

@@ -64,7 +64,7 @@ object AstUtil {
   def extractNonAstFromJoinCond(condition: Option[BaseExprMeta[_]],
                                 left: AttributeSeq, right: AttributeSeq):
   (Option[Expression], List[NamedExpression], List[NamedExpression]) = {
-    
+
     condition match {
       case None => (None, List.empty, List.empty)
       case Some(cond) =>
@@ -88,7 +88,7 @@ object AstUtil {
 
   /**
    * Recursively extract non-AST expressions and convert to GPU in a single pass.
-   * 
+   *
    * @param expr the expression to process
    * @param leftExprIds expression IDs from the left side
    * @param rightExprIds expression IDs from the right side
@@ -108,19 +108,19 @@ object AstUtil {
       // This expression cannot be converted to AST - extract the entire sub-tree
       val exprRef = expr.wrapped.asInstanceOf[Expression]
       val gpuExpr = expr.convertToGpu()
-      
+
       // Check if we've already processed this expression (for deduplication)
       processed.get(GpuExpressionEquals(gpuExpr)) match {
-        case Some(replacement) => 
+        case Some(replacement) =>
           replacement
         case None =>
           // Determine which side this expression belongs to based on its references
           val referencedExprIds = exprRef.references.map(_.exprId).toSet
           val referencesLeft = referencedExprIds.exists(leftExprIds.contains)
           val referencesRight = referencedExprIds.exists(rightExprIds.contains)
-          
+
           // Create an alias and add to appropriate side
-          // Note: if it references both sides or neither, it shouldn't happen if 
+          // Note: if it references both sides or neither, it shouldn't happen if
           // canExtractNonAstConditionIfNeed passed, but we'll default to left
           val alias = if (referencesRight && !referencesLeft) {
             val a = GpuAlias(gpuExpr, s"_agpu_non_ast_r_${rightExprs.size}")()
@@ -131,9 +131,9 @@ object AstUtil {
             leftExprs += a
             a
           }
-          
+
           // Create an AttributeReference explicitly to avoid issues with unresolved aliases
-          val attributeRef = AttributeReference(alias.name, gpuExpr.dataType, 
+          val attributeRef = AttributeReference(alias.name, gpuExpr.dataType,
             gpuExpr.nullable, alias.metadata)(alias.exprId, alias.qualifier)
           processed.put(GpuExpressionEquals(gpuExpr), attributeRef)
           attributeRef
@@ -144,7 +144,7 @@ object AstUtil {
       val convertedChildren = expr.childExprs.map { child =>
         extractAndConvert(child, leftExprIds, rightExprIds, leftExprs, rightExprs, processed)
       }
-      
+
       // Convert to GPU and replace children with the processed versions
       val gpuExpr = expr.convertToGpu()
       if (convertedChildren.isEmpty) {

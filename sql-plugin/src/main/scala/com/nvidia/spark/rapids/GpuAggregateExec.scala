@@ -446,7 +446,7 @@ class AggHelper(
     inputAttributes
   }
   val preStepBound =
-    GpuBindReferences.bindGpuReferencesTiered(preStep.toList, preStepAttributes.toList, 
+    GpuBindReferences.bindGpuReferencesTiered(preStep.toList, preStepAttributes.toList,
       conf, metrics)
 
   // a bound expression that is applied after the cuDF aggregate

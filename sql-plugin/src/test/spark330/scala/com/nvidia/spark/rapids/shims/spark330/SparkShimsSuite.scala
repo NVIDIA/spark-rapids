@@ -36,8 +36,8 @@ class SparkShimsSuite extends AnyFunSuite with FQSuiteName {
 
   test("TypeSig") {
     val check = TypeSig.DAYTIME + TypeSig.YEARMONTH
-    assert(check.isSupportedByPlugin(DayTimeIntervalType()) == true)
-    assert(check.isSupportedByPlugin(YearMonthIntervalType()) == true)
+    assert(check.isSupportedByPlugin(DayTimeIntervalType()))
+    assert(check.isSupportedByPlugin(YearMonthIntervalType()))
   }
 
 }

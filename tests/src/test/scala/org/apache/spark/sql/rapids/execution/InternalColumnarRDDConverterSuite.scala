@@ -308,7 +308,7 @@ class InternalColumnarRDDConverterSparkSessionSuite extends SparkQueryCompareTes
         table.close()
         isRapidsHostColumnVector
       }).collect()
-      assert(result.forall(_ == true))
+      assert(result.forall(identity))
     }, new SparkConf().set("spark.rapids.sql.test.allowedNonGpu", "DeserializeToObjectExec"))
   }
 }

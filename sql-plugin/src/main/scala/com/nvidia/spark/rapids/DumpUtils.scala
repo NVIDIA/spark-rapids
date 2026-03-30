@@ -350,7 +350,7 @@ object ParquetDumper extends Logging {
       fieldName: String,
       sparkType: org.apache.spark.sql.types.DataType): Unit = {
     import org.apache.spark.sql.types._
-    
+
     sparkType match {
       case StructType(fields) =>
         if (cv.getType != DType.STRUCT) {
@@ -362,7 +362,7 @@ object ParquetDumper extends Logging {
             s"Field '$fieldName' expected ${fields.length} children but ColumnView has " +
               s"${cv.getNumChildren} children")
         }
-        
+
       case ArrayType(_, _) =>
         if (cv.getType != DType.LIST) {
           throw new IllegalStateException(
@@ -373,7 +373,7 @@ object ParquetDumper extends Logging {
             s"Field '$fieldName' expected at least 1 child for array but ColumnView has " +
               s"${cv.getNumChildren} children")
         }
-        
+
       case MapType(_, _, _) =>
         if (cv.getType != DType.LIST) {
           throw new IllegalStateException(
@@ -385,7 +385,7 @@ object ParquetDumper extends Logging {
             s"Field '$fieldName' expected at least 1 child for map list but ColumnView has " +
               s"${cv.getNumChildren} children")
         }
-        
+
       case _ =>
         // For primitive types, we don't need to check children
         if (cv.getNumChildren > 0) {
@@ -413,14 +413,14 @@ object ParquetDumper extends Logging {
       while (i < table.getNumberOfColumns) {
         val cv = table.getColumn(i)
         val sparkType = sparkTypes(i)
-        
+
         // Add debug logging to help diagnose the issue
         logDebug(s"Column $i: name='${columnNames(i)}', " +
           s"Spark type=$sparkType, ColumnView type=${cv.getType}, children=${cv.getNumChildren}")
-        
+
         // Validate column structure before processing
         validateColumnStructure(cv, columnNames(i), sparkType)
-        
+
         parquetWriterOptionsFromSparkType(
           builder,
           cv,
@@ -439,17 +439,17 @@ object ParquetDumper extends Logging {
       fieldName: String,
       sparkType: org.apache.spark.sql.types.DataType,
       toClose: ArrayBuffer[ColumnView]): T = {
-    
+
     // Add debug logging to help diagnose the issue
     logDebug(s"Processing field '$fieldName' with Spark type $sparkType, " +
       s"ColumnView has ${cv.getNumChildren} children, type: ${cv.getType}")
-    
+
     import org.apache.spark.sql.types._
     sparkType match {
       case StructType(fields) =>
         val subBuilder = structBuilder(fieldName, true)
         var childIndex = 0
-        
+
         // Add boundary check for StructType
         if (cv.getNumChildren < fields.length) {
           val fieldNames = fields.map(_.name).mkString(", ")
@@ -460,7 +460,7 @@ object ParquetDumper extends Logging {
             s"This mismatch suggests a type conversion issue during GPU processing. " +
             s"ColumnView type: ${cv.getType}, Spark type: $sparkType")
         }
-        
+
         fields.foreach { f =>
           val subCv = cv.getChildColumnView(childIndex)
           toClose += subCv
@@ -468,7 +468,7 @@ object ParquetDumper extends Logging {
           childIndex += 1
         }
         builder.withStructColumn(subBuilder.build())
-        
+
       case ArrayType(elementType, _) =>
         // Add boundary check for ArrayType
         if (cv.getNumChildren < 1) {
@@ -477,13 +477,13 @@ object ParquetDumper extends Logging {
               s"child for array element. " +
             s"ColumnView type: ${cv.getType}, Spark type: $sparkType")
         }
-        
+
         val subCv = cv.getChildColumnView(0)
         toClose += subCv
         val lb = listBuilder(fieldName, true)
         val built = parquetWriterOptionsFromSparkType(lb, subCv, "element", elementType, toClose)
         builder.withListColumn(built.build())
-        
+
       case MapType(keyType, valueType, _) =>
         // MapType is represented in cuDF as List<Struct<key, value>>
         // cv is a LIST column whose child is a STRUCT column
@@ -493,10 +493,10 @@ object ParquetDumper extends Logging {
               s"child for struct containing key-value pairs. " +
             s"ColumnView type: ${cv.getType}, Spark type: $sparkType")
         }
-        
+
         val structCv = cv.getChildColumnView(0)  // Get the STRUCT column
         toClose += structCv
-        
+
         // The STRUCT column should have 2 child columns: key and value
         if (structCv.getNumChildren < 2) {
           throw new IllegalStateException(
@@ -504,18 +504,18 @@ object ParquetDumper extends Logging {
               s"Expected 2 children for key-value pairs. " +
             s"ColumnView type: ${structCv.getType}, expected STRUCT with 2 children")
         }
-        
+
         val lb = listBuilder(fieldName, true)
         val sb = structBuilder("key_value", true)
         val keyCv = structCv.getChildColumnView(0)  // Get the key column
         val valCv = structCv.getChildColumnView(1)  // Get the value column
         toClose ++= Array(keyCv, valCv)
-        
+
         // Both key and value are primitive types; call withColumns directly
         parquetWriterOptionsFromSparkType(sb, keyCv, "key", keyType, toClose)
         parquetWriterOptionsFromSparkType(sb, valCv, "value", valueType, toClose)
         builder.withListColumn(lb.withStructColumn(sb.build()).build())
-        
+
       case _ =>
         builder.withColumns(true, fieldName)
     }

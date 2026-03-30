@@ -31,13 +31,13 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Python runner for Window UDFs in Spark 4.1.x.
- * 
+ *
  * In Spark 4.1.x, the Python worker uses GroupPandasUDFSerializer for SQL_WINDOW_AGG_PANDAS_UDF,
  * which expects the grouped protocol:
  *   - Send 1 before each batch to indicate more data is coming
  *   - Create a new Arrow Stream for each batch
  *   - Send 0 to indicate end of data
- * 
+ *
  * This is different from earlier Spark versions which used ArrowStreamPandasUDFSerializer
  * that didn't require the 1/0 markers.
  */

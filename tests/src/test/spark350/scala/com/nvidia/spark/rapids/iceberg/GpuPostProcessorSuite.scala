@@ -110,7 +110,7 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     // Array type
     val arrayFieldId = 10
     val arrayElementId = 11
-    // Map type  
+    // Map type
     val mapFieldId = 20
     val mapKeyId = 21
     val mapValueId = 22

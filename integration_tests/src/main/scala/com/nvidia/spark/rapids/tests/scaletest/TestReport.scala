@@ -36,7 +36,7 @@ case class QueryMeta(name: String,
  */
 class TestReport(config: Config, queryMetas: Seq[QueryMeta]) {
   def save(): Unit = {
-    if (config.overwrite != true) {
+    if (!config.overwrite) {
       val file = new File(config.reportPath)
       if (file.exists()) {
         throw new IllegalStateException(s"File $config.reportPath already exists. Please use " +

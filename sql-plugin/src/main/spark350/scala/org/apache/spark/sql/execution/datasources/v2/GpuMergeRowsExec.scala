@@ -55,10 +55,10 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * GPU version of MergeRowsExec.
- * 
+ *
  * This operator processes the output of a join between source and target tables,
  * applying merge logic to determine which rows to insert, update, or delete.
- * 
+ *
  *
  * @param isTargetRowPresent GPU expression indicating if target row is present in join
  * @param isSourceRowPresent GPU expression indicating if source row is present in join

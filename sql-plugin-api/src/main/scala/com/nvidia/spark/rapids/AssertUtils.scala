@@ -17,7 +17,7 @@ package com.nvidia.spark.rapids
 
 /**
  * Utilities for assertions that should only run during tests.
- * 
+ *
  * This helps avoid performance overhead and side effects from directly using the
  * `assert` function in scala, since it is not elided in the production code by default.
  */
@@ -37,23 +37,23 @@ object AssertUtils {
 
   /**
    * Asserts a condition only when running in a test environment.
-   * 
+   *
    * This is useful for assertions that:
    * - Have side effects (e.g., calling iterator.hasNext)
    * - Are expensive (e.g., query.resolved, plan canonicalization)
    * - Should not impact production performance
-   * 
+   *
    * The condition parameter is by-name (=> Boolean), so it is only evaluated
    * if we are actually in a test environment.
-   * 
+   *
    * @param condition The condition to assert (not evaluated in production)
    * @param message Optional message to display on assertion failure
-   * 
+   *
    * Example usage:
    * {{{
    *   // Instead of:
    *   assert(!buildIter.hasNext, "build side should have a single batch")
-   *   
+   *
    *   // Use:
    *   assertInTests(!buildIter.hasNext, "build side should have a single batch")
    * }}}

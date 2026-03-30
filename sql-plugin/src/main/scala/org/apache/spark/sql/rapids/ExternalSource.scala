@@ -81,13 +81,8 @@ trait ExternalSourceBase extends Logging {
 
   /** If the file format is supported as an external source */
   def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean = {
-    if (hasSparkAvroJar && avroProvider.isSupportedFormat(format)) {
-      true
-    } else if (deltaProvider.isSupportedFormat(format)) {
-      true
-    } else {
-      false
-    }
+    (hasSparkAvroJar && avroProvider.isSupportedFormat(format)) ||
+      deltaProvider.isSupportedFormat(format)
   }
 
   def isSupportedWrite(write: Class[_ <: SupportsWrite]): Boolean = {

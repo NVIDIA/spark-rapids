@@ -447,7 +447,7 @@ abstract class RapidsMeta[INPUT <: BASE, BASE, OUTPUT <: BASE](
    * @param all should all the data be printed or just what does not work on the GPU?
    */
   def print(strBuilder: StringBuilder, depth: Int, all: Boolean): Unit = {
-    if ((all || !canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan || 
+    if ((all || !canThisBeReplaced || cannotRunOnGpuBecauseOfSparkPlan ||
          (!all && hasDirectCpuBridgeExpressions)) &&
         !suppressWillWorkOnGpuInfo) {
       indent(strBuilder, depth)
@@ -940,7 +940,7 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   /**
    * Returns whether the resulting SparkPlan supports columnar execution
    */
-  override def supportsColumnar: Boolean = wrapped.supportsColumnar || canThisBeReplaced 
+  override def supportsColumnar: Boolean = wrapped.supportsColumnar || canThisBeReplaced
 
   /**
    * Overrides this method to implement custom conversions for specific plans.
@@ -1423,13 +1423,13 @@ abstract class BaseExprMeta[INPUT <: Expression](
    */
   private def deduplicateGpuInputs(
       gpuInputsWithIndex: Seq[(Expression, Int)]): (Seq[Expression], Map[Int, Int]) = {
-    
+
     import org.apache.spark.sql.rapids.catalyst.expressions.GpuExpressionEquals
-    
+
     val deduplicatedInputs = scala.collection.mutable.ListBuffer[Expression]()
     val seenExpressions = scala.collection.mutable.Map[GpuExpressionEquals, Int]()
     val inputMapping = scala.collection.mutable.Map[Int, Int]()
-    
+
     gpuInputsWithIndex.foreach { case (gpuExpr, originalIndex) =>
       val exprWrapper = GpuExpressionEquals(gpuExpr)
       seenExpressions.get(exprWrapper) match {
@@ -1444,7 +1444,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
           inputMapping(originalIndex) = newIndex
       }
     }
-    
+
     (deduplicatedInputs.toSeq, inputMapping.toMap)
   }
 
@@ -1452,20 +1452,20 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * Checks if this expression is compatible with CPU bridge execution.
    * This determines whether THIS specific expression can be wrapped in a bridge.
    * Can be overridden in specific expression metas to provide custom compatibility rules.
-   * 
+   *
    * @return true if this expression can be executed via CPU bridge, false otherwise
    */
   def isBridgeCompatible: Boolean = {
     import org.apache.spark.sql.catalyst.expressions.{Generator, NamedLambdaVariable, TryEval, Unevaluable, WindowFunction}
     import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
-    
+
     if (!conf.isCpuBridgeEnabled) return false
-    
+
     val exprClass = expr.getClass
-    
+
     // Check config-level disallow list
     if (conf.bridgeDisallowList.contains(exprClass.getName)) return false
-    
+
     // Filter out expression types that cannot be directly executed on CPU
     if (classOf[Unevaluable].isAssignableFrom(exprClass) ||
         classOf[AggregateFunction].isAssignableFrom(exprClass) ||
@@ -1475,10 +1475,10 @@ abstract class BaseExprMeta[INPUT <: Expression](
         classOf[TryEval].isAssignableFrom(exprClass)) {
       return false
     }
-    
+
     // Exclude nondeterministic expressions for correctness
     if (!expr.deterministic) return false
-    
+
     true
   }
 
@@ -1491,7 +1491,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
 
   // Shared constant for bridge optimization reason
   private val BRIDGE_OPTIMIZATION_REASON = "it avoids excess CPU and GPU transfers"
-  
+
   final def moveToCpuBridge(): Unit = {
     if (!canMoveToCpuBridge) {
       throw new IllegalStateException("trying to move to bridge when not allowed")
@@ -1907,7 +1907,7 @@ object GpuCpuBridgeOptimizer {
    * Check and optimize expression metas by moving expressions to CPU bridge when possible.
    * This is a simple non-cost-based approach that just enables the bridge for any expression
    * that can't run on GPU but is bridge-compatible.
-   * 
+   *
    * @param exprs The expression metas to check and potentially optimize
    */
   def checkAndOptimizeExpressionMetas(exprs: Seq[BaseExprMeta[_]]): Unit = {
@@ -1923,7 +1923,7 @@ object GpuCpuBridgeOptimizer {
   private def applySimpleBridgeRule(expr: BaseExprMeta[_]): Unit = {
     // First recurse to children
     expr.childExprs.foreach(applySimpleBridgeRule)
-    
+
     // Then apply to this expression if it qualifies
     if (!expr.canThisBeReplaced && expr.canMoveToCpuBridge && !expr.willUseGpuCpuBridge) {
       expr.moveToCpuBridge()

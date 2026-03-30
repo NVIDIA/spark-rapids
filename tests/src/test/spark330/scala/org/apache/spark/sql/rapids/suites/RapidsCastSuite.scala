@@ -41,7 +41,7 @@ class RapidsCastSuite extends CastSuite with RapidsTestsTrait {
         Cast(lit, targetType, timeZoneId)
     }
   }
-  
+
   private val specialTs = Seq(
     "0001-01-01T00:00:00", // the fist timestamp of Common Era
     "1582-10-15T23:59:59", // the cutover date from Julian to Gregorian calendar

@@ -110,7 +110,7 @@ abstract class BackendTestSettings {
       this
     }
 
-    def exclude(testNames: String, reason: ExcludeReason, condition: Boolean = true): 
+    def exclude(testNames: String, reason: ExcludeReason, condition: Boolean = true):
         SuiteSettings = {
       if (condition) {
         exclusion.add(Exclude(testNames))

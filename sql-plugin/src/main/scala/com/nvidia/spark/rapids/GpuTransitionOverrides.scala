@@ -164,7 +164,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           case (ex: ShuffleExchangeLike, Some(x))
               if SparkShimImpl.shuffleParentReadsShuffleData(ex, x) =>
             // In some cases, the parent might have to read the shuffle data directly, so
-            // we don't need the post-shuffle coalesce exec since the parent should 
+            // we don't need the post-shuffle coalesce exec since the parent should
             // coalesce the shuffle data as needed
             s
           case _ =>
@@ -225,7 +225,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       // place. We have to rearrange the order of operations so it is a child of the
       // BroadcastQueryStageExec (which will likely involve another broadcast)
       e.plan match {
-        case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) => 
+        case ReusedExchangeExec(output, b: GpuBroadcastExchangeExec) =>
           // we can't directly re-use a GPU broadcast exchange to feed a CPU broadcast
           // join but Spark will sometimes try and do this
           val keys = output.map { a => a.asInstanceOf[Expression] }
@@ -841,7 +841,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         }
 
         // Some distributions of Spark don't properly transform the plan after the
-        // plugin performs its final transformations of the plan. In this case, we 
+        // plugin performs its final transformations of the plan. In this case, we
         // need to apply any remaining rules that should have been applied.
         updatedPlan = SparkShimImpl.applyPostShimPlanRules(updatedPlan)
 

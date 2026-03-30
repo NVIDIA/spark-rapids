@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2025, NVIDIA CORPORATION.
  *
- * Some portion of this class has been taken from DeltaTableV2 class 
+ * Some portion of this class has been taken from DeltaTableV2 class
  * in the Delta Lake project at https://github.com/delta-io/delta.
  *
  * Copyright (2021) The Delta Lake Project Authors.

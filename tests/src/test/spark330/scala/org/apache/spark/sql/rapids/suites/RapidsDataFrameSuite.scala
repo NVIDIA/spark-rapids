@@ -66,30 +66,30 @@ class RapidsDataFrameSuite
       val df = spark.range(100).toDF()
       val join = df.join(df, "id")
       checkAnswer(join, df)
-      
+
       // GPU uses Gpu* versions of Exchange operators
       import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
-      
+
       // Check for GPU shuffle exchange
       val shuffleExchanges = collect(join.queryExecution.executedPlan) {
         case e if e.getClass.getName.contains("GpuShuffleExchange") => true
       }
       assert(shuffleExchanges.size === 1,
         s"Expected 1 shuffle exchange, got ${shuffleExchanges.size}")
-      
+
       assert(
         collect(join.queryExecution.executedPlan) {
           case _: ReusedExchangeExec => true }.size === 1)
-      
+
       val broadcasted = broadcast(join)
       val join2 = join.join(broadcasted, "id").join(broadcasted, "id")
       checkAnswer(join2, df)
-      
+
       val shuffleExchanges2 = collect(join2.queryExecution.executedPlan) {
         case e if e.getClass.getName.contains("GpuShuffleExchange") => true
       }
       assert(shuffleExchanges2.size == 1)
-      
+
       val broadcastExchanges = collect(join2.queryExecution.executedPlan) {
         case e if e.getClass.getName.contains("GpuBroadcastExchange") => true
       }

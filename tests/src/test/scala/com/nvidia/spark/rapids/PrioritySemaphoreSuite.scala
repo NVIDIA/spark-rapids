@@ -130,18 +130,18 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   test("maxConcurrentGpuTasks limit should be enforced") {
     // Test with a limit of 2 concurrent GPU tasks
     val semaphore = new TestPrioritySemaphore(100, 2)
-    
+
     // First two tasks should succeed
     assert(semaphore.tryAcquire(10, 0, () => false, 0))
     assert(semaphore.tryAcquire(10, 0, () => false, 1))
-    
+
     // Third task should fail due to concurrent GPU task limit, even though permits available
     assert(!semaphore.tryAcquire(10, 0, () => false, 2))
-    
+
     // Release one task, now third task should succeed
     semaphore.release(10)
     assert(semaphore.tryAcquire(10, 0, () => false, 2))
-    
+
     // Clean up
     semaphore.release(10)
     semaphore.release(10)
@@ -150,17 +150,17 @@ class PrioritySemaphoreSuite extends AnyFunSuite {
   test("maxConcurrentGpuTasks limit disabled with 0") {
     // Test with no limit (0)
     val semaphore = new TestPrioritySemaphore(100, 0)
-    
+
     // Should be able to acquire many tasks as long as permits are available
     assert(semaphore.tryAcquire(10, 0, () => false, 0))
     assert(semaphore.tryAcquire(10, 0, () => false, 1))
     assert(semaphore.tryAcquire(10, 0, () => false, 2))
     assert(semaphore.tryAcquire(10, 0, () => false, 3))
     assert(semaphore.tryAcquire(10, 0, () => false, 4))
-    
+
     // Should fail when permits run out, not due to GPU task limit
     assert(!semaphore.tryAcquire(60, 0, () => false, 5))
-    
+
     // Clean up
     semaphore.release(10)
     semaphore.release(10)

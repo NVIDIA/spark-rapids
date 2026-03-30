@@ -41,10 +41,10 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       testData: Seq[(T, Boolean)], // (value, isNull)
       buildExpression: => Expression,
       verifyFunction: (HostColumnVector, Int, T, Boolean) => Unit): Unit = {
-    
+
     val expr = buildExpression
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     // Convert test data to InternalRow format
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
@@ -53,18 +53,18 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(value)
       }
     }
-    
+
     // Create builder
     val resultType = GpuColumnVector.convertFrom(dataType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       // Apply projection
       projection.apply(rows.iterator, Array(builder))
-      
+
       // Build and verify results
       withResource(builder.build()) { result =>
-        assert(result.getRowCount == rows.length, 
+        assert(result.getRowCount == rows.length,
           s"Expected ${rows.length} rows, got ${result.getRowCount}")
-        
+
         // Verify each row
         testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
           verifyFunction(result, idx, expectedValue, expectedIsNull)
@@ -81,7 +81,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (false, true), // null value
       (true, false)
     )
-    
+
     testProjection[Boolean](
       BooleanType,
       testData,
@@ -105,7 +105,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (true, false),
       (false, false)
     )
-    
+
     testProjection[Boolean](
       BooleanType,
       testData,
@@ -126,7 +126,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (0.toByte, true), // null
       (42.toByte, false)
     )
-    
+
     testProjection[Byte](
       ByteType,
       testData,
@@ -149,7 +149,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (0.toShort, true), // null
       (1234.toShort, false)
     )
-    
+
     testProjection[Short](
       ShortType,
       testData,
@@ -172,7 +172,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (0, true), // null
       (123456, false)
     )
-    
+
     testProjection[Int](
       IntegerType,
       testData,
@@ -195,7 +195,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (0L, true), // null
       (123456789L, false)
     )
-    
+
     testProjection[Long](
       LongType,
       testData,
@@ -228,7 +228,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (Float.PositiveInfinity, false),
       (Float.NegativeInfinity, false)
     )
-    
+
     testProjection[Float](
       FloatType,
       testData,
@@ -267,7 +267,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (Double.PositiveInfinity, false),
       (Double.NegativeInfinity, false)
     )
-    
+
     testProjection[Double](
       DoubleType,
       testData,
@@ -297,7 +297,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (null.asInstanceOf[UTF8String], true), // null
       (UTF8String.fromString("after null"), false)
     )
-    
+
     testProjection[UTF8String](
       StringType,
       testData,
@@ -322,7 +322,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (null.asInstanceOf[Array[Byte]], true), // null
       (Array[Byte](10, 20, 30), false)
     )
-    
+
     testProjection[Array[Byte]](
       BinaryType,
       testData,
@@ -353,7 +353,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (0, true),      // null
       (19000, false)
     )
-    
+
     testProjection[Int](
       DateType,
       testData,
@@ -386,7 +386,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       // Test with full precision
       (1609459261123456L, false)   // full: 2021-01-01 00:01:01.123456 UTC
     )
-    
+
     testProjection[Long](
       TimestampType,
       testData,
@@ -413,7 +413,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (0L, true),               // null
       (90061000000L, false)     // 1 day, 1 hour, 1 minute, 1 second
     )
-    
+
     testProjection[Long](
       intervalType,
       testData,
@@ -439,7 +439,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (25, false),     // 2 years, 1 month
       (120, false)     // 10 years
     )
-    
+
     testProjection[Int](
       intervalType,
       testData,
@@ -459,26 +459,26 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     val numRows = 5
     val intData = Seq(1, 2, 3, 4, 5)
     val stringData = Seq("a", "b", "c", "d", "e")
-    
+
     val rows = intData.zip(stringData).map { case (i, s) =>
       InternalRow(i, UTF8String.fromString(s))
     }
-    
+
     val exprs = Seq(
       BoundReference(0, IntegerType, false),
       BoundReference(1, StringType, false)
     )
-    
+
     val projection = BridgeUnsafeProjection.create(exprs)
-    
+
     val intType = GpuColumnVector.convertFrom(IntegerType, false)
     val stringType = GpuColumnVector.convertFrom(StringType, false)
-    
+
     withResource(new RapidsHostColumnBuilder(intType, numRows)) { intBuilder =>
       withResource(new RapidsHostColumnBuilder(stringType, numRows)) { stringBuilder =>
         // Apply projection to both builders
         projection.apply(rows.iterator, Array(intBuilder, stringBuilder))
-        
+
         // Verify int column
         withResource(intBuilder.build()) { intResult =>
           assert(intResult.getRowCount == numRows)
@@ -486,7 +486,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
             assert(intResult.getInt(idx) == expected)
           }
         }
-        
+
         // Verify string column
         withResource(stringBuilder.build()) { stringResult =>
           assert(stringResult.getRowCount == numRows)
@@ -504,7 +504,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     val testData = (0 until numRows).map { i =>
       (i, i % 10 == 0) // every 10th value is null
     }
-    
+
     testProjection[Int](
       IntegerType,
       testData,
@@ -530,7 +530,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (600, true),
       (700, false)
     )
-    
+
     testProjection[Int](
       IntegerType,
       testData,
@@ -549,28 +549,28 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     // Test projecting literal values
     val numRows = 5
     val rows = (0 until numRows).map(_ => InternalRow())
-    
+
     val exprs = Seq(
       Literal(42, IntegerType),
       Literal(UTF8String.fromString("constant"), StringType)
     )
-    
+
     val projection = BridgeUnsafeProjection.create(exprs)
-    
+
     val intType = GpuColumnVector.convertFrom(IntegerType, false)
     val stringType = GpuColumnVector.convertFrom(StringType, false)
-    
+
     withResource(new RapidsHostColumnBuilder(intType, numRows)) { intBuilder =>
       withResource(new RapidsHostColumnBuilder(stringType, numRows)) { stringBuilder =>
         projection.apply(rows.iterator, Array(intBuilder, stringBuilder))
-        
+
         // All values should be the literal values
         withResource(intBuilder.build()) { intResult =>
           (0 until numRows).foreach { idx =>
             assert(intResult.getInt(idx) == 42)
           }
         }
-        
+
         withResource(stringBuilder.build()) { stringResult =>
           (0 until numRows).foreach { idx =>
             assert(stringResult.getJavaString(idx) == "constant")
@@ -585,11 +585,11 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     val rows = Seq.empty[InternalRow]
     val expr = BoundReference(0, IntegerType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val intType = GpuColumnVector.convertFrom(IntegerType, true)
     withResource(new RapidsHostColumnBuilder(intType, 0)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
         assert(result.getRowCount == 0)
       }
@@ -600,14 +600,14 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     // Test projecting null type - always returns null
     val numRows = 5
     val rows = (0 until numRows).map(_ => InternalRow(null))
-    
+
     val expr = BoundReference(0, NullType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val nullType = GpuColumnVector.convertFrom(NullType, true)
     withResource(new RapidsHostColumnBuilder(nullType, numRows)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
         assert(result.getRowCount == numRows)
         (0 until numRows).foreach { idx =>
@@ -625,9 +625,9 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (null.asInstanceOf[Seq[Int]], true), // null
       (Seq(100), false)
     )
-    
+
     val arrayType = ArrayType(IntegerType, containsNull = false)
-    
+
     // Convert Scala Seq to Spark ArrayData
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
@@ -636,17 +636,17 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(new org.apache.spark.sql.catalyst.util.GenericArrayData(value.toArray))
       }
     }
-    
+
     val expr = BoundReference(0, arrayType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(arrayType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
         assert(result.getRowCount == rows.length)
-        
+
         testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
           if (expectedIsNull) {
             assert(result.isNull(idx), s"Expected null at index $idx")
@@ -671,14 +671,14 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       StructField("id", IntegerType, nullable = false),
       StructField("name", StringType, nullable = false)
     ))
-    
+
     val testData = Seq(
       (InternalRow(1, UTF8String.fromString("Alice")), false),
       (InternalRow(2, UTF8String.fromString("Bob")), false),
       (null.asInstanceOf[InternalRow], true), // null
       (InternalRow(3, UTF8String.fromString("Charlie")), false)
     )
-    
+
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
         InternalRow(null)
@@ -686,31 +686,31 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(value)
       }
     }
-    
+
     val expr = BoundReference(0, structType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(structType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
         assert(result.getRowCount == rows.length)
-        
+
         testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
           if (expectedIsNull) {
             assert(result.isNull(idx), s"Expected null at index $idx")
           } else {
             assert(!result.isNull(idx), s"Expected non-null at index $idx")
             // Verify struct has 2 children (id and name fields)
-            assert(result.getNumChildren == 2, 
+            assert(result.getNumChildren == 2,
               s"Expected 2 children in struct, got ${result.getNumChildren}")
-            
+
             // Verify id field - don't close child views, they're views into parent data
             val idChild = result.getChildColumnView(0)
             assert(idChild.getInt(idx) == expectedValue.getInt(0),
               s"Expected id ${expectedValue.getInt(0)} at index $idx")
-            
+
             // Verify name field
             val nameChild = result.getChildColumnView(1)
             assert(nameChild.getJavaString(idx) == expectedValue.getUTF8String(1).toString,
@@ -721,9 +721,9 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
   }
 
-  test("map type") {    
+  test("map type") {
     val mapType = MapType(IntegerType, StringType, valueContainsNull = false)
-    
+
     val testData = Seq(
       (Map(1 -> "one", 2 -> "two"), false),
       (Map(), false),
@@ -731,7 +731,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (null.asInstanceOf[Map[Int, String]], true), // null
       (Map(3 -> "three", 4 -> "four"), false)
     )
-    
+
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
         InternalRow(null)
@@ -742,17 +742,17 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(mapData)
       }
     }
-    
+
     val expr = BoundReference(0, mapType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(mapType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
         assert(result.getRowCount == rows.length)
-        
+
         testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
           if (expectedIsNull) {
             assert(result.isNull(idx), s"Expected null at index $idx")
@@ -762,23 +762,23 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
             // The result should have 1 child (the struct)
             assert(result.getNumChildren == 1,
               s"Expected 1 child (struct), got ${result.getNumChildren}")
-            
+
             // Get the struct child which has key and value columns
             // Don't close child views - they're views into parent data
             val structChild = result.getChildColumnView(0)
             assert(structChild.getNumChildren == 2,
               s"Expected struct with 2 children (key, value), got ${structChild.getNumChildren}")
-            
+
             // Get key and value columns from the struct
             val keyColumn = structChild.getChildColumnView(0)
             val valueColumn = structChild.getChildColumnView(1)
-            
+
             // Get the list for this row to know how many elements
             val structList = result.getList(idx)
             val mapSize = structList.size()
             assert(mapSize == expectedValue.size,
               s"Expected map size ${expectedValue.size}, got $mapSize at index $idx")
-            
+
             // Build map from key/value columns - order doesn't matter for map comparison
             // The list tells us which range of key/value elements belong to this row
             val actualMap = (0 until mapSize).map { i =>
@@ -797,7 +797,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
               val value = valueColumn.getJavaString(listOffset + i)
               key -> value
             }.toMap
-            
+
             // Compare maps - this is order-agnostic
             assert(actualMap.size == expectedValue.size,
               s"Map size mismatch at index $idx: expected " +
@@ -817,13 +817,13 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
 
   test("array of nullable elements") {
     val arrayType = ArrayType(IntegerType, containsNull = true)
-    
+
     val testData = Seq(
       (Seq(Some(1), None, Some(3)), false),
       (Seq(Some(10), Some(20)), false),
       (null.asInstanceOf[Seq[Option[Int]]], true)
     )
-    
+
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
         InternalRow(null)
@@ -837,17 +837,17 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(arrayData)
       }
     }
-    
+
     val expr = BoundReference(0, arrayType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(arrayType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
         assert(result.getRowCount == rows.length)
-        
+
         testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
           if (expectedIsNull) {
             assert(result.isNull(idx), s"Expected null at index $idx")
@@ -856,7 +856,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
             val actualList = result.getList(idx)
             assert(actualList.size() == expectedValue.length,
               s"Expected array size ${expectedValue.length}, got ${actualList.size()}")
-            
+
             expectedValue.zipWithIndex.foreach { case (expectedElem, elemIdx) =>
               expectedElem match {
                 case Some(v) =>
@@ -880,18 +880,18 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       StructField("x", IntegerType, nullable = false),
       StructField("y", IntegerType, nullable = false)
     ))
-    
+
     val outerStructType = StructType(Seq(
       StructField("id", IntegerType, nullable = false),
       StructField("point", innerStructType, nullable = false)
     ))
-    
+
     val testData = Seq(
       (InternalRow(1, InternalRow(10, 20)), false),
       (InternalRow(2, InternalRow(30, 40)), false),
       (null.asInstanceOf[InternalRow], true)
     )
-    
+
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
         InternalRow(null)
@@ -899,34 +899,34 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(value)
       }
     }
-    
+
     val expr = BoundReference(0, outerStructType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(outerStructType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
         assert(result.getRowCount == rows.length)
-        
+
         testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
           if (expectedIsNull) {
             assert(result.isNull(idx), s"Expected null at index $idx")
           } else {
             assert(!result.isNull(idx), s"Expected non-null at index $idx")
-            
+
             // Verify outer struct has 2 children
             assert(result.getNumChildren == 2)
-            
+
             // Verify id field - don't close child views, they're views into parent data
             val idChild = result.getChildColumnView(0)
             assert(idChild.getInt(idx) == expectedValue.getInt(0))
-            
+
             // Verify nested struct (point field)
             val pointChild = result.getChildColumnView(1)
             assert(pointChild.getNumChildren == 2)
-            
+
             val innerRow = expectedValue.getStruct(1, 2)
             val xChild = pointChild.getChildColumnView(0)
             assert(xChild.getInt(idx) == innerRow.getInt(0),
@@ -940,9 +940,9 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
   }
 
-  test("array of strings") {   
+  test("array of strings") {
     val arrayType = ArrayType(StringType, containsNull = false)
-    
+
     val testData = Seq(
       (Seq("hello", "world"), false),
       (Seq(), false),
@@ -950,7 +950,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (null.asInstanceOf[Seq[String]], true),
       (Seq("a", "b", "c", "d"), false)
     )
-    
+
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
         InternalRow(null)
@@ -961,17 +961,17 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(arrayData)
       }
     }
-    
+
     val expr = BoundReference(0, arrayType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(arrayType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
         assert(result.getRowCount == rows.length)
-        
+
         testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
           if (expectedIsNull) {
             assert(result.isNull(idx), s"Expected null at index $idx")
@@ -996,7 +996,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       StructField("name", StringType, nullable = true), // nullable field
       StructField("age", IntegerType, nullable = true)  // nullable field
     ))
-    
+
     val testData = Seq(
       (InternalRow(1, UTF8String.fromString("Alice"), 30), false),
       (InternalRow(2, null, 25), false), // null name
@@ -1004,7 +1004,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (InternalRow(4, null, null), false), // both nullable fields are null
       (null.asInstanceOf[InternalRow], true) // entire struct is null
     )
-    
+
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
         InternalRow(null)
@@ -1012,28 +1012,28 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(value)
       }
     }
-    
+
     val expr = BoundReference(0, structType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(structType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
         assert(result.getRowCount == rows.length)
-        
+
         testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
           if (expectedIsNull) {
             assert(result.isNull(idx), s"Expected null at index $idx")
           } else {
             assert(!result.isNull(idx), s"Expected non-null at index $idx")
             assert(result.getNumChildren == 3)
-            
+
             // Verify id field (non-nullable) - don't close child views
             val idChild = result.getChildColumnView(0)
             assert(idChild.getInt(idx) == expectedValue.getInt(0))
-            
+
             // Verify name field (nullable)
             val nameChild = result.getChildColumnView(1)
             if (expectedValue.isNullAt(1)) {
@@ -1042,7 +1042,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
               assert(!nameChild.isNull(idx), s"Expected non-null name at index $idx")
               assert(nameChild.getJavaString(idx) == expectedValue.getUTF8String(1).toString)
             }
-            
+
             // Verify age field (nullable)
             val ageChild = result.getChildColumnView(2)
             if (expectedValue.isNullAt(2)) {
@@ -1060,14 +1060,14 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
   test("decimal 32-bit (precision <= 9)") {
     // Decimal with precision <= 9 uses 32-bit backing
     val decimalType = DecimalType(9, 2)
-    
+
     val testData = Seq(
       (Decimal("1234567.89"), false),
       (Decimal("0.01"), false),
       (Decimal("-9999999.99"), false),
       (null.asInstanceOf[Decimal], true)
     )
-    
+
     testProjection[Decimal](
       decimalType,
       testData,
@@ -1075,7 +1075,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (result, idx, expectedValue, expectedIsNull) => {
         // Verify backing type is 32-bit
         assert(result.getType.getTypeId == DType.DTypeEnum.DECIMAL32)
-        
+
         if (expectedIsNull) {
           assert(result.isNull(idx), s"Expected null at index $idx")
         } else {
@@ -1091,14 +1091,14 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
   test("decimal 64-bit (precision <= 18)") {
     // Decimal with precision <= 18 uses 64-bit backing
     val decimalType = DecimalType(18, 4)
-    
+
     val testData = Seq(
       (Decimal("12345678901234.5678"), false),
       (Decimal("0.0001"), false),
       (Decimal("-99999999999999.9999"), false),
       (null.asInstanceOf[Decimal], true)
     )
-    
+
     testProjection[Decimal](
       decimalType,
       testData,
@@ -1106,7 +1106,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (result, idx, expectedValue, expectedIsNull) => {
         // Verify backing type is 64-bit
         assert(result.getType.getTypeId == DType.DTypeEnum.DECIMAL64)
-        
+
         if (expectedIsNull) {
           assert(result.isNull(idx), s"Expected null at index $idx")
         } else {
@@ -1122,14 +1122,14 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
   test("decimal 128-bit (precision > 18)") {
     // Decimal with precision > 18 uses 128-bit backing
     val decimalType = DecimalType(38, 10)
-    
+
     val testData = Seq(
       (Decimal("1234567890123456789012345678.0123456789"), false),
       (Decimal("0.0000000001"), false),
       (Decimal("-9999999999999999999999999999.9999999999"), false),
       (null.asInstanceOf[Decimal], true)
     )
-    
+
     testProjection[Decimal](
       decimalType,
       testData,
@@ -1137,7 +1137,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (result, idx, expectedValue, expectedIsNull) => {
         // Verify backing type is 128-bit
         assert(result.getType.getTypeId == DType.DTypeEnum.DECIMAL128)
-        
+
         if (expectedIsNull) {
           assert(result.isNull(idx), s"Expected null at index $idx")
         } else {
@@ -1156,7 +1156,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       StructField("name", StringType)
     ))
     val arrayType = ArrayType(structType, containsNull = true)
-    
+
     val testData = Seq(
       (
         new GenericArrayData(Array(
@@ -1174,7 +1174,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (new GenericArrayData(Array.empty[InternalRow]), false),
       (null, true)
     )
-    
+
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
         InternalRow(null)
@@ -1182,38 +1182,38 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(value)
       }
     }
-    
+
     val expr = BoundReference(0, arrayType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(arrayType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
       assert(result.getType.isNestedType)
-      
+
       testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
         if (expectedIsNull) {
           assert(result.isNull(idx), s"Expected null at index $idx")
         } else {
           assert(!result.isNull(idx), s"Expected non-null at index $idx")
           val expectedArray = expectedValue.asInstanceOf[GenericArrayData]
-          
+
           // Get the struct child which contains the struct fields
           val structChild = result.getChildColumnView(0)
           assert(structChild.getNumChildren == 2,
             s"Expected struct with 2 fields, got ${structChild.getNumChildren}")
-          
+
           val idColumn = structChild.getChildColumnView(0)
           val nameColumn = structChild.getChildColumnView(1)
-          
+
           // Get array size for this row
           val arrayList = result.getList(idx)
           val arraySize = arrayList.size()
           assert(arraySize == expectedArray.numElements(),
             s"Expected array size ${expectedArray.numElements()}, got $arraySize at index $idx")
-          
+
           // Calculate offset for this row's elements
           val listOffset = {
             var offset = 0
@@ -1224,13 +1224,13 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
             }
             offset
           }
-          
+
           // Verify each struct in the array
           (0 until arraySize).foreach { i =>
             val expectedStruct = expectedArray.getStruct(i, 2)
             val actualId = idColumn.getInt(listOffset + i)
             val actualName = nameColumn.getJavaString(listOffset + i)
-            
+
             assert(actualId == expectedStruct.getInt(0),
               s"Expected id ${expectedStruct.getInt(0)} at array[$i], got $actualId")
             assert(actualName == expectedStruct.getUTF8String(1).toString,
@@ -1247,7 +1247,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       StructField("id", IntegerType),
       StructField("tags", ArrayType(StringType, containsNull = false))
     ))
-    
+
     val testData = Seq(
       (
         InternalRow(
@@ -1270,7 +1270,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (InternalRow(3, new GenericArrayData(Array.empty[UTF8String])), false),
       (null, true)
     )
-    
+
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
         InternalRow(null)
@@ -1278,39 +1278,39 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(value)
       }
     }
-    
+
     val expr = BoundReference(0, structType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(structType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
       assert(result.getNumChildren == 2, s"Expected 2 children, got ${result.getNumChildren}")
-      
+
       testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
         if (expectedIsNull) {
           assert(result.isNull(idx), s"Expected null at index $idx")
         } else {
           assert(!result.isNull(idx), s"Expected non-null at index $idx")
-          
+
           // Verify id field
           val idChild = result.getChildColumnView(0)
           assert(idChild.getInt(idx) == expectedValue.getInt(0),
             s"Expected id ${expectedValue.getInt(0)} at index $idx")
-          
+
           // Verify tags array field
           val tagsChild = result.getChildColumnView(1)
           val tagsStringChild = tagsChild.getChildColumnView(0)
-          
+
           val expectedTags = expectedValue.getArray(1)
           val actualTagsList = tagsChild.getList(idx)
           val actualSize = actualTagsList.size()
-          
+
           assert(actualSize == expectedTags.numElements(),
             s"Expected ${expectedTags.numElements()} tags, got $actualSize at index $idx")
-          
+
           // Calculate offset for this row's array elements
           val listOffset = {
             var offset = 0
@@ -1321,7 +1321,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
             }
             offset
           }
-          
+
           // Verify each tag
           (0 until actualSize).foreach { i =>
             val expectedTag = expectedTags.getUTF8String(i).toString
@@ -1340,7 +1340,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       StructField("id", IntegerType),
       StructField("attributes", MapType(StringType, IntegerType, valueContainsNull = false))
     ))
-    
+
     val testData = Seq(
       (
         InternalRow(
@@ -1365,7 +1365,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       (InternalRow(3, ArrayBasedMapData(Array.empty[UTF8String], Array.empty[Int])), false),
       (null, true)
     )
-    
+
     val rows = testData.map { case (value, isNull) =>
       if (isNull) {
         InternalRow(null)
@@ -1373,41 +1373,41 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
         InternalRow(value)
       }
     }
-    
+
     val expr = BoundReference(0, structType, true)
     val projection = BridgeUnsafeProjection.create(Seq(expr))
-    
+
     val resultType = GpuColumnVector.convertFrom(structType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
       projection.apply(rows.iterator, Array(builder))
-      
+
       withResource(builder.build()) { result =>
       assert(result.getNumChildren == 2, s"Expected 2 children, got ${result.getNumChildren}")
-      
+
       testData.zipWithIndex.foreach { case ((expectedValue, expectedIsNull), idx) =>
         if (expectedIsNull) {
           assert(result.isNull(idx), s"Expected null at index $idx")
         } else {
           assert(!result.isNull(idx), s"Expected non-null at index $idx")
-          
+
           // Verify id field
           val idChild = result.getChildColumnView(0)
           assert(idChild.getInt(idx) == expectedValue.getInt(0),
             s"Expected id ${expectedValue.getInt(0)} at index $idx")
-          
+
           // Verify map field (List<Struct<key, value>> in cuDF)
           val mapChild = result.getChildColumnView(1)
           val mapStructChild = mapChild.getChildColumnView(0)
           val keyColumn = mapStructChild.getChildColumnView(0)
           val valueColumn = mapStructChild.getChildColumnView(1)
-          
+
           val expectedMap = expectedValue.getMap(1)
           val actualMapList = mapChild.getList(idx)
           val actualSize = actualMapList.size()
-          
+
           assert(actualSize == expectedMap.numElements(),
             s"Expected ${expectedMap.numElements()} entries, got $actualSize at index $idx")
-          
+
           // Calculate offset for this row's map elements
           val listOffset = {
             var offset = 0
@@ -1418,20 +1418,20 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
             }
             offset
           }
-          
+
           // Build actual map from columns
           val actualMap = (0 until actualSize).map { i =>
             val key = keyColumn.getJavaString(listOffset + i)
             val value = valueColumn.getInt(listOffset + i)
             key -> value
           }.toMap
-          
+
           // Convert expected map to comparable format
           val expectedMapScala = expectedMap.keyArray().array.zip(expectedMap.valueArray().array)
             .map { case (k, v) =>
               k.asInstanceOf[UTF8String].toString -> v.asInstanceOf[Int]
             }.toMap
-          
+
           // Compare maps (order-agnostic)
           assert(actualMap.size == expectedMapScala.size,
             s"Map size mismatch at index $idx")

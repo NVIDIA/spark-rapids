@@ -32,7 +32,7 @@ import org.apache.spark.sql.execution.datasources.v2.StoragePartitionJoinParams
  */
 object StoragePartitionJoinShims {
   type SpjParams = StoragePartitionJoinParams
-  
+
   def default(): SpjParams = StoragePartitionJoinParams()
 
   def fromBatchScan(spjParams: StoragePartitionJoinParams): SpjParams = spjParams

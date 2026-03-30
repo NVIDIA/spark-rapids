@@ -197,7 +197,7 @@ class GpuWindowGroupLimitExecMeta(limitExec: WindowGroupLimitExec,
    *
    * @return Option of (expression id, rank function type) if found
    */
-  private def findMatchingRankExpression(windowExec: WindowExec): 
+  private def findMatchingRankExpression(windowExec: WindowExec):
       Option[(Long, Expression)] = {
     // Get window expressions from WindowExec via reflection
     val windowExprs = try {

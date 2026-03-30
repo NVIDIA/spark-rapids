@@ -53,7 +53,7 @@ class GpuMetricsSuite extends AnyFunSuite {
     val parentOpTime = new LocalGpuMetric()
     val child1OpTime = new LocalGpuMetric()
     val child2OpTime = new LocalGpuMetric()
-    
+
     // First, establish baseline - child metrics start with some time
     child1OpTime.ns {
       Thread.sleep(100)
@@ -61,10 +61,10 @@ class GpuMetricsSuite extends AnyFunSuite {
     child2OpTime.ns {
       Thread.sleep(100)
     }
-    
+
     val child1InitialValue = child1OpTime.value
     val child2InitialValue = child2OpTime.value
-    
+
     // Test the main functionality: parent metric should exclude time from child metrics
     val excludeMetrics = Seq(child1OpTime, child2OpTime)
     parentOpTime.ns(excludeMetrics) {
@@ -78,7 +78,7 @@ class GpuMetricsSuite extends AnyFunSuite {
       // Parent's own work
       Thread.sleep(200) // This time should be INCLUDED in parent
     }
-    
+
     // Verify results
     val child1AdditionalTime = child1OpTime.value - child1InitialValue
     val child2AdditionalTime = child2OpTime.value - child2InitialValue
@@ -87,7 +87,7 @@ class GpuMetricsSuite extends AnyFunSuite {
     assert(parentOpTime.value > 0, "Parent metric should have recorded some time")
     assert(child1AdditionalTime > 0, "Child1 should have additional time from parent execution")
     assert(child2AdditionalTime > 0, "Child2 should have additional time from parent execution")
-    
+
     // Parent time should be reasonable for its own work (~200ms)
     val expectedParentTime = 200 * 1000000L // 200ms in nanoseconds
     val tolerance = 50 * 1000000L // 50ms tolerance for test variance

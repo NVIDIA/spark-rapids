@@ -250,7 +250,7 @@ class AstUtilSuite extends GpuUnitTests {
     val castExpr = mock(classOf[Expression])
     when(castExpr.references).thenReturn(AttributeSet(Seq(attr)))
     when(castExpr.dataType).thenReturn(BooleanType)
-    
+
     val castMeta = mock(classOf[BaseExprMeta[Expression]])
     when(castMeta.childExprs).thenReturn(Seq.empty)
     when(castMeta.canSelfBeAst).thenReturn(false) // Cast cannot be AST
@@ -274,7 +274,7 @@ class AstUtilSuite extends GpuUnitTests {
 
      // The returned expression should be an attribute reference (the replacement)
      assertResult(true)(expr.get.isInstanceOf[AttributeReference])
- 
+
      // The attribute should match the one from the left expression alias
      val leftAlias = leftExprs.head.asInstanceOf[GpuAlias]
      val expectedAttr = AttributeReference(leftAlias.name, leftAlias.child.dataType,
@@ -285,18 +285,18 @@ class AstUtilSuite extends GpuUnitTests {
   test("Top-level non-AST expression on right side should be extracted to right") {
     val l1 = AttributeReference("l1", IntegerType)()
     val r1 = AttributeReference("r1", IntegerType)()
-    
+
     // Test with right side only
     val (expr, leftExprs, rightExprs) =
       AstUtil.extractNonAstFromJoinCond(Some(buildTreeWithCast(r1)), Seq(l1), Seq(r1))
-    
+
     // Should extract the cast to the right side
     assertResult(0)(leftExprs.size)
     assertResult(1)(rightExprs.size)
-    
+
      // The returned expression should be an attribute reference (the replacement)
      assertResult(true)(expr.get.isInstanceOf[AttributeReference])
-     
+
      // The attribute should match the one from the right expression alias
      val rightAlias = rightExprs.head.asInstanceOf[GpuAlias]
      val expectedAttr = AttributeReference(rightAlias.name, rightAlias.child.dataType,

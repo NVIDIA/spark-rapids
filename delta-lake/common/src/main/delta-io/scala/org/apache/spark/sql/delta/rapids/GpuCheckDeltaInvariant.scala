@@ -54,7 +54,7 @@ case class GpuCheckDeltaInvariant(
   override def foldable: Boolean = false
   override def nullable: Boolean = true
 
-  def withBoundReferences(input: AttributeSeq, 
+  def withBoundReferences(input: AttributeSeq,
     metrics: Map[String, GpuMetric]): GpuCheckDeltaInvariant = {
     GpuCheckDeltaInvariant(
       GpuBindReferences.bindReference(child, input, metrics),

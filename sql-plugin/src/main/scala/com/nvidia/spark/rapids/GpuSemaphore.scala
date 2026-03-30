@@ -131,8 +131,8 @@ class StatEstimator(minEntries:Int, defaultValue: Double) {
   }
 }
 
-class GpuStageMemoryEstimator(val stageId: Int, 
-                              private val defaultEstimate: Long, 
+class GpuStageMemoryEstimator(val stageId: Int,
+                              private val defaultEstimate: Long,
                               val allowDynamicUpdate: Boolean) {
   private val stats = new StatEstimator(4, defaultEstimate.toDouble)
   private val activeTasks = new util.HashMap[Long, GpuTaskMemoryEstimator]()
@@ -423,7 +423,7 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
         if (!done && shouldBlockOnSemaphore) {
           // We cannot be in a synchronized block and wait on the semaphore
           // so we have to release it and grab it again afterwards.
-          val used = semaphore.acquire(() => 
+          val used = semaphore.acquire(() =>
               GpuSemaphore.memToPermitsWithMax(memoryEstimator.estimate()),
             () => lastAcquired > 0,
             TaskPriority.getTaskPriority(taskAttemptId), taskAttemptId)

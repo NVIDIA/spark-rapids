@@ -35,7 +35,7 @@ import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
 
 /**
  * A segment of data within a SpillablePartialFileHandle.
- * 
+ *
  * @param handle the partial file handle containing the data
  * @param offset starting offset within the handle
  * @param length number of bytes in this segment
@@ -47,12 +47,12 @@ case class PartitionSegment(
 
 /**
  * Catalog for managing shuffle data in MULTITHREADED mode without merging.
- * 
+ *
  * Instead of merging partial files into a single shuffle file, this catalog
  * stores references to segments within partial files. When a reducer requests
  * a shuffle block, the catalog dynamically assembles the data from all
  * relevant segments.
- * 
+ *
  * This approach avoids the I/O cost of merging. The data may be kept in memory
  * (MEMORY_WITH_SPILL mode) or stored directly on disk (ONLY_FILE mode) depending
  * on memory pressure - both modes work with this skip-merge design.
@@ -63,7 +63,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
    * Map from ShuffleBlockId to list of segments.
    * A partition may have multiple segments if there are multiple batches.
    */
-  private val partitionSegments = 
+  private val partitionSegments =
     new ConcurrentHashMap[ShuffleBlockId, ArrayBuffer[PartitionSegment]]()
 
   /** Track active shuffles for cleanup */
@@ -79,7 +79,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
 
   /**
    * Add a partition segment to the catalog.
-   * 
+   *
    * @param shuffleId shuffle identifier
    * @param mapId map task identifier
    * @param partitionId reduce partition identifier
@@ -245,7 +245,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
 
 /**
  * A ManagedBuffer that reads data from multiple partition segments.
- * 
+ *
  * This buffer dynamically assembles data from multiple SpillablePartialFileHandle
  * segments when createInputStream() is called. Each segment may be in memory or
  * on disk, and the buffer handles both cases transparently.

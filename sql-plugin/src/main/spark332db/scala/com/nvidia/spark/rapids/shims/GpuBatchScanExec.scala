@@ -37,7 +37,7 @@ case class GpuBatchScanExec(
     @transient scan: GpuScan,
     runtimeFilters: Seq[Expression],
     keyGroupedPartitioning: Option[Seq[Expression]],
-    ordering: Option[Seq[SortOrder]], 
+    ordering: Option[Seq[SortOrder]],
     @transient table: Table,
     reusesFileListingResultsSourceNode: Option[BatchScanExec])
     extends GpuBatchScanExecBase(scan, runtimeFilters) {

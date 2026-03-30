@@ -260,7 +260,7 @@ object GpuMetric extends Logging {
   /**
    * Time a block of code with an optional metric. If the metric is None, the code
    * is executed without timing.
-   * 
+   *
    * @param metric Optional metric to record timing to
    * @param f The code block to execute and time
    * @return The result of executing f
@@ -275,7 +275,7 @@ object GpuMetric extends Logging {
   /**
    * Time a block of code with an optional metric, excluding time from other metrics.
    * If the metric is None, the code is executed without timing.
-   * 
+   *
    * @param metric Optional metric to record timing to
    * @param excludeMetrics Metrics whose time should be excluded from the timing
    * @param f The code block to execute and time
@@ -381,7 +381,7 @@ object GpuMetric extends Logging {
   /**
    * Inject metrics into expressions that implement GpuMetricsInjectable.
    * Walks the expression tree and injects metrics into any expressions that support it.
-   * 
+   *
    * @param expressions The expressions to inject metrics into
    * @param metrics Map of metric names to GpuMetric instances
    */
@@ -392,7 +392,7 @@ object GpuMetric extends Logging {
   /**
    * Inject metrics into a single expression tree.
    */
-  private def injectMetricsIntoExpression(expr: Expression, 
+  private def injectMetricsIntoExpression(expr: Expression,
       metrics: Map[String, GpuMetric]): Unit = {
     expr match {
       case injectable: GpuMetricsInjectable =>

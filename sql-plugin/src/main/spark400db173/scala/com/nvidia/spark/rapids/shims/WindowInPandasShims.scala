@@ -27,6 +27,6 @@ import org.apache.spark.sql.execution.python.ArrowWindowPythonExec
  * This trait provides the implementation for 4.1+.
  */
 trait WindowInPandasShims {
-  def getWindowExpressions(winPy: ArrowWindowPythonExec): Seq[NamedExpression] = 
+  def getWindowExpressions(winPy: ArrowWindowPythonExec): Seq[NamedExpression] =
     winPy.projectList
 }

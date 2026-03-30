@@ -82,6 +82,6 @@ class BatchScanExecMeta(p: BatchScanExec,
   }
 
   override def convertToGpu(): GpuExec =
-    GpuBatchScanExec(p.output, childScans.head.convertToGpu(), runtimeFilters, 
+    GpuBatchScanExec(p.output, childScans.head.convertToGpu(), runtimeFilters,
     p.keyGroupedPartitioning, p.ordering, p.table, p.reusesFileListingResultsSourceNode)
 }

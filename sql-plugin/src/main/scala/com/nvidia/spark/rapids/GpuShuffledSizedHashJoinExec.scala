@@ -129,7 +129,7 @@ object GpuShuffledSizedHashJoinExec {
       val rightTypes = rightOutput.map(_.dataType).toArray
       val boundLeftKeys = GpuBindReferences.bindGpuReferences(leftKeys, leftOutput, metrics)
       val boundRightKeys = GpuBindReferences.bindGpuReferences(rightKeys, rightOutput, metrics)
-      
+
       val (boundBuildKeys, buildTypes, buildOutput, boundStreamKeys, streamTypes, streamOutput) =
         buildSide match {
           case GpuBuildRight =>
@@ -137,7 +137,7 @@ object GpuShuffledSizedHashJoinExec {
           case GpuBuildLeft =>
             (boundLeftKeys, leftTypes, leftOutput, boundRightKeys, rightTypes, rightOutput)
       }
-      
+
       // Bind condition to leftOutput ++ rightOutput.
       // LazyCompiledCondition will transform it for BuildLeft by rewriting ordinals.
       val boundCondition = condition.map { c =>
@@ -150,7 +150,7 @@ object GpuShuffledSizedHashJoinExec {
 
       BoundJoinExprs(boundBuildKeys, buildTypes, buildOutput,
         boundStreamKeys, streamTypes, streamOutput,
-        boundCondition, leftOutput.size, rightOutput.size, 
+        boundCondition, leftOutput.size, rightOutput.size,
         treatNullsEqual, needNullFilter)
     }
   }

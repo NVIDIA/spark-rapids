@@ -163,6 +163,7 @@ class OrcSuite extends SparkQueryCompareTestSuite {
    * Refer to ColumnStatisticsImpl.java
    * Exclude the check for bytesOnDisk attribute
    */
+  // scalastyle:off equals.hash.code
   case class ColumnStat(cs: ColumnStatistics) {
     def equalsForBasicStat(t: ColumnStatistics, o: ColumnStatistics): Boolean = {
       // skip check the bytesOnDisk
@@ -204,6 +205,7 @@ class OrcSuite extends SparkQueryCompareTestSuite {
       case _ => false
     }
   }
+  // scalastyle:on equals.hash.code
 
   case class StripeFooterStat(streams: Seq[StreamStat], encodings: Seq[String])
 

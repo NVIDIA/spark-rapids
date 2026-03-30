@@ -106,7 +106,7 @@ abstract class GpuCreateDeltaTableCommandBase(
 
   // Abstract methods for version-specific behavior
   protected def createDataFrameFromQuery(sparkSession: SparkSession, query: LogicalPlan): DataFrame
-  
+
   protected def enforceDependenciesInConfiguration(
       sparkSession: SparkSession,
       configuration: Map[String, String],

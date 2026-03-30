@@ -21,7 +21,7 @@ import org.apache.spark.sql.types.{IntegerType, LongType}
 
 /**
  * Unit tests for the CPU Bridge expression functionality.
- * 
+ *
  * Tests cover:
  * - Bridge expression structure and properties
  * - Configuration enabling/disabling
@@ -32,13 +32,13 @@ class GpuCpuBridgeSuite extends SparkQueryCompareTestSuite {
   // ============================================================================
   // Bridge Expression Structure Tests
   // ============================================================================
-  
+
   test("GpuCpuBridgeExpression properties") {
     val cpuExpression = Add(
       BoundReference(0, LongType, nullable = false),
       Literal(100L)
     )
-    
+
     val gpuInput = GpuBoundReference(0, LongType, nullable = false)(null, "x")
     val bridgeExpr = GpuCpuBridgeExpression(
       gpuInputs = Seq(gpuInput),
@@ -46,20 +46,20 @@ class GpuCpuBridgeSuite extends SparkQueryCompareTestSuite {
       outputDataType = LongType,
       outputNullable = false
     )
-    
+
     assert(bridgeExpr.dataType == LongType)
     assert(!bridgeExpr.nullable)
     assert(bridgeExpr.prettyName == "gpu_cpu_bridge")
     assert(bridgeExpr.hasSideEffects) // Bridge always reports hasSideEffects
     assert(bridgeExpr.children.size == 2) // gpuInput + cpuExpression
   }
-  
+
   test("GpuCpuBridgeExpression with nullable output") {
     val cpuExpression = Add(
       BoundReference(0, IntegerType, nullable = true),
       Literal(10)
     )
-    
+
     val gpuInput = GpuBoundReference(0, IntegerType, nullable = true)(null, "a")
     val bridgeExpr = GpuCpuBridgeExpression(
       gpuInputs = Seq(gpuInput),
@@ -67,20 +67,20 @@ class GpuCpuBridgeSuite extends SparkQueryCompareTestSuite {
       outputDataType = IntegerType,
       outputNullable = true
     )
-    
+
     assert(bridgeExpr.dataType == IntegerType)
     assert(bridgeExpr.nullable)
     assert(bridgeExpr.gpuInputs.size == 1)
     assert(bridgeExpr.cpuExpression == cpuExpression)
   }
-  
+
   test("GpuCpuBridgeExpression with multiple GPU inputs") {
     // CPU expression: input0 + input1
     val cpuExpression = Add(
       BoundReference(0, IntegerType, nullable = true),
       BoundReference(1, IntegerType, nullable = true)
     )
-    
+
     val gpuInput0 = GpuBoundReference(0, IntegerType, nullable = true)(null, "a")
     val gpuInput1 = GpuBoundReference(1, IntegerType, nullable = true)(null, "b")
     val bridgeExpr = GpuCpuBridgeExpression(
@@ -89,17 +89,17 @@ class GpuCpuBridgeSuite extends SparkQueryCompareTestSuite {
       outputDataType = IntegerType,
       outputNullable = true
     )
-    
+
     assert(bridgeExpr.gpuInputs.size == 2)
     assert(bridgeExpr.children.size == 3) // 2 gpuInputs + 1 cpuExpression
   }
-  
+
   test("GpuCpuBridgeExpression prettyName method") {
     val cpuExpression = Add(
       BoundReference(0, IntegerType, nullable = true),
       Literal(5)
     )
-    
+
     val gpuInput = GpuBoundReference(0, IntegerType, nullable = true)(null, "x")
     val bridgeExpr = GpuCpuBridgeExpression(
       gpuInputs = Seq(gpuInput),
@@ -107,44 +107,44 @@ class GpuCpuBridgeSuite extends SparkQueryCompareTestSuite {
       outputDataType = IntegerType,
       outputNullable = true
     )
-    
+
     assert(bridgeExpr.prettyName == "gpu_cpu_bridge")
   }
-  
+
   // ============================================================================
   // Configuration Tests
   // ============================================================================
-  
+
   test("Bridge disallow list config") {
     val conf = new RapidsConf(Map(
       RapidsConf.BRIDGE_DISALLOW_LIST.key -> "org.example.Expr1, org.example.Expr2"
     ))
-    
+
     val disallowList = conf.bridgeDisallowList
     assert(disallowList.contains("org.example.Expr1"))
     assert(disallowList.contains("org.example.Expr2"))
     assert(disallowList.size == 2)
   }
-  
+
   test("Empty bridge disallow list config") {
     val conf = new RapidsConf(Map(
       RapidsConf.BRIDGE_DISALLOW_LIST.key -> ""
     ))
-    
+
     assert(conf.bridgeDisallowList.isEmpty)
   }
-  
+
   test("Bridge disallow list with whitespace") {
     val conf = new RapidsConf(Map(
       RapidsConf.BRIDGE_DISALLOW_LIST.key -> "  org.example.Expr1 ,  org.example.Expr2  "
     ))
-    
+
     val disallowList = conf.bridgeDisallowList
     assert(disallowList.contains("org.example.Expr1"))
     assert(disallowList.contains("org.example.Expr2"))
     assert(disallowList.size == 2)
   }
-  
+
   test("Bridge default config is disabled") {
     // With no config set, bridge should be disabled by default
     val conf = new RapidsConf(Map.empty[String, String])

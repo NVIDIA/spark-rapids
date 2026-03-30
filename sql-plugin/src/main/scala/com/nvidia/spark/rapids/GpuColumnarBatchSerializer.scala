@@ -41,18 +41,18 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * A wrapper around InputStream that tracks time spent on all operations
  * to measure how much time is stalled by input stream operations.
- * 
+ *
  * This wrapper uses manual timing with += instead of the .ns{} method for better performance.
  * The .ns{} method has function call overhead and additional logic for semaphore wait time
  * tracking, while manual timing with System.nanoTime() and += is more lightweight for
  * high-frequency operations like InputStream reads.
- * 
+ *
  * Note: We wrap at the InputStream level (not DataInputStream) because DataInputStream
  * methods are mostly final and cannot be overridden.
  */
 class InputStreamWrapper(underlying: InputStream, stalledByInputStreamMetric: GpuMetric)
   extends InputStream {
-  
+
   @inline
   private def timeOperation[T](operation: => T): T = {
     val start = System.nanoTime()
@@ -62,7 +62,7 @@ class InputStreamWrapper(underlying: InputStream, stalledByInputStreamMetric: Gp
       stalledByInputStreamMetric += (System.nanoTime() - start)
     }
   }
-  
+
   override def read(): Int = timeOperation(underlying.read())
   override def read(b: Array[Byte]): Int = timeOperation(underlying.read(b))
   override def read(b: Array[Byte], off: Int, len: Int): Int =

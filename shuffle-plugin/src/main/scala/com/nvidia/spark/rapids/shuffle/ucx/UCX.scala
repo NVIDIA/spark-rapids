@@ -333,7 +333,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
    * @param responseCallback callback to handle a particular response
    */
   def registerResponseHandler(am: UCXActiveMessage, responseCallback: UCXAmCallback): Unit = {
-    logDebug(s"Register Active Message $am response handler") 
+    logDebug(s"Register Active Message $am response handler")
 
     amRegistrations.computeIfAbsent(am.activeMessageId,
       _ => {

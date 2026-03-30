@@ -168,7 +168,7 @@ object JoinGatherer {
           Math.max(1, (targetSize / fixedBitSize) * 8)
         case None =>
           // Heuristic to see if we need to do the expensive calculation
-          if ((rowsLeft * gatherer.realCheapPerRowSizeEstimate) <= 
+          if ((rowsLeft * gatherer.realCheapPerRowSizeEstimate) <=
             (targetSize * sizeEstimateThreshold)) {
             rowsLeft
           } else {

@@ -22,7 +22,7 @@ import org.apache.spark.sql.rapids.ExternalSource
 /**
  * Meta class for overriding StaticInvoke expressions.
  * <br/>
- * When writing to partitioned table, iceberg needs to compute the partition values based on the 
+ * When writing to partitioned table, iceberg needs to compute the partition values based on the
  * partition spec using [[StaticInvoke]] expression.
  */
 class StaticInvokeMeta(expr: StaticInvoke,

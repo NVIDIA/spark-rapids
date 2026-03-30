@@ -24,25 +24,25 @@ import com.nvidia.spark.rapids.AssertUtils.assertInTests
  * properly detected and executed when running under pytest.
  */
 object AssertInTestsHelper {
-  
+
   /**
    * Tests that assertInTests properly detects the pytest environment.
    * This method will throw an AssertionError if the condition is false
    * and assertions are enabled (which they should be in tests).
-   * 
+   *
    * @param condition The condition to assert
    * @param message The assertion message
    * @return true if the assertion passed, false if it was skipped (shouldn't happen in tests)
    */
   def testAssertion(condition: Boolean, message: String): Boolean = {
     var assertionExecuted = false
-    
+
     // Use a by-name parameter to detect if the assertion body runs
     assertInTests({
       assertionExecuted = true
       condition
     }, message)
-    
+
     assertionExecuted
   }
 }

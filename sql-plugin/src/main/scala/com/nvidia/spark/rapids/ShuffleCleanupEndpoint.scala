@@ -77,7 +77,7 @@ class ShuffleCleanupEndpoint(
       pollIntervalMs, // initial delay
       pollIntervalMs,
       TimeUnit.MILLISECONDS)
-    
+
     // Add shutdown hook to ensure finalCleanup is called on JVM termination
     synchronized {
     if (!shutdownHookAdded) {

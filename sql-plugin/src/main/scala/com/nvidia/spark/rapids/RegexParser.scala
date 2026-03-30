@@ -1993,7 +1993,7 @@ sealed trait RegexOptimizationType
 object RegexOptimizationType {
   case class StartsWith(literal: String) extends RegexOptimizationType
   case class Contains(literal: String) extends RegexOptimizationType
-  case class PrefixRange(literal: String, length: Int, rangeStart: Int, rangeEnd: Int) 
+  case class PrefixRange(literal: String, length: Int, rangeStart: Int, rangeEnd: Int)
     extends RegexOptimizationType
   case class MultipleContains(literals: Seq[UTF8String]) extends RegexOptimizationType
   case object NoOptimization extends RegexOptimizationType
@@ -2009,28 +2009,28 @@ object RegexRewrite {
     }
   }
 
-  /* 
+  /*
    * Extracts the prefix range pattern info from the given AST sequence.
-   * 
+   *
    * @param astLs The AST sequence to extract the prefix range pattern from.
    * @return Some(prefix, length, start, end) if astLs is a `prefix[start-end]{x}` pattern
    * None otherwise. start and end are the code points of the start and end characters.
    */
-  private def getPrefixRangePattern(astLs: collection.Seq[RegexAST]): 
+  private def getPrefixRangePattern(astLs: collection.Seq[RegexAST]):
       Option[(String, Int, Int, Int)] = {
     val haveLiteralPrefix = isLiteralString(astLs.dropRight(1))
     val endsWithRange = astLs.lastOption match {
       case Some(ast) => removeBrackets(collection.Seq(ast)) match {
         case collection.Seq(RegexRepetition(
-            RegexCharacterClass(false, ListBuffer(RegexCharacterRange(a,b))), 
+            RegexCharacterClass(false, ListBuffer(RegexCharacterRange(a,b))),
             quantifier)) => {
           val (start, end) = (a, b) match {
             case (RegexChar(start), RegexChar(end)) => (start, end)
             case _ => return None
           }
           val length = quantifier match {
-            // In Rlike, contains [a-b]{minLen,maxLen} pattern is equivalent to contains 
-            // [a-b]{minLen} because the matching will return the result once it finds the 
+            // In Rlike, contains [a-b]{minLen,maxLen} pattern is equivalent to contains
+            // [a-b]{minLen} because the matching will return the result once it finds the
             // minimum match so y here is unnecessary.
             case QuantifierVariableLength(minLen, _) => minLen
             case QuantifierFixedLength(len) => len
@@ -2073,7 +2073,7 @@ object RegexRewrite {
           case literals => UTF8String.fromString(RegexCharsToString(parts)) +: literals
         }
       }
-      case RegexSequence(parts) if (isLiteralString(parts)) => 
+      case RegexSequence(parts) if (isLiteralString(parts)) =>
           Seq(UTF8String.fromString(RegexCharsToString(parts)))
       case _ => Seq.empty
     }
@@ -2088,12 +2088,12 @@ object RegexRewrite {
     }
   }
 
-  private def stripLeadingWildcards(astLs: collection.Seq[RegexAST]): 
+  private def stripLeadingWildcards(astLs: collection.Seq[RegexAST]):
       collection.Seq[RegexAST] = {
     astLs.dropWhile(isWildcard)
   }
 
-  private def stripTailingWildcards(astLs: collection.Seq[RegexAST]): 
+  private def stripTailingWildcards(astLs: collection.Seq[RegexAST]):
       collection.Seq[RegexAST] = {
     astLs.reverse.dropWhile(isWildcard).reverse
   }
@@ -2149,7 +2149,7 @@ object RegexRewrite {
       // (literal[a-b]{x,y}) => prefix range pattern
       return RegexOptimizationType.PrefixRange(prefix, length, start, end)
     }
-    
+
     // return NoOptimization if the pattern is not a simple pattern and use cuDF
     RegexOptimizationType.NoOptimization
   }

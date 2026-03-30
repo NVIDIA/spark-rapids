@@ -27,7 +27,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * Factory for creating Python runners for grouped UDFs in Spark 4.1.x.
- * 
+ *
  * In Spark 4.1.x, the Python worker uses GroupPandasUDFSerializer for grouped/window UDFs,
  * which expects the grouped protocol:
  *   - Send 1 before each batch

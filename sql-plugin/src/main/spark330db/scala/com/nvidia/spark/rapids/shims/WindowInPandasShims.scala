@@ -30,6 +30,6 @@ import org.apache.spark.sql.execution.python.WindowInPandasExec
  * On Databricks, WindowInPandasExec uses projectList instead of windowExpression.
  */
 trait WindowInPandasShims {
-  def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] = 
+  def getWindowExpressions(winPy: WindowInPandasExec): Seq[NamedExpression] =
     winPy.projectList
 }

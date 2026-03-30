@@ -62,9 +62,9 @@ class ConcurrentWriterMetricsSuite extends SparkQueryCompareTestSuite {
         }
 
         checkMetrics("""
-                       |INSERT INTO TABLE t PARTITION(p) SELECT * 
+                       |INSERT INTO TABLE t PARTITION(p) SELECT *
                        |FROM VALUES(1, 'a'),(2, 'a'),(1, 'b')""".stripMargin, 2, 3)
-        
+
         checkMetrics("""
                        |INSERT INTO TABLE t PARTITION(p) SELECT *
                        |FROM VALUES(1, 'a'),(2, 'b'),(1, 'c'),(2, 'd')""".stripMargin, 4, 4)

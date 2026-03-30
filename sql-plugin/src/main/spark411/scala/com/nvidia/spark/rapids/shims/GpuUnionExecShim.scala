@@ -33,7 +33,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * Spark 4.1+ implementation of union for GpuUnionExec.
  *
  * Uses partitioner-aware union (SPARK-52921) which groups partitions at corresponding
- * indices across child RDDs, preserving partition alignment. Falls back to concatenation 
+ * indices across child RDDs, preserving partition alignment. Falls back to concatenation
  * if partition counts differ.
  */
 object GpuUnionExecShim {

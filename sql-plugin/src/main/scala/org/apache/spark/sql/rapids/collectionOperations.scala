@@ -778,10 +778,10 @@ case class GpuMapFromEntries(child: Expression) extends GpuUnaryExpression with 
     // Internally the format for a list of key/value structs is the same as a map,
     // so we can just return the same column with proper validation and deduplication.
     val inputBase = input.getBase
-    
+
     // Check for null keys
     GpuMapUtils.assertNoNullKeys(inputBase)
-    
+
     // Handle duplicate keys based on the policy.
     // Spark 4.1+ returns an enum value instead of String, so use toString first.
     mapKeyDedupPolicy.toString.toUpperCase match {

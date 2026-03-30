@@ -89,7 +89,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThanOrEqual(rankAttr, Literal(3))
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank <= 3 with limit=4: filter is MORE restrictive (keeps fewer rows), should match")
   }
@@ -98,7 +98,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThanOrEqual(rankAttr, Literal(4))
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank <= 4 with limit=4: filter is SAME as limit, should match")
   }
@@ -107,7 +107,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThanOrEqual(rankAttr, Literal(5))
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank <= 5 with limit=4: filter is LESS restrictive (keeps more rows), should NOT match")
   }
@@ -120,7 +120,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThan(rankAttr, Literal(5))
     val limit = 4
-    
+
     // rank < 5 is equivalent to rank <= 4
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank < 5 with limit=4: equivalent to rank <= 4, should match")
@@ -130,7 +130,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThan(rankAttr, Literal(4))
     val limit = 4
-    
+
     // rank < 4 is equivalent to rank <= 3, which is MORE restrictive than limit=4
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank < 4 with limit=4: equivalent to rank <= 3, MORE restrictive, should match")
@@ -140,7 +140,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThan(rankAttr, Literal(6))
     val limit = 4
-    
+
     // rank < 6 is equivalent to rank <= 5, which is LESS restrictive than limit=4
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank < 6 with limit=4: equivalent to rank <= 5, LESS restrictive, should NOT match")
@@ -150,7 +150,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThan(rankAttr, Literal(1))
     val limit = 4
-    
+
     // rank < 1 keeps nothing (ranks are positive), definitely MORE restrictive
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank < 1 with limit=4: keeps no positive ranks, should match")
@@ -164,7 +164,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = GreaterThanOrEqual(Literal(3), rankAttr)
     val limit = 4
-    
+
     // 3 >= rank is equivalent to rank <= 3
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "3 >= rank with limit=4: equivalent to rank <= 3, MORE restrictive, should match")
@@ -174,7 +174,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = GreaterThanOrEqual(Literal(4), rankAttr)
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "4 >= rank with limit=4: equivalent to rank <= 4, should match")
   }
@@ -183,7 +183,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = GreaterThanOrEqual(Literal(5), rankAttr)
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "5 >= rank with limit=4: equivalent to rank <= 5, LESS restrictive, should NOT match")
   }
@@ -196,7 +196,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = GreaterThan(Literal(5), rankAttr)
     val limit = 4
-    
+
     // 5 > rank is equivalent to rank < 5 = rank <= 4
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "5 > rank with limit=4: equivalent to rank <= 4, should match")
@@ -206,7 +206,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = GreaterThan(Literal(3), rankAttr)
     val limit = 4
-    
+
     // 3 > rank is equivalent to rank < 3 = rank <= 2
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "3 > rank with limit=4: equivalent to rank <= 2, MORE restrictive, should match")
@@ -216,7 +216,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = GreaterThan(Literal(6), rankAttr)
     val limit = 4
-    
+
     // 6 > rank is equivalent to rank < 6 = rank <= 5
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "6 > rank with limit=4: equivalent to rank <= 5, LESS restrictive, should NOT match")
@@ -230,7 +230,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val differentExprId = 999L
     val condition = LessThanOrEqual(rankAttr, Literal(4))
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, differentExprId, 4),
       "Filter on different column than the rank column should NOT match")
   }
@@ -243,7 +243,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThanOrEqual(rankAttr, Literal(4L))
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank <= 4L with limit=4: should match (Long literal converted to Int)")
   }
@@ -252,7 +252,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThanOrEqual(rankAttr, Literal(5L))
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank <= 5L with limit=4: should NOT match")
   }
@@ -266,7 +266,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = EqualTo(rankAttr, Literal(3))
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank = 3 with limit=4: keeps only rank 3, MORE restrictive, should match")
   }
@@ -275,7 +275,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = EqualTo(rankAttr, Literal(4))
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank = 4 with limit=4: keeps only rank 4, same as limit, should match")
   }
@@ -284,7 +284,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = EqualTo(rankAttr, Literal(5))
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank = 5 with limit=4: filter would keep rank 5, but limit only keeps 1-4, NOT safe")
   }
@@ -294,7 +294,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     // Reversed operand order: 3 = rank
     val condition = EqualTo(Literal(3), rankAttr)
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "3 = rank with limit=4: same as rank = 3, should match")
   }
@@ -303,7 +303,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = EqualTo(Literal(4), rankAttr)
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "4 = rank with limit=4: should match")
   }
@@ -312,7 +312,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = EqualTo(Literal(5), rankAttr)
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "5 = rank with limit=4: should NOT match")
   }
@@ -321,7 +321,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = EqualTo(rankAttr, Literal(1))
     val limit = 1
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank = 1 with limit=1: should match")
   }
@@ -334,7 +334,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThanOrEqual(rankAttr, Literal(1))
     val limit = 1
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank <= 1 with limit=1: should match")
   }
@@ -343,7 +343,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThanOrEqual(rankAttr, Literal(2))
     val limit = 1
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank <= 2 with limit=1: LESS restrictive, should NOT match")
   }
@@ -352,7 +352,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThan(rankAttr, Literal(2))
     val limit = 1
-    
+
     // rank < 2 is equivalent to rank <= 1
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank < 2 with limit=1: equivalent to rank <= 1, should match")
@@ -362,7 +362,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankAttr = rankAttrWithId(testExprId)
     val condition = LessThan(rankAttr, Literal(3))
     val limit = 1
-    
+
     // rank < 3 is equivalent to rank <= 2, which is LESS restrictive than limit=1
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank < 3 with limit=1: equivalent to rank <= 2, LESS restrictive, should NOT match")
@@ -381,7 +381,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       EqualTo(rankAttr, Literal(5))
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "OR condition should NOT match - we cannot prove the combined condition is restrictive")
   }
@@ -396,7 +396,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       LessThan(otherAttr, Literal(5))
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "OR with different column should NOT match - rows with rank >= 5 could pass")
   }
@@ -416,7 +416,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       LessThan(otherAttr, Literal(10))
     )
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank < 5 AND other: extracts limit 4 from rank < 5, should match")
   }
@@ -429,7 +429,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       LessThanOrEqual(rankAttr, Literal(5))
     )
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank <= 3 AND rank <= 5: uses min=3, should match with limit=4")
   }
@@ -442,7 +442,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       LessThanOrEqual(rankAttr, Literal(6))
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank <= 5 AND rank <= 6: uses min=5, should NOT match with limit=4")
   }
@@ -456,7 +456,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       LessThanOrEqual(rankAttr, Literal(4))
     )
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank > 2 AND rank <= 4: only rank <= 4 contributes limit, should match")
   }
@@ -468,7 +468,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       LessThanOrEqual(rankAttr, Literal(5))
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank > 2 AND rank <= 5: uses limit 5, should NOT match with limit=4")
   }
@@ -481,7 +481,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       GreaterThan(otherAttr, Literal(0))
     )
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank = 3 AND other: extracts limit 3 from rank = 3, should match")
   }
@@ -494,7 +494,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       GreaterThan(otherAttr, Literal(0))
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "rank = 5 AND other: extracts limit 5 from rank = 5, should NOT match")
   }
@@ -510,7 +510,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       LessThanOrEqual(rankAttr, Literal(4))
     )
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "Triple AND with min=4, should match with limit=4")
   }
@@ -524,7 +524,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       Literal(false)
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "Nested condition in If should NOT match - not a direct comparison")
   }
@@ -536,7 +536,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       GreaterThan(rankAttr, Literal(4))
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "NOT condition should NOT match - not a direct comparison")
   }
@@ -549,7 +549,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       Some(Literal(false))
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "CASE WHEN condition should NOT match - not a direct comparison")
   }
@@ -562,7 +562,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       Seq(Literal(1), Literal(2), Literal(3), Literal(4))
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "IN condition should NOT match - not a direct comparison")
   }
@@ -576,7 +576,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       LessThanOrEqual(rankAttr, Literal(4))
     )
     val limit = 4
-    
+
     assert(filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "BETWEEN 1 AND 4: uses limit 4 from rank <= 4, should match with limit=4")
   }
@@ -588,7 +588,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
       LessThanOrEqual(rankAttr, Literal(5))
     )
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "BETWEEN 1 AND 5: uses limit 5 from rank <= 5, should NOT match with limit=4")
   }
@@ -599,7 +599,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     val rankPlusOne = Add(rankAttr, Literal(1))
     val condition = LessThanOrEqual(rankPlusOne, Literal(5))
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "Arithmetic on rank should NOT match - rank must be directly compared")
   }
@@ -610,7 +610,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     // We can't prove anything when comparing to a non-literal value
     val condition = LessThanOrEqual(rankAttr, otherAttr)
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "Comparison with non-literal should NOT match - can't determine restrictiveness")
   }
@@ -622,7 +622,7 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
     )
     val condition = LessThanOrEqual(coalesced, Literal(4))
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "Coalesce around rank should NOT match - rank must be directly compared")
   }
@@ -630,12 +630,12 @@ class WindowGroupLimitExecSuite extends AnyFunSuite {
   test("Cast on rank: CAST(rank AS BIGINT) <= 4 should NOT match") {
     val rankAttr = rankAttrWithId(testExprId)
     val casted = Cast(
-      rankAttr, 
+      rankAttr,
       LongType
     )
     val condition = LessThanOrEqual(casted, Literal(4L))
     val limit = 4
-    
+
     assert(!filterIsAtLeastAsRestrictive(condition, testExprId, limit),
       "Cast on rank should NOT match - rank must be directly compared")
   }

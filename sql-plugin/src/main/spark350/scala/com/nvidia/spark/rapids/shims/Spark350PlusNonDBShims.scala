@@ -107,7 +107,7 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
         (toPrettyString, conf, p, r) => {
           new CastExprMetaBase[ToPrettyString](toPrettyString, conf, p, r) {
 
-            override def needTimeZoneCheck: Boolean = 
+            override def needTimeZoneCheck: Boolean =
               castNeedsTimeZone(toPrettyString.child.dataType, StringType)
 
             override val toType: StringType.type = StringType
@@ -116,7 +116,7 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
               GpuToPrettyString(child)
             }
           }
-      }), 
+      }),
       GpuOverrides.expr[PythonUDAF](
         "UDF run in an external python process. Does not actually run on the GPU, but " +
           "the transfer of data to/from it can be accelerated",

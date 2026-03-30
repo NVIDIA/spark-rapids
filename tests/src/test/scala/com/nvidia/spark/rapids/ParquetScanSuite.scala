@@ -164,7 +164,7 @@ class ParquetScanSuite extends SparkQueryCompareTestSuite {
     assumeCondition = (_ => (VersionUtils.isSpark320OrLater, "Spark version not 3.2.0+"))) {
     frame => frame.select(col("*"))
   }
-  
+
   /**
    * A malformed version of nested-unsigned.parquet is, which should throw.
    */

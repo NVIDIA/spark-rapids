@@ -258,7 +258,7 @@ class IntervalCastSuite extends SparkQueryCompareTestSuite {
     "test cast(ym as (byte or short)) side effect",
     spark => {
       val data = (-128 to 127).map { i =>
-        val boolean = if (i % 2 == 0) true else false
+        val boolean = i % 2 == 0
         val sideEffectValue = Period.ofMonths(Int.MaxValue)
         val ymValue = if (boolean) sideEffectValue else Period.ofMonths(i)
         Row(boolean, ymValue)
@@ -278,7 +278,7 @@ class IntervalCastSuite extends SparkQueryCompareTestSuite {
     "test cast((long or int) as year-month) side effect",
     spark => {
       val data = (-128 to 127).map { i =>
-        val boolean = if (i % 2 == 0) true else false
+        val boolean = i % 2 == 0
         val sideEffectLongValue = Long.MaxValue
         val sideEffectIntValue = Int.MaxValue
         Row(boolean,

@@ -428,7 +428,7 @@ class AdaptiveQueryExecSuite
         s"Expected to capture exactly one plan: ${capturedPlans.mkString("\n")}")
       val executedPlan = ExecutionPlanCaptureCallback.extractExecutedPlan(capturedPlans.head)
 
-      // find the first occurrence (last node) of GpuColumnarToRowExec in the plan 
+      // find the first occurrence (last node) of GpuColumnarToRowExec in the plan
       // and assert the metrics
       val transition = OperatorsUtilShims.findOperators(
         executedPlan, _.isInstanceOf[GpuColumnarToRowExec]).head.asInstanceOf[GpuColumnarToRowExec]

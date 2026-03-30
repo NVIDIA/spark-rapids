@@ -43,7 +43,7 @@ case class GpuProjectingColumnarBatch(schema: StructType, colOrdinals: Seq[Int])
 
   /**
    * Project a subset of columns from a `ColumnarBatch` onto a new batch
-   * based on the specified column ordinals and output schema. 
+   * based on the specified column ordinals and output schema.
    *
    * @param batch The input batch to project. It's caller's responsibility to close batch.
    * @return The projected batch.

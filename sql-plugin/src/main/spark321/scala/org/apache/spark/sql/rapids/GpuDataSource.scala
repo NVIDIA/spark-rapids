@@ -48,8 +48,8 @@ case class GpuDataSource(
     options: Map[String, String] = Map.empty,
     catalogTable: Option[CatalogTable] = None,
     origProvider: Class[_],
-    gpuFileFormat: ColumnarFileFormat) 
-      extends GpuDataSourceBase(sparkSession, className, paths, userSpecifiedSchema, 
+    gpuFileFormat: ColumnarFileFormat)
+      extends GpuDataSourceBase(sparkSession, className, paths, userSpecifiedSchema,
       partitionColumns, bucketSpec, options, catalogTable, origProvider) {
 
   /**

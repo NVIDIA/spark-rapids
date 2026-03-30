@@ -71,7 +71,7 @@ object ScaleTest {
       spark: SparkSession,
       idleSessionListener: IdleSessionListener): QueryMeta
   = {
-    val mode = if (overwrite == true) "overwrite" else "error"
+    val mode = if (overwrite) "overwrite" else "error"
     val executionTimes = ListBuffer[Long]()
     val exceptions = new ConcurrentLinkedQueue[String]()
     val status = ListBuffer[String]()

@@ -59,7 +59,7 @@ class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
 
   override def compute(split: Partition, context: TaskContext): Iterator[T] = {
     val childIterator = firstParent[T].compute(split, context)
-    
+
     // Create wrapper iterator that tracks opTime excluding child opTime
     new Iterator[T] {
       override def hasNext: Boolean = {

@@ -54,7 +54,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 /**
  * Factory object to create Python runner for Window UDFs.
  * This shim allows different Spark versions to use different runner implementations.
- * 
+ *
  * In Spark 3.x and 4.0.x, the Python worker uses ArrowStreamPandasUDFSerializer for
  * SQL_WINDOW_AGG_PANDAS_UDF, which doesn't require grouped protocol markers.
  */

@@ -383,7 +383,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         // make sure we close the buffer slice
         withResource(buffersToSend) { _ =>
           // [Scala 2.13] The compiler does not seem to be able to do the implicit SAM
-          // conversion after expanding the call in the method call below. So we have to define the 
+          // conversion after expanding the call in the method call below. So we have to define the
           // callback here in a val and type it to TransactionCallback
           val txCallback: TransactionCallback = tx => withResource(tx) { bufferTx =>
             bufferTx.getStatus match {

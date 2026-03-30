@@ -28,7 +28,7 @@ class BroadcastExchangeSuite extends SparkQueryCompareTestSuite {
       val df = spark.range(1).toDF()
       val joinDF = df.join(broadcast(df), "id")
       joinDF.collect()
-      
+
       val broadcasts = PlanUtils.findOperators(
         joinDF.queryExecution.executedPlan,
         _.isInstanceOf[GpuBroadcastExchangeExecBase])

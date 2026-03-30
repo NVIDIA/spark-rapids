@@ -76,7 +76,7 @@ class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
     "GpuSparkWrite does not support streaming write")
 
   override def toString: String = s"GpuSparkPositionDeltaWrite(table=$table)"
-  
+
   private[source] def abort(messages: Array[WriterCommitMessage]): Unit = {
     MethodUtils.invokeMethod(cpu, true, "abort", messages.asInstanceOf[Array[Object]])
   }
@@ -512,7 +512,7 @@ trait GpuDeleteAndDataDeltaWriter extends GpuDeltaWriter {
 
 /**
  * GPU version of DeleteOnlyDeltaWriter.
- * 
+ *
  * This implements position delete writes for merge-on-read DELETE operations.
  * Based on the CPU implementation:
  */
@@ -538,12 +538,12 @@ class GpuDeleteOnlyDeltaWriter(
   // GPU writers work with SpillableColumnarBatch instead of PositionDelete objects
   private val delegate: PartitioningWriter[SpillableColumnarBatch, DeleteWriteResult] =
     newDeleteWriter(table, writerFactory, deleteFileFactory, context)
-  
+
 
   // Partition projections for each spec
   private val partitionProjections: Map[Int, GpuStructProjection] =
     buildPartitionProjections(tablePartitionType, specs)
-  
+
   private var closed: Boolean = false
 
   override def delete(metadata: ColumnarBatch, rowId: ColumnarBatch): Unit = {
@@ -602,7 +602,7 @@ class GpuDeleteOnlyDeltaWriter(
 
   override def update(
       metadata: ColumnarBatch,
-      rowId: ColumnarBatch, 
+      rowId: ColumnarBatch,
       row: ColumnarBatch): Unit = {
     throw new UnsupportedOperationException("Delete-only writer does not support updates")
   }
@@ -822,7 +822,7 @@ object GpuWriteContext {
       .asInstanceOf[Boolean]
     val inputOrdered = FieldUtils.readField(cpu, "inputOrdered", true)
       .asInstanceOf[Boolean]
-    
+
     GpuWriteContext(
       dataSchema,
       dataSparkType,

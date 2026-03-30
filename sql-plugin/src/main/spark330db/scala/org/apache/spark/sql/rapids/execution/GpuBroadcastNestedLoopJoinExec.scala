@@ -187,7 +187,7 @@ case class GpuBroadcastNestedLoopJoinExec(
 
   override def getBroadcastRelation(): Any = {
     if (executorBroadcast) {
-      // Get all the broadcast data from the shuffle coalesced into a single partition 
+      // Get all the broadcast data from the shuffle coalesced into a single partition
       val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions))
       ShuffleExchangeShim.getShuffleRDD(shuffleExchange, partitionSpecs)
     } else {
@@ -195,8 +195,8 @@ case class GpuBroadcastNestedLoopJoinExec(
     }
   }
 
-  // Ideally we cache the executor batch so we're not reading the shuffle multiple times. 
-  // This requires caching the data and making it spillable/etc. This is okay for a smaller 
+  // Ideally we cache the executor batch so we're not reading the shuffle multiple times.
+  // This requires caching the data and making it spillable/etc. This is okay for a smaller
   // batch of data, but when this batch is bigger, this will make this significantly slower.
   // See https://github.com/NVIDIA/spark-rapids/issues/7599
 

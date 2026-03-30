@@ -154,6 +154,19 @@ class GpuDeltaParquetFileFormatBase2(
 
   def hasTablePath: Boolean = tablePath.isDefined
 
+  /**
+   * We sometimes need to replace FileFormat within LogicalPlans, so we have to override
+   * `equals` to ensure file format changes are captured
+   */
+  override def equals(other: Any): Boolean = {
+    other match {
+      case ff: GpuDeltaParquetFileFormatBase2 =>
+        ff.columnMappingMode == columnMappingMode &&
+          ff.referenceSchema == referenceSchema
+      case _ => false
+    }
+  }
+
   override def hashCode(): Int = getClass.getCanonicalName.hashCode()
 
   /////////////////////////////////

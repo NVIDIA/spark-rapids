@@ -55,7 +55,7 @@ class RapidsJoinSuite
   // Original test: JoinSuite.scala lines 1406-1442
   testRapids("SPARK-36794: Ignore duplicated key when building relation for semi/anti hash join") {
     import testImplicits._
-    
+
     withTable("t1", "t2") {
       spark.range(10).map(i => (i.toString, i + 1)).toDF("c1", "c2").write.saveAsTable("t1")
       spark.range(10).map(i => ((i % 5).toString, i % 3)).toDF("c1", "c2").write.saveAsTable("t2")
@@ -84,14 +84,14 @@ class RapidsJoinSuite
           val antiJoinDF = sql(query.replaceAll("SEMI", "ANTI"))
           checkAnswer(semiJoinDF, Seq(Row("0"), Row("1"), Row("2"), Row("3"), Row("4")))
           checkAnswer(antiJoinDF, Seq(Row("5"), Row("6"), Row("7"), Row("8"), Row("9")))
-          
+
           // GPU uses GpuShuffledHashJoinExec instead of ShuffledHashJoinExec
           Seq(semiJoinDF, antiJoinDF).foreach { df =>
             val hasGpuHashJoin = collect(df.queryExecution.executedPlan) {
               case j if j.getClass.getName.contains("GpuShuffledHashJoin") => true
               case j if j.getClass.getName.contains("ShuffledHashJoin") => true
             }.size == 1
-            assert(hasGpuHashJoin, 
+            assert(hasGpuHashJoin,
               "Expected GpuShuffledHashJoinExec or ShuffledHashJoinExec " +
               s"for ignoreDuplicatedKey=$ignoreDuplicatedKey")
           }

@@ -1268,7 +1268,7 @@ case class GpuContainsAny(input: Expression, targets: Seq[UTF8String])
   }
 }
 
-case class GpuLiteralRangePattern(left: Expression, right: Expression, 
+case class GpuLiteralRangePattern(left: Expression, right: Expression,
     length: Int, start: Int, end: Int)
   extends GpuBinaryExpressionArgsAnyScalar with ImplicitCastInputTypes with NullIntolerantShim {
 
@@ -2265,7 +2265,7 @@ case class GpuConv(num: Expression, fromBase: Expression, toBase: Expression, an
 
 case class GpuFormatNumber(x: Expression, d: Expression)
     extends GpuBinaryExpression with ExpectsInputTypes with NullIntolerantShim {
-  
+
   override def left: Expression = x
   override def right: Expression = d
   override def dataType: DataType = StringType
@@ -2278,7 +2278,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     }
   }
 
-  private def getPartsFromDecimal(cv: ColumnVector, d: Int, scale: Int): 
+  private def getPartsFromDecimal(cv: ColumnVector, d: Int, scale: Int):
       (ColumnVector, ColumnVector) = {
     // prevent d too large to fit in decimalType
     val roundingScale = scale.min(d)
@@ -2287,7 +2287,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     val appendZeroNum = (d - scale).max(0).min(d)
     val (intPart, decTemp) = if (roundingScale <= 0) {
       withResource(ArrayBuffer.empty[ColumnVector]) { resourceArray =>
-        val intPart = withResource(Arithmetic.round(cv, roundingScale, 
+        val intPart = withResource(Arithmetic.round(cv, roundingScale,
           RoundMode.HALF_EVEN)) { rounded =>
           rounded.castTo(DType.STRING)
         }
@@ -2497,7 +2497,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         }
       }
       case _ => {
-        formatNumberNonKernel(lhs.getBase, d) 
+        formatNumberNonKernel(lhs.getBase, d)
       }
     }
   }

@@ -35,31 +35,31 @@ object AllocationKind extends Enumeration {
 
 /**
  * Utility object to track memory allocations that are not covered by retry methods.
- * 
+ *
  * This is a debugging tool to help ensure all memory allocation code paths are
  * protected by withRetry/withRetryNoSplit blocks, as required by the retry-OOM
  * handling mechanism in spark-rapids.
- * 
+ *
  * Tracking support:
  * - HOST memory: via HostAlloc hooks
  * - DEVICE memory: via RMM debug mode (onAllocated callback)
- * 
+ *
  * This feature is DISABLED by default. To enable, set environment variable:
  *   export SPARK_RAPIDS_RETRY_COVERAGE_TRACKING=true
- * 
+ *
  * For integration tests:
  *   SPARK_RAPIDS_RETRY_COVERAGE_TRACKING=true ./integration_tests/run_pyspark_from_build.sh
- * 
+ *
  * When enabled:
  * - Checks whether allocations happen while the current thread is executing inside the retry
  *   framework (withRetry/withRetryNoSplit)
  * - For uncovered allocations, captures a filtered stack trace for debugging
  * - Logs uncovered allocations to a CSV file under the JVM temp dir (see log output for path)
  * - Also logs warnings via Spark logging
- * 
+ *
  * Note: Enabling this feature turns on RMM debug mode which may impact performance.
  * Only use for debugging/testing purposes.
- * 
+ *
  * See: https://github.com/NVIDIA/spark-rapids/issues/13672
  */
 object AllocationRetryCoverageTracker extends Logging {
@@ -143,7 +143,7 @@ object AllocationRetryCoverageTracker extends Logging {
   /**
    * Check if a memory allocation is covered by a retry method.
    * If not covered and tracking is enabled, log to the output file.
-   * 
+   *
    * @param kind The kind of memory allocation (HOST or DEVICE)
    */
   private def checkAllocationInternal(kind: AllocationKind): Unit = {
@@ -167,7 +167,7 @@ object AllocationRetryCoverageTracker extends Logging {
 
       // Use the filtered stack as the key to avoid duplicate logging
       val stackKey = s"$kind:$relevantStack"
-      
+
       // Only log if we haven't seen this exact stack before
       if (loggedStacks.add(stackKey)) {
         // Sanitize and escape the stack trace for CSV:

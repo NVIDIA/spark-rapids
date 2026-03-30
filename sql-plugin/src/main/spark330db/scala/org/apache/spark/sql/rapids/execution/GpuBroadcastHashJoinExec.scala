@@ -105,7 +105,7 @@ case class GpuBroadcastHashJoinExec(
           BroadcastDistribution(ExecutorBroadcastMode) :: UnspecifiedDistribution :: Nil
         case GpuBuildRight =>
           UnspecifiedDistribution :: BroadcastDistribution(ExecutorBroadcastMode) :: Nil
-      } 
+      }
     } else {
       super.requiredChildDistribution
     }
@@ -165,7 +165,7 @@ case class GpuBroadcastHashJoinExec(
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
 
-    // Get all the broadcast data from the shuffle coalesced into a single partition 
+    // Get all the broadcast data from the shuffle coalesced into a single partition
     val partitionSpecs = Seq(CoalescedPartitionSpec(0, shuffleExchange.numPartitions))
     val buildRelation = ShuffleExchangeShim.getShuffleRDD(shuffleExchange, partitionSpecs)
         .asInstanceOf[RDD[ColumnarBatch]]
