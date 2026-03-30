@@ -179,8 +179,23 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           // Step 2: Determine which fields are actually required by downstream operations
           val requiredFieldNames = analyzeRequiredFields(fieldsInfoMap.keySet)
 
-          // Step 3: Check if all required fields are supported
-          val unsupportedRequired = requiredFieldNames.filter { name =>
+          // Step 2b: Proto2 required fields must always be decoded so the GPU can
+          // detect missing-required and null the struct row (PERMISSIVE) or throw
+          // (FAILFAST), matching CPU behavior. Without this, schema projection
+          // can prune a required field and the GPU silently produces a non-null
+          // struct where CPU would have returned null.
+          val protoRequiredFieldNames = fieldsInfoMap.collect {
+            case (name, info) if info.isRequired => name
+          }.toSet
+          val allFieldsToDecode = requiredFieldNames ++ protoRequiredFieldNames
+
+          // Step 2c: When nested pruning selects only some children of a struct,
+          // proto2 required children must still be included so their presence
+          // can be checked by the GPU decoder.
+          augmentNestedRequirementsWithRequired(msgDesc)
+
+          // Step 3: Check if all fields to be decoded are supported
+          val unsupportedRequired = allFieldsToDecode.filter { name =>
             fieldsInfoMap.get(name).exists(!_.isSupported)
           }
 
@@ -195,9 +210,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
 
           // Step 4: Identify which fields in fullSchema need to be decoded
-          // These are fields that are required AND supported
           val indicesToDecode = fullSchema.fields.zipWithIndex.collect {
-            case (sf, idx) if requiredFieldNames.contains(sf.name) => idx
+            case (sf, idx) if allFieldsToDecode.contains(sf.name) => idx
           }
 
           // Verify all fields to be decoded are actually supported
@@ -544,6 +558,53 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           nameOpt.getOrElse {
             if (ordinal < schema.fields.length) schema.fields(ordinal).name
             else s"_$ordinal"
+          }
+        }
+
+        /**
+         * Navigate the protobuf descriptor tree by following a path of field names.
+         * Returns the message descriptor at the end of the path, or None.
+         */
+        private def resolveProtoMsgDesc(
+            rootDesc: ProtobufMessageDescriptor,
+            pathParts: Seq[String]): Option[ProtobufMessageDescriptor] = {
+          pathParts.headOption match {
+            case None => Some(rootDesc)
+            case Some(head) =>
+              rootDesc.findField(head).flatMap(_.messageDescriptor).flatMap { childDesc =>
+                if (pathParts.tail.isEmpty) Some(childDesc)
+                else resolveProtoMsgDesc(childDesc, pathParts.tail)
+              }
+          }
+        }
+
+        /**
+         * Augment nestedFieldRequirements so that proto2 required children are
+         * always included when nested pruning is active. Without this, a required
+         * child that is not referenced downstream would be pruned, and the GPU
+         * decoder would not check its presence.
+         */
+        private def augmentNestedRequirementsWithRequired(
+            rootMsgDesc: ProtobufMessageDescriptor): Unit = {
+          if (nestedFieldRequirements.isEmpty) return
+          nestedFieldRequirements = nestedFieldRequirements.map {
+            case entry @ (pathKey, Some(childNames)) =>
+              val pathParts = pathKey.split("\\.").toSeq
+              resolveProtoMsgDesc(rootMsgDesc, pathParts) match {
+                case Some(childMsgDesc) =>
+                  val schemaType = resolveSchemaAtPath(fullSchema, pathParts)
+                  if (schemaType != null) {
+                    val requiredChildNames = schemaType.fields.flatMap { sf =>
+                      childMsgDesc.findField(sf.name).filter(_.isRequired).map(_ => sf.name)
+                    }.toSet
+                    if (requiredChildNames.subsetOf(childNames)) entry
+                    else pathKey -> Some(childNames ++ requiredChildNames)
+                  } else {
+                    entry
+                  }
+                case None => entry
+              }
+            case other => other
           }
         }
 

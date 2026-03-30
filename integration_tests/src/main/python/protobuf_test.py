@@ -1362,6 +1362,82 @@ def test_from_protobuf_nested_required_field_missing_permissive(
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_required_field_pruned_permissive(spark_tmp_path, from_protobuf_fn):
+    """When schema projection prunes a required field, missing-required must still
+    null the struct row in PERMISSIVE mode — matching CPU behavior."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "required.desc", _build_required_field_descriptor_set_bytes)
+    message_name = "test.WithRequired"
+
+    # Row that has required `id` present: id=1, name="ok", count=10
+    row_valid = (_encode_tag(1, 0) + _encode_varint(1) +
+                 _encode_tag(2, 2) + _encode_varint(2) + b"ok" +
+                 _encode_tag(3, 0) + _encode_varint(10))
+    # Row missing required `id`: only name="bad"
+    row_missing_required = _encode_tag(2, 2) + _encode_varint(3) + b"bad"
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(0, row_valid), (1, row_missing_required)],
+            schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        # Only access non-required fields so that schema projection prunes `id`.
+        return df.select(
+            f.col("idx"),
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("name").alias("name"),
+            decoded.getField("count").alias("count")
+        ).orderBy("idx")
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_nested_required_field_pruned_permissive(
+        spark_tmp_path, from_protobuf_fn):
+    """When nested pruning prunes a required child, missing-required must still
+    null the struct row in PERMISSIVE mode — matching CPU behavior."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested_required.desc",
+        _build_nested_required_field_descriptor_set_bytes)
+    message_name = "test.WithNestedRequired"
+
+    inner_valid = (_encode_tag(1, 0) + _encode_varint(7) +
+                   _encode_tag(2, 2) + _encode_varint(2) + b"ok")
+    inner_missing_required = _encode_tag(2, 2) + _encode_varint(4) + b"oops"
+
+    row_valid = (_encode_tag(1, 0) + _encode_varint(100) +
+                 _encode_tag(2, 2) + _encode_varint(len(inner_valid)) + inner_valid +
+                 _encode_tag(3, 2) + _encode_varint(5) + b"valid")
+    row_missing_required = (_encode_tag(1, 0) + _encode_varint(200) +
+                            _encode_tag(2, 2) + _encode_varint(len(inner_missing_required)) +
+                            inner_missing_required +
+                            _encode_tag(3, 2) + _encode_varint(7) + b"missing")
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(0, row_valid), (1, row_missing_required)],
+            schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        # Only access non-required inner child (note) — required child_id should
+        # still be decoded so the GPU can detect missing-required.
+        return df.select(
+            f.col("idx"),
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("name").alias("name"),
+            decoded.getField("inner").getField("note").alias("note")
+        ).orderBy("idx")
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
 def _build_default_value_descriptor_set_bytes(spark):
     """Build a descriptor for proto2 scalar default-value behavior."""
     return _build_proto2_descriptor(spark, "defaults.proto", [
