@@ -45,11 +45,14 @@ cd integration_tests
 ./run_pyspark_from_build.sh --iceberg
 
 # Pre-merge build versions (check pom.xml for current list)
-mvn verify -Dbuildver=320
+mvn verify -Dbuildver=330
 mvn verify -Dbuildver=341
 
-# Scalastyle check
+# Scalastyle check (whole project)
 mvn scalastyle:check
+
+# Scalastyle check (single module)
+mvn scalastyle:check -pl sql-plugin
 
 # Build all supported shims (slow)
 mvn clean verify -DskipTests -Dbuildall
@@ -74,6 +77,8 @@ spark-rapids/
 ├── sql-plugin-api/                # Plugin API definitions
 ├── shuffle-plugin/                # GPU shuffle optimization
 ├── tests/                         # Scala unit tests
+│   ├── src/test/scala/            #   Main test sources
+│   └── src/test/spark{VER}/       #   Version-specific tests (e.g., spark330/)
 ├── integration_tests/             # Python integration tests (pytest)
 │   └── src/main/python/
 │       ├── asserts.py             # GPU vs CPU comparison assertions
@@ -120,6 +125,10 @@ spark-rapids/
   }
   ```
 
+- **Collections**: Use `safeClose` and `safeMap` from
+  `RapidsPluginImplicits` for closing/transforming collections of
+  `AutoCloseable` resources safely.
+
 - **Error handling**: Prefer `withResource` chains over try/finally
 
 ### Shim Layer Architecture
@@ -160,6 +169,12 @@ spark-rapids-shim-json-lines ***/
 - Use `data_gen.py` for reproducible test data with seeds
 - No external data dependencies — generate all test data in-test
 - No formal Python style checker configured yet; follow existing code conventions
+
+### Scala Idioms
+
+- Avoid explicit `return` — use the last expression as the return value
+- Explain magic numbers with named constants or comments
+- Prefer pattern matching over chains of `if`/`else if`
 
 ## Common Patterns
 
