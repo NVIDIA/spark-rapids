@@ -21,13 +21,13 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import (create_iceberg_table, iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
-                     get_full_table_name, iceberg_write_enabled_conf)
+                     get_full_table_name, iceberg_write_enabled_conf,
+                     iceberg_unsupported_mark)
 from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
-from spark_session import with_gpu_session, with_cpu_session, is_iceberg_supported_spark, is_spark_400_or_later
+from spark_session import with_gpu_session, with_cpu_session, is_spark_400_or_later
 
 pytestmark = [
-    pytest.mark.skipif(not is_iceberg_supported_spark(),
-                       reason="Iceberg acceleration requires Spark 3.5.x or 4.0.x"),
+    iceberg_unsupported_mark,
 ]
 
 

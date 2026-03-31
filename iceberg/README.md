@@ -23,8 +23,7 @@ build. The correct version-specific implementation is selected at runtime by pro
 sub-packages (`iceberg19x`, `iceberg110x`) to avoid class conflicts, and the common
 `ShimUtils` dispatcher delegates to the appropriate implementation.
 
-For Spark 4.0.x, only `iceberg-1-10-x` is built because Iceberg Spark 4.0 runtime artifacts are
-available starting with Iceberg 1.10.x.
+For Spark 4.0.x, only `iceberg-1-10-x` is compiled during the build.
 
 ## Code Shared Between Modules
 

@@ -18,12 +18,12 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
 from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
-                     iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list)
+                     iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list,
+                     iceberg_unsupported_mark)
 from marks import allow_non_gpu, allow_non_gpu_conditional, disable_ansi_mode, iceberg, ignore_order, datagen_overrides
-from spark_session import is_iceberg_supported_spark, is_spark_400_or_later, with_cpu_session, with_gpu_session
+from spark_session import is_spark_400_or_later, with_cpu_session, with_gpu_session
 
-pytestmark = pytest.mark.skipif(not is_iceberg_supported_spark(),
-                                reason="Iceberg acceleration requires Spark 3.5.x or 4.0.x")
+pytestmark = iceberg_unsupported_mark
 
 # Configuration for copy-on-write UPDATE operations
 iceberg_update_cow_enabled_conf = copy_and_update(iceberg_write_enabled_conf, {})

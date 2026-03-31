@@ -20,12 +20,11 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from conftest import is_iceberg_remote_catalog
 from iceberg import rapids_reader_types, \
     setup_base_iceberg_table, _add_eq_deletes, _change_table, \
-    all_eq_column_combinations
+    all_eq_column_combinations, iceberg_unsupported_mark
 from marks import iceberg, ignore_order
-from spark_session import is_iceberg_supported_spark, with_gpu_session, with_cpu_session
+from spark_session import with_gpu_session, with_cpu_session
 
-pytestmark = pytest.mark.skipif(not is_iceberg_supported_spark(),
-                                reason="Iceberg acceleration requires Spark 3.5.x or 4.0.x")
+pytestmark = iceberg_unsupported_mark
 
 
 @iceberg
