@@ -48,6 +48,7 @@ def offset_test_wrapper(sql, batch_size):
 @pytest.mark.parametrize('offset', [1024, 2048, 4096])
 @pytest.mark.parametrize('batch_size', ['1000', '1g'])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
+@allow_non_gpu('CollectLimitExec')
 def test_non_zero_offset(offset, batch_size):
     # offset is used in the test cases having no limit, that is limit = -1
     # 1024: offset < df.numRows
