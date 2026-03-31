@@ -278,13 +278,21 @@ run_iceberg_tests() {
 
   local test_type=${1:-'default'}
 
-  # Version detection test: runs against ALL iceberg versions with Spark 3.5 runtime
+  # Version detection test: runs against ALL iceberg versions for the current Spark runtime
   if [[ "$test_type" == "detect_version" ]]; then
-    local all_iceberg_versions="1.6.0 1.6.1 1.9.0 1.9.1 1.9.2 1.10.0 1.10.1"
+    local all_iceberg_versions
+    if [[ "$ICEBERG_SPARK_VER" == "4.0" ]]; then
+      all_iceberg_versions="1.10.0 1.10.1"
+    elif [[ "$ICEBERG_SPARK_VER" == "3.5" ]]; then
+      all_iceberg_versions="1.6.0 1.6.1 1.9.0 1.9.1 1.9.2 1.10.0 1.10.1"
+    else
+      echo "!!!! Skipping Iceberg version detection tests for Spark $ICEBERG_SPARK_VER"
+      return 0
+    fi
     for ICEBERG_VERSION in $all_iceberg_versions; do
-      echo "!!! Running iceberg version detection test for Iceberg $ICEBERG_VERSION"
+      echo "!!! Running iceberg version detection test for Iceberg $ICEBERG_VERSION on Spark $ICEBERG_SPARK_VER"
       EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
-      PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-3.5_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
+      PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
         PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
         PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \

@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.iceberg
 
 import com.nvidia.spark.rapids.{ShimLoader, ShimReflectionUtils, SparkShimVersion, VersionUtils}
-import com.nvidia.spark.rapids.{ShimLoader, ShimReflectionUtils, SparkShimVersion, VersionUtils}
 import org.apache.iceberg.IcebergBuild
 
 class IcebergProbeImpl extends IcebergProbe {
