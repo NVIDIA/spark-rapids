@@ -46,7 +46,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, Cuda, DeviceMemoryBuffer, DType}
+import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ColumnVector, Cuda, DeviceMemoryBuffer, DType,
+  HostMemoryBuffer}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.BloomFilter
 
@@ -79,14 +80,33 @@ class GpuBloomFilter(buffer: DeviceMemoryBuffer) extends AutoCloseable {
 }
 
 object GpuBloomFilter {
-  // Spark serializes their bloom filters in a specific format, see BloomFilterImpl.readFrom.
-  // Data is written via DataOutputStream, so everything is big-endian.
-  // Byte Offset  Size  Description
-  // 0            4     Version ID (see Spark's BloomFilter.Version)
-  // 4            4     Number of hash functions
-  // 8            4     Number of longs, N
-  // 12           N*8   Bloom filter data buffer as longs
-  private val HEADER_SIZE = 12
+  // Spark serializes bloom filters in one of two formats. All values are big-endian.
+  //
+  // V1 (12-byte header):
+  //   Byte Offset  Size  Description
+  //   0            4     Version ID (1)
+  //   4            4     Number of hash functions
+  //   8            4     Number of longs, N
+  //   12           N*8   Bloom filter data buffer as longs
+  //
+  // V2 (16-byte header):
+  //   Byte Offset  Size  Description
+  //   0            4     Version ID (2)
+  //   4            4     Number of hash functions
+  //   8            4     Hash seed
+  //   12           4     Number of longs, N
+  //   16           N*8   Bloom filter data buffer as longs
+  private val HEADER_SIZE_V1 = 12
+  private val HEADER_SIZE_V2 = 16
+
+  private def readVersionFromDevice(data: BaseDeviceMemoryBuffer): Int = {
+    withResource(data.sliceWithCopy(0, 4)) { versionSlice =>
+      withResource(HostMemoryBuffer.allocate(4)) { hostBuf =>
+        hostBuf.copyFromDeviceBuffer(versionSlice)
+        Integer.reverseBytes(hostBuf.getInt(0))
+      }
+    }
+  }
 
   def apply(s: GpuScalar): GpuBloomFilter = {
     s.dataType match {
@@ -101,11 +121,22 @@ object GpuBloomFilter {
   }
 
   def deserialize(data: BaseDeviceMemoryBuffer): GpuBloomFilter = {
-    // Sanity check bloom filter header
     val totalLen = data.getLength
-    val bitBufferLen = totalLen - HEADER_SIZE
-    require(totalLen >= HEADER_SIZE, s"header size is $totalLen")
-    require(bitBufferLen % 8 == 0, "buffer length not a multiple of 8")
+    require(totalLen >= HEADER_SIZE_V1, s"buffer too small: $totalLen")
+
+    val version = readVersionFromDevice(data)
+    val headerSize = version match {
+      case 1 => HEADER_SIZE_V1
+      case 2 => HEADER_SIZE_V2
+      case _ => throw new IllegalArgumentException(
+        s"Unknown bloom filter version: $version")
+    }
+    require(totalLen >= headerSize,
+      s"buffer too small for bloom filter V$version: $totalLen")
+    val bitBufferLen = totalLen - headerSize
+    require(bitBufferLen % 8 == 0,
+      s"bit buffer length ($bitBufferLen) not a multiple of 8")
+
     val filterBuffer = DeviceMemoryBuffer.allocate(totalLen)
     closeOnExcept(filterBuffer) { buf =>
       buf.copyFromDeviceBufferAsync(0, data, 0, buf.getLength, Cuda.DEFAULT_STREAM)
