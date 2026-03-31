@@ -122,12 +122,13 @@ def test_iceberg_delete_unpartitioned_table(spark_tmp_table_factory, delete_mode
         delete_mode=delete_mode
     )
 
-def _do_test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col_sql, delete_mode):
+def _do_test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col_sql, delete_mode, table_properties=None):
     """Helper function for partitioned table DELETE tests."""
     do_delete_test(
         spark_tmp_table_factory,
         lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c2 % 3 = 0"),
         partition_col_sql=partition_col_sql,
+        table_properties=table_properties,
         delete_mode=delete_mode
     )
 
@@ -530,3 +531,16 @@ def test_iceberg_delete_after_drop_partition_field(spark_tmp_table_factory, dele
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+def test_iceberg_delete_partitioned_table_fanout_enabled(spark_tmp_table_factory):
+    _do_test_iceberg_delete_partitioned_table(
+        spark_tmp_table_factory,
+        partition_col_sql="year(_c9)",
+        delete_mode='copy-on-write',
+        table_properties={"write.spark.fanout.enabled": "true"})
