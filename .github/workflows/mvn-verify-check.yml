@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ jobs:
       sparkTailVersions: ${{ steps.all212ShimVersionsStep.outputs.tailVersions }}
       sparkJDKVersions: ${{ steps.all212ShimVersionsStep.outputs.jdkVersions }}
     steps:
-      - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
+      - uses: NVIDIA/spark-rapids-common/checkout@main # refs/pull/:prNumber/merge
       - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
@@ -61,7 +61,7 @@ jobs:
       - name: Cache local Maven repository
         id: cache
         continue-on-error: true
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: ${{ env.dailyCacheKey }}
@@ -113,7 +113,7 @@ jobs:
       fail-fast: false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
+      - uses: NVIDIA/spark-rapids-common/checkout@main # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v5
@@ -123,7 +123,7 @@ jobs:
 
       - name: Cache local Maven repository
         continue-on-error: true
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
@@ -162,7 +162,7 @@ jobs:
       scala213Versions: ${{ steps.all213ShimVersionsStep.outputs.scala213Versions }}
       sparkJDK17Versions: ${{ steps.all213ShimVersionsStep.outputs.jdkVersions }}
     steps:
-      - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
+      - uses: NVIDIA/spark-rapids-common/checkout@main # refs/pull/:prNumber/merge
       - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
@@ -179,7 +179,7 @@ jobs:
       - name: Cache local Maven repository
         id: cache
         continue-on-error: true
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: ${{ env.scala213dailyCacheKey }}
@@ -224,7 +224,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
+      - uses: NVIDIA/spark-rapids-common/checkout@main # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v5
@@ -234,7 +234,7 @@ jobs:
 
       - name: Cache local Maven repository
         continue-on-error: true
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: ${{ needs.cache-dependencies-scala213.outputs.scala213dailyCacheKey }}
@@ -280,7 +280,7 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.cache-dependencies-scala213.outputs.sparkJDK17Versions) }}
     steps:
-      - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
+      - uses: NVIDIA/spark-rapids-common/checkout@main # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v5
@@ -290,7 +290,7 @@ jobs:
 
       - name: Cache local Maven repository
         continue-on-error: true
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: ${{ needs.cache-dependencies-scala213.outputs.scala213dailyCacheKey }}
@@ -335,7 +335,7 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.cache-dependencies.outputs.sparkJDKVersions) }}
     steps:
-      - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
+      - uses: NVIDIA/spark-rapids-common/checkout@main # refs/pull/:prNumber/merge
 
       - name: Setup Java and Maven Env
         uses: actions/setup-java@v5
@@ -345,7 +345,7 @@ jobs:
 
       - name: Cache local Maven repository
         continue-on-error: true
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
@@ -383,7 +383,7 @@ jobs:
       matrix:
         maven-version: [3.6.3, 3.8.8, 3.9.3]
     steps:
-      - uses: actions/checkout@v4 # refs/pull/:prNumber/merge
+      - uses: NVIDIA/spark-rapids-common/checkout@main # refs/pull/:prNumber/merge
 
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -393,7 +393,7 @@ jobs:
 
       - name: Cache local Maven repository
         continue-on-error: true
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: ${{ needs.cache-dependencies.outputs.dailyCacheKey }}
