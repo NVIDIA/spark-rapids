@@ -21,6 +21,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuWrite
 
 import org.apache.spark.rdd.RDD
@@ -61,7 +62,8 @@ case class GpuReplaceDataWritingSparkTask(
   override protected def write(
       writer: DataWriter[ColumnarBatch],
       batch: ColumnarBatch): Unit = {
-    val projected = rowProjection.project(batch)
-    writer.write(projected)
+    withResource(rowProjection.project(batch)) { projected =>
+      writer.write(projected)
+    }
   }
 }
