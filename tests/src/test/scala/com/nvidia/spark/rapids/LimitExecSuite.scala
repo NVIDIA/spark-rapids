@@ -18,18 +18,15 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.execution.LocalLimitExec
+import org.apache.spark.sql.execution.CollectLimitExec
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.DataTypes
 
 class LimitExecSuite extends SparkQueryCompareTestSuite {
 
- /** CollectLimitExec is off by default, turn it on for tests */
   def enableCollectLimitExec(conf: SparkConf = new SparkConf()): SparkConf = {
     enableCsvConf(conf)
       .set("spark.rapids.sql.exec.CollectLimitExec", "true")
-      // GpuCollectLimitMeta inserts CPU LocalLimitExec for row-level per-partition limits
-      .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "LocalLimitExec")
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("limit more than rows", intCsvDf,
@@ -93,9 +90,6 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
         .toDF("a", "b", "c")
   }
 
-  // Plan inspection: verify which limit node is chosen based on
-  // whether the child is columnar (GPU) or row-based (CPU).
-
   test("collect limit uses GpuLocalLimitExec for columnar child") {
     val conf = enableCollectLimitExec()
     withGpuSparkSession(spark => {
@@ -108,18 +102,22 @@ class LimitExecSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
 
-  test("collect limit uses CPU LocalLimitExec for row child") {
+  test("collect limit falls back to CPU for row-based child") {
     val conf = enableCollectLimitExec()
       .set("spark.rapids.sql.exec.RangeExec", "false")
       .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
-        "LocalLimitExec,RangeExec")
+        "CollectLimitExec,RangeExec")
     withGpuSparkSession(spark => {
       val df = spark.range(100).limit(5)
       val plan = df.queryExecution.executedPlan
       assert(
-        plan.find(_.isInstanceOf[LocalLimitExec]).isDefined,
-        "Expected CPU LocalLimitExec for row-based child" +
+        plan.find(_.isInstanceOf[CollectLimitExec]).isDefined,
+        "Expected CPU CollectLimitExec when child is row-based" +
           s"\n${plan.treeString}")
+      assert(
+        plan.find(_.isInstanceOf[GpuLocalLimitExec]).isEmpty,
+        "GpuLocalLimitExec should not appear when " +
+          s"CollectLimitExec falls back to CPU\n${plan.treeString}")
     }, conf)
   }
 }

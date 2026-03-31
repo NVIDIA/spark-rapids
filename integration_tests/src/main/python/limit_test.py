@@ -61,7 +61,7 @@ def test_non_zero_offset(offset, batch_size):
 @pytest.mark.parametrize('limit, offset', [(0, 0), (0, 10), (1024, 500), (2048, 456), (3000, 111), (500, 500), (100, 600)])
 @pytest.mark.parametrize('batch_size', ['1000', '1g'])
 @pytest.mark.skipif(is_before_spark_340(), reason='offset is introduced from Spark 3.4.0')
-@allow_non_gpu('ShuffleExchangeExec', 'LocalLimitExec')
+@allow_non_gpu('ShuffleExchangeExec', 'CollectLimitExec')
 def test_non_zero_offset_with_limit(limit, offset, batch_size):
     # In CPU version of spark, (limit, offset) can not be negative number.
     # Test case description:

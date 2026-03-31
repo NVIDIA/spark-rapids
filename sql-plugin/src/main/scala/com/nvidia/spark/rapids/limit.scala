@@ -31,7 +31,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, Distribution, Partitioning, SinglePartition}
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, LocalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
+import org.apache.spark.sql.execution.{CollectLimitExec, LimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.types.{DataType, StructField, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -206,32 +206,25 @@ class GpuCollectLimitMeta(
         " already provides pre-computed results; replacing" +
         " CollectLimit would trigger an unnecessary Spark job")
     }
+    // When the child cannot run on GPU, fall back the entire
+    // CollectLimit to CPU. CPU CollectLimitExec.doExecute() applies
+    // per-partition .take(limit) that stops upstream iterators early,
+    // which is strictly better than row-to-columnar conversion
+    // followed by GPU limiting.
+    if (!childPlans.head.canThisBeReplaced) {
+      willNotWorkOnGpu(
+        "child cannot run on GPU; falling back entire" +
+        " CollectLimit to CPU to preserve per-partition" +
+        " row-level .take(limit) optimization")
+    }
   }
 
-  // Shared implementation for all Spark versions. Shim overrides supply
-  // the real offset (Spark 3.4+); the base class passes 0 (Spark 3.3).
-  //
-  // When the child is row-based and limit > 0, wrap with CPU
-  // LocalLimitExec to stop upstream row iterators early — matching CPU
-  // CollectLimitExec.doExecute() per-partition .take(limit) behavior.
-  // Skip when limit < 0 (OFFSET-only) since all rows must pass through.
   protected def buildCollectLimitGpu(offset: Int): GpuExec = {
-    val gpuChild = childPlans.head.convertIfNeeded()
-    // When the child is row-based, insert CPU LocalLimitExec to stop
-    // upstream row iterators early (matching CPU CollectLimitExec
-    // per-partition .take(limit) behavior). In this case LocalLimitExec
-    // already enforces the limit, so skip the redundant
-    // GpuLocalLimitExec wrapper.
-    val localLimited =
-      if (collectLimit.limit > 0 && !gpuChild.supportsColumnar) {
-        LocalLimitExec(collectLimit.limit, gpuChild)
-      } else {
-        GpuLocalLimitExec(collectLimit.limit, gpuChild)
-      }
     GpuGlobalLimitExec(collectLimit.limit,
       GpuShuffleExchangeExec(
         GpuSinglePartitioning,
-        localLimited,
+        GpuLocalLimitExec(
+          collectLimit.limit, childPlans.head.convertIfNeeded()),
         ENSURE_REQUIREMENTS
       )(SinglePartition), offset)
   }
