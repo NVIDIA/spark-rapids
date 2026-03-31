@@ -137,11 +137,11 @@ object RapidsPluginUtils extends Logging {
     val possibleRapidsJarURLs = classloader.getResources(propName).asScala.toSet.toSeq.filter {
       url => {
         val urlPath = url.toString
-        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-26.04.0-spark341.jar,
+        // Filter out submodule jars, e.g. rapids-4-spark-aggregator_2.12-26.06.0-spark341.jar,
         // and files stored under subdirs of '!/', e.g.
-        // rapids-4-spark_2.12-26.04.0-cuda12.jar!/spark330/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-26.06.0-cuda12.jar!/spark330/rapids4spark-version-info.properties
         // We only want to find the main jar, e.g.
-        // rapids-4-spark_2.12-26.04.0-cuda12.jar!/rapids4spark-version-info.properties
+        // rapids-4-spark_2.12-26.06.0-cuda12.jar!/rapids4spark-version-info.properties
         !urlPath.contains("rapids-4-spark-") && urlPath.endsWith("!/" + propName)
       }
     }
@@ -522,12 +522,17 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
 
     if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
       GpuShuffleEnv.initShuffleManager()
-      if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
-        rapidsShuffleHeartbeatManager =
-          new RapidsShuffleHeartbeatManager(
-            conf.shuffleTransportEarlyStartHeartbeatInterval,
-            conf.shuffleTransportEarlyStartHeartbeatTimeout)
-      }
+    }
+    // Use isRapidsShuffleConfigured (SparkConf-only, no SparkEnv dependency) to gate
+    // heartbeat manager creation. On Spark 4.x, DriverPlugin.init is called before SparkEnv
+    // is fully initialized, causing isRapidsShuffleAvailable to return false and leaving
+    // rapidsShuffleHeartbeatManager null while executors still send RapidsExecutorStartupMsg.
+    if (GpuShuffleEnv.isRapidsShuffleConfigured(sparkConf) &&
+        GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
+      rapidsShuffleHeartbeatManager =
+        new RapidsShuffleHeartbeatManager(
+          conf.shuffleTransportEarlyStartHeartbeatInterval,
+          conf.shuffleTransportEarlyStartHeartbeatTimeout)
     }
 
     FileCacheLocalityManager.init(sc)
@@ -655,11 +660,16 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
           numCores)
         if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           GpuShuffleEnv.initShuffleManager()
-          if (GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
-            logInfo("Initializing shuffle manager heartbeats")
-            rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
-            rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
-          }
+        }
+        // Mirror the driver-side fix: use isRapidsShuffleConfigured (SparkConf-only) so
+        // heartbeat endpoint creation does not depend on SparkEnv being initialized.
+        if (GpuShuffleEnv.isRapidsShuffleConfigured(sparkConf) &&
+            GpuShuffleEnv.isUCXShuffleAndEarlyStart(conf)) {
+          logInfo("Initializing shuffle manager heartbeats")
+          rapidsShuffleHeartbeatEndpoint = new RapidsShuffleHeartbeatEndpoint(pluginContext, conf)
+          rapidsShuffleHeartbeatEndpoint.registerShuffleHeartbeat()
+        }
+        if (GpuShuffleEnv.isRapidsShuffleAvailable(conf)) {
           // Initialize ShuffleCleanupEndpoint for MULTITHREADED mode when
           // MultithreadedShuffleBufferCatalog is enabled (skipMerge=true, ESS disabled,
           // off-heap limits on). Uses same condition as GpuShuffleEnv.init.

@@ -352,7 +352,7 @@ final class InsertIntoHadoopFsRelationCommandMeta(
     }
     val spark = SparkSession.active
     val formatCls = cmd.fileFormat.getClass
-    fileFormat = if (formatCls == classOf[CSVFileFormat]) {
+    fileFormat = if (classOf[CSVFileFormat].isAssignableFrom(formatCls)) {
       willNotWorkOnGpu("CSV output is not supported")
       None
     } else if (formatCls == classOf[JsonFileFormat]) {
@@ -3501,6 +3501,34 @@ object GpuOverrides extends Logging {
         ("src", TypeSig.STRING, TypeSig.STRING),
         ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[Like](a, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          a.right match {
+            case Literal(v: UTF8String, _) =>
+              val pattern = v.toString
+              val esc = a.escapeChar
+              var i = 0
+              while (i < pattern.length) {
+                if (pattern.charAt(i) == esc) {
+                  val j = i + 1
+                  if (j >= pattern.length) {
+                    willNotWorkOnGpu(
+                      "invalid LIKE escape pattern")
+                    return
+                  }
+                  val c = pattern.charAt(j)
+                  if (c != '_' && c != '%' && c != esc) {
+                    willNotWorkOnGpu(
+                      "invalid LIKE escape pattern")
+                    return
+                  }
+                  i = j + 1
+                } else {
+                  i += 1
+                }
+              }
+            case _ =>
+          }
+        }
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuLike(lhs, rhs, a.escapeChar)
       }),
