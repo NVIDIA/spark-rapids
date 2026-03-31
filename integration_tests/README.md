@@ -526,6 +526,27 @@ properly without it. These tests assume Iceberg is not configured and are disabl
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.
 
+#### Disabling Iceberg fanout writer
+
+The Iceberg fanout writer holds all partition writers open simultaneously, which can cause
+executor OOM when writing to tables with many partitions (e.g., bucket or truncate transforms).
+To avoid this, the CI sets the catalog-level table default to disable fanout:
+
+```
+spark.sql.catalog.spark_catalog.table-default.write.spark.fanout.enabled=false
+```
+
+In the `PYSP_TEST_` env var format used by the test scripts:
+
+```shell
+"PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false"
+```
+
+With fanout disabled, Iceberg uses the clustered writer which writes one partition at a time
+and releases memory between partitions. Dedicated fanout-enabled test cases
+(e.g., `test_*_fanout_enabled`) still exercise the fanout writer path with a single
+partition type to keep memory usage manageable.
+
 ### Run Apache iceberg s3tables tests
 
 To run iceberg tests against aws s3tables catalog, we need to setup several things:

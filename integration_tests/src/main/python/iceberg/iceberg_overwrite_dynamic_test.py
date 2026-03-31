@@ -90,9 +90,10 @@ def test_insert_overwrite_dynamic_unpartitioned_table(spark_tmp_table_factory):
         lambda table_name: create_iceberg_table(table_name, table_prop=table_prop))
 
 
-def _do_test_insert_overwrite_dynamic_partitioned(spark_tmp_table_factory, partition_col_sql):
+def _do_test_insert_overwrite_dynamic_partitioned(spark_tmp_table_factory, partition_col_sql, table_prop=None):
     """Helper function for partitioned table dynamic overwrite tests."""
-    table_prop = {"format-version": "2"}
+    if table_prop is None:
+        table_prop = {"format-version": "2"}
 
     def create_table_with_partition(table_name: str):
         create_iceberg_table(
@@ -389,3 +390,14 @@ def test_insert_overwrite_dynamic_after_drop_partition_field(spark_tmp_table_fac
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+def test_insert_overwrite_dynamic_partitioned_fanout_enabled(spark_tmp_table_factory):
+    _do_test_insert_overwrite_dynamic_partitioned(
+        spark_tmp_table_factory,
+        "year(_c9)",
+        table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})

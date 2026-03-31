@@ -105,11 +105,12 @@ def test_rtas_unpartitioned_table(spark_tmp_table_factory):
     _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory, df_gen, table_prop)
 
 
-def _do_test_rtas_partitioned_table(spark_tmp_table_factory, partition_col_sql):
+def _do_test_rtas_partitioned_table(spark_tmp_table_factory, partition_col_sql, table_prop=None):
     """Helper function for partitioned table RTAS tests."""
-    table_prop = {
-        "format-version": "2"
-    }
+    if table_prop is None:
+        table_prop = {
+            "format-version": "2"
+        }
 
     df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
 
@@ -388,3 +389,14 @@ def test_rtas_aqe(spark_tmp_table_factory, partition_col_sql):
                                 partition_col_sql=partition_col_sql,
                                 create_or_replace=False,
                                 conf=conf)
+
+
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+def test_rtas_partitioned_table_fanout_enabled(spark_tmp_table_factory):
+    _do_test_rtas_partitioned_table(
+        spark_tmp_table_factory,
+        "year(_c9)",
+        table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})
