@@ -21,6 +21,8 @@ package com.nvidia.spark.rapids.iceberg
  * Similar to DeltaProbeImpl in delta-stub.
  */
 class IcebergProbeImpl extends IcebergProbe {
+  override def isSupportedSparkVersion(): Boolean = false
+
   override def getDetectedVersion: String =
     throw new UnsupportedOperationException("Iceberg is not supported in this configuration")
 
