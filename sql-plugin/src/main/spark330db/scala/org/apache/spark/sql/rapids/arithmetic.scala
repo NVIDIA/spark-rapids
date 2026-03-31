@@ -212,8 +212,9 @@ case class GpuAdd(
     left: Expression,
     right: Expression,
     failOnError: Boolean)(
-    @transient override val origin: Origin = CurrentOrigin.get)
+    override val origin: Origin = CurrentOrigin.get)
     extends GpuAddBase with GpuAddSub {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
 
   def do128BitOperation(
       castLhs: ColumnView,
@@ -227,8 +228,10 @@ case class GpuSubtract(
     left: Expression,
     right: Expression,
     failOnError: Boolean)(
-    @transient override val origin: Origin = CurrentOrigin.get)
+    override val origin: Origin = CurrentOrigin.get)
     extends GpuSubtractBase with GpuAddSub {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
+
   def do128BitOperation(
       castLhs: ColumnView,
       castRhs: ColumnView,
@@ -520,8 +523,10 @@ case class GpuIntegralDivide(
     left: Expression,
     right: Expression,
     failOnError: Boolean = SQLConf.get.ansiEnabled)(
-    @transient override val origin: Origin = CurrentOrigin.get)
+    override val origin: Origin = CurrentOrigin.get)
     extends GpuIntegralDivideParent(left, right) {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
+
   assert(!left.dataType.isInstanceOf[DecimalType] ||
          !right.dataType.isInstanceOf[DecimalType],
     "DecimalType integral divides need to be handled by GpuIntegralDecimalDivide")

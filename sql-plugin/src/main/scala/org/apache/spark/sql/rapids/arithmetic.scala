@@ -737,8 +737,10 @@ case class GpuMultiply(
     left: Expression,
     right: Expression,
     failOnError: Boolean = SQLConf.get.ansiEnabled)(
-    @transient override val origin: Origin = CurrentOrigin.get)
+    override val origin: Origin = CurrentOrigin.get)
     extends CudfBinaryArithmetic {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
+
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType multiplies need to be handled by GpuDecimalMultiply")
 
@@ -1102,8 +1104,10 @@ object DecimalDivideChecks {
 
 case class GpuDivide(left: Expression, right: Expression,
     failOnError: Boolean = SQLConf.get.ansiEnabled)(
-    @transient override val origin: Origin = CurrentOrigin.get)
+    override val origin: Origin = CurrentOrigin.get)
     extends GpuDivModLike {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
+
   assert(!left.dataType.isInstanceOf[DecimalType],
     "DecimalType divides need to be handled by GpuDecimalDivide")
 
