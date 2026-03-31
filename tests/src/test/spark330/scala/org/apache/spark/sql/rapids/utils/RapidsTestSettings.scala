@@ -114,7 +114,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-21258: complex object in combination with spilling", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
     .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", ADJUST_UT("Replaced by testRapids version for GPU execution"))
   enableSuite[RapidsDateExpressionsSuite]
-    .exclude("SPARK-33498: GetTimestamp,UnixTimestamp,ToUnixTimestamp with parseError", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13759"))
     .exclude("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp", ADJUST_UT("Replaced by modified version without intercept[Exception] part"))
   enableSuite[RapidsDateFunctionsSuite]
     .exclude("function to_date", WONT_FIX_ISSUE("CPU expects SparkException for invalid date format, but GPU with incompatibleDateFormats.enabled=true has different behavior. This is a known difference documented in compatibility.md"))
