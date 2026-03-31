@@ -437,6 +437,32 @@ class GpuDeviceManagerSuite extends AnyFunSuite with BeforeAndAfter {
     }
   }
 
+  test("MT read limit should be 90% of total off heap when off heap limit disabled") {
+    val deviceCount = 1
+    val availableHostMem = 32L * 1024 * 1024 * 1024  // 32 GiB
+    val heapSize = toBytes("1g")  // default spark.executor.memory
+
+    val sparkConf = new SparkConf()
+    val rapidsConf = new RapidsConf(Map(
+      RapidsConf.OFF_HEAP_LIMIT_ENABLED.key -> "false"))
+
+    TestMemoryChecker.setAvailableMemoryBytes(Some(availableHostMem))
+
+    try {
+      val mtLimit = GpuDeviceManager.computeMtReadLimit(
+        pinnedSize = 0L, nonPinnedLimit = -1L,
+        rapidsConf, sparkConf, deviceCount, TestMemoryChecker)
+
+      // When off-heap limit is disabled, the effective total off-heap should be derived
+      // from hardware (same 80% formula used in the enabled path), and MT read limit = 90% of that.
+      val effectiveOffHeap = (0.8 * (availableHostMem - heapSize)).toLong
+      val expectedMtLimit = (0.9 * effectiveOffHeap).toLong
+      assertResult(expectedMtLimit)(mtLimit)
+    } finally {
+      TestMemoryChecker.setAvailableMemoryBytes(None)
+    }
+  }
+
   test("get host memory limits with discrete GPU") {
     val deviceCount = 1
     val pySparkOverheadStr = "2g"
