@@ -223,8 +223,7 @@ class GpuCollectLimitMeta(
     GpuGlobalLimitExec(collectLimit.limit,
       GpuShuffleExchangeExec(
         GpuSinglePartitioning,
-        GpuLocalLimitExec(
-          collectLimit.limit, childPlans.head.convertIfNeeded()),
+        GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
         ENSURE_REQUIREMENTS
       )(SinglePartition), offset)
   }

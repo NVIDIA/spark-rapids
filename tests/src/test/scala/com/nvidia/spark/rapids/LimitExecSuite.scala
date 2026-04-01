@@ -25,8 +25,7 @@ import org.apache.spark.sql.types.DataTypes
 class LimitExecSuite extends SparkQueryCompareTestSuite {
 
   def enableCollectLimitExec(conf: SparkConf = new SparkConf()): SparkConf = {
-    enableCsvConf(conf)
-      .set("spark.rapids.sql.exec.CollectLimitExec", "true")
+    enableCsvConf(conf).set("spark.rapids.sql.exec.CollectLimitExec", "true")
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual("limit more than rows", intCsvDf,
