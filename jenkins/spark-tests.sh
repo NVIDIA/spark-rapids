@@ -271,10 +271,12 @@ run_iceberg_tests() {
 
   local test_type=${1:-'default'}
 
-  # Version detection test: runs against ALL iceberg versions with Spark 3.5 runtime
+  # Version detection test: runs against supported iceberg versions for the
+  # current Spark version.  Running unsupported versions (e.g. Iceberg 1.9+
+  # on Spark 3.5.0 with Java 8) causes UnsupportedClassVersionError that
+  # crashes every pytest worker during test collection.
   if [[ "$test_type" == "detect_version" ]]; then
-    local all_iceberg_versions="1.6.0 1.6.1 1.9.0 1.9.1 1.9.2 1.10.0 1.10.1"
-    for ICEBERG_VERSION in $all_iceberg_versions; do
+    for ICEBERG_VERSION in $supported_versions; do
       echo "!!! Running iceberg version detection test for Iceberg $ICEBERG_VERSION"
       EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
       PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-3.5_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
