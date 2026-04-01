@@ -51,6 +51,9 @@ spark_jars_env = {
     _SPARK_JARS,
     _SPARK_JARS_PACKAGES
 }
+# Initialized in pytest_sessionstart; declared here so pytest_sessionfinish
+# does not raise NameError if session startup fails before assignment.
+_spark = None
 
 def findspark_init():
     import findspark
@@ -312,4 +315,6 @@ def pytest_sessionfinish(session, exitstatus):
             _spark.stop()
         except Exception as e:
             logging.warning(f"Exception while stopping SparkSession: {e}")
+        finally:
+            _spark = None
 
