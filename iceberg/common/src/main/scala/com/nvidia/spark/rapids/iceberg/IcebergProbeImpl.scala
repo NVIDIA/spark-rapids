@@ -27,10 +27,11 @@ class IcebergProbeImpl extends IcebergProbe with Logging {
     ShimLoader.getShimVersion match {
       case _: SparkShimVersion =>
         VersionUtils.cmpSparkVersion(3, 5, 0) >= 0 &&
-        VersionUtils.cmpSparkVersion(4, 0, 0) < 0
+        VersionUtils.cmpSparkVersion(4, 1, 0) < 0
       case _ => false
     }
   }
+
   // Git commit ID -> version for all supported Iceberg releases.
   // Commit IDs are from iceberg-build.properties embedded in each release jar.
   // https://github.com/apache/iceberg/releases

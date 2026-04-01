@@ -20,12 +20,12 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update, StringGen
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
-    get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf
+    get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf, \
+    iceberg_unsupported_mark
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
-from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
+from spark_session import with_gpu_session, with_cpu_session
 
-pytestmark = pytest.mark.skipif(not is_spark_35x(),
-                       reason="Current spark-rapids only support spark 3.5.x")
+pytestmark = iceberg_unsupported_mark
 
 # Seed for initial insert to ensure different data from overwrite
 INITIAL_INSERT_SEED = 7893676382
@@ -132,9 +132,10 @@ def test_insert_overwrite_unpartitioned_table_values(spark_tmp_table_factory):
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
-def _do_test_insert_overwrite_partitioned_table(spark_tmp_table_factory, partition_col_sql):
+def _do_test_insert_overwrite_partitioned_table(spark_tmp_table_factory, partition_col_sql, table_prop=None):
     """Helper function for partitioned table INSERT OVERWRITE tests."""
-    table_prop = {"format-version": "2"}
+    if table_prop is None:
+        table_prop = {"format-version": "2"}
 
     def create_table_and_set_write_order(table_name: str):
         create_iceberg_table(
@@ -463,3 +464,14 @@ def test_insert_overwrite_static_df_api_truncate_string(spark_tmp_table_factory)
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
     assert_equal_with_local_sort(cpu_data, gpu_data)
+
+
+@iceberg
+@datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+def test_insert_overwrite_partitioned_table_fanout_enabled(spark_tmp_table_factory):
+    _do_test_insert_overwrite_partitioned_table(
+        spark_tmp_table_factory,
+        "year(_c9)",
+        table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})
