@@ -46,25 +46,29 @@ class IcebergProbeImpl extends IcebergProbe with Logging {
   )
 
   // e.g. iceberg-spark-runtime-3.5_2.12-1.10.0-*.jar -> "1.10.0"
-  private val jarVersionPattern = """iceberg-.*-(\d+\.\d+\.\d+)""".r.unanchored
+  private lazy val jarVersionPattern = (
+    """iceberg-spark-runtime-""" +
+    """\d+\.\d+_""" +             // Spark feature.major
+    """\d+\.\d+-""" +             // Scala major.minor
+    """(\d+\.\d+\.\d+)"""         // Iceberg major.minor.patch
+  ).r.unanchored
+
+  private def extractVersionFromJarPath(commitId: String): String = {
+    Option(classOf[IcebergBuild].getProtectionDomain.getCodeSource)
+      .flatMap(cs => Option(cs.getLocation))
+      .map(_.getPath)
+      .collectFirst {
+        case path@jarVersionPattern(v) =>
+          logWarning(s"Commit $commitId not in known map, " +
+            s"extracted version $v from jar path: $path")
+          v
+      }
+      .getOrElse(commitId)
+  }
 
   override def getDetectedVersion: String = {
-    val sourceLocation = Option(classOf[IcebergBuild].getProtectionDomain.getCodeSource)
-      .flatMap(cs => Option(cs.getLocation))
-      .map(_.toString)
-      .getOrElse("unknown")
     val commitId = IcebergBuild.gitCommitId()
-    val version = commitToVersion.getOrElse(commitId,
-      sourceLocation match {
-        case jarVersionPattern(v) =>
-          logInfo(s"Commit $commitId not in known map, " +
-            s"extracted version $v from jar path: $sourceLocation")
-          v
-        case _ => commitId
-      }
-    )
-    logInfo(s"IcebergBuild loaded from $sourceLocation, commitId=$commitId, version=$version")
-    version
+    commitToVersion.getOrElse(commitId, extractVersionFromJarPath(commitId))
   }
 
   // Iceberg major.minor -> shim sub-package
