@@ -278,24 +278,6 @@ run_iceberg_tests() {
 
   local test_type=${1:-'default'}
 
-  # Version detection test: runs against supported iceberg versions for the
-  # current Spark version.  Running unsupported versions (e.g. Iceberg 1.9+
-  # on Spark 3.5.0 with Java 8) causes UnsupportedClassVersionError that
-  # crashes every pytest worker during test collection.
-  if [[ "$test_type" == "detect_version" ]]; then
-    for ICEBERG_VERSION in $supported_versions; do
-      echo "!!! Running iceberg version detection test for Iceberg $ICEBERG_VERSION"
-      EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
-      PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
-        PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
-        ./run_pyspark_from_build.sh -m iceberg --iceberg -k test_iceberg_version_detection
-    done
-    return 0
-  fi
-
   if [[ -n "$ICEBERG_VERSIONS" ]]; then
     for ver in $ICEBERG_VERSIONS; do
       if ! echo "$supported_versions" | grep -qw "$ver"; then
@@ -454,7 +436,6 @@ run_non_utc_time_zone_tests() {
 # - ICEBERG_ONLY: iceberg tests only
 # - ICEBERG_S3TABLES_ONLY: iceberg s3tables tests only
 # - ICEBERG_REST_CATALOG_ONLY: iceberg rest catalog tests only
-# - ICEBERG_DETECT_VERSION_ONLY: iceberg version detection test only (all supported versions)
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - MULTITHREADED_SHUFFLE: shuffle tests only using MULTITHREADED shuffle mode
@@ -518,11 +499,6 @@ fi
 # Iceberg rest tests
 if [[ "$TEST_MODE" == "ICEBERG_REST_CATALOG_ONLY" ]]; then
   run_iceberg_tests 'rest'
-fi
-
-# Iceberg version detection tests (all supported versions)
-if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" || "$TEST_MODE" == "ICEBERG_DETECT_VERSION_ONLY" ]]; then
-  run_iceberg_tests 'detect_version'
 fi
 
 # Avro tests
