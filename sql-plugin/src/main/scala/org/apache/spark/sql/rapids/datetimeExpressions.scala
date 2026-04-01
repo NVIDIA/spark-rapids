@@ -607,8 +607,6 @@ object GpuToTimestamp {
       raw"\A\d{2}/\d{2}/\d{4}\Z"),
     "yyyy-MM-dd HH:mm:ss" -> ParseFormatMeta(Option('-'), isTimestamp = true,
       raw"\A\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\Z"),
-    "yyyy-MM-dd HH:mm:ss.SSS" -> ParseFormatMeta(Option('-'), isTimestamp = true,
-      raw"\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\Z"),
     "MM-dd" -> ParseFormatMeta(Option('-'), isTimestamp = false,
       raw"\A\d{2}-\d{2}\Z"),
     "MM/dd" -> ParseFormatMeta(Option('/'), isTimestamp = false,
@@ -708,10 +706,26 @@ object GpuToTimestamp {
           }
         }
       case _ =>
-        // this is the incompatibleDateFormats case where we do not guarantee compatibility with
-        // Spark and assume that all non-null inputs are valid
-        withResource(Scalar.fromBool(true)) { s =>
-          ColumnVector.fromScalar(s, col.getRowCount.toInt)
+        // This is the incompatibleDateFormats case where we do not guarantee full
+        // compatibility with Spark. However, we still reject inputs where the
+        // date-time separator doesn't match the format: cuDF treats 'T' and space
+        // as interchangeable, but Spark's DateTimeFormatter requires an exact match.
+        // We also use cuDF isTimestamp to reject truly unparseable strings.
+        if (strfFormat.startsWith("%Y-%m-%d %H") ||
+            strfFormat.startsWith("%Y/%m/%d %H")) {
+          val tProg = new RegexProgram(
+            raw"\A.{10}T", CaptureGroups.NON_CAPTURE)
+          withResource(col.matchesRe(tProg)) { hasT =>
+            withResource(hasT.not()) { noT =>
+              withResource(col.isTimestamp(strfFormat)) { cudfValid =>
+                noT.and(cudfValid)
+              }
+            }
+          }
+        } else {
+          withResource(Scalar.fromBool(true)) { s =>
+            ColumnVector.fromScalar(s, col.getRowCount.toInt)
+          }
         }
     }
   }
