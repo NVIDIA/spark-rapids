@@ -57,6 +57,7 @@ object AddOverflowChecks {
     }
     withResource(signDiffCV) { tmpSignDiff =>
       val signDiff = if (mask.isDefined) {
+        // If a mask is passed in we only want to look for overflow within the mask
         mask.get.and(tmpSignDiff)
       } else {
         tmpSignDiff.incRefCount()
@@ -206,6 +207,7 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
 
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Because of 2s compliment we need to only worry about the min value for integer types.
       GpuAnsi.assertMinValueOverflow(input, "minus", origin)
     }
 
@@ -222,6 +224,8 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
           scalar.sub(input.getBase)
         }
       case t if GpuTypeShims.isSupportedDayTimeType(t) =>
+        // For day-time interval, Spark throws an exception when overflow,
+        // regardless of whether `SQLConf.get.ansiEnabled` is true or false
         withResource(Scalar.fromLong(Long.MinValue)) { minVal =>
           GpuAnsi.assertMinValueOverflow(minVal, input, "minus", origin)
         }
@@ -280,14 +284,19 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 
   override def doColumnar(input: GpuColumnVector) : ColumnVector = {
     if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType)) {
+      // Because of 2s compliment we need to only worry about the min value for integer types.
       GpuAnsi.assertMinValueOverflow(input, "abs", origin)
     }
 
     if (GpuTypeShims.isSupportedDayTimeType(dataType)) {
+      // For day-time interval, Spark throws an exception when overflow,
+      // regardless of whether `SQLConf.get.ansiEnabled` is true or false
       withResource(Scalar.fromLong(Long.MinValue)) { minVal =>
         GpuAnsi.assertMinValueOverflow(minVal, input, "abs", origin)
       }
     } else if (GpuTypeShims.isSupportedYearMonthType(dataType)) {
+      // For year-month interval, Spark throws an exception when overflow,
+      // regardless of whether `SQLConf.get.ansiEnabled` is true or false
       withResource(Scalar.fromInt(Int.MinValue)) { minVal =>
         GpuAnsi.assertMinValueOverflow(minVal, input, "abs", origin)
       }
@@ -311,9 +320,12 @@ abstract class GpuAddBase extends CudfBinaryArithmetic with Serializable {
   override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
     val ret = super.doColumnar(lhs, rhs)
     withResource(ret) { ret =>
+      // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
       if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType) ||
           GpuTypeShims.isSupportedDayTimeType(dataType) ||
           GpuTypeShims.isSupportedYearMonthType(dataType)) {
+        // For day time interval, Spark throws an exception when overflow,
+        // regardless of whether `SQLConf.get.ansiEnabled` is true or false
         AddOverflowChecks.basicOpOverflowCheck(lhs, rhs, ret, origin)
       }
 
@@ -338,8 +350,10 @@ abstract class GpuSubtractBase extends CudfBinaryArithmetic with Serializable {
       lhs: BinaryOperable,
       rhs: BinaryOperable,
       ret: ColumnVector): ColumnVector = {
-    // Overflow happens if the arguments have different signs and the sign of
-    // the result is different from the sign of subtractend (RHS).
+    // We need a special overflow check for decimal because CUDF does not support INT128 so we
+    // cannot reuse the same code for the other types.
+    // Overflow happens if the arguments have different signs and the sign of the result is
+    // different from the sign of subtractend (RHS).
     val numRows = ret.getRowCount.toInt
     val zero = BigDecimal(0).bigDecimal
     val overflow = withResource(DecimalUtils.lessThan(rhs, zero, numRows)) { rhsLz =>
@@ -376,9 +390,12 @@ abstract class GpuSubtractBase extends CudfBinaryArithmetic with Serializable {
   override def doColumnar(lhs: BinaryOperable, rhs: BinaryOperable): ColumnVector = {
     val ret = super.doColumnar(lhs, rhs)
     withResource(ret) { ret =>
+      // No shims are needed, because it actually supports ANSI mode from Spark v3.0.1.
       if (failOnError && GpuAnsi.needBasicOpOverflowCheck(dataType) ||
           GpuTypeShims.isSupportedDayTimeType(dataType) ||
           GpuTypeShims.isSupportedYearMonthType(dataType)) {
+        // For day time interval, Spark throws an exception when overflow,
+        // regardless of whether `SQLConf.get.ansiEnabled` is true or false
         SubtractOverflowChecks.basicOpOverflowCheck(lhs, rhs, ret, origin)
       }
 
@@ -757,37 +774,38 @@ case class GpuMultiply(
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     try {
-      Arithmetic.multiply(lhs.getBase, rhs.getBase, failOnError, false)
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
     } catch {
-      case e: ExceptionWithRowIndex =>
-        val i = e.getRowIndex
-        val l = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, i)
-        val r = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, i)
-        throw multiplyOverflowError(s"Multiplication failed in ANSI mode: $l * $r")
+      case rowException: ExceptionWithRowIndex =>
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, errorRowIndex)
+        val rightValue = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, errorRowIndex)
+        throw multiplyOverflowError(
+          s"Multiplication failed in ANSI mode: $leftValue * $rightValue")
     }
   }
 
   override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
     try {
-      Arithmetic.multiply(lhs.getBase, rhs.getBase, failOnError, false)
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
     } catch {
-      case e: ExceptionWithRowIndex =>
-        val i = e.getRowIndex
-        val r = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, i)
+      case rowException: ExceptionWithRowIndex =>
+        val errorRowIndex = rowException.getRowIndex
+        val rightValue = ColumnViewUtils.getElementStringFromColumnView(rhs.getBase, errorRowIndex)
         throw multiplyOverflowError(
-          s"Multiplication failed in ANSI mode: ${lhs.getBase} * $r")
+          s"Multiplication failed in ANSI mode: ${lhs.getBase} * $rightValue")
     }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
     try {
-      Arithmetic.multiply(lhs.getBase, rhs.getBase, failOnError, false)
+      Arithmetic.multiply(lhs.getBase, rhs.getBase, /* ansi */ failOnError, /* try_mode */ false)
     } catch {
-      case e: ExceptionWithRowIndex =>
-        val i = e.getRowIndex
-        val l = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, i)
+      case rowException: ExceptionWithRowIndex =>
+        val errorRowIndex = rowException.getRowIndex
+        val leftValue = ColumnViewUtils.getElementStringFromColumnView(lhs.getBase, errorRowIndex)
         throw multiplyOverflowError(
-          s"Multiplication failed in ANSI mode: $l * ${rhs.getBase}")
+          s"Multiplication failed in ANSI mode: $leftValue * ${rhs.getBase}")
     }
   }
 

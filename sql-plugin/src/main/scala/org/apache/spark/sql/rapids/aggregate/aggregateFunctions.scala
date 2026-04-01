@@ -2122,8 +2122,7 @@ case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
   override lazy val evaluateExpression: Expression = {
     // stddev_samp = sqrt(m2 / (n - 1.0)).
     val stddevSamp =
-      GpuSqrt(GpuDivide(bufferM2,
-        GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false)(),
+      GpuSqrt(GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false)(),
         failOnError = false)())
 
     // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
@@ -2169,8 +2168,7 @@ case class GpuVarianceSamp(child: Expression, nullOnDivideByZero: Boolean)
 
   override lazy val evaluateExpression: Expression = {
     // var_samp = m2 / (n - 1.0).
-    val varSamp = GpuDivide(bufferM2,
-      GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false)(),
+    val varSamp = GpuDivide(bufferM2, GpuSubtract(bufferN, GpuLiteral(1.0), failOnError = false)(),
       failOnError = false)()
 
     // Set nulls for the rows where n == 0, and set nulls (or NaN) for the rows where n == 1.
