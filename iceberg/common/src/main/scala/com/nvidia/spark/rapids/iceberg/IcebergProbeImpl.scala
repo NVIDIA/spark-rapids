@@ -25,7 +25,7 @@ class IcebergProbeImpl extends IcebergProbe {
     ShimLoader.getShimVersion match {
       case _: SparkShimVersion =>
         VersionUtils.cmpSparkVersion(3, 5, 0) >= 0 &&
-        VersionUtils.cmpSparkVersion(4, 0, 0) < 0
+        VersionUtils.cmpSparkVersion(4, 1, 0) < 0
       case _ => false
     }
   }

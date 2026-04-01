@@ -22,8 +22,14 @@ from typing import Callable, List, Dict, Optional
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import FloatType, DoubleType, BinaryType
 
+import pytest
+
 from data_gen import *
-from spark_session import with_cpu_session
+from spark_session import is_iceberg_supported_spark, with_cpu_session
+
+iceberg_unsupported_mark = pytest.mark.skipif(
+    not is_iceberg_supported_spark(),
+    reason="Iceberg acceleration requires Spark 3.5.x or 4.0.x")
 
 # iceberg supported types
 iceberg_table_gen = MappingProxyType({
