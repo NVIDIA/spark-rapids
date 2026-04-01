@@ -1436,8 +1436,10 @@ This will force full Scala code rebuild in downstream modules.
                             <arg>-Wconf:cat=lint-adapted-args:e</arg>
                             <!-- #if scala-2.13 --><!--
                             <arg>-Xsource:2.13</arg>
+                            <arg>-Ywarn-unused:locals,patvars,privates</arg>
                             <arg>-Wconf:cat=deprecation:e,any:e</arg>
                             <arg>-Wconf:cat=scaladoc:wv</arg>
+                            <arg>-Wconf:cat=lint-multiarg-infix:wv</arg>
                             <arg>-Wconf:cat=other-nullary-override:e</arg>
                             <arg>-Wconf:msg=^(?=.*?method|value|type|object|trait|inheritance)(?=.*?deprecated)(?=.*?since 2.13).+$:s</arg>
                             <arg>-Wconf:msg=^(?=.*?Widening conversion from)(?=.*?is deprecated because it loses precision).+$:s</arg>
@@ -1445,14 +1447,6 @@ This will force full Scala code rebuild in downstream modules.
                             <arg>-Wconf:cat=unchecked&amp;msg=outer reference:s</arg>
                             <arg>-Wconf:cat=unchecked&amp;msg=eliminated by erasure:s</arg>
                             <arg>-Wconf:msg=^(?=.*?a value of type)(?=.*?cannot also be).+$:s</arg>
-                            <arg>-Wconf:cat=unused:e</arg>
-                            <arg>-Wconf:cat=unused-imports:e</arg>
-                            <arg>-Wconf:cat=unused-locals:e</arg>
-                            <arg>-Wconf:cat=unused-nowarn:e</arg>
-                            <arg>-Wconf:cat=unused-params:e</arg>
-                            <arg>-Wconf:cat=unused-pat-vars:e</arg>
-                            <arg>-Wconf:cat=unused-privates:e</arg>
-                            <arg>-Wunused:imports,locals,patvars,privates</arg>
                             --><!-- #endif scala-2.13 -->
                         </args>
                         <jvmArgs>

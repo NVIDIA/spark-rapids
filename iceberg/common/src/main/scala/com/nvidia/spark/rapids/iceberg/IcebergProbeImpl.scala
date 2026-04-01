@@ -18,7 +18,6 @@ package com.nvidia.spark.rapids.iceberg
 
 import com.nvidia.spark.rapids.{ShimLoader, ShimReflectionUtils, SparkShimVersion, VersionUtils}
 import org.apache.iceberg.IcebergBuild
-
 import org.apache.spark.internal.Logging
 
 class IcebergProbeImpl extends IcebergProbe with Logging {
