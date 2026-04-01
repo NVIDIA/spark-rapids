@@ -711,10 +711,12 @@ object GpuToTimestamp {
         // date-time separator doesn't match the format: cuDF treats 'T' and space
         // as interchangeable, but Spark's DateTimeFormatter requires an exact match.
         // We also use cuDF isTimestamp to reject truly unparseable strings.
-        if (strfFormat.startsWith("%Y-%m-%d %H") ||
-            strfFormat.startsWith("%Y/%m/%d %H")) {
-          val tProg = new RegexProgram(
-            raw"\A.{10}T", CaptureGroups.NON_CAPTURE)
+        if (strfFormat.startsWith("%Y-%m-%d %H") || strfFormat.startsWith("%Y/%m/%d %H")) {
+          // The 4 element-wise GPU kernels below (matchesRe, not, isTimestamp, and) add
+          // negligible overhead compared to the downstream parseStringAsTimestamp which
+          // performs full cuDF timestamp parsing. The regex is trivial (single fixed-position
+          // character check) and withResource is just RAII for prompt GPU memory release.
+          val tProg = new RegexProgram(raw"\A.{10}T", CaptureGroups.NON_CAPTURE)
           withResource(col.matchesRe(tProg)) { hasT =>
             withResource(hasT.not()) { noT =>
               withResource(col.isTimestamp(strfFormat)) { cudfValid =>
