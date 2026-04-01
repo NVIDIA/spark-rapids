@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,12 +20,11 @@ from asserts import assert_gpu_and_cpu_are_equal_collect
 from conftest import is_iceberg_remote_catalog
 from iceberg import rapids_reader_types, \
     setup_base_iceberg_table, _add_eq_deletes, _change_table, \
-    all_eq_column_combinations
+    all_eq_column_combinations, iceberg_unsupported_mark
 from marks import iceberg, ignore_order
-from spark_session import is_spark_35x, with_gpu_session, with_cpu_session
+from spark_session import with_gpu_session, with_cpu_session
 
-pytestmark = pytest.mark.skipif(not is_spark_35x(),
-                                reason="Current spark-rapids only support spark 3.5.x")
+pytestmark = iceberg_unsupported_mark
 
 
 @iceberg

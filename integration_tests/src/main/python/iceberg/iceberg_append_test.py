@@ -19,12 +19,12 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
-    get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf
+    get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf, \
+    iceberg_unsupported_mark
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
-from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
+from spark_session import with_gpu_session, with_cpu_session
 
-pytestmark = pytest.mark.skipif(not is_spark_35x(),
-                       reason="Current spark-rapids only support spark 3.5.x")
+pytestmark = iceberg_unsupported_mark
 
 
 def do_test_insert_into_table_sql(spark_tmp_table_factory,
