@@ -54,7 +54,8 @@ class IcebergProbeImpl extends IcebergProbe with Logging {
   ).r.unanchored
 
   private def extractVersionFromJarPath(commitId: String): String = {
-    Option(classOf[IcebergBuild].getProtectionDomain.getCodeSource)
+    Option(classOf[IcebergBuild].getProtectionDomain)
+      .flatMap(pd => Option(pd.getCodeSource))
       .flatMap(cs => Option(cs.getLocation))
       .map(_.getPath)
       .collectFirst {
