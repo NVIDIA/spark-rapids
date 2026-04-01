@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@ import pytest
 from asserts import assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
 from conftest import is_iceberg_remote_catalog
 from data_gen import *
-from iceberg import get_full_table_name
+from iceberg import get_full_table_name, iceberg_unsupported_mark
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import is_databricks_runtime, with_cpu_session, \
-    with_gpu_session, is_spark_35x
+    with_gpu_session
 
 iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen ]] + \
@@ -43,8 +43,7 @@ iceberg_gens_list = [
 
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
-pytestmark = pytest.mark.skipif(not is_spark_35x(),
-                                reason="Current spark-rapids only support spark 3.5.x")
+pytestmark = iceberg_unsupported_mark
 
 @allow_non_gpu("BatchScanExec")
 @iceberg

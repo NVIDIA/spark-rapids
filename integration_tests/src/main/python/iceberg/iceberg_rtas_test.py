@@ -21,13 +21,13 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import (create_iceberg_table, iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
-                     get_full_table_name, iceberg_write_enabled_conf)
-from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
-from spark_session import with_gpu_session, with_cpu_session, is_spark_35x
+                     get_full_table_name, iceberg_write_enabled_conf,
+                     iceberg_unsupported_mark)
+from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
+from spark_session import with_gpu_session, with_cpu_session, is_spark_400_or_later
 
 pytestmark = [
-    pytest.mark.skipif(not is_spark_35x(),
-                       reason="Current spark-rapids only support spark 3.5.x"),
+    iceberg_unsupported_mark,
 ]
 
 
@@ -163,6 +163,7 @@ def test_rtas_partitioned_table(spark_tmp_table_factory, partition_col_sql):
     pytest.param("_c8", id="identity(date)"),
     pytest.param("_c10", id="identity(decimal)"),
 ])
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_rtas_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
     _do_test_rtas_partitioned_table(spark_tmp_table_factory, partition_col_sql)
@@ -170,6 +171,7 @@ def test_rtas_partitioned_table_full_coverage(spark_tmp_table_factory, partition
 
 @iceberg
 @ignore_order(local=True)
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_create_or_replace_table(spark_tmp_table_factory):
     """Test CREATE OR REPLACE TABLE AS SELECT when table doesn't exist"""
     table_prop = {
@@ -200,6 +202,7 @@ def test_create_or_replace_table(spark_tmp_table_factory):
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_rtas_unsupported_file_format_fallback(spark_tmp_table_factory,
                                                file_format):
     table_prop = {
@@ -232,6 +235,7 @@ def test_rtas_unsupported_file_format_fallback(spark_tmp_table_factory,
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_rtas_fallback_when_conf_disabled(spark_tmp_table_factory,
                                           conf_key):
     table_prop = {
@@ -261,6 +265,7 @@ def test_rtas_fallback_when_conf_disabled(spark_tmp_table_factory,
 @ignore_order(local=True)
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec',  'ShuffleExchangeExec', 'ProjectExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_rtas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
         "format-version": "2"
@@ -289,6 +294,7 @@ def test_rtas_unpartitioned_table_all_cols_fallback(spark_tmp_table_factory):
 @ignore_order(local=True)
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_rtas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
     table_prop = {
         "format-version": "2"
@@ -319,6 +325,7 @@ def test_rtas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
 @allow_non_gpu('AppendDataExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_rtas_from_values(spark_tmp_table_factory,
                           partition_table):
     table_prop = {

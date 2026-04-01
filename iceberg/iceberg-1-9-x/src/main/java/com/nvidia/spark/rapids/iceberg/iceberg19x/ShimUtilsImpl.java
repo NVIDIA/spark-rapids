@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids.iceberg.iceberg19x;
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
 import org.apache.iceberg.*;
 import org.apache.iceberg.data.IdentityPartitionConverters;
+import org.apache.iceberg.spark.source.GpuStructInternalRow;
+import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PartitionUtil;
 
@@ -31,16 +33,26 @@ public class ShimUtilsImpl implements IcebergShimUtils {
         return f.location();
     }
 
+    private static Object convertConstant(Type type, Object value) {
+        Object converted = IdentityPartitionConverters.convertConstant(type, value);
+        if (converted instanceof StructLike && type instanceof Types.StructType) {
+            GpuStructInternalRow row = new GpuStructInternalRow((Types.StructType) type);
+            row.setStruct((StructLike) converted);
+            return row;
+        }
+        return converted;
+    }
+
     @Override
     public Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema, Table table) {
         if (readSchema.findField(MetadataColumns.PARTITION_COLUMN_ID) != null) {
             Types.StructType partitionType = Partitioning.partitionType(table);
             return PartitionUtil.constantsMap(task,
                     partitionType,
-                    IdentityPartitionConverters::convertConstant);
+                    ShimUtilsImpl::convertConstant);
         } else {
             return PartitionUtil.constantsMap(task,
-                    IdentityPartitionConverters::convertConstant);
+                    ShimUtilsImpl::convertConstant);
         }
     }
 }

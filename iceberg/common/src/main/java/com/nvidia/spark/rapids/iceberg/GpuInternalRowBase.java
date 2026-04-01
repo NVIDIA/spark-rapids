@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,13 +35,16 @@ import java.time.LocalDate;
  * This class is used to fix the issue of partition writer for Date type:
  * For date type, should return a local date instead of an integer.
  */
-public class GpuInternalRow extends InternalRow {
+public abstract class GpuInternalRowBase extends InternalRow {
 
-  // The wrapped `InternalRow`
   private final InternalRow wrapped;
 
-  public GpuInternalRow(InternalRow row) {
+  protected GpuInternalRowBase(InternalRow row) {
     this.wrapped = row;
+  }
+
+  protected InternalRow getWrapped() {
+    return wrapped;
   }
 
   /**
