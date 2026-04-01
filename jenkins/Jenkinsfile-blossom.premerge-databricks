@@ -184,7 +184,7 @@ void databricksBuild() {
             }
         }
 
-        stage("Test agaist $SPARK_MAJOR DB") {
+        stage("Test against $SPARK_MAJOR DB") {
             dbStep = 'TEST'
             withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
                 def TEST_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
