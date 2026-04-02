@@ -112,7 +112,7 @@ def setup_base_iceberg_table(spark_tmp_table_factory,
         table_prop = {'format-version':'2', 'write.delete.mode': 'merge-on-read'}
     else:
         table_prop = {**table_prop, 'format-version': '2', 'write.delete.mode': 'merge-on-read'}
-    table_prop = {**_BASE_TBLPROPS, **table_prop}
+    table_prop = _build_tblprops(table_prop)
 
     table_prop_sql = ", ".join([f"'{k}' = '{v}'" for k, v in table_prop.items()])
 
@@ -175,12 +175,26 @@ def schema_to_ddl(spark, schema):
 
 # Base table properties applied to every Iceberg test table.
 # Disables the fanout writer to prevent OOM in CI.  S3TablesCatalog does not
-# honour catalog-level table-default properties, so this must be set per-table.
+# honor catalog-level table-default properties, so this must be set per table.
 _BASE_TBLPROPS = {'write.spark.fanout.enabled': 'false'}
 
 # SQL fragment for raw CREATE TABLE statements that have no other TBLPROPERTIES.
 _BASE_TBLPROPS_SQL = "TBLPROPERTIES (" + \
     ", ".join(f"'{k}' = '{v}'" for k, v in _BASE_TBLPROPS.items()) + ")"
+
+
+def _build_tblprops(extra_props: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """Build table properties dict with base props merged in.
+    Caller properties take precedence over base."""
+    if extra_props is None:
+        return dict(_BASE_TBLPROPS)
+    return {**_BASE_TBLPROPS, **extra_props}
+
+
+def _build_tblprops_sql(extra_props: Optional[Dict[str, str]] = None) -> str:
+    """Build a TBLPROPERTIES SQL clause with base props merged in."""
+    props = _build_tblprops(extra_props)
+    return "TBLPROPERTIES (" + ", ".join(f"'{k}' = '{v}'" for k, v in props.items()) + ")"
 
 
 def create_iceberg_table(table_name: str,
@@ -189,7 +203,7 @@ def create_iceberg_table(table_name: str,
                          df_gen: Optional[Callable[[SparkSession], DataFrame]] = None) -> str:
     if table_prop is None:
         table_prop = {'format-version':'1'}
-    table_prop = {**_BASE_TBLPROPS, **table_prop}
+    table_prop = _build_tblprops(table_prop)
 
     if df_gen is None:
         df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))

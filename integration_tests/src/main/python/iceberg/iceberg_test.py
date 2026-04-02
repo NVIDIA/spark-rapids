@@ -17,7 +17,7 @@ import pytest
 from asserts import assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
 from conftest import is_iceberg_remote_catalog
 from data_gen import *
-from iceberg import get_full_table_name, iceberg_unsupported_mark, _BASE_TBLPROPS, _BASE_TBLPROPS_SQL
+from iceberg import get_full_table_name, iceberg_unsupported_mark, _build_tblprops, _BASE_TBLPROPS_SQL
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import is_databricks_runtime, with_cpu_session, \
     with_gpu_session
@@ -144,7 +144,7 @@ def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
         df.createOrReplaceTempView(tmpview)
-        props = {**_BASE_TBLPROPS, 'write.format.default': iceberg_format}
+        props = _build_tblprops({'write.format.default': iceberg_format})
         props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in props.items())
         spark.sql(f"CREATE TABLE {full_table} USING ICEBERG "
                   f"TBLPROPERTIES({props_sql}) "
@@ -191,7 +191,7 @@ def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_i
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
-        props = {**_BASE_TBLPROPS, 'write.parquet.compression-codec': codec}
+        props = _build_tblprops({'write.parquet.compression-codec': codec})
         props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in props.items())
         spark.sql(f"CREATE TABLE {full_table} (id BIGINT, data BIGINT) USING ICEBERG "
                   f"TBLPROPERTIES({props_sql})")

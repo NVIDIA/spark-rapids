@@ -22,7 +22,7 @@ from data_gen import gen_df, copy_and_update
 from iceberg import (create_iceberg_table, iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
                      get_full_table_name, iceberg_write_enabled_conf,
-                     iceberg_unsupported_mark, _BASE_TBLPROPS)
+                     iceberg_unsupported_mark, _build_tblprops)
 from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session, is_spark_400_or_later
 
@@ -49,7 +49,7 @@ def _execute_rtas(spark,
 
     replace_clause = "CREATE OR REPLACE" if create_or_replace else "REPLACE"
     partition_clause = "" if partition_col_sql is None else f"PARTITIONED BY ({partition_col_sql}) "
-    table_prop = {**_BASE_TBLPROPS, **table_prop}
+    table_prop = _build_tblprops(table_prop)
     props_sql = _props_to_sql(table_prop)
     df = spark.sql(
         f"{replace_clause} TABLE {target_table} USING ICEBERG {partition_clause}"

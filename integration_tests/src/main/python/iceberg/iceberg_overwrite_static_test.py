@@ -21,7 +21,7 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update, StringGen
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf, \
-    iceberg_unsupported_mark, _BASE_TBLPROPS
+    iceberg_unsupported_mark, _build_tblprops
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session
 
@@ -100,7 +100,7 @@ def test_insert_overwrite_unpartitioned_table_values(spark_tmp_table_factory):
     gpu_table_name = f"{base_table_name}_gpu"
 
     def create_table(spark, table_name: str):
-        props = {**_BASE_TBLPROPS, "format-version": "2"}
+        props = _build_tblprops({"format-version": "2"})
         props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in props.items())
         spark.sql(f"CREATE TABLE {table_name} (id int, name string) USING ICEBERG "
                   f"TBLPROPERTIES ({props_sql})")
@@ -422,8 +422,8 @@ def test_insert_overwrite_static_df_api_truncate_string(spark_tmp_table_factory)
     partition_col_sql = f"truncate({truncate_width}, _c6)"
     partition_filter = f"_c6 >= '{prefix}10' AND _c6 < '{prefix}20'"
 
-    table_prop = {**_BASE_TBLPROPS, "format-version": "2",
-                  "write.format.default": "parquet"}
+    table_prop = _build_tblprops({"format-version": "2",
+                                  "write.format.default": "parquet"})
 
     conf = copy_and_update(iceberg_static_overwrite_conf, {
         "spark.sql.adaptive.enabled": "true",
