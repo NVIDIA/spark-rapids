@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuAlias, GpuExec, GpuLiteral, GpuOverrides, GpuProjectExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSet, CurrentRow, Expression, NamedExpression, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSet, CurrentRow, ExprId, Expression, NamedExpression, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
@@ -227,17 +227,61 @@ case class BatchedOps(running: Seq[NamedExpression],
     bounded: Seq[NamedExpression],
     passThrough: Seq[NamedExpression]) {
 
+  private def dedupeByExprId[T <: NamedExpression](exprs: Seq[T]): Seq[T] = {
+    val seen = mutable.HashSet.empty[ExprId]
+    exprs.filter(expr => seen.add(expr.exprId))
+  }
+
+  /**
+   * Preserve any pre-projected inputs that later batched window stages still reference.
+   * Without this, chaining running/unbounded/double-pass/bounded stages can drop an
+   * intermediate attribute that only appears inside a downstream window expression.
+   */
+  private def collectPassthroughDependencies(
+      futureExpressions: Seq[NamedExpression],
+      availableOutputs: Seq[NamedExpression]): Seq[NamedExpression] = {
+    val seen = mutable.HashSet.empty[ExprId]
+    seen ++= availableOutputs.map(_.exprId)
+    val needed = ArrayBuffer.empty[NamedExpression]
+    futureExpressions.foreach(_.foreach {
+      case attr: Attribute if !seen.contains(attr.exprId) =>
+        seen += attr.exprId
+        needed += attr
+      case _ =>
+    })
+    needed.toSeq
+  }
+
+  private lazy val runningPassthrough: Seq[NamedExpression] =
+    dedupeByExprId(passThrough ++
+      collectPassthroughDependencies(
+        unboundedAgg ++ unboundedDoublePass ++ bounded,
+        passThrough ++ running))
+
+  private lazy val unboundedAggPassthrough: Seq[NamedExpression] =
+    dedupeByExprId(runningPassthrough ++
+      collectPassthroughDependencies(
+        unboundedDoublePass ++ bounded,
+        runningPassthrough ++ running ++ unboundedAgg))
+
+  private lazy val doublePassPassthrough: Seq[NamedExpression] =
+    dedupeByExprId(unboundedAggPassthrough ++
+      collectPassthroughDependencies(
+        bounded,
+        unboundedAggPassthrough ++ running ++ unboundedAgg ++ unboundedDoublePass))
+
   def getRunningExpressionsWithPassthrough: Seq[NamedExpression] =
-    passThrough ++ running
+    runningPassthrough ++ running
 
   def getUnboundedAggWithRunningAsPassthrough: Seq[NamedExpression] =
-    passThrough ++ unboundedAgg ++ running.map(_.toAttribute)
+    unboundedAggPassthrough ++ unboundedAgg ++ running.map(_.toAttribute)
 
   def getDoublePassExpressionsWithRunningAndUnboundedAggAsPassthrough: Seq[NamedExpression] =
-    passThrough ++ unboundedDoublePass ++ (unboundedAgg ++ running).map(_.toAttribute)
+    doublePassPassthrough ++ unboundedDoublePass ++ (unboundedAgg ++ running).map(_.toAttribute)
 
   def getBoundedExpressionsWithTheRestAsPassthrough: Seq[NamedExpression] =
-    passThrough ++ bounded ++ (unboundedDoublePass ++ unboundedAgg ++ running).map(_.toAttribute)
+    doublePassPassthrough ++ bounded ++
+      (unboundedDoublePass ++ unboundedAgg ++ running).map(_.toAttribute)
 
   def getMinPrecedingMaxFollowingForBoundedWindows: (Int, Int) = {
     // All bounded window expressions should have window bound window specs.
