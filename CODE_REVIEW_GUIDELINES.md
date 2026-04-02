@@ -1,6 +1,8 @@
+# Code Review Guidelines
+
 With AI assistants, we are writing much more code than ever. While code review assistants like Greptile and CodeRabbit have improved significantly, human code review is still essential as of today. As a result, code review is becoming a concrete bottleneck in our development process. This document outlines how we can make our code review process more efficient.
 
-### **Philosophy**
+## **Philosophy**
 
 Code review is a collaborative process. Our shared goal is to ship high-quality, reliable code in a timely manner. It is not an adversarial gatekeeping exercise — reviewers and authors are on the same team.
 
