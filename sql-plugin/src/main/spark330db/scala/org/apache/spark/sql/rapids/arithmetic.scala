@@ -52,6 +52,7 @@ import com.nvidia.spark.rapids.shims.NullIntolerantShim
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.trees.{CurrentOrigin, Origin}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
@@ -210,7 +211,10 @@ trait GpuAddSub extends CudfBinaryArithmetic {
 case class GpuAdd(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuAddBase with GpuAddSub {
+    failOnError: Boolean)(
+    override val origin: Origin = CurrentOrigin.get)
+    extends GpuAddBase with GpuAddSub {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
 
   def do128BitOperation(
       castLhs: ColumnView,
@@ -223,7 +227,11 @@ case class GpuAdd(
 case class GpuSubtract(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuSubtractBase with GpuAddSub {
+    failOnError: Boolean)(
+    override val origin: Origin = CurrentOrigin.get)
+    extends GpuSubtractBase with GpuAddSub {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
+
   def do128BitOperation(
       castLhs: ColumnView,
       castRhs: ColumnView,
@@ -514,7 +522,11 @@ case class GpuDecimalMultiply(
 case class GpuIntegralDivide(
     left: Expression,
     right: Expression,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuIntegralDivideParent(left, right) {
+    failOnError: Boolean = SQLConf.get.ansiEnabled)(
+    override val origin: Origin = CurrentOrigin.get)
+    extends GpuIntegralDivideParent(left, right) {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
+
   assert(!left.dataType.isInstanceOf[DecimalType] ||
          !right.dataType.isInstanceOf[DecimalType],
     "DecimalType integral divides need to be handled by GpuIntegralDecimalDivide")
