@@ -15,7 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.{ColumnVector, DType, Scalar}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{Arithmetic, RoundMode}
 
@@ -117,19 +117,41 @@ case class GpuMakeDecimal(
         }
       }
     }
+    def makeResult(
+        outOfBounds: ColumnVector,
+        outputView: ColumnView): ColumnVector = {
+      if (!nullOnOverflow) {
+        withResource(outOfBounds.any()) { isAny =>
+          if (isAny.isValid && isAny.getBoolean) {
+            throw new IllegalStateException(
+              GpuCast.INVALID_INPUT_MESSAGE)
+          }
+        }
+        outputView.copyToColumnVector()
+      } else {
+        withResource(Scalar.fromNull(outputType)) { nullVal =>
+          outOfBounds.ifElse(nullVal, outputView)
+        }
+      }
+    }
+
     withResource(outOfBounds) { outOfBounds =>
-      withResource(base.bitCastTo(outputType)) { outputView =>
-        if (!nullOnOverflow) {
-          withResource(outOfBounds.any()) { isAny =>
-            if (isAny.isValid && isAny.getBoolean) {
-              throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-            }
+      if (outputType.isBackedByInt) {
+        // Precision <= 9: decimal is backed by INT32.
+        // Cast INT64 to INT32 first since bitCastTo requires
+        // matching byte widths.
+        withResource(base.castTo(DType.INT32)) { int32 =>
+          withResource(int32.bitCastTo(outputType)) {
+            makeResult(outOfBounds, _)
           }
-          outputView.copyToColumnVector()
-        } else {
-          withResource(Scalar.fromNull(outputType)) { nullVal =>
-            outOfBounds.ifElse(nullVal, outputView)
-          }
+        }
+      } else {
+        // Precision 10-18: decimal is backed by INT64.
+        // bitCastTo is zero-copy since widths already match.
+        // Note: Decimal128 (precision > 18) is not handled here
+        // because MakeDecimal input is Long (max ~18 digits).
+        withResource(base.bitCastTo(outputType)) {
+          makeResult(outOfBounds, _)
         }
       }
     }
