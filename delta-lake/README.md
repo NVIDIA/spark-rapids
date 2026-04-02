@@ -20,7 +20,6 @@ and directory contains the corresponding support code.
 | 4.0.x              | Spark 4.0.x     | `delta-40x`        |
 | Databricks 13.3    | Databricks 13.3 | `delta-spark341db` |
 | Databricks 14.3    | Databricks 14.3 | `delta-spark350db143` |
-| Databricks 17.3    | Databricks 17.3 | `delta-spark400db173` |
 
 
 Delta Lake is not supported on all Spark versions, and for Spark versions where it is not
