@@ -145,11 +145,16 @@ case class GpuMakeDecimal(
             makeResult(outOfBounds, _)
           }
         }
+      } else if (!outputType.isBackedByLong) {
+        // DECIMAL128 (precision > 18) is unreachable because
+        // the GPU TypeSig for MakeDecimal only allows
+        // DECIMAL_64 output; higher precisions fall back to CPU.
+        throw new IllegalStateException(
+          s"Unexpected decimal output type in " +
+            s"GpuMakeDecimal: $outputType")
       } else {
         // Precision 10-18: decimal is backed by INT64.
         // bitCastTo is zero-copy since widths already match.
-        // Note: Decimal128 (precision > 18) is not handled here
-        // because MakeDecimal input is Long (max ~18 digits).
         withResource(base.bitCastTo(outputType)) {
           makeResult(outOfBounds, _)
         }
