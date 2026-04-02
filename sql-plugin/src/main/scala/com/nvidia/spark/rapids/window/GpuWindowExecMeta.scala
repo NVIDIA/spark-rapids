@@ -239,48 +239,68 @@ case class BatchedOps(running: Seq[NamedExpression],
    */
   private def collectPassthroughDependencies(
       futureExpressions: Seq[NamedExpression],
-      availableOutputs: Seq[NamedExpression]): Seq[NamedExpression] = {
+      availableOutputs: Seq[NamedExpression],
+      childOutput: Seq[Attribute]): Seq[NamedExpression] = {
     val seen = mutable.HashSet.empty[ExprId]
     seen ++= availableOutputs.map(_.exprId)
+    val childOutputByExprId = childOutput.iterator.map(attr => attr.exprId -> attr).toMap
     val needed = ArrayBuffer.empty[NamedExpression]
     futureExpressions.foreach(_.foreach {
       case attr: Attribute if !seen.contains(attr.exprId) =>
-        seen += attr.exprId
-        needed += attr
+        val resolvedAttr = childOutputByExprId.getOrElse(attr.exprId, {
+          throw new IllegalArgumentException(
+            s"Unable to preserve passthrough dependency $attr because it is not produced by " +
+                s"the original child output")
+        })
+        seen += resolvedAttr.exprId
+        needed += resolvedAttr
       case _ =>
     })
     needed.toSeq
   }
 
-  private lazy val runningPassthrough: Seq[NamedExpression] =
+  private def getRunningPassthrough(childOutput: Seq[Attribute]): Seq[NamedExpression] =
     dedupeByExprId(passThrough ++
       collectPassthroughDependencies(
         unboundedAgg ++ unboundedDoublePass ++ bounded,
-        passThrough ++ running))
+        passThrough ++ running,
+        childOutput))
 
-  private lazy val unboundedAggPassthrough: Seq[NamedExpression] =
+  private def getUnboundedAggPassthrough(childOutput: Seq[Attribute]): Seq[NamedExpression] = {
+    val runningPassthrough = getRunningPassthrough(childOutput)
     dedupeByExprId(runningPassthrough ++
       collectPassthroughDependencies(
         unboundedDoublePass ++ bounded,
-        runningPassthrough ++ running ++ unboundedAgg))
+        runningPassthrough ++ running ++ unboundedAgg,
+        childOutput))
+  }
 
-  private lazy val doublePassPassthrough: Seq[NamedExpression] =
+  private def getDoublePassPassthrough(childOutput: Seq[Attribute]): Seq[NamedExpression] = {
+    val unboundedAggPassthrough = getUnboundedAggPassthrough(childOutput)
     dedupeByExprId(unboundedAggPassthrough ++
       collectPassthroughDependencies(
         bounded,
-        unboundedAggPassthrough ++ running ++ unboundedAgg ++ unboundedDoublePass))
+        unboundedAggPassthrough ++ running ++ unboundedAgg ++ unboundedDoublePass,
+        childOutput))
+  }
 
-  def getRunningExpressionsWithPassthrough: Seq[NamedExpression] =
-    runningPassthrough ++ running
+  def getRunningExpressionsWithPassthrough(childOutput: Seq[Attribute]): Seq[NamedExpression] =
+    getRunningPassthrough(childOutput) ++ running
 
-  def getUnboundedAggWithRunningAsPassthrough: Seq[NamedExpression] =
-    unboundedAggPassthrough ++ unboundedAgg ++ running.map(_.toAttribute)
+  def getUnboundedAggWithRunningAsPassthrough(
+      childOutput: Seq[Attribute]): Seq[NamedExpression] =
+    getUnboundedAggPassthrough(childOutput) ++ unboundedAgg ++ running.map(_.toAttribute)
 
-  def getDoublePassExpressionsWithRunningAndUnboundedAggAsPassthrough: Seq[NamedExpression] =
-    doublePassPassthrough ++ unboundedDoublePass ++ (unboundedAgg ++ running).map(_.toAttribute)
+  def getDoublePassExpressionsWithRunningAndUnboundedAggAsPassthrough(
+      childOutput: Seq[Attribute]): Seq[NamedExpression] =
+    getDoublePassPassthrough(childOutput) ++
+      unboundedDoublePass ++
+      (unboundedAgg ++ running).map(_.toAttribute)
 
-  def getBoundedExpressionsWithTheRestAsPassthrough: Seq[NamedExpression] =
-    doublePassPassthrough ++ bounded ++
+  def getBoundedExpressionsWithTheRestAsPassthrough(
+      childOutput: Seq[Attribute]): Seq[NamedExpression] =
+    getDoublePassPassthrough(childOutput) ++
+      bounded ++
       (unboundedDoublePass ++ unboundedAgg ++ running).map(_.toAttribute)
 
   def getMinPrecedingMaxFollowingForBoundedWindows: (Int, Int) = {
@@ -301,10 +321,11 @@ case class BatchedOps(running: Seq[NamedExpression],
       gpuPartitionSpec: Seq[Expression],
       gpuOrderSpec: Seq[SortOrder],
       child: SparkPlan,
+      childOutput: Seq[Attribute],
       cpuPartitionSpec: Seq[Expression],
       cpuOrderSpec: Seq[SortOrder]): GpuExec =
     GpuRunningWindowExec(
-      getRunningExpressionsWithPassthrough,
+      getRunningExpressionsWithPassthrough(childOutput),
       gpuPartitionSpec,
       gpuOrderSpec,
       child)(cpuPartitionSpec, cpuOrderSpec)
@@ -313,11 +334,12 @@ case class BatchedOps(running: Seq[NamedExpression],
       gpuPartitionSpec: Seq[Expression],
       gpuOrderSpec: Seq[SortOrder],
       child: SparkPlan,
+      childOutput: Seq[Attribute],
       cpuPartitionSpec: Seq[Expression],
       cpuOrderSpec: Seq[SortOrder],
       conf: RapidsConf): GpuExec =
     GpuUnboundedToUnboundedAggWindowExec(
-      getUnboundedAggWithRunningAsPassthrough,
+      getUnboundedAggWithRunningAsPassthrough(childOutput),
       gpuPartitionSpec,
       gpuOrderSpec,
       child)(cpuPartitionSpec, cpuOrderSpec, conf.gpuTargetBatchSizeBytes)
@@ -326,10 +348,11 @@ case class BatchedOps(running: Seq[NamedExpression],
       gpuPartitionSpec: Seq[Expression],
       gpuOrderSpec: Seq[SortOrder],
       child: SparkPlan,
+      childOutput: Seq[Attribute],
       cpuPartitionSpec: Seq[Expression],
       cpuOrderSpec: Seq[SortOrder]): GpuExec =
     GpuCachedDoublePassWindowExec(
-      getDoublePassExpressionsWithRunningAndUnboundedAggAsPassthrough,
+      getDoublePassExpressionsWithRunningAndUnboundedAggAsPassthrough(childOutput),
       gpuPartitionSpec,
       gpuOrderSpec,
       child)(cpuPartitionSpec, cpuOrderSpec)
@@ -337,10 +360,11 @@ case class BatchedOps(running: Seq[NamedExpression],
   private def getBatchedBoundedWindowExec(gpuPartitionSpec: Seq[Expression],
       gpuOrderSpec: Seq[SortOrder],
       child: SparkPlan,
+      childOutput: Seq[Attribute],
       cpuPartitionSpec: Seq[Expression],
       cpuOrderSpec: Seq[SortOrder]): GpuExec = {
     val (prec@_, foll@_) = getMinPrecedingMaxFollowingForBoundedWindows
-    new GpuBatchedBoundedWindowExec(getBoundedExpressionsWithTheRestAsPassthrough,
+    new GpuBatchedBoundedWindowExec(getBoundedExpressionsWithTheRestAsPassthrough(childOutput),
       gpuPartitionSpec,
       gpuOrderSpec,
       child)(cpuPartitionSpec, cpuOrderSpec, prec, foll)
@@ -355,24 +379,28 @@ case class BatchedOps(running: Seq[NamedExpression],
       conf: RapidsConf): GpuExec = {
     // The order of these matter so we can match the order of the parameters used to
     //  create the various aggregation functions
+    val childOutput = child.output
     var currentPlan = child
     if (hasRunning) {
-      currentPlan = getRunningWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
+      currentPlan = getRunningWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan, childOutput,
         cpuPartitionSpec, cpuOrderSpec)
     }
 
     if (hasUnboundedAgg) {
       currentPlan = getUnboundedAggWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
+        childOutput,
         cpuPartitionSpec, cpuOrderSpec, conf)
     }
 
     if (hasDoublePass) {
       currentPlan = getDoublePassWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
+        childOutput,
         cpuPartitionSpec, cpuOrderSpec)
     }
 
     if (hasBounded) {
       currentPlan = getBatchedBoundedWindowExec(gpuPartitionSpec, gpuOrderSpec, currentPlan,
+        childOutput,
         cpuPartitionSpec, cpuOrderSpec)
     }
     currentPlan.asInstanceOf[GpuExec]
