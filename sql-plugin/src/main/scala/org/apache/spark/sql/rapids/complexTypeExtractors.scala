@@ -451,16 +451,6 @@ class GpuGetArrayStructFieldsMeta(
 }
 
 object GpuGetArrayStructFieldsMeta {
-  def effectiveOrdinal(expr: GetArrayStructFields): Int = {
-    val runtimeOrd = expr.getTagValue(
-      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
-    if (runtimeOrd >= 0) {
-      runtimeOrd
-    } else {
-      expr.ordinal
-    }
-  }
-
   def effectiveNumFields(
       child: Expression,
       expr: GetArrayStructFields,

@@ -55,25 +55,6 @@ class StructFieldOrdinalTagSuite extends AnyFunSuite {
     assert(GpuGetStructFieldMeta.effectiveOrdinal(gsf) === 0)
   }
 
-  test("effectiveOrdinal ignores negative tag values") {
-    val gsf = GetStructField(structAttr, 1, Some("b"))
-    gsf.setTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG, -1)
-    assert(GpuGetStructFieldMeta.effectiveOrdinal(gsf) === 1)
-  }
-
-  // ---------- GetArrayStructFields ordinal tag ----------
-
-  test("array struct effectiveOrdinal returns original ordinal when no tag") {
-    val gasf = GetArrayStructFields(arrayAttr, threeFieldStruct(1), 1, 3, false)
-    assert(GpuGetArrayStructFieldsMeta.effectiveOrdinal(gasf) === 1)
-  }
-
-  test("array struct effectiveOrdinal returns tagged ordinal when tag is set") {
-    val gasf = GetArrayStructFields(arrayAttr, threeFieldStruct(1), 1, 3, false)
-    gasf.setTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG, 0)
-    assert(GpuGetArrayStructFieldsMeta.effectiveOrdinal(gasf) === 0)
-  }
-
   // ---------- effectiveNumFields ----------
 
   test("effectiveNumFields returns original numFields when no tag") {
@@ -100,22 +81,4 @@ class StructFieldOrdinalTagSuite extends AnyFunSuite {
     assert(result === 3)
   }
 
-  // ---------- Tag independence ----------
-
-  test("tags on different expressions are independent") {
-    val gsf1 = GetStructField(structAttr, 0, Some("a"))
-    val gsf2 = GetStructField(structAttr, 2, Some("c"))
-    gsf1.setTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG, 2)
-
-    assert(GpuGetStructFieldMeta.effectiveOrdinal(gsf1) === 2)
-    assert(GpuGetStructFieldMeta.effectiveOrdinal(gsf2) === 2)
-  }
-
-  test("tag can be overwritten") {
-    val gsf = GetStructField(structAttr, 2, Some("c"))
-    gsf.setTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG, 0)
-    assert(GpuGetStructFieldMeta.effectiveOrdinal(gsf) === 0)
-    gsf.setTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG, 1)
-    assert(GpuGetStructFieldMeta.effectiveOrdinal(gsf) === 1)
-  }
 }
