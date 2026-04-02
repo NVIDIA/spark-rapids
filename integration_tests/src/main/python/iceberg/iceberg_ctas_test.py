@@ -22,7 +22,7 @@ from data_gen import gen_df, copy_and_update
 from iceberg import (create_iceberg_table, iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
                      get_full_table_name, iceberg_write_enabled_conf,
-                     iceberg_unsupported_mark, _disable_fanout)
+                     iceberg_unsupported_mark, _BASE_TBLPROPS)
 from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session, is_spark_400_or_later
 
@@ -49,7 +49,7 @@ def _execute_ctas(spark,
     spark.sql(f"DROP TABLE IF EXISTS {target_table}")
 
     partition_clause = "" if partition_col_sql is None else f"PARTITIONED BY ({partition_col_sql}) "
-    _disable_fanout(table_prop)
+    table_prop = {**_BASE_TBLPROPS, **table_prop}
     props_sql = _props_to_sql(table_prop)
     df = spark.sql(
         f"CREATE TABLE {target_table} USING ICEBERG {partition_clause}"
@@ -270,10 +270,7 @@ def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_ctas_from_values(spark_tmp_table_factory,
                           partition_table):
-    table_prop = {
-        "format-version": "2"
-    }
-    _disable_fanout(table_prop)
+    table_prop = {**_BASE_TBLPROPS, "format-version": "2"}
 
     base_name = get_full_table_name(spark_tmp_table_factory)
     gpu_table = f"{base_name}_gpu"

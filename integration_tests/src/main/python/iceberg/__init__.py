@@ -112,7 +112,7 @@ def setup_base_iceberg_table(spark_tmp_table_factory,
         table_prop = {'format-version':'2', 'write.delete.mode': 'merge-on-read'}
     else:
         table_prop = {**table_prop, 'format-version': '2', 'write.delete.mode': 'merge-on-read'}
-    _disable_fanout(table_prop)
+    table_prop = {**_BASE_TBLPROPS, **table_prop}
 
     table_prop_sql = ", ".join([f"'{k}' = '{v}'" for k, v in table_prop.items()])
 
@@ -173,13 +173,14 @@ def get_full_table_name(spark_tmp_table_factory):
 def schema_to_ddl(spark, schema):
     return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
 
-def _disable_fanout(table_prop: Dict[str, str]) -> Dict[str, str]:
-    """Ensure fanout writer is disabled unless explicitly opted-in.
+# Base table properties applied to every Iceberg test table.
+# Disables the fanout writer to prevent OOM in CI.  S3TablesCatalog does not
+# honour catalog-level table-default properties, so this must be set per-table.
+_BASE_TBLPROPS = {'write.spark.fanout.enabled': 'false'}
 
-    S3TablesCatalog does not honour catalog-level table-default properties,
-    so the property must be set directly on every table."""
-    table_prop.setdefault('write.spark.fanout.enabled', 'false')
-    return table_prop
+# SQL fragment for raw CREATE TABLE statements that have no other TBLPROPERTIES.
+_BASE_TBLPROPS_SQL = "TBLPROPERTIES (" + \
+    ", ".join(f"'{k}' = '{v}'" for k, v in _BASE_TBLPROPS.items()) + ")"
 
 
 def create_iceberg_table(table_name: str,
@@ -188,7 +189,7 @@ def create_iceberg_table(table_name: str,
                          df_gen: Optional[Callable[[SparkSession], DataFrame]] = None) -> str:
     if table_prop is None:
         table_prop = {'format-version':'1'}
-    _disable_fanout(table_prop)
+    table_prop = {**_BASE_TBLPROPS, **table_prop}
 
     if df_gen is None:
         df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
