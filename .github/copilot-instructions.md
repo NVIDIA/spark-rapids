@@ -15,7 +15,7 @@ see [AGENTS.md](../AGENTS.md).
 ## Review Checklist — HIGH (should flag)
 
 - [ ] H1: Performance — unnecessary host-device copies, missing spill support, >2GB partition shuffle
-- [ ] H2: Concurrency — missing GpuSemaphore.acquireIfNecessary(), nested locks without ordering
+- [ ] H2: Concurrency — missing GpuSemaphore.acquireIfNecessary(context), nested locks without ordering
 - [ ] H3: Fallback gaps — new operator in GpuOverrides without fallback declaration or test
 - [ ] H4: Test quality — no GPU execution verification, hardcoded sleeps, unseeded random data
 - [ ] H5: Configuration — new RapidsConf without docs/defaults; should use .internal() if not user-visible; new features default off

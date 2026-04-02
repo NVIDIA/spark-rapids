@@ -73,7 +73,7 @@ spark-rapids/
 │   │       ├── GpuSemaphore.scala       # GPU access semaphore
 │   │       └── spill/SpillFramework.scala    # Spill-to-host/disk framework
 │   └── src/main/spark{VERSION}/   # Spark version-specific shims
-│       └── scala/                 #   e.g., spark320/, spark341/, spark400/
+│       └── scala/                 #   e.g., spark321/, spark341/, spark400/
 ├── sql-plugin-api/                # Plugin API definitions
 ├── shuffle-plugin/                # GPU shuffle optimization
 ├── tests/                         # Scala unit tests
