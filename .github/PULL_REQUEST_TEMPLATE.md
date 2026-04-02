@@ -28,7 +28,7 @@ Please provide a description of the changes proposed in this pull request. Here 
 
 ### Checklists
 
-<!--
+<!-- 
 Check the items below by putting "x" in the brackets for what is done.
 Not all of these items may be relevant to every PR, so please check only those that apply.
 -->
@@ -37,4 +37,3 @@ Not all of these items may be relevant to every PR, so please check only those t
 - [ ] This PR has added new tests or modified existing tests to cover new code paths.
       (Please explain in the PR description how the new code paths are tested, such as names of the new/existing tests that cover them.)
 - [ ] Performance testing has been performed and its results are added in the PR description. Or, an issue has been filed with a link in the PR description.
-- [ ] I have self-reviewed this PR (with or without code review tools).
