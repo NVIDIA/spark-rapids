@@ -21,7 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import com.nvidia.spark.rapids.{BaseExprMeta, DataFromReplacementRule, GpuAlias, GpuExec, GpuLiteral, GpuOverrides, GpuProjectExec, RapidsConf, RapidsMeta, SparkPlanMeta}
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSet, CurrentRow, ExprId, Expression, NamedExpression, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSet, CurrentRow, Expression, ExprId, NamedExpression, RowFrame, SortOrder, UnboundedFollowing, UnboundedPreceding}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.window.WindowExec
 import org.apache.spark.sql.rapids.aggregate.GpuAggregateExpression
