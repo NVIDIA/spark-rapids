@@ -153,11 +153,22 @@ object SchemaUtils {
             !TrampolineUtil.sameType(colSt, toSt) ||
             getPrecisionsList(colSt).exists(p => p <= Decimal.MAX_INT_DIGITS)
         if (needSchemaEvo) {
+          // cuDF's Parquet reader may not follow the backward-compatibility rules
+          // for legacy 2-level LIST types (e.g. repeated groups named "array" with
+          // a single field). In this case cuDF returns the unwrapped child column
+          // instead of a STRUCT column. Detect this and wrap it back into a struct
+          // so schema evolution can proceed normally. See NVIDIA/spark-rapids#11454.
+          val actualCol = if (col.getType.getTypeId != DType.DTypeEnum.STRUCT &&
+              colSt.length == 1) {
+            addToClose(ColumnView.makeStructView(col))
+          } else {
+            col
+          }
           val typeIdMap = buildTypeIdMapFromSchema(colSt, isCaseSensitive)
           val newViews = toSt.safeMap { f =>
             if (typeIdMap.contains(f.name)) {
               val typeAndId = typeIdMap(f.name)
-              val cv = addToClose(col.getChildColumnView(typeAndId._2))
+              val cv = addToClose(actualCol.getChildColumnView(typeAndId._2))
               val newChild = evolveColumnRecursively(cv, typeAndId._1, f.dataType,
                 isCaseSensitive, toClose, castFunc, needCast)
               if (newChild != cv) {
@@ -166,13 +177,14 @@ object SchemaUtils {
               newChild
             } else {
               // Return a null column if the name is not found in the table.
-              addToClose(
-                GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, f.dataType))
+              addToClose(GpuColumnVector.columnVectorFromNull(
+                actualCol.getRowCount.toInt, f.dataType))
             }
           }
-          val opNullCount = Optional.of(col.getNullCount.asInstanceOf[java.lang.Long])
-          new ColumnView(col.getType, col.getRowCount, opNullCount, col.getValid,
-            col.getOffsets, newViews.toArray)
+          val opNullCount =
+            Optional.of(actualCol.getNullCount.asInstanceOf[java.lang.Long])
+          new ColumnView(actualCol.getType, actualCol.getRowCount, opNullCount,
+            actualCol.getValid, actualCol.getOffsets, newViews.toArray)
         } else {
           col
         }
