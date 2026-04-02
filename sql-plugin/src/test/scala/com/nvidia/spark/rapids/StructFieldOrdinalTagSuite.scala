@@ -105,9 +105,9 @@ class StructFieldOrdinalTagSuite extends AnyFunSuite {
   test("tags on different expressions are independent") {
     val gsf1 = GetStructField(structAttr, 0, Some("a"))
     val gsf2 = GetStructField(structAttr, 2, Some("c"))
-    gsf1.setTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG, 5)
+    gsf1.setTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG, 2)
 
-    assert(GpuGetStructFieldMeta.effectiveOrdinal(gsf1) === 5)
+    assert(GpuGetStructFieldMeta.effectiveOrdinal(gsf1) === 2)
     assert(GpuGetStructFieldMeta.effectiveOrdinal(gsf2) === 2)
   }
 
