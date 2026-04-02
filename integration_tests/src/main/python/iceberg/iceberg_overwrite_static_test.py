@@ -102,7 +102,8 @@ def test_insert_overwrite_unpartitioned_table_values(spark_tmp_table_factory):
     def create_table(spark, table_name: str):
         sql = f"""CREATE TABLE {table_name} (id int, name string) USING ICEBERG 
         TBLPROPERTIES (
-        'format-version' = '2')
+        'format-version' = '2',
+        'write.spark.fanout.enabled' = 'false')
         """
         spark.sql(sql)
 
@@ -424,7 +425,8 @@ def test_insert_overwrite_static_df_api_truncate_string(spark_tmp_table_factory)
     partition_filter = f"_c6 >= '{prefix}10' AND _c6 < '{prefix}20'"
 
     table_prop = {"format-version": "2",
-                  "write.format.default": "parquet"}
+                  "write.format.default": "parquet",
+                  "write.spark.fanout.enabled": "false"}
 
     conf = copy_and_update(iceberg_static_overwrite_conf, {
         "spark.sql.adaptive.enabled": "true",
@@ -471,7 +473,8 @@ def test_insert_overwrite_static_df_api_truncate_string(spark_tmp_table_factory)
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_insert_overwrite_partitioned_table_fanout_enabled(spark_tmp_table_factory):
+    # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.
     _do_test_insert_overwrite_partitioned_table(
         spark_tmp_table_factory,
-        "year(_c9)",
+        "bucket(2, _c9)",
         table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})

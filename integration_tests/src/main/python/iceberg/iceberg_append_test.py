@@ -78,7 +78,8 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
             sql += "PARTITIONED BY (bucket(8, id)) "
 
         sql += f"""TBLPROPERTIES (
-        'format-version' = '2')
+        'format-version' = '2',
+        'write.spark.fanout.enabled' = 'false')
         """
         spark.sql(sql)
 
@@ -376,6 +377,7 @@ def test_insert_after_drop_partition_field(spark_tmp_table_factory):
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_insert_into_partitioned_table_fanout_enabled(spark_tmp_table_factory):
+    # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.
     _do_test_insert_into_partitioned_table(
-        spark_tmp_table_factory, "year(_c9)",
+        spark_tmp_table_factory, "bucket(2, _c9)",
         table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})
