@@ -607,8 +607,9 @@ def test_iceberg_update_after_drop_partition_field(spark_tmp_table_factory, upda
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_iceberg_update_partitioned_table_fanout_enabled(spark_tmp_table_factory):
+    # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.
     _do_test_iceberg_update_partitioned_table_single_column(
         spark_tmp_table_factory,
         update_mode='copy-on-write',
-        partition_col_sql="year(_c9)",
+        partition_col_sql="bucket(2, _c9)",
         table_properties={"write.spark.fanout.enabled": "true"})
