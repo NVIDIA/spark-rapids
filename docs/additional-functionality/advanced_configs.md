@@ -171,6 +171,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.window.range.int.enabled"></a>spark.rapids.sql.window.range.int.enabled|When the order-by column of a range based window is int type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the int type order-by column|true|Runtime
 <a name="sql.window.range.long.enabled"></a>spark.rapids.sql.window.range.long.enabled|When the order-by column of a range based window is long type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the long type order-by column|true|Runtime
 <a name="sql.window.range.short.enabled"></a>spark.rapids.sql.window.range.short.enabled|When the order-by column of a range based window is short type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the short type order-by column|false|Runtime
+
 ## Supported GPU Operators and Fine Tuning
 _The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific
 GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the
@@ -385,6 +386,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.Sqrt"></a>spark.rapids.sql.expression.Sqrt|`sqrt`|Square root|true|None|
 <a name="sql.expression.Stack"></a>spark.rapids.sql.expression.Stack|`stack`|Separates expr1, ..., exprk into n rows.|true|None|
 <a name="sql.expression.StartsWith"></a>spark.rapids.sql.expression.StartsWith| |Starts with|true|None|
+<a name="sql.expression.StringDecode"></a>spark.rapids.sql.expression.StringDecode| |Decodes binary data from a charset to a UTF-8 string|true|None|
 <a name="sql.expression.StringInstr"></a>spark.rapids.sql.expression.StringInstr|`instr`|Instr string operator|true|None|
 <a name="sql.expression.StringLPad"></a>spark.rapids.sql.expression.StringLPad| |Pad a string on the left|true|None|
 <a name="sql.expression.StringLocate"></a>spark.rapids.sql.expression.StringLocate|`locate`, `position`|Substring search operator|true|None|

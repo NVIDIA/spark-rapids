@@ -16,25 +16,65 @@
 
 package com.nvidia.spark.rapids
 
+import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
-import org.apache.spark.sql.rapids.ExternalSource
+import org.apache.spark.sql.rapids.{ExternalSource, GpuStringDecode}
 
 /**
  * Meta class for overriding StaticInvoke expressions.
  * <br/>
- * When writing to partitioned table, iceberg needs to compute the partition values based on the 
- * partition spec using [[StaticInvoke]] expression.
+ * Handles two cases:
+ * - Iceberg partition value computation via StaticInvoke
+ * - Spark 4.0+ StringDecode (RuntimeReplaceable replaced by StaticInvoke)
  */
 class StaticInvokeMeta(expr: StaticInvoke,
   conf: RapidsConf,
   parent: Option[RapidsMeta[_, _, _]],
   rule: DataFromReplacementRule) extends ExprMeta[StaticInvoke](expr, conf, parent, rule) {
 
+  private val isStringDecode: Boolean = {
+    expr.staticObject.getName == "org.apache.spark.sql.catalyst.expressions.StringDecode" &&
+      expr.functionName == "decode"
+  }
+
+  private var charsetName: String = _
+
+  override val childExprs: Seq[BaseExprMeta[_]] = if (isStringDecode) {
+    // StringDecode StaticInvoke: decode(bin, charset, legacyCharsets, legacyErrorAction)
+    // Only wrap the first child (bin) as the GPU expression input
+    expr.arguments.take(1).map(GpuOverrides.wrapExpr(_, conf, Some(this)))
+  } else {
+    Seq.empty
+  }
+
   override def tagExprForGpu(): Unit = {
-    ExternalSource.tagForGpu(expr, this)
+    if (isStringDecode) {
+      tagStringDecode()
+    } else {
+      ExternalSource.tagForGpu(expr, this)
+    }
+  }
+
+  private def tagStringDecode(): Unit = {
+    // charset is the second argument, must be a foldable string literal
+    val charsetExpr = expr.arguments(1)
+    GpuOverrides.extractLit(charsetExpr).map(_.value) match {
+      case Some(cs: org.apache.spark.unsafe.types.UTF8String) if cs != null =>
+        charsetName = cs.toString.toUpperCase
+        if (charsetName != "GBK") {
+          willNotWorkOnGpu(s"only GBK charset is supported on GPU, got: $charsetName")
+        }
+      case _ =>
+        willNotWorkOnGpu("charset must be a string literal for GPU StringDecode")
+    }
   }
 
   override def convertToGpuImpl(): GpuExpression = {
-    ExternalSource.convertToGpu(expr, this)
+    if (isStringDecode) {
+      val bin = childExprs.head.convertToGpu().asInstanceOf[Expression]
+      GpuStringDecode(bin, charsetName)
+    } else {
+      ExternalSource.convertToGpu(expr, this)
+    }
   }
 }

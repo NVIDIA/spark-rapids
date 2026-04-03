@@ -28,6 +28,28 @@ from spark_session import with_cpu_session, with_gpu_session, is_databricks104_o
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
+def test_string_decode_gbk_basic():
+    """Test GBK charset decoding with known Chinese characters, ASCII, mixed content, and nulls."""
+    data = [
+        (bytearray(b'\xc4\xe3\xba\xc3'),),              # 你好
+        (bytearray(b'\xca\xc0\xbd\xe7'),),              # 世界
+        (bytearray(b'Hello'),),                           # Pure ASCII
+        (bytearray(b'Hi\xc4\xe3\xba\xc3World'),),       # Mixed ASCII + Chinese
+        (bytearray(b''),),                                # Empty
+        (None,),                                          # Null
+        (bytearray(b'\xff\xff'),),                        # Invalid bytes
+        (bytearray(b'\x81'),),                            # Truncated lead byte
+    ]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data, "bin binary").selectExpr(
+            "decode(bin, 'GBK')"))
+
+def test_string_decode_gbk_random():
+    """Test GBK decoding with random binary data to exercise error handling paths."""
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, BinaryGen(min_length=0, max_length=50), length=2048)
+            .selectExpr("decode(a, 'GBK')"))
+
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
 

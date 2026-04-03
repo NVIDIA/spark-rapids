@@ -2566,27 +2566,6 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression = GpuLower(child)
       })
       .incompat(CASE_MODIFICATION_INCOMPAT),
-    expr[StringDecode](
-      "Decodes binary data from a charset to a UTF-8 string",
-      ExprChecks.binaryProject(TypeSig.STRING, TypeSig.STRING,
-        ("bin", TypeSig.BINARY, TypeSig.BINARY),
-        ("charset", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
-      (a, conf, p, r) => new BinaryExprMeta[StringDecode](a, conf, p, r) {
-        private var charsetName: String = _
-        override def tagExprForGpu(): Unit = {
-          extractStringLit(a.charset) match {
-            case Some(cs) if cs != null =>
-              charsetName = cs.toUpperCase
-              if (charsetName != "GBK") {
-                willNotWorkOnGpu(s"only GBK charset is supported on GPU, got: $charsetName")
-              }
-            case _ =>
-              willNotWorkOnGpu("charset must be a string literal for GPU StringDecode")
-          }
-        }
-        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuStringDecode(lhs, charsetName)
-      }),
     expr[StringLPad](
       "Pad a string on the left",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
@@ -4205,7 +4184,8 @@ object GpuOverrides extends Logging {
   val expressions: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] =
     commonExpressions ++ TimeStamp.getExprs ++ GpuHiveOverrides.exprs ++
         ZOrderRules.exprs ++ DecimalArithmeticOverrides.exprs ++
-        BloomFilterShims.exprs ++ InSubqueryShims.exprs ++ RaiseErrorShim.exprs ++
+        BloomFilterShims.exprs ++ StringDecodeShims.exprs ++
+        InSubqueryShims.exprs ++ RaiseErrorShim.exprs ++
         ExternalSource.exprRules ++ SparkShimImpl.getExprs
 
   def wrapScan[INPUT <: Scan](
