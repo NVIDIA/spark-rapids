@@ -57,7 +57,7 @@ def _get_buildvers(buildvers, pom_file, logger=None, ignore_excluded_shims=False
                     # exists. This is expected when pom.xml and scala2.13/pom.xml
                     # share the same exclusion list but have different profiles due
                     # to #if scala-2.12/#if scala-2.13 conditional comments
-                    # (e.g. 332db only in pom.xml, 400 only in scala2.13/pom.xml).
+                    # (e.g. profile split between pom.xml and scala2.13/pom.xml via #if scala comments).
                     if logger:
                         logger.debug(
                             "Shim %s listed in dyn.shim.excluded.releases not found in "
