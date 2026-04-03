@@ -74,6 +74,7 @@ jobs:
         github.actor == 'SurajAralihalli' ||
         github.actor == 'jihoonson' ||
         github.actor == 'knoguchi22' ||
+        github.actor == 'patilkishorv' ||
         github.actor == 'pmattione-nvidia'
       )
     steps:
