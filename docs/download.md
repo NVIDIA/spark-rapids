@@ -92,7 +92,7 @@ The RAPIDS Accelerator maintains support for Apache Spark versions available for
 | arm64     | Scala 2.13    | [RAPIDS Accelerator v26.02.2](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.02.2/rapids-4-spark_2.13-26.02.2-cuda13-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.02.2/rapids-4-spark_2.13-26.02.2-cuda13-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;26.02.2&lt;/version&gt;<br/>    &lt;classifier&gt;cuda13-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
 
 
-The above packages are built against CUDA 12.9 or CUDA 13.0. They are tested on V100, T4, A10, A100, L4, H100 and GB100 GPUs.
+The above packages are built against CUDA 12.9 or CUDA 13.1. They are tested on V100, T4, A10, A100, L4, H100 and GB100 GPUs.
 
 ### Verify signature
 * Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
@@ -113,6 +113,10 @@ The output of signature verify:
 * Rapids shuffle manager V2 phase 1 with pipelined write ([#13724](https://github.com/NVIDIA/spark-rapids/pull/13724))
 * Enable GPU kudo reads by default ([#14125](https://github.com/NVIDIA/spark-rapids/pull/14125))
 * Multiple deadlock and OOM fixes for improved stability ([#14202](https://github.com/NVIDIA/spark-rapids/pull/14202), [#14180](https://github.com/NVIDIA/spark-rapids/pull/14180), [#14175](https://github.com/NVIDIA/spark-rapids/pull/14175))
+
+Note: There is a known issue in the 26.02.2 release where a query that combines running
+(UNBOUNDED PRECEDING to CURRENT ROW) and bounded window frames in the same PARTITION BY / ORDER BY
+clause, where both use AVG(), may fail with `RuntimeException: Couldn't find _gpu_w* in [...]`.
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
