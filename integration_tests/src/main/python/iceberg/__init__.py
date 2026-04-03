@@ -176,25 +176,26 @@ def schema_to_ddl(spark, schema):
 # Base table properties applied to every Iceberg test table.
 # Disables the fanout writer to prevent OOM in CI.  S3TablesCatalog does not
 # honor catalog-level table-default properties, so this must be set per table.
-_BASE_TBLPROPS = {'write.spark.fanout.enabled': 'false'}
+_BASE_TBLPROPS = {'write.spark.fanout.enabled': False}
 
-# SQL fragment for raw CREATE TABLE statements that have no other TBLPROPERTIES.
-_BASE_TBLPROPS_SQL = "TBLPROPERTIES (" + \
-    ", ".join(f"'{k}' = '{v}'" for k, v in _BASE_TBLPROPS.items()) + ")"
+
+def _to_tblprops_str(props: dict) -> dict:
+    """Convert property values to their SQL-safe string representation."""
+    return {k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in props.items()}
 
 
 def _build_tblprops(extra_props: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """Build table properties dict with base props merged in.
-    Caller properties take precedence over base."""
+    Caller properties take precedence over base.
+    Returns string-valued dict suitable for SQL interpolation."""
     if extra_props is None:
-        return dict(_BASE_TBLPROPS)
-    return {**_BASE_TBLPROPS, **extra_props}
+        return _to_tblprops_str(_BASE_TBLPROPS)
+    return _to_tblprops_str({**_BASE_TBLPROPS, **extra_props})
 
 
-def _build_tblprops_sql(extra_props: Optional[Dict[str, str]] = None) -> str:
-    """Build a TBLPROPERTIES SQL clause with base props merged in."""
-    props = _build_tblprops(extra_props)
-    return "TBLPROPERTIES (" + ", ".join(f"'{k}' = '{v}'" for k, v in props.items()) + ")"
+# SQL fragment for raw CREATE TABLE statements that have no other TBLPROPERTIES.
+_BASE_TBLPROPS_SQL = "TBLPROPERTIES (" + \
+    ", ".join(f"'{k}' = '{v}'" for k, v in _build_tblprops().items()) + ")"
 
 
 def create_iceberg_table(table_name: str,
