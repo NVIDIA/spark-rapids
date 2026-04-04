@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -74,6 +74,14 @@ else
 fi
 
 export SPARK_SHIM_VER=${SPARK_SHIM_VER:-"spark${SPARK_VER//.}db${DB_VER_SUFFIX}"}
+
+# On Databricks with Spark 4.x, the built-in SparkConnectPlugin starts a gRPC
+# service on port 15002 which is already occupied by the cluster's own SparkConnect.
+# The bind failure leaves non-daemon Netty threads that block JVM exit.
+# Fix: use an ephemeral port so the service starts and stops cleanly.
+if [[ "$SPARK_VER" == 4.* ]]; then
+    export PYSP_TEST_spark_connect_grpc_binding_port=0
+fi
 
 # Setup SPARK_HOME if need
 if [[ -z "$SPARK_HOME" ]]; then

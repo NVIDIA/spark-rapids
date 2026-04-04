@@ -397,7 +397,8 @@ def test_insert_overwrite_dynamic_after_drop_partition_field(spark_tmp_table_fac
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_insert_overwrite_dynamic_partitioned_fanout_enabled(spark_tmp_table_factory):
+    # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.
     _do_test_insert_overwrite_dynamic_partitioned(
         spark_tmp_table_factory,
-        "year(_c9)",
+        "bucket(2, _c9)",
         table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})
