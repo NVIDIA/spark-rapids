@@ -487,8 +487,6 @@ object RmmRapidsRetryIterator extends Logging {
         }
       }
       val curAttempt = attemptStack.pop()
-      // Get the info before running the split, since the attempt may be closed after splitting.
-      val attemptAsString = closeOnExcept(curAttempt)(_.toString)
       val splitted = try {
         // splitPolicy must take ownership of the argument
         splitPolicy(curAttempt)
@@ -497,25 +495,33 @@ object RmmRapidsRetryIterator extends Logging {
           // same type to provide more context for the OOM.
           // This looks a little odd, because we can not change the type of root exception.
           // Otherwise, some unit tests will fail due to the wrong exception type returned.
+          //
+          // Stringify the attempt lazily (only on failure) to avoid O(n) cost on the
+          // hot path when splits succeed. The attempt has not been closed yet at this
+          // point because splitPolicy threw before taking ownership.
         case go: GpuRetryOOM =>
+          val attemptAsString = curAttempt.toString
           throw new GpuRetryOOM(
             s"GPU OutOfMemory: " +
               s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
               s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(go)
         case go: GpuSplitAndRetryOOM =>
+          val attemptAsString = curAttempt.toString
           throw new GpuSplitAndRetryOOM(
             s"GPU OutOfMemory: " +
               s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
               s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(go)
         case co: CpuRetryOOM =>
+          val attemptAsString = curAttempt.toString
           throw new CpuRetryOOM(
             s"CPU OutOfMemory: " +
               s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
               s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(co)
         case co: CpuSplitAndRetryOOM =>
+          val attemptAsString = curAttempt.toString
           throw new CpuSplitAndRetryOOM(
             s"CPU OutOfMemory: " +
               s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
