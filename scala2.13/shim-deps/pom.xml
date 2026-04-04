@@ -21,9 +21,9 @@
 
     <parent>
         <groupId>com.nvidia</groupId>
-        <artifactId>rapids-4-spark-jdk-profiles_2.13</artifactId>
+        <artifactId>rapids-4-spark-parent_2.13</artifactId>
         <version>26.06.0-SNAPSHOT</version>
-        <relativePath>../jdk-profiles/pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-shim-deps-parent_2.13</artifactId>
     <packaging>pom</packaging>
@@ -285,6 +285,19 @@
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
+            <!-- Import Spark's dependency management to give precedence to
+                 transitive dependency versions inherited via Spark (e.g. Jackson) -->
+            <dependencyManagement>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.apache.spark</groupId>
+                        <artifactId>spark-parent_${scala.binary.version}</artifactId>
+                        <version>${spark.version}</version>
+                        <type>pom</type>
+                        <scope>import</scope>
+                    </dependency>
+                </dependencies>
+            </dependencyManagement>
             <dependencies>
                 <dependency>
                     <groupId>org.apache.spark</groupId>
