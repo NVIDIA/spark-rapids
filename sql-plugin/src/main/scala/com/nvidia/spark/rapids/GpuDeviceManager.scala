@@ -481,8 +481,9 @@ object GpuDeviceManager extends Logging {
     }
     // Host memory limits must be set after the pinned memory pool is initialized
     HostAlloc.initialize(nonPinnedLimit)
-    // Fill the MULTITHREAD_READ_MEMORY_LIMIT_SIZE with the 90% of the total OFF_HEAP memory
-    // if it is not set already.
+    // Fill the MULTITHREAD_READ_MEMORY_LIMIT_SIZE with 90% of the total off-heap memory
+    // if it is not set already. When off-heap limit tracking is disabled (nonPinnedLimit == -1),
+    // falls back to a hardware-derived estimate via computeEffectiveOffHeapLimit.
     if (conf.multiThreadReadMemoryLimit == 0) {
       sparkConf.set(RapidsConf.MULTITHREAD_READ_MEMORY_LIMIT_SIZE.key,
         computeMtReadLimit(pinnedSize, nonPinnedLimit, conf, sparkConf,
@@ -517,6 +518,9 @@ object GpuDeviceManager extends Logging {
   private def computeEffectiveOffHeapLimit(conf: RapidsConf, sparkConf: SparkConf,
       deviceCount: Int, memCheck: MemoryChecker): Long = {
     val confLimit = conf.offHeapLimit
+    // This min limit of 4GB is somewhat arbitrary, but based on some testing which showed
+    // that the previous minimum of 15 MB * num cores was too little for certain benchmark
+    // queries to complete, whereas this limit was sufficient.
     val minMemoryLimit = 4L * 1024 * 1024 * 1024
 
     val executorOverheadKey = "spark.executor.memoryOverhead"
