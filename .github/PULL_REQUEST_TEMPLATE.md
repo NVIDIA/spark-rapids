@@ -29,8 +29,8 @@ Please provide a description of the changes proposed in this pull request. Here 
 ### Checklists
 
 <!-- 
-Check the items below by putting "x" in the brackets for what is done.
-Not all of these items may be relevant to every PR, so please check only those that apply.
+Check the items that apply by putting "x" in the brackets.
+Leave non-applicable items unchecked — do not delete them.
 -->
 
 - [ ] This PR has added documentation for new or modified features or behaviors.
