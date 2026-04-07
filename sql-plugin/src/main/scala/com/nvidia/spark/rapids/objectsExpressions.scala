@@ -37,7 +37,7 @@ class StaticInvokeMeta(expr: StaticInvoke,
       expr.functionName == "decode"
   }
 
-  private var charsetName: String = _
+  private var charsetName: String = null
 
   override val childExprs: Seq[BaseExprMeta[_]] = if (isStringDecode) {
     // StringDecode StaticInvoke: decode(bin, charset, legacyCharsets, legacyErrorAction)
@@ -56,6 +56,10 @@ class StaticInvokeMeta(expr: StaticInvoke,
   }
 
   private def tagStringDecode(): Unit = {
+    if (expr.arguments.size < 2) {
+      willNotWorkOnGpu("StringDecode StaticInvoke has unexpected argument count")
+      return
+    }
     // charset is the second argument, must be a foldable string literal
     val charsetExpr = expr.arguments(1)
     GpuOverrides.extractLit(charsetExpr).map(_.value) match {
