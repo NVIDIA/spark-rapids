@@ -333,29 +333,6 @@
         <!-- Note Databricks requires 2 properties -Ddatabricks and -Dbuildver=3*db -->
         <!-- #if scala-2.12 -->
         <profile>
-            <id>release332db</id>
-            <activation>
-                <property>
-                    <name>buildver</name>
-                    <value>332db</value>
-                </property>
-            </activation>
-            <properties>
-                <spark.version.classifier>spark332db</spark.version.classifier>
-                <spark.version>${spark332db.version}</spark.version>
-                <spark.test.version>${spark332db.version}</spark.test.version>
-                <hadoop.client.version>3.3.1</hadoop.client.version>
-                <rat.consoleOutput>true</rat.consoleOutput>
-                <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
-            </properties>
-            <modules>
-                <module>shim-deps/databricks</module>
-                <module>delta-lake/delta-spark332db</module>
-                <module>iceberg/iceberg-stub</module>
-            </modules>
-        </profile>
-        <profile>
             <id>release341db</id>
             <activation>
                 <property>
@@ -643,11 +620,14 @@
                 <spark.test.version>${spark400.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-40x</rapids.delta.artifactId1>
+                <iceberg.artifact.suffix>${spark40x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.runtime.version>${iceberg.110x.version}</iceberg.runtime.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-40x</module>
-                <module>iceberg/iceberg-stub</module>
+                <module>iceberg/iceberg-1-10-x</module>
             </modules>
         </profile>
         <profile>
@@ -687,11 +667,14 @@
                 <spark.test.version>${spark401.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-40x</rapids.delta.artifactId1>
+                <iceberg.artifact.suffix>${spark40x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.runtime.version>${iceberg.110x.version}</iceberg.runtime.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-40x</module>
-                <module>iceberg/iceberg-stub</module>
+                <module>iceberg/iceberg-1-10-x</module>
             </modules>
         </profile>
         <profile>
@@ -708,11 +691,14 @@
                 <spark.test.version>${spark402.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-40x</rapids.delta.artifactId1>
+                <iceberg.artifact.suffix>${spark40x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
+                <iceberg.runtime.version>${iceberg.110x.version}</iceberg.runtime.version>
+                <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>delta-lake/delta-40x</module>
-                <module>iceberg/iceberg-stub</module>
+                <module>iceberg/iceberg-1-10-x</module>
             </modules>
         </profile>
         <profile>
@@ -836,10 +822,9 @@
         <spark.version.classifier>spark${buildver}</spark.version.classifier>
         <cuda.version>cuda12</cuda.version>
         <jni.classifier>${cuda.version}</jni.classifier>
-        <!-- TODO: https://github.com/NVIDIA/spark-rapids/issues/14477 -->
-        <spark-rapids-jni.version>26.04.0-SNAPSHOT</spark-rapids-jni.version>
-        <spark-rapids-private.version>26.04.0-SNAPSHOT</spark-rapids-private.version>
-        <spark-rapids-hybrid.version>26.04.0-SNAPSHOT</spark-rapids-hybrid.version>
+        <spark-rapids-jni.version>26.06.0-SNAPSHOT</spark-rapids-jni.version>
+        <spark-rapids-private.version>26.06.0-SNAPSHOT</spark-rapids-private.version>
+        <spark-rapids-hybrid.version>26.06.0-SNAPSHOT</spark-rapids-hybrid.version>
         <scala.binary.version>2.12</scala.binary.version>
         <scala.recompileMode>incremental</scala.recompileMode>
         <scala.version>2.12.21</scala.version>
@@ -899,7 +884,6 @@
         <spark342.version>3.4.2</spark342.version>
         <spark343.version>3.4.3</spark343.version>
         <spark344.version>3.4.4</spark344.version>
-        <spark332db.version>3.3.2-databricks</spark332db.version>
         <spark341db.version>3.4.1-databricks</spark341db.version>
         <spark350db143.version>3.5.0-databricks-143</spark350db143.version>
         <spark350.version>3.5.0</spark350.version>
@@ -946,10 +930,12 @@
         <spark34x.iceberg.artifact.suffix>3.4</spark34x.iceberg.artifact.suffix>
         <spark34x.iceberg.version>1.6.1</spark34x.iceberg.version>
         <spark35x.iceberg.artifact.suffix>3.5</spark35x.iceberg.artifact.suffix>
+        <spark40x.iceberg.artifact.suffix>4.0</spark40x.iceberg.artifact.suffix>
         <iceberg.artifact.suffix>3.3</iceberg.artifact.suffix>
         <iceberg.16x.version>1.6.1</iceberg.16x.version>
         <iceberg.19x.version>1.9.2</iceberg.19x.version>
         <iceberg.110x.version>1.10.1</iceberg.110x.version>
+        <iceberg.runtime.version>${iceberg.version}</iceberg.runtime.version>
         <iceberg.version>${iceberg.16x.version}</iceberg.version>
         <!--
             If true, disables verification that all Shims be built as of one and the same git
@@ -1104,7 +1090,7 @@
             <dependency>
                 <groupId>org.apache.iceberg</groupId>
                 <artifactId>iceberg-spark-runtime-${iceberg.artifact.suffix}_${scala.binary.version}</artifactId>
-                <version>${iceberg.version}</version>
+                <version>${iceberg.runtime.version}</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>

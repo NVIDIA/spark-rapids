@@ -50,6 +50,7 @@ import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, HostColumnVector
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuLiteral
 import com.nvidia.spark.rapids.jni.BloomFilter
+import com.nvidia.spark.rapids.shims.BloomFilterConstantsShims
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.internal.SQLConf.{RUNTIME_BLOOM_FILTER_MAX_NUM_BITS, RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS}
@@ -60,7 +61,9 @@ import org.apache.spark.sql.types.{BinaryType, DataType}
 case class GpuBloomFilterAggregate(
     child: Expression,
     estimatedNumItemsRequested: Long,
-    numBitsRequested: Long) extends GpuAggregateFunction {
+    numBitsRequested: Long,
+    version: Int = BloomFilterConstantsShims.BLOOM_FILTER_FORMAT_VERSION,
+    seed: Int = BloomFilter.DEFAULT_SEED) extends GpuAggregateFunction {
 
   override def nullable: Boolean = true
 
@@ -82,7 +85,8 @@ case class GpuBloomFilterAggregate(
 
   override val inputProjection: Seq[Expression] = Seq(child)
 
-  override val updateAggregates: Seq[CudfAggregate] = Seq(GpuBloomFilterUpdate(numHashes, numBits))
+  override val updateAggregates: Seq[CudfAggregate] =
+    Seq(GpuBloomFilterUpdate(numHashes, numBits, version, seed))
 
   override val mergeAggregates: Seq[CudfAggregate] = Seq(GpuBloomFilterMerge())
 
@@ -111,12 +115,13 @@ object GpuBloomFilterAggregate {
   }
 }
 
-case class GpuBloomFilterUpdate(numHashes: Int, numBits: Long) extends CudfAggregate {
+case class GpuBloomFilterUpdate(
+    numHashes: Int,
+    numBits: Long,
+    version: Int,
+    seed: Int) extends CudfAggregate {
   override val reductionAggregate: ColumnVector => Scalar = (col: ColumnVector) => {
-    // TODO: Address this properly in https://github.com/NVIDIA/spark-rapids/pull/14406.
-    // For now, only the v1 version of bloom-filters is supported.
-    closeOnExcept(BloomFilter.create(
-      BloomFilter.VERSION_1, numHashes, numBits, BloomFilter.DEFAULT_SEED)) { bloomFilter =>
+    closeOnExcept(BloomFilter.create(version, numHashes, numBits, seed)) { bloomFilter =>
       BloomFilter.put(bloomFilter, col)
       bloomFilter
     }
