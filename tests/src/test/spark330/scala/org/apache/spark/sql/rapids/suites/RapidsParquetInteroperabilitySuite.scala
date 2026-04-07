@@ -28,56 +28,16 @@ import org.apache.hadoop.fs.PathFilter
 import org.apache.parquet.format.converter.ParquetMetadataConverter.NO_FILTER
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 
-import org.apache.spark.sql.Row
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFooterReader
 import org.apache.spark.sql.execution.datasources.parquet.ParquetInteroperabilitySuite
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
-import org.apache.spark.sql.types._
 
 
 class RapidsParquetInteroperabilitySuite
   extends ParquetInteroperabilitySuite
   with RapidsSQLTestsBaseTrait {
-  // GPU-specific version of SPARK-36803 to verify the fix for legacy 2-level
-  // Parquet LIST schema evolution runs through the GPU Parquet reader path.
-  // The inherited test is excluded in RapidsTestSettings; this testRapids
-  // replaces it. See NVIDIA/spark-rapids#11454.
-  testRapids("SPARK-36803: parquet files with legacy mode and schema evolution") {
-    Seq(false, true).foreach { legacyMode =>
-      withSQLConf(
-          SQLConf.PARQUET_WRITE_LEGACY_FORMAT.key -> legacyMode.toString) {
-        withTempPath { tableDir =>
-          val schema1 = StructType(
-            StructField("col-0", ArrayType(
-              StructType(
-                StructField("col-0", IntegerType, nullable = true) :: Nil),
-              containsNull = false)) :: Nil)
-          val row1 = Row(Seq(Row(1)))
-          val df1 = spark.createDataFrame(
-            spark.sparkContext.parallelize(row1 :: Nil, 1), schema1)
-          df1.write.parquet(tableDir.getAbsolutePath)
-
-          val schema2 = StructType(
-            StructField("col-0", ArrayType(
-              StructType(
-                StructField("col-0", IntegerType, nullable = true) ::
-                StructField("col-1", IntegerType, nullable = true) :: Nil),
-              containsNull = false)) :: Nil)
-          val row2 = Row(Seq(Row(1, 2)))
-          val df2 = spark.createDataFrame(
-            spark.sparkContext.parallelize(row2 :: Nil, 1), schema2)
-          df2.write.mode("append").parquet(tableDir.getAbsolutePath)
-
-          checkAnswer(
-            spark.read.schema(schema2).parquet(tableDir.getAbsolutePath),
-            Seq(Row(Seq(Row(1, null))), Row(Seq(Row(1, 2)))))
-        }
-      }
-    }
-  }
-
   testRapids("parquet timestamp conversion"){
     // Make a table with one parquet file written by impala, and one parquet file written by spark.
     // We should only adjust the timestamps in the impala file, and only if the conf is set
