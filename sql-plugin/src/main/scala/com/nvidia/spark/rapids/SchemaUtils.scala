@@ -145,7 +145,7 @@ object SchemaUtils {
       isCaseSensitive: Boolean, toClose: ArrayBuffer[ColumnView],
       castFunc: Option[(ColumnView, DataType, DataType) => ColumnView],
       needCast: Boolean,
-      allowNonStructWrapping: Boolean = false): ColumnView = {
+      allowNonStructWrapping: Boolean): ColumnView = {
     // An util function to add a view to the buffer "toClose".
     val addToClose = (v: ColumnView) => {
       toClose += v
