@@ -375,7 +375,7 @@ def test_delta_scan_split_with_DV_disabled_with_DVs(spark_tmp_path, pushdown_dv_
         assert num_deleted > 0, "Expected some rows to be deleted"
         spark.sql(f"ALTER TABLE delta.`{data_path}` SET TBLPROPERTIES " +
                   "('delta.enableDeletionVectors' = 'false')")
-    # The cuDF-based reader (GpuDeltaParquetFileFormat2), which is used when dv_predicate_pushdown is True, support the file split,
+    # The cuDF-based reader (GpuDeltaParquetFileFormat2), which is used when dv_predicate_pushdown is True, supports the file split,
     # whereas the scala reader (GpuDeltaParquetFileFormat) does not support it.
     # So we expect 2 partitions when dv_predicate_pushdown is True, and 1 partition when it is False.
     expected_num_partitions = 2 if pushdown_dv_predicate else 1
