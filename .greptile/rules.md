@@ -10,7 +10,6 @@ shim layer architecture, see `AGENTS.md` at the repo root.
 - [ ] Data correctness — GPU vs CPU divergence: nulls, NaN, overflow, decimal precision/scale, TIMESTAMP_NTZ vs LTZ, empty result handling
 - [ ] Shim consistency — shim change not adjusted across all Spark versions (see AGENTS.md § Shim Layer)
 - [ ] Resource lifecycle — SpillableColumnarBatch used after close or without retry handling
-- [ ] Reliability — >2GB partition shuffle without size enforcement, missing spill support in GPU-resident data paths (both cause crashes)
 - [ ] Performance — unnecessary host-device copies, redundant materializations, avoidable data serialization
 - [ ] Concurrency — missing GpuSemaphore.acquireIfNecessary(context), nested locks without ordering
 - [ ] Fallback gaps — new operator in GpuOverrides without fallback declaration or test

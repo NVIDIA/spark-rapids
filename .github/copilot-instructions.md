@@ -19,7 +19,6 @@ these upstream repositories to verify correctness:
 - [ ] C3: Data correctness — GPU vs CPU divergence: nulls, NaN, overflow, decimal precision/scale, TIMESTAMP_NTZ vs LTZ, empty result handling
 - [ ] C4: Shim consistency — shim change not adjusted across all Spark versions (see AGENTS.md § Shim Layer)
 - [ ] C5: Resource lifecycle — SpillableColumnarBatch used after close or without retry handling
-- [ ] C6: Reliability — >2GB partition shuffle without size enforcement, missing spill support in GPU-resident data paths (both cause crashes)
 
 ## Review Checklist — HIGH (should flag)
 
