@@ -52,8 +52,7 @@ class RapidsParquetCompressionCodecPrecedenceSuite
             sql(s"CREATE TABLE $tbl USING Parquet $opts $part " +
               s"AS SELECT id AS col1, CAST(id % 2 AS INT) AS p " +
               s"FROM range(1000)")
-            val sub = if (isPartitioned) "/p=0" else ""
-            val dir = s"${tmpDir.getPath.stripSuffix("/")}/$tbl$sub"
+            val dir = s"${tmpDir.getPath.stripSuffix("/")}/$tbl"
             val conf = spark.sessionState.newHadoopConf()
             val actual = for {
               f <- readAllFootersWithoutSummaryFiles(
@@ -61,6 +60,8 @@ class RapidsParquetCompressionCodecPrecedenceSuite
               b <- f.getParquetMetadata.getBlocks.asScala
               c <- b.getColumns.asScala
             } yield c.getCodec.name()
+            assert(actual.nonEmpty,
+              s"No parquet column metadata found for codec $codec")
             assert(actual.distinct.forall(_ == codec),
               s"Expected $codec but got ${actual.distinct}")
           }
