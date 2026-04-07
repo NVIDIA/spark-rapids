@@ -40,6 +40,9 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  *   3. Compares CPU and GPU read results for correctness.
  *
  * Note: reader/writer timezones are controlled by `TimeZone.getDefault`.
+ * TimeZone must be set INSIDE the session lambda because resetSparkSessionConf
+ * restores spark.sql.session.timeZone to the original value (UTC),
+ * which also resets TimeZone.getDefault().
  *
  * Run it manually with:
  *   mvn test -DwildcardSuites=com.nvidia.spark.rapids.OrcTimezoneSuite -Dbuildver=xxx
@@ -65,14 +68,9 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
     LocalDateTime.of(9999, 12, 31, 23, 59, 59).toEpochSecond(ZoneOffset.UTC) *
       TimeUnit.SECONDS.toMicros(1) + 999999L
 
-  private def withJvmDefaultTimeZone[T](timeZoneId: String)(f: => T): T = {
-    val originalTimeZone = TimeZone.getDefault
-    try {
-      TimeZone.setDefault(TimeZone.getTimeZone(timeZoneId))
-      f
-    } finally {
-      TimeZone.setDefault(originalTimeZone)
-    }
+  private def setSessionTimeZone(spark: SparkSession, tzId: String): Unit = {
+    TimeZone.setDefault(TimeZone.getTimeZone(tzId))
+    spark.conf.set("spark.sql.session.timeZone", tzId)
   }
 
   private def fileDataFrame(spark: SparkSession, random: Random): DataFrame = {
@@ -121,29 +119,29 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
       val existClass = if (v1SourceList == "orc") "GpuFileSourceScanExec" else "GpuBatchScan"
 
       withTempPath { fileRoot =>
-        withJvmDefaultTimeZone(writerTimeZone) {
-          withCpuSparkSession(
-            spark => writeFile(spark, fileRoot, random),
-            conf = conf)
-        }
+        withCpuSparkSession(spark => {
+          setSessionTimeZone(spark, writerTimeZone)
+          writeFile(spark, fileRoot, random)
+        }, conf = conf)
 
         timezones.foreach { readerTimeZone =>
           withClue(s"writerTimezone=$writerTimeZone readerTimezone=$readerTimeZone " +
               s"datasource=$dsLabel") {
-            withJvmDefaultTimeZone(readerTimeZone) {
-              val (fromCpu, fromGpu) = runOnCpuAndGpu(
-                readFile(fileRoot),
-                _.orderBy("id"),
-                conf = conf,
-                repart = 0,
-                skipCanonicalizationCheck = true,
-                existClasses = existClass)
-              compareResults(
-                sort = false,
-                floatEpsilon = 0.0,
-                fromCpu = fromCpu,
-                fromGpu = fromGpu)
-            }
+            val (fromCpu, fromGpu) = runOnCpuAndGpu(
+              spark => {
+                setSessionTimeZone(spark, readerTimeZone)
+                readFile(fileRoot)(spark)
+              },
+              _.orderBy("id"),
+              conf = conf,
+              repart = 0,
+              skipCanonicalizationCheck = true,
+              existClasses = existClass)
+            compareResults(
+              sort = false,
+              floatEpsilon = 0.0,
+              fromCpu = fromCpu,
+              fromGpu = fromGpu)
           }
         }
       }

@@ -35,13 +35,17 @@ import org.apache.spark.sql.functions._
  * ORC encodes the writer timezone in the stripe footer, and uses the JVM default timezone
  * as the reader timezone, so we must manipulate TimeZone.setDefault().
  *
+ * Note: TimeZone must be set INSIDE the withCpuSparkSession/withGpuSparkSession lambda,
+ * because resetSparkSessionConf restores spark.sql.session.timeZone to the original value
+ * (UTC), which also resets TimeZone.getDefault().
+ *
  * Usage:
- *   argLine="-DenableOrcTimeZonePerf=true \
- *            -DorcPerfWriterTZ=America/Los_Angeles \
- *            -DorcPerfReaderTZ=UTC \
- *            -DorcPerfRows=1073741824" \
  *   mvn test -Dbuildver=xxx \
- *     -DwildcardSuites=com.nvidia.spark.rapids.timezone.OrcTimezonePerfSuite
+ *     -DwildcardSuites=com.nvidia.spark.rapids.timezone.OrcTimezonePerfSuite \
+ *     -DargLine="-DenableOrcTimeZonePerf=true \
+ *                -DorcPerfWriterTZ=America/Los_Angeles \
+ *                -DorcPerfReaderTZ=UTC \
+ *                -DorcPerfRows=1073741824"
  */
 class OrcTimezonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
 
@@ -55,14 +59,9 @@ class OrcTimezonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfte
 
   private val path = "/tmp/tmp_OrcTimezonePerfSuite"
 
-  private def withJvmTimeZone[T](tzId: String)(f: => T): T = {
-    val saved = TimeZone.getDefault
-    try {
-      TimeZone.setDefault(TimeZone.getTimeZone(tzId))
-      f
-    } finally {
-      TimeZone.setDefault(saved)
-    }
+  private def setSessionTimeZone(spark: SparkSession, tzId: String): Unit = {
+    TimeZone.setDefault(TimeZone.getTimeZone(tzId))
+    spark.conf.set("spark.sql.session.timeZone", tzId)
   }
 
   private def orcConf(): SparkConf = {
@@ -75,15 +74,14 @@ class OrcTimezonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfte
   override def beforeAll(): Unit = {
     super.beforeAll()
     if (enablePerfTest) {
-      withJvmTimeZone(writerTZ) {
-        withCpuSparkSession(spark => {
-          spark.range(numRows)
-            .selectExpr("id",
-              s"cast($baseEpochSeconds + abs(hash(id)) % " +
-                s"(34 * 365 * 86400) as timestamp) as ts")
-            .write.mode("overwrite").orc(path)
-        }, orcConf())
-      }
+      withCpuSparkSession(spark => {
+        setSessionTimeZone(spark, writerTZ)
+        spark.range(numRows)
+          .selectExpr("id",
+            s"cast($baseEpochSeconds + abs(hash(id)) % " +
+              s"(34 * 365 * 86400) as timestamp) as ts")
+          .write.mode("overwrite").orc(path)
+      }, orcConf())
 
       val dir = new File(path)
       val orcFiles = dir.listFiles().filter(_.getName.endsWith(".orc"))
@@ -123,21 +121,23 @@ class OrcTimezonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfte
     println("round,type,elapsedMs")
 
     val cpuTimes = (1 to totalRounds).map { i =>
-      val ms = withJvmTimeZone(jvmTZ) {
-        val start = System.nanoTime()
-        withCpuSparkSession(spark => readOrcAgg(spark).collect(), conf)
-        (System.nanoTime() - start) / 1000000L
-      }
+      val start = System.nanoTime()
+      withCpuSparkSession(spark => {
+        setSessionTimeZone(spark, jvmTZ)
+        readOrcAgg(spark).collect()
+      }, conf)
+      val ms = (System.nanoTime() - start) / 1000000L
       println(s"$i,CPU,$ms")
       ms
     }.drop(warmupRounds)
 
     val gpuTimes = (1 to totalRounds).map { i =>
-      val ms = withJvmTimeZone(jvmTZ) {
-        val start = System.nanoTime()
-        withGpuSparkSession(spark => readOrcAgg(spark).collect(), conf)
-        (System.nanoTime() - start) / 1000000L
-      }
+      val start = System.nanoTime()
+      withGpuSparkSession(spark => {
+        setSessionTimeZone(spark, jvmTZ)
+        readOrcAgg(spark).collect()
+      }, conf)
+      val ms = (System.nanoTime() - start) / 1000000L
       println(s"$i,GPU,$ms")
       ms
     }.drop(warmupRounds)
@@ -154,25 +154,27 @@ class OrcTimezonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfte
     assume(enablePerfTest)
 
     // Verify CPU and GPU produce the same results
-    withJvmTimeZone(readerTZ) {
-      val cpuSummary = withCpuSparkSession(
-        spark => readOrcSummary(spark).collect(), orcConf())
-      val gpuSummary = withGpuSparkSession(
-        spark => readOrcSummary(spark).collect(), orcConf())
-      println(s"CPU summary: ${cpuSummary.mkString(", ")}")
-      println(s"GPU summary: ${gpuSummary.mkString(", ")}")
-      assert(cpuSummary.sameElements(gpuSummary),
-        "CPU and GPU ORC summaries did not match")
-    }
+    val cpuSummary = withCpuSparkSession(spark => {
+      setSessionTimeZone(spark, readerTZ)
+      readOrcSummary(spark).collect()
+    }, orcConf())
+    val gpuSummary = withGpuSparkSession(spark => {
+      setSessionTimeZone(spark, readerTZ)
+      readOrcSummary(spark).collect()
+    }, orcConf())
+    println(s"CPU summary: ${cpuSummary.mkString(", ")}")
+    println(s"GPU summary: ${gpuSummary.mkString(", ")}")
+    assert(cpuSummary.sameElements(gpuSummary),
+      "CPU and GPU ORC summaries did not match")
 
     // Verify GPU plan uses RAPIDS ORC scan
-    withJvmTimeZone(readerTZ) {
-      val gpuPlan = withGpuSparkSession(
-        spark => readOrcAgg(spark).queryExecution.executedPlan.toString(), orcConf())
-      assert(gpuPlan.contains("GpuFileSourceScanExec") ||
-        gpuPlan.contains("GpuFileGpuScan"),
-        s"GPU plan does not use RAPIDS ORC scan:\n$gpuPlan")
-    }
+    val gpuPlan = withGpuSparkSession(spark => {
+      setSessionTimeZone(spark, readerTZ)
+      readOrcAgg(spark).queryExecution.executedPlan.toString()
+    }, orcConf())
+    assert(gpuPlan.contains("GpuFileSourceScanExec") ||
+      gpuPlan.contains("GpuFileGpuScan"),
+      s"GPU plan does not use RAPIDS ORC scan:\n$gpuPlan")
 
     val (crossCpuMean, crossGpuMean) = runAndRecordTime("cross-tz", readerTZ)
 
