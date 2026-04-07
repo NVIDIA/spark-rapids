@@ -19,9 +19,8 @@ package org.apache.spark.sql.rapids
 import java.util.Arrays
 
 import ai.rapids.cudf
-import ai.rapids.cudf.{BinaryOp, CudfException, DType}
+import ai.rapids.cudf.{CudfException, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
-import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{Protobuf, ProtobufSchemaDescriptor}
 import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
@@ -145,7 +144,9 @@ case class GpuFromProtobuf(
     defaultStrings, enumValidValues, enumNames)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    val jniResult = try {
+    // Input null mask is propagated to the output struct by the C++ decoder,
+    // so no mergeAndSetValidity call is needed here.
+    try {
       Protobuf.decodeToStruct(input.getBase, protobufSchema, failOnErrors)
     } catch {
       case e: CudfException if failOnErrors =>
@@ -153,15 +154,6 @@ case class GpuFromProtobuf(
       case e: CudfException =>
         logWarning(s"Unexpected CudfException in PERMISSIVE mode: ${e.getMessage}", e)
         throw e
-    }
-
-    // Apply input nulls to output
-    if (input.getBase.hasNulls) {
-      withResource(jniResult) { _ =>
-        jniResult.mergeAndSetValidity(BinaryOp.BITWISE_AND, input.getBase)
-      }
-    } else {
-      jniResult
     }
   }
 }
