@@ -39,6 +39,7 @@
 {"spark": "357"}
 {"spark": "358"}
 {"spark": "400"}
+{"spark": "400db173"}
 {"spark": "401"}
 {"spark": "402"}
 {"spark": "411"}
@@ -112,7 +113,10 @@ object GpuBloomFilterAggregate {
 
 case class GpuBloomFilterUpdate(numHashes: Int, numBits: Long) extends CudfAggregate {
   override val reductionAggregate: ColumnVector => Scalar = (col: ColumnVector) => {
-    closeOnExcept(BloomFilter.create(numHashes, numBits)) { bloomFilter =>
+    // TODO: Address this properly in https://github.com/NVIDIA/spark-rapids/pull/14406.
+    // For now, only the v1 version of bloom-filters is supported.
+    closeOnExcept(BloomFilter.create(
+      BloomFilter.VERSION_1, numHashes, numBits, BloomFilter.DEFAULT_SEED)) { bloomFilter =>
       BloomFilter.put(bloomFilter, col)
       bloomFilter
     }

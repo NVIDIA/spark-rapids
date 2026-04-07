@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -81,6 +81,12 @@ trait SparkShims {
       readDataSchema: StructType,
       metadataColumns: Seq[AttributeReference] = Seq.empty,
       fileFormat: Option[FileFormat] = None): RDD[InternalRow]
+
+  /**
+   * Get files from FilePartition. In Spark 4.0+, the files method was deprecated
+   * in favor of filesWithAbsolutePaths or innerFiles.
+   */
+  def getPartitionFiles(partition: FilePartition): Seq[PartitionedFile]
 
   def shouldFailDivOverflow: Boolean
 

@@ -127,15 +127,15 @@ mvn -pl dist -PnoSnapshots package -DskipTests
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.06.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar spark330.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar(/spark330/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark330.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.06.0-SNAPSHOT-cuda12.jar spark330.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-26.06.0-SNAPSHOT-cuda12.jar(/spark330/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark330.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -177,16 +177,16 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-26.06.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
 
-### Building and Testing with JDK9+
+### Building and Testing
 
-We support JDK8 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
+We support JDK17 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
 with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
-the environment to your JDK root directory. NOTE: for JDK17, we only support build against spark 3.3.0+
+the environment to your JDK root directory.
 If you need to build with a JDK version that we do not test internally add
 `-Denforcer.skipRules=requireJavaVersion` to the Maven invocation.
 
@@ -383,11 +383,6 @@ You can now open the spark-rapids as a
 
 Read on for VS Code Scala Metals instructions.
 
-##### JDK 11 Requirement
-
-It is known that Bloop's SemanticDB generation with JDK 8 is broken for spark-rapids. Please use JDK
-11 or later for Bloop builds.
-
 #### Bloop, Scala Metals, and Visual Studio Code
 
 _Last tested with 1.63.0-insider (Universal) Commit: bedf867b5b02c1c800fbaf4d6ce09cefba_
@@ -437,7 +432,7 @@ jps -l
 Metals background compilation process status appears to be resetting to 0% after reaching 99%
 and you see a peculiar error message [`java.lang.RuntimeException: boom`][1]. This is a known issue
 when running Metals/Bloop on Java 8. To work around it, ensure Metals and Bloop are both running on
-Java 11+.
+Java 17 (minimum Java version for our project):
 
 1. The `-DbloopInstall` profile will enforce Java 11+ compliance.
 

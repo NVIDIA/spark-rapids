@@ -114,9 +114,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-21258: complex object in combination with spilling", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
     .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", ADJUST_UT("Replaced by testRapids version for GPU execution"))
   enableSuite[RapidsDateExpressionsSuite]
-    .exclude("unsupported fmt fields for trunc/date_trunc results null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13757"))
-    .exclude("SPARK-31896: Handle am-pm timestamp parsing when hour is missing", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13758"))
-    .exclude("TIMESTAMP_MICROS", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13760"))
     .exclude("SPARK-33498: GetTimestamp,UnixTimestamp,ToUnixTimestamp with parseError", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13759"))
     .exclude("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp", ADJUST_UT("Replaced by modified version without intercept[Exception] part"))
   enableSuite[RapidsDateFunctionsSuite]
@@ -151,7 +148,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaEncodingLong]
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
   enableSuite[RapidsParquetEncodingSuite]
-    .exclude("Read row group containing both dictionary and plain encoded pages", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13739"))
+    .exclude("Read row group containing both dictionary and plain encoded pages", ADJUST_UT("Test uses CPU VectorizedParquetRecordReader directly, not a GPU path. GPU-native mixed encoding test added in PR #13982. See https://github.com/NVIDIA/spark-rapids/issues/13739"))
     .exclude("parquet v2 pages - delta encoding", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13745"))
     .exclude("parquet v2 pages - rle encoding for boolean value columns", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13746"))
   enableSuite[RapidsParquetFileFormatSuite]
@@ -217,20 +214,16 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsMergedParquetReadSchemaSuite]
   enableSuite[RapidsGeneratorFunctionSuite]
   enableSuite[RapidsSQLQuerySuite]
-    .exclude("SPARK-6743: no columns from cache", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14098"))
     .exclude("aggregation with codegen updates peak execution memory", WONT_FIX_ISSUE("Codegen and memory metrics not applicable for GPU"))
     .exclude("external sorting updates peak execution memory", WONT_FIX_ISSUE("Memory metrics implementation differs on GPU"))
     .exclude("run sql directly on files", ADJUST_UT("Replaced by testRapids version that expects \"Path does not exist\" instead of \"Hive built-in ORC data source must be used with Hive support\" because there's a spark-hive jar in the CLASSPATH in our UT running"))
     .exclude("Common subexpression elimination", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14106"))
     .exclude("SPARK-27619: When spark.sql.legacy.allowHashOnMapType is true, hash can be used on Maptype", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14108"))
     .exclude("SPARK-17515: CollectLimit.execute() should perform per-partition limits", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14109"))
-    .exclude("SPARK-19650: An action on a Command should not trigger a Spark job", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14110"))
     .exclude("SPARK-31594: Do not display the seed of rand/randn with no argument in output schema", ADJUST_UT("Replaced by testRapids version with a correct regex expression to match the projectExplainOutput, randn isn't supported now. See https://github.com/NVIDIA/spark-rapids/issues/11613"))
-    .exclude("normalize special floating numbers in subquery", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14116"))
-    .exclude("SPARK-33677: LikeSimplification should be skipped if pattern contains any escapeChar", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14117"))
     .exclude("SPARK-33593: Vector reader got incorrect data with binary partition value", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14118"))
     .exclude("SPARK-33084: Add jar support Ivy URI in SQL -- jar contains udf class", ADJUST_UT("Replaced by testRapids version that uses testFile() to access Spark test resources instead of getContextClassLoader"))
-    .exclude("SPARK-33482: Fix FileScan canonicalization", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14122"))
+    .exclude("SPARK-33482: Fix FileScan canonicalization", ADJUST_UT("Replaced by testRapids version using V1 sources with AQE and broadcast disabled to assert ReusedExchangeExec directly"))
     .exclude("SPARK-36093: RemoveRedundantAliases should not change expression's name", ADJUST_UT("Replaced by testRapids version that checks the partition column name of the GpuInsertIntoHadoopFsRelationCommand"))
     .exclude("SPARK-39166: Query context of binary arithmetic should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
     .exclude("SPARK-39175: Query context of Cast should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))

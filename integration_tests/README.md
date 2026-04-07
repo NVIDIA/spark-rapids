@@ -16,7 +16,7 @@ in the cluster but it is not required.
 
 ### Prerequisites
 
-The build requires `OpenJDK 8`, `maven`, and `python`.
+The build requires `OpenJDK 17`, `maven`, and `python`.
 Skip to the next section if you have already installed them.
 
 #### Java Environment
@@ -263,7 +263,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-26.04.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-26.04.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-26.06.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-26.06.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -286,7 +286,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 assumes CUDA 12 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.06.0-SNAPSHOT-cuda12.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -507,7 +507,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 12:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar,rapids-4-spark-tests_2.12-26.04.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.06.0-SNAPSHOT-cuda12.jar,rapids-4-spark-tests_2.12-26.06.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-26.06.0-SNAPSHOT-cuda12.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-26.06.0-SNAPSHOT-cuda12.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests
@@ -525,6 +525,27 @@ Some tests require that Apache Iceberg has been configured in the Spark environm
 properly without it. These tests assume Iceberg is not configured and are disabled by default.
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.
+
+#### Disabling Iceberg fanout writer
+
+The Iceberg fanout writer holds all partition writers open simultaneously, which can cause
+executor OOM when writing to tables with many partitions (e.g., bucket or truncate transforms).
+To avoid this, the CI sets the catalog-level table default to disable fanout:
+
+```
+spark.sql.catalog.spark_catalog.table-default.write.spark.fanout.enabled=false
+```
+
+In the `PYSP_TEST_` env var format used by the test scripts:
+
+```shell
+"PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_spark_fanout_enabled=false"
+```
+
+With fanout disabled, Iceberg uses the clustered writer which writes one partition at a time
+and releases memory between partitions. Dedicated fanout-enabled test cases
+(e.g., `test_*_fanout_enabled`) still exercise the fanout writer path with a single
+partition type to keep memory usage manageable.
 
 ### Run Apache iceberg s3tables tests
 
