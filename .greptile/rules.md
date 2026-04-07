@@ -14,7 +14,6 @@ shim layer architecture, see `AGENTS.md` at the repo root.
 - [ ] Operator fallback — new operators declare fallback in GpuOverrides with tests using assert_gpu_fallback_collect
 - [ ] Shim consistency — changes adjusted across all Spark version shims (see AGENTS.md § Shim Layer Architecture)
 - [ ] Configuration — new RapidsConf keys have docs, sensible defaults, .internal() if not user-visible, new features default off
-- [ ] Performance — benchmark matches change scope: micro for operators, NDS/TPC-DS for framework; reasonable test settings; multiple runs with variance
 - [ ] Test quality — GPU resource cleanup in afterAll/afterEach, no hardcoded sleeps, use assert_gpu_and_cpu_are_equal_collect
 - [ ] Pre-merge CI gaps — only selected shims run unit tests; [databricks] needed for DB CI; feature-gated tests need explicit enable; limited Scala 2.13 coverage
 - [ ] Upstream dependencies — SNAPSHOT changes from spark-rapids-jni/cudf may break; verify API usage against upstream repos

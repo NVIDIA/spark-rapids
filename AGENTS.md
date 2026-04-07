@@ -176,6 +176,14 @@ spark-rapids-shim-json-lines ***/
 - Explain magic numbers with named constants or comments
 - Prefer pattern matching over chains of `if`/`else if`
 
+## Performance Validation
+
+- Use targeted micro-benchmarks for expression/operator changes (NOT NDS)
+- Use real-world benchmarks (NDS/TPC-DS) for framework-level changes
+- Distinguish planning-time vs runtime impact
+- Run multiple times to confirm results are outside noise range
+- Verify test settings are reasonable: GPU type, cluster size, data size, data distribution, test query
+
 ## Common Patterns
 
 ### GPU Operator Registration

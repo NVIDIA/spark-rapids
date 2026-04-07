@@ -98,12 +98,6 @@
       "severity": "medium"
     },
     {
-      "id": "performance-benchmark-selection",
-      "rule": "Performance validation must use appropriate benchmarks: targeted micro-benchmarks for expression/operator changes (NOT NDS), real-world benchmarks (NDS/TPC-DS) for framework-level changes. Distinguish planning-time vs runtime impact. Run multiple times to confirm results are outside noise range.",
-      "scope": ["sql-plugin/src/**", "shuffle-plugin/src/**"],
-      "severity": "medium"
-    },
-    {
       "id": "test-resource-cleanup",
       "rule": "Tests must clean up GPU resources and SparkSession in afterAll/afterEach to prevent cascading failures.",
       "scope": ["tests/**", "integration_tests/**", "shuffle-plugin/src/test/**"],
