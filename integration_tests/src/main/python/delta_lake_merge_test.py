@@ -18,7 +18,7 @@ import pytest
 from delta_lake_merge_common import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime, spark_version, supports_delta_lake_deletion_vectors, is_before_spark_353
+from spark_session import is_before_spark_320, is_databricks_runtime, spark_version, supports_delta_lake_deletion_vectors, is_before_spark_353, is_spark_400_or_later
 
 delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                            {"spark.rapids.sql.command.MergeIntoCommand": "true",
