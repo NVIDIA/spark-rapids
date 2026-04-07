@@ -429,13 +429,13 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
       new ColumnarBatch(Array.empty, totalRowsNum)
     } else {
       withResource(columns.safeMap(_.spillableKudoTable.makeKudoTable)) { kudoTables =>
-        val dataBufSize = kudoTables.map { table =>
-          table.getHeader.getTotalDataLen + table.getHeader.getSerializedSize
-        }.sum
-        val offsetsBufSize = 8 * (kudoTables.length + 1)
+        val dataBufSize = kudoTables.foldLeft(0L) { (acc, table) =>
+          acc + table.getHeader.getTotalDataLen + table.getHeader.getSerializedSize
+        }
+        val offsetsBufSize = 8L * (kudoTables.length + 1)
         withResource(KudoBuffers(HostMemoryBuffer.allocate(dataBufSize),
           HostMemoryBuffer.allocate(offsetsBufSize))) { case KudoBuffers(dataHost, offsetsHost) =>
-          var currentOffset = 0
+          var currentOffset = 0L
           kudoTables.zipWithIndex.foreach { case (table, i) =>
             offsetsHost.setLong(i * 8L, currentOffset)
             table.getHeader.writeTo(dataHost, currentOffset)
@@ -481,6 +481,12 @@ case class CloseableTableSeqWithTargetSize[T <: AutoCloseable](
   override def length: Int = tables.length
   override def iterator: Iterator[T] = tables.iterator
   override def apply(idx: Int): T = tables.apply(idx)
+
+  // Keep retry-OOM reporting bounded. SeqLike.toString would stringify every table.
+  override def toString: String = {
+    s"CloseableTableSeqWithTargetSize(numTables=$length, " +
+      s"targetSize=${targetSize.targetSize}, minSize=${targetSize.minSize})"
+  }
 }
 
 

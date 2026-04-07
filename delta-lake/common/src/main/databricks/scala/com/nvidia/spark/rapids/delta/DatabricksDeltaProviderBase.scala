@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -106,7 +106,8 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
     }
   }
 
-  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+  override def getReadFileFormat(
+      relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat = {
     GpuDeltaParquetFileFormat.convertToGpu(relation)
   }
 

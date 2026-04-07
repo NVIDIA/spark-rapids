@@ -436,6 +436,11 @@ else
         if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
             SPARK_SHELL_ARGS_ARR+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
         fi
+
+        if [[ -n "$PYSP_TEST_spark_jars_ivySettings" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--conf "spark.jars.ivySettings=${PYSP_TEST_spark_jars_ivySettings}")
+        fi
+
         # NOTE grep is used not only for checking the output but also
         # to workaround the fact that spark-shell catches all failures.
         # In this test it exits not because of the failure but because it encounters

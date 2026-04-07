@@ -91,7 +91,7 @@ object DecimalArithmeticOverrides {
                 GpuDecimalMultiply(lhs, rhs, d,
                   useLongMultiply = intermediatePrecision > DType.DECIMAL128_MAX_PRECISION)
               case _ =>
-                GpuMultiply(lhs, rhs)
+                GpuMultiply(lhs, rhs)(a.origin)
             }
           }
         }),
@@ -117,7 +117,7 @@ object DecimalArithmeticOverrides {
               case d: DecimalType =>
                 GpuDecimalDivide(lhs, rhs, d)
               case _ =>
-                GpuDivide(lhs, rhs)
+                GpuDivide(lhs, rhs)(a.origin)
             }
         }),
       expr[IntegralDivide](
@@ -131,7 +131,7 @@ object DecimalArithmeticOverrides {
             if (lhs.dataType.isInstanceOf[DecimalType] && rhs.dataType.isInstanceOf[DecimalType]) {
               GpuIntegralDecimalDivide(lhs, rhs)
             } else {
-              GpuIntegralDivide(lhs, rhs)
+              GpuIntegralDivide(lhs, rhs)(a.origin)
             }
         }),
 

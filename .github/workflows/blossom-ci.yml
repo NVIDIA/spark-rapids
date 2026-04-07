@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -74,6 +74,7 @@ jobs:
         github.actor == 'SurajAralihalli' ||
         github.actor == 'jihoonson' ||
         github.actor == 'knoguchi22' ||
+        github.actor == 'patilkishorv' ||
         github.actor == 'pmattione-nvidia'
       )
     steps:
@@ -90,7 +91,7 @@ jobs:
     runs-on: vulnerability-scan
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: NVIDIA/spark-rapids-common/checkout@main
         with:
           repository: ${{ fromJson(needs.Authorization.outputs.args).repo }}
           ref: ${{ fromJson(needs.Authorization.outputs.args).ref }}

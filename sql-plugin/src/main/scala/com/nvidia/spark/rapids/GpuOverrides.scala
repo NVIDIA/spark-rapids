@@ -1629,7 +1629,7 @@ object GpuOverrides extends Logging {
         override def convertToGpu(child: Expression): GpuExpression = {
           // No need for overflow checking on the GpuAdd in Double as Double handles overflow
           // the same in all modes.
-          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), false))
+          GpuLog(GpuAdd(child, GpuLiteral(1d, DataTypes.DoubleType), false)())
         }
       }),
     expr[Log2](
@@ -1941,7 +1941,7 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuAdd(lhs, rhs, failOnError = ansiEnabled)
+          GpuAdd(lhs, rhs, ansiEnabled)(a.origin)
       }),
     expr[Subtract](
       "Subtraction",
@@ -1970,7 +1970,7 @@ object GpuOverrides extends Logging {
         }
 
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuSubtract(lhs, rhs, ansiEnabled)
+          GpuSubtract(lhs, rhs, ansiEnabled)(a.origin)
       }),
     expr[And](
       "Logical AND",
@@ -4153,14 +4153,12 @@ object GpuOverrides extends Logging {
           }
           val precision = GpuHyperLogLogPlusPlus.computePrecision(a.relativeSD)
           // Spark supports precision range: [4, Infinity)
-          // Spark-Rapids only supports precision range: [5, 14]
-          if (precision <= 4 || precision > 14) {
-            //
-            // Info: cuCollection supports precision range [4, 18]
-            // Due to https://github.com/NVIDIA/spark-rapids/issues/12347, the Spark-Rapids supports
-            // fewer precisions than cuCollection: range: [5, 14]
-            willNotWorkOnGpu(s"The precision $precision from relativeSD ${a.relativeSD} is bigger" +
-              s" than 14, GPU only supports precision range [5, 14].")
+          // cuCollection supports precision range: [4, 18]
+          // Spark-Rapids only supports precision range: [4, 14],
+          // GPU does not perform well for precision > 14.
+          if (precision < 4 || precision > 14) {
+            willNotWorkOnGpu(s"The precision $precision from relativeSD ${a.relativeSD} is out of" +
+              s" range, GPU only supports precision range [4, 14].")
           }
         }
 
