@@ -16,47 +16,7 @@ This document provides context for AI coding agents (Claude Code, GitHub Copilot
 
 ## Build Commands
 
-```bash
-# Full build (skip tests)
-mvn clean verify -DskipTests
-
-# Build specific module
-mvn clean verify -DskipTests -pl sql-plugin
-
-# Unit tests (default shim)
-mvn test -pl tests
-
-# Unit tests for specific Spark version
-mvn test -pl tests -Dbuildver=341
-
-# Integration tests (requires running Spark cluster with GPU)
-cd integration_tests
-./run_pyspark_from_build.sh
-
-# Run a specific integration test
-TEST=src/main/python/string_test.py::test_like ./run_pyspark_from_build.sh
-
-# Delta Lake integration tests (requires delta-lake module JAR)
-cd integration_tests
-./run_pyspark_from_build.sh --delta_lake
-
-# Iceberg integration tests (requires iceberg module JAR)
-cd integration_tests
-./run_pyspark_from_build.sh --iceberg
-
-# Pre-merge build versions (check pom.xml for current list)
-mvn verify -Dbuildver=330
-mvn verify -Dbuildver=341
-
-# Scalastyle check (whole project)
-mvn scalastyle:check
-
-# Scalastyle check (single module)
-mvn scalastyle:check -pl sql-plugin
-
-# Build all supported shims (slow)
-mvn clean verify -DskipTests -Dbuildall
-```
+See [`.claude/skills/build-and-test.md`](.claude/skills/build-and-test.md) for full build, test, and performance validation commands.
 
 ## Project Structure
 
@@ -176,54 +136,6 @@ spark-rapids-shim-json-lines ***/
 - Explain magic numbers with named constants or comments
 - Prefer pattern matching over chains of `if`/`else if`
 
-## Performance Validation
-
-- Use targeted micro-benchmarks for expression/operator changes (NOT NDS)
-- Use real-world benchmarks (NDS/TPC-DS) for framework-level changes
-- Distinguish planning-time vs runtime impact
-- Run multiple times to confirm results are outside noise range
-- Verify test settings are reasonable: GPU type, cluster size, data size, data distribution, test query
-
 ## Common Patterns
 
-### GPU Operator Registration
-
-New GPU operators are registered in `GpuOverrides.scala`:
-```scala
-GpuOverrides.expr[MyExpression](
-  "Description of what this does on GPU",
-  ExprChecks.unaryProject(
-    TypeSig.commonCudf,  // output types
-    TypeSig.all,         // Spark output types
-    TypeSig.commonCudf,  // input types
-    TypeSig.all),        // Spark input types
-  (expr, conf, parent, rule) => new UnaryExprMeta[MyExpression](expr, conf, parent, rule) {
-    override def convertToGpu(child: Expression): GpuExpression =
-      GpuMyExpression(child)
-  })
-```
-
-### CPU Fallback
-
-When a GPU operator cannot handle certain inputs:
-```scala
-override def tagExprForGpu(): Unit = {
-  if (someUnsupportedCondition) {
-    willNotWorkOnGpu("reason for fallback")
-  }
-}
-```
-
-### Spill Management
-
-```scala
-// Wrap batch for spill support
-val spillable = SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-
-// Use within retry
-withRetryNoSplit(spillable) { attempt =>
-  withResource(attempt.getColumnarBatch()) { batch =>
-    // GPU work here
-  }
-}
-```
+See [`.claude/skills/gpu-operator-patterns.md`](.claude/skills/gpu-operator-patterns.md) for GPU operator registration, CPU fallback, and spill management patterns.
