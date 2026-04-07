@@ -21,7 +21,6 @@ see [AGENTS.md](../AGENTS.md).
 - [ ] H4: Test quality — no GPU execution verification, hardcoded sleeps, unseeded random data
 - [ ] H5: Configuration — new RapidsConf without docs/defaults; should use .internal() if not user-visible; new features default off
 - [ ] H6: Magic numbers — unexplained numeric literals without named constants or comments
-- [ ] H7: Idiomatic Scala — explicit return, Java-style loops instead of functional combinators (non-hot-path; optimized patterns take precedence in performance-critical GPU execution paths)
 
 ## Do NOT Comment On
 
