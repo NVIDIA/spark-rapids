@@ -12,16 +12,13 @@ these upstream repositories to verify correctness:
 - **rapidsai/cudf** — verify cuDF API usage (column operations, memory allocation semantics, null handling)
 - **NVIDIA/spark-rapids-jni** — verify JNI binding signatures, memory ownership rules, error codes
 
-## Review Checklist — CRITICAL (must flag)
+## Review Checklist
 
 - [ ] C1: Resource leaks — AutoCloseable not closed on exception paths; use withResource/closeOnExcept/safeClose, never bare .close() (see AGENTS.md § Resource management)
 - [ ] C2: OOM retry — GPU-allocating code not in withRetry/withRetryNoSplit; retry function must be idempotent (see AGENTS.md § OOM retry)
 - [ ] C3: Data correctness — GPU vs CPU divergence: nulls, NaN, overflow, decimal precision/scale, TIMESTAMP_NTZ vs LTZ, empty result handling
 - [ ] C4: Shim consistency — shim change not adjusted across all Spark versions (see AGENTS.md § Shim Layer)
 - [ ] C5: Resource lifecycle — SpillableColumnarBatch used after close or without retry handling
-
-## Review Checklist — HIGH (should flag)
-
 - [ ] H1: Performance — unnecessary host-device copies, redundant materializations, avoidable data serialization
 - [ ] H2: Concurrency — missing GpuSemaphore.acquireIfNecessary(context), nested locks without ordering
 - [ ] H3: Fallback gaps — new operator in GpuOverrides without fallback declaration or test
