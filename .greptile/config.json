@@ -2,7 +2,7 @@
   "strictness": 3,
   "commentTypes": ["logic", "syntax"],
   "ignoreKeywords": "DO NOT REVIEW\n[bot]",
-  "ignorePatterns": "*.generated.*\n**/target/**\n**/src/test/resources/**\n**/*.parquet\n**/*.orc\n**/*.avro",
+  "ignorePatterns": "*.generated.*\n**/target/**\n**/src/test/resources/data/**\n**/*.parquet\n**/*.orc\n**/*.avro",
 
   "patternRepositories": [
     "rapidsai/cudf",
