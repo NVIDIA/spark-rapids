@@ -282,7 +282,7 @@ def test_delta_empty_deletion_vector_read(spark_tmp_path, use_chunked_reader, us
     do_test_delta_deletion_vector_read(data_path, use_cdf, conf, f"SELECT * FROM delta.`{data_path}`")
 
 
-def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions, post_setup_table_func=None):
+def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions, post_setup_table_func=None, conf=None):
     import os
     import math
 
@@ -296,8 +296,8 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
             post_setup_table_func(spark, data_path)
     target_num_row_groups = 2
     row_group_size = int(num_rows * 4 / target_num_row_groups) # num_rows * 4 bytes per int / target_num_row_groups
-    conf = {"parquet.block.size": str(row_group_size)}
-    with_cpu_session(setup_tables, conf)
+    table_setup_conf = {"parquet.block.size": str(row_group_size)}
+    with_cpu_session(setup_tables, table_setup_conf)
     # Verify that we have 1 file with 2 row groups
     def verify_files_and_row_groups():
         # list files in data_path
@@ -314,12 +314,14 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
     data_file = verify_files_and_row_groups()
     file_size = os.path.getsize(data_file)
 
-    conf = {"spark.sql.files.maxPartitionBytes": str(math.ceil(file_size/2.0))}
+    read_conf = {"spark.sql.files.maxPartitionBytes": str(math.ceil(file_size/2.0))}
+    if conf:
+        read_conf = copy_and_update(read_conf, conf)
 
     def get_num_partitions(spark):
         df = spark.sql("SELECT * from delta.`{}`".format(data_path))
         return df.rdd.getNumPartitions()
-    num_partitions = with_gpu_session(get_num_partitions, conf=conf)
+    num_partitions = with_gpu_session(get_num_partitions, conf=read_conf)
     assert num_partitions == expected_num_partitions, f"Expected {expected_num_partitions} partitions for split read"
 
 
@@ -343,30 +345,42 @@ def test_delta_scan_split_with_DV_enabled_with_no_DV(spark_tmp_path):
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@pytest.mark.parametrize("pushdown_dv_predicate", [True, False], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
-def test_delta_scan_split_with_DV_enabled_with_DVs(spark_tmp_path):
+def test_delta_scan_split_with_DV_enabled_with_DVs(spark_tmp_path, pushdown_dv_predicate):
     def do_delete(spark, data_path):
         num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
         assert num_deleted > 0, "Expected some rows to be deleted"
-    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1, post_setup_table_func=do_delete)
+    # The cuDF-based reader (GpuDeltaParquetFileFormat2), which is used when dv_predicate_pushdown is True, support the file split,
+    # whereas the scala reader (GpuDeltaParquetFileFormat) does not support it.
+    # So we expect 2 partitions when dv_predicate_pushdown is True, and 1 partition when it is False.
+    expected_num_partitions = 2 if pushdown_dv_predicate else 1
+    conf = {"spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{pushdown_dv_predicate}"}
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=expected_num_partitions, post_setup_table_func=do_delete, conf=conf)
 
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@pytest.mark.parametrize("pushdown_dv_predicate", [True, False], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
-def test_delta_scan_split_with_DV_disabled_with_DVs(spark_tmp_path):
+def test_delta_scan_split_with_DV_disabled_with_DVs(spark_tmp_path, pushdown_dv_predicate):
     def do_delete_and_disable_DV(spark, data_path):
         num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
         assert num_deleted > 0, "Expected some rows to be deleted"
         spark.sql(f"ALTER TABLE delta.`{data_path}` SET TBLPROPERTIES " +
                   "('delta.enableDeletionVectors' = 'false')")
-    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1, post_setup_table_func=do_delete_and_disable_DV)
+    # The cuDF-based reader (GpuDeltaParquetFileFormat2), which is used when dv_predicate_pushdown is True, supports the file split,
+    # whereas the scala reader (GpuDeltaParquetFileFormat) does not support it.
+    # So we expect 2 partitions when dv_predicate_pushdown is True, and 1 partition when it is False.
+    expected_num_partitions = 2 if pushdown_dv_predicate else 1
+    conf = {"spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{pushdown_dv_predicate}"}
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=expected_num_partitions, post_setup_table_func=do_delete_and_disable_DV, conf=conf)
 
 
 @allow_non_gpu(*delta_meta_allow)
