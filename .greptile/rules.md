@@ -7,7 +7,9 @@ shim layer architecture, see `AGENTS.md` at the repo root.
 
 - [ ] Resource management — use withResource/closeOnExcept/safeClose, never bare .close() (see AGENTS.md § Resource management)
 - [ ] OOM retry — GPU-allocating code in withRetry/withRetryNoSplit, idempotent retry function (see AGENTS.md § OOM retry)
-- [ ] Memory & type safety — 2GB partition limit, no unnecessary host-device copies, correct decimal precision, TIMESTAMP_NTZ vs LTZ, null/NaN/empty handling
+- [ ] Reliability — >2GB partition shuffle and missing spill support cause crashes (not just perf); enforce size limits and spill paths in GPU-resident data
+- [ ] Memory & type safety — correct decimal precision, TIMESTAMP_NTZ vs LTZ, null/NaN/empty handling
+- [ ] Performance — no unnecessary host-device copies, redundant materializations, or avoidable data serialization
 - [ ] Concurrency — GpuSemaphore.acquireIfNecessary(context) before GPU work, no undocumented nested locks
 - [ ] Operator fallback — new operators declare fallback in GpuOverrides with tests using assert_gpu_fallback_collect
 - [ ] Shim consistency — changes adjusted across all Spark version shims (see AGENTS.md § Shim Layer Architecture)

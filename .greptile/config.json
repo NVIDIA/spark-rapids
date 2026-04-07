@@ -26,7 +26,7 @@
     },
     {
       "id": "shuffle-partition-size",
-      "rule": "Enforce the 2GB per-partition size limit in shuffle code. Flag unbounded buffer growth.",
+      "rule": "Enforce the 2GB per-partition size limit in shuffle code. Flag unbounded buffer growth. This is a reliability/crash issue, not just performance.",
       "scope": ["shuffle-plugin/src/**", "sql-plugin/src/**/shuffle/**"],
       "severity": "high"
     },
