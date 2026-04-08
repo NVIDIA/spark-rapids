@@ -720,8 +720,8 @@ protected case class GpuParquetFileFilterHandler(
       val footer: ParquetMetadata = try {
         footerReader match {
           case ParquetFooterReaderType.NATIVE =>
-            val serialized = withResource(readAndFilterFooter(fileIO, file, conf,
-              readDataSchema, filePath)) { tableFooter =>
+            val (serialized, rowIndexOffsets) = withResource(readAndFilterFooter(fileIO, file,
+              conf, readDataSchema, filePath)) { tableFooter =>
                 if (tableFooter.getNumColumns <= 0) {
                   // Special case because java parquet reader does not like having 0 columns.
                   val numRows = tableFooter.getNumRows
@@ -733,9 +733,9 @@ protected case class GpuParquetFileFilterHandler(
                     hasInt96Timestamps = false)
                 }
 
-                tableFooter.serializeThriftFile()
+                (tableFooter.serializeThriftFile(), tableFooter.getRowIndexOffsets)
             }
-            withResource(serialized) { serialized =>
+            val footer = withResource(serialized) { serialized =>
               NvtxRegistry.PARQUET_READ_FILTERED_FOOTER {
                 val inputFile = new HMBInputFile(serialized)
 
@@ -743,6 +743,23 @@ protected case class GpuParquetFileFilterHandler(
                 ParquetFileReader.readFooter(inputFile, ParquetMetadataConverter.NO_FILTER)
               }
             }
+            // Fix up row index offsets. ParquetFileReader.readFooter computes row
+            // index offsets assuming the row groups it receives are the entire file.
+            // The native footer reader filters row groups by byte range in C++ before
+            // serialization, so readFooter can see only a subset and compute wrong
+            // offsets (e.g. always 0 for a single surviving row group). This breaks
+            // any logic relying on file-global row indices such as deletion vector
+            // filtering.
+            // So we compute the correct offsets from all row groups before filtering,
+            // and then apply them to the filtered blocks.
+            val blocks = footer.getBlocks
+            assert(blocks.size() == rowIndexOffsets.length,
+              s"Row index offsets length (${rowIndexOffsets.length}) != " +
+              s"blocks count (${blocks.size()})")
+            blocks.asScala.zip(rowIndexOffsets).foreach { case (block, offset) =>
+              block.setRowIndexOffset(offset)
+            }
+            footer
           case _ =>
             readAndSimpleFilterFooter(fileIO, file, conf, filePath)
         }
