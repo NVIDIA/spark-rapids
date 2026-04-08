@@ -123,8 +123,7 @@ case class GpuMakeDecimal(
       if (!nullOnOverflow) {
         withResource(outOfBounds.any()) { isAny =>
           if (isAny.isValid && isAny.getBoolean) {
-            throw new IllegalStateException(
-              GpuCast.INVALID_INPUT_MESSAGE)
+            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
           }
         }
         outputView.copyToColumnVector()
