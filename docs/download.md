@@ -41,8 +41,13 @@ The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Ho
 		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
 
 	Supported Spark versions:
-        Scala 2.12: Spark 3.3.x to Spark 3.5.x
-        Scala 2.13: Spark 3.5.0+, 4.0.0, 4.0.1, 4.0.2, 4.1.1
+		Apache Spark 3.3.0, 3.3.1, 3.3.2, 3.3.3, 3.3.4
+		Apache Spark 3.4.0, 3.4.1, 3.4.2, 3.4.3, 3.4.4
+		Apache Spark 3.5.0, 3.5.1, 3.5.2, 3.5.3, 3.5.4, 3.5.5, 3.5.6, 3.5.7
+		Apache Spark 4.0.0, 4.0.1, 4.0.2
+		Apache Spark 4.1.1
+		Scala 2.12: Spark 3.3.0 through 3.5.7
+		Scala 2.13: Spark 3.5.0 through 3.5.7, and Spark 4.0.0, 4.0.1, 4.0.2, and 4.1.1
 	
 	Supported Databricks runtime versions for Azure and AWS:
 		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
@@ -113,7 +118,6 @@ The output of signature verify:
 * Parquet GPU reader: defer resource collection until close ([#14490](https://github.com/NVIDIA/spark-rapids/pull/14490)); row-to-column per-batch retry for OOM recovery ([#14428](https://github.com/NVIDIA/spark-rapids/pull/14428))
 * Shuffle and spilling: shuffle fanout OOM fix ([#14525](https://github.com/NVIDIA/spark-rapids/pull/14525)), thread-safe shuffle unregister ([#14513](https://github.com/NVIDIA/spark-rapids/pull/14513)), bounded retry logging for shuffle coalesce ([#14537](https://github.com/NVIDIA/spark-rapids/pull/14537))
 * Window execution fixes for mixed ROWS windows ([#14533](https://github.com/NVIDIA/spark-rapids/pull/14533))
-* Iceberg version probing, classloader, and CI fixes ([#14488](https://github.com/NVIDIA/spark-rapids/pull/14488), [#14494](https://github.com/NVIDIA/spark-rapids/pull/14494), [#14515](https://github.com/NVIDIA/spark-rapids/pull/14515), [#14464](https://github.com/NVIDIA/spark-rapids/pull/14464))
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
