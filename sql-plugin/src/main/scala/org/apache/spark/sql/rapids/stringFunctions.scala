@@ -2369,14 +2369,6 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     }
   }
 
-  private def negativeCheck(cv: ColumnVector): ColumnVector = {
-    withResource(cv.castTo(DType.STRING)) { cvStr =>
-      withResource(Scalar.fromString("-")) { negativeSign =>
-        cvStr.startsWith(negativeSign)
-      }
-    }
-  }
-
   private def removeExtraCommas(str: ColumnVector): ColumnVector = {
     withResource(Scalar.fromString(",")) { comma =>
       str.rstrip(comma)
@@ -2392,18 +2384,18 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         }
       }
     }
-    val sepCol = withResource(Scalar.fromString(",")) { sep =>
-      ColumnVector.fromScalar(sep, str.getRowCount.toInt)
+    if (maxstrlen <= 3) {
+      return str.incRefCount()
     }
-    val substrs = closeOnExcept(sepCol) { _ =>
-      (0 until maxstrlen by 3).safeMap { i =>
-        str.substring(i, i + 3).asInstanceOf[ColumnView]
-      }.toArray
-    }
+    val substrs = (0 until maxstrlen by 3).safeMap { i =>
+      str.substring(i, i + 3).asInstanceOf[ColumnView]
+    }.toArray
     withResource(substrs) { _ =>
-      withResource(sepCol) { _ =>
-        withResource(ColumnVector.stringConcatenate(substrs, sepCol)) { res =>
-          removeExtraCommas(res)
+      withResource(Scalar.fromString(",")) { sep =>
+        withResource(Scalar.fromString("")) { narep =>
+          withResource(ColumnVector.stringConcatenate(sep, narep, substrs)) { res =>
+            removeExtraCommas(res)
+          }
         }
       }
     }
@@ -2412,65 +2404,77 @@ case class GpuFormatNumber(x: Expression, d: Expression)
   private def formatNumberNonKernel(cv: ColumnVector, d: Int): ColumnVector = {
     val (integerPart, decimalPart) = getParts(cv, d)
     // reverse integer part for adding commas
-    val resWithDecimalPart = withResource(decimalPart) { _ =>
-      val reversedIntegerPart = withResource(integerPart) { intPart =>
-        intPart.reverseStringsOrLists()
-      }
-      val reversedIntegerPartWithCommas = withResource(reversedIntegerPart) { _ =>
-        addCommas(reversedIntegerPart)
-      }
-      // reverse result back
-      val reverseBack = withResource(reversedIntegerPartWithCommas) { r =>
-        r.reverseStringsOrLists()
-      }
-      d match {
-        case 0 => {
-          // d == 0, only return integer part
-          reverseBack
+    val integerWithCommas = closeOnExcept(decimalPart) { _ =>
+      withResource(integerPart) { _ =>
+        val reversed = integerPart.reverseStringsOrLists()
+        val reversedWithCommas = withResource(reversed) { _ =>
+          addCommas(reversed)
         }
-        case _ => {
-          // d > 0, append decimal part to result
-          withResource(reverseBack) { _ =>
-            withResource(Scalar.fromString(".")) { point =>
-              withResource(Scalar.fromString("")) { empty =>
-                ColumnVector.stringConcatenate(point, empty, Array(reverseBack, decimalPart))
+        withResource(reversedWithCommas) { _ =>
+          reversedWithCommas.reverseStringsOrLists()
+        }
+      }
+    }
+    val signCol = closeOnExcept(decimalPart) { _ =>
+      closeOnExcept(integerWithCommas) { _ =>
+        withResource(cv.castTo(DType.FLOAT64)) { cvDouble =>
+          withResource(Scalar.fromDouble(0.0)) { zero =>
+            withResource(cvDouble.lessThan(zero)) { isNeg =>
+              withResource(Scalar.fromString("-")) { neg =>
+                withResource(Scalar.fromString("")) { empty =>
+                  isNeg.ifElse(neg, empty)
+                }
               }
             }
           }
         }
       }
     }
-    // add negative sign back
-    val negCv = withResource(Scalar.fromString("-")) { negativeSign =>
-      ColumnVector.fromScalar(negativeSign, cv.getRowCount.toInt)
-    }
-    val formated = withResource(resWithDecimalPart) { _ =>
-      val resWithNeg = withResource(negCv) { _ =>
-        ColumnVector.stringConcatenate(Array(negCv, resWithDecimalPart))
-      }
-      withResource(negativeCheck(cv)) { isNegative =>
-        withResource(resWithNeg) { _ =>
-          isNegative.ifElse(resWithNeg, resWithDecimalPart)
-        }
-      }
-    }
-    // handle null case
-    val anyNull = closeOnExcept(formated) { _ =>
-      cv.getNullCount > 0
-    }
-    val formatedWithNull = anyNull match {
-      case true => {
-        withResource(formated) { _ =>
-          withResource(cv.isNull) { isNull =>
-            withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
-              isNull.ifElse(nullScalar, formated)
+    // single concatenation pass for sign + integer [+ "." + decimal]
+    val formatted = d match {
+      case 0 =>
+        withResource(decimalPart) { _ =>
+          withResource(signCol) { _ =>
+            withResource(integerWithCommas) { _ =>
+              ColumnVector.stringConcatenate(
+                Array[ColumnView](signCol, integerWithCommas))
             }
           }
         }
-      }
-      case false => formated
+      case _ =>
+        // join integer and decimal with ".", then prepend sign
+        val intDotDec = withResource(integerWithCommas) { _ =>
+          withResource(decimalPart) { _ =>
+            withResource(Scalar.fromString(".")) { dot =>
+              withResource(Scalar.fromString("")) { narep =>
+                ColumnVector.stringConcatenate(dot, narep,
+                  Array[ColumnView](integerWithCommas, decimalPart))
+              }
+            }
+          }
+        }
+        withResource(signCol) { _ =>
+          withResource(intDotDec) { _ =>
+            ColumnVector.stringConcatenate(
+              Array[ColumnView](signCol, intDotDec))
+          }
+        }
     }
-    formatedWithNull
+    // handle null case
+    val anyNull = closeOnExcept(formatted) { _ =>
+      cv.getNullCount > 0
+    }
+    anyNull match {
+      case true =>
+        withResource(formatted) { _ =>
+          withResource(cv.isNull) { isNull =>
+            withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+              isNull.ifElse(nullScalar, formatted)
+            }
+          }
+        }
+      case false => formatted
+    }
   }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
