@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1695,7 +1695,7 @@ case class GpuFirst(child: Expression, ignoreNulls: Boolean)
   private lazy val valueSet = AttributeReference("valueSet", BooleanType)()
 
   override lazy val inputProjection: Seq[Expression] =
-    Seq(child, GpuLiteral(ignoreNulls, BooleanType))
+    Seq(child, GpuLiteral(!ignoreNulls, BooleanType))
 
   private lazy val commonExpressions: Seq[CudfAggregate] = if (ignoreNulls) {
     Seq(CudfNthLikeAggregate.newFirstExcludeNulls(cudfFirst.dataType),
