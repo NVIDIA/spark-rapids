@@ -171,6 +171,7 @@ Name | Description | Default Value | Applicable at
 <a name="sql.window.range.int.enabled"></a>spark.rapids.sql.window.range.int.enabled|When the order-by column of a range based window is int type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the int type order-by column|true|Runtime
 <a name="sql.window.range.long.enabled"></a>spark.rapids.sql.window.range.long.enabled|When the order-by column of a range based window is long type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the long type order-by column|true|Runtime
 <a name="sql.window.range.short.enabled"></a>spark.rapids.sql.window.range.short.enabled|When the order-by column of a range based window is short type and the range boundary calculated for a value has overflow, CPU and GPU will get the different results. When set to false disables the range window acceleration for the short type order-by column|false|Runtime
+
 ## Supported GPU Operators and Fine Tuning
 _The RAPIDS Accelerator for Apache Spark_ can be configured to enable or disable specific
 GPU accelerated expressions.  Enabled expressions are candidates for GPU execution. If the
@@ -280,6 +281,7 @@ Name | SQL Function(s) | Description | Default Value | Notes
 <a name="sql.expression.GreaterThan"></a>spark.rapids.sql.expression.GreaterThan|`>`|> operator|true|None|
 <a name="sql.expression.GreaterThanOrEqual"></a>spark.rapids.sql.expression.GreaterThanOrEqual|`>=`|>= operator|true|None|
 <a name="sql.expression.Greatest"></a>spark.rapids.sql.expression.Greatest|`greatest`|Returns the greatest value of all parameters, skipping null values|true|None|
+<a name="sql.expression.Hex"></a>spark.rapids.sql.expression.Hex|`hex`|Returns the hex string representation of a value|true|None|
 <a name="sql.expression.HiveHash"></a>spark.rapids.sql.expression.HiveHash| |hive hash operator|true|None|
 <a name="sql.expression.Hour"></a>spark.rapids.sql.expression.Hour|`hour`|Returns the hour component of the string/timestamp|true|None|
 <a name="sql.expression.Hypot"></a>spark.rapids.sql.expression.Hypot|`hypot`|Pythagorean addition (Hypotenuse) of real numbers|true|None|
