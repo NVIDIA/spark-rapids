@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids
+package com.nvidia.spark.rapids.timezone
 
 import java.io.File
 import java.sql.Timestamp
 import java.time.{Instant, LocalDateTime, ZoneOffset}
 import java.util.{Random, TimeZone}
 import java.util.concurrent.TimeUnit
+
+import com.nvidia.spark.rapids.SparkQueryCompareTestSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
@@ -46,6 +48,9 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  *
  * Run it manually with:
  *   mvn test -DwildcardSuites=com.nvidia.spark.rapids.OrcTimezoneSuite -Dbuildver=xxx
+ *
+ * Note: use `orc-tool meta -t orc_file` to view the timezone in each stripe metadata.
+ * Each stripe has a timezone in its metadata.
  */
 class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
 

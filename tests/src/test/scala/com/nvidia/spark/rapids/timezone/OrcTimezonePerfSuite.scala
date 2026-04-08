@@ -45,7 +45,7 @@ import org.apache.spark.sql.functions._
  *     -DargLine="-DenableOrcTimeZonePerf=true \
  *                -DorcPerfWriterTZ=America/Los_Angeles \
  *                -DorcPerfReaderTZ=UTC \
- *                -DorcPerfRows=1073741824"
+ *                -DorcPerfRows=10000000"
  */
 class OrcTimezonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfterAll {
 
