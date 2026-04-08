@@ -6,6 +6,7 @@ Generated on 2026-04-08
 ### Features
 |||
 |:---|:---|
+|[#14571](https://github.com/NVIDIA/spark-rapids/issues/14571)|[FEA] Drop support for the Databricks 12.2 runtime|
 |[#12395](https://github.com/NVIDIA/spark-rapids/issues/12395)|[FEA] Update Delta Lake support to 3.3.0+|
 |[#14429](https://github.com/NVIDIA/spark-rapids/issues/14429)|[FEA] Add iceberg 1.10.1 for spark 4.0|
 |[#12071](https://github.com/NVIDIA/spark-rapids/issues/12071)|[FEA] Deletion vector read support with splits|
@@ -14,7 +15,6 @@ Generated on 2026-04-08
 |[#14457](https://github.com/NVIDIA/spark-rapids/issues/14457)|[FEA] Enforce PR template checklist completion in pr-description-check|
 |[#14238](https://github.com/NVIDIA/spark-rapids/issues/14238)|[FEA] Support read nested data type for iceberg.|
 |[#13591](https://github.com/NVIDIA/spark-rapids/issues/13591)|[FEA] Support iceberg 1.10|
-|[#12694](https://github.com/NVIDIA/spark-rapids/issues/12694)|[BUG] Drop support for Databricks 11.3|
 |[#14378](https://github.com/NVIDIA/spark-rapids/issues/14378)|[FEA] Support iceberg 1.9.2 in scala 2.12|
 |[#14159](https://github.com/NVIDIA/spark-rapids/issues/14159)|[FEA] Add support for Apache Spark 3.5.8|
 |[#14321](https://github.com/NVIDIA/spark-rapids/issues/14321)|[FEA] Support Spark 4.0.2|
