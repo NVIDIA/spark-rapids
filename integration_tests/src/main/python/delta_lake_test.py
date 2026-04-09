@@ -677,8 +677,10 @@ def test_delta_filter_out_metadata_col(spark_tmp_path):
 @ignore_order(local=True)
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"], ids=idfn)
 @pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
-                    reason="Delta Lake deletion vector support is required")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Deletion vector scan is not supported on Databricks")
 def test_delta_deletion_vector_native_footer_multi_row_group(spark_tmp_path, parquet_reader_type, footer_type):
     """
     Tests deletion vector filtering on a Delta table whose single Parquet file has multiple

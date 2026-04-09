@@ -727,6 +727,11 @@ protected case class GpuParquetFileFilterHandler(
                   val numRows = tableFooter.getNumRows
                   val block = new BlockMetaData()
                   block.setRowCount(numRows)
+                  // Fix up the row index offset
+                  val offsets = tableFooter.getRowIndexOffsets
+                  if (offsets.nonEmpty) {
+                    block.setRowIndexOffset(offsets(0))
+                  }
                   val schema = new MessageType("root")
                   return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
                     schema, readDataSchema, DateTimeRebaseLegacy, DateTimeRebaseLegacy,
