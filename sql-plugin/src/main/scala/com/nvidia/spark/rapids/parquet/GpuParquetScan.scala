@@ -760,7 +760,8 @@ protected case class GpuParquetFileFilterHandler(
             val blocks = footer.getBlocks
             require(blocks.size() == rowIndexOffsets.length,
               s"Row index offsets length (${rowIndexOffsets.length}) != " +
-              s"blocks count (${blocks.size()})")
+              s"blocks count (${blocks.size()}) for $filePath " +
+              s"[range=${file.start}:${file.length}]")
             blocks.asScala.zip(rowIndexOffsets).foreach { case (block, offset) =>
               GpuParquetUtilsShims.setRowIndexOffset(block, offset)
             }
