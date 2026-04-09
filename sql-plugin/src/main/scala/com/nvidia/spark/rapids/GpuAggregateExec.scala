@@ -1729,9 +1729,11 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
       plan.logicalLink match {
         case Some(logicalPlan) =>
           logicalPlan.setTagValue(tag, (expr, aggregateStageMask(plan)))
-        case None => // logicalLink is guaranteed to be present normally
-          throw new IllegalStateException(
-            s"Failed to store ${tag.name} due to missing LogicalPlanLink: $plan")
+        case None =>
+          // AQE/EnsureRequirements may insert CPU plans, such as exchanges, that end up as the
+          // transition parent but do not have a logical link. Fall back to storing the tag on the
+          // physical plan so transition rewrites can still materialize the converter on this tree.
+          plan.setTagValue(tag, (expr, 0))
       }
     }
   }
