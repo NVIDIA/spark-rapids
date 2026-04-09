@@ -20,7 +20,7 @@ import java.time.ZoneId
 
 import scala.collection.mutable
 
-import com.nvidia.spark.rapids.GpuTypedImperativeSupportedAggregateExecMeta.{preRowToColProjection, readBufferConverter}
+import com.nvidia.spark.rapids.GpuTypedImperativeSupportedAggregateExecMeta.{postColToRowProjection, preRowToColProjection, readBufferConverter}
 import com.nvidia.spark.rapids.RapidsMeta.noNeedToReplaceReason
 import com.nvidia.spark.rapids.shims.{AggregateInPandasExecShims, DistributionUtil, SparkShimImpl}
 
@@ -724,6 +724,18 @@ abstract class SparkPlanMeta[INPUT <: SparkPlan](plan: INPUT,
   // child can't be replaced.
   private def fixUpExchangeOverhead(): Unit = {
     childPlans.foreach(_.fixUpExchangeOverhead())
+
+    // `preRowToColProjection` already gets bubbled through CPU shuffles below. Do the symmetric
+    // propagation for `postColToRowProjection` as well: gpu->cpu typed imperative aggregate
+    // converters can be bound to an intermediate CPU node that later disappears when transitions
+    // are materialized, so move the tag to the first surviving CPU parent.
+    if (childPlans.size == 1 && !canThisBeReplaced &&
+        wrapped.getTagValue(postColToRowProjection).isEmpty) {
+      readBufferConverter(childPlans.head.wrapped, isR2C = false).foreach { c2r =>
+        wrapped.setTagValue(postColToRowProjection, c2r -> 0)
+      }
+    }
+
     if (wrapped.isInstanceOf[ShuffleExchangeExec] &&
         !SparkShimImpl.isExecutorBroadcastShuffle(wrapped.asInstanceOf[ShuffleExchangeExec]) &&
         !childPlans.exists(_.supportsColumnar) &&

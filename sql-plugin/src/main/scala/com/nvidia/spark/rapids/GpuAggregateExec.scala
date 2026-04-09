@@ -40,10 +40,10 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
+import org.apache.spark.sql.execution.{ExplainUtils, ProjectExec, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
+import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression}
 import org.apache.spark.sql.rapids.execution.{GpuBatchSubPartitioner, GpuShuffleMeta, TrampolineUtil}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -1129,19 +1129,48 @@ object GpuBaseAggregateMeta {
   private val aggPairReplaceChecked = TreeNodeTag[Boolean](
     "rapids.gpu.aggPairReplaceChecked")
 
-  def getAggregateOfAllStages(
-      currentMeta: SparkPlanMeta[_], logical: LogicalPlan): List[GpuBaseAggregateMeta[_]] = {
+  // Mixed CPU/GPU aggregate chains can have pass-through operators inserted between stages while
+  // still belonging to the same logical aggregate. BloomFilterAggregate currently hits this via
+  // ProjectExec injected around the bridge expressions.
+  private def isAggregateChainPassThrough(meta: SparkPlanMeta[_]): Boolean = meta match {
+    case _: GpuShuffleMeta => true
+    case _: GpuSortMeta => true
+    case _ => meta.wrapped.isInstanceOf[ProjectExec]
+  }
+
+  @tailrec
+  private def getAggregateChainRoot(
+      currentMeta: SparkPlanMeta[_],
+      logical: LogicalPlan): SparkPlanMeta[_] = {
+    currentMeta.parent match {
+      case Some(parentAgg: GpuBaseAggregateMeta[_]) if parentAgg.agg.logicalLink.contains(logical) =>
+        getAggregateChainRoot(parentAgg, logical)
+      case Some(parentMeta: SparkPlanMeta[_]) if isAggregateChainPassThrough(parentMeta) =>
+        getAggregateChainRoot(parentMeta, logical)
+      case _ =>
+        currentMeta
+    }
+  }
+
+  @tailrec
+  private def collectAggregateStages(
+      currentMeta: SparkPlanMeta[_],
+      logical: LogicalPlan,
+      acc: List[GpuBaseAggregateMeta[_]]): List[GpuBaseAggregateMeta[_]] = {
     currentMeta match {
       case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
-        List[GpuBaseAggregateMeta[_]](aggMeta) ++
-          getAggregateOfAllStages(aggMeta.childPlans.head, logical)
-      case shuffleMeta: GpuShuffleMeta =>
-        getAggregateOfAllStages(shuffleMeta.childPlans.head, logical)
-      case sortMeta: GpuSortMeta =>
-        getAggregateOfAllStages(sortMeta.childPlans.head, logical)
+        collectAggregateStages(aggMeta.childPlans.head, logical, acc :+ aggMeta)
+      case meta if isAggregateChainPassThrough(meta) && meta.childPlans.nonEmpty =>
+        collectAggregateStages(meta.childPlans.head, logical, acc)
       case _ =>
-        List[GpuBaseAggregateMeta[_]]()
+        acc
     }
+  }
+
+  def getAggregateOfAllStages(
+      currentMeta: SparkPlanMeta[_], logical: LogicalPlan): List[GpuBaseAggregateMeta[_]] = {
+    val root = getAggregateChainRoot(currentMeta, logical)
+    collectAggregateStages(root, logical, Nil)
   }
 }
 
@@ -1585,13 +1614,16 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
    */
   private def handleAggregationBuffer(
       meta: GpuTypedImperativeSupportedAggregateExecMeta[_]): Unit = {
-    // We only run the check for final stages which contain TypedImperativeAggregate.
-    val needToCheck = containTypedImperativeAggregate(meta, Some(Final))
+    // Mixed CPU/GPU aggregates may only have the GPU side on a partial stage, so we cannot
+    // restrict bridge discovery to final stages only.
+    val needToCheck = containTypedImperativeAggregate(meta)
     if (!needToCheck) return
-    // Avoid duplicated check and fallback.
-    val checked = meta.agg.getTagValue[Boolean](bufferConverterInjected).contains(true)
+    // Avoid duplicated check and fallback across all physical stages of the same aggregate chain.
+    val checked = meta.agg.getTagValue[Boolean](bufferConverterInjected).contains(true) ||
+      meta.agg.logicalLink.exists(_.getTagValue[Boolean](bufferConverterInjected).contains(true))
     if (checked) return
     meta.agg.setTagValue(bufferConverterInjected, true)
+    meta.agg.logicalLink.foreach(_.setTagValue(bufferConverterInjected, true))
 
     // Fetch AggregateMetas of all stages which belong to current Aggregate
     val stages = GpuBaseAggregateMeta.getAggregateOfAllStages(meta, meta.agg.logicalLink.get)
@@ -1768,12 +1800,11 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
       partialAggMeta: GpuBaseAggregateMeta[_],
       fromCpuToGpu: Boolean): Seq[NamedExpression] = {
 
-    val converters = mutable.Queue[Either[
-      CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter]]()
-    mergeAggMeta.childExprs.foreach {
+    val converters = mergeAggMeta.childExprs.collect {
       case e if e.childExprs.length == 1 &&
-        e.childExprs.head.isInstanceOf[TypedImperativeAggExprMeta[_]] =>
-        e.wrapped.asInstanceOf[AggregateExpression].mode match {
+          e.childExprs.head.isInstanceOf[TypedImperativeAggExprMeta[_]] =>
+        val aggExpr = e.wrapped.asInstanceOf[AggregateExpression]
+        aggExpr.mode match {
           case Final | PartialMerge =>
             val typImpAggMeta = e.childExprs.head.asInstanceOf[TypedImperativeAggExprMeta[_]]
             val converter = if (fromCpuToGpu) {
@@ -1781,31 +1812,32 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
             } else {
               Right(typImpAggMeta.createGpuToCpuBufferConverter())
             }
-            converters.enqueue(converter)
-          case _ =>
+            val aggFn = aggExpr.aggregateFunction.asInstanceOf[TypedImperativeAggregate[_]]
+            Some(aggFn.inputAggBufferAttributes.head.exprId -> converter)
+          case _ => None
         }
-      case _ =>
-    }
+      case _ => None
+    }.flatten.toMap
 
     val expressions = partialAggMeta.resultExpressions.map {
-      case retExpr if retExpr.typeMeta.typeConverted =>
-        val resultExpr = retExpr.wrapped.asInstanceOf[AttributeReference]
-        val ref = if (fromCpuToGpu) {
-          resultExpr
-        } else {
-          resultExpr.copy(dataType = retExpr.typeMeta.dataType.get)(
-            resultExpr.exprId, resultExpr.qualifier)
-        }
-        converters.dequeue() match {
-          case Left(converter) =>
-            Alias(converter.createExpression(ref),
-              ref.name + "_converted")(NamedExpression.newExprId)
-          case Right(converter) =>
-            Alias(converter.createExpression(ref),
-              ref.name + "_converted")(NamedExpression.newExprId)
-        }
       case retExpr =>
-        retExpr.wrapped.asInstanceOf[NamedExpression]
+        retExpr.wrapped match {
+          // Some typed imperative aggregates, like BloomFilterAggregate, keep BinaryType on both
+          // CPU and GPU but still need a bridge conversion because the buffer semantics differ.
+          case resultExpr: AttributeReference if converters.contains(resultExpr.exprId) =>
+            val ref = if (fromCpuToGpu || !retExpr.typeMeta.typeConverted) {
+              resultExpr
+            } else {
+              resultExpr.copy(dataType = retExpr.typeMeta.dataType.get)(
+                resultExpr.exprId, resultExpr.qualifier)
+            }
+            val convertedExpr = converters(resultExpr.exprId).fold(
+              _.createExpression(ref),
+              _.createExpression(ref))
+            Alias(convertedExpr, ref.name + "_converted")(NamedExpression.newExprId)
+          case _ =>
+            retExpr.wrapped.asInstanceOf[NamedExpression]
+        }
     }
 
     expressions
@@ -1827,8 +1859,8 @@ class GpuHashAggregateMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends GpuBaseAggregateMeta(agg, agg.requiredChildDistributionExpressions,
-    conf, parent, rule)
+  extends GpuTypedImperativeSupportedAggregateExecMeta(agg,
+    agg.requiredChildDistributionExpressions, conf, parent, rule)
 
 class GpuSortAggregateExecMeta(
     override val agg: SortAggregateExec,
