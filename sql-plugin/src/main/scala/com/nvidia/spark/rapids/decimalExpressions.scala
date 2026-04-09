@@ -100,13 +100,32 @@ case class GpuMakeDecimal(
   override def nullable: Boolean = child.nullable || nullOnOverflow
   override def toString: String = s"MakeDecimal($child,$precision,$sparkScale)"
 
+  private lazy val outputType =
+    ai.rapids.cudf.DecimalUtils.createDecimalType(precision, sparkScale)
+
   private lazy val (minValue, maxValue) = {
     val bounds = ai.rapids.cudf.DecimalUtils.bounds(dataType.precision, dataType.scale)
     (bounds.getKey.unscaledValue().longValue(), bounds.getValue.unscaledValue().longValue())
   }
 
+  private def makeResult(
+      outOfBounds: ColumnVector,
+      outputView: ColumnView): ColumnVector = {
+    if (!nullOnOverflow) {
+      withResource(outOfBounds.any()) { isAny =>
+        if (isAny.isValid && isAny.getBoolean) {
+          throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
+        }
+      }
+      outputView.copyToColumnVector()
+    } else {
+      withResource(Scalar.fromNull(outputType)) { nullVal =>
+        outOfBounds.ifElse(nullVal, outputView)
+      }
+    }
+  }
+
   override protected def doColumnar(input: GpuColumnVector): ColumnVector = {
-    val outputType = ai.rapids.cudf.DecimalUtils.createDecimalType(precision, sparkScale)
     val base = input.getBase
     val outOfBounds = withResource(Scalar.fromLong(maxValue)) { maxScalar =>
       withResource(base.greaterThan(maxScalar)) { over =>
@@ -117,40 +136,26 @@ case class GpuMakeDecimal(
         }
       }
     }
-    def makeResult(
-        outOfBounds: ColumnVector,
-        outputView: ColumnView): ColumnVector = {
-      if (!nullOnOverflow) {
-        withResource(outOfBounds.any()) { isAny =>
-          if (isAny.isValid && isAny.getBoolean) {
-            throw new IllegalStateException(GpuCast.INVALID_INPUT_MESSAGE)
-          }
-        }
-        outputView.copyToColumnVector()
-      } else {
-        withResource(Scalar.fromNull(outputType)) { nullVal =>
-          outOfBounds.ifElse(nullVal, outputView)
-        }
-      }
-    }
 
     withResource(outOfBounds) { outOfBounds =>
       if (outputType.isBackedByInt) {
-        // Precision <= 9: decimal is backed by INT32.
-        // Cast INT64 to INT32 first since bitCastTo requires
-        // matching byte widths.
+        // In production Spark, this path is unreachable: MakeDecimal is only
+        // used in the SUM optimization where the input is always Long and
+        // output precision = input precision + 10, so the minimum output
+        // precision is 11 (always INT64-backed). We support it here for
+        // test completeness when MakeDecimal is constructed directly with
+        // precision <= 9.
         withResource(base.castTo(DType.INT32)) { int32 =>
           withResource(int32.bitCastTo(outputType)) {
             makeResult(outOfBounds, _)
           }
         }
       } else if (!outputType.isBackedByLong) {
-        // DECIMAL128 (precision > 18) is unreachable because
-        // the GPU TypeSig for MakeDecimal only allows
-        // DECIMAL_64 output; higher precisions fall back to CPU.
+        // DECIMAL128 (precision > 18) is not needed: MakeDecimal only
+        // operates on Long inputs (max ~18 digits), and the GPU TypeSig
+        // restricts output to DECIMAL_64. Higher precisions fall back to CPU.
         throw new IllegalStateException(
-          s"Unexpected decimal output type in " +
-            s"GpuMakeDecimal: $outputType")
+          s"Unexpected decimal output type in GpuMakeDecimal: $outputType")
       } else {
         // Precision 10-18: decimal is backed by INT64.
         // bitCastTo is zero-copy since widths already match.
