@@ -202,8 +202,8 @@ case class GpuToCpuBloomFilterBufferTransition(
       withResource(new DataOutputStream(out)) { dataOut =>
         bloomFilter.writeTo(dataOut)
         dataOut.flush()
+        out.toByteArray
       }
-      out.toByteArray
     }
   }
 
@@ -216,5 +216,7 @@ case class GpuToCpuBloomFilterBufferTransition(
     }
   }
 
+  // ShimUnaryExpression still requires nullSafeEval even though eval handles the null-to-empty
+  // bloom filter rewrite directly for this bridge expression.
   override protected def nullSafeEval(input: Any): Array[Byte] = input.asInstanceOf[Array[Byte]]
 }
