@@ -677,11 +677,16 @@ def test_delta_filter_out_metadata_col(spark_tmp_path):
 @ignore_order(local=True)
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"], ids=idfn)
 @pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
+@pytest.mark.parametrize("query", [
+    "SELECT a FROM delta.`{path}`",
+    "SELECT a, b FROM delta.`{path}`",
+], ids=["one_col", "two_cols"])
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
-def test_delta_deletion_vector_native_footer_multi_row_group(spark_tmp_path, parquet_reader_type, footer_type):
+def test_delta_deletion_vector_native_footer_multi_row_group(spark_tmp_path, parquet_reader_type,
+                                                             footer_type, query):
     """
     Tests deletion vector filtering on a Delta table whose single Parquet file has multiple
     row groups, with deletions targeting rows beyond the first row group. A small
@@ -723,7 +728,57 @@ def test_delta_deletion_vector_native_footer_multi_row_group(spark_tmp_path, par
 
     with_cpu_session(setup_tables, conf=write_conf)
 
-    # Read only column 'a' from the 3-column table.
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql(f"SELECT a FROM delta.`{data_path}`"),
+        lambda spark: spark.sql(query.format(path=data_path)),
+        conf=read_conf)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("parquet_reader_type", ["COALESCING", "MULTITHREADED"], ids=idfn)
+@pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Deletion vector scan is not supported on Databricks")
+def test_delta_deletion_vector_native_footer_multi_row_group_count_star(
+        spark_tmp_path, parquet_reader_type, footer_type):
+    """
+    Tests zero-column projection (COUNT(*)) with deletion vectors on a partitioned Delta
+    table where each partition's Parquet file has multiple row groups. Uses a partition
+    filter so Spark performs a true zero-column scan while still applying DVs.
+    """
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    num_rows = 10000
+    row_group_size = 10000
+
+    write_conf = {
+        "parquet.block.size": str(row_group_size),
+    }
+    read_conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.rapids.sql.format.parquet.reader.type": parquet_reader_type,
+        "spark.rapids.sql.format.parquet.reader.footer.type": footer_type,
+        "spark.sql.files.maxPartitionBytes": str(row_group_size),
+    }
+
+    def setup_tables(spark):
+        # Partition by a column with few distinct values so each partition has enough
+        # rows to produce multiple row groups per file.
+        spark.range(num_rows).selectExpr(
+            "CAST(id AS INT) AS a",
+            "CAST(id % 2 AS INT) AS part"
+        ).coalesce(1).write.format("delta") \
+            .option("delta.enableDeletionVectors", "true") \
+            .partitionBy("part") \
+            .save(data_path)
+        # Delete rows in later row groups within partition part=0.
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a >= 5000 AND a < 5100 AND part = 0")
+
+    with_cpu_session(setup_tables, conf=write_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT COUNT(*) FROM delta.`{data_path}` WHERE part = 0"),
         conf=read_conf)
