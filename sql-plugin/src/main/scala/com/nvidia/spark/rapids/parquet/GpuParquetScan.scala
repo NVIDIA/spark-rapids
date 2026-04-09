@@ -45,7 +45,7 @@ import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsInputFile, SeekableInputStream}
 import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ShimFilePartitionReaderFactory, SparkShimImpl}
-import com.nvidia.spark.rapids.shims.parquet.{ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
+import com.nvidia.spark.rapids.shims.parquet.{GpuParquetUtilsShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -730,7 +730,7 @@ protected case class GpuParquetFileFilterHandler(
                   // Fix up the row index offset
                   val offsets = tableFooter.getRowIndexOffsets
                   if (offsets.nonEmpty) {
-                    block.setRowIndexOffset(offsets(0))
+                    GpuParquetUtilsShims.setRowIndexOffset(block, offsets(0))
                   }
                   val schema = new MessageType("root")
                   return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
@@ -762,7 +762,7 @@ protected case class GpuParquetFileFilterHandler(
               s"Row index offsets length (${rowIndexOffsets.length}) != " +
               s"blocks count (${blocks.size()})")
             blocks.asScala.zip(rowIndexOffsets).foreach { case (block, offset) =>
-              block.setRowIndexOffset(offset)
+              GpuParquetUtilsShims.setRowIndexOffset(block, offset)
             }
             footer
           case _ =>
