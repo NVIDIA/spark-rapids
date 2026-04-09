@@ -753,7 +753,7 @@ protected case class GpuParquetFileFilterHandler(
             // So we compute the correct offsets from all row groups before filtering,
             // and then apply them to the filtered blocks.
             val blocks = footer.getBlocks
-            assert(blocks.size() == rowIndexOffsets.length,
+            require(blocks.size() == rowIndexOffsets.length,
               s"Row index offsets length (${rowIndexOffsets.length}) != " +
               s"blocks count (${blocks.size()})")
             blocks.asScala.zip(rowIndexOffsets).foreach { case (block, offset) =>
