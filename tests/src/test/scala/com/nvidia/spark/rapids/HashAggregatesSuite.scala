@@ -523,14 +523,14 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       "collect_list/collect_set reduction non-null",
       reductionNonNullDf,
       skipCanonicalizationCheck = true) {
-    frame => frame.agg(collect_list("b"), sort_array(collect_set("b")))
+    frame => frame.agg(sort_array(collect_list("b")), sort_array(collect_set("b")))
   }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual(
       "collect_list/collect_set reduction mixed nulls",
       reductionMixedNullDf,
       skipCanonicalizationCheck = true) {
-    frame => frame.agg(collect_list("b"), sort_array(collect_set("b")))
+    frame => frame.agg(sort_array(collect_list("b")), sort_array(collect_set("b")))
   }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("distinct", datesCsvDf, conf = enableCsvConf()) {
