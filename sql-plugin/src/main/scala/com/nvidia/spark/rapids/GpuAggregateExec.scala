@@ -1143,7 +1143,8 @@ object GpuBaseAggregateMeta {
       currentMeta: SparkPlanMeta[_],
       logical: LogicalPlan): SparkPlanMeta[_] = {
     currentMeta.parent match {
-      case Some(parentAgg: GpuBaseAggregateMeta[_]) if parentAgg.agg.logicalLink.contains(logical) =>
+      case Some(parentAgg: GpuBaseAggregateMeta[_])
+          if parentAgg.agg.logicalLink.contains(logical) =>
         getAggregateChainRoot(parentAgg, logical)
       // Bridge ProjectExec nodes are inserted in the physical plan around buffer conversions but
       // do not carry the aggregate logical link, so we intentionally climb through them first and

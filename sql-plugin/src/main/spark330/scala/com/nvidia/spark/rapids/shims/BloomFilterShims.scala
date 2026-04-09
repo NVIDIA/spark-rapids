@@ -104,7 +104,8 @@ object BloomFilterShims {
 
           // BloomFilterAggregate crosses the CPU/GPU boundary as BinaryType in both directions,
           // but empty GPU partial buffers can be null while Spark CPU final expects a serialized
-          // empty bloom filter. We still need a converter even though the runtime type is unchanged.
+          // empty bloom filter. We still need a converter even though the runtime type
+          // is unchanged.
           override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
             CpuToGpuBloomFilterBufferConverter()
 
