@@ -1,5 +1,5 @@
 # Change log
-Generated on 2026-04-08
+Generated on 2026-04-09
 
 ## Release 26.04
 
@@ -12,7 +12,6 @@ Generated on 2026-04-08
 |[#12071](https://github.com/NVIDIA/spark-rapids/issues/12071)|[FEA] Deletion vector read support with splits|
 |[#13566](https://github.com/NVIDIA/spark-rapids/issues/13566)|[FEA] Enable Predicate Pushdown for MULTITHREADED reader in Delta Lake when dealing with Deletion Vectors|
 |[#12576](https://github.com/NVIDIA/spark-rapids/issues/12576)|[FEA][DV] Implement Parquet+DV Scan using MULTIFILE* Parquet Reader|
-|[#14457](https://github.com/NVIDIA/spark-rapids/issues/14457)|[FEA] Enforce PR template checklist completion in pr-description-check|
 |[#14238](https://github.com/NVIDIA/spark-rapids/issues/14238)|[FEA] Support read nested data type for iceberg.|
 |[#13591](https://github.com/NVIDIA/spark-rapids/issues/13591)|[FEA] Support iceberg 1.10|
 |[#14378](https://github.com/NVIDIA/spark-rapids/issues/14378)|[FEA] Support iceberg 1.9.2 in scala 2.12|
