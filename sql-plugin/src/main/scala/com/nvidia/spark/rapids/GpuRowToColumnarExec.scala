@@ -682,7 +682,7 @@ class RowToColumnarIterator(
               if (rowCount > 0 && !localGoal.isInstanceOf[RequireSingleBatchLike]) {
                 // Emit partial batch. This also handles SplitAndRetryOOM: emitting
                 // a smaller batch IS the right response to memory pressure, and
-                // tryBuild() has its own withRetryNoSplit to handle GPU OOM.
+                // the host-to-GPU transfer has its own split retry to handle GPU OOM.
                 if (row != null) {
                   pendingRow = copyRow(row)
                 }
