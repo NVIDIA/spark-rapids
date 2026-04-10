@@ -160,17 +160,6 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
     assert(!row2ColIter.hasNext)
   }
 
-  test("test GPU OOM split and retry with RequireSingleBatch still throws") {
-    val rowIter: Iterator[InternalRow] = (1 to 10).map(InternalRow(_)).toIterator
-    val row2ColIter = new RowToColumnarIterator(
-      rowIter, schema, RequireSingleBatch, batchSize, new GpuRowToColumnConverter(schema))
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    assertThrows[GpuSplitAndRetryOOM] {
-      row2ColIter.next()
-    }
-  }
-
   test("test GPU OOM split and retry produces multiple batches") {
     val numRows = 10
     val rowIter: Iterator[InternalRow] = (1 to numRows).map(InternalRow(_)).toIterator

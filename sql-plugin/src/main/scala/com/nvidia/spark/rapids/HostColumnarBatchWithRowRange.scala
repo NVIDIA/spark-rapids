@@ -246,15 +246,18 @@ class HostColumnarBatchWithRowRange private (
     val validLen = validityBufferSize(numRows)
     // Default all rows to valid; null rows will be flipped to 0 bits
     val out = HostMemoryBuffer.allocate(validLen)
-    out.setMemory(0L, validLen, 0xFF.toByte)
-    var nullCount = 0L
-    var r = 0
-    while (r < numRows) {
-      if (col.isNull((startRow + r).toLong)) {
-        nullCount += 1
-        RapidsHostColumnBuilder.setNullAt(out, r.toLong)
+    val nullCount = closeOnExcept(out) { _ =>
+      out.setMemory(0L, validLen, 0xFF.toByte)
+      var count = 0L
+      var r = 0
+      while (r < numRows) {
+        if (col.isNull((startRow + r).toLong)) {
+          count += 1
+          RapidsHostColumnBuilder.setNullAt(out, r.toLong)
+        }
+        r += 1
       }
-      r += 1
+      count
     }
     if (nullCount == 0L) {
       out.close()
