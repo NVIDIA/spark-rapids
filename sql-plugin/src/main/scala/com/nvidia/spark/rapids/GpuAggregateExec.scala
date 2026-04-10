@@ -40,7 +40,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
-import org.apache.spark.sql.execution.{ExplainUtils, ProjectExec, SortExec, SparkPlan}
+import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression}
@@ -1129,52 +1129,19 @@ object GpuBaseAggregateMeta {
   private val aggPairReplaceChecked = TreeNodeTag[Boolean](
     "rapids.gpu.aggPairReplaceChecked")
 
-  // Mixed CPU/GPU aggregate chains can have pass-through operators inserted between stages while
-  // still belonging to the same logical aggregate. BloomFilterAggregate currently hits this via
-  // ProjectExec injected around the bridge expressions.
-  private def isAggregateChainPassThrough(meta: SparkPlanMeta[_]): Boolean = meta match {
-    case _: GpuShuffleMeta => true
-    case _: GpuSortMeta => true
-    case _ => meta.wrapped.isInstanceOf[ProjectExec]
-  }
-
-  @tailrec
-  private def getAggregateChainRoot(
-      currentMeta: SparkPlanMeta[_],
-      logical: LogicalPlan): SparkPlanMeta[_] = {
-    currentMeta.parent match {
-      case Some(parentAgg: GpuBaseAggregateMeta[_])
-          if parentAgg.agg.logicalLink.contains(logical) =>
-        getAggregateChainRoot(parentAgg, logical)
-      // Bridge ProjectExec nodes are inserted in the physical plan around buffer conversions but
-      // do not carry the aggregate logical link, so we intentionally climb through them first and
-      // let the next aggregate parent decide whether the chain still belongs to this logical plan.
-      case Some(parentMeta: SparkPlanMeta[_]) if isAggregateChainPassThrough(parentMeta) =>
-        getAggregateChainRoot(parentMeta, logical)
-      case _ =>
-        currentMeta
-    }
-  }
-
-  @tailrec
-  private def collectAggregateStages(
-      currentMeta: SparkPlanMeta[_],
-      logical: LogicalPlan,
-      acc: List[GpuBaseAggregateMeta[_]]): List[GpuBaseAggregateMeta[_]] = {
-    currentMeta match {
-      case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
-        collectAggregateStages(aggMeta.childPlans.head, logical, acc :+ aggMeta)
-      case meta if isAggregateChainPassThrough(meta) && meta.childPlans.nonEmpty =>
-        collectAggregateStages(meta.childPlans.head, logical, acc)
-      case _ =>
-        acc
-    }
-  }
-
   def getAggregateOfAllStages(
       currentMeta: SparkPlanMeta[_], logical: LogicalPlan): List[GpuBaseAggregateMeta[_]] = {
-    val root = getAggregateChainRoot(currentMeta, logical)
-    collectAggregateStages(root, logical, Nil)
+    currentMeta match {
+      case aggMeta: GpuBaseAggregateMeta[_] if aggMeta.agg.logicalLink.contains(logical) =>
+        List[GpuBaseAggregateMeta[_]](aggMeta) ++
+          getAggregateOfAllStages(aggMeta.childPlans.head, logical)
+      case shuffleMeta: GpuShuffleMeta =>
+        getAggregateOfAllStages(shuffleMeta.childPlans.head, logical)
+      case sortMeta: GpuSortMeta =>
+        getAggregateOfAllStages(sortMeta.childPlans.head, logical)
+      case _ =>
+        List[GpuBaseAggregateMeta[_]]()
+    }
   }
 }
 
@@ -1618,16 +1585,13 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
    */
   private def handleAggregationBuffer(
       meta: GpuTypedImperativeSupportedAggregateExecMeta[_]): Unit = {
-    // Mixed CPU/GPU aggregates may only have the GPU side on a partial stage, so we cannot
-    // restrict bridge discovery to final stages only.
-    val needToCheck = containTypedImperativeAggregate(meta)
+    // We only run the check for final stages which contain TypedImperativeAggregate.
+    val needToCheck = containTypedImperativeAggregate(meta, Some(Final))
     if (!needToCheck) return
-    // Avoid duplicated check and fallback across all physical stages of the same aggregate chain.
-    val checked = meta.agg.getTagValue[Boolean](bufferConverterInjected).contains(true) ||
-      meta.agg.logicalLink.exists(_.getTagValue[Boolean](bufferConverterInjected).contains(true))
+    // Avoid duplicated check and fallback.
+    val checked = meta.agg.getTagValue[Boolean](bufferConverterInjected).contains(true)
     if (checked) return
     meta.agg.setTagValue(bufferConverterInjected, true)
-    meta.agg.logicalLink.foreach(_.setTagValue(bufferConverterInjected, true))
 
     // Fetch AggregateMetas of all stages which belong to current Aggregate
     val stages = GpuBaseAggregateMeta.getAggregateOfAllStages(meta, meta.agg.logicalLink.get)
@@ -1729,11 +1693,9 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
       plan.logicalLink match {
         case Some(logicalPlan) =>
           logicalPlan.setTagValue(tag, (expr, aggregateStageMask(plan)))
-        case None =>
-          // AQE/EnsureRequirements may insert CPU plans, such as exchanges, that end up as the
-          // transition parent but do not have a logical link. Fall back to storing the tag on the
-          // physical plan so transition rewrites can still materialize the converter on this tree.
-          plan.setTagValue(tag, (expr, 0))
+        case None => // logicalLink is guaranteed to be present normally
+          throw new IllegalStateException(
+            s"Failed to store ${tag.name} due to missing LogicalPlanLink: $plan")
       }
     }
   }
@@ -1865,8 +1827,8 @@ class GpuHashAggregateMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
-  extends GpuTypedImperativeSupportedAggregateExecMeta(agg,
-    agg.requiredChildDistributionExpressions, conf, parent, rule)
+  extends GpuBaseAggregateMeta(agg, agg.requiredChildDistributionExpressions,
+    conf, parent, rule)
 
 class GpuSortAggregateExecMeta(
     override val agg: SortAggregateExec,
