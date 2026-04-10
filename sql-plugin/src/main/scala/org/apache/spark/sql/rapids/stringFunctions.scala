@@ -2444,12 +2444,14 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         }
       case _ =>
         // join integer and decimal with ".", then prepend sign
-        val intDotDec = withResource(integerWithCommas) { _ =>
-          withResource(decimalPart) { _ =>
-            withResource(Scalar.fromString(".")) { dot =>
-              withResource(Scalar.fromString("")) { narep =>
-                ColumnVector.stringConcatenate(dot, narep,
-                  Array[ColumnView](integerWithCommas, decimalPart))
+        val intDotDec = closeOnExcept(signCol) { _ =>
+          withResource(integerWithCommas) { _ =>
+            withResource(decimalPart) { _ =>
+              withResource(Scalar.fromString(".")) { dot =>
+                withResource(Scalar.fromString("")) { narep =>
+                  ColumnVector.stringConcatenate(dot, narep,
+                    Array[ColumnView](integerWithCommas, decimalPart))
+                }
               }
             }
           }
