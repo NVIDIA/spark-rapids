@@ -2385,16 +2385,17 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       }
     }
     if (maxstrlen <= 3) {
-      return str.incRefCount()
-    }
-    val substrs = (0 until maxstrlen by 3).safeMap { i =>
-      str.substring(i, i + 3).asInstanceOf[ColumnView]
-    }.toArray
-    withResource(substrs) { _ =>
-      withResource(Scalar.fromString(",")) { sep =>
-        withResource(Scalar.fromString("")) { narep =>
-          withResource(ColumnVector.stringConcatenate(sep, narep, substrs)) { res =>
-            removeExtraCommas(res)
+      str.incRefCount()
+    } else {
+      val substrs = (0 until maxstrlen by 3).safeMap { i =>
+        str.substring(i, i + 3).asInstanceOf[ColumnView]
+      }.toArray
+      withResource(substrs) { _ =>
+        withResource(Scalar.fromString(",")) { sep =>
+          withResource(Scalar.fromString("")) { narep =>
+            withResource(ColumnVector.stringConcatenate(sep, narep, substrs)) { res =>
+              removeExtraCommas(res)
+            }
           }
         }
       }
