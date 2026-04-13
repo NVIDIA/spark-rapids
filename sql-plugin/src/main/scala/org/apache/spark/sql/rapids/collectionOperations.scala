@@ -1250,7 +1250,7 @@ case class GpuArraysZip(children: Seq[Expression]) extends GpuExpression with Sh
    */
   private def padArraysToMaxLength(inputs: Seq[ColumnVector]): Seq[ColumnVector] = {
     if (inputs.head.getRowCount == 0) {
-      return inputs.map(_.incRefCount())
+      return inputs.safeMap(_.incRefCount())
     }
     // Compute max size of input arrays for each row, this is to know how we need to pad things.
     //
