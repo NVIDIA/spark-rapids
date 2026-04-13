@@ -3238,8 +3238,8 @@ object GpuOverrides extends Logging {
       "StringReplace operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("src", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-          ParamCheck("replace", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+          ParamCheck("search", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("replace", TypeSig.STRING, TypeSig.STRING))),
       (in, conf, p, r) => new TernaryExprMeta[StringReplace](in, conf, p, r) {
         override def convertToGpu(
             column: Expression,

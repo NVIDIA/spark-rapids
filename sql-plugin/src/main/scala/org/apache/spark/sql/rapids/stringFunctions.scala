@@ -849,7 +849,7 @@ case class GpuStringReplace(
     srcExpr: Expression,
     searchExpr: Expression,
     replaceExpr: Expression)
-  extends GpuTernaryExpressionArgsAnyScalarScalar
+  extends GpuTernaryExpression
       with ImplicitCastInputTypes
       with HasGpuStringReplace {
 
@@ -879,6 +879,64 @@ case class GpuStringReplace(
       replaceExpr: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(strExpr, numRows)) { strExprCol =>
       doColumnar(strExprCol, searchExpr, replaceExpr)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    strExpr.getBase.stringReplacePerRow(searchExpr.getBase, replaceExpr.getBase)
+  }
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(strExpr, searchExpr.getRowCount.toInt)) { expandedStr =>
+      doColumnar(expandedStr, searchExpr, replaceExpr)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(searchExpr, strExpr.getRowCount.toInt)) { expandedSearch =>
+      doColumnar(strExpr, expandedSearch, replaceExpr)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(replaceExpr, strExpr.getRowCount.toInt)) { expandedRepl =>
+      doColumnar(strExpr, searchExpr, expandedRepl)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(strExpr, replaceExpr.getRowCount.toInt)) { expandedStr =>
+      withResource(GpuColumnVector.from(searchExpr, replaceExpr.getRowCount.toInt)) {
+        expandedSearch =>
+          doColumnar(expandedStr, expandedSearch, replaceExpr)
+      }
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(strExpr, searchExpr.getRowCount.toInt)) { expandedStr =>
+      withResource(GpuColumnVector.from(replaceExpr, searchExpr.getRowCount.toInt)) {
+        expandedRepl =>
+          doColumnar(expandedStr, searchExpr, expandedRepl)
+      }
     }
   }
 }
