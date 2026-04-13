@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.{GpuExec, GpuExpression, ScanRule, ShimLoader, ShimLoaderTemp, SparkPlanMeta, SparkShimVersion, StaticInvokeMeta, VersionUtils}
+import com.nvidia.spark.rapids.{GpuExec, GpuExpression, ScanRule, ShimLoaderTemp, SparkPlanMeta, StaticInvokeMeta}
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
@@ -42,6 +42,7 @@ trait IcebergProvider {
  * Loaded via ShimReflectionUtils with a fixed class name (independent of shimPackage).
  */
 trait IcebergProbe {
+  def isSupportedSparkVersion(): Boolean
   def getDetectedVersion: String
   def shimPackage: String
   def getProvider: IcebergProvider
@@ -68,12 +69,20 @@ object IcebergProvider {
    */
   lazy val shimPackage: String = probe.shimPackage
 
-  def isSupportedSparkVersion(): Boolean = {
-    ShimLoader.getShimVersion match {
-      case _: SparkShimVersion =>
-        VersionUtils.cmpSparkVersion(3, 5, 0) >= 0 &&
-        VersionUtils.cmpSparkVersion(4, 0, 0) < 0
-      case _ => false
-    }
-  }
+  def isSupportedSparkVersion(): Boolean = probe.isSupportedSparkVersion()
+}
+
+object NoIcebergProvider extends IcebergProvider {
+  private def unsupported: Nothing =
+    throw new UnsupportedOperationException("Iceberg is not supported in this configuration")
+
+  override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = Map.empty
+  override def tagForGpu(expr: StaticInvoke, meta: StaticInvokeMeta): Unit = unsupported
+  override def convertToGpu(expr: StaticInvoke, meta: StaticInvokeMeta): GpuExpression = unsupported
+  override def isSupportedWrite(write: Class[_ <: Write]): Boolean = false
+  override def isSupportedCatalog(catalogClass: Class[_]): Boolean = false
+  override def tagForGpuPlan[P <: SparkPlan, M <: SparkPlanMeta[P]](
+      cpuExec: P, meta: M): Unit = unsupported
+  override def convertToGpuPlan[P <: SparkPlan, M <: SparkPlanMeta[P]](
+      cpuExec: P, meta: M): GpuExec = unsupported
 }

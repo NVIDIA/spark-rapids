@@ -16,19 +16,18 @@
 
 package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.ShimReflectionUtils
-
 /**
  * Stub IcebergProbe for Spark versions where Iceberg is not supported.
  * Similar to DeltaProbeImpl in delta-stub.
  */
 class IcebergProbeImpl extends IcebergProbe {
+  override def isSupportedSparkVersion(): Boolean = false
+
   override def getDetectedVersion: String =
     throw new UnsupportedOperationException("Iceberg is not supported in this configuration")
 
-  override def shimPackage: String = "com.nvidia.spark.rapids.iceberg.icebergstub"
+  override def shimPackage: String =
+    throw new UnsupportedOperationException("Iceberg is not supported in this configuration")
 
-  override def getProvider: IcebergProvider =
-    ShimReflectionUtils.newInstanceOf[IcebergProvider](
-      s"${shimPackage}.IcebergProviderImpl")
+  override def getProvider: IcebergProvider = NoIcebergProvider
 }
