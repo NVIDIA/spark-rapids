@@ -1,5 +1,5 @@
 # Change log
-Generated on 2026-04-09
+Generated on 2026-04-13
 
 ## Release 26.04
 
@@ -28,6 +28,7 @@ Generated on 2026-04-09
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#14564](https://github.com/NVIDIA/spark-rapids/issues/14564)|[BUG] cuDF-based Delta DV reader returns incorrect results when NATIVE footer reader is used with split Parquet files|
 |[#14168](https://github.com/NVIDIA/spark-rapids/issues/14168)|[BUG]  `.agg(F.first()` brings inconsistency when using the CPU and GPU engines|
 |[#14395](https://github.com/NVIDIA/spark-rapids/issues/14395)|[BUG] IllegalArgumentException: EmptyRelationExec not columnar in LeftAnti broadcast nested loop join with AQE|
 |[#14511](https://github.com/NVIDIA/spark-rapids/issues/14511)|[BUG] test_delta_scan_split_with_DV_enabled_with_DVs failed assert 2 == 1|
@@ -92,6 +93,8 @@ Generated on 2026-04-09
 ### PRs
 |||
 |:---|:---|
+|[#14585](https://github.com/NVIDIA/spark-rapids/pull/14585)|Update dependency version JNI, private, hybrid to 26.04.0|
+|[#14565](https://github.com/NVIDIA/spark-rapids/pull/14565)|[DOC] Update download and archive pages for v26.04.0 release [skip ci]|
 |[#14555](https://github.com/NVIDIA/spark-rapids/pull/14555)|Fix GPU first reduction state tracking|
 |[#14562](https://github.com/NVIDIA/spark-rapids/pull/14562)|Disable AQE for Delta merge tests and delete test with Spark 4.0+|
 |[#14549](https://github.com/NVIDIA/spark-rapids/pull/14549)|Fix splitability tests for the Delta scan with deletion vectors|
