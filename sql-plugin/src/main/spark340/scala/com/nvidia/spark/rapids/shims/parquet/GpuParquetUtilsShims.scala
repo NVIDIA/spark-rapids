@@ -44,6 +44,13 @@ import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData}
 object GpuParquetUtilsShims {
 
   /**
+   * Sets the given row index offset on the BlockMetaData.
+   */
+  def setRowIndexOffset(block: BlockMetaData, offset: Long): Unit = {
+    block.setRowIndexOffset(offset)
+  }
+
+  /**
    * Build a new BlockMetaData from an existing one, but with a new set of column chunks metadata.
    *
    * @param existingMetadata the existing BlockMetaData to copy row count and row index offset from

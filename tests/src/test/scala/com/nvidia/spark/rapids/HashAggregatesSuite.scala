@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -957,9 +957,36 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.groupBy(col("more_ints")).agg(first("ints", false))
   }
 
+  IGNORE_ORDER_testMatrixSparkResultsAreEqual(
+      "first reduction ignoreNulls=false",
+      firstReductionDf,
+      skipCanonicalizationCheck = true) {
+    // skip canonicalization check because Spark uses SortAggregate for this reduction case, while
+    // we replace it with HashAggregate on the GPU.
+    frame => frame.agg(first("b", ignoreNulls = false))
+  }
+
+  IGNORE_ORDER_testMatrixSparkResultsAreEqual(
+      "first reduction ignoreNulls=false null-leading",
+      firstReductionNullDf,
+      skipCanonicalizationCheck = true) {
+    // skip canonicalization check because Spark uses SortAggregate for this reduction case, while
+    // we replace it with HashAggregate on the GPU.
+    frame => frame.agg(first("b", ignoreNulls = false))
+  }
+
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("last ignoreNulls=false", intCsvDf,
     conf = enableCsvConf()) {
     frame => frame.groupBy(col("more_ints")).agg(last("ints", false))
+  }
+
+  IGNORE_ORDER_testMatrixSparkResultsAreEqual(
+      "last reduction ignoreNulls=false null-trailing",
+      lastReductionDf,
+      skipCanonicalizationCheck = true) {
+    // skip canonicalization check because Spark uses SortAggregate for this reduction case, while
+    // we replace it with HashAggregate on the GPU.
+    frame => frame.agg(last("b", ignoreNulls = false))
   }
 
   IGNORE_ORDER_testMatrixSparkResultsAreEqual("first/last ints column", intCsvDf,
@@ -1051,6 +1078,35 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       ("ff", Long.MaxValue),
       ("ff", null)
     ).toDF("c0", "c1")
+  }
+
+  private def firstReductionDf(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq(
+      (2, "z", 1000.0),
+      (5, "x", 1500.0),
+      (3, "y", 1200.0)
+    ).toDF("a", "b", "c")
+  }
+
+  private def firstReductionNullDf(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq[(Int, String, Double)](
+      (1, null, 900.0),
+      (2, "z", 1000.0),
+      (5, "x", 1500.0),
+      (3, "y", 1200.0)
+    ).toDF("a", "b", "c")
+  }
+
+  private def lastReductionDf(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq[(Int, String, Double)](
+      (2, "z", 1000.0),
+      (5, "x", 1500.0),
+      (3, "y", 1200.0),
+      (6, null, 1800.0)
+    ).toDF("a", "b", "c")
   }
 
   private def randomDF(dataType: DataType)(spark: SparkSession) : DataFrame = {

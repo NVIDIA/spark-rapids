@@ -22,7 +22,7 @@ from data_gen import gen_df, copy_and_update
 from iceberg import (create_iceberg_table, iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
                      get_full_table_name, iceberg_write_enabled_conf,
-                     iceberg_unsupported_mark)
+                     iceberg_unsupported_mark, _build_tblprops)
 from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session, is_spark_400_or_later
 
@@ -49,6 +49,7 @@ def _execute_ctas(spark,
     spark.sql(f"DROP TABLE IF EXISTS {target_table}")
 
     partition_clause = "" if partition_col_sql is None else f"PARTITIONED BY ({partition_col_sql}) "
+    table_prop = _build_tblprops(table_prop)
     props_sql = _props_to_sql(table_prop)
     df = spark.sql(
         f"CREATE TABLE {target_table} USING ICEBERG {partition_clause}"
@@ -269,9 +270,7 @@ def test_ctas_partitioned_table_all_cols_fallback(spark_tmp_table_factory):
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_ctas_from_values(spark_tmp_table_factory,
                           partition_table):
-    table_prop = {
-        "format-version": "2"
-    }
+    table_prop = _build_tblprops({"format-version": "2"})
 
     base_name = get_full_table_name(spark_tmp_table_factory)
     gpu_table = f"{base_name}_gpu"
@@ -341,7 +340,8 @@ def test_ctas_aqe(spark_tmp_table_factory, partition_col_sql):
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_ctas_partitioned_table_fanout_enabled(spark_tmp_table_factory):
+    # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.
     _do_test_ctas_partitioned_table(
         spark_tmp_table_factory,
-        "year(_c9)",
+        "bucket(2, _c9)",
         table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})
