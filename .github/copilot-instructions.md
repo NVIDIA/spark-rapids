@@ -1,7 +1,16 @@
-# spark-rapids Code Review Rules
+# GitHub Copilot Review Instructions for spark-rapids
 
-For full coding conventions, build commands, code examples, and
-shim layer architecture, see `AGENTS.md` at the repo root.
+spark-rapids is a GPU acceleration plugin for Apache Spark.
+For full project context, coding conventions, and code examples,
+see [AGENTS.md](../AGENTS.md).
+
+## Cross-repo References
+
+When reviewing shim code or GPU operator implementations, cross-reference
+these upstream repositories to verify correctness:
+- **apache/spark** — verify GPU behavior matches the CPU implementation in the target Spark version (expression evaluation semantics, null handling, type coercion, catalog/partition behavior)
+- **rapidsai/cudf** — verify cuDF API usage (column operations, memory allocation semantics, null handling)
+- **NVIDIA/spark-rapids-jni** — verify JNI binding signatures, memory ownership rules, error codes
 
 ## Review Checklist
 
@@ -18,3 +27,10 @@ shim layer architecture, see `AGENTS.md` at the repo root.
 - [ ] H6: Magic numbers — unexplained numeric literals without named constants or comments
 - [ ] H7: Pre-merge CI gaps — only selected shims run unit tests; [databricks] needed for DB CI; feature-gated tests need explicit enable; limited Scala 2.13 coverage
 - [ ] H8: Upstream dependencies — SNAPSHOT changes from spark-rapids-jni/cudf may break; verify API usage against upstream repos
+
+## Do NOT Comment On
+
+- Code formatting or import ordering (handled by scalastyle + pre-commit)
+- Naming preferences (unless actively misleading)
+- Self-explanatory documentation suggestions
+- Minor refactoring preferences
