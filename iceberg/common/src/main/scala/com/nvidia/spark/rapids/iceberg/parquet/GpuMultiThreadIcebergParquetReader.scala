@@ -20,10 +20,9 @@ import java.util.{Map => JMap}
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.CombineConf
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.data.GpuDeleteFilter
-import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, MultiFileCloudParquetPartitionReader}
+import com.nvidia.spark.rapids.parquet.{CpuCompressionConfig, HostMemoryBuffersWithMetaData, MultiFileCloudParquetPartitionReader}
 
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.datasources.PartitionedFile
@@ -85,8 +84,17 @@ class GpuMultiThreadIcebergParquetReader(
     }
   }
 
+  private def findIcebergFile(f: PartitionedFile): IcebergPartitionedFile = {
+    val path = f.filePath.toString()
+    val icebergFiles = pathToFile(path).filter(p => p.isSame(f))
+    require(icebergFiles.length == 1, s"Expected 1 iceberg partition file, but found " +
+      s"${icebergFiles.length} for $f")
+    icebergFiles.head
+  }
+
   private def createParquetReader() = {
     val sparkPartitionedFiles = files.map(_.sparkPartitionedFile).toArray
+    val multiThreadConf = conf.threadConf.asInstanceOf[MultiThread]
 
     inited = true
     new MultiFileCloudParquetPartitionReader(
@@ -106,16 +114,26 @@ class GpuMultiThreadIcebergParquetReader(
       CpuCompressionConfig.disabled(),
       conf.metrics,
       new StructType(), // iceberg handles partition value by itself
-      conf.threadConf.asInstanceOf[MultiThread].poolConfBuilder.build(),
-      conf.threadConf.asInstanceOf[MultiThread].maxNumFilesProcessed,
+      multiThreadConf.poolConfBuilder.build(),
+      multiThreadConf.maxNumFilesProcessed,
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
       false, // useFieldId
-      // We always set this to true to disable combining small files into a larger one
-      // as iceberg's parquet file may have different schema due to schema evolution.
-      true, // queryUsesInputFile
+      multiThreadConf.queryUsesInputFile,
       true, // keepReadsInOrder, this is required for iceberg
-      CombineConf(-1, -1)) // Disable combine
+      multiThreadConf.combineConf) {
+
+      override def checkIfNeedToSplit(current: HostMemoryBuffersWithMetaData,
+          next: HostMemoryBuffersWithMetaData): Boolean = {
+        if (super.checkIfNeedToSplit(current, next)) return true
+        val curFile = findIcebergFile(current.partitionedFile)
+        val nextFile = findIcebergFile(next.partitionedFile)
+        val curProcessor = postProcessors.get(curFile)
+        val nextProcessor = postProcessors.get(nextFile)
+        if (curProcessor == null || nextProcessor == null) return true
+        !curProcessor.isCompatibleForCoalescing(nextProcessor)
+      }
+    }
   }
 
   private def filterBlock(f: PartitionedFile) = {

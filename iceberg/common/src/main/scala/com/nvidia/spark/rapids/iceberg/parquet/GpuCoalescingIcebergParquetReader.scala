@@ -102,9 +102,20 @@ class GpuCoalescingIcebergParquetReader(
       {
       override def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
           nextBlockInfo: SingleDataBlockInfo): Boolean = {
-        // Iceberg should always use field id for matching columns, so we should always disable
-        // coalescing.
-        true
+        if (checkIfNeedToSplitBlocks(
+          currentBlockInfo.extraInfo.dateRebaseMode,
+          nextBlockInfo.extraInfo.dateRebaseMode,
+          currentBlockInfo.extraInfo.timestampRebaseMode,
+          nextBlockInfo.extraInfo.timestampRebaseMode,
+          currentBlockInfo.schema,
+          nextBlockInfo.schema,
+          currentBlockInfo.filePath.toString,
+          nextBlockInfo.filePath.toString)) {
+          return true
+        }
+        val curExtra = currentBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
+        val nextExtra = nextBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
+        !curExtra.postProcessor.isCompatibleForCoalescing(nextExtra.postProcessor)
       }
 
       override def finalizeOutputBatch(batch: ColumnarBatch,

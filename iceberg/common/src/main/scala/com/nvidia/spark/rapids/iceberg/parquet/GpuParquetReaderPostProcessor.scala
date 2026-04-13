@@ -661,6 +661,32 @@ class GpuParquetReaderPostProcessor(
   // Check if we can pass through the entire batch without any processing.
   private val canPassThroughBatch: Boolean = rootAction == PassThrough
 
+  private lazy val hasFileSpecificActions: Boolean = containsFileSpecificAction(rootAction)
+
+  private def containsFileSpecificAction(action: ColumnAction): Boolean = action match {
+    case FetchFilePath | FetchRowPosition => true
+    case ProcessStruct(fieldActions, _) => fieldActions.exists(containsFileSpecificAction)
+    case ProcessList(elementAction) => containsFileSpecificAction(elementAction)
+    case ProcessMap(keyAction, valueAction) =>
+      containsFileSpecificAction(keyAction) || containsFileSpecificAction(valueAction)
+    case _ => false
+  }
+
+  /**
+   * Check if this post-processor is compatible with another for file coalescing/combining.
+   * Two post-processors are compatible when applying either one to any input batch from
+   * their respective files would produce the same result. This requires:
+   * - No file-specific actions (FetchFilePath, FetchRowPosition) in the action tree
+   * - Identical action trees (same schema transformations)
+   * - Identical constant maps (same partition values)
+   */
+  private[iceberg] def isCompatibleForCoalescing(
+      other: GpuParquetReaderPostProcessor): Boolean = {
+    !hasFileSpecificActions &&
+      rootAction == other.rootAction &&
+      idToConstant.equals(other.idToConstant)
+  }
+
   // Expose for testing - displays the action tree
   private[iceberg] def displayActionPlan(): String = {
     rootAction match {

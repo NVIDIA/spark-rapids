@@ -22,7 +22,7 @@ import java.util.Objects
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
+import com.nvidia.spark.rapids.{CombineConf, DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
@@ -116,7 +116,9 @@ case object SingleFile extends ThreadConf
 
 case class MultiThread(
     poolConfBuilder: ThreadPoolConfBuilder,
-    maxNumFilesProcessed: Int) extends ThreadConf
+    maxNumFilesProcessed: Int,
+    combineConf: CombineConf,
+    queryUsesInputFile: Boolean) extends ThreadConf
 
 case class MultiFile(poolConfBuilder: ThreadPoolConfBuilder) extends ThreadConf
 

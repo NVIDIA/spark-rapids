@@ -18,7 +18,7 @@ package org.apache.iceberg.spark.source
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{GpuMetric, MultiFileReaderUtils, RapidsConf, ThreadPoolConfBuilder}
+import com.nvidia.spark.rapids.{CombineConf, GpuMetric, MultiFileReaderUtils, RapidsConf, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.iceberg.ShimUtils.locationOf
 import com.nvidia.spark.rapids.iceberg.parquet.{MultiFile, MultiThread, SingleFile, ThreadConf}
 import org.apache.iceberg.{FileFormat, ScanTask, ScanTaskGroup}
@@ -42,6 +42,8 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
     !queryUsesInputFile
 
   private val poolConfBuilder = ThreadPoolConfBuilder(rapidsConf)
+  private val combineThresholdSize = rapidsConf.getMultithreadedCombineThreshold
+  private val combineWaitTime = rapidsConf.getMultithreadedCombineWaitTime
 
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] =
     throw new UnsupportedOperationException("GpuReaderFactory does not support createReader()")
@@ -86,7 +88,13 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
         canUseMultiThread, files, allCloudSchemes)
 
       if (useMultiThread) {
-        MultiThread(poolConfBuilder, partition.maxNumParquetFilesParallel)
+        val combineConf = if (hasNoDeletes) {
+          CombineConf(combineThresholdSize, combineWaitTime)
+        } else {
+          CombineConf(-1, -1)
+        }
+        MultiThread(poolConfBuilder, partition.maxNumParquetFilesParallel,
+          combineConf, queryUsesInputFile)
       } else {
         MultiFile(poolConfBuilder)
       }

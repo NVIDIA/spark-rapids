@@ -84,7 +84,7 @@ class DefaultDeleteLoader(
           _ => Map.empty[Integer, Any].asJava,
           _ => None,
           newConf)
-      case MultiThread(_, _) =>
+      case _: MultiThread =>
         new GpuMultiThreadIcebergParquetReader(
           rapidsFileIO,
           files,
