@@ -40,8 +40,10 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
@@ -219,13 +221,31 @@ class GpuMergeBatchIterator(
     numOutputBatches: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] {
 
-  override def hasNext: Boolean = inputIter.hasNext
+  private val pendingOutputs = new ArrayBuffer[SpillableColumnarBatch]()
+
+  Option(TaskContext.get()).foreach { tc =>
+    onTaskCompletion(tc) {
+      pendingOutputs.foreach(_.close())
+      pendingOutputs.clear()
+    }
+  }
+
+  override def hasNext: Boolean = pendingOutputs.nonEmpty || inputIter.hasNext
 
   override def next(): ColumnarBatch = {
+    while (pendingOutputs.isEmpty && inputIter.hasNext) {
+      val batch = inputIter.next()
+      withResource(new NvtxWithMetrics("GpuMergeBatchIterator", NvtxColor.CYAN, opTime)) { _ =>
+        pendingOutputs ++= processBatch(batch)
+      }
+    }
 
-    val batch = inputIter.next()
-    withResource(new NvtxWithMetrics("GpuMergeBatchIterator", NvtxColor.CYAN, opTime)) { _ =>
-      val result = processBatch(batch)
+    if (pendingOutputs.isEmpty) {
+      throw new NoSuchElementException("next on empty GpuMergeBatchIterator")
+    }
+
+    withResource(pendingOutputs.remove(0)) { spillable =>
+      val result = spillable.getColumnarBatch()
       numOutputBatches += 1
       numOutputRows += result.numRows()
       result
@@ -235,8 +255,7 @@ class GpuMergeBatchIterator(
   /**
    * Process a single columnar batch, applying merge logic.
    */
-  private def processBatch(batch: ColumnarBatch): ColumnarBatch = {
-
+  private def processBatch(batch: ColumnarBatch): Seq[SpillableColumnarBatch] = {
     withRetryNoSplit(batch) { _ =>
       // Evaluate presence flags
       val outputs = new ArrayBuffer[SpillableColumnarBatch](
@@ -269,13 +288,7 @@ class GpuMergeBatchIterator(
           }
         }
       }
-      // TODO: There is a small chance that the output batch is much larger input batch,
-      //  e.g. all cases need to update split, which leads to a result batch whose row
-      //  count is twice of input batch. We need to handle this case by splitting the outputs
-      // https://github.com/NVIDIA/spark-rapids/issues/13712
-      withResource(GpuBatchUtils.concatSpillBatchesAndClose(outputs.toSeq)) { spillable =>
-        spillable.get.getColumnarBatch()
-      }
+      outputs.toSeq
     }
   }
 

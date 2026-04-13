@@ -59,6 +59,7 @@ iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
                     MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
                     MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
+# Broad Iceberg end-to-end coverage including nested types
 iceberg_full_gens_list = ([byte_gen, short_gen, IntegerGen(nullable=False), LongGen(nullable=False),
                           float_gen, double_gen, string_gen, boolean_gen, date_gen,
                           timestamp_gen, binary_gen, ArrayGen(binary_gen), ArrayGen(byte_gen),
@@ -71,6 +72,107 @@ iceberg_full_gens_list = ([byte_gen, short_gen, IntegerGen(nullable=False), Long
                                               ['child2', int_gen]]))] +
                           iceberg_map_gens + decimal_gens)
 
+iceberg_nested_write_float_gen = FloatGen(nullable=False, no_nans=True)
+iceberg_nested_write_double_gen = DoubleGen(nullable=False, no_nans=True)
+iceberg_nested_write_string_gen = StringGen(nullable=False)
+iceberg_nested_write_boolean_gen = BooleanGen(nullable=False)
+iceberg_nested_write_date_gen = DateGen(nullable=False)
+iceberg_nested_write_timestamp_gen = TimestampGen(nullable=False)
+iceberg_nested_write_decimal32_gen = DecimalGen(precision=7, scale=3, nullable=False,
+                                                special_cases=[])
+iceberg_nested_write_decimal64_gen = DecimalGen(precision=12, scale=2, nullable=False,
+                                                special_cases=[])
+iceberg_nested_write_decimal128_gen = DecimalGen(precision=20, scale=2, nullable=False,
+                                                 special_cases=[])
+iceberg_nested_write_binary_gen = BinaryGen(nullable=False)
+
+iceberg_nested_write_string_array_gen = ArrayGen(iceberg_nested_write_string_gen,
+                                                 min_length=1, max_length=10,
+                                                 nullable=False)
+iceberg_nested_write_long_array_gen = ArrayGen(LongGen(nullable=False), min_length=1,
+                                               max_length=10, nullable=False)
+iceberg_nested_write_binary_array_gen = ArrayGen(iceberg_nested_write_binary_gen,
+                                                 min_length=1, max_length=10,
+                                                 nullable=False)
+iceberg_nested_write_date_array_gen = ArrayGen(iceberg_nested_write_date_gen,
+                                               min_length=1, max_length=10,
+                                               nullable=False)
+iceberg_nested_write_timestamp_array_gen = ArrayGen(iceberg_nested_write_timestamp_gen,
+                                                    min_length=1, max_length=10,
+                                                    nullable=False)
+iceberg_nested_write_decimal64_array_gen = ArrayGen(iceberg_nested_write_decimal64_gen,
+                                                    min_length=1, max_length=10,
+                                                    nullable=False)
+iceberg_nested_write_nested_int_array_gen = ArrayGen(
+    ArrayGen(IntegerGen(nullable=False), min_length=1, max_length=10, nullable=False),
+    min_length=1, max_length=10, nullable=False)
+iceberg_nested_write_struct_gen = StructGen(
+    [['child0', ArrayGen(IntegerGen(nullable=False), min_length=1, max_length=10, nullable=False)],
+     ['child1', IntegerGen(nullable=False)],
+     ['child2', iceberg_nested_write_float_gen],
+     ['child3', iceberg_nested_write_decimal64_gen]],
+    nullable=False)
+iceberg_nested_write_struct_array_gen = ArrayGen(
+    StructGen([['child0', iceberg_nested_write_string_gen],
+               ['child1', iceberg_nested_write_double_gen],
+               ['child2', IntegerGen(nullable=False)]], nullable=False),
+    min_length=1, max_length=10, nullable=False)
+iceberg_nested_write_simple_string_map_gen = MapGen(
+    StringGen(pattern='key_[0-9]', nullable=False),
+    StringGen(nullable=False),
+    min_length=1, max_length=10, nullable=False)
+iceberg_nested_write_map_gens = [
+    MapGen(BooleanGen(nullable=False), BooleanGen(nullable=False),
+           min_length=1, max_length=10, nullable=False),
+    MapGen(IntegerGen(nullable=False), IntegerGen(nullable=False),
+           min_length=1, max_length=10, nullable=False),
+    MapGen(LongGen(nullable=False), LongGen(nullable=False),
+           min_length=1, max_length=10, nullable=False),
+    MapGen(iceberg_nested_write_float_gen, iceberg_nested_write_float_gen,
+           min_length=1, max_length=10, nullable=False),
+    MapGen(iceberg_nested_write_double_gen, iceberg_nested_write_double_gen,
+           min_length=1, max_length=10, nullable=False),
+    MapGen(iceberg_nested_write_date_gen, iceberg_nested_write_date_gen,
+           min_length=1, max_length=10, nullable=False),
+    MapGen(iceberg_nested_write_timestamp_gen, iceberg_nested_write_timestamp_gen,
+           min_length=1, max_length=10, nullable=False),
+    iceberg_nested_write_simple_string_map_gen,
+    MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+           iceberg_nested_write_string_array_gen,
+           min_length=1, max_length=10, nullable=False),
+    MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), LongGen(nullable=False),
+           min_length=1, max_length=10, nullable=False),
+    MapGen(StringGen(pattern='key_[0-9]', nullable=False),
+           iceberg_nested_write_simple_string_map_gen,
+           min_length=1, max_length=10, nullable=False)
+]
+
+# Nested types intended for focused positive GPU Iceberg tests.
+# It also avoids null and empty nested containers so these tests stay focused on type support
+# instead of separate null/empty handling mismatches. Dedicated binary regression tests cover
+# the null/empty byte edge cases separately.
+iceberg_nested_write_gens_list = ([IntegerGen(nullable=False), LongGen(nullable=False),
+                                   iceberg_nested_write_float_gen,
+                                   iceberg_nested_write_double_gen,
+                                   iceberg_nested_write_string_gen,
+                                   iceberg_nested_write_boolean_gen,
+                                   iceberg_nested_write_date_gen,
+                                   iceberg_nested_write_timestamp_gen,
+                                   iceberg_nested_write_binary_gen,
+                                   iceberg_nested_write_long_array_gen,
+                                   iceberg_nested_write_binary_array_gen,
+                                   iceberg_nested_write_string_array_gen,
+                                   iceberg_nested_write_date_array_gen,
+                                   iceberg_nested_write_timestamp_array_gen,
+                                   iceberg_nested_write_decimal64_array_gen,
+                                   iceberg_nested_write_nested_int_array_gen,
+                                   iceberg_nested_write_struct_gen,
+                                   iceberg_nested_write_struct_array_gen] +
+                                  iceberg_nested_write_map_gens +
+                                  [iceberg_nested_write_decimal32_gen,
+                                   iceberg_nested_write_decimal64_gen,
+                                   iceberg_nested_write_decimal128_gen])
+
 iceberg_write_enabled_conf = {
     "spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
     "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED",
@@ -80,6 +182,24 @@ iceberg_write_enabled_conf = {
     # for merge-on-read (MOR) DML operations (UPDATE/DELETE/MERGE with write.*.mode='merge-on-read')
     "spark.rapids.sql.exec.WriteDeltaExec": "true",
 }
+
+parquet_write_corrected_conf = {
+    "spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
+    "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED",
+}
+
+
+def materialize_parquet_source(spark_tmp_path: str,
+                               gen_list,
+                               seed: Optional[int] = None,
+                               length: int = 2048) -> str:
+    temp_dir = tempfile.mkdtemp(dir=spark_tmp_path)
+
+    def write_parquet(spark: SparkSession):
+        gen_df(spark, gen_list, length=length, seed=seed).write.mode("overwrite").parquet(temp_dir)
+
+    with_cpu_session(write_parquet, conf=parquet_write_corrected_conf)
+    return temp_dir
 
 
 def can_be_eq_delete_col(data_gen: DataGen) -> bool:

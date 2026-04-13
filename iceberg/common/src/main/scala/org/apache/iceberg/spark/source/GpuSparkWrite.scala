@@ -30,6 +30,7 @@ import org.apache.hadoop.mapreduce.Job
 import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg._
 import org.apache.iceberg.io._
+import org.apache.iceberg.io.DeleteSchemaUtil
 import org.apache.iceberg.spark.{GpuTypeToSparkType, Spark3Util, SparkSchemaUtil}
 import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
 import org.apache.iceberg.spark.source.GpuWriteContext.positionDeleteSparkType
@@ -344,9 +345,11 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
     val writerFactory = new GpuSparkFileWriterFactory(
       table,
       format,
+      writeSchema,
       dsSchema,
       table.sortOrder(),
       format,
+      DeleteSchemaUtil.pathPosSchema(),
       positionDeleteSparkType,
       outputWriterFactory,
       statsTracker.newTaskInstance(),

@@ -18,7 +18,7 @@ from asserts import assert_equal_with_local_sort, assert_gpu_fallback_write_sql
 from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
-                     iceberg_base_table_cols, iceberg_gens_list, iceberg_full_gens_list,
+                     iceberg_base_table_cols, iceberg_gens_list, iceberg_nested_write_gens_list,
                      iceberg_unsupported_mark)
 from marks import allow_non_gpu, allow_non_gpu_conditional, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_400_or_later, with_cpu_session, with_gpu_session
@@ -312,62 +312,22 @@ def test_iceberg_delete_fallback_unsupported_file_format(spark_tmp_table_factory
         conf=iceberg_delete_cow_enabled_conf
     )
 
-@allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec", "ProjectExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize('delete_mode,fallback_exec', [
-    pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
-    pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
-])
-def test_iceberg_delete_fallback_nested_types(spark_tmp_table_factory, delete_mode, fallback_exec):
-    """Test DELETE falls back with nested types (arrays, structs, maps) - currently unsupported"""
-    base_table_name = get_full_table_name(spark_tmp_table_factory)
+@pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
+@allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
+def test_iceberg_delete_nested_types(spark_tmp_table_factory, delete_mode):
+    """Test DELETE with supported nested types."""
+    cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_nested_write_gens_list)]
+    data_gen_func = lambda spark: gen_df(spark, list(zip(cols, iceberg_nested_write_gens_list)))
 
-    # Use table with all iceberg types including nested types (arrays, structs, maps)
-    def data_gen(spark):
-        cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
-        return gen_df(spark, list(zip(cols, iceberg_full_gens_list)))
-
-    # Phase 1: Initialize tables with data (separate for CPU and GPU)
-    def init_table(table_name):
-        table_props = {
-            'format-version': '2',
-            'write.delete.mode': delete_mode
-        }
-
-        create_iceberg_table(table_name,
-                             table_prop=table_props,
-                             df_gen=data_gen)
-
-        def insert_data(spark):
-            df = data_gen(spark)
-            df.writeTo(table_name).append()
-
-        with_cpu_session(insert_data)
-
-    # Initialize both CPU and GPU tables
-    cpu_table_name = f'{base_table_name}_cpu'
-    gpu_table_name = f'{base_table_name}_gpu'
-    init_table(cpu_table_name)
-    init_table(gpu_table_name)
-
-    # Phase 2: DELETE operation (to be tested with fallback)
-    # Use _c2 (IntegerGen) for DELETE condition as it's a simple type
-    def write_func(spark, table_name):
-        spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
-
-    # Read function to verify results
-    def read_func(spark, table_name):
-        return spark.sql(f"SELECT * FROM {table_name}")
-
-    assert_gpu_fallback_write_sql(
-        write_func,
-        read_func,
-        base_table_name,
-        fallback_exec,
-        conf=iceberg_delete_cow_enabled_conf
+    do_delete_test(
+        spark_tmp_table_factory,
+        lambda spark, table: spark.sql(f"DELETE FROM {table} WHERE _c0 % 3 = 0"),
+        data_gen_func=data_gen_func,
+        delete_mode=delete_mode
     )
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,9 @@ import java.util.stream.{Stream => JStream}
 import com.nvidia.spark.rapids.{GpuParquetWriter, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
-import org.apache.iceberg.{FieldMetrics, Metrics, MetricsConfig}
+import org.apache.iceberg.{FieldMetrics, Metrics, MetricsConfig, Schema}
 import org.apache.iceberg.io.FileAppender
+import org.apache.iceberg.parquet.GpuParquetMetricsHelper
 import org.apache.iceberg.parquet.ParquetUtil
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.ParquetMetadata
 
@@ -40,6 +41,7 @@ import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.ParquetMetad
 class GpuIcebergParquetAppender(
   val inner: GpuParquetWriter,
   val metricsConfig: MetricsConfig,
+  val schema: Schema,
   val fileIO: IcebergFileIO) extends FileAppender[SpillableColumnarBatch] {
   private var closed = false
   private var footer: ParquetMetadata = _
@@ -51,7 +53,8 @@ class GpuIcebergParquetAppender(
   override def metrics(): Metrics = {
     require(closed, "Writer must be closed before getting metrics")
 
-    ParquetUtil.footerMetrics(footer, JStream.empty[FieldMetrics[_]](), metricsConfig)
+    GpuParquetMetricsHelper.footerMetrics(schema, footer, JStream.empty[FieldMetrics[_]](),
+      metricsConfig)
   }
 
   override def length(): Long = inner.getFileLength

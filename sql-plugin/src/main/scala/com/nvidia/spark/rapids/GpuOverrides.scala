@@ -924,8 +924,9 @@ object GpuOverrides extends Logging {
     (IcebergFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.BINARY +
           TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
-      cudfWrite = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-        GpuTypeShims.additionalParquetSupportedTypes,
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          GpuTypeShims.additionalParquetSupportedTypes).nested(),
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.BINARY + TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())))
 
@@ -3079,8 +3080,9 @@ object GpuOverrides extends Logging {
       "Creates a new map from two arrays",
       ExprChecks.binaryProject(
         TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          TypeSig.ARRAY + TypeSig.STRUCT),
-        TypeSig.MAP.nested(TypeSig.all - TypeSig.MAP),
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        // Map values may themselves be maps. Map keys remain constrained by the key-array check.
+        TypeSig.MAP.nested(TypeSig.all),
         ("keys",
           TypeSig.ARRAY.nested(
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -4617,7 +4619,7 @@ object GpuOverrides extends Logging {
       "The backend for the expand operator",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY).nested(),
         TypeSig.all),
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
