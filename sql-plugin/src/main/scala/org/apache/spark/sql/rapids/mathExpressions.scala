@@ -92,7 +92,7 @@ case class GpuHex(child: Expression) extends GpuUnaryExpression with Serializabl
     child.dataType match {
       case LongType =>
         CastStrings.fromIntegersWithBase(input.getBase, 16)
-      case StringType | BinaryType =>
+      case _: StringType | BinaryType =>
         CastStrings.bytesToHex(input.getBase)
     }
   }
