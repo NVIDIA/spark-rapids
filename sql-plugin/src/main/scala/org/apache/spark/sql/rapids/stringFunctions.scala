@@ -2418,14 +2418,15 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     }
     val signCol = closeOnExcept(decimalPart) { _ =>
       closeOnExcept(integerWithCommas) { _ =>
-        withResource(cv.castTo(DType.FLOAT64)) { cvDouble =>
+        val isNeg = withResource(cv.castTo(DType.FLOAT64)) { cvDouble =>
           withResource(Scalar.fromDouble(0.0)) { zero =>
-            withResource(cvDouble.lessThan(zero)) { isNeg =>
-              withResource(Scalar.fromString("-")) { neg =>
-                withResource(Scalar.fromString("")) { empty =>
-                  isNeg.ifElse(neg, empty)
-                }
-              }
+            cvDouble.lessThan(zero)
+          }
+        }
+        withResource(isNeg) { _ =>
+          withResource(Scalar.fromString("-")) { neg =>
+            withResource(Scalar.fromString("")) { empty =>
+              isNeg.ifElse(neg, empty)
             }
           }
         }
