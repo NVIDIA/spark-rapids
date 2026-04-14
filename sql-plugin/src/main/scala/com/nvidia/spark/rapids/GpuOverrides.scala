@@ -3059,16 +3059,13 @@ object GpuOverrides extends Logging {
       "Returns the array after removing all elements that equal to the input element (right) " +
       "from the input array (left)",
       ExprChecks.binaryProject(
-        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
         TypeSig.ARRAY.nested(TypeSig.all),
         ("array",
-          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+          TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
           TypeSig.all),
         ("element",
-          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-            TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP).nested(),
+          (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL),
           TypeSig.all)),
       (in, conf, p, r) => new BinaryExprMeta[ArrayRemove](in, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
