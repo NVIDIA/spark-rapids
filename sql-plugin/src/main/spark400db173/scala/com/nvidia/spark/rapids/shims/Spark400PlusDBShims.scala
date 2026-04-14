@@ -42,6 +42,6 @@ trait Spark400PlusDBShims extends Spark341PlusDBShims {
   }
 
   override def getPartitionFiles(partition: FilePartition): Seq[PartitionedFile] = {
-    partition.innerFiles
+    partition.filesWithAbsolutePaths
   }
 }

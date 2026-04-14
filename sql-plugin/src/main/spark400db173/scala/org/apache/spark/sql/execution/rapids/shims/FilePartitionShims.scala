@@ -31,7 +31,7 @@ object FilePartitionShims extends SplitFiles {
     }
   }
 
-  def getFiles(p: FilePartition): Array[PartitionedFile] = p.innerFiles
+  def getFiles(p: FilePartition): Array[PartitionedFile] = p.filesWithAbsolutePaths
 
   def copyWithFiles(p: FilePartition, newFiles: Array[PartitionedFile]): FilePartition = {
     p.copy(innerFiles = newFiles)
