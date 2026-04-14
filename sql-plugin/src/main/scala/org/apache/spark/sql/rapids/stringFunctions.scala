@@ -2435,12 +2435,11 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     // single concatenation pass for sign + integer [+ "." + decimal]
     val formatted = d match {
       case 0 =>
-        withResource(decimalPart) { _ =>
-          withResource(signCol) { _ =>
-            withResource(integerWithCommas) { _ =>
-              ColumnVector.stringConcatenate(
-                Array[ColumnView](signCol, integerWithCommas))
-            }
+        decimalPart.close()
+        withResource(signCol) { _ =>
+          withResource(integerWithCommas) { _ =>
+            ColumnVector.stringConcatenate(
+              Array[ColumnView](signCol, integerWithCommas))
           }
         }
       case _ =>
