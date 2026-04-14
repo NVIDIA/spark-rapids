@@ -2406,14 +2406,14 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     val (integerPart, decimalPart) = getParts(cv, d)
     // reverse integer part for adding commas
     val integerWithCommas = closeOnExcept(decimalPart) { _ =>
-      withResource(integerPart) { _ =>
-        val reversed = integerPart.reverseStringsOrLists()
-        val reversedWithCommas = withResource(reversed) { _ =>
-          addCommas(reversed)
-        }
-        withResource(reversedWithCommas) { _ =>
-          reversedWithCommas.reverseStringsOrLists()
-        }
+      val reversed = withResource(integerPart) { _ =>
+        integerPart.reverseStringsOrLists()
+      }
+      val reversedWithCommas = withResource(reversed) { _ =>
+        addCommas(reversed)
+      }
+      withResource(reversedWithCommas) { _ =>
+        reversedWithCommas.reverseStringsOrLists()
       }
     }
     val signCol = closeOnExcept(decimalPart) { _ =>
