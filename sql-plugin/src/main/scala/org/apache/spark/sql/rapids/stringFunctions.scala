@@ -2418,9 +2418,9 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     }
     val signCol = closeOnExcept(decimalPart) { _ =>
       closeOnExcept(integerWithCommas) { _ =>
-        val isNeg = withResource(cv.castTo(DType.FLOAT64)) { cvDouble =>
-          withResource(Scalar.fromDouble(0.0)) { zero =>
-            cvDouble.lessThan(zero)
+        val isNeg = withResource(cv.castTo(DType.FLOAT32)) { cvFloat =>
+          withResource(Scalar.fromFloat(0.0f)) { zero =>
+            cvFloat.lessThan(zero)
           }
         }
         withResource(isNeg) { _ =>
