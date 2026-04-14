@@ -150,6 +150,11 @@ trait BloomFilterAggregateQuerySuiteBase extends SparkQueryCompareTestSuite {
 
   // Keep the empty-partition mixed CPU/GPU regression coverage in the shared base so both the
   // 3.3x/3.5x suites and the 4.1.1 suite exercise the same bridge behavior.
+  // This is a defensive correctness path that is unlikely in normal workloads because a supported
+  // BloomFilterAggregate would normally keep both partial and final stages on GPU.
+  // The test forces the mixed plan on purpose: BloomFilterMightContain falls back to CPU,
+  // hashAgg.replaceMode keeps only one aggregate stage on GPU, AQE stays off so the plan shape is
+  // stable, and extra shuffle partitions guarantee empty build partitions.
   for (mode <- Seq("partial", "final")) {
     ALLOW_NON_GPU_testSparkResultsAreEqualWithCapture(
       s"might_contain GPU $mode build CPU probe with empty build partitions",

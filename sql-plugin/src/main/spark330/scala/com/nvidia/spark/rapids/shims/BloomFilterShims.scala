@@ -102,6 +102,7 @@ object BloomFilterShims {
             aggBuffer.copy(dataType = a.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
           }
 
+          // This is a defensive correctness fix for the rare mixed CPU/GPU bridge path.
           // BloomFilterAggregate crosses the CPU/GPU boundary as BinaryType in both directions,
           // but empty GPU partial buffers can be null while Spark CPU final expects a serialized
           // empty bloom filter. We still need a converter even though the runtime type
