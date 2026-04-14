@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids.fileio.iceberg;
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import com.nvidia.spark.rapids.jni.fileio.RapidsOutputFile;
+import org.apache.iceberg.aws.s3.IcebergS3InputFile;
 import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.io.InputFile;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -47,7 +49,8 @@ public class IcebergFileIO implements RapidsFileIO {
 
   @Override
   public IcebergInputFile newInputFile(String path) throws IOException {
-    return new IcebergInputFile(delegate.newInputFile(path));
+    InputFile inputFile = delegate.newInputFile(path);
+    return IcebergS3InputFile.maybeCreate(inputFile);
   }
 
   @Override
