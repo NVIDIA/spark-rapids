@@ -1797,8 +1797,40 @@ case class GpuFlattenArray(child: Expression) extends GpuUnaryExpression with Nu
   private def childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
   override def nullable: Boolean = child.nullable || childDataType.containsNull
   override def dataType: DataType = childDataType.elementType
+
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
-    input.getBase.flattenLists
+    val inputBase = input.getBase
+    val numRows = inputBase.getRowCount.toInt
+    // flattenLists in cuDF crashes with CUDA illegal memory access when:
+    //   (a) the inner list column has 0 rows (empty outer array, e.g. flatten([])), or
+    //   (b) the leaf values column has 0 rows AND no inner array is null
+    //       (all inner arrays are valid-but-empty, e.g. flatten([[]])).
+    // When inner arrays are NULL (e.g. flatten([null])), flattenLists handles null
+    // propagation correctly and must be called — do NOT take the guard path.
+    val needsEmptyGuard = withResource(inputBase.getChildColumnView(0)) { inner =>
+      val innerRows = inner.getRowCount
+      innerRows == 0L || {
+        withResource(inner.getChildColumnView(0)) { grandchild =>
+          grandchild.getRowCount == 0L && inner.getNullCount == 0L
+        }
+      }
+    }
+    if (!needsEmptyGuard) {
+      inputBase.flattenLists
+    } else {
+      // All inner arrays are valid-but-empty (no null inner arrays, no leaf values).
+      // Every output row is either null (outer list is null) or an empty list.
+      // Build a column of empty lists, then apply the outer null mask.
+      val elemHostType = GpuColumnVector.convertFrom(
+        dataType.asInstanceOf[ArrayType].elementType, true)
+      withResource(ColumnVector.empty(elemHostType)) { emptyElemCol =>
+        withResource(Scalar.listFromColumnView(emptyElemCol)) { emptyListScalar =>
+          withResource(ColumnVector.fromScalar(emptyListScalar, numRows)) { emptyLists =>
+            emptyLists.mergeAndSetValidity(BinaryOp.BITWISE_AND, inputBase)
+          }
+        }
+      }
+    }
   }
 }
 
