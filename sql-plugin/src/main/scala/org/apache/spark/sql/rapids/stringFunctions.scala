@@ -2385,12 +2385,14 @@ case class GpuFormatNumber(x: Expression, d: Expression)
       }
     }
     if (maxstrlen <= 3) {
+      // no commas are needed for strings of 3 or fewer chars
       str.incRefCount()
     } else {
       val substrs = (0 until maxstrlen by 3).safeMap { i =>
         str.substring(i, i + 3).asInstanceOf[ColumnView]
       }.toArray
       withResource(substrs) { _ =>
+        // join the 3-char chunks with commas using a scalar separator
         withResource(Scalar.fromString(",")) { sep =>
           withResource(Scalar.fromString("")) { narep =>
             withResource(ColumnVector.stringConcatenate(sep, narep, substrs)) { res =>
@@ -2416,8 +2418,14 @@ case class GpuFormatNumber(x: Expression, d: Expression)
         reversedWithCommas.reverseStringsOrLists()
       }
     }
+    // build a small per-row sign prefix column ("-" or "") based on the sign
+    // of the value, that we will prepend at the end.
+    // this way, we avoid creating bigger signed/unsigned versions of the formatted column
+    // followed by an ifElse.
     val signCol = closeOnExcept(decimalPart) { _ =>
       closeOnExcept(integerWithCommas) { _ =>
+        // since we only need the sign bit, cast to float and compare < 0.
+        // this is cheaper than casting to string and checking for "-".
         val isNeg = withResource(cv.castTo(DType.FLOAT32)) { cvFloat =>
           withResource(Scalar.fromFloat(0.0f)) { zero =>
             cvFloat.lessThan(zero)
@@ -2436,6 +2444,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     val formatted = d match {
       case 0 =>
         decimalPart.close()
+        // no decimal - just prepend the precomputed sign prefix
         withResource(signCol) { _ =>
           withResource(integerWithCommas) { _ =>
             ColumnVector.stringConcatenate(
@@ -2443,7 +2452,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
           }
         }
       case _ =>
-        // join integer and decimal with ".", then prepend sign
+        // join integer and decimal with scalar separator "."
         val intDotDec = closeOnExcept(signCol) { _ =>
           withResource(integerWithCommas) { _ =>
             withResource(decimalPart) { _ =>
@@ -2456,6 +2465,7 @@ case class GpuFormatNumber(x: Expression, d: Expression)
             }
           }
         }
+        // prepend the precomputed sign prefix to the formatted number
         withResource(signCol) { _ =>
           withResource(intDotDec) { _ =>
             ColumnVector.stringConcatenate(
