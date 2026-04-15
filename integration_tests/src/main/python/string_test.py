@@ -297,7 +297,8 @@ def test_contains_col_search_with_nulls():
                 .selectExpr(
                     'contains(src, search)',
                     'contains(src, "")',
-                    'contains("abc", search)'))
+                    'contains("abc", search)',
+                    'contains(CAST(NULL AS STRING), search)'))
 
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}'), StringGen('')])
