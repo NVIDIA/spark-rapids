@@ -30,7 +30,7 @@ import com.nvidia.spark.rapids.parquet.{GpuParquetUtils, ParquetFileInfoWithBloc
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
-import org.apache.iceberg.Schema
+import org.apache.iceberg.{MetadataColumns, Schema}
 import org.apache.iceberg.expressions.Expression
 import org.apache.iceberg.hadoop.HadoopInputFile
 import org.apache.iceberg.io.InputFile
@@ -118,7 +118,7 @@ case class MultiThread(
     poolConfBuilder: ThreadPoolConfBuilder,
     maxNumFilesProcessed: Int,
     combineConf: CombineConf,
-    queryUsesInputFile: Boolean) extends ThreadConf
+    disableCombining: Boolean) extends ThreadConf
 
 case class MultiFile(poolConfBuilder: ThreadPoolConfBuilder) extends ThreadConf
 
@@ -142,6 +142,25 @@ case class GpuIcebergParquetReaderConf(
 
 trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   def conf: GpuIcebergParquetReaderConf
+
+  private def hasMatchingConstant(
+      currentConstants: java.util.Map[Integer, _],
+      nextConstants: java.util.Map[Integer, _],
+      fieldId: Int): Boolean = {
+    val key = Integer.valueOf(fieldId)
+    currentConstants.containsKey(key) == nextConstants.containsKey(key) &&
+      (!currentConstants.containsKey(key) ||
+        Objects.equals(currentConstants.get(key), nextConstants.get(key)))
+  }
+
+  protected def compatibleForCombining(
+      currentConstants: java.util.Map[Integer, _],
+      nextConstants: java.util.Map[Integer, _]): Boolean = {
+    hasMatchingConstant(currentConstants, nextConstants,
+      MetadataColumns.SPEC_ID_COLUMN_ID) &&
+      hasMatchingConstant(currentConstants, nextConstants,
+        MetadataColumns.PARTITION_COLUMN_ID)
+  }
 
   def projectSchema(fileSchema: ShadedMessageType, requiredSchema: Schema):
   (ShadedMessageType, ShadedMessageType) = {

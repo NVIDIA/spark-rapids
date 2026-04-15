@@ -21,6 +21,7 @@ import java.util.{Map => JMap}
 import com.nvidia.spark.rapids.{DateTimeRebaseMode, ExtraInfo, GpuColumnVector, SingleDataBlockInfo}
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.parquet._
+import org.apache.iceberg.MetadataColumns
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types.StructType
@@ -34,7 +35,10 @@ class GpuCoalescingIcebergParquetReader(
 
   private var inited = false
   private lazy val reader = createParquetReader()
-  private var curPostProcessor: GpuParquetReaderPostProcessor = _
+  private val hasFilePathMetadata =
+    conf.expectedSchema.findField(MetadataColumns.FILE_PATH.fieldId()) != null
+  private val hasRowPositionMetadata =
+    conf.expectedSchema.findField(MetadataColumns.ROW_POSITION.fieldId()) != null
 
   override def close(): Unit = {
     if (inited) {
@@ -44,12 +48,7 @@ class GpuCoalescingIcebergParquetReader(
 
   override def hasNext: Boolean = reader.next()
 
-  override def next(): ColumnarBatch = {
-    val batch = reader.get()
-    require(curPostProcessor != null,
-      "The post processor should not be null when calling next()")
-    curPostProcessor.process(batch)
-  }
+  override def next(): ColumnarBatch = reader.get()
 
   private def createParquetReader() = {
     val clippedBlocks = files.map(f => (f, super.filterParquetBlocks(f, conf.expectedSchema)))
@@ -102,6 +101,9 @@ class GpuCoalescingIcebergParquetReader(
       {
       override def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
           nextBlockInfo: SingleDataBlockInfo): Boolean = {
+        if (currentBlockInfo.filePath == nextBlockInfo.filePath) {
+          return false
+        }
         if (checkIfNeedToSplitBlocks(
           currentBlockInfo.extraInfo.dateRebaseMode,
           nextBlockInfo.extraInfo.dateRebaseMode,
@@ -113,18 +115,21 @@ class GpuCoalescingIcebergParquetReader(
           nextBlockInfo.filePath.toString)) {
           return true
         }
+        if (hasFilePathMetadata || hasRowPositionMetadata) {
+          return true
+        }
         val curExtra = currentBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
         val nextExtra = nextBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
-        !curExtra.postProcessor.isCompatibleForCoalescing(nextExtra.postProcessor)
+        !compatibleForCombining(curExtra.postProcessor.idToConstant,
+          nextExtra.postProcessor.idToConstant)
       }
 
       override def finalizeOutputBatch(batch: ColumnarBatch,
           extraInfo: ExtraInfo): ColumnarBatch = {
-        GpuCoalescingIcebergParquetReader.this.curPostProcessor = extraInfo
+        extraInfo
           .asInstanceOf[IcebergParquetExtraInfo]
           .postProcessor
-
-        GpuColumnVector.incRefCounts(batch)
+          .process(GpuColumnVector.incRefCounts(batch))
       }
     }
   }

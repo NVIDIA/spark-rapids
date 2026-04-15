@@ -632,20 +632,20 @@ class GpuParquetReaderPostProcessor(
   private[iceberg] var currentNumRows = 0
 
   // Convert shaded parquet schema to Iceberg schema for comparison
-  private val fileIcebergSchema: Schema = ParquetSchemaUtil.convert(shadedFileReadSchema)
+  private lazy val fileIcebergSchema: Schema = ParquetSchemaUtil.convert(shadedFileReadSchema)
 
   // Build field ID to batch index mapping using the UNSHADED schema from parquetInfo.
   // The parquet reader returns top-level columns in the physical file-read order captured by
   // parquetInfo.schema, which can differ from the requested Iceberg schema order.
   // Map field ID to that batch position.
-  private val fieldIdToBatchIndex: Map[Int, Int] = {
+  private lazy val fieldIdToBatchIndex: Map[Int, Int] = {
     (0 until fileReadSchema.getFieldCount).flatMap { i =>
       Option(fileReadSchema.getType(i).getId).map(id => id.intValue() -> i)
     }.toMap
   }
 
   // Pre-compute action tree by visiting expected schema with file schema as partner
-  private val rootAction: ColumnAction = buildActionTimeMetric.ns {
+  private lazy val rootAction: ColumnAction = buildActionTimeMetric.ns {
     val visitor = new ActionBuildingVisitor(idToConstant)
     val accessors = new FileSchemaAccessors()
     SchemaWithPartnerVisitor.visit(
@@ -655,37 +655,11 @@ class GpuParquetReaderPostProcessor(
       accessors)
   }
 
-  private val expectedFields = expectedSchema.asStruct().fields().asScala
-  private val expectedSparkTypes = expectedFields.map(f => SparkSchemaUtil.convert(f.`type`()))
+  private lazy val expectedFields = expectedSchema.asStruct().fields().asScala
+  private lazy val expectedSparkTypes = expectedFields.map(f => SparkSchemaUtil.convert(f.`type`()))
 
   // Check if we can pass through the entire batch without any processing.
-  private val canPassThroughBatch: Boolean = rootAction == PassThrough
-
-  private lazy val hasFileSpecificActions: Boolean = containsFileSpecificAction(rootAction)
-
-  private def containsFileSpecificAction(action: ColumnAction): Boolean = action match {
-    case FetchFilePath | FetchRowPosition => true
-    case ProcessStruct(fieldActions, _) => fieldActions.exists(containsFileSpecificAction)
-    case ProcessList(elementAction) => containsFileSpecificAction(elementAction)
-    case ProcessMap(keyAction, valueAction) =>
-      containsFileSpecificAction(keyAction) || containsFileSpecificAction(valueAction)
-    case _ => false
-  }
-
-  /**
-   * Check if this post-processor is compatible with another for file coalescing/combining.
-   * Two post-processors are compatible when applying either one to any input batch from
-   * their respective files would produce the same result. This requires:
-   * - No file-specific actions (FetchFilePath, FetchRowPosition) in the action tree
-   * - Identical action trees (same schema transformations)
-   * - Identical constant maps (same partition values)
-   */
-  private[iceberg] def isCompatibleForCoalescing(
-      other: GpuParquetReaderPostProcessor): Boolean = {
-    !hasFileSpecificActions &&
-      rootAction == other.rootAction &&
-      idToConstant.equals(other.idToConstant)
-  }
+  private lazy val canPassThroughBatch: Boolean = rootAction == PassThrough
 
   // Expose for testing - displays the action tree
   private[iceberg] def displayActionPlan(): String = {

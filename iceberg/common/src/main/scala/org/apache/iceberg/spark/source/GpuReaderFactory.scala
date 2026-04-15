@@ -20,8 +20,13 @@ import scala.collection.JavaConverters._
 
 import com.nvidia.spark.rapids.{CombineConf, GpuMetric, MultiFileReaderUtils, RapidsConf, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.iceberg.ShimUtils.locationOf
-import com.nvidia.spark.rapids.iceberg.parquet.{MultiFile, MultiThread, SingleFile, ThreadConf}
-import org.apache.iceberg.{FileFormat, ScanTask, ScanTaskGroup}
+import com.nvidia.spark.rapids.iceberg.parquet.{
+  MultiFile,
+  MultiThread,
+  SingleFile,
+  ThreadConf
+}
+import org.apache.iceberg.{FileFormat, MetadataColumns, ScanTask, ScanTaskGroup}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
@@ -38,8 +43,7 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
   // Here ignores the "ignoreCorruptFiles" comparing to the code in
   // "GpuParquetMultiFilePartitionReaderFactory", since "ignoreCorruptFiles" is
   // not honored by Iceberg.
-  private val canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled &&
-    !queryUsesInputFile
+  private val canUseParquetCoalescing = rapidsConf.isParquetCoalesceFileReadEnabled
 
   private val poolConfBuilder = ThreadPoolConfBuilder(rapidsConf)
   private val combineThresholdSize = rapidsConf.getMultithreadedCombineThreshold
@@ -70,6 +74,10 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       .map(_.asFileScanTask())
 
     val hasNoDeletes = scans.forall(_.deletes.isEmpty)
+    val hasFilePathMetadata =
+      partition.expectedSchema.findField(MetadataColumns.FILE_PATH.fieldId()) != null
+    val hasRowPositionMetadata =
+      partition.expectedSchema.findField(MetadataColumns.ROW_POSITION.fieldId()) != null
 
     val allParquet = scans.forall(_.file.format == FileFormat.PARQUET)
 
@@ -80,7 +88,7 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       }
 
       val canUseMultiThread = canUseParquetMultiThread
-      val canUseCoalescing = canUseParquetCoalescing && hasNoDeletes
+      val canUseCoalescing = canUseParquetCoalescing && hasNoDeletes && !queryUsesInputFile
 
       val files = scans.map(s => locationOf(s.file)).toArray
 
@@ -88,13 +96,11 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
         canUseMultiThread, files, allCloudSchemes)
 
       if (useMultiThread) {
-        val combineConf = if (hasNoDeletes) {
-          CombineConf(combineThresholdSize, combineWaitTime)
-        } else {
-          CombineConf(-1, -1)
-        }
+        val disableCombining =
+          queryUsesInputFile || hasFilePathMetadata || hasRowPositionMetadata || !hasNoDeletes
         MultiThread(poolConfBuilder, partition.maxNumParquetFilesParallel,
-          combineConf, queryUsesInputFile)
+          CombineConf(combineThresholdSize, combineWaitTime),
+          disableCombining)
       } else {
         MultiFile(poolConfBuilder)
       }

@@ -17,7 +17,8 @@ import pytest
 from asserts import assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
 from conftest import is_iceberg_remote_catalog
 from data_gen import *
-from iceberg import get_full_table_name, iceberg_unsupported_mark, _build_tblprops, _BASE_TBLPROPS_SQL
+from iceberg import get_full_table_name, iceberg_unsupported_mark, _build_tblprops, \
+    _BASE_TBLPROPS_SQL, create_iceberg_table
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import is_databricks_runtime, with_cpu_session, \
     with_gpu_session
@@ -665,4 +666,101 @@ def test_iceberg_read_metadata_columns_with_partition_evolution(spark_tmp_table_
     # Test reading all metadata columns along with data columns
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql(f"SELECT a, b, c, _file, _pos, _spec_id, _partition FROM {table}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_small_file_combine_with_schema_evolution(spark_tmp_table_factory, reader_type):
+    table = get_full_table_name(spark_tmp_table_factory)
+    schema_evolution_gens_v1 = [('a', long_gen), ('b', int_gen)]
+    schema_evolution_gens_v2 = schema_evolution_gens_v1 + [('c', string_gen)]
+    base_seed = get_datagen_seed()
+    create_iceberg_table(
+        table,
+        partition_col_sql='bucket(2, a)',
+        df_gen=lambda spark: gen_df(spark, schema_evolution_gens_v1))
+
+    def setup_iceberg_table(spark):
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                schema_evolution_gens_v1,
+                length=64,
+                seed=base_seed + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(f"ALTER TABLE {table} ADD COLUMN c STRING")
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                schema_evolution_gens_v2,
+                length=64,
+                seed=base_seed + 100 + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(
+            f"ALTER TABLE {table} SET TBLPROPERTIES ("
+            "'read.split.target-size' = '268435456', "
+            "'read.split.planning-lookback' = '100')")
+        spark.sql(f"REFRESH TABLE {table}")
+
+    with_cpu_session(setup_iceberg_table)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT a, b, c FROM {table}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_small_file_combine_with_partition_spec_evolution(
+        spark_tmp_table_factory, reader_type):
+    table = get_full_table_name(spark_tmp_table_factory)
+    partition_evolution_gens = [('a', long_gen), ('b', int_gen), ('c', string_gen)]
+    base_seed = get_datagen_seed()
+    create_iceberg_table(
+        table,
+        partition_col_sql='bucket(10, a)',
+        df_gen=lambda spark: gen_df(spark, partition_evolution_gens))
+
+    def setup_iceberg_table(spark):
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                partition_evolution_gens,
+                length=64,
+                seed=base_seed + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(f"ALTER TABLE {table} ADD PARTITION FIELD bucket(10, b)")
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                partition_evolution_gens,
+                length=64,
+                seed=base_seed + 100 + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(f"ALTER TABLE {table} DROP PARTITION FIELD bucket(10, a)")
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                partition_evolution_gens,
+                length=64,
+                seed=base_seed + 200 + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(
+            f"ALTER TABLE {table} SET TBLPROPERTIES ("
+            "'read.split.target-size' = '268435456', "
+            "'read.split.planning-lookback' = '100')")
+        spark.sql(f"REFRESH TABLE {table}")
+
+    with_cpu_session(setup_iceberg_table)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT a, b, c, _spec_id, _partition FROM {table}"),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
