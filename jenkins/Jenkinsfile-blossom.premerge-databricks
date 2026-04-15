@@ -93,7 +93,7 @@ pipeline {
                         // 'name' and 'value' only supprt literal string in the declarative Jenkins
                         // Refer to Jenkins issue https://issues.jenkins.io/browse/JENKINS-62127
                         name 'DB_RUNTIME'
-                        values '12.2', '13.3', '14.3', '17.3'
+                        values '13.3', '14.3', '17.3'
                     }
                 }
                 stages {
@@ -184,16 +184,13 @@ void databricksBuild() {
             }
         }
 
-        // TODO: Temporarily skip tests on Databricks 17.3 until the test failures are fixed
-        if (env.DB_RUNTIME != '17.3') {
-            stage("Test agaist $SPARK_MAJOR DB") {
-                dbStep = 'TEST'
-                withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                    def TEST_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
-                    // Get built tar from the path "$testArgs" on Databricks cluster
-                    // Refer to https://github.com/NVIDIA/spark-rapids/pull/11788/files#diff-db28879431d57d0e454a2c7ee89fdda9abdec463c61771333d6a6565bf96c062R52-R55
-                    sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS $testArgs"
-                }
+        stage("Test against $SPARK_MAJOR DB") {
+            dbStep = 'TEST'
+            withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                def TEST_PARAMS = DbUtils.getParameters(this, dbStep, "-c $CLUSTER_ID")
+                // Get built tar from the path "$testArgs" on Databricks cluster
+                // Refer to https://github.com/NVIDIA/spark-rapids/pull/11788/files#diff-db28879431d57d0e454a2c7ee89fdda9abdec463c61771333d6a6565bf96c062R52-R55
+                sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS $testArgs"
             }
         }
     } finally {

@@ -189,6 +189,44 @@ object RmmRapidsRetryIterator extends Logging {
   }
 
   /**
+   * Execute `fn` inside a retry block where host/GPU allocations throw retryable
+   * OOM exceptions instead of fatal errors. Unlike `withRetryNoSplit`, this does
+   * NOT automatically retry — the caller manages its own retry logic within `fn`.
+   *
+   * Use this for incremental operations (e.g. row-by-row accumulation) where
+   * partial progress is valuable and the standard atomic-retry model doesn't fit.
+   *
+   * @param fn the work to perform inside the retry block
+   * @tparam T result type
+   * @return the result of `fn`
+   */
+  def withRetryBlock[T](fn: => T): T = {
+    RmmSpark.currentThreadStartRetryBlock()
+    try {
+      fn
+    } finally {
+      RmmSpark.currentThreadEndRetryBlock()
+    }
+  }
+
+  /**
+   * Block the current thread until memory is freed, following the standard
+   * protocol of exiting and re-entering the retry block around the blocking call.
+   *
+   * Must be called from within an active retry block (i.e. inside `withRetryBlock`).
+   * After this call returns, the retry block is re-entered and the caller can retry
+   * the failed operation.
+   */
+  def blockUntilMemoryFreed(): Unit = {
+    RmmSpark.currentThreadEndRetryBlock()
+    try {
+      RmmSpark.blockThreadUntilReady()
+    } finally {
+      RmmSpark.currentThreadStartRetryBlock()
+    }
+  }
+
+  /**
    * Returns a tuple of (shouldRetry, shouldSplit, isFromGpuOom) depending the exception
    * passed
    */
@@ -487,8 +525,6 @@ object RmmRapidsRetryIterator extends Logging {
         }
       }
       val curAttempt = attemptStack.pop()
-      // Get the info before running the split, since the attempt may be closed after splitting.
-      val attemptAsString = closeOnExcept(curAttempt)(_.toString)
       val splitted = try {
         // splitPolicy must take ownership of the argument
         splitPolicy(curAttempt)
@@ -497,25 +533,33 @@ object RmmRapidsRetryIterator extends Logging {
           // same type to provide more context for the OOM.
           // This looks a little odd, because we can not change the type of root exception.
           // Otherwise, some unit tests will fail due to the wrong exception type returned.
+          //
+          // Stringify the attempt lazily (only on failure) to avoid O(n) cost on the
+          // hot path when splits succeed. The attempt has not been closed yet at this
+          // point because splitPolicy threw before taking ownership.
         case go: GpuRetryOOM =>
+          val attemptAsString = curAttempt.toString
           throw new GpuRetryOOM(
             s"GPU OutOfMemory: " +
               s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
               s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(go)
         case go: GpuSplitAndRetryOOM =>
+          val attemptAsString = curAttempt.toString
           throw new GpuSplitAndRetryOOM(
             s"GPU OutOfMemory: " +
               s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
               s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(go)
         case co: CpuRetryOOM =>
+          val attemptAsString = curAttempt.toString
           throw new CpuRetryOOM(
             s"CPU OutOfMemory: " +
               s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +
               s"Could not split the current attempt: {$attemptAsString}"
           ).initCause(co)
         case co: CpuSplitAndRetryOOM =>
+          val attemptAsString = curAttempt.toString
           throw new CpuSplitAndRetryOOM(
             s"CPU OutOfMemory: " +
               s"Current threadCountBlockedUntilReady: ${threadCountBlockedUntilReady}. " +

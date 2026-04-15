@@ -282,7 +282,7 @@ def test_delta_empty_deletion_vector_read(spark_tmp_path, use_chunked_reader, us
     do_test_delta_deletion_vector_read(data_path, use_cdf, conf, f"SELECT * FROM delta.`{data_path}`")
 
 
-def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions, post_setup_table_func=None):
+def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_partitions, post_setup_table_func=None, conf=None):
     import os
     import math
 
@@ -296,8 +296,8 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
             post_setup_table_func(spark, data_path)
     target_num_row_groups = 2
     row_group_size = int(num_rows * 4 / target_num_row_groups) # num_rows * 4 bytes per int / target_num_row_groups
-    conf = {"parquet.block.size": str(row_group_size)}
-    with_cpu_session(setup_tables, conf)
+    table_setup_conf = {"parquet.block.size": str(row_group_size)}
+    with_cpu_session(setup_tables, table_setup_conf)
     # Verify that we have 1 file with 2 row groups
     def verify_files_and_row_groups():
         # list files in data_path
@@ -314,12 +314,14 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
     data_file = verify_files_and_row_groups()
     file_size = os.path.getsize(data_file)
 
-    conf = {"spark.sql.files.maxPartitionBytes": str(math.ceil(file_size/2.0))}
+    read_conf = {"spark.sql.files.maxPartitionBytes": str(math.ceil(file_size/2.0))}
+    if conf:
+        read_conf = copy_and_update(read_conf, conf)
 
     def get_num_partitions(spark):
         df = spark.sql("SELECT * from delta.`{}`".format(data_path))
         return df.rdd.getNumPartitions()
-    num_partitions = with_gpu_session(get_num_partitions, conf=conf)
+    num_partitions = with_gpu_session(get_num_partitions, conf=read_conf)
     assert num_partitions == expected_num_partitions, f"Expected {expected_num_partitions} partitions for split read"
 
 
@@ -343,30 +345,42 @@ def test_delta_scan_split_with_DV_enabled_with_no_DV(spark_tmp_path):
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@pytest.mark.parametrize("pushdown_dv_predicate", [True, False], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
-def test_delta_scan_split_with_DV_enabled_with_DVs(spark_tmp_path):
+def test_delta_scan_split_with_DV_enabled_with_DVs(spark_tmp_path, pushdown_dv_predicate):
     def do_delete(spark, data_path):
         num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
         assert num_deleted > 0, "Expected some rows to be deleted"
-    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1, post_setup_table_func=do_delete)
+    # The cuDF-based reader (GpuDeltaParquetFileFormat2), which is used when dv_predicate_pushdown is True, support the file split,
+    # whereas the scala reader (GpuDeltaParquetFileFormat) does not support it.
+    # So we expect 2 partitions when dv_predicate_pushdown is True, and 1 partition when it is False.
+    expected_num_partitions = 2 if pushdown_dv_predicate else 1
+    conf = {"spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{pushdown_dv_predicate}"}
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=expected_num_partitions, post_setup_table_func=do_delete, conf=conf)
 
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@pytest.mark.parametrize("pushdown_dv_predicate", [True, False], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Deletion vector scan is not supported on Databricks")
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
-def test_delta_scan_split_with_DV_disabled_with_DVs(spark_tmp_path):
+def test_delta_scan_split_with_DV_disabled_with_DVs(spark_tmp_path, pushdown_dv_predicate):
     def do_delete_and_disable_DV(spark, data_path):
         num_deleted = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a = 0").collect()[0][0]
         assert num_deleted > 0, "Expected some rows to be deleted"
         spark.sql(f"ALTER TABLE delta.`{data_path}` SET TBLPROPERTIES " +
                   "('delta.enableDeletionVectors' = 'false')")
-    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=1, post_setup_table_func=do_delete_and_disable_DV)
+    # The cuDF-based reader (GpuDeltaParquetFileFormat2), which is used when dv_predicate_pushdown is True, supports the file split,
+    # whereas the scala reader (GpuDeltaParquetFileFormat) does not support it.
+    # So we expect 2 partitions when dv_predicate_pushdown is True, and 1 partition when it is False.
+    expected_num_partitions = 2 if pushdown_dv_predicate else 1
+    conf = {"spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": f"{pushdown_dv_predicate}"}
+    do_test_scan_split(spark_tmp_path, enable_deletion_vectors=True, expected_num_partitions=expected_num_partitions, post_setup_table_func=do_delete_and_disable_DV, conf=conf)
 
 
 @allow_non_gpu(*delta_meta_allow)
@@ -670,3 +684,115 @@ def test_delta_filter_out_metadata_col(spark_tmp_path):
 
     with_cpu_session(create_delta)
     assert_gpu_and_cpu_are_equal_collect(read_table)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"], ids=idfn)
+@pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
+@pytest.mark.parametrize("query", [
+    "SELECT a FROM delta.`{path}`",
+    "SELECT a, b FROM delta.`{path}`",
+], ids=["one_col", "two_cols"])
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Deletion vector scan is not supported on Databricks")
+def test_delta_deletion_vector_native_footer_multi_row_group(spark_tmp_path, parquet_reader_type,
+                                                             footer_type, query):
+    """
+    Tests deletion vector filtering on a Delta table whose single Parquet file has multiple
+    row groups, with deletions targeting rows beyond the first row group. A small
+    maxPartitionBytes forces Spark to assign per-row-group splits so the footer reader
+    sees only a subset of the file's row groups per split.
+    """
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    num_rows = 10000
+    # Small row group size → multiple row groups per file.
+    # 10000 rows * 4 bytes * 3 cols = 120KB total; with 10KB row groups we get ~12 row groups.
+    row_group_size = 10000
+
+    write_conf = {
+        "parquet.block.size": str(row_group_size),
+    }
+    read_conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.rapids.sql.format.parquet.reader.type": parquet_reader_type,
+        "spark.rapids.sql.format.parquet.reader.footer.type": footer_type,
+        # Force Spark to split the file at row group boundaries so the NATIVE footer
+        # reader returns one row group per PartitionedFile split.
+        "spark.sql.files.maxPartitionBytes": str(row_group_size),
+    }
+
+    def setup_tables(spark):
+        # Create a multi-column table with monotonic data so row positions are predictable.
+        # coalesce(1) ensures a single data file with multiple row groups.
+        spark.range(num_rows).selectExpr(
+            "CAST(id AS INT) AS a",
+            "CAST(id * 2 AS INT) AS b",
+            "CAST(id * 3 AS INT) AS c"
+        ).coalesce(1).write.format("delta") \
+            .option("delta.enableDeletionVectors", "true") \
+            .save(data_path)
+        # Delete rows in later row groups. With ~800 rows per row group,
+        # rows a >= 5000 are in row group 6+.
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a >= 5000 AND a < 5100")
+
+    with_cpu_session(setup_tables, conf=write_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(query.format(path=data_path)),
+        conf=read_conf)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.parametrize("parquet_reader_type", ["COALESCING", "MULTITHREADED"], ids=idfn)
+@pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Deletion vector scan is not supported on Databricks")
+def test_delta_deletion_vector_native_footer_multi_row_group_count_star(
+        spark_tmp_path, parquet_reader_type, footer_type):
+    """
+    Tests zero-column projection (COUNT(*)) with deletion vectors on a partitioned Delta
+    table where each partition's Parquet file has multiple row groups. Uses a partition
+    filter so Spark performs a true zero-column scan while still applying DVs.
+    """
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    num_rows = 10000
+    row_group_size = 10000
+
+    write_conf = {
+        "parquet.block.size": str(row_group_size),
+    }
+    read_conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.rapids.sql.format.parquet.reader.type": parquet_reader_type,
+        "spark.rapids.sql.format.parquet.reader.footer.type": footer_type,
+        "spark.sql.files.maxPartitionBytes": str(row_group_size),
+    }
+
+    def setup_tables(spark):
+        # Partition by a column with few distinct values so each partition has enough
+        # rows to produce multiple row groups per file.
+        spark.range(num_rows).selectExpr(
+            "CAST(id AS INT) AS a",
+            "CAST(id % 2 AS INT) AS part"
+        ).coalesce(1).write.format("delta") \
+            .option("delta.enableDeletionVectors", "true") \
+            .partitionBy("part") \
+            .save(data_path)
+        # Delete rows in later row groups within partition part=0.
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a >= 5000 AND a < 5100 AND part = 0")
+
+    with_cpu_session(setup_tables, conf=write_conf)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT COUNT(*) FROM delta.`{data_path}` WHERE part = 0"),
+        conf=read_conf)

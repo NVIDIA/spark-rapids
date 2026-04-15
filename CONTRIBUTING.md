@@ -252,12 +252,12 @@ The following acronyms may appear in directory names:
 
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
-|db     |Databricks  |332db  |Databricks Spark based on Spark 3.3.2         |
+|db     |Databricks  |341db  |Databricks Spark based on Spark 3.4.1         |
 |cdh    |Cloudera CDH|(removed)|Cloudera CDH shims have been removed         |
 
 The version-specific directory names have one of the following forms / use cases:
 
-* `src/main/spark${buildver}`, example: `src/main/spark332db`
+* `src/main/spark${buildver}`, example: `src/main/spark341db`
 * `src/test/spark${buildver}`, example: `src/test/spark340`
 
 with a special shim descriptor as a Scala/Java comment. See [shimplify.md][1]
@@ -635,6 +635,12 @@ find the uploaded log.
 Options:
 1. Skip tests run by adding `[skip ci]` to title, this should only be used for doc-only change
 2. Run build and tests in databricks runtimes by adding `[databricks]` to title, this would add around 30-40 minutes
+
+
+### Code Review Guidelines
+
+We have [code review guidelines](CODE_REVIEW_GUIDELINES.md) that outline how we collaborate during code review. Please read them before opening or reviewing a pull request.
+
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/master/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md

@@ -481,6 +481,12 @@ case class CloseableTableSeqWithTargetSize[T <: AutoCloseable](
   override def length: Int = tables.length
   override def iterator: Iterator[T] = tables.iterator
   override def apply(idx: Int): T = tables.apply(idx)
+
+  // Keep retry-OOM reporting bounded. SeqLike.toString would stringify every table.
+  override def toString: String = {
+    s"CloseableTableSeqWithTargetSize(numTables=$length, " +
+      s"targetSize=${targetSize.targetSize}, minSize=${targetSize.minSize})"
+  }
 }
 
 
