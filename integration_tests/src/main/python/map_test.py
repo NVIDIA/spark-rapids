@@ -723,7 +723,7 @@ def test_map_element_at_ansi_null(data_gen):
 
 
 @disable_ansi_mode  # ANSI mode failures are tested separately.
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_transform_values(data_gen):
     def do_it(spark):
@@ -762,7 +762,8 @@ def test_transform_values(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value +
+    decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_transform_keys(data_gen):
     # The processing here is very limited, because we need to be sure we do not create duplicate keys.
@@ -822,7 +823,7 @@ def test_sql_map_scalars(query):
             lambda spark: spark.sql('SELECT {}'.format(query)))
 
 
-@pytest.mark.parametrize('data_gen', map_gens_sample \
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value \
                          + [MapGen(f(nullable=False, min_val=-10, max_val=10), f(), min_length=10) for f in [ByteGen, ShortGen, IntegerGen, LongGen]] \
                          + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), min_length=10)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -889,7 +890,7 @@ def test_map_zip_with_mismatch_keys(data_gen):
     # Not using @disable_ansi_mode because of https://github.com/NVIDIA/spark-rapids/issues/13214.  Using explicit setting instead.
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.sql.ansi.enabled': False})
 
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_filter(data_gen):
     columns = ['map_filter(a, (key, value) -> isnotnull(value) )',

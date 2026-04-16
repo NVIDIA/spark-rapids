@@ -537,7 +537,8 @@ def test_array_element_at_zero_index_fail(index, ansi_enabled):
         error_message=message)
 
 
-@pytest.mark.parametrize('data_gen', array_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', array_gens_sample +
+    [ArrayGen(BinaryGen(max_length=10), max_length=10)], ids=idfn)
 @disable_ansi_mode
 def test_array_transform(data_gen):
     def do_it(spark):
@@ -659,7 +660,8 @@ def test_get_array_struct_fields(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, array_struct_gen).selectExpr('a.child0'))
 
-@pytest.mark.parametrize('data_gen', [ArrayGen(string_gen), ArrayGen(int_gen)])
+@pytest.mark.parametrize('data_gen', [ArrayGen(string_gen), ArrayGen(int_gen),
+    ArrayGen(BinaryGen(max_length=10))], ids=idfn)
 @pytest.mark.parametrize('threeVL', [
     pytest.param(False, id='3VL:off'),
     pytest.param(True, id='3VL:on'),
@@ -678,6 +680,9 @@ def test_array_exists(data_gen, threeVL):
         if isinstance(element_type, StringType):
             columns.extend(['exists(a, entry -> length(entry) > 5) as exists_longer_than_5'])
 
+        if isinstance(element_type, BinaryType):
+            columns.extend(['exists(a, item -> isnotnull(item)) as exists_not_null'])
+
         return unary_op_df(spark, data_gen).selectExpr(columns)
 
     assert_gpu_and_cpu_are_equal_collect(do_it, conf= {
@@ -686,8 +691,9 @@ def test_array_exists(data_gen, threeVL):
 
 
 @pytest.mark.parametrize('data_gen', [
-    ArrayGen(string_gen), 
+    ArrayGen(string_gen),
     ArrayGen(int_gen),
+    ArrayGen(BinaryGen(max_length=10)),
     ArrayGen(ArrayGen(int_gen)),
     ArrayGen(ArrayGen(StructGen([["A", int_gen], ["B", string_gen]])))], ids=idfn)
 def test_array_filter(data_gen):
@@ -703,6 +709,9 @@ def test_array_filter(data_gen):
 
         if isinstance(element_type, StringType):
             columns.extend(['filter(a, entry -> length(entry) > 5) as filter_longer_than_5'])
+
+        if isinstance(element_type, BinaryType):
+            columns.extend(['filter(a, item -> isnotnull(item)) as filter_not_null'])
 
         if isinstance(element_type, ArrayType):
             columns.extend(['filter(a, entry -> size(entry) < 5) as filter_shorter_than_5'])
