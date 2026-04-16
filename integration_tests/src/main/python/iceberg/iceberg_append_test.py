@@ -20,7 +20,7 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name, iceberg_full_gens_list, iceberg_write_enabled_conf, \
-    iceberg_unsupported_mark
+    iceberg_unsupported_mark, _build_tblprops
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session
 
@@ -73,13 +73,12 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
     gpu_table_name = f"{base_table_name}_gpu"
 
     def create_table(spark, table_name: str):
-        sql = f"""CREATE TABLE {table_name} (id int, name string) USING ICEBERG """
+        props = _build_tblprops({"format-version": "2"})
+        props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in props.items())
+        sql = f"CREATE TABLE {table_name} (id int, name string) USING ICEBERG "
         if partition_table:
             sql += "PARTITIONED BY (bucket(8, id)) "
-
-        sql += f"""TBLPROPERTIES (
-        'format-version' = '2')
-        """
+        sql += f"TBLPROPERTIES ({props_sql})"
         spark.sql(sql)
 
     with_cpu_session(lambda spark: create_table(spark, cpu_table_name))
@@ -376,6 +375,7 @@ def test_insert_after_drop_partition_field(spark_tmp_table_factory):
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_insert_into_partitioned_table_fanout_enabled(spark_tmp_table_factory):
+    # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.
     _do_test_insert_into_partitioned_table(
-        spark_tmp_table_factory, "year(_c9)",
+        spark_tmp_table_factory, "bucket(2, _c9)",
         table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})
