@@ -88,7 +88,7 @@ class GpuMultiThreadIcebergParquetReader(
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
       false, // useFieldId
-      false,
+      multiThreadConf.disableCombining,
       multiThreadConf.disableCombining,
       multiThreadConf.combineConf) {
 
