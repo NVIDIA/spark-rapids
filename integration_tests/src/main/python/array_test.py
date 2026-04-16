@@ -21,7 +21,7 @@ from marks import incompat, allow_non_gpu, disable_ansi_mode
 from spark_session import *
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, col, element_at, lit, array
+from pyspark.sql.functions import array_contains, array_remove, col, element_at, lit, array
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -943,11 +943,23 @@ def test_array_remove_scalar(data_gen):
             'array_remove(a, 10)')
     )
 
-@pytest.mark.parametrize('data_gen', [ByteGen(special_cases=[5]), ShortGen(special_cases=[5]), 
+def test_array_remove_struct_scalar():
+    elem_gen = StructGen([['child0', int_gen], ['child1', string_gen]], nullable=False)
+    arr_gen = ArrayGen(elem_gen, nullable=True)
+    scalar = with_cpu_session(lambda spark: gen_scalar(elem_gen, force_no_nulls=True))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, arr_gen).select(
+            array_remove(col('a'), scalar),
+            array_remove(col('a'), lit(None).cast(elem_gen.data_type)))
+    )
+
+@pytest.mark.parametrize('data_gen', [ByteGen(special_cases=[5]), ShortGen(special_cases=[5]),
                                       IntegerGen(special_cases=[5]), LongGen(special_cases=[5]),
-                                      FloatGen(special_cases=_non_neg_zero_float_special_cases + [-0.0]), 
+                                      FloatGen(special_cases=_non_neg_zero_float_special_cases + [-0.0]),
                                       DoubleGen(special_cases=_non_neg_zero_double_special_cases + [-0.0]),
-                                      StringGen(pattern='[0-9]{1,5}'), boolean_gen, date_gen, timestamp_gen] + decimal_gens, ids=idfn)
+                                      StringGen(pattern='[0-9]{1,5}'), boolean_gen, date_gen, timestamp_gen,
+                                      StructGen([['child0', int_gen], ['child1', string_gen]], nullable=False)] + decimal_gens, ids=idfn)
 def test_array_remove(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
