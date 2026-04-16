@@ -54,10 +54,7 @@ import com.nvidia.spark.rapids.shims.BloomFilterConstantsShims
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.internal.SQLConf.{
-  RUNTIME_BLOOM_FILTER_MAX_NUM_BITS,
-  RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS
-}
+import org.apache.spark.sql.internal.SQLConf.{RUNTIME_BLOOM_FILTER_MAX_NUM_BITS, RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.aggregate.GpuBloomFilterAggregate.optimalNumOfHashFunctions
 import org.apache.spark.sql.types.{BinaryType, DataType}
