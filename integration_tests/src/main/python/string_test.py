@@ -28,26 +28,28 @@ from spark_session import with_cpu_session, with_gpu_session, is_databricks104_o
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
 
-def test_string_decode_gbk_basic():
-    """Test GBK charset decoding with known Chinese characters, ASCII, mixed content, and nulls."""
-    data = [
-        (bytearray(b'\xc4\xe3\xba\xc3'),),              # 你好
-        (bytearray(b'\xca\xc0\xbd\xe7'),),              # 世界
-        (bytearray(b'Hello'),),                           # Pure ASCII
-        (bytearray(b'Hi\xc4\xe3\xba\xc3World'),),       # Mixed ASCII + Chinese
-        (bytearray(b''),),                                # Empty
-        (None,),                                          # Null
-        (bytearray(b'\xff\xff'),),                        # Invalid bytes
-        (bytearray(b'\x81'),),                            # Truncated lead byte
-    ]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.createDataFrame(data, "bin binary").selectExpr(
-            "decode(bin, 'GBK')"))
+_gbk_edge_cases = [
+    bytearray(b''),                        # empty
+    bytearray(b'\xc4\xe3\xba\xc3'),       # "你好" in GBK
+    bytearray(b'\xff\xff'),                # invalid lead bytes
+    bytearray(b'\x81'),                    # truncated lead byte (no second byte)
+    bytearray(b'\x81\xff'),               # lead + 0xFF (consumed as pair, maps to FFFD)
+    bytearray(b'\x81\x30'),               # lead + invalid second byte (< 0x40)
+    bytearray(b'Hi\xc4\xe3\xba\xc3World'), # mixed ASCII and Chinese
+]
 
-def test_string_decode_gbk_random():
-    """Test GBK decoding with random binary data to exercise error handling paths."""
+@pytest.mark.parametrize('data_gen', [
+    # Random CJK ideographs encoded as GBK — tests normal decode path
+    BinaryGen(min_length=0, max_length=50, min_val=0x4E00, max_val=0x9FA5, encoding='gbk'),
+    # Raw random bytes — tests error handling and edge cases
+    BinaryGen(min_length=0, max_length=50),
+], ids=['gbk_chinese', 'random_bytes'])
+def test_string_decode_gbk(data_gen):
+    gen = data_gen
+    for sc in _gbk_edge_cases:
+        gen = gen.with_special_case(sc)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, BinaryGen(min_length=0, max_length=50), length=2048)
+        lambda spark: unary_op_df(spark, gen, length=2048)
             .selectExpr("decode(a, 'GBK')"))
 
 def mk_str_gen(pattern):
