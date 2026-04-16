@@ -46,17 +46,21 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.aggregate
 
+import java.io.{ByteArrayOutputStream, DataOutputStream}
+
 import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, HostColumnVector, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuLiteral
 import com.nvidia.spark.rapids.jni.BloomFilter
 import com.nvidia.spark.rapids.shims.BloomFilterConstantsShims
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.internal.SQLConf.{RUNTIME_BLOOM_FILTER_MAX_NUM_BITS, RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.aggregate.GpuBloomFilterAggregate.optimalNumOfHashFunctions
 import org.apache.spark.sql.types.{BinaryType, DataType}
+import org.apache.spark.util.sketch.{BloomFilter => SparkBloomFilter}
 
 case class GpuBloomFilterAggregate(
     child: Expression,
@@ -72,10 +76,9 @@ case class GpuBloomFilterAggregate(
   override def prettyName: String = "bloom_filter_agg"
 
   private val estimatedNumItems: Long =
-    Math.min(estimatedNumItemsRequested, SQLConf.get.getConf(RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS))
+    GpuBloomFilterAggregate.clampEstimatedNumItems(estimatedNumItemsRequested)
 
-  private val numBits: Long = Math.min(numBitsRequested,
-    SQLConf.get.getConf(RUNTIME_BLOOM_FILTER_MAX_NUM_BITS))
+  private val numBits: Long = GpuBloomFilterAggregate.clampNumBits(numBitsRequested)
 
   private lazy val numHashes: Int = optimalNumOfHashFunctions(estimatedNumItems, numBits)
 
@@ -98,6 +101,12 @@ case class GpuBloomFilterAggregate(
 }
 
 object GpuBloomFilterAggregate {
+  def clampEstimatedNumItems(estimatedNumItemsRequested: Long): Long =
+    Math.min(estimatedNumItemsRequested, SQLConf.get.getConf(RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS))
+
+  def clampNumBits(numBitsRequested: Long): Long =
+    Math.min(numBitsRequested, SQLConf.get.getConf(RUNTIME_BLOOM_FILTER_MAX_NUM_BITS))
+
   /**
    * From Spark's BloomFilter.optimalNumOfHashFunctions
    *
@@ -161,4 +170,53 @@ case class GpuBloomFilterMerge() extends CudfAggregate {
   override def dataType: DataType = BinaryType
 
   override val name: String = "gpu_bloom_filter_merge"
+}
+
+case class CpuToGpuBloomFilterBufferConverter() extends CpuToGpuAggregateBufferConverter {
+  override def createExpression(child: Expression): CpuToGpuBufferTransition =
+    CpuToGpuBloomFilterBufferTransition(child)
+}
+
+case class CpuToGpuBloomFilterBufferTransition(override val child: Expression)
+    extends CpuToGpuBufferTransition {
+  override def dataType: DataType = BinaryType
+
+  override protected def nullSafeEval(input: Any): Array[Byte] = input.asInstanceOf[Array[Byte]]
+}
+
+case class GpuToCpuBloomFilterBufferConverter(
+    estimatedNumItems: Long,
+    numBits: Long) extends GpuToCpuAggregateBufferConverter {
+  override def createExpression(child: Expression): GpuToCpuBufferTransition =
+    GpuToCpuBloomFilterBufferTransition(child, estimatedNumItems, numBits)
+}
+
+case class GpuToCpuBloomFilterBufferTransition(
+    override val child: Expression,
+    estimatedNumItems: Long,
+    numBits: Long) extends GpuToCpuBufferTransition {
+
+  private lazy val emptyBloomFilterBytes: Array[Byte] = {
+    val bloomFilter = SparkBloomFilter.create(estimatedNumItems, numBits)
+    withResource(new ByteArrayOutputStream()) { out =>
+      withResource(new DataOutputStream(out)) { dataOut =>
+        bloomFilter.writeTo(dataOut)
+        dataOut.flush()
+        out.toByteArray
+      }
+    }
+  }
+
+  override def eval(input: InternalRow): Any = {
+    val buffer = child.eval(input)
+    if (buffer == null) {
+      emptyBloomFilterBytes.clone()
+    } else {
+      buffer.asInstanceOf[Array[Byte]]
+    }
+  }
+
+  // ShimUnaryExpression still requires nullSafeEval even though eval handles the null-to-empty
+  // bloom filter rewrite directly for this bridge expression.
+  override protected def nullSafeEval(input: Any): Array[Byte] = input.asInstanceOf[Array[Byte]]
 }

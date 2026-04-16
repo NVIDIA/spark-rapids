@@ -50,6 +50,11 @@
     <server>
       <username>${env.URM_CREDS_USR}</username>
       <password>${env.URM_CREDS_PSW}</password>
+      <id>snapshots-repo</id>
+    </server>
+    <server>
+      <username>${env.URM_CREDS_USR}</username>
+      <password>${env.URM_CREDS_PSW}</password>
       <id>cloudera-repo</id>
     </server>
     <server>
@@ -110,6 +115,11 @@
         </repository>
         <repository>
           <id>apache-snapshots-repo</id>
+          <name>sw-spark-maven</name>
+          <url>${env.URM_URL}</url>
+        </repository>
+        <repository>
+          <id>snapshots-repo</id>
           <name>sw-spark-maven</name>
           <url>${env.URM_URL}</url>
         </repository>
