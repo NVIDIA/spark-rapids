@@ -46,8 +46,6 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.aggregate
 
-import java.io.{ByteArrayOutputStream, DataOutputStream}
-
 import ai.rapids.cudf.{ColumnVector, DType, GroupByAggregation, HostColumnVector, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuLiteral
@@ -56,12 +54,13 @@ import com.nvidia.spark.rapids.shims.BloomFilterConstantsShims
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
-import org.apache.spark.sql.internal.SQLConf.{RUNTIME_BLOOM_FILTER_MAX_NUM_BITS, RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS}
+import org.apache.spark.sql.internal.SQLConf.{
+  RUNTIME_BLOOM_FILTER_MAX_NUM_BITS,
+  RUNTIME_BLOOM_FILTER_MAX_NUM_ITEMS
+}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.aggregate.GpuBloomFilterAggregate.optimalNumOfHashFunctions
 import org.apache.spark.sql.types.{BinaryType, DataType}
-import org.apache.spark.util.sketch.{BloomFilter => SparkBloomFilter}
-
 case class GpuBloomFilterAggregate(
     child: Expression,
     estimatedNumItemsRequested: Long,
@@ -121,6 +120,30 @@ object GpuBloomFilterAggregate {
   private def optimalNumOfHashFunctions(n: Long, m: Long): Int = {
     // (m / n) * log(2), but avoid truncation due to division!
     Math.max(1, Math.round(m.toDouble / n * Math.log(2)).toInt)
+  }
+
+  // Use the JNI BloomFilter API here instead of Spark's BloomFilter implementation because
+  // some Databricks runtimes do not expose org.apache.spark.util.sketch.BloomFilter on the
+  // compile/runtime classpath. This path still needs to produce Spark-compatible serialized
+  // bloom filter bytes for the rare GPU-to-CPU aggregate buffer bridge case.
+  def createEmptyBloomFilterBytes(
+      effectiveEstimatedNumItems: Long,
+      effectiveNumBits: Long,
+      version: Int,
+      seed: Int): Array[Byte] = {
+    val numHashes = optimalNumOfHashFunctions(effectiveEstimatedNumItems, effectiveNumBits)
+    withResource(BloomFilter.create(version, numHashes, effectiveNumBits, seed)) { bloomFilter =>
+      withResource(bloomFilter.getListAsColumnView) { bloomFilterView =>
+        withResource(bloomFilterView.copyToHost()) { hostBloomFilter =>
+          val byteCount = Math.toIntExact(hostBloomFilter.getRowCount)
+          val bytes = new Array[Byte](byteCount)
+          if (byteCount > 0) {
+            hostBloomFilter.getData.getBytes(bytes, 0, 0, byteCount)
+          }
+          bytes
+        }
+      }
+    }
   }
 }
 
@@ -185,27 +208,25 @@ case class CpuToGpuBloomFilterBufferTransition(override val child: Expression)
 }
 
 case class GpuToCpuBloomFilterBufferConverter(
-    estimatedNumItems: Long,
-    numBits: Long) extends GpuToCpuAggregateBufferConverter {
+    effectiveEstimatedNumItems: Long,
+    effectiveNumBits: Long,
+    version: Int = BloomFilterConstantsShims.BLOOM_FILTER_FORMAT_VERSION,
+    seed: Int = BloomFilter.DEFAULT_SEED) extends GpuToCpuAggregateBufferConverter {
   override def createExpression(child: Expression): GpuToCpuBufferTransition =
-    GpuToCpuBloomFilterBufferTransition(child, estimatedNumItems, numBits)
+    GpuToCpuBloomFilterBufferTransition(
+      child, effectiveEstimatedNumItems, effectiveNumBits, version, seed)
 }
 
 case class GpuToCpuBloomFilterBufferTransition(
     override val child: Expression,
-    estimatedNumItems: Long,
-    numBits: Long) extends GpuToCpuBufferTransition {
+    effectiveEstimatedNumItems: Long,
+    effectiveNumBits: Long,
+    version: Int,
+    seed: Int) extends GpuToCpuBufferTransition {
 
-  private lazy val emptyBloomFilterBytes: Array[Byte] = {
-    val bloomFilter = SparkBloomFilter.create(estimatedNumItems, numBits)
-    withResource(new ByteArrayOutputStream()) { out =>
-      withResource(new DataOutputStream(out)) { dataOut =>
-        bloomFilter.writeTo(dataOut)
-        dataOut.flush()
-        out.toByteArray
-      }
-    }
-  }
+  private lazy val emptyBloomFilterBytes: Array[Byte] =
+    GpuBloomFilterAggregate.createEmptyBloomFilterBytes(
+      effectiveEstimatedNumItems, effectiveNumBits, version, seed)
 
   override def eval(input: InternalRow): Any = {
     val buffer = child.eval(input)
