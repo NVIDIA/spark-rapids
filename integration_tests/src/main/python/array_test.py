@@ -681,7 +681,7 @@ def test_array_exists(data_gen, threeVL):
             columns.extend(['exists(a, entry -> length(entry) > 5) as exists_longer_than_5'])
 
         if isinstance(element_type, BinaryType):
-            columns.extend(['exists(a, item -> isnotnull(item)) as exists_not_null'])
+            columns.extend(['exists(a, item -> length(hex(item)) > 0) as exists_non_empty'])
 
         return unary_op_df(spark, data_gen).selectExpr(columns)
 
@@ -711,7 +711,7 @@ def test_array_filter(data_gen):
             columns.extend(['filter(a, entry -> length(entry) > 5) as filter_longer_than_5'])
 
         if isinstance(element_type, BinaryType):
-            columns.extend(['filter(a, item -> isnotnull(item)) as filter_not_null'])
+            columns.extend(['filter(a, item -> length(hex(item)) > 5) as filter_longer_than_5'])
 
         if isinstance(element_type, ArrayType):
             columns.extend(['filter(a, entry -> size(entry) < 5) as filter_shorter_than_5'])

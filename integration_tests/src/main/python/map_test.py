@@ -757,6 +757,10 @@ def test_transform_values(data_gen):
             columns.extend([
                 'transform_values(a, (key, value) -> transform_values(value, (sub_key, sub_value) -> 1)) as sub_one'])
 
+        if isinstance(value_type, BinaryType):
+            columns.extend([
+                'transform_values(a, (key, value) -> hex(value)) as hex_val'])
+
         return two_col_df(spark, data_gen, byte_gen).selectExpr(columns)
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
@@ -848,6 +852,9 @@ def test_map_zip_with(data_gen):
         if isinstance(value_type, ArrayType):
             columns.extend([
                     'map_zip_with(a, b,  (key, value1, value2) -> concat(value1, value2)) as array_concat',])
+        if isinstance(value_type, BinaryType):
+            columns.extend([
+                    'map_zip_with(a, b,  (key, value1, value2) -> hex(value1)) as hex_val',])
         df = two_col_df(spark, data_gen, data_gen)
         return df.selectExpr(columns)
     # ANSI mode is disabled since this test verifies the behaviour of map_zip_with and the evaluation of the associated lambda. 
