@@ -2039,6 +2039,9 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
 
     val totalBytesCopied = if (fileIO.isInstanceOf[HadoopFileIO]) {
       // Fix this after https://github.com/NVIDIA/spark-rapids/issues/13306 is resolved
+      if (filePath.toUri.getScheme.startsWith("s3")) {
+        GpuTaskMetrics.get.recordPerfioS3BackendOnce()
+      }
       PerfIO.readToHostMemory(
         conf, out.buffer, filePath.toUri,
         coalescedRanges.map(r => IntRangeWithOffset(r.offset, r.length, r.outputOffset))
