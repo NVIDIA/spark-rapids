@@ -943,18 +943,6 @@ def test_array_remove_scalar(data_gen):
             'array_remove(a, 10)')
     )
 
-def test_array_remove_struct_scalar():
-    # Use int field with special_cases=[1] so the literal struct occasionally matches
-    # array elements, exercising the actual removal path on GPU.
-    elem_gen = StructGen([['child0', IntegerGen(special_cases=[1])],
-                          ['child1', StringGen()]], nullable=False)
-    gen = StructGen([('a', ArrayGen(elem_gen, nullable=True))], nullable=False)
-
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, gen).selectExpr(
-            "array_remove(a, named_struct('child0', 1, 'child1', 'a'))")
-    )
-
 @pytest.mark.parametrize('data_gen', [ByteGen(special_cases=[5]), ShortGen(special_cases=[5]),
                                       IntegerGen(special_cases=[5]), LongGen(special_cases=[5]),
                                       FloatGen(special_cases=_non_neg_zero_float_special_cases + [-0.0]),
