@@ -1,5 +1,5 @@
 # Change log
-Generated on 2026-04-13
+Generated on 2026-04-16
 
 ## Release 26.04
 
@@ -28,6 +28,7 @@ Generated on 2026-04-13
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#14607](https://github.com/NVIDIA/spark-rapids/issues/14607)|[BUG] Unity Catalog table scan fails with "Path must be absolute" on Databricks 17.3|
 |[#14564](https://github.com/NVIDIA/spark-rapids/issues/14564)|[BUG] cuDF-based Delta DV reader returns incorrect results when NATIVE footer reader is used with split Parquet files|
 |[#14168](https://github.com/NVIDIA/spark-rapids/issues/14168)|[BUG]  `.agg(F.first()` brings inconsistency when using the CPU and GPU engines|
 |[#14395](https://github.com/NVIDIA/spark-rapids/issues/14395)|[BUG] IllegalArgumentException: EmptyRelationExec not columnar in LeftAnti broadcast nested loop join with AQE|
@@ -93,6 +94,9 @@ Generated on 2026-04-13
 ### PRs
 |||
 |:---|:---|
+|[#14602](https://github.com/NVIDIA/spark-rapids/pull/14602)|Backport settings artifactory [skip ci]|
+|[#14590](https://github.com/NVIDIA/spark-rapids/pull/14590)|Fix auto merge conflict 14589 [skip ci]|
+|[#14569](https://github.com/NVIDIA/spark-rapids/pull/14569)|Update changelog for the v26.04 release [skip ci]|
 |[#14585](https://github.com/NVIDIA/spark-rapids/pull/14585)|Update dependency version JNI, private, hybrid to 26.04.0|
 |[#14565](https://github.com/NVIDIA/spark-rapids/pull/14565)|[DOC] Update download and archive pages for v26.04.0 release [skip ci]|
 |[#14555](https://github.com/NVIDIA/spark-rapids/pull/14555)|Fix GPU first reduction state tracking|
