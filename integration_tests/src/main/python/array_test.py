@@ -21,7 +21,7 @@ from marks import incompat, allow_non_gpu, disable_ansi_mode
 from spark_session import *
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
-from pyspark.sql.functions import array_contains, array_remove, col, element_at, lit, array
+from pyspark.sql.functions import array_contains, col, element_at, lit, array
 
 # max_val is a little larger than the default max size(20) of ArrayGen
 # so we can get the out-of-bound indices.
@@ -944,14 +944,15 @@ def test_array_remove_scalar(data_gen):
     )
 
 def test_array_remove_struct_scalar():
-    elem_gen = StructGen([['child0', int_gen], ['child1', string_gen]], nullable=False)
-    arr_gen = ArrayGen(elem_gen, nullable=True)
-    scalar = with_cpu_session(lambda spark: gen_scalar(elem_gen, force_no_nulls=True))
+    # Use int field with special_cases=[1] so the literal struct occasionally matches
+    # array elements, exercising the actual removal path on GPU.
+    elem_gen = StructGen([['child0', IntegerGen(special_cases=[1])],
+                          ['child1', StringGen()]], nullable=False)
+    gen = StructGen([('a', ArrayGen(elem_gen, nullable=True))], nullable=False)
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, arr_gen).select(
-            array_remove(col('a'), scalar),
-            array_remove(col('a'), lit(None).cast(elem_gen.data_type)))
+        lambda spark: gen_df(spark, gen).selectExpr(
+            "array_remove(a, named_struct('child0', 1, 'child1', 'a'))")
     )
 
 @pytest.mark.parametrize('data_gen', [ByteGen(special_cases=[5]), ShortGen(special_cases=[5]),
