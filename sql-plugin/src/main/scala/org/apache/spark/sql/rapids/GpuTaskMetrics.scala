@@ -518,8 +518,12 @@ class GpuTaskMetrics extends Serializable with Logging {
       case "crt"   => perfioS3CrtExecutors
       case _       => perfioS3S3aExecutors
     }
-    if (PerfIO.reportedBackendAccIds.add(acc.id)) {
-      acc.add(1L)
+    try {
+      if (PerfIO.reportedBackendAccIds.add(acc.id)) {
+        acc.add(1L)
+      }
+    } catch {
+      case _: IllegalArgumentException => // accumulator not yet registered; no-op
     }
   }
 }
