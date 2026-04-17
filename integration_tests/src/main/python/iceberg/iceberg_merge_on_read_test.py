@@ -223,6 +223,14 @@ def test_iceberg_small_file_combine_with_eq_deletes(
             table_name,
             spark_tmp_path)
 
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                eq_delete_gens,
+                length=64,
+                seed=base_seed + 100 + seed_offset,
+                num_slices=1).writeTo(table_name).append()
+
         spark.sql(
             f"ALTER TABLE {table_name} SET TBLPROPERTIES ("
             "'read.split.target-size' = '268435456', "
