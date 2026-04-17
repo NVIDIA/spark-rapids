@@ -72,8 +72,13 @@ iceberg_full_gens_list = ([byte_gen, short_gen, IntegerGen(nullable=False), Long
                                               ['child2', int_gen]]))] +
                           iceberg_map_gens + decimal_gens)
 
-iceberg_nested_write_float_gen = FloatGen(nullable=False, no_nans=True)
-iceberg_nested_write_double_gen = DoubleGen(nullable=False, no_nans=True)
+# Scalar top-level column generators.
+#
+# Top-level columns are non-nullable so rows are always present (row-level null coverage lives in
+# `iceberg_full_gens_list`). Float/double allow NaN (no_nans=False default) so NaN handling is
+# exercised at the column level as well as inside nested containers.
+iceberg_nested_write_float_gen = FloatGen(nullable=False)
+iceberg_nested_write_double_gen = DoubleGen(nullable=False)
 iceberg_nested_write_string_gen = StringGen(nullable=False)
 iceberg_nested_write_boolean_gen = BooleanGen(nullable=False)
 iceberg_nested_write_date_gen = DateGen(nullable=False)
@@ -86,75 +91,64 @@ iceberg_nested_write_decimal128_gen = DecimalGen(precision=20, scale=2, nullable
                                                  special_cases=[])
 iceberg_nested_write_binary_gen = BinaryGen(nullable=False)
 
-iceberg_nested_write_string_array_gen = ArrayGen(iceberg_nested_write_string_gen,
-                                                 min_length=1, max_length=10,
-                                                 nullable=False)
-iceberg_nested_write_long_array_gen = ArrayGen(LongGen(nullable=False), min_length=1,
-                                               max_length=10, nullable=False)
-iceberg_nested_write_binary_array_gen = ArrayGen(iceberg_nested_write_binary_gen,
-                                                 min_length=1, max_length=10,
-                                                 nullable=False)
-iceberg_nested_write_date_array_gen = ArrayGen(iceberg_nested_write_date_gen,
-                                               min_length=1, max_length=10,
-                                               nullable=False)
-iceberg_nested_write_timestamp_array_gen = ArrayGen(iceberg_nested_write_timestamp_gen,
-                                                    min_length=1, max_length=10,
-                                                    nullable=False)
-iceberg_nested_write_decimal64_array_gen = ArrayGen(iceberg_nested_write_decimal64_gen,
-                                                    min_length=1, max_length=10,
-                                                    nullable=False)
+# Nested container generators.
+#
+# Outer containers stay non-nullable so the column is always present, but inner elements/values
+# use default nullable=True gens so nulls appear inside arrays/maps/structs. Using the default
+# min_length=0 lets arrays/maps be empty. Float/double inner gens keep no_nans=False so NaN is
+# covered inside containers too.
+iceberg_nested_write_string_array_gen = ArrayGen(StringGen(), max_length=10, nullable=False)
+iceberg_nested_write_long_array_gen = ArrayGen(LongGen(), max_length=10, nullable=False)
+iceberg_nested_write_binary_array_gen = ArrayGen(BinaryGen(), max_length=10, nullable=False)
+iceberg_nested_write_date_array_gen = ArrayGen(DateGen(), max_length=10, nullable=False)
+iceberg_nested_write_timestamp_array_gen = ArrayGen(TimestampGen(), max_length=10, nullable=False)
+iceberg_nested_write_decimal64_array_gen = ArrayGen(
+    DecimalGen(precision=12, scale=2, special_cases=[]),
+    max_length=10, nullable=False)
 iceberg_nested_write_nested_int_array_gen = ArrayGen(
-    ArrayGen(IntegerGen(nullable=False), min_length=1, max_length=10, nullable=False),
-    min_length=1, max_length=10, nullable=False)
+    ArrayGen(IntegerGen(), max_length=10),
+    max_length=10, nullable=False)
 iceberg_nested_write_struct_gen = StructGen(
-    [['child0', ArrayGen(IntegerGen(nullable=False), min_length=1, max_length=10, nullable=False)],
-     ['child1', IntegerGen(nullable=False)],
-     ['child2', iceberg_nested_write_float_gen],
-     ['child3', iceberg_nested_write_decimal64_gen]],
+    [['child0', ArrayGen(IntegerGen(), max_length=10)],
+     ['child1', IntegerGen()],
+     ['child2', FloatGen()],
+     ['child3', DecimalGen(precision=12, scale=2, special_cases=[])]],
     nullable=False)
 iceberg_nested_write_struct_array_gen = ArrayGen(
-    StructGen([['child0', iceberg_nested_write_string_gen],
-               ['child1', iceberg_nested_write_double_gen],
-               ['child2', IntegerGen(nullable=False)]], nullable=False),
-    min_length=1, max_length=10, nullable=False)
+    StructGen([['child0', StringGen()],
+               ['child1', DoubleGen()],
+               ['child2', IntegerGen()]]),
+    max_length=10, nullable=False)
 iceberg_nested_write_simple_string_map_gen = MapGen(
     StringGen(pattern='key_[0-9]', nullable=False),
-    StringGen(nullable=False),
-    min_length=1, max_length=10, nullable=False)
+    StringGen(),
+    max_length=10, nullable=False)
 iceberg_nested_write_map_gens = [
-    MapGen(BooleanGen(nullable=False), BooleanGen(nullable=False),
-           min_length=1, max_length=10, nullable=False),
-    MapGen(IntegerGen(nullable=False), IntegerGen(nullable=False),
-           min_length=1, max_length=10, nullable=False),
-    MapGen(LongGen(nullable=False), LongGen(nullable=False),
-           min_length=1, max_length=10, nullable=False),
-    MapGen(iceberg_nested_write_float_gen, iceberg_nested_write_float_gen,
-           min_length=1, max_length=10, nullable=False),
-    MapGen(iceberg_nested_write_double_gen, iceberg_nested_write_double_gen,
-           min_length=1, max_length=10, nullable=False),
-    MapGen(iceberg_nested_write_date_gen, iceberg_nested_write_date_gen,
-           min_length=1, max_length=10, nullable=False),
-    MapGen(iceberg_nested_write_timestamp_gen, iceberg_nested_write_timestamp_gen,
-           min_length=1, max_length=10, nullable=False),
+    MapGen(BooleanGen(nullable=False), BooleanGen(), max_length=10, nullable=False),
+    MapGen(IntegerGen(nullable=False), IntegerGen(), max_length=10, nullable=False),
+    MapGen(LongGen(nullable=False), LongGen(), max_length=10, nullable=False),
+    MapGen(FloatGen(nullable=False), FloatGen(), max_length=10, nullable=False),
+    MapGen(DoubleGen(nullable=False), DoubleGen(), max_length=10, nullable=False),
+    MapGen(DateGen(nullable=False), DateGen(), max_length=10, nullable=False),
+    MapGen(TimestampGen(nullable=False), TimestampGen(), max_length=10, nullable=False),
     iceberg_nested_write_simple_string_map_gen,
     MapGen(StringGen(pattern='key_[0-9]', nullable=False),
-           iceberg_nested_write_string_array_gen,
-           min_length=1, max_length=10, nullable=False),
-    MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), LongGen(nullable=False),
-           min_length=1, max_length=10, nullable=False),
+           ArrayGen(StringGen(), max_length=10),
+           max_length=10, nullable=False),
+    MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), LongGen(),
+           max_length=10, nullable=False),
     MapGen(StringGen(pattern='key_[0-9]', nullable=False),
            iceberg_nested_write_simple_string_map_gen,
-           min_length=1, max_length=10, nullable=False)
+           max_length=10, nullable=False)
 ]
 
 # Nested types intended for focused positive GPU Iceberg tests.
-# It also avoids null and empty nested containers so these tests stay focused on type support
-# instead of separate null/empty handling mismatches. Dedicated binary regression tests cover
-# the null/empty byte edge cases separately.
 #
-# TODO(coverage): expand to cover nullable nested fields, empty arrays/maps, and NaN float/double
-# values for nested Iceberg writes once the underlying GPU handling is stabilized.
-# Tracking issue: https://github.com/NVIDIA/spark-rapids/issues/NEW (file before merging).
+# Covers nullable nested fields, empty arrays/maps, and NaN/Inf floats/doubles inside nested
+# containers so merge/update/delete/append/CTAS/RTAS/overwrite nested_types tests exercise the
+# same edge cases that `iceberg_full_gens_list`-based `_all_cols` tests do. `_c0` and `_c1` stay
+# strict non-nullable IntegerGen/LongGen so merge/update/delete join keys and predicates don't
+# get trivialized by nulls.
 iceberg_nested_write_gens_list = ([IntegerGen(nullable=False), LongGen(nullable=False),
                                    iceberg_nested_write_float_gen,
                                    iceberg_nested_write_double_gen,

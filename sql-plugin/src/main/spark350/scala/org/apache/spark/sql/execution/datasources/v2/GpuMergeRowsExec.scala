@@ -233,13 +233,15 @@ class GpuMergeBatchIterator(
     }
   }
 
-  override def hasNext: Boolean = pendingOutputs.nonEmpty || inputIter.hasNext
-
-  override def next(): ColumnarBatch = {
+  // hasNext must drain the input until a non-empty batch is produced so that it faithfully
+  // predicts next(). Because processBatch can produce only zero-row outputs (which we drop to
+  // avoid inflating numOutputBatches and pushing empty batches downstream), a plain
+  // `inputIter.hasNext` check is not enough -- downstream operators could see hasNext=true but
+  // next() would throw when every remaining input batch filtered to zero rows.
+  override def hasNext: Boolean = {
     while (pendingOutputs.isEmpty && inputIter.hasNext) {
       val batch = inputIter.next()
       withResource(new NvtxWithMetrics("GpuMergeBatchIterator", NvtxColor.CYAN, opTime)) { _ =>
-        // Skip zero-row outputs so we don't emit empty batches or inflate numOutputBatches.
         processBatch(batch).foreach { spillable =>
           if (spillable.numRows() > 0) {
             pendingOutputs.enqueue(spillable)
@@ -249,11 +251,13 @@ class GpuMergeBatchIterator(
         }
       }
     }
+    pendingOutputs.nonEmpty
+  }
 
-    if (pendingOutputs.isEmpty) {
+  override def next(): ColumnarBatch = {
+    if (!hasNext) {
       throw new NoSuchElementException("next on empty GpuMergeBatchIterator")
     }
-
     withResource(pendingOutputs.dequeue()) { spillable =>
       val result = spillable.getColumnarBatch()
       numOutputBatches += 1
