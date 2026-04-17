@@ -151,6 +151,10 @@ iceberg_nested_write_map_gens = [
 # It also avoids null and empty nested containers so these tests stay focused on type support
 # instead of separate null/empty handling mismatches. Dedicated binary regression tests cover
 # the null/empty byte edge cases separately.
+#
+# TODO(coverage): expand to cover nullable nested fields, empty arrays/maps, and NaN float/double
+# values for nested Iceberg writes once the underlying GPU handling is stabilized.
+# Tracking issue: https://github.com/NVIDIA/spark-rapids/issues/NEW (file before merging).
 iceberg_nested_write_gens_list = ([IntegerGen(nullable=False), LongGen(nullable=False),
                                    iceberg_nested_write_float_gen,
                                    iceberg_nested_write_double_gen,
@@ -200,6 +204,17 @@ def materialize_parquet_source(spark_tmp_path: str,
 
     with_cpu_session(write_parquet, conf=parquet_write_corrected_conf)
     return temp_dir
+
+
+def assert_no_cpu_project_exec(spark: SparkSession, df: DataFrame) -> None:
+    """Assert that the Spark plan for `df` does not contain a CPU ProjectExec.
+
+    Used by positive write tests to confirm the entire write pipeline stays on
+    GPU (no Project operator is left behind on CPU).
+    """
+    jvm = spark.sparkContext._jvm
+    jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertNotContain(
+        df._jdf, "ProjectExec")
 
 
 def can_be_eq_delete_col(data_gen: DataGen) -> bool:

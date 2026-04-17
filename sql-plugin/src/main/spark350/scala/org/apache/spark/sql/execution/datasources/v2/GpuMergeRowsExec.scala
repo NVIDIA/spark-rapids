@@ -33,6 +33,7 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import scala.annotation.tailrec
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Scalar}
@@ -221,7 +222,9 @@ class GpuMergeBatchIterator(
     numOutputBatches: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] {
 
-  private val pendingOutputs = new ArrayBuffer[SpillableColumnarBatch]()
+  // Queue yields O(1) dequeue vs ArrayBuffer.remove(0) O(n); size is typically small
+  // (one entry per instruction per input batch) but using Queue makes the intent clear.
+  private val pendingOutputs = new mutable.Queue[SpillableColumnarBatch]()
 
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc) {
@@ -236,7 +239,14 @@ class GpuMergeBatchIterator(
     while (pendingOutputs.isEmpty && inputIter.hasNext) {
       val batch = inputIter.next()
       withResource(new NvtxWithMetrics("GpuMergeBatchIterator", NvtxColor.CYAN, opTime)) { _ =>
-        pendingOutputs ++= processBatch(batch)
+        // Skip zero-row outputs so we don't emit empty batches or inflate numOutputBatches.
+        processBatch(batch).foreach { spillable =>
+          if (spillable.numRows() > 0) {
+            pendingOutputs.enqueue(spillable)
+          } else {
+            spillable.close()
+          }
+        }
       }
     }
 
@@ -244,7 +254,7 @@ class GpuMergeBatchIterator(
       throw new NoSuchElementException("next on empty GpuMergeBatchIterator")
     }
 
-    withResource(pendingOutputs.remove(0)) { spillable =>
+    withResource(pendingOutputs.dequeue()) { spillable =>
       val result = spillable.getColumnarBatch()
       numOutputBatches += 1
       numOutputRows += result.numRows()

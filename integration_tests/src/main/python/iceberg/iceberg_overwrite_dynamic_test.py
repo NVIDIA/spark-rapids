@@ -18,7 +18,8 @@ import pytest
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
-from iceberg import create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list, \
+from iceberg import assert_no_cpu_project_exec, create_iceberg_table, \
+    iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name, iceberg_full_gens_list, iceberg_nested_write_gens_list, \
     iceberg_write_enabled_conf, iceberg_unsupported_mark, materialize_parquet_source
 from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
@@ -191,11 +192,16 @@ def test_insert_overwrite_dynamic_nested_types(spark_tmp_table_factory, spark_tm
         df = this_gen_df(spark)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
-        spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
+        return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
 
-    with_gpu_session(lambda spark: overwrite_data(spark, gpu_table_name),
+    def overwrite_data_and_assert_gpu_plan(spark, table_name):
+        df = overwrite_data(spark, table_name)
+        df.collect()
+        assert_no_cpu_project_exec(spark, df)
+
+    with_gpu_session(lambda spark: overwrite_data_and_assert_gpu_plan(spark, gpu_table_name),
                      conf=dynamic_overwrite_conf)
-    with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name),
+    with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name).collect(),
                      conf=dynamic_overwrite_conf)
 
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
@@ -240,11 +246,16 @@ def test_insert_overwrite_dynamic_all_cols(spark_tmp_table_factory, spark_tmp_pa
         df = this_gen_df(spark)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
-        spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
+        return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
 
-    with_gpu_session(lambda spark: overwrite_data(spark, gpu_table_name),
+    def overwrite_data_and_assert_gpu_plan(spark, table_name):
+        df = overwrite_data(spark, table_name)
+        df.collect()
+        assert_no_cpu_project_exec(spark, df)
+
+    with_gpu_session(lambda spark: overwrite_data_and_assert_gpu_plan(spark, gpu_table_name),
                      conf=dynamic_overwrite_conf)
-    with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name),
+    with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name).collect(),
                      conf=dynamic_overwrite_conf)
 
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())

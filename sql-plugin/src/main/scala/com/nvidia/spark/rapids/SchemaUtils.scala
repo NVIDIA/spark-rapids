@@ -38,26 +38,29 @@ object SchemaUtils {
   private val FIELD_ID_METADATA_KEY = "parquet.field.id"
   import IcebergParquetMetadataKeys._
 
-  private lazy val hasParquetFieldIdField = {
-    val field = classOf[ColumnWriterOptions].getDeclaredField("hasParquetFieldId")
-    field.setAccessible(true)
-    field
+  // Reflection-based access to private fields on cuDF's ColumnWriterOptions.
+  // cuDF's Java list/map builder path drops the container's parquet field id and has no
+  // public setter for `isBinary` on a built options object, so we reach into the private
+  // fields here. TODO(cuDF): remove once public setters are exposed upstream.
+  // Tracking issue: https://github.com/rapidsai/cudf/issues/NEW (file before merging).
+  private def accessibleField(name: String): java.lang.reflect.Field = {
+    try {
+      val field = classOf[ColumnWriterOptions].getDeclaredField(name)
+      field.setAccessible(true)
+      field
+    } catch {
+      case e @ (_: NoSuchFieldException | _: SecurityException) =>
+        throw new IllegalStateException(
+          s"Unable to access ColumnWriterOptions.$name via reflection. " +
+          s"The cuDF version on the classpath may have renamed or removed this field; " +
+          s"see SchemaUtils in spark-rapids.", e)
+    }
   }
 
-  private lazy val parquetFieldIdField = {
-    val field = classOf[ColumnWriterOptions].getDeclaredField("parquetFieldId")
-    field.setAccessible(true)
-    field
-  }
+  private lazy val hasParquetFieldIdField = accessibleField("hasParquetFieldId")
+  private lazy val parquetFieldIdField = accessibleField("parquetFieldId")
+  private lazy val isBinaryField = accessibleField("isBinary")
 
-  private lazy val isBinaryField = {
-    val field = classOf[ColumnWriterOptions].getDeclaredField("isBinary")
-    field.setAccessible(true)
-    field
-  }
-
-  // cuDF's Java list/map builder path drops the container's parquet field id when the final
-  // ColumnWriterOptions object is materialized, so restore it on the built option here.
   private def setParquetFieldId(
       options: ColumnWriterOptions,
       parquetFieldId: Option[Int],

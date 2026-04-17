@@ -434,6 +434,12 @@ def test_iceberg_merge_fallback_unsupported_file_format(spark_tmp_table_factory,
     )
 
 
+# MergeRows$Keep / $Discard / $Split are the Spark CPU instruction expressions that live
+# inside a MergeRowsExec. GpuMergeRowsExec constructs its own GpuKeep/GpuDiscard/GpuSplit
+# at planning time and consumes them internally, so these CPU expressions never reach
+# execution. However, the plan-tagging step that drives assert-no-CPU checks sees them as
+# "not on GPU" because there is no registered ExprRule for them. This allow_non_gpu is
+# therefore required even though the actual execution is fully on GPU.
 @allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
 @iceberg
 @ignore_order(local=True)
