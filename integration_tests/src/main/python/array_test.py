@@ -961,11 +961,11 @@ def test_array_remove(data_gen):
             'array_remove(a, null)')
     )
 
-# ARRAY, MAP, and BINARY element types are not in GpuArrayRemove's TypeSig and must fall back to CPU.
+# ARRAY and BINARY element types are not in GpuArrayRemove's TypeSig and must fall back to CPU.
 # This test locks in that the TypeSig narrowing in GpuOverrides is effective.
+@allow_non_gpu('ProjectExec', 'ArrayRemove')
 @pytest.mark.parametrize('data_gen', [
     ArrayGen(int_gen, max_length=5),
-    MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), max_length=5),
     BinaryGen(max_length=10)],
     ids=idfn)
 def test_array_remove_fallback(data_gen):
