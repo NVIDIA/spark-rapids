@@ -118,9 +118,14 @@ case class MultiThread(
     poolConfBuilder: ThreadPoolConfBuilder,
     maxNumFilesProcessed: Int,
     combineConf: CombineConf,
-    disableCombining: Boolean) extends ThreadConf
+    disableCombining: Boolean,
+    hasFilePathMetadata: Boolean,
+    hasRowPositionMetadata: Boolean) extends ThreadConf
 
-case class MultiFile(poolConfBuilder: ThreadPoolConfBuilder) extends ThreadConf
+case class MultiFile(
+    poolConfBuilder: ThreadPoolConfBuilder,
+    hasFilePathMetadata: Boolean,
+    hasRowPositionMetadata: Boolean) extends ThreadConf
 
 
 case class GpuIcebergParquetReaderConf(
@@ -149,8 +154,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       fieldId: Int): Boolean = {
     val key = Integer.valueOf(fieldId)
     currentConstants.containsKey(key) == nextConstants.containsKey(key) &&
-      (!currentConstants.containsKey(key) ||
-        Objects.equals(currentConstants.get(key), nextConstants.get(key)))
+      Objects.equals(currentConstants.get(key), nextConstants.get(key))
   }
 
   protected def compatibleForCombining(

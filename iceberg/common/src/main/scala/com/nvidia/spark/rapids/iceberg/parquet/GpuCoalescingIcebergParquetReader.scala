@@ -21,7 +21,6 @@ import java.util.{Map => JMap}
 import com.nvidia.spark.rapids.{DateTimeRebaseMode, ExtraInfo, GpuColumnVector, SingleDataBlockInfo}
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.parquet._
-import org.apache.iceberg.MetadataColumns
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types.StructType
@@ -35,10 +34,6 @@ class GpuCoalescingIcebergParquetReader(
 
   private var inited = false
   private lazy val reader = createParquetReader()
-  private val hasFilePathMetadata =
-    conf.expectedSchema.findField(MetadataColumns.FILE_PATH.fieldId()) != null
-  private val hasRowPositionMetadata =
-    conf.expectedSchema.findField(MetadataColumns.ROW_POSITION.fieldId()) != null
 
   override def close(): Unit = {
     if (inited) {
@@ -51,6 +46,9 @@ class GpuCoalescingIcebergParquetReader(
   override def next(): ColumnarBatch = reader.get()
 
   private def createParquetReader() = {
+    val multiFileConf = conf.threadConf.asInstanceOf[MultiFile]
+    val hasFilePathMetadata = multiFileConf.hasFilePathMetadata
+    val hasRowPositionMetadata = multiFileConf.hasRowPositionMetadata
     val clippedBlocks = files.map(f => (f, super.filterParquetBlocks(f, conf.expectedSchema)))
       .flatMap {
         case (file, (info, shadedFileReadSchema)) =>
@@ -94,7 +92,7 @@ class GpuCoalescingIcebergParquetReader(
       CpuCompressionConfig.disabled(),
       conf.metrics,
       new StructType(), // partitionSchema
-      conf.threadConf.asInstanceOf[MultiFile].poolConfBuilder.build(),
+      multiFileConf.poolConfBuilder.build(),
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
       false) // useFieldId

@@ -25,7 +25,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.{IcebergFileIO, IcebergInputFile}
 import com.nvidia.spark.rapids.iceberg.ShimUtils.locationOf
 import com.nvidia.spark.rapids.iceberg.parquet._
-import org.apache.iceberg.{DeleteFile, Schema}
+import org.apache.iceberg.{DeleteFile, MetadataColumns, Schema}
 
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -75,7 +75,9 @@ class DefaultDeleteLoader(
 
   private def createReader(schema: Schema,
       files: Seq[IcebergPartitionedFile]): GpuIcebergParquetReader = {
-    val newConf = parquetConf.copy(expectedSchema = schema)
+    val newConf = parquetConf.copy(
+      expectedSchema = schema,
+      threadConf = updateThreadConf(schema))
     newConf.threadConf match {
       case SingleFile =>
         new GpuSingleThreadIcebergParquetReader(
@@ -91,10 +93,28 @@ class DefaultDeleteLoader(
           _ => Map.empty[Integer, Any].asJava,
           _ => None,
           newConf)
-      case MultiFile(_) =>
+      case _: MultiFile =>
         new GpuCoalescingIcebergParquetReader(rapidsFileIO, files,
           _ => Map.empty[Integer, Any].asJava,
           newConf)
+    }
+  }
+
+  private def updateThreadConf(schema: Schema): ThreadConf = {
+    val hasFilePathMetadata = schema.findField(MetadataColumns.FILE_PATH.fieldId()) != null
+    val hasRowPositionMetadata = schema.findField(MetadataColumns.ROW_POSITION.fieldId()) != null
+    parquetConf.threadConf match {
+      case threadConf: MultiThread =>
+        threadConf.copy(
+          disableCombining =
+            hasFilePathMetadata || hasRowPositionMetadata,
+          hasFilePathMetadata = hasFilePathMetadata,
+          hasRowPositionMetadata = hasRowPositionMetadata)
+      case threadConf: MultiFile =>
+        threadConf.copy(
+          hasFilePathMetadata = hasFilePathMetadata,
+          hasRowPositionMetadata = hasRowPositionMetadata)
+      case SingleFile => SingleFile
     }
   }
 }

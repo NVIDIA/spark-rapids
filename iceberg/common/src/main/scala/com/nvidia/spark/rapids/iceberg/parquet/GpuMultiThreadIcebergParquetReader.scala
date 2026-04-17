@@ -112,7 +112,11 @@ class GpuMultiThreadIcebergParquetReader(
         require(postProcessor != null,
           s"Iceberg parquet partition file post processor does not exist for $icebergFile")
 
-        val postProcessed = super.readBatches(fileBufsAndMeta).map(postProcessor.process)
+        val postProcessed = super.readBatches(fileBufsAndMeta).map { batch =>
+          // Empty row-count batches are materialized with the Parquet read schema, so they still
+          // need Iceberg post-processing to match the expected output schema.
+          postProcessor.process(batch)
+        }
         deleteFilterProvider(icebergFile)
           .map(_.filterAndDelete(postProcessed))
           .getOrElse(postProcessed)
@@ -121,11 +125,7 @@ class GpuMultiThreadIcebergParquetReader(
   }
 
   private def filterBlock(f: PartitionedFile) = {
-    val path = f.filePath.toString()
-    val icebergFiles = pathToFile(path).filter(p => p.isSame(f))
-    require(icebergFiles.length == 1, s"Expected 1 iceberg partition file, but found " +
-      s"${icebergFiles.length} for $f")
-    val icebergFile = icebergFiles.head
+    val icebergFile = findIcebergFile(f)
     val deleteFilter = deleteFilterProvider(icebergFile)
 
     val requiredSchema = deleteFilter.map(_.requiredSchema).getOrElse(conf.expectedSchema)

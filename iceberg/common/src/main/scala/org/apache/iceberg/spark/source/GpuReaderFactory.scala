@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.iceberg.parquet.{
   SingleFile,
   ThreadConf
 }
-import org.apache.iceberg.{FileFormat, MetadataColumns, ScanTask, ScanTaskGroup}
+import org.apache.iceberg.{FileContent, FileFormat, MetadataColumns, ScanTask, ScanTaskGroup}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
@@ -74,6 +74,8 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       .map(_.asFileScanTask())
 
     val hasNoDeletes = scans.forall(_.deletes.isEmpty)
+    val hasPositionDeletes =
+      scans.exists(_.deletes.asScala.exists(_.content() == FileContent.POSITION_DELETES))
     val hasFilePathMetadata =
       partition.expectedSchema.findField(MetadataColumns.FILE_PATH.fieldId()) != null
     val hasRowPositionMetadata =
@@ -96,13 +98,17 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
         canUseMultiThread, files, allCloudSchemes)
 
       if (useMultiThread) {
+        // Position deletes are file-specific even when _pos/_file are not projected by the query.
         val disableCombining =
-          queryUsesInputFile || hasFilePathMetadata || hasRowPositionMetadata || !hasNoDeletes
+          queryUsesInputFile || hasFilePathMetadata || hasRowPositionMetadata ||
+            hasPositionDeletes
         MultiThread(poolConfBuilder, partition.maxNumParquetFilesParallel,
           CombineConf(combineThresholdSize, combineWaitTime),
-          disableCombining)
+          disableCombining,
+          hasFilePathMetadata,
+          hasRowPositionMetadata)
       } else {
-        MultiFile(poolConfBuilder)
+        MultiFile(poolConfBuilder, hasFilePathMetadata, hasRowPositionMetadata)
       }
     } else {
       throw new UnsupportedOperationException("Currently only parquet format is supported")
