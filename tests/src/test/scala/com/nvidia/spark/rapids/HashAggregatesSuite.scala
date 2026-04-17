@@ -465,6 +465,15 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     frame => frame.agg(last("b", ignoreNulls = false))
   }
 
+  // Direct regression test for #14168: first(ignoreNulls=false) on all-non-null data.
+  // A "valueSet flag" bug would cause GPU to return null here even though no nulls exist.
+  IGNORE_ORDER_testMatrixSparkResultsAreEqual(
+      "first reduction ignoreNulls=false non-null",
+      reductionNonNullDf,
+      skipCanonicalizationCheck = true) {
+    frame => frame.agg(first("b", ignoreNulls = false))
+  }
+
   IGNORE_ORDER_testMatrixSparkResultsAreEqual(
       "first reduction ignoreNulls=true",
       reductionMixedNullDf,
