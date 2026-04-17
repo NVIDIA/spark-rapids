@@ -18,7 +18,19 @@
     },
     {
       "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/SpillableColumnarBatch.scala",
-      "description": "GPU memory spill framework"
+      "description": "GPU memory spill framework for columnar batches"
+    },
+    {
+      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/GpuSemaphore.scala",
+      "description": "GPU access semaphore and deadlock prevention"
+    },
+    {
+      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/spill/SpillFramework.scala",
+      "description": "GPU memory spill-to-host/disk framework"
+    },
+    {
+      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/SpillPriorities.scala",
+      "description": "Spill priority definitions for GPU memory management"
     },
     {
       "path": "integration_tests/src/main/python/asserts.py",
@@ -33,6 +45,10 @@
     {
       "path": "CONTRIBUTING.md",
       "description": "Contribution guidelines"
+    },
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE.md",
+      "description": "PR checklist template"
     }
   ]
 }

@@ -170,7 +170,7 @@ object DecimalArithmeticOverrides {
             case _: DecimalType => throw new IllegalStateException(
               "Decimal Multiply should be converted in CheckOverflow")
             case _ =>
-              GpuMultiply(lhs, rhs)
+              GpuMultiply(lhs, rhs)(a.origin)
           }
         }
       }),
@@ -199,7 +199,7 @@ object DecimalArithmeticOverrides {
               throw new IllegalStateException("Internal Error: Decimal Divide operations " +
                   "should be converted to the GPU in the CheckOverflow rule")
             case _ =>
-              GpuDivide(lhs, rhs)
+              GpuDivide(lhs, rhs)(a.origin)
           }
       }),
     expr[IntegralDivide](
@@ -210,7 +210,7 @@ object DecimalArithmeticOverrides {
         ("rhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128)),
       (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-          GpuIntegralDivide(lhs, rhs)
+          GpuIntegralDivide(lhs, rhs)(a.origin)
       }),
     expr[Remainder](
       "Remainder or modulo",
