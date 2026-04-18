@@ -481,13 +481,15 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     )
 
     val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      new JHashMap[Integer, Any](),
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
     val ex = intercept[IllegalArgumentException] {
-      new GpuParquetReaderPostProcessor(
-        parquetInfo,
-        new JHashMap[Integer, Any](),
-        expectedSchema,
-        shadedSchema,
-        Map.empty)
+      // The action tree is built lazily, so missing required fields surface when it is accessed.
+      processor.displayActionPlan()
     }
     assert(ex.getMessage.contains("Missing required field"))
   }
@@ -503,13 +505,14 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     )
 
     val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      new JHashMap[Integer, Any](),
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
     val ex = intercept[IllegalArgumentException] {
-      new GpuParquetReaderPostProcessor(
-        parquetInfo,
-        new JHashMap[Integer, Any](),
-        expectedSchema,
-        shadedSchema,
-        Map.empty)
+      processor.displayActionPlan()
     }
     assert(ex.getMessage.contains("Missing required field"))
   }
@@ -530,13 +533,14 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     )
 
     val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      new JHashMap[Integer, Any](),
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
     val ex = intercept[IllegalArgumentException] {
-      new GpuParquetReaderPostProcessor(
-        parquetInfo,
-        new JHashMap[Integer, Any](),
-        expectedSchema,
-        shadedSchema,
-        Map.empty)
+      processor.displayActionPlan()
     }
     assert(ex.getMessage.contains("Missing required field"))
   }
