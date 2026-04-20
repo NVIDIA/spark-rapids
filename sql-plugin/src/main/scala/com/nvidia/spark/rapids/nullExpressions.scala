@@ -28,15 +28,26 @@ import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuNvl {
+  // For non-nested types, use the fused replaceNulls kernel directly.
+  // Otherwise fall back to isNotNull+ifElse (backed by copy_if_else which
+  // supports nested types).
   def apply(lhs: ColumnVector, rhs: ColumnVector): ColumnVector = {
-    withResource(lhs.isNotNull) { isLhsNotNull =>
-      isLhsNotNull.ifElse(lhs, rhs)
+    if (lhs.getType.isNestedType) {
+      withResource(lhs.isNotNull) { isLhsNotNull =>
+        isLhsNotNull.ifElse(lhs, rhs)
+      }
+    } else {
+      lhs.replaceNulls(rhs)
     }
   }
 
   def apply(lhs: ColumnVector, rhs: Scalar): ColumnVector = {
-    withResource(lhs.isNotNull) { isLhsNotNull =>
-      isLhsNotNull.ifElse(lhs, rhs)
+    if (lhs.getType.isNestedType) {
+      withResource(lhs.isNotNull) { isLhsNotNull =>
+        isLhsNotNull.ifElse(lhs, rhs)
+      }
+    } else {
+      lhs.replaceNulls(rhs)
     }
   }
 }
