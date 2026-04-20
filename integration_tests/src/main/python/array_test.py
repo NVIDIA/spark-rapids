@@ -952,11 +952,12 @@ def test_array_remove_scalar(data_gen):
             'array_remove(a, 10)')
     )
 
-@pytest.mark.parametrize('data_gen', [ByteGen(special_cases=[5]), ShortGen(special_cases=[5]), 
+@pytest.mark.parametrize('data_gen', [ByteGen(special_cases=[5]), ShortGen(special_cases=[5]),
                                       IntegerGen(special_cases=[5]), LongGen(special_cases=[5]),
-                                      FloatGen(special_cases=_non_neg_zero_float_special_cases + [-0.0]), 
+                                      FloatGen(special_cases=_non_neg_zero_float_special_cases + [-0.0]),
                                       DoubleGen(special_cases=_non_neg_zero_double_special_cases + [-0.0]),
-                                      StringGen(pattern='[0-9]{1,5}'), boolean_gen, date_gen, timestamp_gen] + decimal_gens, ids=idfn)
+                                      StringGen(pattern='[0-9]{1,5}'), boolean_gen, date_gen, timestamp_gen,
+                                      StructGen([['child0', int_gen], ['child1', string_gen]], nullable=False)] + decimal_gens, ids=idfn)
 def test_array_remove(data_gen):
     gen = StructGen(
         [('a', ArrayGen(data_gen, nullable=True)),
@@ -968,6 +969,23 @@ def test_array_remove(data_gen):
             'array_remove(a, b)',
             'array_remove(a, null)')
     )
+
+# ARRAY and BINARY element types are not in GpuArrayRemove's TypeSig and must fall back to CPU.
+# This test locks in that the TypeSig narrowing in GpuOverrides is effective.
+@allow_non_gpu('ProjectExec', 'ArrayRemove')
+@pytest.mark.parametrize('data_gen', [
+    ArrayGen(int_gen, max_length=5),
+    BinaryGen(max_length=10)],
+    ids=idfn)
+def test_array_remove_fallback(data_gen):
+    gen = StructGen(
+        [('a', ArrayGen(data_gen, nullable=True)),
+         ('b', data_gen)],
+        nullable=False)
+
+    assert_gpu_fallback_collect(
+        lambda spark: gen_df(spark, gen).selectExpr('array_remove(a, b)'),
+        'ArrayRemove')
 
 
 @pytest.mark.parametrize('data_gen', [ArrayGen(sub_gen) for sub_gen in array_gens_sample], ids=idfn)

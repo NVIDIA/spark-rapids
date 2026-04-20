@@ -51,7 +51,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("Flatten", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14127"))
     .exclude("MapFromEntries", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14128"))
     .exclude("Array Intersect", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
-    .exclude("Array remove", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14129"))
     .exclude("Shuffle", ADJUST_UT("Replaced by testRapids version that adjusts the expected results to match the running by --master local[2]."))
   enableSuite[RapidsColumnExpressionSuite]
     .exclude("input_file_name, input_file_block_start, input_file_block_length - HadoopRDD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14153"))
