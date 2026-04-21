@@ -2962,6 +2962,28 @@ object GpuOverrides extends Logging {
           )
         }
       }),
+    expr[ArrayAggregate](
+      "Aggregate elements in an array using an accumulator function and finishing " +
+          "transformation. Currently only lambdas of the form (acc, x) -> acc + g(x) with an " +
+          "identity finish are executed on the GPU; other shapes fall back to CPU.",
+      ExprChecks.projectOnly(
+        TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+        TypeSig.all,
+        Seq(
+          ParamCheck("argument",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
+                TypeSig.STRUCT),
+            TypeSig.ARRAY.nested(TypeSig.all)),
+          ParamCheck("zero",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+            TypeSig.all),
+          ParamCheck("merge",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+            TypeSig.all),
+          ParamCheck("finish",
+            TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
+            TypeSig.all))),
+      (in, conf, p, r) => new GpuArrayAggregateMeta(in, conf, p, r)),
     // TODO: fix the signature https://github.com/NVIDIA/spark-rapids/issues/5327
     expr[ArraysZip](
       "Returns a merged array of structs in which the N-th struct contains" +
