@@ -40,7 +40,7 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType, fa
   override lazy val evaluateExpression: Expression = {
     GpuCast(
       GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = failOnError,
-        failOnDivideByZero = false), dataType, ansiMode = failOnError)
+        failOnDivideByZero = false), dataType, ansiMode = failOnError)()
   }
 
   // Window
@@ -52,6 +52,6 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType, fa
       failOnErrorOverride = failOnError), spec)
     GpuCast(
       GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = failOnError,
-        failOnDivideByZero = false), dataType, ansiMode = failOnError)
+        failOnDivideByZero = false), dataType, ansiMode = failOnError)()
   }
 }

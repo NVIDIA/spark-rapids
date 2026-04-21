@@ -502,7 +502,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference =
       GpuBoundReference(0, dataType, nullable = false)(NamedExpression.newExprId, "arg")
-    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType, ansiMode = true),
+    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType, ansiMode = true)(),
       dataType,
       DataTypes.StringType,
       expectedFun = castToStringExpectedFun[T],
