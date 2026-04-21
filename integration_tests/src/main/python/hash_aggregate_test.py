@@ -2537,10 +2537,17 @@ def test_no_fallback_when_ansi_enabled(data_gen, kudo_enabled):
         conf={'spark.sql.ansi.enabled': 'true', kudo_enabled_conf_key: kudo_enabled})
 
 # Tests for standard deviation and variance aggregations.
+# FP corner-case coverage: the last two data_gen entries use bare DoubleGen() /
+# FloatGen() whose default special_cases inject NaN, -0.0, +-Inf, and
+# max-fraction values into the aggregated column. This closes the
+# -0.0 / Infinity gap for StddevPop / VariancePop / VarianceSamp under
+# DOUBLE / FLOAT. See https://github.com/NVIDIA/spark-rapids/issues/14631.
 @ignore_order(local=True)
 @approximate_float
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_decimals, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_decimals + [
+    [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', DoubleGen()), ('c', DoubleGen())],
+    [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', FloatGen()), ('c', FloatGen())]], ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_std_variance(data_gen, conf, kudo_enabled):
@@ -2598,30 +2605,6 @@ def test_std_variance_nulls(data_gen, conf, ansi_enabled, kudo_enabled):
         'stddev(c),' +
         'stddev_samp(c)'
         ' from data_table',
-        conf=local_conf)
-
-
-# Corner case coverage for FP aggregates (stddev*/variance*/var_*).
-# Driven by DoubleGen() / FloatGen() defaults, which inject NaN, -0.0,
-# +Inf, -Inf into the aggregated column.
-@ignore_order(local=True)
-@approximate_float
-@incompat
-@pytest.mark.parametrize('data_gen', [DoubleGen(), FloatGen()], ids=idfn)
-@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
-def test_std_variance_fp_corner_cases(data_gen, kudo_enabled):
-    local_conf = {
-        'spark.rapids.sql.castDecimalToFloat.enabled': 'true',
-        kudo_enabled_conf_key: kudo_enabled}
-    assert_gpu_and_cpu_are_equal_sql(
-        lambda spark: gen_df(spark,
-            [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', data_gen)],
-            length=1000),
-        "data_table",
-        'select a,'
-        ' stddev(b), stddev_pop(b), stddev_samp(b),'
-        ' variance(b), var_pop(b), var_samp(b)'
-        ' from data_table group by a',
         conf=local_conf)
 
 
