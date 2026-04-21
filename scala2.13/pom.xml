@@ -714,11 +714,11 @@
                 <spark.version>${spark411.version}</spark.version>
                 <spark.test.version>${spark411.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-41x</rapids.delta.artifactId1>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-41x</module>
                 <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>
@@ -803,6 +803,9 @@
     <properties>
         <delta33x.version>3.3.0</delta33x.version>
         <delta40x.version>4.0.0</delta40x.version>
+        <delta40x.spark.artifactId>delta-spark_${scala.binary.version}</delta40x.spark.artifactId>
+        <delta41x.version>4.1.0</delta41x.version>
+        <delta41x.spark.artifactId>delta-spark_4.1_${scala.binary.version}</delta41x.spark.artifactId>
         <!-- start dyn.shim properties -->
         <!--  TODO: Will remove 321 from the excluding list after no need to support some legacy scenario -->
         <dyn.shim.excluded.releases>

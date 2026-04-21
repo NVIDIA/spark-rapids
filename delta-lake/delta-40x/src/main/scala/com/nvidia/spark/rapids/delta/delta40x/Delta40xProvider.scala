@@ -17,6 +17,15 @@
 package com.nvidia.spark.rapids.delta.delta40x
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.common.{
+  DeleteCommandMeta,
+  DeltaDynamicPartitionOverwriteCommandMeta,
+  GpuDeltaParquetFileFormat,
+  GpuDeltaParquetFileFormat2,
+  MergeIntoCommandMeta,
+  OptimizeTableCommandMeta,
+  UpdateCommandMeta
+}
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
 
 import org.apache.spark.internal.Logging
@@ -35,7 +44,7 @@ object Delta40xProvider extends DeltaProviderBase with Logging {
   }
 
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean =
-    super.isSupportedFormat(format) || format == classOf[GpuDelta40xParquetFileFormat]
+    super.isSupportedFormat(format) || format == classOf[GpuDeltaParquetFileFormat]
 
   override def tagForGpu(
       cpuExec: AppendDataExecV1,
@@ -76,9 +85,7 @@ object Delta40xProvider extends DeltaProviderBase with Logging {
   override protected def toGpuParquetFileFormat(conf: RapidsConf, fmt: DeltaParquetFileFormat)
   : FileFormat = {
     if (canPushDVPredicateDownToScan(conf)) {
-      // Pushing down deletion vector predicates is currently only supported
-      // when the metadata row index is enabled.
-      GpuDelta40xParquetFileFormat2(
+      GpuDeltaParquetFileFormat2(
         protocol = fmt.protocol,
         metadata = fmt.metadata,
         nullableRowTrackingFields = false,
@@ -97,7 +104,7 @@ object Delta40xProvider extends DeltaProviderBase with Logging {
       } else {
         fmt.optimizationsEnabled
       }
-      GpuDelta40xParquetFileFormat(
+      GpuDeltaParquetFileFormat(
         protocol = fmt.protocol,
         metadata = fmt.metadata,
         nullableRowTrackingFields = false,

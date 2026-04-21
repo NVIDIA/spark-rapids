@@ -803,6 +803,9 @@
     <properties>
         <delta33x.version>3.3.0</delta33x.version>
         <delta40x.version>4.0.0</delta40x.version>
+        <delta40x.spark.artifactId>delta-spark_${scala.binary.version}</delta40x.spark.artifactId>
+        <delta41x.version>4.1.0</delta41x.version>
+        <delta41x.spark.artifactId>delta-spark_4.1_${scala.binary.version}</delta41x.spark.artifactId>
         <!-- start dyn.shim properties -->
         <!--  TODO: Will remove 321 from the excluding list after no need to support some legacy scenario -->
         <dyn.shim.excluded.releases>
