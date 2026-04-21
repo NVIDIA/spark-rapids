@@ -2104,8 +2104,10 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     shuffleBlockResolver match {
       case isbr: IndexShuffleBlockResolver =>
         Option(taskIdMapsForShuffle.remove(shuffleId)).foreach { mapTaskIds =>
-          mapTaskIds.iterator.foreach { mapTaskId =>
-            isbr.removeDataByMap(shuffleId, mapTaskId)
+          mapTaskIds.synchronized {
+            mapTaskIds.iterator.foreach { mapTaskId =>
+              isbr.removeDataByMap(shuffleId, mapTaskId)
+            }
           }
         }
       case _: GpuShuffleBlockResolver => // noop

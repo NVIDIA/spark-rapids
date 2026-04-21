@@ -723,7 +723,7 @@ def test_map_element_at_ansi_null(data_gen):
 
 
 @disable_ansi_mode  # ANSI mode failures are tested separately.
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_transform_values(data_gen):
     def do_it(spark):
@@ -757,12 +757,17 @@ def test_transform_values(data_gen):
             columns.extend([
                 'transform_values(a, (key, value) -> transform_values(value, (sub_key, sub_value) -> 1)) as sub_one'])
 
+        if isinstance(value_type, BinaryType):
+            columns.extend([
+                'transform_values(a, (key, value) -> hex(value)) as hex_val'])
+
         return two_col_df(spark, data_gen, byte_gen).selectExpr(columns)
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-@pytest.mark.parametrize('data_gen', map_gens_sample + decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value +
+    decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_transform_keys(data_gen):
     # The processing here is very limited, because we need to be sure we do not create duplicate keys.
@@ -822,7 +827,7 @@ def test_sql_map_scalars(query):
             lambda spark: spark.sql('SELECT {}'.format(query)))
 
 
-@pytest.mark.parametrize('data_gen', map_gens_sample \
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value \
                          + [MapGen(f(nullable=False, min_val=-10, max_val=10), f(), min_length=10) for f in [ByteGen, ShortGen, IntegerGen, LongGen]] \
                          + [MapGen(StringGen(pattern='key_[0-9]', nullable=False), StringGen(), min_length=10)], ids=idfn)
 @allow_non_gpu(*non_utc_allow)
@@ -847,6 +852,9 @@ def test_map_zip_with(data_gen):
         if isinstance(value_type, ArrayType):
             columns.extend([
                     'map_zip_with(a, b,  (key, value1, value2) -> concat(value1, value2)) as array_concat',])
+        if isinstance(value_type, BinaryType):
+            columns.extend([
+                    'map_zip_with(a, b,  (key, value1, value2) -> hex(value1)) as hex_val',])
         df = two_col_df(spark, data_gen, data_gen)
         return df.selectExpr(columns)
     # ANSI mode is disabled since this test verifies the behaviour of map_zip_with and the evaluation of the associated lambda. 
@@ -889,7 +897,7 @@ def test_map_zip_with_mismatch_keys(data_gen):
     # Not using @disable_ansi_mode because of https://github.com/NVIDIA/spark-rapids/issues/13214.  Using explicit setting instead.
     assert_gpu_and_cpu_are_equal_collect(do_it, conf={'spark.sql.ansi.enabled': False})
 
-@pytest.mark.parametrize('data_gen', map_gens_sample, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_map_filter(data_gen):
     columns = ['map_filter(a, (key, value) -> isnotnull(value) )',

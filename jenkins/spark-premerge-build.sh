@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -150,6 +150,44 @@ rapids_shuffle_smoke_test() {
     $SPARK_HOME/sbin/stop-master.sh
 }
 
+run_iceberg_version_detect_tests() {
+    local spark_ver=${1:?'spark_ver is required'}
+    local scala_ver=${2:?'scala_ver is required'}
+    echo "Running Iceberg version detection tests for Spark $spark_ver (Scala $scala_ver)..."
+
+    local iceberg_spark_ver
+    iceberg_spark_ver=$(echo "$spark_ver" | cut -d. -f1,2)
+    local spark_patch_ver
+    spark_patch_ver=$(echo "$spark_ver" | cut -d. -f3)
+
+    if [[ "$iceberg_spark_ver" != "3.5" && "$iceberg_spark_ver" != "4.0" ]]; then
+        echo "!!!! Skipping Iceberg version detection. Not supported on Spark $iceberg_spark_ver"
+        return 0
+    fi
+
+    # Supported Iceberg versions per Spark version — must stay in sync with
+    # run_iceberg_tests() in spark-tests.sh.
+    local iceberg_versions
+    if [[ "$iceberg_spark_ver" == "4.0" ]]; then
+        iceberg_versions="1.10.1"
+    elif [[ "$spark_patch_ver" -le 3 ]]; then
+        iceberg_versions="1.6.1"
+    else
+        iceberg_versions="1.9.2 1.10.1"
+    fi
+
+    for ICEBERG_VERSION in $iceberg_versions; do
+        echo "!!! Running iceberg version detection test for Iceberg $ICEBERG_VERSION"
+        EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
+        PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${iceberg_spark_ver}_${scala_ver}:${ICEBERG_VERSION} \
+            PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
+            PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
+            PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
+            PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
+            ./integration_tests/run_pyspark_from_build.sh -m iceberg --iceberg -k test_iceberg_version_detection
+    done
+}
+
 ci_2() {
     echo "Run premerge ci 2 testings..."
     export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
@@ -219,6 +257,11 @@ ci_scala213() {
 
     # Trigger the RapidsShuffleManager tests for scala 2.13
     rapids_shuffle_smoke_test $SPARK_VER
+
+    # Iceberg version detection (requires JDK 17, available in this stage).
+    # Moved out of spark-tests.sh DEFAULT mode where JDK 8 causes
+    # UnsupportedClassVersionError for Iceberg 1.9+ runtime JARs.
+    run_iceberg_version_detect_tests $SPARK_VER 2.13
 }
 
 prepare_spark() {

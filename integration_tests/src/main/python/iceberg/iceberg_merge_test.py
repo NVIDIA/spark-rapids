@@ -710,8 +710,9 @@ def test_iceberg_merge_after_drop_partition_field(spark_tmp_table_factory, merge
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 def test_iceberg_merge_partitioned_fanout_enabled(spark_tmp_table_factory):
+    # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.
     _do_test_iceberg_merge(
         spark_tmp_table_factory,
-        "year(_c9)",
+        "bucket(2, _c9)",
         merge_mode='copy-on-write',
         table_properties={"write.spark.fanout.enabled": "true"})

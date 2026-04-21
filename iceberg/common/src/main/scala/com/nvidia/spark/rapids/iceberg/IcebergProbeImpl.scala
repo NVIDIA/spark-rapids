@@ -19,7 +19,9 @@ package com.nvidia.spark.rapids.iceberg
 import com.nvidia.spark.rapids.{ShimLoader, ShimReflectionUtils, SparkShimVersion, VersionUtils}
 import org.apache.iceberg.IcebergBuild
 
-class IcebergProbeImpl extends IcebergProbe {
+import org.apache.spark.internal.Logging
+
+class IcebergProbeImpl extends IcebergProbe with Logging {
 
   override def isSupportedSparkVersion(): Boolean = {
     ShimLoader.getShimVersion match {
@@ -29,6 +31,7 @@ class IcebergProbeImpl extends IcebergProbe {
       case _ => false
     }
   }
+
   // Git commit ID -> version for all supported Iceberg releases.
   // Commit IDs are from iceberg-build.properties embedded in each release jar.
   // https://github.com/apache/iceberg/releases
@@ -42,9 +45,31 @@ class IcebergProbeImpl extends IcebergProbe {
     "ccb8bc435062171e64bc8b7e5f56e6aed9c5b934" -> "1.10.1"
   )
 
+  // e.g. iceberg-spark-runtime-3.5_2.12-1.10.0-*.jar -> "1.10.0"
+  private lazy val jarVersionPattern = (
+    """iceberg-spark-runtime-""" +
+    """\d+\.\d+_""" +             // Spark feature.major
+    """\d+\.\d+-""" +             // Scala major.minor
+    """(\d+\.\d+\.\d+)"""         // Iceberg major.minor.patch
+  ).r.unanchored
+
+  private def extractVersionFromJarPath(commitId: String): String = {
+    Option(classOf[IcebergBuild].getProtectionDomain)
+      .flatMap(pd => Option(pd.getCodeSource))
+      .flatMap(cs => Option(cs.getLocation))
+      .map(_.getPath)
+      .collectFirst {
+        case path@jarVersionPattern(v) =>
+          logWarning(s"Commit $commitId not in known map, " +
+            s"extracted version $v from jar path: $path")
+          v
+      }
+      .getOrElse(commitId)
+  }
+
   override def getDetectedVersion: String = {
     val commitId = IcebergBuild.gitCommitId()
-    commitToVersion.getOrElse(commitId, commitId)
+    commitToVersion.getOrElse(commitId, extractVersionFromJarPath(commitId))
   }
 
   // Iceberg major.minor -> shim sub-package
