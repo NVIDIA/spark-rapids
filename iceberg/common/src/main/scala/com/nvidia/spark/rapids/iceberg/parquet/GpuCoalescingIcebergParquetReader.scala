@@ -102,6 +102,9 @@ class GpuCoalescingIcebergParquetReader(
         if (currentBlockInfo.filePath == nextBlockInfo.filePath) {
           return false
         }
+        if (hasFilePathMetadata || hasRowPositionMetadata) {
+          return true
+        }
         if (checkIfNeedToSplitBlocks(
           currentBlockInfo.extraInfo.dateRebaseMode,
           nextBlockInfo.extraInfo.dateRebaseMode,
@@ -111,9 +114,6 @@ class GpuCoalescingIcebergParquetReader(
           nextBlockInfo.schema,
           currentBlockInfo.filePath.toString,
           nextBlockInfo.filePath.toString)) {
-          return true
-        }
-        if (hasFilePathMetadata || hasRowPositionMetadata) {
           return true
         }
         val curExtra = currentBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
