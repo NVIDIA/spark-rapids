@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, Literal}
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.rapids.{ExternalSource, GpuStringDecode}
 
@@ -56,7 +56,9 @@ class StaticInvokeMeta(expr: StaticInvoke,
   }
 
   private def tagStringDecode(): Unit = {
-    if (expr.arguments.size < 2) {
+    // Spark 4.0+ StringDecode.replacement always builds the StaticInvoke with 4 arguments:
+    // (bin, charset, legacyCharsets, legacyErrorAction).
+    if (expr.arguments.size < 4) {
       willNotWorkOnGpu("StringDecode StaticInvoke has unexpected argument count")
       return
     }
@@ -70,6 +72,21 @@ class StaticInvokeMeta(expr: StaticInvoke,
         }
       case _ =>
         willNotWorkOnGpu("charset must be a string literal for GPU StringDecode")
+    }
+    // The GPU kernel unconditionally replaces malformed bytes with U+FFFD and accepts GBK
+    // regardless of the session's charset allow-list. CPU diverges when either legacy flag
+    // is false: spark.sql.legacy.javaCharsets=false rejects GBK at CharsetProvider.forName,
+    // and spark.sql.legacy.codingErrorAction=false raises MALFORMED_CHARACTER_CODING on
+    // invalid input instead of replacing. Require both to be the literal true.
+    expr.arguments(2) match {
+      case Literal(true, _) =>
+      case _ => willNotWorkOnGpu(
+        "GPU StringDecode requires spark.sql.legacy.javaCharsets=true")
+    }
+    expr.arguments(3) match {
+      case Literal(true, _) =>
+      case _ => willNotWorkOnGpu(
+        "GPU StringDecode requires spark.sql.legacy.codingErrorAction=true")
     }
   }
 
