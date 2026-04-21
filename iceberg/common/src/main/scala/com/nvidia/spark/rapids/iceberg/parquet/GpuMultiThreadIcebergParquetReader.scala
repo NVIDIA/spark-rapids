@@ -102,7 +102,7 @@ class GpuMultiThreadIcebergParquetReader(
         val curProcessor = postProcessors.get(curFile)
         val nextProcessor = postProcessors.get(nextFile)
         if (curProcessor == null || nextProcessor == null) return true
-        !compatibleForCombining(curProcessor.idToConstant, nextProcessor.idToConstant)
+        !curProcessor.compatibleForCombining(nextProcessor)
       }
 
       override def readBatches(

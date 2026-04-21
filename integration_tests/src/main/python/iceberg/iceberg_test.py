@@ -764,3 +764,59 @@ def test_iceberg_small_file_combine_with_partition_spec_evolution(
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql(f"SELECT a, b, c, _spec_id, _partition FROM {table}"),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason = "S3tables catalog is managed")
+def test_iceberg_small_file_combine_with_add_files_identity_partition(
+        spark_tmp_table_factory, reader_type):
+    target_table = get_full_table_name(spark_tmp_table_factory)
+    source_table = get_full_table_name(spark_tmp_table_factory)
+    create_iceberg_table(
+        target_table,
+        partition_col_sql='a',
+        df_gen=lambda spark: spark.createDataFrame([], 'a long, b string'))
+
+    def setup_imported_table(spark):
+        spark.sql(
+            f"CREATE TABLE {source_table} (a BIGINT, b STRING) "
+            "USING PARQUET "
+            "PARTITIONED BY (a)")
+        source_columns = spark.table(source_table).columns
+
+        partition_values = [2451350, 2452349, 2452323]
+        for batch_id in range(4):
+            batch_gens = [
+                ('a', RepeatSeqGen(partition_values * 2, data_type=long_gen.data_type)),
+                ('b', RepeatSeqGen(
+                    [f"batch-{batch_id}-row-{row_idx}" for row_idx in range(6)],
+                    data_type=string_gen.data_type))
+            ]
+            (gen_df(
+                spark,
+                batch_gens,
+                length=6,
+                num_slices=1)
+                .select(*source_columns)
+                .write
+                .mode('append')
+                .insertInto(source_table))
+
+        spark.sql(
+            f"CALL spark_catalog.system.add_files("
+            f"table => '{target_table}', "
+            f"source_table => '{source_table}')")
+        spark.sql(
+            f"ALTER TABLE {target_table} SET TBLPROPERTIES ("
+            "'read.split.target-size' = '268435456', "
+            "'read.split.planning-lookback' = '100')")
+        spark.sql(f"REFRESH TABLE {target_table}")
+
+    with_cpu_session(setup_imported_table)
+
+    # Imported partitioned Parquet files materialize `a` from the path, not the file payload.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT a, b FROM {target_table}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})

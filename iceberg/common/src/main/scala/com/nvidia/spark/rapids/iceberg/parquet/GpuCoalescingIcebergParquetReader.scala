@@ -118,8 +118,7 @@ class GpuCoalescingIcebergParquetReader(
         }
         val curExtra = currentBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
         val nextExtra = nextBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
-        !compatibleForCombining(curExtra.postProcessor.idToConstant,
-          nextExtra.postProcessor.idToConstant)
+        !curExtra.postProcessor.compatibleForCombining(nextExtra.postProcessor)
       }
 
       override def finalizeOutputBatch(batch: ColumnarBatch,
