@@ -2601,6 +2601,30 @@ def test_std_variance_nulls(data_gen, conf, ansi_enabled, kudo_enabled):
         conf=local_conf)
 
 
+# Corner case coverage for FP aggregates (stddev*/variance*/var_*).
+# Driven by DoubleGen() / FloatGen() defaults, which inject NaN, -0.0,
+# +Inf, -Inf into the aggregated column.
+@ignore_order(local=True)
+@approximate_float
+@incompat
+@pytest.mark.parametrize('data_gen', [DoubleGen(), FloatGen()], ids=idfn)
+@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+def test_std_variance_fp_corner_cases(data_gen, kudo_enabled):
+    local_conf = {
+        'spark.rapids.sql.castDecimalToFloat.enabled': 'true',
+        kudo_enabled_conf_key: kudo_enabled}
+    assert_gpu_and_cpu_are_equal_sql(
+        lambda spark: gen_df(spark,
+            [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', data_gen)],
+            length=1000),
+        "data_table",
+        'select a,'
+        ' stddev(b), stddev_pop(b), stddev_samp(b),'
+        ' variance(b), var_pop(b), var_samp(b)'
+        ' from data_table group by a',
+        conf=local_conf)
+
+
 @ignore_order(local=True)
 @approximate_float
 @allow_non_gpu('NormalizeNaNAndZero',
