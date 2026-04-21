@@ -48,9 +48,16 @@ def test_string_decode_gbk(data_gen):
     gen = data_gen
     for sc in _gbk_edge_cases:
         gen = gen.with_special_case(sc)
+    # Spark 4.0+ requires both legacy flags for GBK: javaCharsets=true lets the CPU
+    # accept GBK (not in the default allow-list), codingErrorAction=true keeps the
+    # CPU in REPLACE mode so it matches the GPU's malformed-byte handling.
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=2048)
-            .selectExpr("decode(a, 'GBK')"))
+            .selectExpr("decode(a, 'GBK')"),
+        conf={
+            'spark.sql.legacy.javaCharsets': 'true',
+            'spark.sql.legacy.codingErrorAction': 'true',
+        })
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
