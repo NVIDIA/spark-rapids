@@ -44,7 +44,7 @@ class StaticInvokeMeta(expr: StaticInvoke,
     // Only wrap the first child (bin) as the GPU expression input
     expr.arguments.take(1).map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   } else {
-    Seq.empty
+    expr.children.map(GpuOverrides.wrapExpr(_, conf, Some(this)))
   }
 
   override def tagExprForGpu(): Unit = {
