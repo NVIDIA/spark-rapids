@@ -122,6 +122,9 @@ The output of signature verify:
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
 
+### Known Issues
+* PERFILE reader may return incorrect counts for zero-column Delta scans with deletion vectors ([#14574](https://github.com/NVIDIA/spark-rapids/issues/14574)). Workaround: use the default `MULTITHREADED`/`COALESCING` reader.
+
 ## Archived releases
 
 As new releases come out, previous ones will still be available in [archived releases](./archive.md).
