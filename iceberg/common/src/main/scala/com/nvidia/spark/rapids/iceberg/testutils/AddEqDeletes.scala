@@ -147,7 +147,7 @@ object AddEqDeletes extends Logging {
     (parquetFile)))
 
     val tableSchema = table.schema
-    withResource(icebergPartitionedFile.newReader) { reader =>
+    withResource(icebergPartitionedFile.newReader()) { reader =>
       logDebug(s"Reading eq delete parquet file $parquetFile, " +
         s"schema:\n${reader.getFileMetaData.getSchema}")
       val colNames = reader
