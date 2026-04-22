@@ -897,32 +897,32 @@ case class GpuMapFilter(argument: Expression,
 }
 
 
-// =====================================================================================
-// AggOp: one case object per supported segmented reduction. Adding a new op is three
-// things: define the case object, wire matchBinary to its Catalyst shape, and append it
-// to ArrayAggregateDecomposer.allOps. The op owns: its cuDF aggregation + null policy, the
-// identity scalar used to back-fill rows where no element contributed, and the combine-
-// with-zero step.
-// =====================================================================================
+// Registered segmented reductions used by GpuArrayAggregate. To add a new op: define the
+// case object, wire matchBinary to its Catalyst shape, and append it to
+// ArrayAggregateDecomposer.allOps.
 
 sealed trait AggOp {
   def name: String
   def cudfAgg: cudf.SegmentedReductionAggregation
   def nullPolicy: cudf.NullPolicy
-  /**
-   * Identity element at the given Spark type. Built with a cuDF DType matching the
-   * reduced column so downstream ifElse / binaryOp don't hit a width mismatch.
-   */
+  /** Identity scalar, built with `cudfDType` so ifElse / binaryOp don't hit width mismatch. */
   def identityScalar(sparkType: DataType, cudfDType: DType): cudf.Scalar
-  /** `result = reduced OP zero`, typed to outDType, with Spark-matching null propagation. */
+  /** `reduced OP zero`, typed to outDType, with Spark-matching null propagation. */
   def combineWithZero(
       reduced: cudf.ColumnVector,
       zero: cudf.ColumnView,
       outDType: DType): cudf.ColumnVector
   /** Return (left, right) if the body is this op's Catalyst shape. */
   def matchBinary(body: Expression): Option[(Expression, Expression)]
-  /** Is this Spark data type supported for this op's accumulator / result? */
   def supportsType(sparkType: DataType): Boolean
+}
+
+object AggOp {
+  /** Numeric types that all basic cuDF reductions (sum/product/max/min) accept. */
+  def isPlainNumeric(t: DataType): Boolean = t match {
+    case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => true
+    case _ => false
+  }
 }
 
 case object SumOp extends AggOp {
@@ -932,16 +932,13 @@ case object SumOp extends AggOp {
   // one null element anywhere in the list yields null.
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
   def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = t match {
-    case _: ByteType => cudf.Scalar.fromByte(0.toByte)
-    case _: ShortType => cudf.Scalar.fromShort(0.toShort)
-    case _: IntegerType => cudf.Scalar.fromInt(0)
-    case _: LongType => cudf.Scalar.fromLong(0L)
-    case _: FloatType => cudf.Scalar.fromFloat(0.0f)
-    case _: DoubleType => cudf.Scalar.fromDouble(0.0)
-    case _: DecimalType =>
-      // fromDecimal(BigDecimal) picks DECIMAL32/64/128 from the value's precision, which
-      // may not match the reduced column's fixed width. Bind the DType explicitly.
-      cudf.Scalar.fromDecimal(java.math.BigInteger.ZERO, cudfT)
+    case ByteType => cudf.Scalar.fromByte(0.toByte)
+    case ShortType => cudf.Scalar.fromShort(0.toShort)
+    case IntegerType => cudf.Scalar.fromInt(0)
+    case LongType => cudf.Scalar.fromLong(0L)
+    case FloatType => cudf.Scalar.fromFloat(0.0f)
+    case DoubleType => cudf.Scalar.fromDouble(0.0)
+    case d: DecimalType => GpuScalar.from(0, d)
     case other => throw new IllegalStateException(s"SUM identity not defined for $other")
   }
   def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType) = r.add(z, out)
@@ -949,11 +946,8 @@ case object SumOp extends AggOp {
     case a: Add => Some((a.left, a.right))
     case _ => None
   }
-  def supportsType(t: DataType): Boolean = t match {
-    case _: ByteType | _: ShortType | _: IntegerType | _: LongType |
-         _: FloatType | _: DoubleType | _: DecimalType => true
-    case _ => false
-  }
+  def supportsType(t: DataType): Boolean =
+    AggOp.isPlainNumeric(t) || t.isInstanceOf[DecimalType]
 }
 
 case object ProductOp extends AggOp {
@@ -962,56 +956,45 @@ case object ProductOp extends AggOp {
     cudf.SegmentedReductionAggregation.product()
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
   def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = t match {
-    case _: ByteType => cudf.Scalar.fromByte(1.toByte)
-    case _: ShortType => cudf.Scalar.fromShort(1.toShort)
-    case _: IntegerType => cudf.Scalar.fromInt(1)
-    case _: LongType => cudf.Scalar.fromLong(1L)
-    case _: FloatType => cudf.Scalar.fromFloat(1.0f)
-    case _: DoubleType => cudf.Scalar.fromDouble(1.0)
-    case other =>
-      throw new IllegalStateException(s"PRODUCT identity not defined for $other")
+    case ByteType => cudf.Scalar.fromByte(1.toByte)
+    case ShortType => cudf.Scalar.fromShort(1.toShort)
+    case IntegerType => cudf.Scalar.fromInt(1)
+    case LongType => cudf.Scalar.fromLong(1L)
+    case FloatType => cudf.Scalar.fromFloat(1.0f)
+    case DoubleType => cudf.Scalar.fromDouble(1.0)
+    case other => throw new IllegalStateException(s"PRODUCT identity not defined for $other")
   }
   def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType) = r.mul(z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case m: Multiply => Some((m.left, m.right))
     case _ => None
   }
-  def supportsType(t: DataType): Boolean = t match {
-    case _: ByteType | _: ShortType | _: IntegerType | _: LongType |
-         _: FloatType | _: DoubleType => true
-    case _ => false
-  }
+  def supportsType(t: DataType): Boolean = AggOp.isPlainNumeric(t)
 }
 
 /**
  * MaxOp / MinOp share EXCLUDE null policy: Spark's Greatest / Least skip null operands,
- * so an all-null list reduces to null (no non-null contributor) and should then fold
- * back to zero via the identity substitution.
+ * so an all-null list reduces to null and then folds back to zero via identity substitution.
  */
 sealed trait ExtremumOp extends AggOp {
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.EXCLUDE
-  def supportsType(t: DataType): Boolean = t match {
-    case _: ByteType | _: ShortType | _: IntegerType | _: LongType |
-         _: FloatType | _: DoubleType => true
-    case _ => false
-  }
+  def supportsType(t: DataType): Boolean = AggOp.isPlainNumeric(t)
 }
 
 case object MaxOp extends ExtremumOp {
   val name = "MAX"
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.max()
   def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = t match {
-    case _: ByteType => cudf.Scalar.fromByte(Byte.MinValue)
-    case _: ShortType => cudf.Scalar.fromShort(Short.MinValue)
-    case _: IntegerType => cudf.Scalar.fromInt(Int.MinValue)
-    case _: LongType => cudf.Scalar.fromLong(Long.MinValue)
-    case _: FloatType => cudf.Scalar.fromFloat(Float.NegativeInfinity)
-    case _: DoubleType => cudf.Scalar.fromDouble(Double.NegativeInfinity)
+    case ByteType => cudf.Scalar.fromByte(Byte.MinValue)
+    case ShortType => cudf.Scalar.fromShort(Short.MinValue)
+    case IntegerType => cudf.Scalar.fromInt(Int.MinValue)
+    case LongType => cudf.Scalar.fromLong(Long.MinValue)
+    case FloatType => cudf.Scalar.fromFloat(Float.NegativeInfinity)
+    case DoubleType => cudf.Scalar.fromDouble(Double.NegativeInfinity)
     case other => throw new IllegalStateException(s"MAX identity not defined for $other")
   }
-  // Element-wise max with Spark's null propagation: if either side is null, result is null.
-  // cuDF has no direct MAX BinaryOp (only NULL_MAX which treats null as smallest), so use
-  // a compare + ifElse; null in the compare's output propagates to ifElse.
+  // cuDF's NULL_MAX treats null as smallest (wrong for Spark), so emulate null-propagating
+  // max via compare + ifElse; null in the compare's result propagates through ifElse.
   def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType)
       : cudf.ColumnVector = {
     withResource(r.greaterThan(z)) { rGreater =>
@@ -1028,12 +1011,12 @@ case object MinOp extends ExtremumOp {
   val name = "MIN"
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.min()
   def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = t match {
-    case _: ByteType => cudf.Scalar.fromByte(Byte.MaxValue)
-    case _: ShortType => cudf.Scalar.fromShort(Short.MaxValue)
-    case _: IntegerType => cudf.Scalar.fromInt(Int.MaxValue)
-    case _: LongType => cudf.Scalar.fromLong(Long.MaxValue)
-    case _: FloatType => cudf.Scalar.fromFloat(Float.PositiveInfinity)
-    case _: DoubleType => cudf.Scalar.fromDouble(Double.PositiveInfinity)
+    case ByteType => cudf.Scalar.fromByte(Byte.MaxValue)
+    case ShortType => cudf.Scalar.fromShort(Short.MaxValue)
+    case IntegerType => cudf.Scalar.fromInt(Int.MaxValue)
+    case LongType => cudf.Scalar.fromLong(Long.MaxValue)
+    case FloatType => cudf.Scalar.fromFloat(Float.PositiveInfinity)
+    case DoubleType => cudf.Scalar.fromDouble(Double.PositiveInfinity)
     case other => throw new IllegalStateException(s"MIN identity not defined for $other")
   }
   def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType)
@@ -1059,7 +1042,7 @@ case object AllOp extends AggOp {
     case a: And => Some((a.left, a.right))
     case _ => None
   }
-  def supportsType(t: DataType): Boolean = t.isInstanceOf[BooleanType]
+  def supportsType(t: DataType): Boolean = t == BooleanType
 }
 
 case object AnyOp extends AggOp {
@@ -1072,7 +1055,7 @@ case object AnyOp extends AggOp {
     case o: Or => Some((o.left, o.right))
     case _ => None
   }
-  def supportsType(t: DataType): Boolean = t.isInstanceOf[BooleanType]
+  def supportsType(t: DataType): Boolean = t == BooleanType
 }
 
 
@@ -1195,65 +1178,71 @@ case class GpuArrayAggregate(
    */
   private def substituteMask(
       listCol: cudf.ColumnView,
-      reduced: cudf.ColumnVector): cudf.ColumnVector = op.nullPolicy match {
-    case cudf.NullPolicy.INCLUDE =>
-      withResource(listCol.countElements()) { counts =>
-        withResource(cudf.Scalar.fromInt(0)) { zeroInt =>
-          withResource(counts.equalTo(zeroInt)) { isEmpty =>
-            if (argument.nullable) {
-              withResource(listCol.isNotNull) { isNotNull => isEmpty.and(isNotNull) }
-            } else {
-              isEmpty.incRefCount()
-            }
+      reduced: cudf.ColumnVector): cudf.ColumnVector = {
+    val reducedIsEmpty = op.nullPolicy match {
+      case cudf.NullPolicy.INCLUDE =>
+        // Empty-and-not-null only. Null-poisoned reduces stay null to match Spark's
+        // iterative `acc op null = null` semantics.
+        withResource(listCol.countElements()) { counts =>
+          withResource(cudf.Scalar.fromInt(0)) { zero =>
+            counts.equalTo(zero)
           }
         }
-      }
-    case cudf.NullPolicy.EXCLUDE =>
-      withResource(reduced.isNull) { reducedIsNull =>
-        if (argument.nullable) {
-          withResource(listCol.isNotNull) { isNotNull => reducedIsNull.and(isNotNull) }
-        } else {
-          reducedIsNull.incRefCount()
-        }
-      }
+      case cudf.NullPolicy.EXCLUDE =>
+        // Any reduce-null: empty list OR all-null list (both mean "no element contributed"),
+        // matching Spark's Greatest/Least which skip nulls.
+        reduced.isNull
+    }
+    // Exclude null-list rows from the mask so the final null-restoration step handles them.
+    // For non-nullable columns this is effectively a no-op (isNotNull is all-true).
+    withResource(reducedIsEmpty) { m =>
+      withResource(listCol.isNotNull) { isNotNull => m.and(isNotNull) }
+    }
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    val outDType = GpuColumnVector.getNonNestedRapidsType(dataType)
     withResource(argument.asInstanceOf[GpuExpression].columnarEval(batch)) { arg =>
-      val transformedData = withResource(makeElementProjectBatch(batch, arg)) { cb =>
-        function.asInstanceOf[GpuExpression].columnarEval(cb)
-      }
-      withResource(transformedData) { transformedData =>
-        val listOfGView = GpuListUtils.replaceListDataColumnAsView(
-          arg.getBase, transformedData.getBase)
-        withResource(listOfGView) { listOfGView =>
-          val outDType = GpuColumnVector.getNonNestedRapidsType(dataType)
-          withResource(listOfGView.listReduce(op.cudfAgg, op.nullPolicy, outDType)) { reduced =>
-            withResource(substituteMask(arg.getBase, reduced)) { mask =>
-              withResource(op.identityScalar(dataType, outDType)) { idScalar =>
-                withResource(mask.ifElse(idScalar, reduced)) { adjusted =>
-                  withResource(zero.asInstanceOf[GpuExpression].columnarEval(batch)) { zeroCv =>
-                    withResource(
-                        op.combineWithZero(adjusted, zeroCv.getBase, outDType)) { combined =>
-                      // Unconditionally restore null for rows where the input list itself
-                      // was null. Not all cuDF binary ops (e.g. GREATER / LOGICAL_AND)
-                      // propagate null the way Spark's 3VL would, so we can't rely on the
-                      // combine step to preserve null-list semantics. Doing the restore
-                      // even when the argument is declared non-nullable is a no-op (isNull
-                      // is all-false) and avoids fragile reliance on the nullable flag.
-                      withResource(arg.getBase.isNull) { isNullList =>
-                        withResource(cudf.Scalar.fromNull(outDType)) { nullScalar =>
-                          GpuColumnVector.from(
-                            isNullList.ifElse(nullScalar, combined), dataType)
-                        }
-                      }
-                    }
-                  }
-                }
+      // Each step chains via `val x = withResource(...) { ... }` so the previous stage's
+      // intermediate GPU columns are released before the next stage allocates more. The
+      // exploded batch (can be large for long arrays) is the main thing we want to let go
+      // of as early as possible.
+
+      // Step 1: g(x) over children + segmented reduce. Releases cb, transformedData,
+      // listOfGView as soon as the reduced per-row scalar column is materialized.
+      val reduced: cudf.ColumnVector =
+        withResource(makeElementProjectBatch(batch, arg)) { cb =>
+          withResource(function.asInstanceOf[GpuExpression].columnarEval(cb)) {
+            transformedData =>
+              withResource(GpuListUtils.replaceListDataColumnAsView(
+                  arg.getBase, transformedData.getBase)) { listOfGView =>
+                listOfGView.listReduce(op.cudfAgg, op.nullPolicy, outDType)
               }
-            }
           }
         }
+
+      // Step 2: substitute op's identity for rows the reduce couldn't cover (per
+      // nullPolicy). Releases reduced, mask, and idScalar.
+      val adjusted: cudf.ColumnVector = withResource(reduced) { reduced =>
+        withResource(substituteMask(arg.getBase, reduced)) { mask =>
+          withResource(op.identityScalar(dataType, outDType)) { idScalar =>
+            mask.ifElse(idScalar, reduced)
+          }
+        }
+      }
+
+      // Step 3: combine with zero. Releases adjusted and zeroCv.
+      val combined: cudf.ColumnVector = withResource(adjusted) { adjusted =>
+        withResource(zero.asInstanceOf[GpuExpression].columnarEval(batch)) { zeroCv =>
+          op.combineWithZero(adjusted, zeroCv.getBase, outDType)
+        }
+      }
+
+      // Step 4: restore null on rows where the input list itself was null. cuDF GREATER /
+      // LOGICAL_AND / LOGICAL_OR don't propagate null the way Spark's 3VL would, so the
+      // combine step alone can't preserve it. mergeNulls short-circuits if no nulls.
+      withResource(combined) { combined =>
+        GpuColumnVector.from(NullUtilities.mergeNulls(combined, arg.getBase), dataType)
       }
     }
   }
