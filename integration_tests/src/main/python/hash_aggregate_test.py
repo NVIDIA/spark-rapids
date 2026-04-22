@@ -2537,11 +2537,6 @@ def test_no_fallback_when_ansi_enabled(data_gen, kudo_enabled):
         conf={'spark.sql.ansi.enabled': 'true', kudo_enabled_conf_key: kudo_enabled})
 
 # Tests for standard deviation and variance aggregations.
-# FP corner-case coverage: the last two data_gen entries use bare DoubleGen() /
-# FloatGen() whose default special_cases inject NaN, -0.0, +-Inf, and
-# max-fraction values into the aggregated column. This closes the
-# -0.0 / Infinity gap for StddevPop / VariancePop / VarianceSamp under
-# DOUBLE / FLOAT. See https://github.com/NVIDIA/spark-rapids/issues/14631.
 @ignore_order(local=True)
 @approximate_float
 @incompat
