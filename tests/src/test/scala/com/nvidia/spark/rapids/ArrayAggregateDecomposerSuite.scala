@@ -16,15 +16,16 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.expressions.{Add, Cast, Expression, LambdaFunction,
-  Literal, Multiply, NamedExpression, NamedLambdaVariable, Subtract}
-import org.apache.spark.sql.types.{DataType, IntegerType, LongType}
+import org.apache.spark.sql.catalyst.expressions.{Add, And, Cast, Divide, Expression,
+  Greatest, LambdaFunction, Least, Literal, Multiply, NamedExpression, NamedLambdaVariable,
+  Or, Subtract}
+import org.apache.spark.sql.types.{BooleanType, DataType, IntegerType, LongType}
 
-// Extends GpuUnitTests so SQLConf.get is available for the default evalMode/failOnError
-// parameter on Add/Subtract/Multiply (the field name differs across Spark versions; letting
-// Spark apply its own default keeps this test shim-agnostic).
+// Extends GpuUnitTests so SQLConf.get is available for the default evalMode / failOnError
+// parameter on Add/Subtract/Multiply/Divide (the field name differs across Spark versions;
+// letting Spark apply its own default keeps this test shim-agnostic).
 class ArrayAggregateDecomposerSuite extends GpuUnitTests {
-  import ArrayAggregateDecomposer._
+  import ArrayAggregateDecomposer.decompose
 
   // --- helpers -----------------------------------------------------------
 
@@ -43,141 +44,165 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
   private def plus(l: Expression, r: Expression): Add = Add(l, r)
   private def minus(l: Expression, r: Expression): Subtract = Subtract(l, r)
   private def times(l: Expression, r: Expression): Multiply = Multiply(l, r)
+  private def div(l: Expression, r: Expression): Divide = Divide(l, r)
+  private def greatest(l: Expression, r: Expression): Greatest = Greatest(Seq(l, r))
+  private def least(l: Expression, r: Expression): Least = Least(Seq(l, r))
 
-  // --- positive cases ----------------------------------------------------
-
-  test("Add(acc, x) decomposes to SUM with gChildIndex=1") {
-    val acc = lv("acc")
-    val x = lv("x")
-    val m = merge(plus(acc, x), acc, x)
-    val d = decompose(m, identityFinish(acc))
-    assert(d.isDefined)
-    assert(d.get.op == SumOp)
-    assert(d.get.gChildIndex == 1)
+  /** Assert decomposition succeeds; returns the ArrayAggregateDecomposition for further checks. */
+  private def assertDecomposes(
+      body: Expression,
+      acc: NamedLambdaVariable,
+      x: NamedLambdaVariable,
+      expectedOp: AggOp,
+      expectedGChildIndex: Int): ArrayAggregateDecomposition = {
+    val d = decompose(merge(body, acc, x), identityFinish(acc))
+    assert(d.isDefined, s"expected decomposition for body=$body")
+    assert(d.get.op == expectedOp)
+    assert(d.get.gChildIndex == expectedGChildIndex)
     assert(d.get.accVarExprId == acc.exprId)
     assert(d.get.elemVar.exprId == x.exprId)
+    d.get
   }
 
-  test("Add(x, acc) (commuted) decomposes with gChildIndex=0") {
-    val acc = lv("acc")
-    val x = lv("x")
-    val m = merge(plus(x, acc), acc, x)
-    val d = decompose(m, identityFinish(acc))
-    assert(d.isDefined)
-    assert(d.get.gChildIndex == 0)
+  private def assertRejects(
+      mergeBody: LambdaFunction,
+      finish: Expression,
+      reason: String): Unit = {
+    assert(decompose(mergeBody, finish).isEmpty, reason)
   }
 
-  test("Add(acc, complex g(x)) where g contains no acc ref decomposes") {
-    val acc = lv("acc", LongType)
-    val x = lv("x", IntegerType)
-    // g = x * 2 + 1 (as Long after Cast)
-    val g = plus(times(x, Literal(2)), Literal(1))
-    val m = merge(plus(acc, Cast(g, LongType)), acc, x)
-    val d = decompose(m, identityFinish(acc))
-    assert(d.isDefined)
-    assert(d.get.gChildIndex == 1)
+  // --- positive: one per op ---------------------------------------------
+
+  test("Add(acc, x) -> SUM, gChildIndex=1") {
+    val acc = lv("acc"); val x = lv("x")
+    assertDecomposes(plus(acc, x), acc, x, SumOp, 1)
   }
 
-  test("acc wrapped in a Cast on the acc-side is still accepted") {
-    val acc = lv("acc", LongType)
-    val x = lv("x", IntegerType)
-    // body = Cast(acc, Int) + x
-    val m = merge(plus(Cast(acc, IntegerType), x), acc, x)
-    val d = decompose(m, identityFinish(acc))
-    assert(d.isDefined)
-    assert(d.get.gChildIndex == 1)
+  test("Add(x, acc) (commuted) -> SUM, gChildIndex=0") {
+    val acc = lv("acc"); val x = lv("x")
+    assertDecomposes(plus(x, acc), acc, x, SumOp, 0)
   }
 
-  test("chained Cast on acc side is unwrapped") {
-    val acc = lv("acc")
-    val x = lv("x")
-    // body = Cast(Cast(acc, Long), Int) + x
-    val accDoubleCast = Cast(Cast(acc, LongType), IntegerType)
-    val m = merge(plus(accDoubleCast, x), acc, x)
-    val d = decompose(m, identityFinish(acc))
-    assert(d.isDefined)
+  test("Multiply(acc, x) -> PRODUCT") {
+    val acc = lv("acc"); val x = lv("x")
+    assertDecomposes(times(acc, x), acc, x, ProductOp, 1)
   }
 
-  // --- negative cases ----------------------------------------------------
-
-  test("Subtract rejected (only Add is SUM)") {
-    val acc = lv("acc")
-    val x = lv("x")
-    val m = merge(minus(acc, x), acc, x)
-    assert(decompose(m, identityFinish(acc)).isEmpty)
+  test("Greatest(acc, x) -> MAX") {
+    val acc = lv("acc"); val x = lv("x")
+    assertDecomposes(greatest(acc, x), acc, x, MaxOp, 1)
   }
 
-  test("Multiply rejected") {
-    val acc = lv("acc")
-    val x = lv("x")
-    val m = merge(times(acc, x), acc, x)
-    assert(decompose(m, identityFinish(acc)).isEmpty)
+  test("Least(acc, x) -> MIN") {
+    val acc = lv("acc"); val x = lv("x")
+    assertDecomposes(least(acc, x), acc, x, MinOp, 1)
+  }
+
+  test("And(acc, x) -> ALL") {
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
+    assertDecomposes(And(acc, x), acc, x, AllOp, 1)
+  }
+
+  test("Or(acc, x) -> ANY") {
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
+    assertDecomposes(Or(acc, x), acc, x, AnyOp, 1)
+  }
+
+  // --- positive: structural variations ----------------------------------
+
+  test("Complex g(x) with no acc ref still decomposes") {
+    val acc = lv("acc", LongType); val x = lv("x", IntegerType)
+    // g = Cast(x * 2 + 1, Long)
+    val g = Cast(plus(times(x, Literal(2)), Literal(1)), LongType)
+    assertDecomposes(plus(acc, g), acc, x, SumOp, 1)
+  }
+
+  test("Cast wrapping the acc side is unwrapped (single layer)") {
+    val acc = lv("acc", LongType); val x = lv("x", IntegerType)
+    assertDecomposes(plus(Cast(acc, IntegerType), x), acc, x, SumOp, 1)
+  }
+
+  test("Cast wrapping the acc side is unwrapped (chained)") {
+    val acc = lv("acc"); val x = lv("x")
+    val doubleCastAcc = Cast(Cast(acc, LongType), IntegerType)
+    assertDecomposes(plus(doubleCastAcc, x), acc, x, SumOp, 1)
+  }
+
+  // --- negative: wrong shape --------------------------------------------
+
+  test("Subtract is not an associative op we recognize") {
+    val acc = lv("acc"); val x = lv("x")
+    assertRejects(merge(minus(acc, x), acc, x), identityFinish(acc),
+      "Subtract is not in the registered AggOps")
+  }
+
+  test("Divide is not an associative op we recognize") {
+    val acc = lv("acc"); val x = lv("x")
+    assertRejects(merge(div(acc, x), acc, x), identityFinish(acc),
+      "Divide is not in the registered AggOps")
+  }
+
+  test("Greatest with arity != 2 is not decomposed") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = Greatest(Seq(acc, x, Literal(1)))
+    assertRejects(merge(body, acc, x), identityFinish(acc),
+      "Greatest with 3 children is not a 2-operand op")
   }
 
   test("g that references acc is rejected") {
-    val acc = lv("acc")
-    val x = lv("x")
-    // g = acc * x — references acc
-    val m = merge(plus(acc, times(acc, x)), acc, x)
-    assert(decompose(m, identityFinish(acc)).isEmpty)
+    val acc = lv("acc"); val x = lv("x")
+    // g = acc * x, references acc
+    assertRejects(merge(plus(acc, times(acc, x)), acc, x), identityFinish(acc),
+      "g must not reference acc")
   }
 
   test("both sides reference acc is rejected") {
-    val acc = lv("acc")
-    val x = lv("x")
-    val m = merge(plus(acc, acc), acc, x)
-    assert(decompose(m, identityFinish(acc)).isEmpty)
+    val acc = lv("acc"); val x = lv("x")
+    assertRejects(merge(plus(acc, acc), acc, x), identityFinish(acc),
+      "neither side is a 'pure non-acc'")
   }
 
   test("neither side is a pure acc ref is rejected") {
-    val acc = lv("acc")
-    val x = lv("x")
-    // body = (acc + 1) + x — left has acc but isn't a naked acc ref
-    val leftWithPlusOne = plus(acc, Literal(1))
-    val m = merge(plus(leftWithPlusOne, x), acc, x)
-    assert(decompose(m, identityFinish(acc)).isEmpty)
+    val acc = lv("acc"); val x = lv("x")
+    // body = (acc + 1) + x
+    assertRejects(merge(plus(plus(acc, Literal(1)), x), acc, x), identityFinish(acc),
+      "left side isn't a naked acc ref")
   }
 
-  test("non-identity finish rejected") {
-    val acc = lv("acc")
-    val x = lv("x")
-    val m = merge(plus(acc, x), acc, x)
+  // --- negative: finish lambda ------------------------------------------
+
+  test("non-identity finish is rejected") {
+    val acc = lv("acc"); val x = lv("x")
     val finishAcc = lv("finishAcc")
-    val nonIdentityFinish =
-      LambdaFunction(plus(finishAcc, Literal(1)), Seq(finishAcc))
-    assert(decompose(m, nonIdentityFinish).isEmpty)
+    val badFinish = LambdaFunction(plus(finishAcc, Literal(1)), Seq(finishAcc))
+    assertRejects(merge(plus(acc, x), acc, x), badFinish,
+      "finish that multiplies the accumulator isn't identity")
   }
 
   test("finish referencing a different variable id is rejected") {
-    val acc = lv("acc")
-    val x = lv("x")
-    val m = merge(plus(acc, x), acc, x)
-    // finish's body references a NamedLambdaVariable with a *different* exprId,
-    // so it is not the identity over the finish's arg.
+    val acc = lv("acc"); val x = lv("x")
     val finishAcc = lv("finishAcc")
-    val someOther = lv("other")  // different exprId
-    val badFinish = LambdaFunction(someOther, Seq(finishAcc))
-    assert(decompose(m, badFinish).isEmpty)
+    val otherVar = lv("other")
+    val badFinish = LambdaFunction(otherVar, Seq(finishAcc))
+    assertRejects(merge(plus(acc, x), acc, x), badFinish,
+      "finish body refers to a variable that isn't its own arg")
   }
 
-  test("merge with wrong arg count rejected") {
-    val acc = lv("acc")
-    val x = lv("x")
-    val extra = lv("extra")
-    val m = LambdaFunction(plus(acc, x), Seq(acc, x, extra))
-    assert(decompose(m, identityFinish(acc)).isEmpty)
+  // --- negative: shape sanity --------------------------------------------
+
+  test("merge with wrong arg count is rejected") {
+    val acc = lv("acc"); val x = lv("x"); val extra = lv("extra")
+    val body = LambdaFunction(plus(acc, x), Seq(acc, x, extra))
+    assertRejects(body, identityFinish(acc), "merge must take 2 lambda args")
   }
 
   test("merge that isn't a LambdaFunction at all is rejected") {
     val acc = lv("acc")
-    // Pass something that isn't a lambda.
     assert(decompose(plus(Literal(1), Literal(2)), identityFinish(acc)).isEmpty)
   }
 
-  test("finish that isn't a LambdaFunction rejected") {
-    val acc = lv("acc")
-    val x = lv("x")
-    val m = merge(plus(acc, x), acc, x)
-    assert(decompose(m, Literal(0)).isEmpty)
+  test("finish that isn't a LambdaFunction is rejected") {
+    val acc = lv("acc"); val x = lv("x")
+    assert(decompose(merge(plus(acc, x), acc, x), Literal(0)).isEmpty)
   }
 }
