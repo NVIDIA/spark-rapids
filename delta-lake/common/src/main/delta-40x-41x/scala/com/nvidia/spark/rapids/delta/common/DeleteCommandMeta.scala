@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.delta.common.DeleteCommandMetaBase
 
 import org.apache.spark.sql.delta.commands.DeleteCommand
-import org.apache.spark.sql.delta.rapids.{GpuDeltaLog, GpuDeleteCommand}
+import org.apache.spark.sql.delta.rapids.{GpuDeleteCommand, GpuDeltaLog}
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 class DeleteCommandMeta(
