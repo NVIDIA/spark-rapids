@@ -155,6 +155,7 @@ abstract class GpuBroadcastHashJoinExecBase(
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
+    val enableBuildSideReuse = RapidsConf.BROADCAST_HASH_TABLE_REUSE.get(conf)
 
     val broadcastRelation = broadcastExchange.executeColumnarBroadcast[Any]()
 
@@ -187,12 +188,12 @@ abstract class GpuBroadcastHashJoinExecBase(
               boundStreamKeys)
           }
           doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
-            numOutputBatches, opTime, joinTime)
+            numOutputBatches, opTime, joinTime, enableBuildSideReuse)
         }
       } else {
         // builtBatch will be closed in doJoin
         doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
-          joinTime)
+          joinTime, enableBuildSideReuse)
       }
     }
   }
