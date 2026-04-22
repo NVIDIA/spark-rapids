@@ -45,6 +45,11 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       "CAST(id % 4 AS INT) AS join_key",
       "CAST(id AS INT) AS build_value")
 
+  private def largerNonDistinctBuildDf(spark: SparkSession): DataFrame =
+    spark.range(0, 1024).selectExpr(
+      "CAST(id % 4 AS INT) AS join_key",
+      "CAST(id AS INT) AS build_value")
+
   private def nullableProbeDf(spark: SparkSession): DataFrame =
     spark.range(0, 8).selectExpr(
       "CAST(CASE CAST(id AS INT) " +
@@ -148,6 +153,14 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
     streamedProbeDf,
     nonDistinctBuildDf,
     conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "inner")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse non-distinct inner build right with auto build-side selection",
+    streamedProbeDf,
+    largerNonDistinctBuildDf,
+    conf = broadcastReuseConf.clone().set("spark.rapids.sql.join.buildSide", "AUTO")) {
     (probe, build) => probe.join(broadcast(build), Seq("join_key"), "inner")
   }
 
