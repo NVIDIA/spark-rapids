@@ -123,7 +123,7 @@ For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
 
 ### Known Issues
-* PERFILE reader may return incorrect counts for zero-column Delta scans with deletion vectors ([#14574](https://github.com/NVIDIA/spark-rapids/issues/14574)). Triggered when all of the following apply: the Delta table has deletion vectors enabled (`delta.enableDeletionVectors=true`), `spark.rapids.sql.format.parquet.reader.type=PERFILE`, `spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled=true`, and the query reads zero data columns (e.g. `SELECT COUNT(*) ... WHERE <partition predicate>`). Workaround: use the default `MULTITHREADED`/`COALESCING` reader, or set `spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled=false`.
+* PERFILE reader may return incorrect counts for zero-column Delta scans with deletion vectors ([#14574](https://github.com/NVIDIA/spark-rapids/issues/14574)). Triggered when all of the following apply: the Delta table has deletion vector files created for the latest snapshot, `spark.rapids.sql.format.parquet.reader.type=PERFILE`, `spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled=true`, and the query reads zero data columns (e.g. `SELECT COUNT(*) ... WHERE <partition predicate>`). Workaround: use the default reader (`AUTO`). 
 
 ## Archived releases
 
