@@ -64,6 +64,12 @@ trait RapidsErrorUtilsFor330plus {
     QueryExecutionErrors.overflowInIntegralDivideError(origin.context)
   }
 
+  def arithmeticOverflowError(
+      message: String,
+      origin: Origin): ArithmeticException = {
+    QueryExecutionErrors.arithmeticOverflowError(message, "", origin.context)
+  }
+
   def foundDuplicateFieldInCaseInsensitiveModeError(
       requiredFieldName: String, matchedFields: String): Throwable = {
     QueryExecutionErrors.foundDuplicateFieldInCaseInsensitiveModeError(

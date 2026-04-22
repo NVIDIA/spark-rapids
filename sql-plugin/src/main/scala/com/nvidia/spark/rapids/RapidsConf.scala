@@ -439,13 +439,12 @@ object RapidsConf extends Logging {
       .createWithDefault(2)
 
   val ENABLE_R2C_RETRY = conf("spark.rapids.sql.rowToColumnar.retry.enabled")
-    .doc("When true, the row-to-columnar conversion wraps each row's conversion with " +
-      "retry logic so that host OOM during conversion can be recovered. This adds a small " +
-      "per-row overhead. When false (default), the retry is disabled to avoid that overhead, " +
-      "at the risk of failing the task on host OOM during R2C conversion.")
+    .doc("When true (default), the row-to-columnar conversion uses a per-batch retry block " +
+      "so that host OOM during conversion can be recovered with negligible overhead. " +
+      "Set to false to disable retry and let host OOM fail the task immediately.")
     .internal()
     .booleanConf
-    .createWithDefault(false)
+    .createWithDefault(true)
 
   val GPU_COREDUMP_DIR = conf("spark.rapids.gpu.coreDump.dir")
     .doc("The URI to a directory where a GPU core dump will be created if the GPU encounters " +
@@ -733,15 +732,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .internal()
     .stringConf
     .createOptional
-
-  val TIMESTAMP_RULES_END_YEAR = conf("spark.rapids.timezone.transitionCache.maxYear")
-    .doc("Set the max year for timestamp processing for timezones with transitions " +
-      "such as Daylight Savings. For efficiency reasons, timestamp" +
-      " transitions are stored on the GPU. We store transitions up to some set year." +
-      " Adding more years will use more memory, every 100 years is roughly 1MB.")
-    .startupOnly()
-    .integerConf
-    .createWithDefault(2200)
 
   // Internal Features
 
@@ -3889,8 +3879,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val gpuWriteMemorySpeed: Double = get(OPTIMIZER_GPU_WRITE_SPEED)
 
   lazy val driverTimeZone: Option[String] = get(DRIVER_TIMEZONE)
-
-  lazy val timestampRulesEndYear: Int = get(TIMESTAMP_RULES_END_YEAR)
 
   lazy val isRangeWindowByteEnabled: Boolean = get(ENABLE_RANGE_WINDOW_BYTES)
 

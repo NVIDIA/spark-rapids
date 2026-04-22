@@ -33,7 +33,7 @@ def TEMP_IMAGE_BUILD = true
 def CUDA_NAME = 'cuda12.0.1' // hardcode cuda version for docker build part
 def PREMERGE_DOCKERFILE = 'jenkins/Dockerfile-blossom.ubuntu'
 def IMAGE_PREMERGE // temp image for premerge test
-def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME_V2}/sw-spark-docker/spark:rapids-databricks-ubuntu22")
+def IMAGE_DB = pod.getCPUYAML("${common.ARTIFACTORY_NAME}/sw-spark-docker/spark:rapids-databricks-ubuntu22")
 def PREMERGE_TAG
 def skipped = false
 def db_build = false
@@ -72,12 +72,11 @@ pipeline {
         LIBCUDF_KERNEL_CACHE_PATH = '/tmp/.cudf'
         GITHUB_TOKEN = credentials("github-token")
 
-        // v1 instance for maven mirror only, will be migrated to v2 soon
         URM_URL = "https://${common.ARTIFACTORY_NAME}/artifactory/sw-spark-maven"
         MVN_URM_MIRROR = '-s jenkins/settings.xml -P mirror-apache-to-urm'
         // v2 instance for CI images usage
-        URM_CREDS = credentials("urm_creds_v2")
-        ARTIFACTORY_NAME = "${common.ARTIFACTORY_NAME_V2}"
+        URM_CREDS = credentials("urm_creds")
+        ARTIFACTORY_NAME = "${common.ARTIFACTORY_NAME}"
 
         PVC = credentials("pvc")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"

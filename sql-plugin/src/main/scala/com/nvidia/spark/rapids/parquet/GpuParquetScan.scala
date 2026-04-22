@@ -45,7 +45,7 @@ import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsInputFile, SeekableInputStream}
 import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{CopyRange, LocalCopy, PARQUET_MAGIC}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims, ShimFilePartitionReaderFactory, SparkShimImpl}
-import com.nvidia.spark.rapids.shims.parquet.{ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
+import com.nvidia.spark.rapids.shims.parquet.{GpuParquetUtilsShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -78,8 +78,8 @@ import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedF
 import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.{isTimestampNTZ, GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.rapids.isTimestampNTZ
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -565,8 +565,11 @@ protected case class GpuParquetFileFilterHandler(
     if (fileIO.isInstanceOf[HadoopFileIO]) {
       // We should remove this after https://github.com/NVIDIA/spark-rapids/issues/13306 is
       // implemented.
-      PerfIO.readParquetFooterBuffer(filePath, conf, verifyParquetMagic)
-        .getOrElse(readFooterBufUsingHadoop(fileIO, filePath))
+      val result = PerfIO.readParquetFooterBuffer(filePath, conf, verifyParquetMagic)
+      if (filePath.toUri.getScheme.startsWith("s3")) {
+        GpuTaskMetrics.get.recordPerfioS3BackendOnce()
+      }
+      result.getOrElse(readFooterBufUsingHadoop(fileIO, filePath))
     } else {
       readFooterBufUsingHadoop(fileIO, filePath)
     }
@@ -720,22 +723,27 @@ protected case class GpuParquetFileFilterHandler(
       val footer: ParquetMetadata = try {
         footerReader match {
           case ParquetFooterReaderType.NATIVE =>
-            val serialized = withResource(readAndFilterFooter(fileIO, file, conf,
-              readDataSchema, filePath)) { tableFooter =>
+            val (serialized, rowIndexOffsets) = withResource(readAndFilterFooter(fileIO, file,
+              conf, readDataSchema, filePath)) { tableFooter =>
                 if (tableFooter.getNumColumns <= 0) {
                   // Special case because java parquet reader does not like having 0 columns.
                   val numRows = tableFooter.getNumRows
                   val block = new BlockMetaData()
                   block.setRowCount(numRows)
+                  // Fix up the row index offset
+                  val offsets = tableFooter.getRowIndexOffsets
+                  if (offsets.nonEmpty) {
+                    GpuParquetUtilsShims.setRowIndexOffset(block, offsets(0))
+                  }
                   val schema = new MessageType("root")
                   return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
                     schema, readDataSchema, DateTimeRebaseLegacy, DateTimeRebaseLegacy,
                     hasInt96Timestamps = false)
                 }
 
-                tableFooter.serializeThriftFile()
+                (tableFooter.serializeThriftFile(), tableFooter.getRowIndexOffsets)
             }
-            withResource(serialized) { serialized =>
+            val footer = withResource(serialized) { serialized =>
               NvtxRegistry.PARQUET_READ_FILTERED_FOOTER {
                 val inputFile = new HMBInputFile(serialized)
 
@@ -743,6 +751,24 @@ protected case class GpuParquetFileFilterHandler(
                 ParquetFileReader.readFooter(inputFile, ParquetMetadataConverter.NO_FILTER)
               }
             }
+            // Fix up row index offsets. ParquetFileReader.readFooter computes row
+            // index offsets assuming the row groups it receives are the entire file.
+            // The native footer reader filters row groups by byte range in C++ before
+            // serialization, so readFooter can see only a subset and compute wrong
+            // offsets (e.g. always 0 for a single surviving row group). This breaks
+            // any logic relying on file-global row indices such as deletion vector
+            // filtering.
+            // So we compute the correct offsets from all row groups before filtering,
+            // and then apply them to the filtered blocks.
+            val blocks = footer.getBlocks
+            require(blocks.size() == rowIndexOffsets.length,
+              s"Row index offsets length (${rowIndexOffsets.length}) != " +
+              s"blocks count (${blocks.size()}) for $filePath " +
+              s"[range=${file.start}:${file.length}]")
+            blocks.asScala.zip(rowIndexOffsets).foreach { case (block, offset) =>
+              GpuParquetUtilsShims.setRowIndexOffset(block, offset)
+            }
+            footer
           case _ =>
             readAndSimpleFilterFooter(fileIO, file, conf, filePath)
         }
@@ -2036,6 +2062,9 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
 
     val totalBytesCopied = if (fileIO.isInstanceOf[HadoopFileIO]) {
       // Fix this after https://github.com/NVIDIA/spark-rapids/issues/13306 is resolved
+      if (filePath.toUri.getScheme.startsWith("s3")) {
+        GpuTaskMetrics.get.recordPerfioS3BackendOnce()
+      }
       PerfIO.readToHostMemory(
         conf, out.buffer, filePath.toUri,
         coalescedRanges.map(r => IntRangeWithOffset(r.offset, r.length, r.outputOffset))
@@ -3456,7 +3485,9 @@ abstract class AbstractParquetTableReader(
 
   private[this] lazy val splitsString = splits.mkString("; ")
 
-  protected val resources: Seq[AutoCloseable] = Seq(reader) ++ buffers
+  // Should be lazy since the reader is not defined. Otherwise in practise, a native
+  // chunk reader will be leaked.
+  protected lazy val resources: Seq[AutoCloseable] = Seq(reader) ++ buffers
 
   override def hasNext: Boolean = reader.hasNext
 

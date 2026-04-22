@@ -1299,7 +1299,7 @@ case class DeltaParquetTableReader(
       maxChunkedReaderMemoryUsageSizeBytes, opts, buffers, dvInfos)
   )
 
-  override protected val resources: Seq[AutoCloseable] =
+  override protected lazy val resources: Seq[AutoCloseable] =
     Seq(reader) ++ buffers ++ dvInfos.map(_.serializedBitmap)
 
   override protected def postProcessChunk(chunk: Table): Table = {

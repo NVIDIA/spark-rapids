@@ -254,7 +254,7 @@ run_iceberg_tests() {
   # get the patch version of Spark
   SPARK_PATCH_VER=$(echo "$SPARK_VER" | cut -d. -f3)
 
-  if [[ "$ICEBERG_SPARK_VER" != "3.5" ]]; then
+  if [[ "$ICEBERG_SPARK_VER" != "3.5" && "$ICEBERG_SPARK_VER" != "4.0" ]]; then
     echo "!!!! Skipping Iceberg tests. GPU acceleration of Iceberg is not supported on $ICEBERG_SPARK_VER"
     return 0
   fi
@@ -262,30 +262,21 @@ run_iceberg_tests() {
   # Supported Iceberg versions per Spark patch version:
   # Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
   # Spark 3.5.4+       -> Iceberg 1.9.2, 1.10.1
+  # Spark 4.0.x        -> Iceberg 1.10.1
   local supported_versions
-  if [[ "$SPARK_PATCH_VER" -le 3 ]]; then
+  if [[ "$ICEBERG_SPARK_VER" == "4.0" ]]; then
+    if [[ "$SCALA_BINARY_VER" != "2.13" ]]; then
+      echo "!!!! Skipping Iceberg tests. Spark 4.0 Iceberg tests require Scala 2.13"
+      return 0
+    fi
+    supported_versions="1.10.1"
+  elif [[ "$SPARK_PATCH_VER" -le 3 ]]; then
     supported_versions="1.6.1"
   else
     supported_versions="1.9.2 1.10.1"
   fi
 
   local test_type=${1:-'default'}
-
-  # Version detection test: runs against ALL iceberg versions with Spark 3.5 runtime
-  if [[ "$test_type" == "detect_version" ]]; then
-    local all_iceberg_versions="1.6.0 1.6.1 1.9.0 1.9.1 1.9.2 1.10.0 1.10.1"
-    for ICEBERG_VERSION in $all_iceberg_versions; do
-      echo "!!! Running iceberg version detection test for Iceberg $ICEBERG_VERSION"
-      EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
-      PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-3.5_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
-        PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
-        ./run_pyspark_from_build.sh -m iceberg --iceberg -k test_iceberg_version_detection
-    done
-    return 0
-  fi
 
   if [[ -n "$ICEBERG_VERSIONS" ]]; then
     for ver in $ICEBERG_VERSIONS; do
@@ -297,7 +288,9 @@ run_iceberg_tests() {
     echo "Using user-specified ICEBERG_VERSIONS=$ICEBERG_VERSIONS"
   else
     # Default: test one representative version per Spark patch range
-    if [[ "$SPARK_PATCH_VER" -le 3 ]]; then
+    if [[ "$ICEBERG_SPARK_VER" == "4.0" ]]; then
+      ICEBERG_VERSIONS="1.10.1"
+    elif [[ "$SPARK_PATCH_VER" -le 3 ]]; then
       ICEBERG_VERSIONS="1.6.1"
     elif [[ "$SPARK_PATCH_VER" -le 6 ]]; then
       ICEBERG_VERSIONS="1.9.2"
@@ -309,10 +302,11 @@ run_iceberg_tests() {
     echo "Running Iceberg tests for Iceberg version $ICEBERG_VERSION"
     if [[ "$test_type" == "default" ]]; then
       echo "!!! Running iceberg tests"
-      EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
-      PYSP_TEST_spark_driver_memory=6G \
-      PYSP_TEST_spark_executor_memory=6G \
-      PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
+      env \
+        EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
+        PYSP_TEST_spark_driver_memory=1G \
+        PYSP_TEST_spark_executor_memory=2G \
+        PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
         PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
         PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
@@ -329,8 +323,8 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
             EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
             ICEBERG_TEST_CATALOG_TYPE="rest" \
             ICEBERG_TEST_REMOTE_CATALOG=1 \
-            PYSP_TEST_spark_driver_memory=6G \
-            PYSP_TEST_spark_executor_memory=6G \
+            PYSP_TEST_spark_driver_memory=1G \
+            PYSP_TEST_spark_executor_memory=2G \
             PYSP_TEST_spark_rapids_filecache_enabled=true \
             PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
             PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
@@ -345,7 +339,7 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
             ./run_pyspark_from_build.sh -m iceberg --iceberg
     elif [[ "$test_type" == "s3tables" ]]; then
       echo "!!! Running iceberg tests with s3tables"
-      # AWS deps versions for Spark 3.5.x
+      # AWS deps versions for Spark 3.5.x and 4.0.x
       AWS_SDK_VERSION=${AWS_SDK_VERSION:-"2.29.26"}
       HADOOP_AWS_VERSION=${HADOOP_AWS_VERSION:-"3.3.4"}
       AWS_SDK_BUNDLE_VERSION=${AWS_SDK_BUNDLE_VERSION:-"1.12.709"}
@@ -376,8 +370,8 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
       env \
         EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
         ICEBERG_TEST_REMOTE_CATALOG=1 \
-        PYSP_TEST_spark_driver_memory=6G \
-        PYSP_TEST_spark_executor_memory=6G \
+        PYSP_TEST_spark_driver_memory=1G \
+        PYSP_TEST_spark_executor_memory=2G \
         PYSP_TEST_spark_rapids_filecache_enabled=true \
         PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
         PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
@@ -439,7 +433,6 @@ run_non_utc_time_zone_tests() {
 # - ICEBERG_ONLY: iceberg tests only
 # - ICEBERG_S3TABLES_ONLY: iceberg s3tables tests only
 # - ICEBERG_REST_CATALOG_ONLY: iceberg rest catalog tests only
-# - ICEBERG_DETECT_VERSION_ONLY: iceberg version detection test only (all supported versions)
 # - AVRO_ONLY: avro tests only (with --packages option instead of --jars)
 # - CUDF_UDF_ONLY: cudf_udf tests only, requires extra conda cudf-py lib
 # - MULTITHREADED_SHUFFLE: shuffle tests only using MULTITHREADED shuffle mode
@@ -503,11 +496,6 @@ fi
 # Iceberg rest tests
 if [[ "$TEST_MODE" == "ICEBERG_REST_CATALOG_ONLY" ]]; then
   run_iceberg_tests 'rest'
-fi
-
-# Iceberg version detection tests (all supported versions)
-if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "ICEBERG_ONLY" || "$TEST_MODE" == "ICEBERG_DETECT_VERSION_ONLY" ]]; then
-  run_iceberg_tests 'detect_version'
 fi
 
 # Avro tests

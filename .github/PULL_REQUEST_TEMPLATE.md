@@ -29,12 +29,23 @@ Please provide a description of the changes proposed in this pull request. Here 
 ### Checklists
 
 <!-- 
-Check the items below by putting "x" in the brackets for what is done.
-Not all of these items may be relevant to every PR, so please check only those that apply.
+For each category, check the one item that applies by putting "x" in the brackets.
 -->
 
+Readiness
 - [ ] I have reviewed my PR using AI tools _and_ by myself.
-- [ ] This PR has added documentation for new or modified features or behaviors.
-- [ ] This PR has added new tests or modified existing tests to cover new code paths.
-      (Please explain in the PR description how the new code paths are tested, such as names of the new/existing tests that cover them.)
-- [ ] Performance testing has been performed and its results are added in the PR description. Or, an issue has been filed with a link in the PR description.
+
+Documentation
+- [ ] Updated for new or modified user-facing features or behaviors
+- [ ] No user-facing change
+
+Testing
+- [ ] Added or modified tests to cover new code paths
+- [ ] Covered by existing tests
+      (Please provide the names of the existing tests in the PR description.)
+- [ ] Not required
+
+Performance
+- [ ] Tests ran and results are added in the PR description
+- [ ] Issue filed with a link in the PR description
+- [ ] Not required

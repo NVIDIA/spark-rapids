@@ -22,8 +22,14 @@ from typing import Callable, List, Dict, Optional
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import FloatType, DoubleType, BinaryType
 
+import pytest
+
 from data_gen import *
-from spark_session import with_cpu_session
+from spark_session import is_iceberg_supported_spark, with_cpu_session
+
+iceberg_unsupported_mark = pytest.mark.skipif(
+    not is_iceberg_supported_spark(),
+    reason="Iceberg acceleration requires Spark 3.5.x or 4.0.x")
 
 # iceberg supported types
 iceberg_table_gen = MappingProxyType({
@@ -106,6 +112,7 @@ def setup_base_iceberg_table(spark_tmp_table_factory,
         table_prop = {'format-version':'2', 'write.delete.mode': 'merge-on-read'}
     else:
         table_prop = {**table_prop, 'format-version': '2', 'write.delete.mode': 'merge-on-read'}
+    table_prop = _build_tblprops(table_prop)
 
     table_prop_sql = ", ".join([f"'{k}' = '{v}'" for k, v in table_prop.items()])
 
@@ -166,12 +173,38 @@ def get_full_table_name(spark_tmp_table_factory):
 def schema_to_ddl(spark, schema):
     return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
 
+# Base table properties applied to every Iceberg test table.
+# Disables the fanout writer to prevent OOM in CI.  S3TablesCatalog does not
+# honor catalog-level table-default properties, so this must be set per table.
+_BASE_TBLPROPS = {'write.spark.fanout.enabled': False}
+
+
+def _to_tblprops_str(props: dict) -> dict:
+    """Convert property values to their SQL-safe string representation."""
+    return {k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in props.items()}
+
+
+def _build_tblprops(extra_props: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """Build table properties dict with base props merged in.
+    Caller properties take precedence over base.
+    Returns string-valued dict suitable for SQL interpolation."""
+    if extra_props is None:
+        return _to_tblprops_str(_BASE_TBLPROPS)
+    return _to_tblprops_str({**_BASE_TBLPROPS, **extra_props})
+
+
+# SQL fragment for raw CREATE TABLE statements that have no other TBLPROPERTIES.
+_BASE_TBLPROPS_SQL = "TBLPROPERTIES (" + \
+    ", ".join(f"'{k}' = '{v}'" for k, v in _build_tblprops().items()) + ")"
+
+
 def create_iceberg_table(table_name: str,
                          partition_col_sql: Optional[str] = None,
                          table_prop: Optional[Dict[str, str]] = None,
                          df_gen: Optional[Callable[[SparkSession], DataFrame]] = None) -> str:
     if table_prop is None:
         table_prop = {'format-version':'1'}
+    table_prop = _build_tblprops(table_prop)
 
     if df_gen is None:
         df_gen = lambda spark: gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
