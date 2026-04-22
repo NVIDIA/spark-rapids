@@ -32,6 +32,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-32908: maximum target error in percentile_approx", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14635"))
   enableSuite[RapidsArithmeticExpressionSuite]
   enableSuite[RapidsBitwiseExpressionsSuite]
+  enableSuite[RapidsBloomFilterAggregateQuerySuite]
   enableSuite[RapidsComplexTypeSuite]
     .exclude("CreateMap", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14140"))
   enableSuite[RapidsConditionalExpressionSuite]
