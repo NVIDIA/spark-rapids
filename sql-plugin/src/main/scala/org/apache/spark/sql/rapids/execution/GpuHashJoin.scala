@@ -1211,10 +1211,11 @@ abstract class BaseHashJoinIterator(
 
   protected def disableBuildSideReuse(): Unit = {
     buildSideReuseDisabled = true
-    cachedHashJoin.foreach(_.close())
+    val hashJoinToClose = cachedHashJoin
     cachedHashJoin = None
-    cachedDistinctHashJoin.foreach(_.close())
+    val distinctHashJoinToClose = cachedDistinctHashJoin
     cachedDistinctHashJoin = None
+    Seq(hashJoinToClose, distinctHashJoinToClose).flatten.safeClose()
   }
 
   /**
@@ -1559,24 +1560,27 @@ class HashJoinIterator(
       joinTime = joinTime) {
 
   override def computeNumJoinRows(cb: LazySpillableColumnarBatch): Long = {
-    val fallback = super.computeNumJoinRows(cb)
+    lazy val fallback = super.computeNumJoinRows(cb)
     if (buildStats.isDistinct) {
       fallback
     } else {
+      cb.checkpoint()
       try {
-        withResource(GpuProjectExec.project(cb.getBatch, boundStreamKeys)) { streamKeys =>
-          try {
-            withResource(GpuColumnVector.from(streamKeys)) { streamKeysTable =>
-              exactNumJoinRows(streamKeysTable).getOrElse(fallback)
+        withRetryNoSplit {
+          withRestoreOnRetry(cb) {
+            withResource(GpuProjectExec.project(cb.getBatch, boundStreamKeys)) { streamKeys =>
+              withResource(GpuColumnVector.from(streamKeys)) { streamKeysTable =>
+                exactNumJoinRows(streamKeysTable).getOrElse(fallback)
+              }
             }
-          } finally {
-            cb.allowSpilling()
           }
         }
       } catch {
         case _: OutOfMemoryError | _: GpuOOM =>
           disableBuildSideReuse()
           fallback
+      } finally {
+        cb.allowSpilling()
       }
     }
   }
@@ -2198,7 +2202,9 @@ class HashJoinStreamSideIterator(
     // Pass the original joinType if it was transformed to subJoinType
     val originalJoinType = if (joinType != subJoinType) Some(joinType) else None
 
-    if (buildStats.isDistinct) {
+    // The distinct outer path only produces a single gather map for LeftOuter/RightOuter,
+    // but HashJoinStreamSideIterator always needs both maps to update tracking state.
+    if (buildStats.isDistinct && subJoinType == Inner) {
       return computeDistinctUnconditionalJoin(leftKeys, rightKeys, originalJoinType)
     }
 
@@ -2932,7 +2938,7 @@ trait GpuHashJoin extends GpuJoinExec {
       numOutputBatches: GpuMetric,
       opTime: GpuMetric,
       joinTime: GpuMetric,
-      enableBuildSideReuse: Boolean = false): Iterator[ColumnarBatch] = {
+      enableBuildSideReuse: Boolean): Iterator[ColumnarBatch] = {
 
     val filterOutNull = GpuHashJoin.buildSideNeedsNullFilter(joinType, compareNullsEqual,
       buildSide, buildKeys)

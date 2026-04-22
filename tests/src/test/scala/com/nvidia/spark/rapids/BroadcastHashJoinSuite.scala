@@ -45,6 +45,32 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       "CAST(id % 4 AS INT) AS join_key",
       "CAST(id AS INT) AS build_value")
 
+  private def nullableProbeDf(spark: SparkSession): DataFrame =
+    spark.range(0, 8).selectExpr(
+      "CAST(CASE CAST(id AS INT) " +
+        "WHEN 0 THEN NULL " +
+        "WHEN 1 THEN 0 " +
+        "WHEN 2 THEN 1 " +
+        "WHEN 3 THEN 2 " +
+        "WHEN 4 THEN 3 " +
+        "WHEN 5 THEN 4 " +
+        "WHEN 6 THEN 5 " +
+        "ELSE 8 END AS INT) AS join_key",
+      "CAST(id AS INT) AS probe_value")
+
+  private def nullableDistinctBuildDf(spark: SparkSession): DataFrame =
+    spark.range(0, 8).selectExpr(
+      "CAST(CASE CAST(id AS INT) " +
+        "WHEN 0 THEN NULL " +
+        "WHEN 1 THEN 0 " +
+        "WHEN 2 THEN 1 " +
+        "WHEN 3 THEN 2 " +
+        "WHEN 4 THEN 3 " +
+        "WHEN 5 THEN 4 " +
+        "WHEN 6 THEN 6 " +
+        "ELSE 9 END AS INT) AS join_key",
+      "CAST(id * 10 AS INT) AS build_value")
+
   test("broadcast hint isn't propagated after a join") {
     val conf = new SparkConf()
       .set("spark.sql.autoBroadcastJoinThreshold", "-1")
@@ -147,5 +173,32 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
     nonDistinctBuildDf,
     conf = broadcastReuseConf) {
     (probe, build) => probe.join(broadcast(build), Seq("join_key"), "leftanti")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse distinct inner nullable keys build right",
+    nullableProbeDf,
+    nullableDistinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "inner")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse distinct left outer nullable keys build right",
+    nullableProbeDf,
+    nullableDistinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "left")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse conditional inner build right",
+    streamedProbeDf,
+    distinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) =>
+      probe.join(broadcast(build),
+        probe("join_key") === build("join_key") &&
+          probe("probe_value") <= build("build_value"), "inner")
   }
 }
