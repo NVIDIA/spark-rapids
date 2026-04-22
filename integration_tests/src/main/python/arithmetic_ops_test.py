@@ -928,6 +928,12 @@ def test_bin_long(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('bin(a)'))
 
+@pytest.mark.parametrize('data_gen', [long_gen, StringGen(),
+    StringGen('[\x00-\xff]{0,10}'), BinaryGen()], ids=idfn)
+def test_hex(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('hex(a)'))
+
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_cos(data_gen):

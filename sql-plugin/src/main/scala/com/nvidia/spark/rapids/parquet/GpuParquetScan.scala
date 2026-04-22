@@ -78,8 +78,8 @@ import org.apache.spark.sql.execution.datasources.{DataSourceUtils, PartitionedF
 import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.execution.datasources.v2.parquet.ParquetScan
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.{isTimestampNTZ, GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.sql.rapids.isTimestampNTZ
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -565,8 +565,11 @@ protected case class GpuParquetFileFilterHandler(
     if (fileIO.isInstanceOf[HadoopFileIO]) {
       // We should remove this after https://github.com/NVIDIA/spark-rapids/issues/13306 is
       // implemented.
-      PerfIO.readParquetFooterBuffer(filePath, conf, verifyParquetMagic)
-        .getOrElse(readFooterBufUsingHadoop(fileIO, filePath))
+      val result = PerfIO.readParquetFooterBuffer(filePath, conf, verifyParquetMagic)
+      if (filePath.toUri.getScheme.startsWith("s3")) {
+        GpuTaskMetrics.get.recordPerfioS3BackendOnce()
+      }
+      result.getOrElse(readFooterBufUsingHadoop(fileIO, filePath))
     } else {
       readFooterBufUsingHadoop(fileIO, filePath)
     }
@@ -2059,6 +2062,9 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
 
     val totalBytesCopied = if (fileIO.isInstanceOf[HadoopFileIO]) {
       // Fix this after https://github.com/NVIDIA/spark-rapids/issues/13306 is resolved
+      if (filePath.toUri.getScheme.startsWith("s3")) {
+        GpuTaskMetrics.get.recordPerfioS3BackendOnce()
+      }
       PerfIO.readToHostMemory(
         conf, out.buffer, filePath.toUri,
         coalescedRanges.map(r => IntRangeWithOffset(r.offset, r.length, r.outputOffset))

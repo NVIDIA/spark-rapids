@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,13 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330db"}
-{"spark": "332db"}
-{"spark": "341db"}
-{"spark": "350db143"}
+{"spark": "330"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.suites
 
-import com.nvidia.spark.rapids._
+import org.apache.spark.sql.ApproximatePercentileQuerySuite
+import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
-import org.apache.spark.sql.execution.FileSourceScanExec
-
-class FileSourceScanExecMeta(plan: FileSourceScanExec,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
-    extends FileSourceScanExecMetaBase(plan, conf, parent, rule)
+class RapidsApproximatePercentileQuerySuite
+  extends ApproximatePercentileQuerySuite with RapidsSQLTestsTrait {
+}
