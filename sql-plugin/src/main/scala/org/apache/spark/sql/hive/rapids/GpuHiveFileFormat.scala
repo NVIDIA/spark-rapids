@@ -16,11 +16,10 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import java.nio.charset.Charset
+import java.nio.charset.{Charset, StandardCharsets}
 import java.util.Locale
 
 import ai.rapids.cudf.{CompressionType, CSVWriterOptions, DType, ParquetWriterOptions, QuoteStyle, Scalar, Table, TableWriter => CudfTableWriter}
-import com.google.common.base.Charsets
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.CastStrings
@@ -183,7 +182,7 @@ object GpuHiveFileFormat extends Logging {
 
     val charset = Charset.forName(
       storage.properties.getOrElse("serialization.encoding", "UTF-8"))
-    if (!charset.equals(Charsets.UTF_8)) {
+    if (!charset.equals(StandardCharsets.UTF_8)) {
       meta.willNotWorkOnGpu("only UTF-8 is supported as the charset")
     }
 

@@ -16,10 +16,9 @@
 
 package org.apache.spark.sql.hive.rapids
 
-import java.nio.charset.Charset
+import java.nio.charset.{Charset, StandardCharsets}
 import java.time.ZoneId
 
-import com.google.common.base.Charsets
 import com.nvidia.spark.RapidsUDF
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuUserDefinedFunction.udfTypeSig
@@ -189,7 +188,8 @@ class HiveProviderImpl extends HiveProviderCmdShims {
 
             val charset = Charset.forName(
               storage.properties.getOrElse("serialization.encoding", "UTF-8"))
-            if (!(charset.equals(Charsets.US_ASCII) || charset.equals(Charsets.UTF_8))) {
+            if (!(charset.equals(StandardCharsets.US_ASCII) ||
+                charset.equals(StandardCharsets.UTF_8))) {
               willNotWorkOnGpu("only UTF-8 and ASCII are supported as the charset")
             }
           }
