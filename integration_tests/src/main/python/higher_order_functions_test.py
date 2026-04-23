@@ -230,3 +230,20 @@ def test_array_aggregate_non_identity_finish_falls_back():
         lambda spark: unary_op_df(spark, ArrayGen(int_gen, max_length=5)).selectExpr(
             'aggregate(a, 0L, (acc, x) -> acc + CAST(x as BIGINT), acc -> acc * 2) as doubled'),
         'ArrayAggregate')
+
+
+# MAX / MIN on float/double arrays must fall back: cuDF's segmented max/min follow IEEE 754
+# where NaN is absorbed (`fmax(NaN, x) = x`), while Spark's `Greatest`/`Least` propagate NaN
+# via `Double.compare`. Rather than paper over this for now we restrict ExtremumOp to
+# integral types and fall back on float/double.
+@pytest.mark.parametrize('lambda_sql, init_sql', [
+    ('(acc, x) -> greatest(acc, x)', 'CAST("-Infinity" as DOUBLE)'),
+    ('(acc, x) -> least(acc, x)', 'CAST("Infinity" as DOUBLE)'),
+], ids=['max', 'min'])
+@disable_ansi_mode
+@allow_non_gpu('ProjectExec')
+def test_array_aggregate_double_extremum_falls_back(lambda_sql, init_sql):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(double_gen, max_length=5)).selectExpr(
+            f'aggregate(a, {init_sql}, {lambda_sql}) as res'),
+        'ArrayAggregate')

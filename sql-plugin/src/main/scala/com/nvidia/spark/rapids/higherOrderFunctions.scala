@@ -975,10 +975,19 @@ case object ProductOp extends AggOp {
 /**
  * MaxOp / MinOp share EXCLUDE null policy: Spark's Greatest / Least skip null operands,
  * so an all-null list reduces to null and then folds back to zero via identity substitution.
+ *
+ * Float / Double are unsupported: cuDF's segmented `max` / `min` follow IEEE 754, where
+ * `fmax(NaN, x) = x` (NaN is absorbed). Spark's `Greatest` / `Least` use `Double.compare`,
+ * which treats NaN as larger than every other value and propagates it. The `combineWithZero`
+ * compare + ifElse also breaks on NaN (`greaterThan(NaN, z) = false`). Until we add an
+ * explicit NaN-propagation step, restrict to integral types.
  */
 sealed trait ExtremumOp extends AggOp {
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.EXCLUDE
-  def supportsType(t: DataType): Boolean = AggOp.isPlainNumeric(t)
+  def supportsType(t: DataType): Boolean = t match {
+    case ByteType | ShortType | IntegerType | LongType => true
+    case _ => false
+  }
 }
 
 case object MaxOp extends ExtremumOp {
