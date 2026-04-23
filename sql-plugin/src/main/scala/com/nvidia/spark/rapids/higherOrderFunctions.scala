@@ -998,8 +998,6 @@ case object MaxOp extends ExtremumOp {
     case ShortType => cudf.Scalar.fromShort(Short.MinValue)
     case IntegerType => cudf.Scalar.fromInt(Int.MinValue)
     case LongType => cudf.Scalar.fromLong(Long.MinValue)
-    case FloatType => cudf.Scalar.fromFloat(Float.NegativeInfinity)
-    case DoubleType => cudf.Scalar.fromDouble(Double.NegativeInfinity)
     case other => throw new IllegalStateException(s"MAX identity not defined for $other")
   }
   // cuDF's NULL_MAX treats null as smallest (wrong for Spark), so emulate null-propagating
@@ -1024,8 +1022,6 @@ case object MinOp extends ExtremumOp {
     case ShortType => cudf.Scalar.fromShort(Short.MaxValue)
     case IntegerType => cudf.Scalar.fromInt(Int.MaxValue)
     case LongType => cudf.Scalar.fromLong(Long.MaxValue)
-    case FloatType => cudf.Scalar.fromFloat(Float.PositiveInfinity)
-    case DoubleType => cudf.Scalar.fromDouble(Double.PositiveInfinity)
     case other => throw new IllegalStateException(s"MIN identity not defined for $other")
   }
   def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType)
