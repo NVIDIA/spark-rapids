@@ -135,7 +135,9 @@ trait GpuAutoCompactBase extends AutoCompactBase {
         optimizeContext
       ).optimize()
       val metrics = rows.map(_.getAs[OptimizeMetrics](1))
-      recordDeltaEvent(deltaLog, s"$opType.execute.metrics", data = metrics.head)
+      metrics.headOption.foreach { metric =>
+        recordDeltaEvent(deltaLog, s"$opType.execute.metrics", data = metric)
+      }
       metrics
     }
   }
