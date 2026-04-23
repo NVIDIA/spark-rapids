@@ -528,6 +528,7 @@ def assert_cpu_and_gpu_are_equal_collect_with_capture(func,
         _sort_locally(from_cpu, from_gpu)
 
     assert_equal(from_cpu, from_gpu)
+    return gpu_df
 
 def assert_cpu_and_gpu_are_equal_sql_with_capture(df_fun,
         sql,

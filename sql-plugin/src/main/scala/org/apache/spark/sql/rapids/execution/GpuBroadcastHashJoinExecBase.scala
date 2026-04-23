@@ -119,7 +119,11 @@ abstract class GpuBroadcastHashJoinExecBase(
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
-    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME))
+    JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
+    BUILD_SIDE_CACHE_BUILDS ->
+      createMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_SIDE_CACHE_BUILDS),
+    BUILD_SIDE_CACHE_HITS ->
+      createMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_SIDE_CACHE_HITS))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
@@ -152,6 +156,8 @@ abstract class GpuBroadcastHashJoinExecBase(
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val streamTime = gpuLongMetric(STREAM_TIME)
     val joinTime = gpuLongMetric(JOIN_TIME)
+    val buildSideCacheBuilds = gpuLongMetric(BUILD_SIDE_CACHE_BUILDS)
+    val buildSideCacheHits = gpuLongMetric(BUILD_SIDE_CACHE_HITS)
 
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val joinOptions = RapidsConf.getJoinOptions(conf, targetSize)
@@ -168,6 +174,10 @@ abstract class GpuBroadcastHashJoinExecBase(
           broadcastRelation,
           buildSchema,
           new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime))
+      val broadcastBatch = broadcastRelation.value match {
+        case batch: SerializeConcatHostBuffersDeserializeBatch => Some(batch)
+        case _ => None
+      }
       if (localIsNullAwareAntiJoin) {
         // This is to support the null-aware anti join for the LeftAnti join with
         // BuildRight. See the config "spark.sql.optimizeNullAwareAntiJoin".
@@ -188,12 +198,18 @@ abstract class GpuBroadcastHashJoinExecBase(
               boundStreamKeys)
           }
           doJoin(builtBatch, nullFilteredStreamIter, joinOptions, numOutputRows,
-            numOutputBatches, opTime, joinTime, enableBuildSideReuse)
+            numOutputBatches, opTime, joinTime, enableBuildSideReuse,
+            broadcastBatch = broadcastBatch,
+            buildSideCacheBuilds = buildSideCacheBuilds,
+            buildSideCacheHits = buildSideCacheHits)
         }
       } else {
         // builtBatch will be closed in doJoin
         doJoin(builtBatch, streamIter, joinOptions, numOutputRows, numOutputBatches, opTime,
-          joinTime, enableBuildSideReuse)
+          joinTime, enableBuildSideReuse,
+          broadcastBatch = broadcastBatch,
+          buildSideCacheBuilds = buildSideCacheBuilds,
+          buildSideCacheHits = buildSideCacheHits)
       }
     }
   }

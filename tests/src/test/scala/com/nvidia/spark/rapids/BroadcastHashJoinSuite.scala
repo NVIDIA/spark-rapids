@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids.TestUtils.findOperator
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.functions.broadcast
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuHashJoin}
 
@@ -149,6 +150,14 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse distinct full outer build right",
+    nullableProbeDf,
+    nullableDistinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "fullouter")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
     "broadcast hash join reuse non-distinct inner build right",
     streamedProbeDf,
     nonDistinctBuildDf,
@@ -213,5 +222,25 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
       probe.join(broadcast(build),
         probe("join_key") === build("join_key") &&
           probe("probe_value") <= build("build_value"), "inner")
+  }
+
+  test("broadcast hash join reuse same broadcast in multiple joins plan") {
+    val conf = broadcastReuseConf.clone().set("spark.sql.exchange.reuse", "true")
+    withGpuSparkSession(spark => {
+      val probe = streamedProbeDf(spark)
+      val build = broadcast(distinctBuildDf(spark))
+      val joined = probe
+        .join(build, Seq("join_key"), "inner")
+        .select("join_key", "probe_value")
+        .join(build, Seq("join_key"), "inner")
+        .select("join_key", "probe_value")
+
+      joined.collect()
+      val plan = joined.queryExecution.executedPlan
+      val bhjCount = PlanUtils.findOperators(plan, _.isInstanceOf[GpuBroadcastHashJoinExec])
+      val reusedExchanges = PlanUtils.findOperators(plan, _.isInstanceOf[ReusedExchangeExec])
+      assertResult(2)(bhjCount.size)
+      assert(reusedExchanges.nonEmpty)
+    }, conf)
   }
 }

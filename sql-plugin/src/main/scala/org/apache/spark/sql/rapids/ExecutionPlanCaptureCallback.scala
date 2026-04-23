@@ -35,6 +35,8 @@ trait ExecutionPlanCaptureCallbackBase {
   def assertContainsAnsiCast(df: DataFrame): Unit
   def assertNotContain(gpuPlan: SparkPlan, className: String): Unit
   def assertNotContain(df: DataFrame, gpuClass: String): Unit
+  def sumMetric(gpuPlan: SparkPlan, className: String, metricName: String): Long
+  def sumMetric(df: DataFrame, className: String, metricName: String): Long
   def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit
   def assertDidFallBack(df: DataFrame, fallbackCpuClass: String): Unit
   def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit
@@ -84,6 +86,12 @@ object ExecutionPlanCaptureCallback extends ExecutionPlanCaptureCallbackBase {
 
   override def assertNotContain(df: DataFrame, gpuClass: String): Unit =
     impl.assertNotContain(df, gpuClass)
+
+  override def sumMetric(gpuPlan: SparkPlan, className: String, metricName: String): Long =
+    impl.sumMetric(gpuPlan, className, metricName)
+
+  override def sumMetric(df: DataFrame, className: String, metricName: String): Long =
+    impl.sumMetric(df, className, metricName)
 
   override def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit =
     impl.assertDidFallBack(gpuPlan, fallbackCpuClass)
