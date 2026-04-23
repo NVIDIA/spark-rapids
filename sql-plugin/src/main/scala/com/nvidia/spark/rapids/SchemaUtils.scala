@@ -85,6 +85,10 @@ object SchemaUtils {
    * @param isCaseSensitive Whether the name check should be case sensitive or not
    * @param castFunc optional, function to cast the input column to the required type
    * @param needCast if true, table columns will always be traversed to look for needed casts
+   * @param allowNonStructWrapping if true, allow wrapping a non-STRUCT column into a struct
+   *   view when the expected Catalyst type is a single-field StructType. This is only needed
+   *   for the Parquet legacy 2-level LIST case where cuDF returns an unwrapped child column.
+   *   Should NOT be enabled for ORC or other formats.
    * @return a new table mapping to the "readSchema". Users should close it if no longer needed.
    */
   private[rapids] def evolveSchemaIfNeededAndClose(
@@ -93,7 +97,8 @@ object SchemaUtils {
       readSchema: StructType,
       isCaseSensitive: Boolean,
       castFunc: Option[(ColumnView, DataType, DataType) => ColumnView] = None,
-      needCast: Boolean = false): Table = {
+      needCast: Boolean = false,
+      allowNonStructWrapping: Boolean = false): Table = {
     // Schema evolution is needed when
     //   1) there are columns with precision can be stored in an int, or
     //   2) "readSchema" is not equal to "tableSchema".
@@ -113,7 +118,7 @@ object SchemaUtils {
             val cv = table.getColumn(typeAndId._2)
             withResource(new ArrayBuffer[ColumnView]) { toClose =>
               val newCol = evolveColumnRecursively(cv, typeAndId._1, rf.dataType, isCaseSensitive,
-                toClose, castFunc, needCast)
+                toClose, castFunc, needCast, allowNonStructWrapping)
               if (newCol == cv) {
                 cv.incRefCount()
               } else {
@@ -139,7 +144,8 @@ object SchemaUtils {
       col: ColumnView, colType: DataType, targetType: DataType,
       isCaseSensitive: Boolean, toClose: ArrayBuffer[ColumnView],
       castFunc: Option[(ColumnView, DataType, DataType) => ColumnView],
-      needCast: Boolean): ColumnView = {
+      needCast: Boolean,
+      allowNonStructWrapping: Boolean): ColumnView = {
     // An util function to add a view to the buffer "toClose".
     val addToClose = (v: ColumnView) => {
       toClose += v
@@ -153,33 +159,48 @@ object SchemaUtils {
             !TrampolineUtil.sameType(colSt, toSt) ||
             getPrecisionsList(colSt).exists(p => p <= Decimal.MAX_INT_DIGITS)
         if (needSchemaEvo) {
+          // cuDF's Parquet reader may not follow the backward-compatibility rules
+          // for legacy 2-level LIST types (e.g. repeated groups named "array" with
+          // a single field). In this case cuDF returns the unwrapped child column
+          // instead of a STRUCT column. Detect this and wrap it back into a struct
+          // so schema evolution can proceed normally. See NVIDIA/spark-rapids#11454.
+          // Gated by allowNonStructWrapping so this only applies to Parquet paths,
+          // not ORC or other formats that share this method.
+          val actualCol = if (allowNonStructWrapping &&
+              col.getType.getTypeId != DType.DTypeEnum.STRUCT &&
+              colSt.length == 1) {
+            addToClose(ColumnView.makeStructView(col))
+          } else {
+            col
+          }
           val typeIdMap = buildTypeIdMapFromSchema(colSt, isCaseSensitive)
           val newViews = toSt.safeMap { f =>
             if (typeIdMap.contains(f.name)) {
               val typeAndId = typeIdMap(f.name)
-              val cv = addToClose(col.getChildColumnView(typeAndId._2))
+              val cv = addToClose(actualCol.getChildColumnView(typeAndId._2))
               val newChild = evolveColumnRecursively(cv, typeAndId._1, f.dataType,
-                isCaseSensitive, toClose, castFunc, needCast)
+                isCaseSensitive, toClose, castFunc, needCast, allowNonStructWrapping)
               if (newChild != cv) {
                 addToClose(newChild)
               }
               newChild
             } else {
               // Return a null column if the name is not found in the table.
-              addToClose(
-                GpuColumnVector.columnVectorFromNull(col.getRowCount.toInt, f.dataType))
+              addToClose(GpuColumnVector.columnVectorFromNull(
+                actualCol.getRowCount.toInt, f.dataType))
             }
           }
-          val opNullCount = Optional.of(col.getNullCount.asInstanceOf[java.lang.Long])
-          new ColumnView(col.getType, col.getRowCount, opNullCount, col.getValid,
-            col.getOffsets, newViews.toArray)
+          val opNullCount =
+            Optional.of(actualCol.getNullCount.asInstanceOf[java.lang.Long])
+          new ColumnView(actualCol.getType, actualCol.getRowCount, opNullCount,
+            actualCol.getValid, actualCol.getOffsets, newViews.toArray)
         } else {
           col
         }
       case (colAt: ArrayType, toAt: ArrayType) =>
         val child = addToClose(col.getChildColumnView(0))
         val newChild = evolveColumnRecursively(child, colAt.elementType, toAt.elementType,
-          isCaseSensitive, toClose, castFunc, needCast)
+          isCaseSensitive, toClose, castFunc, needCast, allowNonStructWrapping)
         if (child == newChild) {
           col
         } else {
@@ -195,7 +216,7 @@ object SchemaUtils {
         val processView = (id: Int, srcType: DataType, distType: DataType) => {
           val view = addToClose(listChild.getChildColumnView(id))
           val newView = evolveColumnRecursively(view, srcType, distType, isCaseSensitive,
-            toClose, castFunc, needCast)
+            toClose, castFunc, needCast, allowNonStructWrapping)
           if (newView != view) {
             newStructChildren += addToClose(newView)
             newStructIndices += id

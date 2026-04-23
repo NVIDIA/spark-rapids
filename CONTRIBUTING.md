@@ -636,5 +636,11 @@ Options:
 1. Skip tests run by adding `[skip ci]` to title, this should only be used for doc-only change
 2. Run build and tests in databricks runtimes by adding `[databricks]` to title, this would add around 30-40 minutes
 
+
+### Code Review Guidelines
+
+We have [code review guidelines](CODE_REVIEW_GUIDELINES.md) that outline how we collaborate during code review. Please read them before opening or reviewing a pull request.
+
+
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/master/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md

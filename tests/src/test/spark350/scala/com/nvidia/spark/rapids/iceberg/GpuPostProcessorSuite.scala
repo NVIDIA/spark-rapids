@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -481,13 +481,15 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     )
 
     val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      new JHashMap[Integer, Any](),
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
     val ex = intercept[IllegalArgumentException] {
-      new GpuParquetReaderPostProcessor(
-        parquetInfo,
-        new JHashMap[Integer, Any](),
-        expectedSchema,
-        shadedSchema,
-        Map.empty)
+      // The action tree is built lazily, so missing required fields surface when it is accessed.
+      processor.displayActionPlan()
     }
     assert(ex.getMessage.contains("Missing required field"))
   }
@@ -503,13 +505,14 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     )
 
     val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      new JHashMap[Integer, Any](),
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
     val ex = intercept[IllegalArgumentException] {
-      new GpuParquetReaderPostProcessor(
-        parquetInfo,
-        new JHashMap[Integer, Any](),
-        expectedSchema,
-        shadedSchema,
-        Map.empty)
+      processor.displayActionPlan()
     }
     assert(ex.getMessage.contains("Missing required field"))
   }
@@ -530,13 +533,14 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     )
 
     val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      new JHashMap[Integer, Any](),
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
     val ex = intercept[IllegalArgumentException] {
-      new GpuParquetReaderPostProcessor(
-        parquetInfo,
-        new JHashMap[Integer, Any](),
-        expectedSchema,
-        shadedSchema,
-        Map.empty)
+      processor.displayActionPlan()
     }
     assert(ex.getMessage.contains("Missing required field"))
   }
@@ -930,4 +934,5 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     assert(plan.contains(
       s"FetchConstant(fieldId=$structFieldId, struct<"))
   }
+
 }

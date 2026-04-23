@@ -80,6 +80,24 @@ case class GpuBin(child: Expression) extends GpuUnaryExpression
   }
 }
 
+case class GpuHex(child: Expression) extends GpuUnaryExpression with Serializable {
+  // Preserve the input StringType (including collation) for string inputs,
+  // matching Spark's Hex.dataType behavior.
+  override def dataType: DataType = child.dataType match {
+    case st: StringType => st
+    case _ => StringType
+  }
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    child.dataType match {
+      case LongType =>
+        CastStrings.fromIntegersWithBase(input.getBase, 16)
+      case _: StringType | BinaryType =>
+        CastStrings.bytesToHex(input.getBase)
+    }
+  }
+}
+
 case class GpuAcoshImproved(child: Expression) extends CudfUnaryMathExpression("ACOSH") {
   override def unaryOp: UnaryOp = UnaryOp.ARCCOSH
 }

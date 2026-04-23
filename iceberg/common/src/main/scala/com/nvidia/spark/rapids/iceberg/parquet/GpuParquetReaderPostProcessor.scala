@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.iceberg.parquet
 
-import java.util.{List => JList, Map => JMap, Optional}
+import java.util.{List => JList, Map => JMap, Objects, Optional}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.Stack
@@ -632,20 +632,20 @@ class GpuParquetReaderPostProcessor(
   private[iceberg] var currentNumRows = 0
 
   // Convert shaded parquet schema to Iceberg schema for comparison
-  private val fileIcebergSchema: Schema = ParquetSchemaUtil.convert(shadedFileReadSchema)
+  private lazy val fileIcebergSchema: Schema = ParquetSchemaUtil.convert(shadedFileReadSchema)
 
   // Build field ID to batch index mapping using the UNSHADED schema from parquetInfo.
   // The parquet reader returns top-level columns in the physical file-read order captured by
   // parquetInfo.schema, which can differ from the requested Iceberg schema order.
   // Map field ID to that batch position.
-  private val fieldIdToBatchIndex: Map[Int, Int] = {
+  private lazy val fieldIdToBatchIndex: Map[Int, Int] = {
     (0 until fileReadSchema.getFieldCount).flatMap { i =>
       Option(fileReadSchema.getType(i).getId).map(id => id.intValue() -> i)
     }.toMap
   }
 
   // Pre-compute action tree by visiting expected schema with file schema as partner
-  private val rootAction: ColumnAction = buildActionTimeMetric.ns {
+  private lazy val rootAction: ColumnAction = buildActionTimeMetric.ns {
     val visitor = new ActionBuildingVisitor(idToConstant)
     val accessors = new FileSchemaAccessors()
     SchemaWithPartnerVisitor.visit(
@@ -655,11 +655,38 @@ class GpuParquetReaderPostProcessor(
       accessors)
   }
 
-  private val expectedFields = expectedSchema.asStruct().fields().asScala
-  private val expectedSparkTypes = expectedFields.map(f => SparkSchemaUtil.convert(f.`type`()))
+  private lazy val expectedFields = expectedSchema.asStruct().fields().asScala
+  private lazy val expectedSparkTypes = expectedFields.map(f => SparkSchemaUtil.convert(f.`type`()))
 
   // Check if we can pass through the entire batch without any processing.
-  private val canPassThroughBatch: Boolean = rootAction == PassThrough
+  private lazy val canPassThroughBatch: Boolean = rootAction == PassThrough
+
+  // Only constants that synthesize projected fields need to participate in combining checks.
+  // If a projected field is still read from the parquet file, differing constant-map values for
+  // that field do not affect the materialized output.
+  private[iceberg] lazy val synthesizedConstantFieldIdsForCombining: Set[Integer] =
+    idToConstant.keySet().asScala.filter { fieldId =>
+      expectedSchema.idToName().containsKey(fieldId) &&
+        !fileIcebergSchema.idToName().containsKey(fieldId)
+    }.toSet
+
+  private def hasMatchingConstant(
+      other: GpuParquetReaderPostProcessor,
+      key: Integer): Boolean = {
+    idToConstant.containsKey(key) == other.idToConstant.containsKey(key) &&
+      Objects.equals(idToConstant.get(key), other.idToConstant.get(key))
+  }
+
+  private[iceberg] def compatibleForCombining(other: GpuParquetReaderPostProcessor): Boolean = {
+    // Iceberg's constants map can include entries for projected fields that are still read
+    // directly from parquet, such as identity partition source columns. Those entries should not
+    // block combining because the post-processor never materializes them from constants.
+    //
+    // Only expected fields that are synthesized from constants for either file can affect the
+    // combined output, so compatibility checks are limited to that subset.
+    (synthesizedConstantFieldIdsForCombining ++ other.synthesizedConstantFieldIdsForCombining)
+      .forall(hasMatchingConstant(other, _))
+  }
 
   // Expose for testing - displays the action tree
   private[iceberg] def displayActionPlan(): String = {

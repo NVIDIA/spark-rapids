@@ -51,7 +51,9 @@ import com.nvidia.spark.rapids.jni.BloomFilter
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.BloomFilterAggregate
-import org.apache.spark.sql.rapids.aggregate.GpuBloomFilterAggregate
+import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter,
+  CpuToGpuBloomFilterBufferConverter, GpuBloomFilterAggregate,
+  GpuToCpuAggregateBufferConverter, GpuToCpuBloomFilterBufferConverter}
 
 object BloomFilterShims {
   val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
@@ -77,15 +79,41 @@ object BloomFilterShims {
                   TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG)),
                 ParamCheck("numBits",
                   TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG))))))),
-        (a, conf, p, r) => new ExprMeta[BloomFilterAggregate](a, conf, p, r) {
-          override def convertToGpuImpl(): GpuExpression = {
+        (a, conf, p, r) => new TypedImperativeAggExprMeta[BloomFilterAggregate](a, conf, p, r) {
+          private lazy val estimatedNumItems =
+            GpuBloomFilterAggregate.clampEstimatedNumItems(
+              a.estimatedNumItemsExpression.eval().asInstanceOf[Number].longValue)
+
+          private lazy val numBits =
+            GpuBloomFilterAggregate.clampNumBits(
+              a.numBitsExpression.eval().asInstanceOf[Number].longValue)
+
+          override def convertToGpu(childExprs: Seq[Expression]): GpuExpression = {
             GpuBloomFilterAggregate(
-              childExprs.head.convertToGpu(),
+              childExprs.head,
               a.estimatedNumItemsExpression.eval().asInstanceOf[Number].longValue,
               a.numBitsExpression.eval().asInstanceOf[Number].longValue,
               BloomFilterConstantsShims.BLOOM_FILTER_FORMAT_VERSION,
               BloomFilter.DEFAULT_SEED)
           }
+
+          override def aggBufferAttribute: AttributeReference = {
+            val aggBuffer = a.aggBufferAttributes.head
+            aggBuffer.copy(dataType = a.dataType)(aggBuffer.exprId, aggBuffer.qualifier)
+          }
+
+          // This is a defensive correctness fix for the rare mixed CPU/GPU bridge path.
+          // BloomFilterAggregate crosses the CPU/GPU boundary as BinaryType in both directions,
+          // but empty GPU partial buffers can be null while Spark CPU final expects a serialized
+          // empty bloom filter. We still need a converter even though the runtime type
+          // is unchanged.
+          override def createCpuToGpuBufferConverter(): CpuToGpuAggregateBufferConverter =
+            CpuToGpuBloomFilterBufferConverter()
+
+          override def createGpuToCpuBufferConverter(): GpuToCpuAggregateBufferConverter =
+            GpuToCpuBloomFilterBufferConverter(estimatedNumItems, numBits)
+
+          override val supportBufferConversion: Boolean = true
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
   }
