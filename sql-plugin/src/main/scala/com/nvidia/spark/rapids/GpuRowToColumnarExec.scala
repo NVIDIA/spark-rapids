@@ -124,7 +124,10 @@ object GpuRowToColumnConverter {
       case (MapType(k, v, vcn), false) =>
         NotNullMapConverter(getConverterForType(k, nullable = false),
           getConverterForType(v, vcn))
-      case (NullType, true) =>
+      case (NullType, _) =>
+        // nullable=false appears only as a synthetic child of empty nested
+        // containers (e.g. MapType(NullType, NullType) from an empty map),
+        // where no row is ever appended, so NullConverter is safe either way.
         NullConverter
       // check special Shims types, such as DayTimeIntervalType
       case (otherType, nullable) if GpuTypeShims.hasConverterForType(otherType) =>
