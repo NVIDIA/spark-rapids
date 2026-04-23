@@ -113,7 +113,8 @@ The output of signature verify:
 
 ### Release Notes
 * Databricks 17.3 ML LTS (Spark 4.0) support (Delta Lake fallback to CPU); Databricks 12.2 ML LTS no longer supported ([#14518](https://github.com/NVIDIA/spark-rapids/pull/14518))
-* Iceberg 1.10.1 support with Spark 4.0.2 ([#14459](https://github.com/NVIDIA/spark-rapids/pull/14459))
+* Delta Lake deletion vector support on Databricks 14.3
+* Iceberg 1.9.2 and 1.10.1 support for Spark 3.5.4–3.5.8 ([#14401](https://github.com/NVIDIA/spark-rapids/pull/14401)); Iceberg 1.10.1 support with Spark 4.0.2 ([#14459](https://github.com/NVIDIA/spark-rapids/pull/14459))
 * Bloom filter v2 support on Databricks ([#14406](https://github.com/NVIDIA/spark-rapids/pull/14406))
 * Parquet GPU reader: defer resource collection until close ([#14490](https://github.com/NVIDIA/spark-rapids/pull/14490)); row-to-column per-batch retry for OOM recovery ([#14428](https://github.com/NVIDIA/spark-rapids/pull/14428))
 * Shuffle and spilling: shuffle fanout OOM fix ([#14525](https://github.com/NVIDIA/spark-rapids/pull/14525)), thread-safe shuffle unregister ([#14513](https://github.com/NVIDIA/spark-rapids/pull/14513)), bounded retry logging for shuffle coalesce ([#14537](https://github.com/NVIDIA/spark-rapids/pull/14537))
@@ -121,6 +122,9 @@ The output of signature verify:
 
 For a detailed list of changes, please refer to the
 [CHANGELOG](https://github.com/NVIDIA/spark-rapids/blob/main/CHANGELOG.md).
+
+### Known Issues
+* PERFILE reader may return incorrect counts for zero-column Delta scans with deletion vectors ([#14574](https://github.com/NVIDIA/spark-rapids/issues/14574)). This can be triggered when all of the following apply: the Delta table has deletion vector files created for the latest snapshot, `spark.rapids.sql.format.parquet.reader.type=PERFILE`, `spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled=true`, and the query reads zero data columns (e.g. `SELECT COUNT(*) ... WHERE <partition predicate>`). Workaround: use the default reader (`AUTO`). 
 
 ## Archived releases
 
