@@ -1152,7 +1152,12 @@ case class GpuArrayAggregate(
 
   override def dataType: DataType = zero.dataType
 
-  override def nullable: Boolean = argument.nullable
+  // Matches Spark's ArrayAggregate.nullable = argument.nullable || finish.nullable. The
+  // finish lambda's accumulator variable is bound with nullable=true (Spark's
+  // ArrayAggregate.bind uses `zero.dataType -> true` for the acc slot), so the CPU side
+  // is effectively always true. Also covers the INCLUDE-policy case where a null element
+  // in a non-null list poisons the reduce and yields a null output row.
+  override def nullable: Boolean = true
 
   override def prettyName: String = "array_aggregate"
 
