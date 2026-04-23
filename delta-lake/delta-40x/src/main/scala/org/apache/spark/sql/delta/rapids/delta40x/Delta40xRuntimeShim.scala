@@ -22,12 +22,8 @@ import com.nvidia.spark.rapids.delta.delta40x.{Delta40xProvider, GpuDeltaCatalog
 
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
-import org.apache.spark.sql.delta.rapids.{
-  DeltaRuntimeShimBase,
-  GpuOptimisticTransaction,
-  GpuOptimisticTransactionBase,
-  StartTransactionArg
-}
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShimBase, GpuOptimisticTransaction,
+  GpuOptimisticTransactionBase, StartTransactionArg}
 
 /**
  * Delta runtime shim for Delta 4.0.x on Spark 4.0.x.

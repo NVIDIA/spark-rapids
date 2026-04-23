@@ -30,16 +30,8 @@ import org.apache.spark.sql.catalyst.expressions.{And, Expression, Literal}
 import org.apache.spark.sql.catalyst.plans.logical.DeleteFromTable
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, CharVarcharUtils}
 import org.apache.spark.sql.classic.{SparkSession => ClassicSparkSession}
-import org.apache.spark.sql.delta.{
-  ColumnWithDefaultExprUtils,
-  DeltaErrors,
-  DeltaLog,
-  DeltaOperations,
-  DeltaOptions,
-  DeltaTableUtils,
-  IdentityColumn,
-  OptimisticTransaction
-}
+import org.apache.spark.sql.delta.{ColumnWithDefaultExprUtils, DeltaErrors, DeltaLog,
+  DeltaOperations, DeltaOptions, DeltaTableUtils, IdentityColumn, OptimisticTransaction}
 import org.apache.spark.sql.delta.actions.{Action, AddCDCFile, AddFile, FileAction, RemoveFile}
 import org.apache.spark.sql.delta.commands.{DeleteCommand, DeltaCommand, WriteIntoDelta, WriteIntoDeltaLike}
 import org.apache.spark.sql.delta.commands.DMLUtils.TaggedCommitData

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,8 @@
 package com.nvidia.spark.rapids.delta.delta41x
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.delta.common.{
-  DeleteCommandMeta,
-  DeltaDynamicPartitionOverwriteCommandMeta,
-  GpuDeltaParquetFileFormat,
-  GpuDeltaParquetFileFormat2,
-  MergeIntoCommandMeta,
-  OptimizeTableCommandMeta,
-  UpdateCommandMeta
-}
+import com.nvidia.spark.rapids.delta.common.{DeleteCommandMeta, DeltaDynamicPartitionOverwriteCommandMeta, MergeIntoCommandMeta, OptimizeTableCommandMeta, UpdateCommandMeta}
+import com.nvidia.spark.rapids.delta.common.{GpuDeltaParquetFileFormat, GpuDeltaParquetFileFormat2}
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
 
 import org.apache.spark.internal.Logging

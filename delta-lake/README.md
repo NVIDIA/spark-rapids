@@ -26,28 +26,6 @@ and directory contains the corresponding support code.
 Delta Lake is not supported on all Spark versions, and for Spark versions where it is not
 supported the `delta-stub` project is used.
 
-## Spark 4.1 Status
-
-Spark 4.1 builds against the dedicated `delta-41x` module instead of `delta-stub`.
-The `delta-41x` module targets Delta Lake 4.1.x using the `delta-spark_4.1_2.13`
-artifact and keeps the Spark 4.0-specific implementation isolated from the Spark 4.1
-API changes in Delta Lake.
-
-The current Spark 4.1 validation covers:
-
-* provider/runtime probe resolution to a real Delta provider
-* a basic GPU Delta write path (`GpuRapidsDeltaWrite`)
-* a basic Delta read path with a GPU file scan
-
-The current Spark 4.1 caveats are:
-
-* Delta metadata queries against `_delta_log` JSON/checkpoint files remain CPU-oriented by
-  design; the existing `spark.rapids.sql.detectDeltaLogQueries` and
-  `spark.rapids.sql.detectDeltaCheckpointQueries` protections still apply
-* broader Spark 4.1 command coverage such as update/delete/merge/optimize/auto-compact is
-  implemented through the `delta-41x` provider surface, but only the focused read/write
-  smoke path is validated here today
-
 ## Code Shared Between Modules
 
 The `common` directory contains code that is shared across some or all of the Delta Lake
