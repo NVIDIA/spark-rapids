@@ -784,9 +784,12 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val BROADCAST_HASH_TABLE_REUSE =
     conf("spark.rapids.sql.join.broadcastHashTable.reuse")
-      .doc("Enable reuse of broadcast-side hash table state across stream batches for " +
-        "broadcast hash joins. This only applies when the broadcast side remains the " +
-        "physical build side selected by the join implementation.")
+      .doc("Enable reuse of the broadcast-side hash table for broadcast hash joins. " +
+        "When enabled, the hash table is built once per broadcast and shared across all " +
+        "stream batches within a task and across all tasks that consume the same broadcast " +
+        "on an executor. Reuse pins the physical build side to the broadcast side for the " +
+        "lifetime of each cached join, overriding the dynamic build-side selection " +
+        s"heuristic configured by ${JOIN_BUILD_SIDE.key}.")
       .internal()
       .booleanConf
       .createWithDefault(false)

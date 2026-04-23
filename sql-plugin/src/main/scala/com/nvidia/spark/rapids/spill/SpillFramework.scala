@@ -352,7 +352,7 @@ object SharedRecomputableDeviceHandle {
 }
 
 /**
- * Spill-framework handle for device-only state that is cheaper to recompute than to spill.
+ * Handle for device-only state that is cheaper to recompute than to spill.
  *
  * When this handle is selected for spilling, it does not copy anything to host or disk. Instead
  * it marks the current device state as evicted and returns `approxSizeInBytes` so the spill

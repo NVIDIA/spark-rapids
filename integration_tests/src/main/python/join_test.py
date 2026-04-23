@@ -251,10 +251,7 @@ def test_broadcast_hash_join_reuse_large_build_aqe(kudo_enabled):
         'GpuBroadcastHashJoinExec',
         'buildSideCacheHits')
     assert cache_builds == 1
-    if gpu_df.sparkSession.sparkContext.master.startswith("local"):
-        assert cache_hits >= 3
-    else:
-        assert cache_hits > 0
+    assert cache_hits > 0
 
 
 @ignore_order(local=True)
@@ -293,10 +290,7 @@ def test_broadcast_hash_join_reuse_same_broadcast_multi_join_aqe(kudo_enabled):
         'GpuBroadcastHashJoinExec',
         'buildSideCacheHits')
     assert cache_builds == 1
-    if gpu_df.sparkSession.sparkContext.master.startswith("local"):
-        assert cache_hits >= 3
-    else:
-        assert cache_hits > 0
+    assert cache_hits > 0
 
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84

@@ -542,3 +542,4 @@ object GpuShuffledHashJoinExec extends Logging {
     retIter
   }
 }
+
