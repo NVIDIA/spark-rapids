@@ -58,6 +58,25 @@ def test_array_aggregate_numeric_ops(lambda_sql, init_sql, gen_max):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
+# Same ops exercised on the native element type (no Cast in the lambda body), so the
+# identityScalar / combineWithZero paths for Int / Long are hit directly. Covers the
+# INCLUDE-policy null-element propagation for SUM on a nullable element type too.
+@pytest.mark.parametrize('gen, lambda_sql, init_sql', [
+    (IntegerGen(min_val=-100, max_val=100), '(acc, x) -> acc + x', '0'),
+    (LongGen(min_val=-100, max_val=100), '(acc, x) -> acc + x', '0L'),
+    (IntegerGen(min_val=-100, max_val=100),
+        '(acc, x) -> greatest(acc, x)', 'CAST(-9999 as INT)'),
+    (LongGen(min_val=-100, max_val=100),
+        '(acc, x) -> least(acc, x)', '9223372036854775807L'),
+], ids=['int-sum', 'long-sum', 'int-max', 'long-min'])
+@disable_ansi_mode
+def test_array_aggregate_native_integer_ops(gen, lambda_sql, init_sql):
+    def do_it(spark):
+        return unary_op_df(spark, ArrayGen(gen, max_length=8)).selectExpr(
+            f'aggregate(a, {init_sql}, {lambda_sql}) as res')
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
 # Happy path for the boolean ops. Elements must be non-null because cuDF's segmented ALL/
 # ANY with INCLUDE nulls don't match Spark's AND/OR 3VL for mixed null+bool (specifically,
 # `false AND null = false` short-circuit; `true OR null = true`). The tag-time guard falls

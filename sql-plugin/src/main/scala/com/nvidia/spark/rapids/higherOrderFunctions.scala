@@ -1042,7 +1042,7 @@ case object AllOp extends AggOp {
   // INCLUDE: matches Spark's 3VL for AND (null AND true = null, null AND false = false).
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
   def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = cudf.Scalar.fromBool(true)
-  def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType) = r.and(z)
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType) = r.and(z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case a: And => Some((a.left, a.right))
     case _ => None
@@ -1055,7 +1055,7 @@ case object AnyOp extends AggOp {
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.any()
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
   def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = cudf.Scalar.fromBool(false)
-  def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType) = r.or(z)
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType) = r.or(z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case o: Or => Some((o.left, o.right))
     case _ => None
@@ -1069,13 +1069,16 @@ case object AnyOp extends AggOp {
  * registered AggOp.
  *
  * @param op            the chosen aggregation operator
- * @param gChildIndex   0 if `g` is the left child of the merge body's binary op, 1 if right
+ * @param g             the Catalyst sub-expression corresponding to `g(x)` in the
+ *                      `(acc, x) -> op(acc, g(x))` rewrite — stored directly (rather than
+ *                      a child index) so convertToGpuImpl locates it by expression
+ *                      identity instead of relying on a meta-children ordering invariant
  * @param accVarExprId  the accumulator NamedLambdaVariable's exprId
  * @param elemVar       the element NamedLambdaVariable (used to build the g lambda)
  */
 case class ArrayAggregateDecomposition(
     op: AggOp,
-    gChildIndex: Int,
+    g: Expression,
     accVarExprId: ExprId,
     elemVar: NamedLambdaVariable)
 
@@ -1105,9 +1108,9 @@ object ArrayAggregateDecomposer {
     allOps.view.flatMap { op =>
       op.matchBinary(body).flatMap { case (l, r) =>
         if (isAccRef(l, accId) && !containsAccRef(r, accId)) {
-          Some(ArrayAggregateDecomposition(op, 1, accId, elemVar))
+          Some(ArrayAggregateDecomposition(op, r, accId, elemVar))
         } else if (isAccRef(r, accId) && !containsAccRef(l, accId)) {
-          Some(ArrayAggregateDecomposition(op, 0, accId, elemVar))
+          Some(ArrayAggregateDecomposition(op, l, accId, elemVar))
         } else None
       }
     }.headOption
@@ -1218,8 +1221,14 @@ case class GpuArrayAggregate(
       // exploded batch (can be large for long arrays) is the main thing we want to let go
       // of as early as possible.
 
-      // Step 1: g(x) over children + segmented reduce. Releases cb, transformedData,
-      // listOfGView as soon as the reduced per-row scalar column is materialized.
+      // Each step chains via a `val x = closeOnExcept(...) { withResource(previous) { ... } }`
+      // idiom: closeOnExcept covers the tiny window between the previous step's result
+      // being assigned and `withResource` taking ownership, and the inner `withResource`
+      // ensures the previous step's column is released on both normal and exceptional
+      // paths. cuDF's ColumnVector.close is refcount-based so any late double-close on
+      // the rare exception path is benign.
+
+      // Step 1: g(x) over children + segmented reduce.
       val reduced: cudf.ColumnVector =
         withResource(makeElementProjectBatch(batch, arg)) { cb =>
           withResource(function.asInstanceOf[GpuExpression].columnarEval(cb)) {
@@ -1231,28 +1240,33 @@ case class GpuArrayAggregate(
           }
         }
 
-      // Step 2: substitute op's identity for rows the reduce couldn't cover (per
-      // nullPolicy). Releases reduced, mask, and idScalar.
-      val adjusted: cudf.ColumnVector = withResource(reduced) { reduced =>
-        withResource(substituteMask(arg.getBase, reduced)) { mask =>
-          withResource(op.identityScalar(dataType, outDType)) { idScalar =>
-            mask.ifElse(idScalar, reduced)
+      // Step 2: substitute op's identity for rows the reduce couldn't cover.
+      val adjusted: cudf.ColumnVector = closeOnExcept(reduced) { _ =>
+        withResource(reduced) { reduced =>
+          withResource(substituteMask(arg.getBase, reduced)) { mask =>
+            withResource(op.identityScalar(dataType, outDType)) { idScalar =>
+              mask.ifElse(idScalar, reduced)
+            }
           }
         }
       }
 
-      // Step 3: combine with zero. Releases adjusted and zeroCv.
-      val combined: cudf.ColumnVector = withResource(adjusted) { adjusted =>
-        withResource(zero.asInstanceOf[GpuExpression].columnarEval(batch)) { zeroCv =>
-          op.combineWithZero(adjusted, zeroCv.getBase, outDType)
+      // Step 3: combine with zero.
+      val combined: cudf.ColumnVector = closeOnExcept(adjusted) { _ =>
+        withResource(adjusted) { adjusted =>
+          withResource(zero.asInstanceOf[GpuExpression].columnarEval(batch)) { zeroCv =>
+            op.combineWithZero(adjusted, zeroCv.getBase, outDType)
+          }
         }
       }
 
       // Step 4: restore null on rows where the input list itself was null. cuDF GREATER /
       // LOGICAL_AND / LOGICAL_OR don't propagate null the way Spark's 3VL would, so the
       // combine step alone can't preserve it. mergeNulls short-circuits if no nulls.
-      withResource(combined) { combined =>
-        GpuColumnVector.from(NullUtilities.mergeNulls(combined, arg.getBase), dataType)
+      closeOnExcept(combined) { _ =>
+        withResource(combined) { combined =>
+          GpuColumnVector.from(NullUtilities.mergeNulls(combined, arg.getBase), dataType)
+        }
       }
     }
   }
@@ -1290,14 +1304,10 @@ class GpuArrayAggregateMeta(
     }
     // g's output type must equal the accumulator/zero type so the segmented reduce output
     // matches the Spark-expected result type directly.
-    val body = expr.merge.asInstanceOf[LambdaFunction].function
-    val gType = decomp.op.matchBinary(body).get match {
-      case (_, r) if decomp.gChildIndex == 1 => r.dataType
-      case (l, _) => l.dataType
-    }
-    if (!DataType.equalsStructurally(gType, expr.zero.dataType, ignoreNullability = true)) {
+    if (!DataType.equalsStructurally(
+        decomp.g.dataType, expr.zero.dataType, ignoreNullability = true)) {
       willNotWorkOnGpu(
-        s"g(x) output type ($gType) does not match accumulator/zero type " +
+        s"g(x) output type (${decomp.g.dataType}) does not match accumulator/zero type " +
         s"(${expr.zero.dataType})")
       return
     }
@@ -1324,12 +1334,16 @@ class GpuArrayAggregateMeta(
 
     val argGpu = childExprs.head.convertToGpu()
     val zeroGpu = childExprs(1).convertToGpu()
-    // childExprs(2) is the merge lambda meta; its first child is the op body meta, whose
-    // gChildIndex-th child is the g sub-expression. For binary catalyst shapes (Add,
-    // Multiply, And, Or) children are [left, right]; for variadic shapes restricted to
-    // size==2 (Greatest, Least) children are also [left, right]. So the index lines up.
+    // childExprs(2) is the merge lambda meta; its first child is the op body meta. Find
+    // the sub-meta whose wrapped CPU expression matches the g we recorded during
+    // decomposition, so we don't rely on meta-children ordering lining up with Catalyst's
+    // [left, right] convention.
     val bodyMeta = childExprs(2).childExprs.head
-    val gGpu = bodyMeta.childExprs(d.gChildIndex).convertToGpu()
+    val gMeta = bodyMeta.childExprs.find {
+      _.wrapped.asInstanceOf[Expression].fastEquals(d.g)
+    }.getOrElse(throw new IllegalStateException(
+      s"could not locate g sub-expression ${d.g} under merge body meta"))
+    val gGpu = gMeta.convertToGpu()
     val elemVarGpu = GpuNamedLambdaVariable(
       d.elemVar.name, d.elemVar.dataType, d.elemVar.nullable, d.elemVar.exprId)
     val gLambda = GpuLambdaFunction(gGpu, Seq(elemVarGpu))

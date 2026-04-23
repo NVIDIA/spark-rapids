@@ -54,11 +54,11 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
       acc: NamedLambdaVariable,
       x: NamedLambdaVariable,
       expectedOp: AggOp,
-      expectedGChildIndex: Int): ArrayAggregateDecomposition = {
+      expectedG: Expression): ArrayAggregateDecomposition = {
     val d = decompose(merge(body, acc, x), identityFinish(acc))
     assert(d.isDefined, s"expected decomposition for body=$body")
     assert(d.get.op == expectedOp)
-    assert(d.get.gChildIndex == expectedGChildIndex)
+    assert(d.get.g.fastEquals(expectedG), s"expected g=$expectedG, got ${d.get.g}")
     assert(d.get.accVarExprId == acc.exprId)
     assert(d.get.elemVar.exprId == x.exprId)
     d.get
@@ -73,59 +73,58 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
 
   // --- positive: one per op ---------------------------------------------
 
-  test("Add(acc, x) -> SUM, gChildIndex=1") {
+  test("Add(acc, x) -> SUM, g = x") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(plus(acc, x), acc, x, SumOp, 1)
+    assertDecomposes(plus(acc, x), acc, x, SumOp, x)
   }
 
-  test("Add(x, acc) (commuted) -> SUM, gChildIndex=0") {
+  test("Add(x, acc) (commuted) -> SUM, g = x") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(plus(x, acc), acc, x, SumOp, 0)
+    assertDecomposes(plus(x, acc), acc, x, SumOp, x)
   }
 
-  test("Multiply(acc, x) -> PRODUCT") {
+  test("Multiply(acc, x) -> PRODUCT, g = x") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(times(acc, x), acc, x, ProductOp, 1)
+    assertDecomposes(times(acc, x), acc, x, ProductOp, x)
   }
 
-  test("Greatest(acc, x) -> MAX") {
+  test("Greatest(acc, x) -> MAX, g = x") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(greatest(acc, x), acc, x, MaxOp, 1)
+    assertDecomposes(greatest(acc, x), acc, x, MaxOp, x)
   }
 
-  test("Least(acc, x) -> MIN") {
+  test("Least(acc, x) -> MIN, g = x") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(least(acc, x), acc, x, MinOp, 1)
+    assertDecomposes(least(acc, x), acc, x, MinOp, x)
   }
 
-  test("And(acc, x) -> ALL") {
+  test("And(acc, x) -> ALL, g = x") {
     val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
-    assertDecomposes(And(acc, x), acc, x, AllOp, 1)
+    assertDecomposes(And(acc, x), acc, x, AllOp, x)
   }
 
-  test("Or(acc, x) -> ANY") {
+  test("Or(acc, x) -> ANY, g = x") {
     val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
-    assertDecomposes(Or(acc, x), acc, x, AnyOp, 1)
+    assertDecomposes(Or(acc, x), acc, x, AnyOp, x)
   }
 
   // --- positive: structural variations ----------------------------------
 
-  test("Complex g(x) with no acc ref still decomposes") {
+  test("Complex g(x) with no acc ref is captured verbatim") {
     val acc = lv("acc", LongType); val x = lv("x", IntegerType)
-    // g = Cast(x * 2 + 1, Long)
     val g = Cast(plus(times(x, Literal(2)), Literal(1)), LongType)
-    assertDecomposes(plus(acc, g), acc, x, SumOp, 1)
+    assertDecomposes(plus(acc, g), acc, x, SumOp, g)
   }
 
   test("Cast wrapping the acc side is unwrapped (single layer)") {
     val acc = lv("acc", LongType); val x = lv("x", IntegerType)
-    assertDecomposes(plus(Cast(acc, IntegerType), x), acc, x, SumOp, 1)
+    assertDecomposes(plus(Cast(acc, IntegerType), x), acc, x, SumOp, x)
   }
 
   test("Cast wrapping the acc side is unwrapped (chained)") {
     val acc = lv("acc"); val x = lv("x")
     val doubleCastAcc = Cast(Cast(acc, LongType), IntegerType)
-    assertDecomposes(plus(doubleCastAcc, x), acc, x, SumOp, 1)
+    assertDecomposes(plus(doubleCastAcc, x), acc, x, SumOp, x)
   }
 
   // --- negative: wrong shape --------------------------------------------
