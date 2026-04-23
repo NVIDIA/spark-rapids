@@ -133,7 +133,10 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             tar xf "/tmp/$JAR_FILE_NAME" -C $HOME
             rm -f "/tmp/$JAR_FILE_NAME"
         fi
+        # Override the Databricks-specific shim for this upstream Spark smoke test so
+        # run_pyspark_from_build.sh selects jars consistent with the temporary SPARK_HOME.
         SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
+        SPARK_SHIM_VER=${UPSTREAM_SHIM_VER} \
         SPARK_SHELL_SMOKE_TEST=1 \
         PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${UPSTREAM_SHIM_VER}.RapidsShuffleManager \
             bash integration_tests/run_pyspark_from_build.sh
