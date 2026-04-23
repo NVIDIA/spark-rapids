@@ -143,9 +143,11 @@ object ParquetFooterUtils {
           }
         }
       }.getOrElse {
-        val footer = readFooterBuffer
-        metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES_SIZE, NoopMetric) += footer.getLength
-        footer
+        closeOnExcept(readFooterBuffer) { footer =>
+          metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES_SIZE, NoopMetric) +=
+            footer.getLength
+          footer
+        }
       }
     }
   }
