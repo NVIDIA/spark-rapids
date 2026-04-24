@@ -411,6 +411,87 @@ else
       export PYSP_TEST_spark_gluten_loadLibFromJar=true
     fi
 
+    dump_log_tail() {
+        local log_file="$1"
+        local max_lines="${2:-200}"
+        if [[ ! -f "$log_file" ]]; then
+            return
+        fi
+        echo "===== BEGIN ${log_file} (last ${max_lines} lines) ====="
+        python - "$log_file" "$max_lines" <<'PY'
+import sys
+from collections import deque
+
+path = sys.argv[1]
+max_lines = int(sys.argv[2])
+with open(path, encoding="utf-8", errors="replace") as fh:
+    for line in deque(fh, maxlen=max_lines):
+        sys.stdout.write(line)
+PY
+        echo "===== END ${log_file} ====="
+    }
+
+    collect_local_cluster_log_paths() {
+        local app_id="$1"
+        python - "$SPARK_HOME" "$app_id" <<'PY'
+import glob
+import os
+import sys
+
+spark_home, app_id = sys.argv[1], sys.argv[2]
+
+def existing(pattern):
+    return [path for path in glob.glob(pattern) if os.path.isfile(path)]
+
+worker_logs = existing(os.path.join(spark_home, "logs", "*Worker*.out")) + \
+    existing(os.path.join(spark_home, "logs", "*Worker*.err"))
+app_logs = []
+if app_id:
+    app_logs = existing(os.path.join(spark_home, "work", app_id, "*", "stderr")) + \
+        existing(os.path.join(spark_home, "work", app_id, "*", "stdout"))
+if not app_logs:
+    app_logs = existing(os.path.join(spark_home, "work", "app-*", "*", "stderr")) + \
+        existing(os.path.join(spark_home, "work", "app-*", "*", "stdout"))
+
+seen = set()
+ordered = []
+for path in sorted(app_logs + worker_logs, key=os.path.getmtime, reverse=True):
+    if path not in seen:
+        seen.add(path)
+        ordered.append(path)
+
+for path in ordered[:12]:
+    print(path)
+PY
+    }
+
+    dump_local_cluster_logs() {
+        local shell_output="$1"
+        local app_id=""
+        if [[ "$shell_output" =~ (app-[0-9]{14}-[0-9]{4}) ]]; then
+            app_id="${BASH_REMATCH[1]}"
+            echo "Detected standalone Spark app id: ${app_id}"
+        else
+            echo "Could not determine standalone Spark app id from smoke test output"
+        fi
+
+        # Give standalone worker/executor processes a moment to flush logs to disk.
+        sleep 2
+
+        local -a log_files=()
+        mapfile -t log_files < <(collect_local_cluster_log_paths "$app_id")
+        if (( ${#log_files[@]} == 0 )); then
+            echo "No standalone worker/executor logs found under ${SPARK_HOME}"
+            return
+        fi
+
+        echo "Dumping standalone worker/executor logs from ${SPARK_HOME}"
+        local log_file
+        for log_file in "${log_files[@]}"; do
+            dump_log_tail "$log_file" 200
+        done
+    }
+
     SPARK_SHELL_SMOKE_TEST="${SPARK_SHELL_SMOKE_TEST:-0}"
     EXPLAIN_ONLY_CPU_SMOKE_TEST="${EXPLAIN_ONLY_CPU_SMOKE_TEST:-0}"
     SPARK_CONNECT_SMOKE_TEST="${SPARK_CONNECT_SMOKE_TEST:-0}"
@@ -457,11 +538,13 @@ else
         set -e
         if [[ ${spark_shell_status} -ne 0 ]]; then
             printf '%s\n' "$output"
+            dump_local_cluster_logs "$output"
             echo "spark-shell exited with status ${spark_shell_status}"
             exit "${spark_shell_status}"
         fi
         if ! grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])' <<< "$output" >/dev/null; then
             printf '%s\n' "$output"
+            dump_local_cluster_logs "$output"
             echo "spark-shell smoke test output did not contain the expected result"
             exit 1
         fi
