@@ -16,8 +16,6 @@
 
 package org.apache.iceberg.parquet
 
-import scala.annotation.nowarn
-
 import com.nvidia.spark.rapids.{GpuMetric, NoopMetric}
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import org.apache.hadoop.fs.Path
