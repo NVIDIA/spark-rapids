@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -462,7 +462,7 @@ private object TestGpuDeleteLoader {
       deleteFiles: Seq[DeleteFile],
       deleteLoader: Option[GpuDeleteLoader]): GpuDeleteFilter = {
     new GpuDeleteFilter(
-      new IcebergFileIO(new HadoopFileIO(new Configuration())),
+      new IcebergFileIO(new HadoopFileIO(new Configuration()), new Configuration()),
       tableSchema,
       Map.empty,
       GpuIcebergParquetReaderConf(

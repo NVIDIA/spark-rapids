@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids.fileio.iceberg;
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import com.nvidia.spark.rapids.jni.fileio.RapidsOutputFile;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.aws.s3.IcebergS3InputFile;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
@@ -34,23 +35,29 @@ import java.util.Objects;
  */
 public class IcebergFileIO implements RapidsFileIO {
   private final FileIO delegate;
+  private final Configuration hadoopConf;
 
   /**
    * Constructs an IcebergFileIO with the given Iceberg FileIO delegate.
    *
-   * @param delegate the Iceberg FileIO to delegate to. It's the caller's responsibility to ensure
-   *                 that the delegate is closed when no longer used, e.g., iceberg table/catalog close.
+   * @param delegate   the Iceberg FileIO to delegate to. It's the caller's responsibility to ensure
+   *                   that the delegate is closed when no longer used, e.g., iceberg table/catalog close.
+   * @param hadoopConf the ambient Spark/Hadoop configuration. Passed through to PerfIO for S3 reads
+   *                   so the async S3 client inherits the same credential-provider chain as the rest
+   *                   of the job (IRSA on EKS, assumed role, EMRFS defaults, etc.).
    */
-  public IcebergFileIO(FileIO delegate) {
+  public IcebergFileIO(FileIO delegate, Configuration hadoopConf) {
     Objects.requireNonNull(delegate, "delegate can't be null");
+    Objects.requireNonNull(hadoopConf, "hadoopConf can't be null");
     this.delegate = delegate;
+    this.hadoopConf = hadoopConf;
   }
 
 
   @Override
   public IcebergInputFile newInputFile(String path) throws IOException {
     InputFile inputFile = delegate.newInputFile(path);
-    return IcebergS3InputFile.maybeCreate(inputFile);
+    return IcebergS3InputFile.maybeCreate(inputFile, hadoopConf);
   }
 
   @Override
