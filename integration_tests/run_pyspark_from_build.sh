@@ -447,10 +447,31 @@ else
         # an EOF on stdin and injects a ":quit" command. Without a grep check
         # the exit code would be success 0 regardless of the exceptions.
         #
-        <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
-            "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>/dev/null \
-            | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'
-        echo "SUCCESS spark-shell smoke test"
+        # Capture combined stdout/stderr to a log so we can dump diagnostics
+        # on failure. Previously stderr was discarded, which made CI failures
+        # in this step opaque (the only signal was a non-zero grep exit).
+        smoke_log=$(mktemp -t spark-shell-smoke.XXXXXX.log)
+        if <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+                "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1 \
+                | tee "$smoke_log" \
+                | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'; then
+            rm -f "$smoke_log"
+            echo "SUCCESS spark-shell smoke test"
+        else
+            shell_status=${PIPESTATUS[0]}
+            grep_status=${PIPESTATUS[2]}
+            echo "FAILED spark-shell smoke test (spark-shell exit=${shell_status}, grep exit=${grep_status})"
+            echo "----- spark-shell combined stdout/stderr (tail -n 300 of $smoke_log) -----"
+            tail -n 300 "$smoke_log" || true
+            echo "----- spark-shell executor stderr (tail -n 200 each) -----"
+            for f in "${SPARK_HOME}"/work/*/*/stderr; do
+                [[ -f "$f" ]] || continue
+                echo "=== $f ==="
+                tail -n 200 "$f" || true
+            done
+            rm -f "$smoke_log"
+            exit 1
+        fi
     elif [[ "${EXPLAIN_ONLY_CPU_SMOKE_TEST}" != "0" ]]; then
         echo "Running explainOnly mode on CPU smoke test..."
         SPARK_SHELL_ARGS_ARR=(
