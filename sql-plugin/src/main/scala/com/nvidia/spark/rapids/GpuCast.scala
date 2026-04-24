@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ import org.apache.spark.sql.catalyst.util.DateTimeConstants.MICROS_PER_SECOND
 import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.RoundingErrorUtil
-import org.apache.spark.sql.rapids.shims.{GpuCastToNumberErrorShim, RapidsErrorUtils}
+import org.apache.spark.sql.rapids.shims.{GpuCastToNumberErrorShim, OriginContextShim, RapidsErrorUtils}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -655,7 +655,7 @@ object GpuCast {
         // Do not call `Decimal(s)` with an unparseable string — it would throw
         // NumberFormatException before we could build the Spark-shaped ANSI error.
         throw GpuCastToNumberErrorShim.invalidInputInCastToNumberError(
-          to, UTF8String.fromString(s), CurrentOrigin.get.context)
+          to, UTF8String.fromString(s), OriginContextShim.queryContext(CurrentOrigin.get))
     }
   }
 
@@ -668,7 +668,7 @@ object GpuCast {
           UTF8String.fromString(errScalar.getJavaString)
         }
         throw GpuCastToNumberErrorShim.invalidInputInCastToNumberError(
-          to, s, CurrentOrigin.get.context)
+          to, s, OriginContextShim.queryContext(CurrentOrigin.get))
     }
   }
 
@@ -696,7 +696,7 @@ object GpuCast {
         withResource(valuesIsNan.any()) { anyNan =>
           if (anyNan.isValid && anyNan.getBoolean) {
             throw RapidsErrorUtils.arithmeticOverflowError(
-              errorMsg, "", CurrentOrigin.get.context)
+              errorMsg, "", OriginContextShim.queryContext(CurrentOrigin.get))
           }
         }
       }
@@ -708,7 +708,7 @@ object GpuCast {
           inclusiveMax && ord.compare(maxInput, maxValue) > 0 ||
           !inclusiveMax && ord.compare(maxInput, maxValue) >= 0) {
         throw RapidsErrorUtils.arithmeticOverflowError(
-          errorMsg, "", CurrentOrigin.get.context)
+          errorMsg, "", OriginContextShim.queryContext(CurrentOrigin.get))
       }
     }
 
@@ -1249,7 +1249,7 @@ object GpuCast {
               if (isAllBool.isValid && !isAllBool.getBoolean) {
                 throw RapidsErrorUtils.invalidInputSyntaxForBooleanError(
                   UTF8String.fromString("in the input column has atleast one invalid value"),
-                  CurrentOrigin.get.context)
+                  OriginContextShim.queryContext(CurrentOrigin.get))
               }
             }
           }
@@ -1287,7 +1287,8 @@ object GpuCast {
         withResource(isValidDate.all()) { all =>
           if (all.isValid && !all.getBoolean) {
             throw new DateTimeException(
-              "One or more values is not a valid date" + CurrentOrigin.get.context)
+              "One or more values is not a valid date" +
+                OriginContextShim.contextSummary(CurrentOrigin.get))
           }
         }
       }
@@ -1338,7 +1339,8 @@ object GpuCast {
     val result = CastStrings.toDate(input, ansiMode)
     if (ansiMode && result == null) {
       // All the errors of Spark 32x, 33x, 34x, 35x contains "DateTimeException"
-      throw new DateTimeException("DateTimeException" + CurrentOrigin.get.context)
+      throw new DateTimeException(
+        "DateTimeException" + OriginContextShim.contextSummary(CurrentOrigin.get))
     } else {
       result
     }
@@ -1377,7 +1379,8 @@ object GpuCast {
     closeOnExcept(CastStrings.toTimestamp(input, normalizedTZ, ansiMode, versionForJni)) { result =>
       if (ansiMode && result == null) {
         throw new DateTimeException(
-          "One or more values is not a valid timestamp" + CurrentOrigin.get.context)
+          "One or more values is not a valid timestamp" +
+            OriginContextShim.contextSummary(CurrentOrigin.get))
       } else {
         result
       }
@@ -1492,7 +1495,7 @@ object GpuCast {
         }
       }
       throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(
-        Decimal(failedVal), dt, CurrentOrigin.get.context)
+        Decimal(failedVal), dt, OriginContextShim.queryContext(CurrentOrigin.get))
     }
     converted.result
   }
@@ -1504,7 +1507,7 @@ object GpuCast {
       withResource(outOfBounds.any()) { isAny =>
         if (isAny.isValid && isAny.getBoolean) {
           throw RapidsErrorUtils.arithmeticOverflowError(
-            OVERFLOW_MESSAGE, "", CurrentOrigin.get.context)
+            OVERFLOW_MESSAGE, "", OriginContextShim.queryContext(CurrentOrigin.get))
         }
       }
       input.copyToColumnVector()
@@ -1728,7 +1731,7 @@ case class GpuCast(
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     // Wrap the cast in the CPU expression's origin so any ANSI error thrown by
     // the static `doCast` helpers picks up the SQL query context via
-    // `CurrentOrigin.get.context` (see error-site helpers in this file).
+    // `OriginContextShim.queryContext(CurrentOrigin.get)` (see error-site helpers in this file).
     CurrentOrigin.withOrigin(origin) {
       doCast(input.getBase, input.dataType(), dataType, options)
     }
