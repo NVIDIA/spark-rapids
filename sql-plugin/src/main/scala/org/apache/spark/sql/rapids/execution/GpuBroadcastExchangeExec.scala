@@ -80,7 +80,8 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   // used for memoization of deserialization to GPU on Executor
   @transient private var batchInternal: SpillableColumnarBatch = null
-  @transient private var cachedBuildSideCache: mutable.HashMap[BroadcastCachedBuildSideKey, CachedBuildSide] = null
+  @transient private var cachedBuildSideCache:
+      mutable.HashMap[BroadcastCachedBuildSideKey, CachedBuildSide] = null
 
   private def maybeGpuBatch: Option[SpillableColumnarBatch] = Option(batchInternal)
 
