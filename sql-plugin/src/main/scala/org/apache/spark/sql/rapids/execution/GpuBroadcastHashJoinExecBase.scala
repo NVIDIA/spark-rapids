@@ -120,8 +120,8 @@ abstract class GpuBroadcastHashJoinExecBase(
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
     JOIN_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_JOIN_TIME),
-    BUILD_SIDE_CACHE_BUILDS -> createMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_SIDE_CACHE_BUILDS),
-    BUILD_SIDE_CACHE_HITS -> createMetric(MODERATE_LEVEL, DESCRIPTION_BUILD_SIDE_CACHE_HITS))
+    BUILD_SIDE_CACHE_BUILDS -> createMetric(DEBUG_LEVEL, DESCRIPTION_BUILD_SIDE_CACHE_BUILDS),
+    BUILD_SIDE_CACHE_HITS -> createMetric(DEBUG_LEVEL, DESCRIPTION_BUILD_SIDE_CACHE_HITS))
 
   override def requiredChildDistribution: Seq[Distribution] = {
     val mode = HashedRelationBroadcastMode(buildKeys)
