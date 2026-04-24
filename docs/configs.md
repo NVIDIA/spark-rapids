@@ -16,15 +16,15 @@ The following is the list of options that `rapids-plugin-4-spark` supports.
 On startup use: `--conf [conf key]=[conf value]`. For example:
 
 ```
-${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.02.0-cuda12.jar \
+${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.04.0-cuda12.jar \
 --conf spark.plugins=com.nvidia.spark.SQLPlugin \
---conf spark.rapids.sql.concurrentGpuTasks=2
+--conf spark.rapids.sql.explain=NOT_ON_GPU
 ```
 
 At runtime use: `spark.conf.set("[conf key]", [conf value])`. For example:
 
 ```
-scala> spark.conf.set("spark.rapids.sql.concurrentGpuTasks", 2)
+scala> spark.conf.set("spark.rapids.sql.explain", "NOT_ON_GPU")
 ```
 
  All configs can be set on startup, but some configs, especially for shuffle, will not
