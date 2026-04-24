@@ -447,9 +447,24 @@ else
         # an EOF on stdin and injects a ":quit" command. Without a grep check
         # the exit code would be success 0 regardless of the exceptions.
         #
-        <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
-            "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>/dev/null \
-            | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'
+        # Keep stderr in the captured output so CI logs show the real spark-shell failure.
+        set +e
+        output=$(
+            <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+                "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1
+        )
+        spark_shell_status=$?
+        set -e
+        if [[ ${spark_shell_status} -ne 0 ]]; then
+            printf '%s\n' "$output"
+            echo "spark-shell exited with status ${spark_shell_status}"
+            exit "${spark_shell_status}"
+        fi
+        if ! grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])' <<< "$output" >/dev/null; then
+            printf '%s\n' "$output"
+            echo "spark-shell smoke test output did not contain the expected result"
+            exit 1
+        fi
         echo "SUCCESS spark-shell smoke test"
     elif [[ "${EXPLAIN_ONLY_CPU_SMOKE_TEST}" != "0" ]]; then
         echo "Running explainOnly mode on CPU smoke test..."

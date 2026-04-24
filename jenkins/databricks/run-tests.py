@@ -42,8 +42,11 @@ def main():
         (params.jar_path, params.spark_conf, params.base_spark_pom_version, params.extra_envs, params.test_type,
          params.script_dest, ' '.join(params.script_args))
     print("ssh command: %s" % ssh_command)
+    remote_error = None
     try:
         subprocess.check_call(ssh_command, shell=True)
+    except subprocess.CalledProcessError as err:
+        remote_error = err
     finally:
         print("Copying test report tarball back")
         if params.base_spark_pom_version.startswith("4."):
@@ -54,7 +57,15 @@ def main():
         rsync_command = "rsync -I -Pave \"ssh %s\" ubuntu@%s:%s/integration_tests/target/run_dir*/TEST-pytest-*.xml ./" % \
             (ssh_args, master_addr, report_path_prefix)
         print("rsync command: %s" % rsync_command)
-        subprocess.check_call(rsync_command, shell = True)
+        try:
+            subprocess.check_call(rsync_command, shell = True)
+        except subprocess.CalledProcessError as err:
+            if remote_error is None:
+                raise
+            print("Warning: failed to copy test reports back: %s" % err, file=sys.stderr)
+
+    if remote_error is not None:
+        raise remote_error
 
 
 if __name__ == '__main__':
