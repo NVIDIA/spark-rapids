@@ -21,9 +21,9 @@ import com.nvidia.spark.rapids.delta.common.GpuDeltaParquetFileFormatBase
 import org.apache.spark.sql.delta.actions.{Metadata, Protocol}
 
 /**
- * Thin wrapper delegating to the shared Parquet format implementation.
+ * Thin wrapper delegating the Delta 4.x reader path to the shared Parquet format implementation.
  */
-case class GpuDeltaParquetFileFormat(
+case class GpuDelta4xParquetFileFormat(
     protocol: Protocol,
     metadata: Metadata,
     nullableRowTrackingFields: Boolean = false,

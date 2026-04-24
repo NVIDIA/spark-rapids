@@ -35,4 +35,4 @@ case class GpuDeleteCommand(
     target: LogicalPlan,
     condition: Option[Expression])
   extends GpuDeleteCommandBase(gpuDeltaLog, catalogTable, target, condition)
-  with ClassicSparkCommandShims
+  with ClassicSessionDeltaCommandShims

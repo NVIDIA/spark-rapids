@@ -25,10 +25,10 @@ import org.apache.spark.sql.nvidia.DFUDFShims
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 
 /**
- * Shared command shims for classic Spark-backed Delta commands.
+ * Shared command shims for Delta commands that execute against Spark's classic session runtime.
  * Uses ClassicSparkSession and the Spark-side column conversion helpers.
  */
-trait ClassicSparkCommandShims extends DeltaCommandShims {
+trait ClassicSessionDeltaCommandShims extends DeltaCommandShims {
   override type ShimSparkSession = SqlSparkSession
   override type OperationSparkSession = ClassicSparkSession
 
@@ -71,4 +71,4 @@ trait ClassicSparkCommandShims extends DeltaCommandShims {
   }
 }
 
-object ClassicSparkCommandShims extends ClassicSparkCommandShims
+object ClassicSessionDeltaCommandShims extends ClassicSessionDeltaCommandShims

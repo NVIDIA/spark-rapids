@@ -37,16 +37,6 @@ import org.apache.spark.sql.delta.stats.AutoCompactPartitionStats
 
 trait GpuAutoCompactBase extends AutoCompactBase {
   /**
-   * Run the Auto Compact hook with the GPU optimistic transaction.
-   */
-  def run(
-      spark: SparkSession,
-      txn: GpuOptimisticTransactionBase,
-      committedVersion: Long,
-      postCommitSnapshot: Snapshot,
-      actions: Seq[Action]): Unit
-
-  /**
    * Execute a prepared auto-compaction request. Version-specific shims are responsible for
    * constructing the request with the correct Delta API.
    */
@@ -100,6 +90,7 @@ trait GpuAutoCompactBase extends AutoCompactBase {
       Seq.empty[OptimizeMetrics]
     }
   }
+
   /**
    * Launch Auto Compaction jobs if there is sufficient capacity.
    * @param spark The spark session of the parent transaction that triggers this Auto Compaction.
@@ -141,4 +132,16 @@ trait GpuAutoCompactBase extends AutoCompactBase {
       metrics
     }
   }
+}
+
+trait GpuTransactionalAutoCompactBase extends GpuAutoCompactBase {
+  /**
+   * Run the auto-compaction hook against the live GPU transaction API used by Delta 3.3/4.0.
+   */
+  def run(
+      spark: SparkSession,
+      txn: GpuOptimisticTransactionBase,
+      committedVersion: Long,
+      postCommitSnapshot: Snapshot,
+      actions: Seq[Action]): Unit
 }

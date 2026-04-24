@@ -23,9 +23,6 @@ package org.apache.spark.sql.delta.hooks
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.delta._
-import org.apache.spark.sql.delta.actions._
-import org.apache.spark.sql.delta.rapids.GpuOptimisticTransactionBase
-
 /**
  * Delta 4.1 version-specific implementation of GpuAutoCompact.
  * Delta 4.1 drives post-commit hooks via CommittedTransaction instead of the older live
@@ -40,16 +37,6 @@ case object GpuAutoCompact extends GpuAutoCompactBase {
     val autoCompactTypeOpt = getAutoCompactType(conf, txn.postCommitSnapshot.metadata)
     if (shouldSkipAutoCompact(autoCompactTypeOpt, spark, txn)) return
     compactIfNecessary(spark, txn)
-  }
-
-  override def run(
-      spark: SparkSession,
-      txn: GpuOptimisticTransactionBase,
-      committedVersion: Long,
-      postCommitSnapshot: Snapshot,
-      actions: Seq[Action]): Unit = {
-    throw new UnsupportedOperationException(
-      "Spark 4.1 Delta auto-compaction uses the committed transaction hook")
   }
 
   private def compactIfNecessary(

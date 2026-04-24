@@ -32,7 +32,7 @@ import org.apache.spark.sql.delta.rapids.GpuOptimisticTransactionBase
  * - DeltaTransaction instead of OptimisticTransactionImpl
  * - Iterator[Action] instead of Seq[Action]
  */
-case object GpuAutoCompact extends GpuAutoCompactBase {
+case object GpuAutoCompact extends GpuTransactionalAutoCompactBase {
 
   override def run(
       spark: SparkSession,

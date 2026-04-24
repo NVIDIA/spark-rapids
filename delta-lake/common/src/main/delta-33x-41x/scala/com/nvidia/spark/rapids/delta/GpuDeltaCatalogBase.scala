@@ -78,6 +78,9 @@ abstract class GpuDeltaCatalogBase(
   }
 
   private lazy val isUnityCatalog: Boolean = {
+    // This is a defensive superclass walk, not a version-specific shim split: supported Delta
+    // catalogs expose the same `isUnityCatalog` flag, but wrapper subclasses may inherit it rather
+    // than redeclare it on the concrete runtime class we receive here.
     @scala.annotation.tailrec
     def findField(clazz: Class[_]): Option[java.lang.reflect.Field] = {
       if (clazz == null) {

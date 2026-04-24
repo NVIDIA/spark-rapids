@@ -39,4 +39,4 @@ case class GpuUpdateCommand(
     condition: Option[Expression])
   extends GpuUpdateCommandBase(
     gpuDeltaLog, tahoeFileIndex, catalogTable, target, updateExpressions, condition)
-  with ClassicSparkCommandShims
+  with ClassicSessionDeltaCommandShims

@@ -69,7 +69,7 @@ class GpuOptimisticTransaction(deltaLog: DeltaLog,
     snapshot: Option[Snapshot],
     rapidsConf: RapidsConf)
   extends GpuOptimisticTransactionBase(deltaLog, catalogTable, snapshot, rapidsConf)
-  with ClassicSparkCommandShims {
+  with ClassicSessionDeltaCommandShims {
 
   /** Creates a new OptimisticTransaction.
    *

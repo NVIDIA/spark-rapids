@@ -20,7 +20,7 @@ import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.delta.common.DeltaDynamicPartitionOverwriteCommandMetaBase
 
 import org.apache.spark.sql.delta.DeltaDynamicPartitionOverwriteCommand
-import org.apache.spark.sql.delta.rapids.ClassicSparkCommandShims
+import org.apache.spark.sql.delta.rapids.ClassicSessionDeltaCommandShims
 
 class DeltaDynamicPartitionOverwriteCommandMeta(
     overwriteCommand: DeltaDynamicPartitionOverwriteCommand,
@@ -28,4 +28,4 @@ class DeltaDynamicPartitionOverwriteCommandMeta(
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule)
   extends DeltaDynamicPartitionOverwriteCommandMetaBase(
-    overwriteCommand, conf, parent, rule, ClassicSparkCommandShims)
+    overwriteCommand, conf, parent, rule, ClassicSessionDeltaCommandShims)

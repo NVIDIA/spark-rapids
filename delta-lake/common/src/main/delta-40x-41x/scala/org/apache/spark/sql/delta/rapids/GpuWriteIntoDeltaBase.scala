@@ -69,9 +69,20 @@ abstract class GpuWriteIntoDeltaBase(
     cpuWrite.options.canOverwriteSchema && isOverwriteOperation &&
       cpuWrite.options.replaceWhere.isEmpty
 
+  /**
+   * Build the Delta commit metadata object for this runtime's `WriteIntoDelta` implementation.
+   *
+   * Delta 4.1 extends `DeltaOperations.Write` with additional overwrite/schema flags while Delta
+   * 4.0 still uses the shorter constructor, so subclasses supply the version-specific metadata
+   * object here.
+   */
   protected def buildWriteOperation: DeltaOperations.Operation
 
-  protected def copyWithCpuWrite(newCpuWrite: WriteIntoDelta): WriteIntoDeltaLike
+  /**
+   * Recreate the GPU write command around an updated CPU `WriteIntoDelta` while preserving the
+   * concrete GPU subclass used by the current Delta runtime.
+   */
+  protected def copyWithCpuWrite(newCpuWrite: WriteIntoDelta): GpuWriteIntoDeltaBase
 
   override def run(sparkSession: SqlSparkSession): Seq[Row] = {
     gpuDeltaLog.withNewTransaction(cpuWrite.catalogTableOpt) { txn =>

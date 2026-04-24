@@ -18,14 +18,17 @@ package org.apache.spark.sql.delta.rapids.delta41x
 
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.DeltaProvider
-import com.nvidia.spark.rapids.delta.delta41x.{Delta41xProvider, GpuDeltaCatalog}
+import com.nvidia.spark.rapids.delta.delta41x.Delta41xProvider
 
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
+import org.apache.spark.sql.delta.commands.TableCreationModes
 import org.apache.spark.sql.delta.rapids.{
   DeltaRuntimeShimBase,
+  GpuDeltaCatalog4x,
   GpuOptimisticTransaction,
   GpuOptimisticTransactionBase,
+  GpuWriteIntoDelta,
   StartTransactionArg
 }
 
@@ -36,7 +39,25 @@ class Delta41xRuntimeShim extends DeltaRuntimeShimBase {
   override def getGpuDeltaCatalog(
       cpuCatalog: DeltaCatalog,
       rapidsConf: RapidsConf): StagingTableCatalog = {
-    new GpuDeltaCatalog(cpuCatalog, rapidsConf)
+    new GpuDeltaCatalog4x(
+      cpuCatalog,
+      rapidsConf,
+      (
+          withDb,
+          existingTableOpt,
+          mode,
+          writer: Option[GpuWriteIntoDelta],
+          operation: TableCreationModes.CreationMode,
+          isByPath,
+          tableCreateFunc) =>
+        GpuCreateDeltaTableCommand(
+          withDb,
+          existingTableOpt,
+          operation.mode,
+          writer,
+          operation,
+          tableByPath = isByPath,
+          createTableFunc = tableCreateFunc)(rapidsConf))
   }
 
   override protected def constructOptimisticTransaction(

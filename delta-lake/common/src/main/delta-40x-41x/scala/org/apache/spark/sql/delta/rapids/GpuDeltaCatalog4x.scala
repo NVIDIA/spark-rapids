@@ -1,11 +1,6 @@
 /*
  * Copyright (c) 2026, NVIDIA CORPORATION.
  *
- * This file was derived from DeltaDataSource.scala in the
- * Delta Lake project at https://github.com/delta-io/delta.
- *
- * Copyright (2021) The Delta Lake Project Authors.
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -19,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.delta.delta41x
+package org.apache.spark.sql.delta.rapids
 
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.GpuDeltaCatalogBase
@@ -28,12 +23,25 @@ import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.commands.TableCreationModes
-import org.apache.spark.sql.delta.rapids.GpuWriteIntoDelta
-import org.apache.spark.sql.delta.rapids.delta41x.GpuCreateDeltaTableCommand
+import org.apache.spark.sql.execution.command.RunnableCommand
 
-class GpuDeltaCatalog(
+/**
+ * Shared GPU Delta catalog wrapper for the Delta 4.0 and 4.1 shims.
+ *
+ * The catalog logic is identical across these runtimes; only the
+ * version-specific `GpuCreateDeltaTableCommand` constructor differs.
+ */
+class GpuDeltaCatalog4x(
     cpuCatalog: DeltaCatalog,
-    rapidsConf: RapidsConf)
+    rapidsConf: RapidsConf,
+    createDeltaTableCommand: (
+        CatalogTable,
+        Option[CatalogTable],
+        SaveMode,
+        Option[GpuWriteIntoDelta],
+        TableCreationModes.CreationMode,
+        Boolean,
+        Option[CatalogTable => Unit]) => RunnableCommand)
   extends GpuDeltaCatalogBase(cpuCatalog, rapidsConf) {
 
   override protected def createGpuCreateDeltaTableCommand(
@@ -44,13 +52,13 @@ class GpuDeltaCatalog(
       operation: TableCreationModes.CreationMode,
       isByPath: Boolean,
       tableCreateFunc: Option[CatalogTable => Unit]): Unit = {
-    GpuCreateDeltaTableCommand(
+    createDeltaTableCommand(
       withDb,
       existingTableOpt,
-      operation.mode,
+      mode,
       writer,
       operation,
-      tableByPath = isByPath,
-      createTableFunc = tableCreateFunc)(rapidsConf).run(spark)
+      isByPath,
+      tableCreateFunc).run(spark)
   }
 }
