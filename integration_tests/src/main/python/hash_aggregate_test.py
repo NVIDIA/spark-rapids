@@ -194,6 +194,13 @@ _decimals_with_no_nulls = [
 _init_list_with_decimals = _init_list + [
     _decimals_with_nulls, _decimals_with_no_nulls]
 
+# Grouped FP gens using bare DoubleGen()/FloatGen() on the aggregated columns.
+# Their default special_cases inject NaN, -0.0, +-Inf, and max-fraction values,
+# which exercise the corner-case paths for FP aggregate functions.
+_init_list_with_decimals_and_floats = _init_list_with_decimals + [
+    [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', DoubleGen()), ('c', DoubleGen())],
+    [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', FloatGen()), ('c', FloatGen())]]
+
 # Used to test ANSI-mode fallback
 _no_overflow_ansi_gens = [
     ByteGen(min_val = 1, max_val = 10, special_cases=[]),
@@ -2540,7 +2547,7 @@ def test_no_fallback_when_ansi_enabled(data_gen, kudo_enabled):
 @ignore_order(local=True)
 @approximate_float
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_decimals, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_decimals_and_floats, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_std_variance(data_gen, conf, kudo_enabled):
