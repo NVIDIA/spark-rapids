@@ -790,7 +790,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         "on an executor. Reuse pins the physical build side to the broadcast side for the " +
         "lifetime of each cached join, overriding the dynamic build-side selection " +
         s"heuristic configured by ${JOIN_BUILD_SIDE.key}.")
-      .internal()
       .booleanConf
       .createWithDefault(false)
 
