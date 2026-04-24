@@ -16,7 +16,9 @@
 
 package org.apache.iceberg.parquet
 
-import com.nvidia.spark.rapids.GpuMetric
+import scala.annotation.nowarn
+
+import com.nvidia.spark.rapids.{GpuMetric, NoopMetric}
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions
@@ -26,14 +28,16 @@ import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
  * Iceberg 1.9.x shim: footer caching is not supported because the shaded `ParquetFileReader` in
  * 1.9.x has no public API to inject pre-parsed footer metadata. This opens the reader via the
  * plain `open(InputFile, ParquetReadOptions)` path and always reads the footer from the file.
+ * The footer-miss counter is bumped on every call so dashboards see non-zero activity instead
+ * of silently interpreting "all zeros" as "everything was cached".
  */
 object GpuParquetIOShim {
   def openReader(
       inputFile: IcebergInputFile,
-      filePath: Path,
+      _filePath: Path,
       options: ParquetReadOptions,
       metrics: Map[String, GpuMetric]): ParquetFileReader = {
-    val _ = (filePath, metrics)
+    metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES, NoopMetric) += 1
     ParquetFileReader.open(GpuParquetIO.file(inputFile.getDelegate), options)
   }
 }
