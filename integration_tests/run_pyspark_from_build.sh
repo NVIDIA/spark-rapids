@@ -411,6 +411,27 @@ else
       export PYSP_TEST_spark_gluten_loadLibFromJar=true
     fi
 
+    dump_log_head() {
+        local log_file="$1"
+        local max_lines="${2:-120}"
+        if [[ ! -f "$log_file" ]]; then
+            return
+        fi
+        echo "===== BEGIN ${log_file} (first ${max_lines} lines) ====="
+        python - "$log_file" "$max_lines" <<'PY'
+import sys
+
+path = sys.argv[1]
+max_lines = int(sys.argv[2])
+with open(path, encoding="utf-8", errors="replace") as fh:
+    for idx, line in enumerate(fh):
+        if idx >= max_lines:
+            break
+        sys.stdout.write(line)
+PY
+        echo "===== END ${log_file} ====="
+    }
+
     dump_log_tail() {
         local log_file="$1"
         local max_lines="${2:-200}"
@@ -429,6 +450,44 @@ with open(path, encoding="utf-8", errors="replace") as fh:
         sys.stdout.write(line)
 PY
         echo "===== END ${log_file} ====="
+    }
+
+    dump_log_matches() {
+        local log_file="$1"
+        local pattern="$2"
+        local context_lines="${3:-20}"
+        if [[ ! -f "$log_file" ]]; then
+            return
+        fi
+        python - "$log_file" "$pattern" "$context_lines" <<'PY'
+import re
+import sys
+
+path, pattern, context_lines = sys.argv[1], sys.argv[2], int(sys.argv[3])
+with open(path, encoding="utf-8", errors="replace") as fh:
+    lines = fh.readlines()
+
+regex = re.compile(pattern, re.IGNORECASE)
+matches = [idx for idx, line in enumerate(lines) if regex.search(line)]
+if not matches:
+    sys.exit(0)
+
+ranges = []
+for idx in matches:
+    start = max(0, idx - context_lines)
+    end = min(len(lines), idx + context_lines + 1)
+    if ranges and start <= ranges[-1][1]:
+        ranges[-1][1] = max(ranges[-1][1], end)
+    else:
+        ranges.append([start, end])
+
+print(f"===== BEGIN matched excerpts from {path} =====")
+for start, end in ranges:
+    print(f"--- lines {start + 1}-{end} ---")
+    for line in lines[start:end]:
+        sys.stdout.write(line)
+print(f"===== END matched excerpts from {path} =====")
+PY
     }
 
     collect_local_cluster_log_paths() {
@@ -488,6 +547,12 @@ PY
         echo "Dumping standalone worker/executor logs from ${SPARK_HOME}"
         local log_file
         for log_file in "${log_files[@]}"; do
+            if [[ "${log_file}" == */stderr ]]; then
+                dump_log_matches "$log_file" \
+                    "Exception in the executor plugin|CudaFatalException|CudaException|fatal CUDA error|UnsatisfiedLinkError|NoClassDefFoundError|Halting after|Forcing Halt" \
+                    25
+            fi
+            dump_log_head "$log_file" 120
             dump_log_tail "$log_file" 200
         done
     }
