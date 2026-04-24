@@ -16,11 +16,10 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{HashJoin => CudfHashJoin, Table}
+import ai.rapids.cudf.{DistinctHashJoin => CudfDistinctHashJoin, HashJoin => CudfHashJoin, Table}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
-import com.nvidia.spark.rapids.jni.DistinctHashJoin
 import com.nvidia.spark.rapids.spill.SharedRecomputableDeviceHandle
 
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -37,7 +36,7 @@ final class CachedHashJoin(
 
 final class CachedDistinctHashJoin(
     override val buildStats: JoinBuildSideStats,
-    val handle: SharedRecomputableDeviceHandle[DistinctHashJoin]) extends CachedBuildSide {
+    val handle: SharedRecomputableDeviceHandle[CudfDistinctHashJoin]) extends CachedBuildSide {
   override def close(): Unit = handle.close()
 }
 
@@ -97,9 +96,9 @@ object BroadcastCachedBuildSide {
       }
     }
 
-    def buildDistinctHashJoin(): DistinctHashJoin = {
+    def buildDistinctHashJoin(): CudfDistinctHashJoin = {
       withBuildKeys(broadcastBatch, boundBuiltKeys, filterOutNulls) { buildKeys =>
-        new DistinctHashJoin(buildKeys, compareNullsEqual)
+        new CudfDistinctHashJoin(buildKeys, compareNullsEqual)
       }
     }
 
@@ -111,7 +110,7 @@ object BroadcastCachedBuildSide {
           stats,
           SharedRecomputableDeviceHandle(
             approxSizeInBytes,
-            new DistinctHashJoin(buildKeys, compareNullsEqual)) {
+            new CudfDistinctHashJoin(buildKeys, compareNullsEqual)) {
             buildDistinctHashJoin()
           })
       } else {

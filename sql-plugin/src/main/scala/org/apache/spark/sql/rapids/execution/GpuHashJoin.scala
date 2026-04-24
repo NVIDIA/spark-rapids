@@ -15,13 +15,13 @@
  */
 package org.apache.spark.sql.rapids.execution
 
-import ai.rapids.cudf.{ColumnView, DType, GatherMap, HashJoin => CudfHashJoin, NullEquality, OutOfBoundsPolicy, Scalar, Table}
+import ai.rapids.cudf.{ColumnView, DistinctHashJoin => CudfDistinctHashJoin, DType, GatherMap, HashJoin => CudfHashJoin, NullEquality, OutOfBoundsPolicy, Scalar, Table}
 import ai.rapids.cudf.ast.CompiledExpression
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{withRestoreOnRetry, withRetryNoSplit}
-import com.nvidia.spark.rapids.jni.{DistinctHashJoin, GpuOOM, JoinPrimitives}
+import com.nvidia.spark.rapids.jni.{GpuOOM, JoinPrimitives}
 import com.nvidia.spark.rapids.shims.ShimBinaryExecNode
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, NamedExpression}
@@ -337,29 +337,29 @@ object JoinImpl {
 
   def innerDistinctHashJoinBuildLeft(
       rightKeys: Table,
-      leftHashJoin: DistinctHashJoin): GatherMapsResult = {
-    val arrayRet = leftHashJoin.innerJoinGatherMaps(rightKeys)
+      leftHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
+    val arrayRet = rightKeys.innerJoinGatherMaps(leftHashJoin)
     GatherMapsResult(arrayRet(1), arrayRet(0))
   }
 
   def innerDistinctHashJoinBuildRight(
       leftKeys: Table,
-      rightHashJoin: DistinctHashJoin): GatherMapsResult = {
-    val arrayRet = rightHashJoin.innerJoinGatherMaps(leftKeys)
+      rightHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
+    val arrayRet = leftKeys.innerJoinGatherMaps(rightHashJoin)
     GatherMapsResult(arrayRet(0), arrayRet(1))
   }
 
   def leftOuterDistinctHashJoinBuildRight(
       leftKeys: Table,
-      rightHashJoin: DistinctHashJoin): GatherMapsResult = {
-    val rightRet = rightHashJoin.leftJoinGatherMap(leftKeys)
+      rightHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
+    val rightRet = leftKeys.leftDistinctJoinGatherMap(rightHashJoin)
     GatherMapsResult.makeFromRight(rightRet)
   }
 
   def rightOuterDistinctHashJoinBuildLeft(
       rightKeys: Table,
-      leftHashJoin: DistinctHashJoin): GatherMapsResult = {
-    val leftRet = leftHashJoin.leftJoinGatherMap(rightKeys)
+      leftHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
+    val leftRet = rightKeys.leftDistinctJoinGatherMap(leftHashJoin)
     GatherMapsResult.makeFromLeft(leftRet)
   }
 
@@ -1192,7 +1192,7 @@ abstract class BaseHashJoinIterator(
   }
 
   protected def withCachedDistinctHashJoin[T](
-      expectedBuildSide: GpuBuildSide)(f: DistinctHashJoin => T): Option[T] = {
+      expectedBuildSide: GpuBuildSide)(f: CudfDistinctHashJoin => T): Option[T] = {
     if (!canUseCachedDistinctHashJoin(expectedBuildSide)) {
       None
     } else {
