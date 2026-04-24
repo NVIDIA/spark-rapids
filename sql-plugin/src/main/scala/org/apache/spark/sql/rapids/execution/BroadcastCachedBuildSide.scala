@@ -17,7 +17,7 @@
 package org.apache.spark.sql.rapids.execution
 
 import ai.rapids.cudf.{DistinctHashJoin => CudfDistinctHashJoin, HashJoin => CudfHashJoin, Table}
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, SpillableColumnarBatch}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuExpression, GpuProjectExec, NvtxRegistry, SpillableColumnarBatch}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.spill.SharedRecomputableDeviceHandle
@@ -80,6 +80,20 @@ object BroadcastCachedBuildSide {
     }
   }
 
+  private def newHashJoin(buildKeys: Table, compareNullsEqual: Boolean): CudfHashJoin = {
+    NvtxRegistry.BROADCAST_HASH_TABLE_BUILD {
+      new CudfHashJoin(buildKeys, compareNullsEqual)
+    }
+  }
+
+  private def newDistinctHashJoin(
+      buildKeys: Table,
+      compareNullsEqual: Boolean): CudfDistinctHashJoin = {
+    NvtxRegistry.BROADCAST_HASH_TABLE_BUILD {
+      new CudfDistinctHashJoin(buildKeys, compareNullsEqual)
+    }
+  }
+
   /**
    * cuDF's reusable hash join handles are safe for concurrent probes. The executor-wide cache
    * therefore pins the live handle while a task is probing it and relies on
@@ -92,13 +106,13 @@ object BroadcastCachedBuildSide {
       filterOutNulls: Boolean): CachedBuildSide = {
     def buildHashJoin(): CudfHashJoin = {
       withBuildKeys(broadcastBatch, boundBuiltKeys, filterOutNulls) { buildKeys =>
-        new CudfHashJoin(buildKeys, compareNullsEqual)
+        newHashJoin(buildKeys, compareNullsEqual)
       }
     }
 
     def buildDistinctHashJoin(): CudfDistinctHashJoin = {
       withBuildKeys(broadcastBatch, boundBuiltKeys, filterOutNulls) { buildKeys =>
-        new CudfDistinctHashJoin(buildKeys, compareNullsEqual)
+        newDistinctHashJoin(buildKeys, compareNullsEqual)
       }
     }
 
@@ -110,7 +124,7 @@ object BroadcastCachedBuildSide {
           stats,
           SharedRecomputableDeviceHandle(
             approxSizeInBytes,
-            new CudfDistinctHashJoin(buildKeys, compareNullsEqual)) {
+            newDistinctHashJoin(buildKeys, compareNullsEqual)) {
             buildDistinctHashJoin()
           })
       } else {
@@ -118,7 +132,7 @@ object BroadcastCachedBuildSide {
           stats,
           SharedRecomputableDeviceHandle(
             approxSizeInBytes,
-            new CudfHashJoin(buildKeys, compareNullsEqual)) {
+            newHashJoin(buildKeys, compareNullsEqual)) {
             buildHashJoin()
           })
       }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -393,6 +393,9 @@ object NvtxRegistry {
   val BUILD_JOIN_TABLE: NvtxId = NvtxId("build join table", NvtxColor.GREEN,
     "Building hash table for join operation")
 
+  val BROADCAST_HASH_TABLE_BUILD: NvtxId = NvtxId("broadcast hash table build",
+    NvtxColor.GREEN, "Building cuDF hash table for broadcast hash join")
+
   // Window operations
   val WINDOW: NvtxId = NvtxId("window", NvtxColor.CYAN,
     "Computing window function results")
@@ -780,6 +783,7 @@ object NvtxRegistry {
     register(EXISTENCE_JOIN_SCATTER_MAP)
     register(EXISTENCE_JOIN_BATCH)
     register(BUILD_JOIN_TABLE)
+    register(BROADCAST_HASH_TABLE_BUILD)
     register(WINDOW)
     register(RUNNING_WINDOW)
     register(DOUBLE_BATCHED_WINDOW_PRE)
