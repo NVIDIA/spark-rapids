@@ -20,13 +20,13 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.common.{DeleteCommandMeta, DeltaDynamicPartitionOverwriteCommandMeta, MergeIntoCommandMeta, OptimizeTableCommandMeta, UpdateCommandMeta}
 import com.nvidia.spark.rapids.delta.common.{GpuDelta4xParquetFileFormat, GpuDeltaParquetFileFormat2}
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
-import org.apache.spark.sql.delta.rapids.GpuDeltaCatalog4x
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.catalog.SupportsWrite
 import org.apache.spark.sql.delta.{DeltaDynamicPartitionOverwriteCommand, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.catalog.DeltaTableV2
 import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, OptimizeTableCommand, UpdateCommand}
+import org.apache.spark.sql.delta.rapids.GpuDeltaCatalog4x
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.AppendDataExecV1
