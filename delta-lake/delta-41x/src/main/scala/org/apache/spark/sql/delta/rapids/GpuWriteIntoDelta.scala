@@ -21,8 +21,6 @@
 
 package org.apache.spark.sql.delta.rapids
 
-import scala.util.Try
-
 import org.apache.spark.sql.delta.DeltaOperations
 import org.apache.spark.sql.delta.commands.WriteIntoDelta
 
@@ -47,7 +45,7 @@ case class GpuWriteIntoDelta(
     copy(cpuWrite = newCpuWrite)
 
   private def dynamicPartitionOverwriteForCommitInfo: Option[Boolean] =
-    booleanOption(Try(cpuWrite.options.isDynamicPartitionOverwriteMode).getOrElse(false))
+    booleanOption(cpuWrite.options.isDynamicPartitionOverwriteMode)
 
   private def booleanOption(enabled: Boolean): Option[Boolean] =
     if (enabled) Some(true) else None
