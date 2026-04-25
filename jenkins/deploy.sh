@@ -110,10 +110,6 @@ echo "Deploy CMD: $DEPLOY_CMD"
 ###### Deploy the parent pom file ######
 $DEPLOY_CMD -Dfile=./pom.xml -DpomFile=./pom.xml
 
-###### Deploy the jdk-profile pom file ######
-JDK_PROFILES=${JDK_PROFILES:-"jdk-profiles"}
-$DEPLOY_CMD -Dfile=$JDK_PROFILES/pom.xml -DpomFile=$JDK_PROFILES/pom.xml
-
 ###### Deploy the artifact jar(s) ######
 $DEPLOY_CMD -DpomFile=$POM_FILE \
             -Dfile=$FPATH-$DEFAULT_CUDA_CLASSIFIER.jar \
