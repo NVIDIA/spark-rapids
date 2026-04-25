@@ -280,13 +280,42 @@
             </dependencies>
         </profile>
 
+        <!-- Active for OSS Spark builds (i.e. when -Ddatabricks is not
+             passed). Imports Spark's dependency management so transitive
+             dependency versions inherited via Spark (e.g. Jackson) take
+             precedence, and pulls in spark-hive/spark-sql/spark-avro at
+             compile scope.
+
+             We deliberately gate this profile on !databricks (rather than
+             activeByDefault=true) so we keep the BOM import and the
+             spark-* deps in a single profile. activeByDefault profiles
+             get silently deactivated as soon as any other profile in the
+             same POM activates, which would split the BOM and the deps
+             across two profiles and break their interaction.
+
+             For Databricks builds, dbdeps activates and pulls in
+             rapids-4-spark-db-bom, which provides spark-hive/spark-sql/
+             spark-avro et al under Databricks-specific coordinates
+             installed by jenkins/databricks/install_deps.py. Importing
+             Spark's BOM there would drag in OSS transitives (e.g.
+             commons-io 2.8.0 from hadoop-client) that conflict with the
+             Databricks-shipped jars (e.g. commons-io 2.13.0 needed by
+             NullOutputStream.INSTANCE in spark350db143).
+
+             TODO: when another proprietary shim lands, replace the
+             !databricks gate with a single sentinel property such as
+             !nonOssRuntime that both the Databricks and the new shim's
+             build scripts pass via -DnonOssRuntime=true. Maven activation
+             can only test one property per profile, so AND-ing
+             !databricks and the new shim's flag is not expressible
+             without that indirection. -->
         <profile>
             <id>with-classifier</id>
             <activation>
-                <activeByDefault>true</activeByDefault>
+                <property>
+                    <name>!databricks</name>
+                </property>
             </activation>
-            <!-- Import Spark's dependency management to give precedence to
-                 transitive dependency versions inherited via Spark (e.g. Jackson) -->
             <dependencyManagement>
                 <dependencies>
                     <dependency>
