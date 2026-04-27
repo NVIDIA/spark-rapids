@@ -56,7 +56,7 @@ import org.apache.spark.sql.rapids.GpuShuffleBlockResolverBase
 import org.apache.spark.storage.ShuffleMergedBlockId
 
 class GpuShuffleBlockResolver(
-    resolver: IndexShuffleBlockResolver,
+    val resolver: IndexShuffleBlockResolver,
     catalog: ShuffleBufferCatalog)
     extends GpuShuffleBlockResolverBase(resolver, catalog) {
 
