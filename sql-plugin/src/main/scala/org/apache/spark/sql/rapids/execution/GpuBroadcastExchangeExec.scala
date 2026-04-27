@@ -80,8 +80,17 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   // used for memoization of deserialization to GPU on Executor
   @transient private var batchInternal: SpillableColumnarBatch = null
+  @transient private var cachedBuildSideCache:
+      mutable.HashMap[BroadcastCachedBuildSideKey, CachedBuildSide] = null
 
   private def maybeGpuBatch: Option[SpillableColumnarBatch] = Option(batchInternal)
+
+  private def cachedBuildSides: mutable.HashMap[BroadcastCachedBuildSideKey, CachedBuildSide] = {
+    if (cachedBuildSideCache == null) {
+      cachedBuildSideCache = mutable.HashMap.empty
+    }
+    cachedBuildSideCache
+  }
 
   def batch: SpillableColumnarBatch = this.synchronized {
     maybeGpuBatch.getOrElse {
@@ -145,6 +154,31 @@ class SerializeConcatHostBuffersDeserializeBatch(
           new ColumnarBatch(hostColumns.toArray, rowCount)
         }
       }
+    }
+  }
+
+  def getCachedBuildSide(
+      boundBuiltKeys: Seq[GpuExpression],
+      compareNullsEqual: Boolean,
+      filterOutNulls: Boolean,
+      cacheBuilds: GpuMetric = NoopMetric,
+      cacheHits: GpuMetric = NoopMetric): CachedBuildSide = this.synchronized {
+    val cacheKey = BroadcastCachedBuildSide.key(
+      boundBuiltKeys,
+      compareNullsEqual,
+      filterOutNulls)
+    cachedBuildSides.get(cacheKey).map { cached =>
+      cacheHits += 1
+      cached
+    }.getOrElse {
+      cacheBuilds += 1
+      val cached = BroadcastCachedBuildSide.create(
+        batch,
+        boundBuiltKeys,
+        compareNullsEqual,
+        filterOutNulls)
+      cachedBuildSides.put(cacheKey, cached)
+      cached
     }
   }
 
@@ -246,8 +280,10 @@ class SerializeConcatHostBuffersDeserializeBatch(
    */
   def closeInternal(): Unit = this.synchronized {
     Seq(data, batchInternal).safeClose()
+    Option(cachedBuildSideCache).foreach(cache => cache.values.toSeq.safeClose())
     data = null
     batchInternal = null
+    cachedBuildSideCache = null
   }
 
   @scala.annotation.nowarn("msg=method finalize in class Object is deprecated")

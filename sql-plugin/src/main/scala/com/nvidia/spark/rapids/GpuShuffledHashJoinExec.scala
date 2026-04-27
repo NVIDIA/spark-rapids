@@ -264,7 +264,7 @@ case class GpuShuffledHashJoinExec(
             }
             // doJoin will close singleBatch
             doJoin(singleBatch, maybeBufferedStreamIter, joinOptions,
-              numOutputRows, numOutputBatches, opTime, joinTime)
+              numOutputRows, numOutputBatches, opTime, joinTime, enableBuildSideReuse = false)
           case Right(builtBatchIter) =>
             // For big joins, when the build data can not fit into a single batch.
             val sizeBuildIter = builtBatchIter.map { cb =>

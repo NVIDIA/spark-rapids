@@ -782,6 +782,17 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .checkValues(JoinBuildSideSelection.values.map(_.toString))
     .createWithDefault(JoinBuildSideSelection.AUTO.toString)
 
+  val BROADCAST_HASH_TABLE_REUSE =
+    conf("spark.rapids.sql.join.broadcastHashTable.reuse")
+      .doc("Enable reuse of the broadcast-side hash table for broadcast hash joins. " +
+        "When enabled, the hash table is built once per broadcast and shared across all " +
+        "stream batches within a task and across all tasks that consume the same broadcast " +
+        "on an executor. Reuse pins the physical build side to the broadcast side for the " +
+        "lifetime of each cached join, overriding the dynamic build-side selection " +
+        s"heuristic configured by ${JOIN_BUILD_SIDE.key}.")
+      .booleanConf
+      .createWithDefault(false)
+
   val LOG_JOIN_CARDINALITY = conf("spark.rapids.sql.join.logCardinality")
     .doc("Enable logging of join cardinality statistics to help diagnose performance issues. " +
       "When enabled, logs task context, key data types, join condition, row counts, and " +
@@ -3279,6 +3290,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val logJoinCardinality: Boolean = get(LOG_JOIN_CARDINALITY)
 
   lazy val joinGathererSizeEstimateThreshold: Double = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
+
+  lazy val broadcastHashTableReuse: Boolean = get(BROADCAST_HASH_TABLE_REUSE)
 
   /**
    * Get join options based on the current configuration.

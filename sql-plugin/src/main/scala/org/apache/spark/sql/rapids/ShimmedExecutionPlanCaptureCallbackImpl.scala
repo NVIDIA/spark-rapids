@@ -185,6 +185,21 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     assertNotContain(executedPlan, gpuClass)
   }
 
+  override def sumMetric(gpuPlan: SparkPlan, className: String, metricName: String): Long = {
+    val executedPlan = extractExecutedPlan(gpuPlan)
+    val matchingPlans = collectPlansMatching(executedPlan, p => PlanUtils.sameClass(p, className))
+    assert(matchingPlans.nonEmpty, s"Could not find $className in the Spark plan\n$executedPlan")
+    matchingPlans.map { plan =>
+      plan.metrics.getOrElse(metricName, {
+        throw new AssertionError(s"Could not find metric $metricName on plan node\n$plan")
+      }).value
+    }.sum
+  }
+
+  override def sumMetric(df: DataFrame, className: String, metricName: String): Long = {
+    sumMetric(df.queryExecution.executedPlan, className, metricName)
+  }
+
   override def assertContainsAnsiCast(df: DataFrame): Unit = {
     val executedPlan = extractExecutedPlan(df.queryExecution.executedPlan)
     assert(containsPlanMatching(executedPlan,
@@ -253,5 +268,23 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
     case p =>
       p.children.exists(plan => containsPlanMatching(plan, f))
   }.nonEmpty
-}
 
+  private def collectPlansMatching(plan: SparkPlan, f: SparkPlan => Boolean): Seq[SparkPlan] = {
+    val matching = ArrayBuffer[SparkPlan]()
+
+    def recurse(currentPlan: SparkPlan): Unit = currentPlan match {
+      case p: AdaptiveSparkPlanExec => recurse(p.executedPlan)
+      case p: QueryStageExec => recurse(p.plan)
+      case p: ReusedSubqueryExec => recurse(p.child)
+      case p: ReusedExchangeExec => recurse(p.child)
+      case p =>
+        if (f(p)) {
+          matching += p
+        }
+        p.children.foreach(recurse)
+    }
+
+    recurse(plan)
+    matching.toSeq
+  }
+}

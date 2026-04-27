@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,63 @@ package com.nvidia.spark.rapids
 import com.nvidia.spark.rapids.TestUtils.findOperator
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.functions.broadcast
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuHashJoin}
 
 class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
+  private def broadcastReuseConf: SparkConf = new SparkConf()
+    .set("spark.sql.adaptive.enabled", "false")
+    .set("spark.sql.autoBroadcastJoinThreshold", "-1")
+    .set("spark.rapids.sql.join.broadcastHashTable.reuse", "true")
+    .set("spark.rapids.sql.batchSizeBytes", "1")
+
+  private def streamedProbeDf(spark: SparkSession): DataFrame =
+    spark.range(0, 128).selectExpr(
+      "CAST(id % 8 AS INT) AS join_key",
+      "CAST(id AS INT) AS probe_value")
+
+  private def distinctBuildDf(spark: SparkSession): DataFrame =
+    spark.range(0, 8).selectExpr(
+      "CAST(id AS INT) AS join_key",
+      "CAST(id * 10 AS INT) AS build_value")
+
+  private def nonDistinctBuildDf(spark: SparkSession): DataFrame =
+    spark.range(0, 16).selectExpr(
+      "CAST(id % 4 AS INT) AS join_key",
+      "CAST(id AS INT) AS build_value")
+
+  private def largerNonDistinctBuildDf(spark: SparkSession): DataFrame =
+    spark.range(0, 1024).selectExpr(
+      "CAST(id % 4 AS INT) AS join_key",
+      "CAST(id AS INT) AS build_value")
+
+  private def nullableProbeDf(spark: SparkSession): DataFrame =
+    spark.range(0, 8).selectExpr(
+      "CAST(CASE CAST(id AS INT) " +
+        "WHEN 0 THEN NULL " +
+        "WHEN 1 THEN 0 " +
+        "WHEN 2 THEN 1 " +
+        "WHEN 3 THEN 2 " +
+        "WHEN 4 THEN 3 " +
+        "WHEN 5 THEN 4 " +
+        "WHEN 6 THEN 5 " +
+        "ELSE 8 END AS INT) AS join_key",
+      "CAST(id AS INT) AS probe_value")
+
+  private def nullableDistinctBuildDf(spark: SparkSession): DataFrame =
+    spark.range(0, 8).selectExpr(
+      "CAST(CASE CAST(id AS INT) " +
+        "WHEN 0 THEN NULL " +
+        "WHEN 1 THEN 0 " +
+        "WHEN 2 THEN 1 " +
+        "WHEN 3 THEN 2 " +
+        "WHEN 4 THEN 3 " +
+        "WHEN 5 THEN 4 " +
+        "WHEN 6 THEN 6 " +
+        "ELSE 9 END AS INT) AS join_key",
+      "CAST(id * 10 AS INT) AS build_value")
 
   test("broadcast hint isn't propagated after a join") {
     val conf = new SparkConf()
@@ -70,5 +123,124 @@ class BroadcastHashJoinSuite extends SparkQueryCompareTestSuite {
         assert(finalPlan2.get.asInstanceOf[GpuHashJoin].buildSide == GpuBuildRight)
       }
     })
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse distinct inner build right",
+    streamedProbeDf,
+    distinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "inner")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse distinct left outer build right",
+    streamedProbeDf,
+    distinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "left")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse distinct right outer build left",
+    distinctBuildDf,
+    streamedProbeDf,
+    conf = broadcastReuseConf) {
+    (build, probe) => broadcast(build).join(probe, Seq("join_key"), "right")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse distinct full outer build right",
+    nullableProbeDf,
+    nullableDistinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "fullouter")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse non-distinct inner build right",
+    streamedProbeDf,
+    nonDistinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "inner")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse non-distinct inner build right with auto build-side selection",
+    streamedProbeDf,
+    largerNonDistinctBuildDf,
+    conf = broadcastReuseConf.clone().set("spark.rapids.sql.join.buildSide", "AUTO")) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "inner")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse non-distinct inner build left",
+    nonDistinctBuildDf,
+    streamedProbeDf,
+    conf = broadcastReuseConf) {
+    (build, probe) => broadcast(build).join(probe, Seq("join_key"), "inner")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse non-distinct left semi build right",
+    streamedProbeDf,
+    nonDistinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "leftsemi")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse non-distinct left anti build right",
+    streamedProbeDf,
+    nonDistinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "leftanti")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse distinct inner nullable keys build right",
+    nullableProbeDf,
+    nullableDistinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "inner")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse distinct left outer nullable keys build right",
+    nullableProbeDf,
+    nullableDistinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) => probe.join(broadcast(build), Seq("join_key"), "left")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "broadcast hash join reuse conditional inner build right",
+    streamedProbeDf,
+    distinctBuildDf,
+    conf = broadcastReuseConf) {
+    (probe, build) =>
+      probe.join(broadcast(build),
+        probe("join_key") === build("join_key") &&
+          probe("probe_value") <= build("build_value"), "inner")
+  }
+
+  test("broadcast hash join reuse same broadcast in multiple joins plan") {
+    val conf = broadcastReuseConf.clone().set("spark.sql.exchange.reuse", "true")
+    withGpuSparkSession(spark => {
+      val probe = streamedProbeDf(spark)
+      val build = broadcast(distinctBuildDf(spark))
+      val joined = probe
+        .join(build, Seq("join_key"), "inner")
+        .select("join_key", "probe_value")
+        .join(build, Seq("join_key"), "inner")
+        .select("join_key", "probe_value")
+
+      joined.collect()
+      val plan = joined.queryExecution.executedPlan
+      val bhjCount = PlanUtils.findOperators(plan, _.isInstanceOf[GpuBroadcastHashJoinExec])
+      val reusedExchanges = PlanUtils.findOperators(plan, _.isInstanceOf[ReusedExchangeExec])
+      assertResult(2)(bhjCount.size)
+      assert(reusedExchanges.nonEmpty)
+    }, conf)
   }
 }

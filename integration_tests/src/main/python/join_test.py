@@ -19,7 +19,7 @@ from pyspark.sql.types import *
 from asserts import (assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal,
                      assert_gpu_fallback_collect, assert_cpu_and_gpu_are_equal_collect_with_capture,
                      assert_cpu_and_gpu_are_equal_sql_with_capture, assert_gpu_and_cpu_are_equal_sql)
-from conftest import is_emr_runtime
+from conftest import is_emr_runtime, spark_jvm
 from data_gen import *
 from marks import ignore_order, allow_non_gpu, incompat, validate_execs_in_gpu_plan, disable_ansi_mode
 from spark_session import with_cpu_session, is_before_spark_330, is_databricks_runtime, is_spark_400_or_later, is_spark_411_or_later
@@ -215,6 +215,82 @@ def test_broadcast_hash_join_constant_keys(join_type, kudo_enabled):
         'spark.sql.adaptive.enabled': 'true',
         kudo_enabled_conf_key: kudo_enabled
     })
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+def test_broadcast_hash_join_reuse_large_build_aqe(kudo_enabled):
+    def do_join(spark):
+        left = spark.range(4096, numPartitions=4).selectExpr(
+            "CAST(id % 64 AS INT) AS join_key",
+            "CAST(id AS INT) AS probe_value")
+        right = spark.range(8192).selectExpr(
+            "CAST(id % 64 AS INT) AS join_key",
+            "CAST(id * 3 AS INT) AS build_value")
+        return left.join(broadcast(right), "join_key", "inner").groupBy("join_key").count()
+
+    conf = {
+        'spark.sql.adaptive.enabled': 'true',
+        'spark.sql.autoBroadcastJoinThreshold': '-1',
+        'spark.sql.shuffle.partitions': '4',
+        'spark.rapids.sql.batchSizeBytes': '1024',
+        'spark.rapids.sql.join.broadcastHashTable.reuse': 'true',
+        kudo_enabled_conf_key: kudo_enabled
+    }
+    gpu_df = assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_join,
+        exist_classes='GpuBroadcastHashJoinExec',
+        conf=conf)
+    jvm = spark_jvm()
+    cache_builds = jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.sumMetric(
+        gpu_df._jdf,
+        'GpuBroadcastHashJoinExec',
+        'buildSideCacheBuilds')
+    cache_hits = jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.sumMetric(
+        gpu_df._jdf,
+        'GpuBroadcastHashJoinExec',
+        'buildSideCacheHits')
+    assert cache_builds == 1
+    assert cache_hits > 0
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
+def test_broadcast_hash_join_reuse_same_broadcast_multi_join_aqe(kudo_enabled):
+    def do_join(spark):
+        fact = spark.range(512, numPartitions=4).selectExpr(
+            "CAST(id % 8 AS INT) AS join_key",
+            "CAST(id AS INT) AS probe_value")
+        dim = broadcast(spark.range(32).selectExpr(
+            "CAST(id % 8 AS INT) AS join_key",
+            "CAST(id AS INT) AS build_value"))
+        return fact.join(dim, "join_key", "inner").select("join_key", "probe_value") \
+            .join(dim, "join_key", "inner").groupBy("join_key").count()
+
+    conf = {
+        'spark.sql.adaptive.enabled': 'true',
+        'spark.sql.autoBroadcastJoinThreshold': '-1',
+        'spark.sql.exchange.reuse': 'true',
+        'spark.sql.shuffle.partitions': '4',
+        'spark.rapids.sql.batchSizeBytes': '1024',
+        'spark.rapids.sql.join.broadcastHashTable.reuse': 'true',
+        kudo_enabled_conf_key: kudo_enabled
+    }
+    gpu_df = assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_join,
+        exist_classes='GpuBroadcastHashJoinExec,ReusedExchangeExec',
+        conf=conf)
+    jvm = spark_jvm()
+    cache_builds = jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.sumMetric(
+        gpu_df._jdf,
+        'GpuBroadcastHashJoinExec',
+        'buildSideCacheBuilds')
+    cache_hits = jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.sumMetric(
+        gpu_df._jdf,
+        'GpuBroadcastHashJoinExec',
+        'buildSideCacheHits')
+    assert cache_builds == 1
+    assert cache_hits > 0
 
 
 # local sort because of https://github.com/NVIDIA/spark-rapids/issues/84

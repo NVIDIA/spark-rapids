@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids
 
 import org.apache.spark.SparkConf
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.ExistenceJoin
 import org.apache.spark.sql.catalyst.plans.logical.{BROADCAST, HintInfo, Join, JoinHint}
@@ -45,6 +46,39 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
       .set("spark.sql.join.preferSortMergeJoin", "false")
       .set("spark.sql.shuffle.partitions", "2") // hack to try and work around bug in cudf
 
+  private def shuffledDistinctOuterConf: SparkConf = new SparkConf()
+    .set("spark.sql.adaptive.enabled", "false")
+    .set("spark.sql.autoBroadcastJoinThreshold", "-1")
+    .set("spark.sql.join.preferSortMergeJoin", "false")
+    .set("spark.sql.shuffle.partitions", "2")
+    .set("spark.rapids.sql.batchSizeBytes", "1")
+
+  private def distinctNullableLeftDf(spark: SparkSession): DataFrame =
+    spark.range(0, 8).selectExpr(
+      "CAST(CASE CAST(id AS INT) " +
+        "WHEN 0 THEN NULL " +
+        "WHEN 1 THEN 0 " +
+        "WHEN 2 THEN 1 " +
+        "WHEN 3 THEN 2 " +
+        "WHEN 4 THEN 3 " +
+        "WHEN 5 THEN 4 " +
+        "WHEN 6 THEN 6 " +
+        "ELSE 8 END AS INT) AS join_key",
+      "CAST(id AS INT) AS left_value")
+
+  private def distinctNullableRightDf(spark: SparkSession): DataFrame =
+    spark.range(0, 8).selectExpr(
+      "CAST(CASE CAST(id AS INT) " +
+        "WHEN 0 THEN NULL " +
+        "WHEN 1 THEN 0 " +
+        "WHEN 2 THEN 1 " +
+        "WHEN 3 THEN 2 " +
+        "WHEN 4 THEN 4 " +
+        "WHEN 5 THEN 5 " +
+        "WHEN 6 THEN 7 " +
+        "ELSE 9 END AS INT) AS join_key",
+      "CAST(id * 10 AS INT) AS right_value")
+
   IGNORE_ORDER_testSparkResultsAreEqual2("Test hash join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {
     (A, B) => A.join(B, A("longs") === B("longs"))
@@ -68,6 +102,25 @@ class JoinsSuite extends SparkQueryCompareTestSuite {
   IGNORE_ORDER_testSparkResultsAreEqual2("Test hash full join", longsDf, biggerLongsDf,
     conf = shuffledJoinConf) {
     (A, B) => A.join(B, A("longs") === B("longs"), "FullOuter")
+  }
+
+  IGNORE_ORDER_testSparkResultsAreEqual2(
+    "Test shuffled distinct full join with nullable keys",
+    distinctNullableLeftDf,
+    distinctNullableRightDf,
+    conf = shuffledDistinctOuterConf) {
+    (left, right) => left.repartition(2).join(right.repartition(2), Seq("join_key"), "FullOuter")
+  }
+
+  test("Test shuffled distinct full join with nullable keys uses sized hash join") {
+    withGpuSparkSession(spark => {
+      val left = distinctNullableLeftDf(spark).repartition(2)
+      val right = distinctNullableRightDf(spark).repartition(2)
+      val joined = left.join(right, Seq("join_key"), "FullOuter")
+      joined.collect()
+      assert(TestUtils.findOperator(joined.queryExecution.executedPlan,
+        _.isInstanceOf[GpuShuffledSizedHashJoinExec[_]]).isDefined)
+    }, shuffledDistinctOuterConf)
   }
 
   IGNORE_ORDER_testSparkResultsAreEqual2("Test cross join", longsDf, biggerLongsDf,
