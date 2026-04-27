@@ -163,9 +163,9 @@ object GpuShuffleCoalesceUtils {
       Seq[CloseableTableSeqWithTargetSize[T]] = {
     (wrapper: CloseableTableSeqWithTargetSize[T]) => {
       val tables = wrapper
-      if (tables.isEmpty) {
+      if (tables.length <= 1) {
         throw new com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM(
-          s"GPU OutOfMemory: empty table sequence cannot be split!")
+          s"GPU OutOfMemory: a sequence of ${tables.length} tables cannot be split!")
       }
 
       val newTargetSize = splitTargetSizeInHalfGpu(wrapper.targetSize).head

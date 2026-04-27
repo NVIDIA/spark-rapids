@@ -863,7 +863,7 @@ object RmmRapidsRetryIterator extends Logging {
       // If dataSize is known and smaller than targetSize/2, halving targetSize would still
       // exceed the data, making the retry a no-op. Use dataSize/2 instead to force
       // processing roughly half the data per attempt.
-      val newTarget = if (target.dataSize > 0 && target.dataSize < target.targetSize / 2) {
+      val newTarget = if (target.dataSize > 0 && target.dataSize <= target.targetSize / 2) {
         target.dataSize / 2
       } else {
         target.targetSize / 2
@@ -879,7 +879,7 @@ object RmmRapidsRetryIterator extends Logging {
                 s" minimum: ${target.minSize}")
         }
       }
-      Seq(AutoCloseableTargetSize(newTarget, target.minSize))
+      Seq(AutoCloseableTargetSize(newTarget, target.minSize, target.dataSize))
     }
   }
 
