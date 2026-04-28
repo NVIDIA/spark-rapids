@@ -46,6 +46,10 @@
 #   To run all tests, including Avro tests:
 #     INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh
 #
+#   To run protobuf tests (spark-protobuf bundles protobuf-java; no extra jar needed):
+#     PROTOBUF_JARS=~/.m2/repository/org/apache/spark/spark-protobuf_2.12/3.5.1/spark-protobuf_2.12-3.5.1.jar \
+#       ./run_pyspark_from_build.sh -m protobuf_test
+#
 #   To run a specific test:
 #     TEST=my_test ./run_pyspark_from_build.sh
 #
@@ -141,9 +145,40 @@ else
         AVRO_JARS=""
     fi
 
-    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar if they exist
+    # Protobuf tests require explicit extra jars
+    PROTOBUF_EXTRA_JARS=""
+    export PROTOBUF_JARS_AVAILABLE=false
+    if [[ -n "${PROTOBUF_JARS}" ]];
+    then
+        SPARK_PROTOBUF_JAR_AVAILABLE=false
+        VALID_PROTOBUF_JARS=()
+        IFS=',:' read -ra RAW_PROTOBUF_JARS <<< "${PROTOBUF_JARS}"
+        for raw_pb_jar in "${RAW_PROTOBUF_JARS[@]}"; do
+            pb_jar=$(readlink -e "$raw_pb_jar" || true)
+            if [[ -z "$pb_jar" ]]; then
+                echo "WARNING: Protobuf jar not found: $raw_pb_jar"
+                continue
+            fi
+            VALID_PROTOBUF_JARS+=("$pb_jar")
+            if [[ "$(basename "$pb_jar")" == spark-protobuf_* ]]; then
+                SPARK_PROTOBUF_JAR_AVAILABLE=true
+            fi
+        done
+
+        if [[ ${#VALID_PROTOBUF_JARS[@]} -gt 0 && \
+              "$SPARK_PROTOBUF_JAR_AVAILABLE" == "true" ]]; then
+            PROTOBUF_EXTRA_JARS="${VALID_PROTOBUF_JARS[*]}"
+            export PROTOBUF_JARS_AVAILABLE=true
+            echo "Including protobuf jars: ${VALID_PROTOBUF_JARS[*]}"
+        else
+            echo "WARNING: Protobuf jars are not configured correctly; protobuf tests will be skipped"
+            echo "  Expected PROTOBUF_JARS to include at least one spark-protobuf jar"
+        fi
+    fi
+
+    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar protobuf.jar if they exist
     # Remove non-existing paths and canonicalize the paths including get rid of links and `..`
-    ALL_JARS=$(readlink -e $PLUGIN_JAR $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
+    ALL_JARS=$(readlink -e $PLUGIN_JAR $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS $PROTOBUF_EXTRA_JARS || true)
     # `:` separated jars
     ALL_JARS="${ALL_JARS//$'\n'/:}"
 

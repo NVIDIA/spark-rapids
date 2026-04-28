@@ -378,3 +378,39 @@ def is_hive_available():
 
 def is_hybrid_backend_loaded():
     return _spark.conf.get("spark.rapids.sql.hybrid.loadBackend", "false") == "true"
+
+def is_protobuf_runtime_available():
+    try:
+        from pyspark.sql.protobuf.functions import from_protobuf  # noqa: F401
+    except Exception:
+        return False
+
+    try:
+        jvm = _spark.sparkContext._jvm
+    except Exception:
+        return False
+    loader = None
+    try:
+        loader = jvm.java.lang.Thread.currentThread().getContextClassLoader()
+    except Exception:
+        pass
+
+    candidates = [
+        "org.apache.spark.sql.protobuf.functions$",
+        "org.apache.spark.sql.protobuf.functions",
+    ]
+    for cls in candidates:
+        try:
+            if loader is not None:
+                jvm.java.lang.Class.forName(cls, False, loader)
+            else:
+                jvm.java.lang.Class.forName(cls)
+            return True
+        except Exception:
+            continue
+
+    try:
+        member = jvm.org.apache.spark.sql.protobuf.functions.from_protobuf
+        return type(member).__name__ != "JavaPackage"
+    except Exception:
+        return False

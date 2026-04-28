@@ -448,6 +448,27 @@ $ LOAD_HYBRID_BACKEND=1 \
 ```
 For more information about Hybrid feature, refer to [link](../docs/dev/hybrid-execution.md)
 
+### Running with Protobuf tests
+The protobuf tests require `spark-protobuf_${scala.binary.version}-${spark.version}.jar`.
+This jar already bundles `protobuf-java` internally, so no separate `protobuf-java-*.jar`
+is needed.
+
+The jar is available in the local Maven repository after a normal build:
+```
+~/.m2/repository/org/apache/spark/spark-protobuf_2.12/${spark.version}/spark-protobuf_2.12-${spark.version}.jar
+```
+
+Pass the path via `PROTOBUF_JARS` (`PROTOBUF_JARS` accepts both comma- and
+colon-separated paths):
+```shell
+$ PROTOBUF_JARS=~/.m2/repository/org/apache/spark/spark-protobuf_2.12/3.5.1/spark-protobuf_2.12-3.5.1.jar \
+  ./integration_tests/run_pyspark_from_build.sh -m protobuf_test
+```
+
+`run_pyspark_from_build.sh` does not download protobuf jars automatically.
+If `PROTOBUF_JARS` is not provided or does not include a `spark-protobuf` jar,
+the protobuf tests are skipped.
+
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
