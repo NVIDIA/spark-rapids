@@ -955,6 +955,7 @@ object GpuOverrides extends Logging {
             + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
+        override def typeMeta: DataTypeMeta = childExprs.head.typeMeta
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
       }),
@@ -2636,10 +2637,7 @@ object GpuOverrides extends Logging {
         TypeSig.STRUCT.nested(TypeSig.commonCudfTypes + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.MAP + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY),
         TypeSig.STRUCT.nested(TypeSig.all)),
-      (expr, conf, p, r) => new UnaryExprMeta[GetStructField](expr, conf, p, r) {
-        override def convertToGpu(arr: Expression): GpuExpression =
-          GpuGetStructField(arr, expr.ordinal, expr.name)
-      }),
+      (expr, conf, p, r) => new GpuGetStructFieldMeta(expr, conf, p, r)),
     expr[GetArrayItem](
       "Gets the field at `ordinal` in the Array",
       ExprChecks.binaryProject(
