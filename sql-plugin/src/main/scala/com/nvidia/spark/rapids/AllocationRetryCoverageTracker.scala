@@ -143,6 +143,7 @@ object AllocationRetryCoverageTracker extends Logging {
   /**
    * Check if a memory allocation is covered by a retry method.
    * If not covered and tracking is enabled, log to the output file.
+   * If allocation is in nested retry blocks (depth > 1), log as NESTED.
    * 
    * @param kind The kind of memory allocation (HOST or DEVICE)
    */
@@ -150,36 +151,47 @@ object AllocationRetryCoverageTracker extends Logging {
     // Consider an allocation "covered" if it happens while the current thread is executing
     // inside the retry framework (withRetry/withRetryNoSplit).
     //
-    // When uncovered, we capture a filtered stack trace for debugging.
-    if (!RetryStateTracker.isInRetryBlock) {
-      // Ensure header is written before logging the first uncovered allocation
-      ensureHeaderWritten()
-      val stackTrace = Thread.currentThread().getStackTrace
-      // Filter to only spark-rapids related frames for cleaner output
-      val relevantStack = stackTrace
-        .filter { element =>
-          val className = element.getClassName
-          isRelevantStackClassName(className) &&
-            !className.contains("AllocationRetryCoverageTracker")
-        }
-        .map(_.toString)
-        .mkString(" -> ")
+    // When uncovered or nested, we capture a filtered stack trace for debugging.
+    val retryDepth = RetryStateTracker.getRetryBlockDepth
 
-      // Use the filtered stack as the key to avoid duplicate logging
-      val stackKey = s"$kind:$relevantStack"
-      
-      // Only log if we haven't seen this exact stack before
-      if (loggedStacks.add(stackKey)) {
-        // Sanitize and escape the stack trace for CSV:
-        //  - replace newlines/carriage returns to keep one record per line
-        //  - escape embedded quotes and wrap in quotes
-        val sanitizedStack = relevantStack
-          .replace("\r", " ")
-          .replace("\n", " ")
-        val escapedStack = "\"" + sanitizedStack.replace("\"", "\"\"") + "\""
-        writeToFile(s"$kind,$escapedStack", append = true)
-        logWarning(s"Uncovered $kind allocation #${loggedStacks.size()}. Stack: $relevantStack")
+    val kindStr = if (retryDepth == 0) {
+      // Not in any retry block - this is an uncovered allocation
+      kind.toString
+    } else if (retryDepth > 1) {
+      // In nested retry blocks (depth > 1) - nested retries can cause cascading retry attempts 
+      // and reduced performance
+      "NESTED"
+    } else {
+      // Properly covered by exactly one retry block - no need to log
+      return
+    }
+
+    ensureHeaderWritten()
+    val stackTrace = Thread.currentThread().getStackTrace
+    // Filter to only spark-rapids related frames for cleaner output
+    val relevantStack = stackTrace
+      .filter { element =>
+        val className = element.getClassName
+        isRelevantStackClassName(className) &&
+          !className.contains("AllocationRetryCoverageTracker")
       }
+      .map(_.toString)
+      .mkString(" -> ")
+
+    // Use the filtered stack as the key to avoid duplicate logging
+    val stackKey = s"$kindStr:$relevantStack"
+
+    // Only log if we haven't seen this exact stack before
+    if (loggedStacks.add(stackKey)) {
+      // Sanitize and escape the stack trace for CSV:
+      //  - replace newlines/carriage returns to keep one record per line
+      //  - escape embedded quotes and wrap in quotes
+      val sanitizedStack = relevantStack
+        .replace("\r", " ")
+        .replace("\n", " ")
+      val escapedStack = "\"" + sanitizedStack.replace("\"", "\"\"") + "\""
+      writeToFile(s"$kindStr,$escapedStack", append = true)
+      logWarning(s"$kindStr allocation #${loggedStacks.size()}. Stack: $relevantStack")
     }
   }
 
