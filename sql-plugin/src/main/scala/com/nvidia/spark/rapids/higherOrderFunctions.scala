@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.shims.ShimExpression
 import org.apache.spark.sql.catalyst.analysis.TypeCoercion
 import org.apache.spark.sql.catalyst.expressions.{Add, And, ArrayAggregate, Attribute, AttributeReference, AttributeSeq, Cast, Expression, ExprId, Greatest, LambdaFunction, Least, Multiply, NamedExpression, NamedLambdaVariable, Or}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, DataType, DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType, Metadata, ShortType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, DataType, DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType, Metadata, NumericType, ShortType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -905,8 +905,8 @@ sealed trait AggOp {
   def name: String
   def cudfAgg: cudf.SegmentedReductionAggregation
   def nullPolicy: cudf.NullPolicy
-  /** Identity scalar, built with `cudfDType` so ifElse / binaryOp don't hit width mismatch. */
-  def identityScalar(sparkType: DataType, cudfDType: DType): cudf.Scalar
+  /** Identity scalar typed to match `t` so ifElse / binaryOp don't hit width mismatch. */
+  def identityScalar(t: DataType): cudf.Scalar
   /** `reduced OP zero`, typed to outDType, with Spark-matching null propagation. */
   def combineWithZero(
       reduced: cudf.ColumnVector,
@@ -917,21 +917,13 @@ sealed trait AggOp {
   def supportsType(sparkType: DataType): Boolean
 }
 
-object AggOp {
-  /** Numeric types that all basic cuDF reductions (sum/product/max/min) accept. */
-  def isPlainNumeric(t: DataType): Boolean = t match {
-    case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => true
-    case _ => false
-  }
-}
-
 case object SumOp extends AggOp {
   val name = "SUM"
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.sum()
   // INCLUDE: Spark iteratively computes `acc + x` and null poisons the accumulator, so
   // one null element anywhere in the list yields null.
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
-  def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = t match {
+  def identityScalar(t: DataType): cudf.Scalar = t match {
     case ByteType => cudf.Scalar.fromByte(0.toByte)
     case ShortType => cudf.Scalar.fromShort(0.toShort)
     case IntegerType => cudf.Scalar.fromInt(0)
@@ -946,8 +938,7 @@ case object SumOp extends AggOp {
     case a: Add => Some((a.left, a.right))
     case _ => None
   }
-  def supportsType(t: DataType): Boolean =
-    AggOp.isPlainNumeric(t) || t.isInstanceOf[DecimalType]
+  def supportsType(t: DataType): Boolean = t.isInstanceOf[NumericType]
 }
 
 case object ProductOp extends AggOp {
@@ -955,7 +946,7 @@ case object ProductOp extends AggOp {
   def cudfAgg: cudf.SegmentedReductionAggregation =
     cudf.SegmentedReductionAggregation.product()
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
-  def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = t match {
+  def identityScalar(t: DataType): cudf.Scalar = t match {
     case ByteType => cudf.Scalar.fromByte(1.toByte)
     case ShortType => cudf.Scalar.fromShort(1.toShort)
     case IntegerType => cudf.Scalar.fromInt(1)
@@ -969,21 +960,29 @@ case object ProductOp extends AggOp {
     case m: Multiply => Some((m.left, m.right))
     case _ => None
   }
-  def supportsType(t: DataType): Boolean = AggOp.isPlainNumeric(t)
+  // Decimal would need DecimalUtils.multiplyDecimals for overflow handling — exclude for now.
+  def supportsType(t: DataType): Boolean = t match {
+    case _: NumericType => !t.isInstanceOf[DecimalType]
+    case _ => false
+  }
 }
 
 /**
- * MaxOp / MinOp share EXCLUDE null policy: Spark's Greatest / Least skip null operands,
- * so an all-null list reduces to null and then folds back to zero via identity substitution.
+ * MaxOp / MinOp share EXCLUDE null policy: Spark's Greatest / Least skip null operands.
+ * combineWithZero uses cuDF's NULL_MAX / NULL_MIN (the same primitive GpuGreatest/GpuLeast
+ * use), which returns the non-null operand when one side is null — exactly Spark's
+ * behavior on integral types.
  *
  * Float / Double are unsupported: cuDF's segmented `max` / `min` follow IEEE 754, where
  * `fmax(NaN, x) = x` (NaN is absorbed). Spark's `Greatest` / `Least` use `Double.compare`,
- * which treats NaN as larger than every other value and propagates it. The `combineWithZero`
- * compare + ifElse also breaks on NaN (`greaterThan(NaN, z) = false`). Until we add an
+ * which treats NaN as larger than every other value and propagates it. Until we add an
  * explicit NaN-propagation step, restrict to integral types.
  */
 sealed trait ExtremumOp extends AggOp {
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.EXCLUDE
+  def binaryOp: cudf.BinaryOp
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType): cudf.ColumnVector =
+    r.binaryOp(binaryOp, z, out)
   def supportsType(t: DataType): Boolean = t match {
     case ByteType | ShortType | IntegerType | LongType => true
     case _ => false
@@ -993,20 +992,13 @@ sealed trait ExtremumOp extends AggOp {
 case object MaxOp extends ExtremumOp {
   val name = "MAX"
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.max()
-  def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = t match {
+  val binaryOp: cudf.BinaryOp = cudf.BinaryOp.NULL_MAX
+  def identityScalar(t: DataType): cudf.Scalar = t match {
     case ByteType => cudf.Scalar.fromByte(Byte.MinValue)
     case ShortType => cudf.Scalar.fromShort(Short.MinValue)
     case IntegerType => cudf.Scalar.fromInt(Int.MinValue)
     case LongType => cudf.Scalar.fromLong(Long.MinValue)
     case other => throw new IllegalStateException(s"MAX identity not defined for $other")
-  }
-  // cuDF's NULL_MAX treats null as smallest (wrong for Spark), so emulate null-propagating
-  // max via compare + ifElse; null in the compare's result propagates through ifElse.
-  def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType)
-      : cudf.ColumnVector = {
-    withResource(r.greaterThan(z)) { rGreater =>
-      rGreater.ifElse(r, z)
-    }
   }
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case g: Greatest if g.children.size == 2 => Some((g.children.head, g.children(1)))
@@ -1017,18 +1009,13 @@ case object MaxOp extends ExtremumOp {
 case object MinOp extends ExtremumOp {
   val name = "MIN"
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.min()
-  def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = t match {
+  val binaryOp: cudf.BinaryOp = cudf.BinaryOp.NULL_MIN
+  def identityScalar(t: DataType): cudf.Scalar = t match {
     case ByteType => cudf.Scalar.fromByte(Byte.MaxValue)
     case ShortType => cudf.Scalar.fromShort(Short.MaxValue)
     case IntegerType => cudf.Scalar.fromInt(Int.MaxValue)
     case LongType => cudf.Scalar.fromLong(Long.MaxValue)
     case other => throw new IllegalStateException(s"MIN identity not defined for $other")
-  }
-  def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType)
-      : cudf.ColumnVector = {
-    withResource(r.lessThan(z)) { rLess =>
-      rLess.ifElse(r, z)
-    }
   }
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case l: Least if l.children.size == 2 => Some((l.children.head, l.children(1)))
@@ -1041,7 +1028,7 @@ case object AllOp extends AggOp {
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.all()
   // INCLUDE: matches Spark's 3VL for AND (null AND true = null, null AND false = false).
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
-  def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = cudf.Scalar.fromBool(true)
+  def identityScalar(t: DataType): cudf.Scalar = cudf.Scalar.fromBool(true)
   def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType) = r.and(z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case a: And => Some((a.left, a.right))
@@ -1054,7 +1041,7 @@ case object AnyOp extends AggOp {
   val name = "ANY"
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.any()
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
-  def identityScalar(t: DataType, cudfT: DType): cudf.Scalar = cudf.Scalar.fromBool(false)
+  def identityScalar(t: DataType): cudf.Scalar = cudf.Scalar.fromBool(false)
   def combineWithZero(r: cudf.ColumnVector, z: cudf.ColumnView, out: DType) = r.or(z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case o: Or => Some((o.left, o.right))
@@ -1207,27 +1194,19 @@ case class GpuArrayAggregate(
         reduced.isNull
     }
     // Exclude null-list rows from the mask so the final null-restoration step handles them.
-    // For non-nullable columns this is effectively a no-op (isNotNull is all-true).
-    withResource(reducedIsEmpty) { m =>
-      withResource(listCol.isNotNull) { isNotNull => m.and(isNotNull) }
+    // Skip when the input list has no nulls — `m.and(all-true)` is a wasted kernel.
+    if (listCol.getNullCount > 0) {
+      withResource(reducedIsEmpty) { m =>
+        withResource(listCol.isNotNull) { isNotNull => m.and(isNotNull) }
+      }
+    } else {
+      reducedIsEmpty
     }
   }
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val outDType = GpuColumnVector.getNonNestedRapidsType(dataType)
     withResource(argument.asInstanceOf[GpuExpression].columnarEval(batch)) { arg =>
-      // Each step chains via `val x = withResource(...) { ... }` so the previous stage's
-      // intermediate GPU columns are released before the next stage allocates more. The
-      // exploded batch (can be large for long arrays) is the main thing we want to let go
-      // of as early as possible.
-
-      // Each step chains via a `val x = closeOnExcept(...) { withResource(previous) { ... } }`
-      // idiom: closeOnExcept covers the tiny window between the previous step's result
-      // being assigned and `withResource` taking ownership, and the inner `withResource`
-      // ensures the previous step's column is released on both normal and exceptional
-      // paths. cuDF's ColumnVector.close is refcount-based so any late double-close on
-      // the rare exception path is benign.
-
       // Step 1: g(x) over children + segmented reduce.
       val reduced: cudf.ColumnVector =
         withResource(makeElementProjectBatch(batch, arg)) { cb =>
@@ -1241,32 +1220,30 @@ case class GpuArrayAggregate(
         }
 
       // Step 2: substitute op's identity for rows the reduce couldn't cover.
-      val adjusted: cudf.ColumnVector = closeOnExcept(reduced) { _ =>
-        withResource(reduced) { reduced =>
-          withResource(substituteMask(arg.getBase, reduced)) { mask =>
-            withResource(op.identityScalar(dataType, outDType)) { idScalar =>
-              mask.ifElse(idScalar, reduced)
-            }
+      val adjusted: cudf.ColumnVector = withResource(reduced) { reduced =>
+        withResource(substituteMask(arg.getBase, reduced)) { mask =>
+          withResource(op.identityScalar(dataType)) { idScalar =>
+            mask.ifElse(idScalar, reduced)
           }
         }
       }
 
       // Step 3: combine with zero.
-      val combined: cudf.ColumnVector = closeOnExcept(adjusted) { _ =>
-        withResource(adjusted) { adjusted =>
-          withResource(zero.asInstanceOf[GpuExpression].columnarEval(batch)) { zeroCv =>
-            op.combineWithZero(adjusted, zeroCv.getBase, outDType)
-          }
+      val combined: cudf.ColumnVector = withResource(adjusted) { adjusted =>
+        withResource(zero.asInstanceOf[GpuExpression].columnarEval(batch)) { zeroCv =>
+          op.combineWithZero(adjusted, zeroCv.getBase, outDType)
         }
       }
 
-      // Step 4: restore null on rows where the input list itself was null. cuDF GREATER /
-      // LOGICAL_AND / LOGICAL_OR don't propagate null the way Spark's 3VL would, so the
-      // combine step alone can't preserve it. mergeNulls short-circuits if no nulls.
-      closeOnExcept(combined) { _ =>
+      // Step 4: restore null on rows where the input list itself was null. cuDF NULL_MAX /
+      // NULL_MIN / LOGICAL_AND / LOGICAL_OR don't propagate null the way Spark's 3VL would,
+      // so the combine step alone can't preserve it. Skip outright when the list has no nulls.
+      if (arg.getBase.getNullCount > 0) {
         withResource(combined) { combined =>
           GpuColumnVector.from(NullUtilities.mergeNulls(combined, arg.getBase), dataType)
         }
+      } else {
+        GpuColumnVector.from(combined, dataType)
       }
     }
   }

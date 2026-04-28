@@ -109,7 +109,7 @@ def test_array_aggregate_boolean_ops_nullable_elements_fallback(lambda_sql, init
         'ArrayAggregate')
 
 
-# Count-if pattern (structural twin of the client's real workload).
+# Count-if pattern: aggregate(array, 0, (acc, x) -> acc + CASE WHEN ... THEN 1 ELSE 0 END).
 @disable_ansi_mode
 def test_array_aggregate_count_if_int():
     assert_gpu_and_cpu_are_equal_collect(
@@ -118,9 +118,9 @@ def test_array_aggregate_count_if_int():
             'aggregate(a, 0L, (acc, x) -> acc + CAST(CASE WHEN x IS NULL THEN 1 ELSE 0 END as BIGINT)) as null_cnt'))
 
 
-# Client's actual pattern (simplified): filter + aggregate with split / GetArrayItem / IN.
+# Composed pattern: filter + aggregate with split / GetArrayItem / IN inside the lambda.
 @disable_ansi_mode
-def test_array_aggregate_client_pattern():
+def test_array_aggregate_with_filter_and_split():
     field_gen = StringGen('[a-z]{2}')
     def do_it(spark):
         df = unary_op_df(spark, ArrayGen(field_gen, max_length=5))
@@ -134,7 +134,7 @@ def test_array_aggregate_client_pattern():
                 AND NOT split(z, '    ', -1)[1] IN ('xx', 'yy')
               ) THEN 1 ELSE 0 END as BIGINT),
               id -> id
-            ) as client_cnt""")
+            ) as cnt""")
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
