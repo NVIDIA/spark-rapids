@@ -42,6 +42,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
+import java.util.Locale
+
 import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, StringDecode}
@@ -59,7 +61,7 @@ object StringDecodeShims {
         override def tagExprForGpu(): Unit = {
           GpuOverrides.extractStringLit(a.charset) match {
             case Some(cs) if cs != null =>
-              charsetName = cs.toUpperCase
+              charsetName = cs.toUpperCase(Locale.ROOT)
               if (charsetName != "GBK") {
                 willNotWorkOnGpu(s"only GBK charset is supported on GPU, got: $charsetName")
               }

@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.Locale
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal}
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.rapids.{ExternalSource, GpuStringDecode}
@@ -69,7 +71,7 @@ class StaticInvokeMeta(expr: StaticInvoke,
     val charsetExpr = expr.arguments(1)
     GpuOverrides.extractLit(charsetExpr).map(_.value) match {
       case Some(cs: org.apache.spark.unsafe.types.UTF8String) if cs != null =>
-        charsetName = cs.toString.toUpperCase
+        charsetName = cs.toString.toUpperCase(Locale.ROOT)
         if (charsetName != "GBK") {
           willNotWorkOnGpu(s"only GBK charset is supported on GPU, got: $charsetName")
         }
