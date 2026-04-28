@@ -32,6 +32,9 @@ Please provide a description of the changes proposed in this pull request. Here 
 For each category, check the one item that applies by putting "x" in the brackets.
 -->
 
+Readiness
+- [ ] I have reviewed my PR using AI tools _and_ by myself.
+
 Documentation
 - [ ] Updated for new or modified user-facing features or behaviors
 - [ ] No user-facing change
