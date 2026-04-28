@@ -1622,7 +1622,6 @@ def test_sized_join_high_key_replication(join_type, is_left_replicated, is_condi
     join_conf = {
         "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "true",
         "spark.rapids.sql.join.useShuffledAsymmetricHashJoin": "true",
-        "spark.rapids.sql.join.use"
         "spark.sql.autoBroadcastJoinThreshold": "1",
         'spark.sql.adaptive.enabled': 'false'
     }

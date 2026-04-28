@@ -2347,7 +2347,7 @@ def test_no_fallback_when_ansi_enabled(data_gen):
 @ignore_order(local=True)
 @approximate_float
 @incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_decimals, ids=idfn)
+@pytest.mark.parametrize('data_gen', _init_list_with_decimals_and_floats, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_std_variance(data_gen, conf):
     local_conf = copy_and_update(conf, {
