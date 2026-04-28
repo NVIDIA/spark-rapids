@@ -1091,16 +1091,29 @@ protected case class GpuParquetFileFilterHandler(
   private def throwTypeIncompatibleError(parquetType: Type,
                                          sparkType: DataType,
                                          filePath: String): Unit = {
+    // Match the format produced by Spark's vectorized reader
+    // (ParquetVectorUpdaterFactory#constructConvertNotSupportedException):
+    // the column path is bracket-wrapped (Java Arrays.toString shape) and
+    // the Parquet type is the primitive type name (e.g. "INT32") rather
+    // than the full schema literal ("required int32 a"). For non-primitive
+    // root types we fall back to toString.
+    val columnPath = s"[${parquetType.getName}]"
+    val foundType = if (parquetType.isPrimitive) {
+      // .name() avoids the ambiguous PrimitiveTypeName.toString(ColumnReader) overload
+      parquetType.asPrimitiveType().getPrimitiveTypeName.name()
+    } else {
+      parquetType.toString
+    }
     val exception = new SchemaColumnConvertNotSupportedException(
-      parquetType.getName,
-      parquetType.toString,
+      columnPath,
+      foundType,
       sparkType.catalogString)
 
     // A copy of QueryExecutionErrors.unsupportedSchemaColumnConvertError introduced in 3.2+
     // TODO: replace with unsupportedSchemaColumnConvertError after we deprecate Spark 3.1
     val message = "Parquet column cannot be converted in " +
-      s"file $filePath. Column: ${parquetType.getName}, " +
-      s"Expected: ${sparkType.catalogString}, Found: $parquetType"
+      s"file $filePath. Column: $columnPath, " +
+      s"Expected: ${sparkType.catalogString}, Found: $foundType"
     throw new QueryExecutionException(message, exception)
   }
 
