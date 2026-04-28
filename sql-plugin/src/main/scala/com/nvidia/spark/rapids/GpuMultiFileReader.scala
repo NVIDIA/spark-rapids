@@ -26,6 +26,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, LinkedHashMap, Queue}
 import scala.collection.mutable
 import scala.language.implicitConversions
+import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{HostMemoryBuffer, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -777,26 +778,32 @@ abstract class MultiFileCloudPartitionReaderBase(
     var sizeRead = 0L
     var numRowsRead = 0L
     val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
-    readReadyFiles(0, 0, results)
-    if (results.isEmpty) {
-      // none were ready yet so wait as long as need for first one
-      val hostBuffersWithMeta = if (keepReadsInOrder) {
-        convertAsyncResult(tasks.poll().get())
-      } else {
-        val bufMetaFut = fcs.take()
-        tasks.remove(bufMetaFut)
-        convertAsyncResult(bufMetaFut.get())
-      }
-      sizeRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.bytes).sum
-      numRowsRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.numRows).sum
+    try {
+      readReadyFiles(0, 0, results)
+      if (results.isEmpty) {
+        // none were ready yet so wait as long as need for first one
+        val hostBuffersWithMeta = if (keepReadsInOrder) {
+          convertAsyncResult(tasks.poll().get())
+        } else {
+          val bufMetaFut = fcs.take()
+          tasks.remove(bufMetaFut)
+          convertAsyncResult(bufMetaFut.get())
+        }
+        sizeRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.bytes).sum
+        numRowsRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.numRows).sum
 
-      filesToRead -= 1
-      results.append(hostBuffersWithMeta)
-      // since we had to wait for one to be ready,
-      // check if more are ready as well
-      readReadyFiles(sizeRead, numRowsRead, results)
+        filesToRead -= 1
+        results.append(hostBuffersWithMeta)
+        // since we had to wait for one to be ready,
+        // check if more are ready as well
+        readReadyFiles(sizeRead, numRowsRead, results)
+      }
+      combineHMBs(results.toArray)
+    } catch {
+      case t: Throwable =>
+        results.safeClose(t)
+        throw t
     }
-    combineHMBs(results.toArray)
   }
 
   private def getNextBuffersAndMetaSingleFile(): HostMemoryBuffersWithMetaDataBase = {
@@ -828,21 +835,28 @@ abstract class MultiFileCloudPartitionReaderBase(
     // unset leftOverFiles because it will get reset in combineHMBs again if needed
     combineLeftOverFiles = None
     val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
-    val curSize = leftOvers.map(_.memBuffersAndSizes.map(_.bytes).sum).sum
-    val curNumRows = leftOvers.map(_.memBuffersAndSizes.map(_.numRows).sum).sum
-    readReadyFiles(curSize, curNumRows, results)
-    val allReady = leftOvers ++ results
-    val fileBufsAndMeta = combineHMBs(allReady)
+    try {
+      val curSize = leftOvers.map(_.memBuffersAndSizes.map(_.bytes).sum).sum
+      val curNumRows = leftOvers.map(_.memBuffersAndSizes.map(_.numRows).sum).sum
+      readReadyFiles(curSize, curNumRows, results)
+      val allReady = leftOvers ++ results
+      val fileBufsAndMeta = combineHMBs(allReady)
 
-    TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
-    // this is combine mode so input file shouldn't be used at all but update to
-    // what would be closest so we at least don't have same file as last batch
-    val inputFileToSet = fileBufsAndMeta.partitionedFile
-    InputFileUtils.setInputFileBlock(
-      inputFileToSet.filePath.toString(),
-      inputFileToSet.start,
-      inputFileToSet.length)
-    fileBufsAndMeta
+      TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
+      // this is combine mode so input file shouldn't be used at all but update to
+      // what would be closest so we at least don't have same file as last batch
+      val inputFileToSet = fileBufsAndMeta.partitionedFile
+      InputFileUtils.setInputFileBlock(
+        inputFileToSet.filePath.toString(),
+        inputFileToSet.start,
+        inputFileToSet.length)
+      fileBufsAndMeta
+    } catch {
+      case t: Throwable =>
+        results.safeClose(t)
+        leftOvers.safeClose(t)
+        throw t
+    }
   }
 
   override def next(): Boolean = {
@@ -967,6 +981,29 @@ abstract class MultiFileCloudPartitionReaderBase(
     currentFileHostBuffers = None
   }
 
+  /**
+   * Best-effort cleanup for completed async readers.
+   *
+   * A failed future must not prevent cleanup of other completed readers that already
+   * produced host buffers, otherwise those buffers can leak during early task teardown.
+   */
+  private def collectCompletedReaderBuffersForCleanup(
+      needToClose: ArrayBuffer[BufferInfo]): Unit = {
+    tasks.asScala.foreach {
+      case task if task.isCancelled => // Do nothing if already cancelled
+      case task if task.isDone =>
+        try {
+          needToClose += convertAsyncResult(task.get())
+        } catch {
+          case NonFatal(e) =>
+            logWarning("Ignoring completed async reader failure during cleanup", e)
+        }
+      case task =>
+        // Do not interrupt reads in flight. Let them finish and drop the result.
+        task.cancel(false)
+    }
+  }
+
   override def close(): Unit = {
     // this is more complicated because threads might still be processing files
     // in cases close got called early for like limit() calls
@@ -976,16 +1013,7 @@ abstract class MultiFileCloudPartitionReaderBase(
 
     // clean up Async Readers being left over
     val needToClose = mutable.ArrayBuffer[BufferInfo]()
-    tasks.asScala.foreach {
-      case task if task.isCancelled => // Do nothing if already cancelled
-      case task if task.isDone => // Close all produced hmbs
-        needToClose += convertAsyncResult(task.get())
-      case task => // Task is still running
-        // Note we are not interrupting thread here so it
-        // will finish reading and then just discard. If we
-        // interrupt HDFS logs warnings about being interrupted.
-        task.cancel(false)
-    }
+    collectCompletedReaderBuffersForCleanup(needToClose)
     needToClose.safeClose()
   }
 }
