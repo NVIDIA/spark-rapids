@@ -462,7 +462,7 @@ private object TestGpuDeleteLoader {
       deleteFiles: Seq[DeleteFile],
       deleteLoader: Option[GpuDeleteLoader]): GpuDeleteFilter = {
     new GpuDeleteFilter(
-      new IcebergFileIO(new HadoopFileIO(new Configuration()), new Configuration()),
+      new IcebergFileIO(new HadoopFileIO(new Configuration())),
       tableSchema,
       Map.empty,
       GpuIcebergParquetReaderConf(

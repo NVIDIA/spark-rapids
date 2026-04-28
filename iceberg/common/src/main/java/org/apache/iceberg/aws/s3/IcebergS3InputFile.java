@@ -19,47 +19,52 @@ package org.apache.iceberg.aws.s3;
 import ai.rapids.cudf.HostMemoryBuffer;
 import com.nvidia.spark.rapids.PerfIO;
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.io.InputFile;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
 
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
 
 /**
- * S3-backed {@link IcebergInputFile} that routes byte-range reads through PerfIO's shared
- * async S3 client. Lives in {@code org.apache.iceberg.aws.s3} for access to the
- * package-private {@link S3FileIOProperties}.
+ * S3-backed {@link IcebergInputFile} that routes byte-range reads through PerfIO using the
+ * {@link S3AsyncClient} owned by Iceberg's {@link S3FileIO}. Lives in
+ * {@code org.apache.iceberg.aws.s3} for access to the package-private {@link BaseS3File}.
  *
- * <p>Uses the ambient Spark/Hadoop {@link Configuration} so PerfIO inherits the same
- * credential-provider chain (IRSA, assumed role, EMRFS defaults, etc.) as the rest of the
- * job. Synthesizing a {@code Configuration} from {@link S3FileIOProperties} would drop
- * everything except static keys, which silently falls back to IMDS on EKS and authenticates
- * as the node instance role instead of the pod's execution role.
+ * <p>Reusing Iceberg's async client keeps the PerfIO read path on the same credential chain
+ * (resolved via {@link S3FileIOProperties}, including
+ * {@link org.apache.iceberg.io.SupportsStorageCredentials} contributions) as every other S3
+ * call the job makes.
  */
 public final class IcebergS3InputFile extends IcebergInputFile {
   private final URI s3Uri;
-  private final Configuration hadoopConf;
+  private final S3AsyncClient asyncClient;
 
-  private IcebergS3InputFile(InputFile delegate, URI s3Uri, Configuration hadoopConf) {
+  private IcebergS3InputFile(InputFile delegate, URI s3Uri, S3AsyncClient asyncClient) {
     super(delegate);
     this.s3Uri = s3Uri;
-    this.hadoopConf = hadoopConf;
+    this.asyncClient = asyncClient;
   }
 
-  public static IcebergInputFile maybeCreate(InputFile inputFile, Configuration hadoopConf) {
-    if (!(inputFile instanceof BaseS3File) || !PerfIO.s3BackendAvailable()) {
+  public static IcebergInputFile maybeCreate(InputFile inputFile) {
+    if (!(inputFile instanceof BaseS3File)) {
       return new IcebergInputFile(inputFile);
     }
     BaseS3File s3File = (BaseS3File) inputFile;
+    S3AsyncClient asyncClient = s3File.asyncClient();
+    if (asyncClient == null) {
+      // S3FileIO opted out of async (s3.crt.enabled=false and shouldUseAsyncClient()=false).
+      // Without an async client we have no zero-copy fast path; fall back to the default reader.
+      return new IcebergInputFile(inputFile);
+    }
     S3URI uri = s3File.uri();
     URI s3Uri = URI.create("s3://" + uri.bucket() + "/" + uri.key());
-    return new IcebergS3InputFile(inputFile, s3Uri, hadoopConf);
+    return new IcebergS3InputFile(inputFile, s3Uri, asyncClient);
   }
 
   @Override
   public void readVectored(HostMemoryBuffer output, List<CopyRange> copyRanges)
       throws IOException {
-    PerfIO.readVectoredS3(hadoopConf, output, s3Uri, copyRanges);
+    PerfIO.readVectoredS3(asyncClient, output, s3Uri, copyRanges);
   }
 }
