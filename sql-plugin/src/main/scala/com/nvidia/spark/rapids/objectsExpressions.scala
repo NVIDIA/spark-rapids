@@ -38,6 +38,9 @@ class StaticInvokeMeta(expr: StaticInvoke,
   }
 
   private var charsetName: String = null
+  // True when spark.sql.legacy.codingErrorAction=false: the GPU kernel must signal malformed
+  // input so the caller can raise MALFORMED_CHARACTER_CODING instead of silently replacing.
+  private var reportMalformed: Boolean = false
 
   override val childExprs: Seq[BaseExprMeta[_]] = if (isStringDecode) {
     // StringDecode StaticInvoke: decode(bin, charset, legacyCharsets, legacyErrorAction)
@@ -73,27 +76,30 @@ class StaticInvokeMeta(expr: StaticInvoke,
       case _ =>
         willNotWorkOnGpu("charset must be a string literal for GPU StringDecode")
     }
-    // The GPU kernel unconditionally replaces malformed bytes with U+FFFD and accepts GBK
-    // regardless of the session's charset allow-list. CPU diverges when either legacy flag
-    // is false: spark.sql.legacy.javaCharsets=false rejects GBK at CharsetProvider.forName,
-    // and spark.sql.legacy.codingErrorAction=false raises MALFORMED_CHARACTER_CODING on
-    // invalid input instead of replacing. Require both to be the literal true.
+    // spark.sql.legacy.javaCharsets=false rejects GBK at CharsetProvider.forName on the CPU
+    // before decoding ever starts; in that case we leave the work to the CPU so the charset
+    // error is raised consistently. GPU accepts GBK unconditionally and has no equivalent
+    // rejection path.
     expr.arguments(2) match {
       case Literal(true, _) =>
       case _ => willNotWorkOnGpu(
         "GPU StringDecode requires spark.sql.legacy.javaCharsets=true")
     }
+    // spark.sql.legacy.codingErrorAction selects REPLACE (legacy, true) vs REPORT (false).
+    // Both are supported on the GPU; REPORT is delegated to the kernel via CharsetDecode.REPORT
+    // and the resulting malformed signal is translated to MALFORMED_CHARACTER_CODING.
     expr.arguments(3) match {
-      case Literal(true, _) =>
+      case Literal(true, _)  => reportMalformed = false
+      case Literal(false, _) => reportMalformed = true
       case _ => willNotWorkOnGpu(
-        "GPU StringDecode requires spark.sql.legacy.codingErrorAction=true")
+        "legacyCodingErrorAction argument to StringDecode is not a boolean literal")
     }
   }
 
   override def convertToGpuImpl(): GpuExpression = {
     if (isStringDecode) {
       val bin = childExprs.head.convertToGpu().asInstanceOf[Expression]
-      GpuStringDecode(bin, charsetName)
+      GpuStringDecode(bin, charsetName, reportMalformed)
     } else {
       ExternalSource.convertToGpu(expr, this)
     }

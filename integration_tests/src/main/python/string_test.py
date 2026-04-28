@@ -48,9 +48,8 @@ def test_string_decode_gbk(data_gen):
     gen = data_gen
     for sc in _gbk_edge_cases:
         gen = gen.with_special_case(sc)
-    # Spark 4.0+ requires both legacy flags for GBK: javaCharsets=true lets the CPU
-    # accept GBK (not in the default allow-list), codingErrorAction=true keeps the
-    # CPU in REPLACE mode so it matches the GPU's malformed-byte handling.
+    # javaCharsets=true lets the CPU accept GBK (it is not in the default allow-list);
+    # codingErrorAction=true keeps the CPU in REPLACE mode so U+FFFD matches the GPU.
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen, length=2048)
             .selectExpr("decode(a, 'GBK')"),
@@ -58,6 +57,37 @@ def test_string_decode_gbk(data_gen):
             'spark.sql.legacy.javaCharsets': 'true',
             'spark.sql.legacy.codingErrorAction': 'true',
         })
+
+
+# codingErrorAction=false is Spark 4.0+: malformed bytes raise MALFORMED_CHARACTER_CODING
+# on the CPU, and the GPU must raise the same error instead of falling back.
+@pytest.mark.skipif(not is_spark_400_or_later(), reason="codingErrorAction introduced in Spark 4.0")
+def test_string_decode_gbk_report_mode_clean():
+    # Only valid GBK pairs -> both CPU and GPU must succeed.
+    gen = BinaryGen(min_length=0, max_length=50, min_val=0x4E00, max_val=0x9FA5, encoding='gbk')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen, length=2048)
+            .selectExpr("decode(a, 'GBK')"),
+        conf={
+            'spark.sql.legacy.javaCharsets': 'true',
+            'spark.sql.legacy.codingErrorAction': 'false',
+        })
+
+
+@pytest.mark.skipif(not is_spark_400_or_later(), reason="codingErrorAction introduced in Spark 4.0")
+def test_string_decode_gbk_report_mode_malformed():
+    # Input with malformed GBK bytes -> CPU and GPU must both raise MALFORMED_CHARACTER_CODING.
+    gen = BinaryGen(min_length=0, max_length=50)
+    for sc in _gbk_edge_cases:
+        gen = gen.with_special_case(sc)
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, gen, length=2048)
+            .selectExpr("decode(a, 'GBK')").collect(),
+        conf={
+            'spark.sql.legacy.javaCharsets': 'true',
+            'spark.sql.legacy.codingErrorAction': 'false',
+        },
+        error_message='MALFORMED_CHARACTER_CODING')
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
