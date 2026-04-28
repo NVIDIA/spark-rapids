@@ -1487,11 +1487,32 @@ object GpuCast {
 
   def fixDecimalBounds(input: ColumnView,
       outOfBounds: ColumnView,
+      targetType: DecimalType,
       ansiMode: Boolean): ColumnVector = {
     if (ansiMode) {
       withResource(outOfBounds.any()) { isAny =>
         if (isAny.isValid && isAny.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSAGE)
+          // Match Spark CPU's overflow message format
+          // ("Decimal(expanded, ${value}, ${p}, ${s}) cannot be represented as
+          // Decimal(${p'}, ${s'}). If necessary set ...") instead of a generic
+          // "overflow occurred" — this is what CheckOverflow on CPU produces
+          // and what the Spark UT for SPARK-28067 / SPARK-28224 / SPARK-35955
+          // asserts on. The decimal value's natural precision is preserved
+          // by using Decimal(BigDecimal) — the (value, p, s) constructor would
+          // cap precision at 38 and throw "Decimal precision N exceeds max
+          // precision 38" when the overflow value's BigDecimal precision
+          // exceeds the cuDF storage type's max.
+          // See https://github.com/NVIDIA/spark-rapids/issues/14143
+          val rowId = withResource(outOfBounds.copyToHost()) { hcv =>
+            (0L until outOfBounds.getRowCount)
+              .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
+              .get
+          }
+          val bigDecimalValue = withResource(input.copyToHost()) { hcv =>
+            hcv.getBigDecimal(rowId)
+          }
+          throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(
+            Decimal(bigDecimalValue), targetType)
         }
       }
       input.copyToColumnVector()
@@ -1508,7 +1529,7 @@ object GpuCast {
       ansiMode: Boolean): ColumnVector = {
     assert(input.getType.isDecimalType)
     withResource(DecimalUtil.outOfBounds(input, to)) { outOfBounds =>
-      fixDecimalBounds(input, outOfBounds, ansiMode)
+      fixDecimalBounds(input, outOfBounds, to, ansiMode)
     }
   }
 

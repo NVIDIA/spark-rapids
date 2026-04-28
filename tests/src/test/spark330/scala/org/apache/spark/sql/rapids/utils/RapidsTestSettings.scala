@@ -90,9 +90,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-28441: COUNT bug with attribute ref in subquery input and output with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
   enableSuite[RapidsSQLViewSuite]
   enableSuite[RapidsDataFrameSuite]
-    .exclude("SPARK-28224: Aggregate sum big decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
-    .exclude("SPARK-28067: Aggregate sum should not return wrong results for decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
-    .exclude("SPARK-35955: Aggregate avg should not return wrong results for decimal overflow", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14143"))
     .exclude("reuse exchange", ADJUST_UT("Replaced by testRapids version that uses GPU class name"))
     .exclude("SPARK-22520: support code generation for large CaseWhen", WONT_FIX_ISSUE("It's a codegen related test, not applicable for GPU"))
     .exclude("Uuid expressions should produce same results at retries in the same DataFrame", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14149"))

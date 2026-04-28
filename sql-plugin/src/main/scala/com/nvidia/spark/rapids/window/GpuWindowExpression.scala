@@ -1603,7 +1603,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
         }
       }
       withResource(outOfBounds) { _ =>
-        closeOnExcept(GpuCast.fixDecimalBounds(ret, outOfBounds, isAnsi)) { replaced =>
+        closeOnExcept(GpuCast.fixDecimalBounds(ret, outOfBounds, dt, isAnsi)) { replaced =>
           updateState(replaced, Some(outOfBounds))
           replaced
         }
