@@ -652,10 +652,21 @@ object GpuCast {
         val s = withResource(input.getScalarElement(c.getRowWithError)) { errScalar =>
           errScalar.getJavaString
         }
-        // Do not call `Decimal(s)` with an unparseable string — it would throw
-        // NumberFormatException before we could build the Spark-shaped ANSI error.
-        throw GpuCastToNumberErrorShim.invalidInputInCastToNumberError(
-          to, UTF8String.fromString(s), OriginContextShim.queryContext(CurrentOrigin.get))
+        val ctx = OriginContextShim.queryContext(CurrentOrigin.get)
+        // CPU parity: unparseable strings raise CAST_INVALID_INPUT, but
+        // parseable values that don't fit the target precision raise
+        // NUMERIC_VALUE_OUT_OF_RANGE via cannotChangeDecimalPrecisionError.
+        // `Decimal(s)` throws NumberFormatException on unparseable input.
+        val parsed = try Some(Decimal(s)) catch {
+          case _: NumberFormatException | _: ArithmeticException => None
+        }
+        parsed match {
+          case Some(d) =>
+            throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(d, to, ctx)
+          case None =>
+            throw GpuCastToNumberErrorShim.invalidInputInCastToNumberError(
+              to, UTF8String.fromString(s), ctx)
+        }
     }
   }
 
