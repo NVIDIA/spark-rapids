@@ -143,7 +143,10 @@ case class GpuFileSourceScanExec(
   // We can only determine the actual partitions at runtime when a dynamic partition filter is
   // present. This is because such a filter relies on information that is only available at run
   // time (for instance the keys used in the other side of a join).
-  @transient private lazy val dynamicallySelectedPartitions: Array[PartitionDirectory] = {
+  // Visible to org.apache.spark.* so tests can assert on runtime partition pruning, mirroring
+  // CPU's FileSourceScanExec.dynamicallySelectedPartitions (which is package-private to
+  // org.apache.spark.sql.execution).
+  @transient private[spark] lazy val dynamicallySelectedPartitions: Array[PartitionDirectory] = {
     val dynamicPartitionFilters = partitionFilters.filter(isDynamicPruningFilter)
 
     if (dynamicPartitionFilters.nonEmpty) {
