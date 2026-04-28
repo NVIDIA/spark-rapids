@@ -1989,21 +1989,11 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     }
 
     val coalescedRanges = coalesceReads(remoteCopies)
-    val totalBytesCopied = if (fileIO.isInstanceOf[HadoopFileIO]) {
-      if (filePath.toUri.getScheme.startsWith("s3")) {
-        GpuTaskMetrics.get.recordPerfioS3BackendOnce()
-      }
-      PerfIO.readToHostMemory(
-        conf, out.buffer, filePath.toUri,
-        coalescedRanges.map(r => IntRangeWithOffset(r.offset, r.length, r.outputOffset))
-      ).getOrElse {
-        GpuParquetScan.readRangesToHostMemory(
-          inputFile, out.buffer, coalescedRanges, metrics.getOrElse(READ_FS_TIME, NoopMetric))
-      }
-    } else {
-      GpuParquetScan.readRangesToHostMemory(
-        inputFile, out.buffer, coalescedRanges, metrics.getOrElse(READ_FS_TIME, NoopMetric))
+    if (filePath.toUri.getScheme.startsWith("s3")) {
+      GpuTaskMetrics.get.recordPerfioS3BackendOnce()
     }
+    val totalBytesCopied = GpuParquetScan.readRangesToHostMemory(
+      inputFile, out.buffer, coalescedRanges, metrics.getOrElse(READ_FS_TIME, NoopMetric))
 
     // try to cache the remote ranges that were copied
     remoteCopies.foreach { range =>
