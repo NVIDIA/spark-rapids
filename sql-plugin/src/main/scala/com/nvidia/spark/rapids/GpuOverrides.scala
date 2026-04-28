@@ -3500,7 +3500,7 @@ object GpuOverrides extends Logging {
       "Contains",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("src", TypeSig.STRING, TypeSig.STRING),
-        ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
+        ("search", TypeSig.STRING, TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[Contains](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuContains(lhs, rhs)

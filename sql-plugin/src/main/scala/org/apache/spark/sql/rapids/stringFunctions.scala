@@ -394,7 +394,7 @@ case class GpuConcatWs(children: Seq[Expression])
 }
 
 case class GpuContains(left: Expression, right: Expression)
-    extends GpuBinaryExpressionArgsAnyScalar
+    extends GpuBinaryExpression
         with Predicate
         with ImplicitCastInputTypes
         with NullIntolerantShim
@@ -410,11 +410,25 @@ case class GpuContains(left: Expression, right: Expression)
 
   override def toString: String = s"gpucontains($left, $right)"
 
-  def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector =
     lhs.getBase.stringContains(rhs.getBase)
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
+      doColumnar(expandedLhs, rhs)
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
+    // stringContainsPerRow returns false for null targets, but Spark expects null
+    // when either argument is null (nullIntolerant). Merge validity from both inputs.
+    withResource(lhs.getBase.stringContainsPerRow(rhs.getBase)) { result =>
+      result.mergeAndSetValidity(BinaryOp.BITWISE_AND, lhs.getBase, rhs.getBase)
+    }
+  }
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(lhs, rhs.getRowCount.toInt)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
     }
   }

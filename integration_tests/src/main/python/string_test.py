@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -282,16 +282,24 @@ def test_contains():
                 f.col('a').contains(''),
                 f.col('a').contains(None)))
 
-@allow_non_gpu('ProjectExec')
-def test_unsupported_fallback_contains():
-    gen = StringGen(pattern='[a-z]')
-    def assert_gpu_did_fallback(op):
-        assert_gpu_fallback_collect(lambda spark:
-            unary_op_df(spark, gen, length=10).select(op),
-            'Contains')
+def test_contains_col_search():
+    gen = mk_str_gen('.{0,3}Z?_Z?.{0,3}A?.{0,3}')
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, gen, length=10).select(
+                f.lit('Z').contains(f.col('a')),
+                f.col('a').contains(f.col('a'))))
 
-    assert_gpu_did_fallback(f.lit('Z').contains(f.col('a')))
-    assert_gpu_did_fallback(f.col('a').contains(f.col('a')))
+def test_contains_col_search_with_nulls():
+    src_gen = StringGen(pattern='[a-z]{0,5}').with_special_case('').with_special_case(None)
+    search_gen = StringGen(pattern='[a-c]{0,3}').with_special_case('').with_special_case(None)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: gen_df(spark, [('src', src_gen), ('search', search_gen)], length=100)
+                .selectExpr(
+                    'contains(src, search)',
+                    'contains(src, "")',
+                    'contains("abc", search)',
+                    'contains(CAST(NULL AS STRING), search)',
+                    'contains(src, CAST(NULL AS STRING))'))
 
 
 @pytest.mark.parametrize('data_gen', [mk_str_gen('[Ab \ud720]{0,3}A.{0,3}Z[ Ab]{0,3}'), StringGen('')])
