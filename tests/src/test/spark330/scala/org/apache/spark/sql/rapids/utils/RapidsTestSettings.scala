@@ -34,6 +34,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-24690 enables star schema detection even if CBO disabled", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14653"))
   enableSuite[RapidsArithmeticExpressionSuite]
   enableSuite[RapidsBitwiseExpressionsSuite]
+  enableSuite[RapidsBloomFilterAggregateQuerySuite]
   enableSuite[RapidsComplexTypeSuite]
     .exclude("CreateMap", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14140"))
   enableSuite[RapidsConditionalExpressionSuite]
