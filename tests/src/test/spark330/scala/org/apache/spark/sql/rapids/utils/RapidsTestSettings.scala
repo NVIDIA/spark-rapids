@@ -156,8 +156,8 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
   enableSuite[RapidsParquetEncodingSuite]
     .exclude("Read row group containing both dictionary and plain encoded pages", ADJUST_UT("Test uses CPU VectorizedParquetRecordReader directly, not a GPU path. GPU-native mixed encoding test added in PR #13982. See https://github.com/NVIDIA/spark-rapids/issues/13739"))
-    .exclude("parquet v2 pages - delta encoding", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13745"))
-    .exclude("parquet v2 pages - rle encoding for boolean value columns", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13746"))
+    .exclude("parquet v2 pages - delta encoding", ADJUST_UT("Replaced by testRapids version that drops encoding-format assertion. GPU's libcudf parquet writer chooses different but valid Parquet v2 encodings (PLAIN/PLAIN_DICTIONARY) than CPU's DELTA_BINARY_PACKED/DELTA_BYTE_ARRAY; encoding choice is internal optimization that doesn't affect data correctness. See https://github.com/NVIDIA/spark-rapids/issues/13745"))
+    .exclude("parquet v2 pages - rle encoding for boolean value columns", ADJUST_UT("Replaced by testRapids version that drops encoding-format assertion. GPU's libcudf parquet writer uses PLAIN encoding for booleans rather than CPU's RLE; encoding choice is internal optimization that doesn't affect data correctness. See https://github.com/NVIDIA/spark-rapids/issues/13746"))
   enableSuite[RapidsParquetFileFormatSuite]
     .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11602"))
   enableSuite[RapidsParquetFieldIdIOSuite]
