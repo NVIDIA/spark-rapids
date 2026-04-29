@@ -19,75 +19,51 @@ package org.apache.iceberg.aws.s3;
 import ai.rapids.cudf.HostMemoryBuffer;
 import com.nvidia.spark.rapids.PerfIO;
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
+import com.nvidia.spark.rapids.iceberg.IcebergProvider;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.net.URI;
 import java.util.List;
 
 /**
- * S3-backed {@link IcebergInputFile} that routes byte-range reads through PerfIO using the
- * AWS S3 async client owned by Iceberg's {@link S3FileIO}.
+ * S3-backed {@link IcebergInputFile} that routes byte-range reads through PerfIO. Auth is
+ * delegated to a per-Iceberg-version bridge living in spark-rapids-private's
+ * {@code iceberg-1-{6,9,10}-x} module — that bridge reads {@code S3FileIOProperties} plus
+ * (on 1.9+) {@code SupportsStorageCredentials} so REST-catalog-vended, table-scoped
+ * credentials are honored. PerfIO loads the right bridge from the shim package returned
+ * by {@link IcebergProvider#shimPackage()}.
  *
- * <p>Authorization is delegated entirely to Iceberg. {@link S3FileIO} builds and caches its
- * async client from {@link S3FileIOProperties} merged with any
- * {@link org.apache.iceberg.io.SupportsStorageCredentials} contributions the catalog
- * supplied; this class borrows that already-configured client so PerfIO inherits the same
- * credential chain (IRSA / assumed-role / signer / region pinning) as every other S3 call
- * the FileIO makes.
- *
- * <p>The async client is held as {@code Object} (read reflectively from
- * {@link S3FileIO#asyncClient()}) so that {@code iceberg/common} does not pick up a
- * compile-time dependency on the AWS SDK — the SDK is supplied at runtime by Iceberg's
- * bundled spark-runtime jar. {@link PerfIO} re-casts it to its real type in private/core,
- * where aws-sdk is already on the compile classpath.
+ * <p>This class lives in {@code org.apache.iceberg.aws.s3} only for the package-private
+ * {@link BaseS3File} access we need to extract the bucket/key URI from an Iceberg
+ * {@link InputFile}.
  */
 public final class IcebergS3InputFile extends IcebergInputFile {
-  private static final Method S3_FILEIO_ASYNC_CLIENT;
-
-  static {
-    try {
-      S3_FILEIO_ASYNC_CLIENT = S3FileIO.class.getMethod("asyncClient");
-    } catch (NoSuchMethodException e) {
-      throw new ExceptionInInitializerError(e);
-    }
-  }
-
   private final URI s3Uri;
-  private final Object asyncClient;
+  private final FileIO fileIO;
+  private final String shimPackage;
 
-  private IcebergS3InputFile(InputFile delegate, URI s3Uri, Object asyncClient) {
+  private IcebergS3InputFile(InputFile delegate, URI s3Uri, FileIO fileIO, String shimPackage) {
     super(delegate);
     this.s3Uri = s3Uri;
-    this.asyncClient = asyncClient;
+    this.fileIO = fileIO;
+    this.shimPackage = shimPackage;
   }
 
   public static IcebergInputFile maybeCreate(InputFile inputFile, FileIO fileIO) {
-    if (!(inputFile instanceof BaseS3File) || !(fileIO instanceof S3FileIO)) {
-      return new IcebergInputFile(inputFile);
-    }
-    Object asyncClient;
-    try {
-      asyncClient = S3_FILEIO_ASYNC_CLIENT.invoke(fileIO);
-    } catch (ReflectiveOperationException e) {
-      return new IcebergInputFile(inputFile);
-    }
-    if (asyncClient == null) {
-      // S3FileIO opted out of async (e.g. s3.crt.enabled=false). Without an async client
-      // there is no zero-copy fast path; fall back to the default reader.
+    if (!(inputFile instanceof BaseS3File) || !PerfIO.s3BackendAvailable()) {
       return new IcebergInputFile(inputFile);
     }
     BaseS3File s3File = (BaseS3File) inputFile;
     S3URI uri = s3File.uri();
     URI s3Uri = URI.create("s3://" + uri.bucket() + "/" + uri.key());
-    return new IcebergS3InputFile(inputFile, s3Uri, asyncClient);
+    return new IcebergS3InputFile(inputFile, s3Uri, fileIO, IcebergProvider.shimPackage());
   }
 
   @Override
   public void readVectored(HostMemoryBuffer output, List<CopyRange> copyRanges)
       throws IOException {
-    PerfIO.readVectoredS3(asyncClient, output, s3Uri, copyRanges);
+    PerfIO.readVectoredS3(fileIO, shimPackage, output, s3Uri, copyRanges);
   }
 }

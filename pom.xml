@@ -394,6 +394,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-6-x</rapids.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-6-x</rapids.private.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -417,6 +418,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-6-x</rapids.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-6-x</rapids.private.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -440,6 +442,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-6-x</rapids.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-6-x</rapids.private.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -463,6 +466,7 @@
                 <rapids.delta.artifactId1>rapids-4-spark-delta-33x</rapids.delta.artifactId1>
                 <iceberg.artifact.suffix>${spark35x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-6-x</rapids.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-6-x</rapids.private.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -488,6 +492,8 @@
                 <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-9-x</rapids.private.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId2>rapids-4-spark-private-iceberg-1-10-x</rapids.private.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -514,6 +520,8 @@
                 <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-9-x</rapids.private.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId2>rapids-4-spark-private-iceberg-1-10-x</rapids.private.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -540,6 +548,8 @@
                 <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-9-x</rapids.private.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId2>rapids-4-spark-private-iceberg-1-10-x</rapids.private.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -566,6 +576,8 @@
                 <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-9-x</rapids.private.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId2>rapids-4-spark-private-iceberg-1-10-x</rapids.private.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -592,6 +604,8 @@
                 <iceberg.version>${iceberg.19x.version}</iceberg.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-9-x</rapids.iceberg.artifactId>
                 <rapids.iceberg.artifactId2>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId2>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-9-x</rapids.private.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId2>rapids-4-spark-private-iceberg-1-10-x</rapids.private.iceberg.artifactId2>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -618,6 +632,7 @@
                 <iceberg.artifact.suffix>${spark40x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.runtime.version>${iceberg.110x.version}</iceberg.runtime.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-10-x</rapids.private.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -665,6 +680,7 @@
                 <iceberg.artifact.suffix>${spark40x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.runtime.version>${iceberg.110x.version}</iceberg.runtime.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-10-x</rapids.private.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -689,6 +705,7 @@
                 <iceberg.artifact.suffix>${spark40x.iceberg.artifact.suffix}</iceberg.artifact.suffix>
                 <iceberg.runtime.version>${iceberg.110x.version}</iceberg.runtime.version>
                 <rapids.iceberg.artifactId>rapids-4-spark-iceberg-1-10-x</rapids.iceberg.artifactId>
+                <rapids.private.iceberg.artifactId>rapids-4-spark-private-iceberg-1-10-x</rapids.private.iceberg.artifactId>
                 <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
@@ -937,6 +954,16 @@
         -->
         <rapids.iceberg.artifactId>rapids-4-spark-iceberg-stub</rapids.iceberg.artifactId>
         <rapids.iceberg.artifactId2>${rapids.iceberg.artifactId}</rapids.iceberg.artifactId2>
+        <!--
+        Per-iceberg-version PerfIO S3 auth bridge artifacts from spark-rapids-private. For
+        Spark versions that ship iceberg shims, profiles below override these to point at
+        rapids-4-spark-private-iceberg-1-{6,9,10}-x. For Spark versions that don't have an
+        iceberg shim, default to rapids-4-spark-private (which is already a dep of the
+        aggregator) so the placeholder resolves to a real artifact and Maven dedups the
+        repeated dependency.
+        -->
+        <rapids.private.iceberg.artifactId>rapids-4-spark-private</rapids.private.iceberg.artifactId>
+        <rapids.private.iceberg.artifactId2>${rapids.private.iceberg.artifactId}</rapids.private.iceberg.artifactId2>
         <spark33x.iceberg.artifact.suffix>3.3</spark33x.iceberg.artifact.suffix>
         <spark33x.iceberg.version>1.6.1</spark33x.iceberg.version>
         <spark34x.iceberg.artifact.suffix>3.4</spark34x.iceberg.artifact.suffix>
