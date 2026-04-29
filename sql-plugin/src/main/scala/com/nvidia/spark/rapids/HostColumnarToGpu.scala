@@ -144,6 +144,8 @@ object HostColumnarToGpu extends Logging {
         ColumnarCopyHelper.doubleCopy(cv, b, rows)
       case StringType =>
         ColumnarCopyHelper.stringCopy(cv, b, rows)
+      case BinaryType =>
+        ColumnarCopyHelper.binaryCopy(cv, b, rows)
       case dt: DecimalType =>
         cv match {
           case wcv: WritableColumnVector =>

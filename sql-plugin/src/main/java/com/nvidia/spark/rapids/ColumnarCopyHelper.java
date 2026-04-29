@@ -179,6 +179,28 @@ public class ColumnarCopyHelper {
     return bytesCopied;
   }
 
+  public static long binaryCopy(ColumnVector cv, RapidsHostColumnBuilder b, int rows) {
+    long bytesCopied = 0L;
+    if (!cv.hasNull()) {
+      for (int i = 0; i < rows; i++) {
+        byte[] value = cv.getBinary(i);
+        b.appendByteList(value);
+        bytesCopied += value.length;
+      }
+      return bytesCopied;
+    }
+    for (int i = 0; i < rows; i++) {
+      if (cv.isNullAt(i)) {
+        bytesCopied += b.appendNull();
+      } else {
+        byte[] value = cv.getBinary(i);
+        b.appendByteList(value);
+        bytesCopied += value.length;
+      }
+    }
+    return bytesCopied;
+  }
+
   public static long decimal32Copy(WritableColumnVector cv, RapidsHostColumnBuilder b, int rows) {
     return intCopy(cv, b, rows);
   }
