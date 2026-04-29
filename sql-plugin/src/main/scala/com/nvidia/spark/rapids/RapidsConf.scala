@@ -2737,6 +2737,17 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .longConf
       .createOptional
 
+  val PROJECT_SPLIT_RETRY_ENABLED = conf("spark.rapids.sql.projectExec.splitRetry.enabled")
+      .doc("When true, GpuProjectExec uses split-and-retry on GPU OOM for purely " +
+          "deterministic projections: the input batch is halved by rows and the " +
+          "projection is re-run on each half. Mixed deterministic + non-deterministic " +
+          "projections fall back to the existing withRetryNoSplit path because the " +
+          "non-deterministic side is computed once on the full batch and stitched " +
+          "row-by-row to the deterministic side, which row-splitting would break. " +
+          "Disable this to revert to the prior behavior.")
+      .booleanConf
+      .createWithDefault(true)
+
   val TEST_IO_ENCRYPTION = conf("spark.rapids.test.io.encryption")
     .doc("Only for tests: verify for IO encryption")
     .internal()
@@ -3933,6 +3944,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
+
+  lazy val isProjectSplitRetryEnabled: Boolean = get(PROJECT_SPLIT_RETRY_ENABLED)
 
   lazy val chunkedPackBounceBufferCount: Int = get(CHUNKED_PACK_BOUNCE_BUFFER_COUNT)
 

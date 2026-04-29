@@ -40,6 +40,7 @@ import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, PartitioningCollection, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SampleExec, SparkPlan}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuCreateArray, GpuCreateMap, GpuCreateNamedStruct, GpuPartitionwiseSampledRDD, GpuPoissonSampler}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
@@ -162,6 +163,21 @@ object GpuProjectExec {
   def projectWithRetrySingleBatch(sb: SpillableColumnarBatch,
       boundExprs: Seq[Expression]): ColumnarBatch = {
 
+    // For purely deterministic projections, use split-retry: on GPU OOM, halve
+    // the input batch by rows and re-run on each half. This recovers from
+    // cuDF-internal scratch allocations that the pre-split estimator cannot
+    // see (e.g. regex / string-replace working memory).
+    //
+    // Mixed deterministic + non-deterministic projections fall through to the
+    // existing withRetryNoSplit path: the non-deterministic side is computed
+    // once on the full input batch and stitched row-by-row to the deterministic
+    // side, and row-splitting either side would break that alignment.
+    if (new RapidsConf(SQLConf.get).isProjectSplitRetryEnabled &&
+        boundExprs.forall(_.deterministic)) {
+      val retryables = GpuExpressionsUtils.collectRetryables(boundExprs)
+      return runWithSplitRetry(sb, retryables, project(_, boundExprs))
+    }
+
     // First off we want to find/run all of the expressions that are not retryable,
     // These cannot be retried.
     val (retryableExprs, notRetryableExprs) = boundExprs.partition(
@@ -210,6 +226,80 @@ object GpuProjectExec {
           }
         }
       }
+    }
+  }
+
+  /**
+   * Run a deterministic projection with row-split retry. On GPU OOM the retry
+   * framework calls splitSpillableInHalfByRows to halve the input batch and
+   * re-runs the projection on each half. The resulting sub-batches are
+   * concatenated back into a single output batch to preserve the single-batch
+   * contract of projectAndCloseWithRetrySingleBatch.
+   *
+   * Caller must ensure the projection driven by `runProject` is purely
+   * deterministic — non-deterministic expressions cannot be safely
+   * re-evaluated on row-split sub-batches.
+   *
+   * `runProject` receives a (non-spillable) ColumnarBatch and returns the
+   * projected ColumnarBatch. It must not close its input (the framework will).
+   *
+   * Takes ownership of `sb`: it is closed by the retry iterator when drained.
+   * If the caller does not want to surrender ownership, it must increment the
+   * ref count before calling.
+   */
+  private[rapids] def runWithSplitRetry(
+      sb: SpillableColumnarBatch,
+      retryables: Seq[Retryable],
+      runProject: ColumnarBatch => ColumnarBatch): ColumnarBatch = {
+    retryables.foreach(_.checkpoint())
+    val resultIter = withRetry(sb, splitSpillableInHalfByRows) { spillable =>
+      withResource(spillable.getColumnarBatch()) { cb =>
+        withRestoreOnRetry(retryables) {
+          runProject(cb)
+        }
+      }
+    }
+    // Drain the retry iterator. Each piece is an independently-projected
+    // sub-batch. If draining itself throws (e.g. a later split also OOMs and
+    // retry is exhausted), close any pieces collected so far before
+    // propagating.
+    val pieces = ArrayBuffer[ColumnarBatch]()
+    closeOnExcept(pieces) { _ =>
+      while (resultIter.hasNext) {
+        pieces += resultIter.next()
+      }
+    }
+    if (pieces.length == 1) {
+      pieces.head
+    } else {
+      concatColumnarBatches(pieces.toArray)
+    }
+  }
+
+  /**
+   * Concatenate a non-empty array of ColumnarBatches into a single ColumnarBatch.
+   * Closes all input batches on success; on failure, the input batches are also
+   * closed via closeOnExcept. The returned batch's device buffers are
+   * independent of the inputs (Table.concatenate copies).
+   *
+   * Note: if the concatenation itself OOMs, it will be caught by whatever outer
+   * retry layer surrounds the caller. We don't try to recover here because by
+   * definition the retry framework already split the input as far as it could.
+   */
+  private def concatColumnarBatches(pieces: Array[ColumnarBatch]): ColumnarBatch = {
+    require(pieces.nonEmpty, "concatColumnarBatches requires at least one piece")
+    closeOnExcept(pieces) { _ =>
+      val outputTypes: Array[DataType] = (0 until pieces.head.numCols()).map { i =>
+        pieces.head.column(i).asInstanceOf[GpuColumnVector].dataType()
+      }.toArray
+      val result = withResource(pieces.safeMap(GpuColumnVector.from)) { tables =>
+        withResource(Table.concatenate(tables: _*)) { concatenated =>
+          GpuColumnVector.from(concatenated, outputTypes)
+        }
+      }
+      // Result holds independent device buffers; release the input pieces.
+      pieces.foreach(_.close())
+      result
     }
   }
 }
@@ -947,6 +1037,17 @@ case class GpuProjectAstExec(
     }
   }
 
+  /**
+   * Are all expressions across all tiers deterministic. This is a stricter
+   * check than [[areAllRetryable]] — a Retryable but non-deterministic
+   * expression (e.g. GpuRand) is retryable but cannot be safely re-evaluated
+   * on a row-split sub-batch. Used by the split-retry path to gate row
+   * splitting.
+   */
+  lazy val areAllDeterministic = exprTiers.forall { tier =>
+    tier.forall(_.deterministic)
+  }
+
   lazy val retryables: Seq[Retryable] = exprTiers.flatMap(GpuExpressionsUtils.collectRetryables)
 
   lazy val outputExprs = exprTiers.last.toArray
@@ -997,17 +1098,27 @@ case class GpuProjectAstExec(
       // If all of the expressions are retryable we can just run everything and retry it
       // at the top level. If some things are not retryable we need to split them up and
       // do the processing in a way that makes it so retries are more likely to succeed.
-      val sbToClose = if (closeInputBatch) {
-        Some(sb)
+      if (areAllDeterministic && new RapidsConf(SQLConf.get).isProjectSplitRetryEnabled) {
+        // Split-retry path: on GPU OOM, halve the input batch by rows and
+        // re-run the projection on each half. runWithSplitRetry takes
+        // ownership of the SpillableColumnarBatch and closes it; if the
+        // caller asked us not to close `sb`, increment the ref count to
+        // compensate.
+        val sbForRetry = if (closeInputBatch) sb else sb.incRefCount()
+        GpuProjectExec.runWithSplitRetry(sbForRetry, retryables, project(_))
       } else {
-        None
-      }
-      withResource(sbToClose) { _ =>
-        retryables.foreach(_.checkpoint())
-        RmmRapidsRetryIterator.withRetryNoSplit {
-          withResource(sb.getColumnarBatch()) { cb =>
-            withRestoreOnRetry(retryables) {
-              project(cb)
+        val sbToClose = if (closeInputBatch) {
+          Some(sb)
+        } else {
+          None
+        }
+        withResource(sbToClose) { _ =>
+          retryables.foreach(_.checkpoint())
+          RmmRapidsRetryIterator.withRetryNoSplit {
+            withResource(sb.getColumnarBatch()) { cb =>
+              withRestoreOnRetry(retryables) {
+                project(cb)
+              }
             }
           }
         }
