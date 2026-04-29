@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,6 +27,67 @@ import pyspark.sql.functions as f
 from spark_session import with_cpu_session, with_gpu_session, is_databricks104_or_later, is_databricks_version_or_later, is_before_spark_320, is_before_spark_330, is_spark_400_or_later, is_before_spark_340
 
 _regexp_conf = { 'spark.rapids.sql.regexp.enabled': 'true' }
+
+_gbk_edge_cases = [
+    bytearray(b''),                        # empty
+    bytearray(b'\xc4\xe3\xba\xc3'),       # "你好" in GBK
+    bytearray(b'\xff\xff'),                # invalid lead bytes
+    bytearray(b'\x81'),                    # truncated lead byte (no second byte)
+    bytearray(b'\x81\xff'),               # lead + 0xFF (consumed as pair, maps to FFFD)
+    bytearray(b'\x81\x30'),               # lead + invalid second byte (< 0x40)
+    bytearray(b'Hi\xc4\xe3\xba\xc3World'), # mixed ASCII and Chinese
+]
+
+@pytest.mark.parametrize('data_gen', [
+    # Random CJK ideographs encoded as GBK — tests normal decode path
+    BinaryGen(min_length=0, max_length=50, min_val=0x4E00, max_val=0x9FA5, encoding='gbk'),
+    # Raw random bytes — tests error handling and edge cases
+    BinaryGen(min_length=0, max_length=50),
+], ids=['gbk_chinese', 'random_bytes'])
+def test_string_decode_gbk(data_gen):
+    gen = data_gen
+    for sc in _gbk_edge_cases:
+        gen = gen.with_special_case(sc)
+    # javaCharsets=true lets the CPU accept GBK (it is not in the default allow-list);
+    # codingErrorAction=true keeps the CPU in REPLACE mode so U+FFFD matches the GPU.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen, length=2048)
+            .selectExpr("decode(a, 'GBK')"),
+        conf={
+            'spark.sql.legacy.javaCharsets': 'true',
+            'spark.sql.legacy.codingErrorAction': 'true',
+        })
+
+
+# codingErrorAction=false is Spark 4.0+: malformed bytes raise MALFORMED_CHARACTER_CODING
+# on the CPU, and the GPU must raise the same error instead of falling back.
+@pytest.mark.skipif(not is_spark_400_or_later(), reason="codingErrorAction introduced in Spark 4.0")
+def test_string_decode_gbk_report_mode_clean():
+    # Only valid GBK pairs -> both CPU and GPU must succeed.
+    gen = BinaryGen(min_length=0, max_length=50, min_val=0x4E00, max_val=0x9FA5, encoding='gbk')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen, length=2048)
+            .selectExpr("decode(a, 'GBK')"),
+        conf={
+            'spark.sql.legacy.javaCharsets': 'true',
+            'spark.sql.legacy.codingErrorAction': 'false',
+        })
+
+
+@pytest.mark.skipif(not is_spark_400_or_later(), reason="codingErrorAction introduced in Spark 4.0")
+def test_string_decode_gbk_report_mode_malformed():
+    # Input with malformed GBK bytes -> CPU and GPU must both raise MALFORMED_CHARACTER_CODING.
+    gen = BinaryGen(min_length=0, max_length=50)
+    for sc in _gbk_edge_cases:
+        gen = gen.with_special_case(sc)
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, gen, length=2048)
+            .selectExpr("decode(a, 'GBK')").collect(),
+        conf={
+            'spark.sql.legacy.javaCharsets': 'true',
+            'spark.sql.legacy.codingErrorAction': 'false',
+        },
+        error_message='MALFORMED_CHARACTER_CODING')
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
