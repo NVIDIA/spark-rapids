@@ -19,9 +19,21 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
+import org.apache.spark.SparkConf
 import org.apache.spark.sql.InjectRuntimeFilterSuite
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsTrait
 
 class RapidsInjectRuntimeFilterSuite
   extends InjectRuntimeFilterSuite with RapidsSQLTestsTrait {
+
+  // The upstream tests' thresholds (RUNTIME_BLOOM_FILTER_APPLICATION_SIDE_SCAN_SIZE_THRESHOLD,
+  // AUTO_BROADCASTJOIN_THRESHOLD, RUNTIME_BLOOM_FILTER_CREATION_SIDE_THRESHOLD) are hardcoded
+  // against parquet file sizes produced by Spark CPU writes (e.g. application=3362,
+  // creation=3409 bytes). GPU parquet writes use different row-group/compression settings,
+  // producing different sizeInBytes that fail the optimizer rule's threshold checks. Force
+  // CPU parquet writes during beforeAll's saveAsTable so the catalog stats match the
+  // hardcoded thresholds; GPU execution still happens for read/aggregation/scan paths.
+  override def sparkConf: SparkConf = {
+    super.sparkConf.set("spark.rapids.sql.format.parquet.write.enabled", "false")
+  }
 }

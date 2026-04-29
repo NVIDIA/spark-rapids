@@ -31,16 +31,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("percentile_approx(col, ...), input rows contains null, with group by", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14634"))
     .exclude("SPARK-32908: maximum target error in percentile_approx", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14635"))
   enableSuite[RapidsInjectRuntimeFilterSuite]
-    .exclude("Runtime semi join reduction: simple", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
-    .exclude("Runtime semi join reduction: two joins", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
-    .exclude("Runtime semi join reduction: three joins", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
-    .exclude("Runtime bloom filter join: simple", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
-    .exclude("Runtime bloom filter join: two filters single join", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
-    .exclude("Runtime bloom filter join: test the number of filter threshold", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
-    .exclude("Runtime bloom filter join: insert one bloom filter per column", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
-    .exclude("Runtime bloom filter join: BF rewrite triggering threshold test", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
-    .exclude("Support Left Semi join in row level runtime filters", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
-    .exclude("Merge runtime bloom filters", ADJUST_UT("Plan-shape assertion counts CPU Join/SubqueryExec nodes replaced by RAPIDS GPU variants. See https://github.com/NVIDIA/spark-rapids/issues/14659 for GPU-aware rewrite plan."))
   enableSuite[RapidsArithmeticExpressionSuite]
   enableSuite[RapidsBitwiseExpressionsSuite]
   enableSuite[RapidsComplexTypeSuite]
