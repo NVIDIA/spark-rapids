@@ -107,3 +107,4 @@ class GpuSparkFileWriterFactory(val table: Table,
     )
   }
 }
+
