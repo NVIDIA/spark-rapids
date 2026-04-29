@@ -58,7 +58,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("cast string to timestamp", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/blob/main/docs/compatibility.md#string-to-timestamp"))
     .exclude("cast string to date", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10771"))
   enableSuite[RapidsCollectionExpressionsSuite]
-    .exclude("Flatten", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14127"))
     .exclude("MapFromEntries", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14128"))
     .exclude("Array Intersect", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
     .exclude("Shuffle", ADJUST_UT("Replaced by testRapids version that adjusts the expected results to match the running by --master local[2]."))

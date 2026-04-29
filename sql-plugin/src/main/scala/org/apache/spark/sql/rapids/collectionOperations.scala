@@ -1797,6 +1797,7 @@ case class GpuFlattenArray(child: Expression) extends GpuUnaryExpression with Nu
   private def childDataType: ArrayType = child.dataType.asInstanceOf[ArrayType]
   override def nullable: Boolean = child.nullable || childDataType.containsNull
   override def dataType: DataType = childDataType.elementType
+
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     input.getBase.flattenLists
   }

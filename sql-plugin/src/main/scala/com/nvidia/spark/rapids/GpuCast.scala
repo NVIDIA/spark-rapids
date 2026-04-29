@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -889,10 +889,8 @@ object GpuCast {
       Seq(leftStr, rightStr, emptyStr, options.nullString).safeMap(Scalar.fromString)
     ){ case Seq(left, right, empty, nullRep) =>
       val strChildContainsNull = withResource(input.getChildColumnView(0)) {child =>
-        doCast(
-          child, elementType, StringType, options)
+        doCast(child, elementType, StringType, options)
       }
-
       val concatenated = withResource(strChildContainsNull) { _ =>
         withResource(input.replaceListChild(strChildContainsNull)) {
           concatenateStringArrayElements(_, options, castingBinaryData)
