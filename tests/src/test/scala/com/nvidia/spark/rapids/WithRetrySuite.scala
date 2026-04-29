@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -262,6 +262,30 @@ class WithRetrySuite
     } finally {
       assert(lastSplitSize >= minValue)
       assert(lastSplitSize == (initialValue / (2 * numSplits)))
+    }
+  }
+
+  test("splitTargetSizeInHalfGpu uses dataSize/2 as target when dataSize < targetSize/2") {
+    // When the actual data is smaller than the halved target, halving targetSize is a no-op:
+    // the retry would fetch the same data and OOM again. The fix is to use dataSize/2 instead,
+    // which forces the caller to process roughly half the data per retry.
+    val targetSize = 1000L
+    val minSize = 100L
+    val dataSize = 200L  // less than targetSize/2=500, so halving targetSize is a no-op
+    var doThrow = true
+    var splitTargetUsed = 0L
+    val myTarget = AutoCloseableTargetSize(targetSize, minSize, dataSize)
+    try {
+      withRetry(myTarget, splitTargetSizeInHalfGpu) { attempt =>
+        splitTargetUsed = attempt.targetSize
+        if (doThrow) {
+          doThrow = false
+          throw new GpuSplitAndRetryOOM("first attempt always fails")
+        }
+      }.toSeq
+    } finally {
+      // Should split to dataSize/2=100, not targetSize/2=500
+      assert(splitTargetUsed == dataSize / 2)
     }
   }
 
