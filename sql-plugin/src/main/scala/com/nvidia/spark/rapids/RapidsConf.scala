@@ -2745,6 +2745,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
           "non-deterministic side is computed once on the full batch and stitched " +
           "row-by-row to the deterministic side, which row-splitting would break. " +
           "Disable this to revert to the prior behavior.")
+      .internal()
       .booleanConf
       .createWithDefault(true)
 
