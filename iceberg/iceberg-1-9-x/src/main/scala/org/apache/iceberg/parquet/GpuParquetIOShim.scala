@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,30 +16,26 @@
 
 package org.apache.iceberg.parquet
 
-import com.nvidia.spark.rapids.GpuMetric
+import com.nvidia.spark.rapids.{GpuMetric, NoopMetric}
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import org.apache.hadoop.fs.Path
-import org.apache.iceberg.io.InputFile
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
-import org.apache.iceberg.shaded.org.apache.parquet.io.{InputFile => ShadedInputFile}
 
-object GpuParquetIO {
-  def file(file: InputFile): ShadedInputFile = {
-    ParquetIO.file(file)
-  }
-
-  /**
-   * Open a shaded `ParquetFileReader`. Footer caching is version-dependent and handled by the
-   * per-iceberg-version [[GpuParquetIOShim]]: the 1.10.x shim caches via `FileCache`, while the
-   * 1.6.x / 1.9.x shims open without caching (their shaded parquet has no way to inject a
-   * pre-parsed footer).
-   */
+/**
+ * Iceberg 1.9.x shim: footer caching is not supported because the shaded `ParquetFileReader` in
+ * 1.9.x has no public API to inject pre-parsed footer metadata. This opens the reader via the
+ * plain `open(InputFile, ParquetReadOptions)` path and always reads the footer from the file.
+ * The footer-miss counter is bumped on every call so dashboards see non-zero activity instead
+ * of silently interpreting "all zeros" as "everything was cached".
+ */
+object GpuParquetIOShim {
   def openReader(
       inputFile: IcebergInputFile,
-      filePath: Path,
+      _filePath: Path,
       options: ParquetReadOptions,
       metrics: Map[String, GpuMetric]): ParquetFileReader = {
-    GpuParquetIOShim.openReader(inputFile, filePath, options, metrics)
+    metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES, NoopMetric) += 1
+    ParquetFileReader.open(GpuParquetIO.file(inputFile.getDelegate), options)
   }
 }

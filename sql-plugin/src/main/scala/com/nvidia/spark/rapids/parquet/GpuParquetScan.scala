@@ -21,7 +21,6 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.nio.charset.StandardCharsets
-import java.util
 import java.util.{Collections, Locale}
 
 import scala.annotation.tailrec
@@ -488,7 +487,6 @@ protected case class GpuParquetFileFilterHandler(
 
   private val PARQUET_ENCRYPTION_CONFS = Seq("parquet.encryption.kms.client.class",
     "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
-  private val PARQUET_MAGIC_ENCRYPTED = "PARE".getBytes(StandardCharsets.US_ASCII)
 
   private def isParquetTimeInInt96(parquetType: Type): Boolean = {
     parquetType match {
@@ -534,27 +532,10 @@ protected case class GpuParquetFileFilterHandler(
       conf: Configuration,
       metrics: Map[String, GpuMetric]): HostMemoryBuffer = {
     val inputFile = fileIO.newInputFile(filePath)
-    FileCache.get.getFooter(inputFile).map { hmb =>
-      withResource(hmb) { _ =>
-        metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS, NoopMetric) += 1
-        metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS_SIZE, NoopMetric) += hmb.getLength
-        // buffer includes header and trailing length and magic, stripped here
-        hmb.slice(MAGIC.length, hmb.getLength - Integer.BYTES - MAGIC.length)
-      }
-    }.getOrElse {
-      metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES, NoopMetric) += 1
-      withResource(readFooterBuffer(fileIO, filePath, conf)) { hmb =>
-        metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES_SIZE, NoopMetric) += hmb.getLength
-        // footer was not cached, so try to cache it
-        // If we get a filecache token then we can complete the caching by providing the data.
-        // If we do not get a token then we should not cache this data.
-        val cacheToken = FileCache.get.startFooterCache(inputFile)
-        cacheToken.foreach { t =>
-          t.complete(hmb.slice(0, hmb.getLength))
-        }
-        // buffer includes header and trailing length and magic, stripped here
-        hmb.slice(MAGIC.length, hmb.getLength - Integer.BYTES - MAGIC.length)
-      }
+    withResource(ParquetFooterUtils.getFooterBuffer(inputFile, metrics,
+        readFooterBuffer(fileIO, filePath, conf))) { hmb =>
+      // buffer includes header and trailing length and magic, stripped here
+      hmb.slice(MAGIC.length, hmb.getLength - Integer.BYTES - MAGIC.length)
     }
   }
 
@@ -619,17 +600,7 @@ protected case class GpuParquetFileFilterHandler(
 
 
   private def verifyParquetMagic(filePath: Path, magic: Array[Byte]): Unit = {
-    if (!util.Arrays.equals(MAGIC, magic)) {
-      if (util.Arrays.equals(PARQUET_MAGIC_ENCRYPTED, magic)) {
-        throw new RuntimeException("The GPU does not support reading encrypted Parquet " +
-          "files. To read encrypted or columnar encrypted files, disable the GPU Parquet " +
-          s"reader via ${RapidsConf.ENABLE_PARQUET_READ.key}.")
-      } else {
-        throw new RuntimeException(s"$filePath is not a Parquet file. " +
-          s"Expected magic number at tail ${util.Arrays.toString(MAGIC)} " +
-          s"but found ${util.Arrays.toString(magic)}")
-      }
-    }
+    ParquetFooterUtils.verifyParquetMagic(filePath, magic)
   }
 
   private def readAndFilterFooter(
@@ -665,39 +636,10 @@ protected case class GpuParquetFileFilterHandler(
     //noinspection ScalaDeprecation
     NvtxRegistry.PARQUET_READ_FOOTER {
       val inputFile = fileIO.newInputFile(filePath)
-      FileCache.get.getFooter(inputFile).map { hmb =>
-        withResource(hmb) { _ =>
-          metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS, NoopMetric) += 1
-          metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_HITS_SIZE, NoopMetric) += hmb.getLength
-          ParquetFileReader.readFooter(new HMBInputFile(hmb),
-            ParquetMetadataConverter.range(file.start, file.start + file.length))
-        }
-      }.getOrElse {
-        metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES, NoopMetric) += 1
-        // footer was not cached, so try to cache it
-        // If we get a filecache token then we can complete the caching by providing the data.
-        // If something goes wrong before completing the caching then the token must be canceled.
-        // If we do not get a token then we should not cache this data.
-        val cacheToken = FileCache.get.startFooterCache(inputFile)
-        cacheToken.map { token =>
-          var needTokenCancel = true
-          try {
-            withResource(readFooterBuffer(fileIO, filePath, conf)) { hmb =>
-              metrics.getOrElse(GpuMetric.FILECACHE_FOOTER_MISSES_SIZE, NoopMetric) += hmb.getLength
-              token.complete(hmb.slice(0, hmb.getLength))
-              needTokenCancel = false
-              ParquetFileReader.readFooter(new HMBInputFile(hmb),
-                ParquetMetadataConverter.range(file.start, file.start + file.length))
-            }
-          } finally {
-            if (needTokenCancel) {
-              token.cancel()
-            }
-          }
-        }.getOrElse {
-          ParquetFileReader.readFooter(conf, filePath,
-            ParquetMetadataConverter.range(file.start, file.start + file.length))
-        }
+      withResource(ParquetFooterUtils.getFooterBuffer(inputFile, metrics,
+          readFooterBuffer(fileIO, filePath, conf))) { hmb =>
+        ParquetFileReader.readFooter(new HMBInputFile(hmb),
+          ParquetMetadataConverter.range(file.start, file.start + file.length))
       }
     }
   }
