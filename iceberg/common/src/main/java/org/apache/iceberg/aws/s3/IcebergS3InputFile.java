@@ -20,6 +20,7 @@ import ai.rapids.cudf.HostMemoryBuffer;
 import com.nvidia.spark.rapids.PerfIO;
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
 import com.nvidia.spark.rapids.iceberg.IcebergProvider;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
 
@@ -28,42 +29,55 @@ import java.net.URI;
 import java.util.List;
 
 /**
- * S3-backed {@link IcebergInputFile} that routes byte-range reads through PerfIO. Auth is
- * delegated to a per-Iceberg-version bridge living in spark-rapids-private's
- * {@code iceberg-1-{6,9,10}-x} module — that bridge reads {@code S3FileIOProperties} plus
- * (on 1.9+) {@code SupportsStorageCredentials} so REST-catalog-vended, table-scoped
- * credentials are honored. PerfIO loads the right bridge from the shim package returned
- * by {@link IcebergProvider#shimPackage()}.
+ * S3-backed {@link IcebergInputFile} that routes byte-range reads through PerfIO. PerfIO
+ * picks one of two paths:
  *
- * <p>This class lives in {@code org.apache.iceberg.aws.s3} only for the package-private
- * {@link BaseS3File} access we need to extract the bucket/key URI from an Iceberg
- * {@link InputFile}.
+ * <ul>
+ *   <li>Common case (IRSA / assumed-role / static-key auth): the live Hadoop
+ *       {@link Configuration} drives PerfIO's tuned RangeCopier singleton. Fast.</li>
+ *   <li>REST-vended credentials present (Iceberg 1.9+ {@code SupportsStorageCredentials}
+ *       is non-empty): a per-iceberg-version bridge in spark-rapids-private builds an
+ *       {@code S3AsyncClient} from {@code S3FileIOProperties} so the table-scoped creds
+ *       are honored. Slower but correct.</li>
+ * </ul>
+ *
+ * <p>This class lives in {@code org.apache.iceberg.aws.s3} for the package-private
+ * {@link BaseS3File} access used to extract the bucket/key URI.
  */
 public final class IcebergS3InputFile extends IcebergInputFile {
   private final URI s3Uri;
+  private final Configuration hadoopConf;
   private final FileIO fileIO;
   private final String shimPackage;
 
-  private IcebergS3InputFile(InputFile delegate, URI s3Uri, FileIO fileIO, String shimPackage) {
+  private IcebergS3InputFile(
+      InputFile delegate,
+      URI s3Uri,
+      Configuration hadoopConf,
+      FileIO fileIO,
+      String shimPackage) {
     super(delegate);
     this.s3Uri = s3Uri;
+    this.hadoopConf = hadoopConf;
     this.fileIO = fileIO;
     this.shimPackage = shimPackage;
   }
 
-  public static IcebergInputFile maybeCreate(InputFile inputFile, FileIO fileIO) {
+  public static IcebergInputFile maybeCreate(
+      InputFile inputFile, FileIO fileIO, Configuration hadoopConf) {
     if (!(inputFile instanceof BaseS3File) || !PerfIO.s3BackendAvailable()) {
       return new IcebergInputFile(inputFile);
     }
     BaseS3File s3File = (BaseS3File) inputFile;
     S3URI uri = s3File.uri();
     URI s3Uri = URI.create("s3://" + uri.bucket() + "/" + uri.key());
-    return new IcebergS3InputFile(inputFile, s3Uri, fileIO, IcebergProvider.shimPackage());
+    return new IcebergS3InputFile(
+        inputFile, s3Uri, hadoopConf, fileIO, IcebergProvider.shimPackage());
   }
 
   @Override
   public void readVectored(HostMemoryBuffer output, List<CopyRange> copyRanges)
       throws IOException {
-    PerfIO.readVectoredS3(fileIO, shimPackage, output, s3Uri, copyRanges);
+    PerfIO.readVectoredS3(hadoopConf, fileIO, shimPackage, output, s3Uri, copyRanges);
   }
 }
