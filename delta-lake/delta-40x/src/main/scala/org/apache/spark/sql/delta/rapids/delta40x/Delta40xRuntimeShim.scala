@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,13 @@ package org.apache.spark.sql.delta.rapids.delta40x
 
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.DeltaProvider
-import com.nvidia.spark.rapids.delta.delta40x.{Delta40xProvider, GpuDeltaCatalog}
+import com.nvidia.spark.rapids.delta.delta40x.Delta40xProvider
 
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
-import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShimBase, GpuOptimisticTransactionBase, StartTransactionArg}
+import org.apache.spark.sql.delta.commands.TableCreationModes
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShimBase, GpuDeltaCatalog4x,
+  GpuOptimisticTransaction, GpuOptimisticTransactionBase, GpuWriteIntoDelta, StartTransactionArg}
 
 /**
  * Delta runtime shim for Delta 4.0.x on Spark 4.0.x.
@@ -36,11 +38,28 @@ class Delta40xRuntimeShim extends DeltaRuntimeShimBase {
   override def getGpuDeltaCatalog(
      cpuCatalog: DeltaCatalog,
      rapidsConf: RapidsConf): StagingTableCatalog = {
-    new GpuDeltaCatalog(cpuCatalog, rapidsConf)
+    new GpuDeltaCatalog4x(
+      cpuCatalog,
+      rapidsConf,
+      (
+          withDb,
+          existingTableOpt,
+          mode,
+          writer: Option[GpuWriteIntoDelta],
+          operation: TableCreationModes.CreationMode,
+          isByPath,
+          tableCreateFunc) =>
+        GpuCreateDeltaTableCommand(
+          withDb,
+          existingTableOpt,
+          operation.mode,
+          writer,
+          operation,
+          tableByPath = isByPath,
+          createTableFunc = tableCreateFunc)(rapidsConf))
   }
 
   override protected def constructOptimisticTransaction(
       arg: StartTransactionArg): GpuOptimisticTransactionBase =
     new GpuOptimisticTransaction(arg.log, arg.catalogTable, arg.snapshot, arg.conf)
-
 }
