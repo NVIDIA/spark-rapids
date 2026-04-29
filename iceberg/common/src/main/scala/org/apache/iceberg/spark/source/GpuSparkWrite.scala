@@ -328,8 +328,7 @@ class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
   val hadoopConf: SerializableConfiguration
 ) extends DataWriterFactory {
 
-  private lazy val fileIO: IcebergFileIO =
-    new IcebergFileIO(tableBroadcast.value.io())
+  private lazy val fileIO: IcebergFileIO = new IcebergFileIO(tableBroadcast.value.io())
 
   override def createWriter(partitionId: Int, taskId: Long): DataWriter[InternalRow] = {
     val table = tableBroadcast.value
