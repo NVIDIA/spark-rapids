@@ -54,7 +54,7 @@
             project.basedir=${project.basedir}
             project.build.directory=${project.build.directory}
             spark.version.classifier=${spark.version.classifier}
-            URM_URL=${env.URM_URL}
+            ART_URL=${env.ART_URL}
             maven.repo.local=${maven.repo.local}
         </echo>
         <property name="shimServiceRsrc" value="META-INF/services/com.nvidia.spark.rapids.SparkShimServiceProvider"/>
