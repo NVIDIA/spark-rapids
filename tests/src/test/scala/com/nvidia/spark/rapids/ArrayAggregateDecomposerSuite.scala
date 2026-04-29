@@ -19,7 +19,8 @@ package com.nvidia.spark.rapids
 import org.apache.spark.sql.catalyst.expressions.{Add, And, Cast, Divide, Expression,
   Greatest, LambdaFunction, Least, Literal, Multiply, NamedExpression, NamedLambdaVariable,
   Or, Subtract}
-import org.apache.spark.sql.types.{BooleanType, DataType, IntegerType, LongType}
+import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, DoubleType, IntegerType,
+  LongType}
 
 // Extends GpuUnitTests so SQLConf.get is available for the default evalMode / failOnError
 // parameter on Add/Subtract/Multiply/Divide (the field name differs across Spark versions;
@@ -39,78 +40,91 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
   private def identityFinish(acc: NamedLambdaVariable): LambdaFunction =
     LambdaFunction(acc, Seq(acc))
 
+  /** Wrap zeroType in an ArrayType(_, containsNull = false) for the typical happy path. */
+  private def arrTy(zeroType: DataType): ArrayType = ArrayType(zeroType, containsNull = false)
+
   private def assertDecomposes(
       body: Expression,
       acc: NamedLambdaVariable,
       x: NamedLambdaVariable,
       expectedOp: AggOp,
-      expectedG: Expression): ArrayAggregateDecomposition = {
-    val d = decompose(merge(body, acc, x), identityFinish(acc))
-    assert(d.isDefined, s"expected decomposition for body=$body")
-    assert(d.get.op == expectedOp)
-    assert(d.get.g.fastEquals(expectedG), s"expected g=$expectedG, got ${d.get.g}")
-    assert(d.get.accVarExprId == acc.exprId)
-    assert(d.get.elemVar.exprId == x.exprId)
-    d.get
+      expectedGIsLeft: Boolean,
+      zeroType: DataType = IntegerType,
+      argType: Option[DataType] = None): ArrayAggregateDecomposition = {
+    val d = decompose(merge(body, acc, x), identityFinish(acc),
+      argType.getOrElse(arrTy(zeroType)), zeroType)
+    val r = d.getOrElse(fail(s"expected decomposition for body=$body, got Left: $d"))
+    assert(r.op == expectedOp)
+    assert(r.gIsLeftOfMergeBody == expectedGIsLeft,
+      s"expected gIsLeftOfMergeBody=$expectedGIsLeft, got ${r.gIsLeftOfMergeBody}")
+    assert(r.accVarExprId == acc.exprId)
+    assert(r.elemVar.exprId == x.exprId)
+    r
   }
 
   private def assertRejects(
       mergeBody: LambdaFunction,
       finish: Expression,
-      reason: String): Unit = {
-    assert(decompose(mergeBody, finish).isEmpty, reason)
+      reason: String,
+      zeroType: DataType = IntegerType,
+      argType: Option[DataType] = None): String = {
+    val d = decompose(mergeBody, finish, argType.getOrElse(arrTy(zeroType)), zeroType)
+    assert(d.isLeft, s"$reason — expected Left but got: $d")
+    d.swap.getOrElse(fail("unreachable"))
   }
 
-  test("Add(acc, x) -> SUM, g = x") {
+  test("Add(acc, x) -> SUM, g on the right") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Add(acc, x), acc, x, SumOp, x)
+    assertDecomposes(Add(acc, x), acc, x, SumOp, expectedGIsLeft = false)
   }
 
-  test("Add(x, acc) (commuted) -> SUM, g = x") {
+  test("Add(x, acc) (commuted) -> SUM, g on the left") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Add(x, acc), acc, x, SumOp, x)
+    assertDecomposes(Add(x, acc), acc, x, SumOp, expectedGIsLeft = true)
   }
 
-  test("Multiply(acc, x) -> PRODUCT, g = x") {
+  test("Multiply(acc, x) -> PRODUCT") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Multiply(acc, x), acc, x, ProductOp, x)
+    assertDecomposes(Multiply(acc, x), acc, x, ProductOp, expectedGIsLeft = false)
   }
 
-  test("Greatest(acc, x) -> MAX, g = x") {
+  test("Greatest(acc, x) -> MAX") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Greatest(Seq(acc, x)), acc, x, MaxOp, x)
+    assertDecomposes(Greatest(Seq(acc, x)), acc, x, MaxOp, expectedGIsLeft = false)
   }
 
-  test("Least(acc, x) -> MIN, g = x") {
+  test("Least(acc, x) -> MIN") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Least(Seq(acc, x)), acc, x, MinOp, x)
+    assertDecomposes(Least(Seq(acc, x)), acc, x, MinOp, expectedGIsLeft = false)
   }
 
-  test("And(acc, x) -> ALL, g = x") {
+  test("And(acc, x) -> ALL") {
     val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
-    assertDecomposes(And(acc, x), acc, x, AllOp, x)
+    assertDecomposes(And(acc, x), acc, x, AllOp, expectedGIsLeft = false,
+      zeroType = BooleanType)
   }
 
-  test("Or(acc, x) -> ANY, g = x") {
+  test("Or(acc, x) -> ANY") {
     val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
-    assertDecomposes(Or(acc, x), acc, x, AnyOp, x)
+    assertDecomposes(Or(acc, x), acc, x, AnyOp, expectedGIsLeft = false,
+      zeroType = BooleanType)
   }
 
-  test("Complex g(x) with no acc ref is captured verbatim") {
+  test("Complex g(x) with no acc ref decomposes (g on the right)") {
     val acc = lv("acc", LongType); val x = lv("x", IntegerType)
     val g = Cast(Add(Multiply(x, Literal(2)), Literal(1)), LongType)
-    assertDecomposes(Add(acc, g), acc, x, SumOp, g)
+    assertDecomposes(Add(acc, g), acc, x, SumOp, expectedGIsLeft = false, zeroType = LongType)
   }
 
   test("Cast wrapping the acc side is unwrapped (single layer)") {
     val acc = lv("acc", LongType); val x = lv("x", IntegerType)
-    assertDecomposes(Add(Cast(acc, IntegerType), x), acc, x, SumOp, x)
+    assertDecomposes(Add(Cast(acc, IntegerType), x), acc, x, SumOp, expectedGIsLeft = false)
   }
 
   test("Cast wrapping the acc side is unwrapped (chained)") {
     val acc = lv("acc"); val x = lv("x")
     val doubleCastAcc = Cast(Cast(acc, LongType), IntegerType)
-    assertDecomposes(Add(doubleCastAcc, x), acc, x, SumOp, x)
+    assertDecomposes(Add(doubleCastAcc, x), acc, x, SumOp, expectedGIsLeft = false)
   }
 
   test("Subtract is not an associative op we recognize") {
@@ -175,11 +189,43 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
 
   test("merge that isn't a LambdaFunction at all is rejected") {
     val acc = lv("acc")
-    assert(decompose(Add(Literal(1), Literal(2)), identityFinish(acc)).isEmpty)
+    assert(decompose(Add(Literal(1), Literal(2)), identityFinish(acc),
+      arrTy(IntegerType), IntegerType).isLeft)
   }
 
   test("finish that isn't a LambdaFunction is rejected") {
     val acc = lv("acc"); val x = lv("x")
-    assert(decompose(merge(Add(acc, x), acc, x), Literal(0)).isEmpty)
+    assert(decompose(merge(Add(acc, x), acc, x), Literal(0),
+      arrTy(IntegerType), IntegerType).isLeft)
+  }
+
+  // The decomposer now owns the "is this shape ever GPU-able" decision, so it must also
+  // reject unsupported types and AllOp/AnyOp on null-bearing arrays.
+
+  test("MaxOp on Double is rejected (NaN propagation differs from cuDF)") {
+    val acc = lv("acc", DoubleType); val x = lv("x", DoubleType)
+    val msg = assertRejects(merge(Greatest(Seq(acc, x)), acc, x), identityFinish(acc),
+      "MAX should fall back on Double",
+      zeroType = DoubleType)
+    assert(msg.contains("MAX"), s"expected MAX-related error, got: $msg")
+  }
+
+  test("ALL on array<bool> with containsNull rejects") {
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
+    val msg = assertRejects(merge(And(acc, x), acc, x), identityFinish(acc),
+      "ALL on null-bearing array should fall back",
+      zeroType = BooleanType,
+      argType = Some(ArrayType(BooleanType, containsNull = true)))
+    assert(msg.contains("ALL"), s"expected ALL-related error, got: $msg")
+  }
+
+  test("g type mismatch with zero type rejects") {
+    val acc = lv("acc", LongType); val x = lv("x", IntegerType)
+    // body sums a non-cast Int element into a Long acc — g.dataType=Int doesn't match
+    // zeroType=Long, so this must fall back even though the shape is otherwise OK.
+    val msg = assertRejects(merge(Add(acc, x), acc, x), identityFinish(acc),
+      "g type mismatch should fall back",
+      zeroType = LongType)
+    assert(msg.contains("does not match"), s"expected type-mismatch error, got: $msg")
   }
 }
