@@ -16,10 +16,17 @@
 
 package com.nvidia.spark.rapids
 
+import scala.collection.mutable.ArrayBuffer
+
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
+import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, ArrayData}
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 
 class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
   private val schema = StructType(Seq(StructField("a", IntegerType)))
@@ -137,6 +144,191 @@ class RowToColumnarIteratorRetrySuite extends RmmSparkRetrySuiteBase {
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
     assertThrows[GpuSplitAndRetryOOM] {
       row2ColIter.next()
+    }
+  }
+
+  test("test empty schema preserves row count") {
+    val emptySchema = StructType(Nil)
+    val rowIter: Iterator[InternalRow] = Iterator(InternalRow.empty)
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, emptySchema, RequireSingleBatch, batchSize,
+      new GpuRowToColumnConverter(emptySchema))
+    withResource(row2ColIter.next()) { batch =>
+      assertResult(1)(batch.numRows())
+      assertResult(0)(batch.numCols())
+    }
+    assert(!row2ColIter.hasNext)
+  }
+
+  test("test GPU OOM split and retry produces multiple batches") {
+    val numRows = 10
+    val rowIter: Iterator[InternalRow] = (1 to numRows).map(InternalRow(_)).toIterator
+    val goal = TargetSize(batchSize)
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, schema, goal, batchSize, new GpuRowToColumnConverter(schema))
+
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+
+    val batches = new ArrayBuffer[ColumnarBatch]()
+    val allValues = new ArrayBuffer[Int]()
+    try {
+      while (row2ColIter.hasNext) {
+        val batch = row2ColIter.next()
+        batches += batch
+        withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+          for (i <- 0 until batch.numRows()) {
+            allValues += hostCol.getInt(i)
+          }
+        }
+      }
+
+      assert(batches.length >= 2,
+        s"Expected at least 2 batches after split, got ${batches.length}")
+      assertResult(numRows)(allValues.length)
+      assertResult((1 to numRows).toSeq)(allValues.toSeq)
+    } finally {
+      batches.foreach(_.close())
+    }
+  }
+
+  test("test GPU OOM split and retry with multiple splits") {
+    val numRows = 16
+    val rowIter: Iterator[InternalRow] = (1 to numRows).map(InternalRow(_)).toIterator
+    val goal = TargetSize(batchSize)
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, schema, goal, batchSize, new GpuRowToColumnConverter(schema))
+
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 3,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+
+    val batches = new ArrayBuffer[ColumnarBatch]()
+    val allValues = new ArrayBuffer[Int]()
+    try {
+      while (row2ColIter.hasNext) {
+        val batch = row2ColIter.next()
+        batches += batch
+        withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+          for (i <- 0 until batch.numRows()) {
+            allValues += hostCol.getInt(i)
+          }
+        }
+      }
+
+      assert(batches.length >= 4,
+        s"Expected at least 4 batches after 3 sequential splits, got ${batches.length}")
+      assertResult(numRows)(allValues.length)
+      assertResult((1 to numRows).toSeq)(allValues.toSeq)
+    } finally {
+      batches.foreach(_.close())
+    }
+  }
+
+  test("test GPU OOM split with single row cannot split further") {
+    val rowIter: Iterator[InternalRow] = Iterator(InternalRow(1))
+    val goal = TargetSize(batchSize)
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, schema, goal, batchSize, new GpuRowToColumnConverter(schema))
+
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+
+    assertThrows[GpuSplitAndRetryOOM] {
+      row2ColIter.next()
+    }
+  }
+
+  test("test GPU OOM split and retry with nested types") {
+    val nestedSchema = StructType(Seq(
+      StructField("id", IntegerType),
+      StructField("str", StringType),
+      StructField("arr", ArrayType(IntegerType, containsNull = true)),
+      StructField("nested_struct", StructType(Seq(
+        StructField("x", IntegerType),
+        StructField("y", StringType)
+      ))),
+      StructField("map", MapType(StringType, IntegerType, valueContainsNull = true)),
+      StructField("arr_of_struct", ArrayType(
+        StructType(Seq(
+          StructField("a", IntegerType),
+          StructField("b", StringType)
+        )),
+        containsNull = true
+      )),
+      StructField("arr_of_arr", ArrayType(
+        ArrayType(IntegerType, containsNull = true),
+        containsNull = true
+      )),
+      StructField("struct_of_arr", StructType(Seq(
+        StructField("nums", ArrayType(IntegerType, containsNull = true)),
+        StructField("strs", ArrayType(StringType, containsNull = true))
+      )))
+    ))
+    val numRows = 10
+    val rowIter: Iterator[InternalRow] = (1 to numRows).map { i =>
+      val str = UTF8String.fromString(s"test_string_$i")
+      val arr = ArrayData.toArrayData(Array(i, i + 1, null, i + 2))
+      val nestedStruct = new GenericInternalRow(
+        Array[Any](i * 10, UTF8String.fromString(s"s_$i")))
+      val keys = ArrayData.toArrayData(Array(
+        UTF8String.fromString(s"key_${i}_a"),
+        UTF8String.fromString(s"key_${i}_b")
+      ))
+      val values = ArrayData.toArrayData(Array(i, null))
+      val mapData = new ArrayBasedMapData(keys, values)
+      val struct1 = new GenericInternalRow(Array[Any](i, UTF8String.fromString(s"a_$i")))
+      val struct2 = new GenericInternalRow(Array[Any](i + 1, UTF8String.fromString(s"b_$i")))
+      val arrOfStruct = ArrayData.toArrayData(Array(struct1, null, struct2))
+      val innerArr1 = ArrayData.toArrayData(Array(i, i + 1))
+      val innerArr2 = ArrayData.toArrayData(Array(i + 2, null, i + 3))
+      val arrOfArr = ArrayData.toArrayData(Array(innerArr1, null, innerArr2))
+      val numsArr = ArrayData.toArrayData(Array(i * 100, i * 100 + 1, null))
+      val strsArr = ArrayData.toArrayData(Array(
+        UTF8String.fromString(s"x_$i"),
+        null,
+        UTF8String.fromString(s"y_$i")
+      ))
+      val structOfArr = new GenericInternalRow(Array[Any](numsArr, strsArr))
+
+      new GenericInternalRow(Array[Any](
+        i, str, arr, nestedStruct, mapData, arrOfStruct, arrOfArr, structOfArr))
+    }.toIterator
+
+    val goal = TargetSize(batchSize)
+    val row2ColIter = new RowToColumnarIterator(
+      rowIter, nestedSchema, goal, batchSize, new GpuRowToColumnConverter(nestedSchema))
+
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+
+    val batches = new ArrayBuffer[ColumnarBatch]()
+    val idValues = new ArrayBuffer[Int]()
+    val strValues = new ArrayBuffer[String]()
+    try {
+      while (row2ColIter.hasNext) {
+        val batch = row2ColIter.next()
+        batches += batch
+        withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+          for (i <- 0 until batch.numRows()) {
+            idValues += hostCol.getInt(i)
+          }
+        }
+        withResource(batch.column(1).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+          for (i <- 0 until batch.numRows()) {
+            strValues += hostCol.getBase.getJavaString(i)
+          }
+        }
+      }
+
+      assert(batches.length >= 2,
+        s"Expected at least 2 batches after split with nested types, got ${batches.length}")
+      assertResult(numRows)(idValues.length)
+      assertResult(numRows)(strValues.length)
+      assertResult((1 to numRows).toSeq)(idValues.toSeq)
+      val expectedStrings = (1 to numRows).map(i => s"test_string_$i")
+      assertResult(expectedStrings)(strValues.toSeq)
+    } finally {
+      batches.foreach(_.close())
     }
   }
 }
