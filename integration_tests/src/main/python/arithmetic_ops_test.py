@@ -68,6 +68,15 @@ _arith_decimal_gens_high_precision = _arith_decimal_gens_high_precision_no_neg_s
     _decimal_gen_36_neg5, _decimal_gen_38_neg10
 ]
 
+# Gens covering the full accepted input-type set for math-unary functions
+# (asinh/atanh/cbrt/...): Spark auto-casts FLOAT/DECIMAL to DOUBLE before
+# applying these, but the cast+op code path is worth exercising end-to-end.
+_math_unary_input_gens = [double_gen, FloatGen(), decimal_gen_64bit]
+
+# DECIMAL input requires GPU decimal->double cast (off by default for
+# precision-loss reasons).
+_math_unary_conf = {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'}
+
 _arith_data_gens_diff_precision_scale_and_no_neg_scale = \
     _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 + [_decimal_gen_38_0]
 
@@ -854,10 +863,11 @@ def test_bround_ansi_overflow_integral(data_gen, scale):
         error_message="ArithmeticException")
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _math_unary_input_gens, ids=idfn)
 def test_cbrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('cbrt(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('cbrt(a)'),
+            conf=_math_unary_conf)
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_bit_and(data_gen):
@@ -988,10 +998,11 @@ def test_asin(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('asin(a)'))
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _math_unary_input_gens, ids=idfn)
 def test_asinh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('asinh(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('asinh(a)'),
+            conf=_math_unary_conf)
 
 # The default approximate is 1e-6 or 1 in a million
 # in some cases we need to adjust this because the algorithm is different
@@ -1017,10 +1028,11 @@ def test_atan(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('atan(a)'))
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _math_unary_input_gens, ids=idfn)
 def test_atanh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('atanh(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('atanh(a)'),
+            conf=_math_unary_conf)
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

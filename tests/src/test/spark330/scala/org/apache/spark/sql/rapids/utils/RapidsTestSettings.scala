@@ -32,6 +32,13 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-32908: maximum target error in percentile_approx", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14635"))
   enableSuite[RapidsDataFrameJoinSuite]
     .exclude("SPARK-24690 enables star schema detection even if CBO disabled", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14653"))
+  enableSuite[RapidsDataFrameSelfJoinSuite]
+  enableSuite[RapidsDataFrameWindowFramesSuite]
+  enableSuite[RapidsDataFrameTimeWindowingSuite]
+  enableSuite[RapidsDataFrameSessionWindowingSuite]
+  enableSuite[RapidsDataFrameStatSuite]
+  enableSuite[RapidsTypedImperativeAggregateSuite]
+  enableSuite[RapidsDatasetAggregatorSuite]
   enableSuite[RapidsArithmeticExpressionSuite]
   enableSuite[RapidsBitwiseExpressionsSuite]
   enableSuite[RapidsBloomFilterAggregateQuerySuite]
