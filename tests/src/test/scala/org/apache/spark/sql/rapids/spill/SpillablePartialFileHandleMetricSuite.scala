@@ -74,27 +74,31 @@ class SpillablePartialFileHandleMetricSuite extends AnyFunSuite with BeforeAndAf
     // metrics; charging them again as memory-pressure spill produces the
     // double-count described in the bug.
     val tempFile = File.createTempFile("test-spill-for-commit-metric-", ".tmp")
-    withTaskContext { taskMetrics =>
-      withResource(SpillablePartialFileHandle.createMemoryWithSpill(
-        initialCapacity = 1024,
-        maxBufferSize = testMaxBufferSize,
-        memoryThreshold = 0.5,
-        spillFile = tempFile)) { handle =>
+    try {
+      withTaskContext { taskMetrics =>
+        withResource(SpillablePartialFileHandle.createMemoryWithSpill(
+          initialCapacity = 1024,
+          maxBufferSize = testMaxBufferSize,
+          memoryThreshold = 0.5,
+          spillFile = tempFile)) { handle =>
 
-        val testData = "Bytes flushed as part of shuffle commit".getBytes("UTF-8")
-        handle.write(testData, 0, testData.length)
-        handle.finishWrite()
+          val testData = "Bytes flushed as part of shuffle commit".getBytes("UTF-8")
+          handle.write(testData, 0, testData.length)
+          handle.finishWrite()
 
-        assert(taskMetrics.diskBytesSpilled == 0L)
+          assert(taskMetrics.diskBytesSpilled == 0L)
 
-        val flushed = handle.spillForCommit()
-        assert(flushed == testData.length)
-        assert(handle.isSpilled)
+          val flushed = handle.spillForCommit()
+          assert(flushed == testData.length)
+          assert(handle.isSpilled)
 
-        assert(taskMetrics.diskBytesSpilled == 0L,
-          s"spillForCommit should not increment diskBytesSpilled, " +
-            s"but got ${taskMetrics.diskBytesSpilled}")
+          assert(taskMetrics.diskBytesSpilled == 0L,
+            s"spillForCommit should not increment diskBytesSpilled, " +
+              s"but got ${taskMetrics.diskBytesSpilled}")
+        }
       }
+    } finally {
+      tempFile.delete()
     }
   }
 
@@ -102,27 +106,31 @@ class SpillablePartialFileHandleMetricSuite extends AnyFunSuite with BeforeAndAf
     // Counterpart of the fix: spill() — used for memory-pressure eviction —
     // must still account bytes against the disk-bytes-spilled task metric.
     val tempFile = File.createTempFile("test-spill-pressure-metric-", ".tmp")
-    withTaskContext { taskMetrics =>
-      withResource(SpillablePartialFileHandle.createMemoryWithSpill(
-        initialCapacity = 1024,
-        maxBufferSize = testMaxBufferSize,
-        memoryThreshold = 0.5,
-        spillFile = tempFile)) { handle =>
+    try {
+      withTaskContext { taskMetrics =>
+        withResource(SpillablePartialFileHandle.createMemoryWithSpill(
+          initialCapacity = 1024,
+          maxBufferSize = testMaxBufferSize,
+          memoryThreshold = 0.5,
+          spillFile = tempFile)) { handle =>
 
-        val testData = "Bytes spilled due to memory pressure".getBytes("UTF-8")
-        handle.write(testData, 0, testData.length)
-        handle.finishWrite()
+          val testData = "Bytes spilled due to memory pressure".getBytes("UTF-8")
+          handle.write(testData, 0, testData.length)
+          handle.finishWrite()
 
-        assert(taskMetrics.diskBytesSpilled == 0L)
+          assert(taskMetrics.diskBytesSpilled == 0L)
 
-        val spilled = handle.spill()
-        assert(spilled == testData.length)
-        assert(handle.isSpilled)
+          val spilled = handle.spill()
+          assert(spilled == testData.length)
+          assert(handle.isSpilled)
 
-        assert(taskMetrics.diskBytesSpilled == testData.length.toLong,
-          s"spill should increment diskBytesSpilled to ${testData.length}, " +
-            s"but got ${taskMetrics.diskBytesSpilled}")
+          assert(taskMetrics.diskBytesSpilled == testData.length.toLong,
+            s"spill should increment diskBytesSpilled to ${testData.length}, " +
+              s"but got ${taskMetrics.diskBytesSpilled}")
+        }
       }
+    } finally {
+      tempFile.delete()
     }
   }
 }
