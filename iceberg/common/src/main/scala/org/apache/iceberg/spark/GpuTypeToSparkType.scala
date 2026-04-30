@@ -18,7 +18,7 @@ package org.apache.iceberg.spark
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.IcebergParquetMetadataKeys._
+import com.nvidia.spark.rapids.SchemaUtils._
 import org.apache.iceberg.{MetadataColumns, Schema}
 import org.apache.iceberg.spark.GpuTypeToSparkType.fieldMetadataOf
 import org.apache.iceberg.types.{Types, TypeUtil}

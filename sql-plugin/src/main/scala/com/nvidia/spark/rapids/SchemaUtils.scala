@@ -30,13 +30,27 @@ import org.apache.orc.TypeDescription
 import org.apache.spark.sql.catalyst.parser.CatalystSqlParser
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.QueryExecutionException
+import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils.FIELD_ID_METADATA_KEY
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object SchemaUtils {
-  // Parquet field ID metadata key
-  private val FIELD_ID_METADATA_KEY = "parquet.field.id"
-  import IcebergParquetMetadataKeys._
+  // Side-channel keys for nested element field ids. Spark's StructField metadata only attaches to
+  // top-level fields, so to round-trip ids for list elements / map keys / map values we store
+  // them on the parent StructField under these keys (with `_NESTED_IDS` carrying further-nested
+  // ids as a JSON-serialized Metadata).
+  val LIST_ELEMENT_FIELD_ID_METADATA_KEY =
+    "rapids.parquet.list.element.field.id"
+  val LIST_ELEMENT_NESTED_IDS_METADATA_KEY =
+    "rapids.parquet.list.element.nested.ids"
+  val MAP_KEY_FIELD_ID_METADATA_KEY =
+    "rapids.parquet.map.key.field.id"
+  val MAP_KEY_NESTED_IDS_METADATA_KEY =
+    "rapids.parquet.map.key.nested.ids"
+  val MAP_VALUE_FIELD_ID_METADATA_KEY =
+    "rapids.parquet.map.value.field.id"
+  val MAP_VALUE_NESTED_IDS_METADATA_KEY =
+    "rapids.parquet.map.value.nested.ids"
 
   // Reflection-based access to private fields on cuDF's ColumnWriterOptions.
   // cuDF's Java list/map builder path drops the container's parquet field id and has no
