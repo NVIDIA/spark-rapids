@@ -18,9 +18,11 @@ package com.nvidia.spark.rapids.iceberg.iceberg110x;
 
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
 import org.apache.iceberg.*;
-import org.apache.iceberg.util.PartitionUtil;
+import org.apache.iceberg.aws.s3.S3FileIO;
+import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.types.Types;
+import org.apache.iceberg.util.PartitionUtil;
 
 import java.util.Map;
 
@@ -41,5 +43,19 @@ public class ShimUtilsImpl implements IcebergShimUtils {
         } else {
             return PartitionUtil.constantsMap(task, SparkUtil::internalToSpark);
         }
+    }
+
+    @Override
+    public boolean s3AsyncClientSupported() {
+        return true;
+    }
+
+    /**
+     * Iceberg 1.10.x dispatches to the per-prefix {@code PrefixedS3Client} via
+     * {@code asyncClient(storagePath)}, honoring per-prefix endpoint/region overrides.
+     */
+    @Override
+    public Object s3AsyncClient(FileIO fileIO, String storagePath) {
+        return ((S3FileIO) fileIO).asyncClient(storagePath);
     }
 }

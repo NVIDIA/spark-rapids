@@ -22,6 +22,7 @@ import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.io.FileIO;
 
 import java.util.Map;
 
@@ -51,5 +52,13 @@ public class ShimUtils {
     public static Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema,
                                                     Table table) {
         return IMPL.constantsMap(task, readSchema, table);
+    }
+
+    public static boolean s3AsyncClientSupported() {
+        return IMPL.s3AsyncClientSupported();
+    }
+
+    public static Object s3AsyncClient(FileIO fileIO, String storagePath) {
+        return IMPL.s3AsyncClient(fileIO, storagePath);
     }
 }

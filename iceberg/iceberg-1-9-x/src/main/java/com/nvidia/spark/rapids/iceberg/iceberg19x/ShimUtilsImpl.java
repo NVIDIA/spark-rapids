@@ -18,7 +18,9 @@ package com.nvidia.spark.rapids.iceberg.iceberg19x;
 
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
 import org.apache.iceberg.*;
+import org.apache.iceberg.aws.s3.S3FileIO;
 import org.apache.iceberg.data.IdentityPartitionConverters;
+import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.spark.source.GpuStructInternalRow;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
@@ -54,5 +56,16 @@ public class ShimUtilsImpl implements IcebergShimUtils {
             return PartitionUtil.constantsMap(task,
                     ShimUtilsImpl::convertConstant);
         }
+    }
+
+    @Override
+    public boolean s3AsyncClientSupported() {
+        return true;
+    }
+
+    /** Iceberg 1.9.x has only the no-arg {@code asyncClient()}; storagePath is ignored. */
+    @Override
+    public Object s3AsyncClient(FileIO fileIO, String storagePath) {
+        return ((S3FileIO) fileIO).asyncClient();
     }
 }

@@ -209,7 +209,7 @@ class GpuPositionDeltaWriterFactory(
       outputWriterFactory,
       statsTracker.newTaskInstance(),
       hadoopConf,
-      new IcebergFileIO(table.io(), hadoopConf.value))
+      new IcebergFileIO(table.io()))
 
     if (command == Command.DELETE) {
       new GpuDeleteOnlyDeltaWriter(table, writerFactory, deleteFileFactory, context)

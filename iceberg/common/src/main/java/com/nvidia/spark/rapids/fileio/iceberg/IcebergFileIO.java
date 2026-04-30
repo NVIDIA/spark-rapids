@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids.fileio.iceberg;
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import com.nvidia.spark.rapids.jni.fileio.RapidsOutputFile;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.aws.s3.IcebergS3InputFile;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
@@ -35,31 +34,24 @@ import java.util.Objects;
  */
 public class IcebergFileIO implements RapidsFileIO {
   private final FileIO delegate;
-  private final Configuration hadoopConf;
 
   /**
    * Constructs an IcebergFileIO with the given Iceberg FileIO delegate.
    *
-   * @param delegate   the Iceberg FileIO to delegate to. It's the caller's responsibility to
-   *                   ensure that the delegate is closed when no longer used, e.g.,
-   *                   iceberg table/catalog close.
-   * @param hadoopConf the live Spark/Hadoop configuration. Threaded through to PerfIO so the
-   *                   common-case auth path (IRSA / assumed-role / static keys) reuses
-   *                   RangeCopier's tuned singleton client. The bridge-built path (REST-
-   *                   catalog vended credentials) does not consume this conf.
+   * @param delegate the Iceberg FileIO to delegate to. It's the caller's responsibility to
+   *                 ensure that the delegate is closed when no longer used, e.g.,
+   *                 iceberg table/catalog close.
    */
-  public IcebergFileIO(FileIO delegate, Configuration hadoopConf) {
+  public IcebergFileIO(FileIO delegate) {
     Objects.requireNonNull(delegate, "delegate can't be null");
-    Objects.requireNonNull(hadoopConf, "hadoopConf can't be null");
     this.delegate = delegate;
-    this.hadoopConf = hadoopConf;
   }
 
 
   @Override
   public IcebergInputFile newInputFile(String path) throws IOException {
     InputFile inputFile = delegate.newInputFile(path);
-    return IcebergS3InputFile.maybeCreate(inputFile, delegate, hadoopConf);
+    return IcebergS3InputFile.maybeCreate(inputFile, delegate);
   }
 
   @Override
