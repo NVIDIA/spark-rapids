@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
+
 import pytest
 
 from asserts import assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
@@ -579,17 +581,118 @@ def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_ty
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 
+def _scala_seq_to_list(seq):
+    return [seq.apply(i) for i in range(seq.size())]
+
+
+def _java_iterable_to_list(iterable):
+    it = iterable.iterator()
+    values = []
+    while it.hasNext():
+        values.append(it.next())
+    return values
+
+
+def _collect_plan_nodes(plan, class_name):
+    nodes = []
+    if plan.getClass().getSimpleName() == class_name:
+        nodes.append(plan)
+    children = plan.children()
+    for i in range(children.size()):
+        nodes.extend(_collect_plan_nodes(children.apply(i), class_name))
+    return nodes
+
+
+def _gpu_batch_scan_partitions(scan):
+    method_names = [method.getName() for method in scan.getClass().getMethods()]
+    if "inputPartitions" in method_names:
+        return _scala_seq_to_list(scan.inputPartitions())
+    if "partitions" in method_names:
+        return _scala_seq_to_list(scan.partitions())
+    assert False, f"Cannot find input partitions for {scan.getClass().getName()}"
+
+
+def _iceberg_gpu_input_partitions(spark, query):
+    df = spark.sql(query)
+    jvm = spark.sparkContext._jvm
+    plan = jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.extractExecutedPlan(
+        df._jdf.queryExecution().executedPlan())
+    scans = _collect_plan_nodes(plan, "GpuBatchScanExec")
+    assert len(scans) > 0, "GpuBatchScanExec not found in Iceberg GPU scan plan"
+    partitions = []
+    for scan in scans:
+        for partition in _gpu_batch_scan_partitions(scan):
+            if partition.getClass().getName() == "org.apache.iceberg.spark.source.GpuSparkInputPartition":
+                partitions.append(partition)
+    assert len(partitions) > 0, "GpuSparkInputPartition not found in Iceberg GPU scan plan"
+    return df, partitions
+
+
+def _iceberg_filecache_preferred_locations(jvm, partition):
+    manager = jvm.com.nvidia.spark.rapids.filecache.FileCacheLocalityManager.get()
+    host_to_num_bytes = {}
+    files = []
+
+    def add_file_cache_locations(file, num_bytes):
+        files.append(file)
+        for host in _scala_seq_to_list(manager.getLocations(file)):
+            if host != "localhost":
+                host_to_num_bytes[host] = host_to_num_bytes.get(host, 0) + num_bytes
+
+    task_group = partition.cpuPartition().taskGroup()
+    for task in _java_iterable_to_list(task_group.tasks()):
+        file_task = task.asFileScanTask()
+        add_file_cache_locations(
+            jvm.com.nvidia.spark.rapids.iceberg.ShimUtils.locationOf(file_task.file()),
+            file_task.length())
+    preferred_locations = [
+        host for host, _ in sorted(host_to_num_bytes.items(),
+                                  key=lambda host_and_bytes: host_and_bytes[1],
+                                  reverse=True)[:3]
+    ]
+    return preferred_locations, files
+
+
+def _read_iceberg_twice_with_filecache_check(spark, query):
+    first_result = spark.sql(query).collect()
+    jvm = spark.sparkContext._jvm
+    deadline = time.time() + 10
+    last_files = []
+    while True:
+        df, partitions = _iceberg_gpu_input_partitions(spark, query)
+        has_cache_locations = False
+        last_files = []
+        for partition in partitions:
+            expected_locations, files = _iceberg_filecache_preferred_locations(jvm, partition)
+            last_files.extend(files)
+            if expected_locations:
+                has_cache_locations = True
+                preferred_locations = list(partition.preferredLocations())
+                missing_locations = [
+                    loc for loc in expected_locations if loc not in preferred_locations
+                ]
+                assert len(missing_locations) == 0, \
+                    f"Cached locations {missing_locations} are missing from preferred locations " \
+                    f"{preferred_locations} for Iceberg files {files}"
+        if has_cache_locations:
+            return first_result, df.collect()
+        if time.time() >= deadline:
+            raise AssertionError(
+                f"File cache did not report locality for Iceberg files: {last_files}")
+        time.sleep(1)
+
+
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.skipif(not is_iceberg_remote_catalog(), reason="Filecache is only meaningful with remote storage, skipping for local Hadoop filesystem")
 def test_iceberg_read_with_filecache(spark_tmp_table_factory, reader_type):
-    """Create a table on CPU, read it twice on GPU with file cache enabled,
-    and verify both reads match the CPU result."""
+    """Create a table on CPU, read it twice on GPU with file cache enabled, verify the
+    second read uses filecache preferred locations, and verify both reads match the CPU result."""
     filecache_enabled = with_gpu_session(
         lambda spark: spark.conf.get("spark.rapids.filecache.enabled", "false"))
-    assert filecache_enabled == "true", \
-        "spark.rapids.filecache.enabled must be set to true to run this test"
+    if filecache_enabled != "true":
+        pytest.skip("spark.rapids.filecache.enabled must be set to true to run this test")
     table = get_full_table_name(spark_tmp_table_factory)
     tmpview = spark_tmp_table_factory.get()
     def setup_iceberg_table(spark):
@@ -604,8 +707,9 @@ def test_iceberg_read_with_filecache(spark_tmp_table_factory, reader_type):
     filecache_conf = {
         'spark.rapids.sql.format.parquet.reader.type': reader_type,
     }
-    gpu_result_1 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
-    gpu_result_2 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
+    gpu_result_1, gpu_result_2 = with_gpu_session(
+        lambda spark: _read_iceberg_twice_with_filecache_check(spark, query),
+        conf=filecache_conf)
     assert_equal_with_local_sort(cpu_result, gpu_result_1)
     assert_equal_with_local_sort(cpu_result, gpu_result_2)
 
