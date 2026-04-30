@@ -22,8 +22,6 @@ import java.util.TimeZone
 
 import scala.collection.mutable.ListBuffer
 
-import ai.rapids.cudf.{ColumnVector, RegexProgram}
-import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.BeforeAndAfterEach
 
 import org.apache.spark.SparkConf
@@ -31,8 +29,6 @@ import org.apache.spark.sql.Row
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.functions.{col, to_date, to_timestamp, unix_timestamp}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.GpuToTimestamp.REMOVE_WHITESPACE_FROM_MONTH_DAY
-import org.apache.spark.sql.rapids.RegexReplace
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterEach {
@@ -238,12 +234,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
     assert(!planStr.contains(RapidsConf.INCOMPATIBLE_DATE_FORMATS.key))
   }
 
-  test("Regex: Remove whitespace from month and day") {
-    testRegex(REMOVE_WHITESPACE_FROM_MONTH_DAY,
-    Seq("1- 1-1", "1-1- 1", "1- 1- 1", null),
-    Seq("1-1-1", "1-1-1", "1-1-1", null))
-  }
-
   test("literals: ensure time literals are correct") {
     val conf = new SparkConf()
     val df = withGpuSparkSession(spark => {
@@ -301,17 +291,6 @@ class ParseDateTimeSuite extends SparkQueryCompareTestSuite with BeforeAndAfterE
       f(conf)
     } finally {
       TimeZone.setDefault(originTimeZone)
-    }
-  }
-
-  private def testRegex(rule: RegexReplace, values: Seq[String], expected: Seq[String]): Unit = {
-    withResource(ColumnVector.fromStrings(values: _*)) { v =>
-      withResource(ColumnVector.fromStrings(expected: _*)) { expected =>
-        val prog = new RegexProgram(rule.search)
-        withResource(v.stringReplaceWithBackrefs(prog, rule.replace)) { actual =>
-          CudfTestHelper.assertColumnsAreEqual(expected, actual)
-        }
-      }
     }
   }
 
