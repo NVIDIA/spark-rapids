@@ -52,11 +52,10 @@ object SchemaUtils {
   val MAP_VALUE_NESTED_IDS_METADATA_KEY =
     "rapids.parquet.map.value.nested.ids"
 
-  // Reflection-based access to private fields on cuDF's ColumnWriterOptions.
-  // cuDF's Java list/map builder path drops the container's parquet field id and has no
-  // public setter for `isBinary` on a built options object, so we reach into the private
-  // fields here. TODO(cuDF): remove once public setters are exposed upstream.
-  // Tracking issue: https://github.com/rapidsai/cudf/issues/NEW (file before merging).
+  // cuDF's listBuilder() and mapColumn() factories don't accept a parquetFieldId, and there is
+  // no public setter on a built ColumnWriterOptions, so we reach into private fields to attach
+  // the field id to list/map containers. Once cuDF exposes builder variants that accept
+  // parquetFieldId for list/map, this reflection should go away.
   private def accessibleField(name: String): java.lang.reflect.Field = {
     try {
       val field = classOf[ColumnWriterOptions].getDeclaredField(name)
@@ -73,7 +72,6 @@ object SchemaUtils {
 
   private lazy val hasParquetFieldIdField = accessibleField("hasParquetFieldId")
   private lazy val parquetFieldIdField = accessibleField("parquetFieldId")
-  private lazy val isBinaryField = accessibleField("isBinary")
 
   private def setParquetFieldId(
       options: ColumnWriterOptions,
@@ -83,23 +81,6 @@ object SchemaUtils {
       hasParquetFieldIdField.setBoolean(options, true)
       parquetFieldIdField.setInt(options, parquetFieldId.get)
     }
-  }
-
-  private def markAsBinary(options: ColumnWriterOptions): Unit = {
-    isBinaryField.setBoolean(options, true)
-  }
-
-  private def buildBinaryOptions(
-      name: String,
-      nullable: Boolean,
-      parquetFieldId: Option[Int],
-      parquetFieldIdWriteEnabled: Boolean): ListColumnWriterOptions = {
-    val binaryOptions = listBuilder(name, nullable)
-      .withColumns(false, "BINARY_DATA")
-      .build()
-    markAsBinary(binaryOptions)
-    setParquetFieldId(binaryOptions, parquetFieldId, parquetFieldIdWriteEnabled)
-    binaryOptions
   }
 
   /**
@@ -378,13 +359,12 @@ object SchemaUtils {
             } else {
               Option.empty
             }
-            listBuilder(name, nullable)
-              .withListColumn(buildBinaryOptions(
-                "element",
-                a.containsNull,
-                elementParquetFieldId,
-                parquetFieldIdWriteEnabled))
-              .build()
+            val lb = listBuilder(name, nullable)
+            if (parquetFieldIdWriteEnabled && elementParquetFieldId.nonEmpty) {
+              lb.withBinaryColumn("element", a.containsNull, elementParquetFieldId.get).build()
+            } else {
+              lb.withBinaryColumn("element", a.containsNull).build()
+            }
           case _ =>
             writerOptionsFromField(
               listBuilder(name, nullable),
@@ -431,11 +411,11 @@ object SchemaUtils {
         setParquetFieldId(mapOptions, parquetFieldId, parquetFieldIdWriteEnabled)
         builder.withMapColumn(mapOptions)
       case BinaryType =>
-        builder.withListColumn(buildBinaryOptions(
-          name,
-          nullable,
-          parquetFieldId,
-          parquetFieldIdWriteEnabled))
+        if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          builder.withBinaryColumn(name, nullable, parquetFieldId.get)
+        } else {
+          builder.withBinaryColumn(name, nullable)
+        }
       case _ =>
         if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
           builder.withColumn(nullable, name, parquetFieldId.get)
