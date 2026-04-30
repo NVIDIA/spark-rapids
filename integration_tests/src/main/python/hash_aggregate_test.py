@@ -194,11 +194,14 @@ _decimals_with_no_nulls = [
 _init_list_with_decimals = _init_list + [
     _decimals_with_nulls, _decimals_with_no_nulls]
 
+_std_variance_issue_14681_gen = [
+    ('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', DoubleGen()), ('c', DoubleGen())]
+
 # Grouped FP gens using bare DoubleGen()/FloatGen() on the aggregated columns.
 # Their default special_cases inject NaN, -0.0, +-Inf, and max-fraction values,
 # which exercise the corner-case paths for FP aggregate functions.
 _init_list_with_decimals_and_floats = _init_list_with_decimals + [
-    [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', DoubleGen()), ('c', DoubleGen())],
+    _std_variance_issue_14681_gen,
     [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', FloatGen()), ('c', FloatGen())]]
 
 # Used to test ANSI-mode fallback
@@ -2551,6 +2554,9 @@ def test_no_fallback_when_ansi_enabled(data_gen, kudo_enabled):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_std_variance(data_gen, conf, kudo_enabled):
+    if data_gen is _std_variance_issue_14681_gen:
+        pytest.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/14681')
+
     local_conf = copy_and_update(conf, {
         'spark.rapids.sql.castDecimalToFloat.enabled': 'true',
         kudo_enabled_conf_key: kudo_enabled})
