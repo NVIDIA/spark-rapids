@@ -27,7 +27,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.ExprMeta
 import com.nvidia.spark.rapids.GpuOverrides.{extractStringLit, getTimeParserPolicy}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.{Arithmetic, DateTimeUtils, GpuTimeZoneDB}
+import com.nvidia.spark.rapids.jni.{Arithmetic, CastStrings, DateTimeUtils, GpuTimeZoneDB}
 import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimBinaryExpression, ShimExpression}
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, ExpectsInputTypes, Expression, FromUnixTime, FromUTCTimestamp, ImplicitCastInputTypes, MonthsBetween, TimeZoneAwareExpression, ToUTCTimestamp, TruncDate, TruncTimestamp}
@@ -653,10 +653,6 @@ object GpuToTimestamp {
       raw"\A\d{8}(\D|\s|\Z)")
   )
 
-  /** remove whitespace before month and day */
-  val REMOVE_WHITESPACE_FROM_MONTH_DAY: RegexReplace =
-    RegexReplace(raw"(\A\d+)-([ \t]*)(\d+)-([ \t]*)(\d+)", raw"\1-\3-\5")
-
   def daysEqual(col: ColumnVector, name: String): ColumnVector = {
     withResource(Scalar.fromString(name)) { scalarName =>
       col.equalTo(scalarName)
@@ -680,6 +676,13 @@ object GpuToTimestamp {
         }
       }
     }
+  }
+
+  // True iff the fused JNI parser handles this (sparkFormat, policy) combination.
+  // Today the JNI accepts every entry in CORRECTED_COMPATIBLE_FORMATS / LEGACY_COMPATIBLE_FORMATS.
+  private def isSimpleSparkFormat(sparkFormat: String, isLegacy: Boolean): Boolean = {
+    val map = if (isLegacy) LEGACY_COMPATIBLE_FORMATS else CORRECTED_COMPATIBLE_FORMATS
+    map.contains(sparkFormat)
   }
 
   def isTimestamp(col: ColumnVector, sparkFormat: String, strfFormat: String) : ColumnVector = {
@@ -747,16 +750,29 @@ object GpuToTimestamp {
       failOnError: Boolean): ColumnVector = {
 
     // `tsVector` will be closed in replaceSpecialDates
-    val tsVector = withResource(isTimestamp(lhs.getBase, sparkFormat, strfFormat)) { isTs =>
-      if(failOnError && !BoolUtils.isAllValidTrue(isTs)) {
-        // ANSI mode and has invalid value.
-        // CPU may throw `DateTimeParseException`, `DateTimeException` or `ParseException`
-        throw new IllegalArgumentException("Exception occurred when parsing timestamp in ANSI mode")
+    val tsVector = if (isSimpleSparkFormat(sparkFormat, isLegacy = false)) {
+      // Fused kernel skips the regex+length+cuDF-asTimestamp chain.
+      val parsed = CastStrings.parseTimestampWithFormat(lhs.getBase, sparkFormat, false)
+      closeOnExcept(parsed) { _ =>
+        if (failOnError && parsed.getNullCount > lhs.getBase.getNullCount) {
+          // ANSI mode + a row that was non-null in input but failed to parse.
+          // CPU may throw DateTimeParseException, DateTimeException or ParseException
+          throw new IllegalArgumentException(
+            "Exception occurred when parsing timestamp in ANSI mode")
+        }
       }
-
-      withResource(Scalar.fromNull(dtype)) { nullValue =>
-        withResource(lhs.getBase.asTimestamp(dtype, strfFormat)) { tsVec =>
-          isTs.ifElse(tsVec, nullValue)
+      parsed
+    } else {
+      // Fallback for incompatibleDateFormats: keep the legacy regex+cuDF chain.
+      withResource(isTimestamp(lhs.getBase, sparkFormat, strfFormat)) { isTs =>
+        if(failOnError && !BoolUtils.isAllValidTrue(isTs)) {
+          throw new IllegalArgumentException(
+            "Exception occurred when parsing timestamp in ANSI mode")
+        }
+        withResource(Scalar.fromNull(dtype)) { nullValue =>
+          withResource(lhs.getBase.asTimestamp(dtype, strfFormat)) { tsVec =>
+            isTs.ifElse(tsVec, nullValue)
+          }
         }
       }
     }
@@ -785,96 +801,15 @@ object GpuToTimestamp {
       strfFormat: String,
       dtype: DType,
       asTimestamp: (ColumnVector, String) => ColumnVector): ColumnVector = {
-
-    val format = LEGACY_COMPATIBLE_FORMATS.getOrElse(sparkFormat,
-      throw new IllegalStateException(s"Unsupported format $sparkFormat"))
-
-    val regexReplaceRules = Seq(REMOVE_WHITESPACE_FROM_MONTH_DAY)
-
-    // we support date formats using either `-` or `/` to separate year, month, and day and the
-    // regex rules are written with '-' so we need to replace '-' with '/' here as necessary
-    val rulesWithSeparator = format.separator match {
-      case Some('/') =>
-        regexReplaceRules.map {
-          case RegexReplace(pattern, backref) =>
-            RegexReplace(pattern.replace('-', '/'), backref.replace('-', '/'))
-        }
-      case Some('-') | Some(_) =>
-        regexReplaceRules
-      case None =>
-        // For formats like `yyyyMMdd` that do not contains separator,
-        // do not need to do regexp replacement rules
-        // Note: here introduced the following inconsistent behavior compared to Spark
-        // Spark's behavior:
-        //   to_date('20240101', 'yyyyMMdd')  = 2024-01-01
-        //   to_date('202401 01', 'yyyyMMdd') = 2024-01-01
-        //   to_date('2024 0101', 'yyyyMMdd') = null
-        // GPU behavior:
-        //   to_date('20240101', 'yyyyMMdd')  = 2024-01-01
-        //   to_date('202401 01', 'yyyyMMdd') = null
-        //   to_date('2024 0101', 'yyyyMMdd') = null
-        Seq()
+    if (!isSimpleSparkFormat(sparkFormat, isLegacy = true)) {
+      throw new IllegalStateException(s"Unsupported format $sparkFormat")
     }
-
-    // apply each rule in turn to the data
-    val fixedUp = rulesWithSeparator
-      .foldLeft(rejectLeadingNewlineThenStrip(lhs))((cv, regexRule) => {
-        withResource(cv) {
-          _.stringReplaceWithBackrefs(new RegexProgram(regexRule.search), regexRule.replace)
-        }
-      })
-
-    // check the final value against a regex to determine if it is valid or not, so we produce
-    // null values for any invalid inputs
-    withResource(Scalar.fromNull(dtype)) { nullValue =>
-      val prog = new RegexProgram(format.validRegex, CaptureGroups.NON_CAPTURE)
-      withResource(fixedUp.matchesRe(prog)) { isValidDate =>
-        withResource(asTimestampOrNull(fixedUp, dtype, strfFormat, asTimestamp)) { timestamp =>
-          isValidDate.ifElse(timestamp, nullValue)
-        }
-      }
-    }
-  }
-
-  /**
-   * Filter out strings that have a newline before the first non-whitespace character
-   * and then strip all leading and trailing whitespace.
-   */
-  private def rejectLeadingNewlineThenStrip(lhs: GpuColumnVector) = {
-    val prog = new RegexProgram("\\A[ \\t]*[\\n]+", CaptureGroups.NON_CAPTURE)
-    withResource(lhs.getBase.matchesRe(prog)) { hasLeadingNewline =>
-      withResource(Scalar.fromNull(DType.STRING)) { nullValue =>
-        withResource(lhs.getBase.strip()) { stripped =>
-          hasLeadingNewline.ifElse(nullValue, stripped)
-        }
-      }
-    }
-  }
-
-  /**
-   * Parse a string column to timestamp.
-   */
-  def asTimestampOrNull(
-      cv: ColumnVector,
-      dtype: DType,
-      strfFormat: String,
-      asTimestamp: (ColumnVector, String) => ColumnVector): ColumnVector = {
-    withResource(cv) { _ =>
-      withResource(Scalar.fromNull(dtype)) { nullValue =>
-        withResource(cv.isTimestamp(strfFormat)) { isTimestamp =>
-          withResource(asTimestamp(cv, strfFormat)) { timestamp =>
-            isTimestamp.ifElse(timestamp, nullValue)
-          }
-        }
-      }
-    }
+    CastStrings.parseTimestampWithFormat(lhs.getBase, sparkFormat, true)
   }
 
 }
 
 case class ParseFormatMeta(separator: Option[Char], isTimestamp: Boolean, validRegex: String)
-
-case class RegexReplace(search: String, replace: String)
 
 /**
  * A direct conversion of Spark's ToTimestamp class which converts time to UNIX timestamp by
