@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.iceberg.iceberg16x;
 
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
 import org.apache.iceberg.*;
+import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.spark.source.GpuBaseReader;
 import org.apache.iceberg.util.PartitionUtil;
 import org.apache.iceberg.types.Types;
@@ -41,5 +42,17 @@ public class ShimUtilsImpl implements IcebergShimUtils {
         } else {
             return PartitionUtil.constantsMap(task, GpuBaseReader::convertConstant);
         }
+    }
+
+    @Override
+    public boolean s3AsyncClientSupported() {
+        return false;
+    }
+
+    @Override
+    public Object s3AsyncClient(FileIO fileIO, String storagePath) {
+        throw new UnsupportedOperationException(
+                "Iceberg 1.6.x does not expose a public S3AsyncClient on S3FileIO; "
+                        + "PerfIO vectored S3 reads require Iceberg 1.9 or newer.");
     }
 }

@@ -20,6 +20,7 @@ import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.io.FileIO;
 
 import java.util.Map;
 
@@ -51,4 +52,25 @@ public interface IcebergShimUtils {
      *         type-to-Spark type conversion, which differs across Iceberg versions.
      */
     Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema, Table table);
+
+    /**
+     * True if this Iceberg version exposes a public {@code S3AsyncClient} accessor on
+     * {@code S3FileIO}. 1.6.x predates the accessor entirely (no async client built);
+     * 1.9.x adds {@code asyncClient()} and 1.10.x adds {@code asyncClient(String)}.
+     * Callers must gate {@link #s3AsyncClient} on this method.
+     */
+    boolean s3AsyncClientSupported();
+
+    /**
+     * Returns Iceberg's own {@code S3AsyncClient} for the given {@link FileIO}, dispatching
+     * to {@code S3FileIO.asyncClient()} on 1.9.x and {@code S3FileIO.asyncClient(storagePath)}
+     * on 1.10.x (which routes to the per-prefix {@code PrefixedS3Client} for tables that
+     * configure {@code s3.<prefix>.endpoint} etc.). 1.6.x throws
+     * {@link UnsupportedOperationException} since no public accessor exists.
+     *
+     * <p>Returned as {@link Object} so callers in {@code iceberg/common} avoid an
+     * {@code aws-sdk-v2} compile dependency; PerfIO casts internally to
+     * {@code S3AsyncClient} where the SDK is already on the classpath.
+     */
+    Object s3AsyncClient(FileIO fileIO, String storagePath);
 }
