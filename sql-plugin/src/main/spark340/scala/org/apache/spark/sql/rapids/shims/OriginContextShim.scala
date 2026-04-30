@@ -37,9 +37,12 @@ package org.apache.spark.sql.rapids.shims
 import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
 
 // Apache Spark 3.4.x / 3.5.x typed `Origin.context` as `SQLQueryContext`
-// directly — no narrowing needed.
+// directly, while some Databricks runtimes expose the wider `QueryContext`.
 object OriginContextShim {
-  def queryContext(origin: Origin): SQLQueryContext = origin.context
+  def queryContext(origin: Origin): SQLQueryContext = origin.context match {
+    case ctx: SQLQueryContext => ctx
+    case _ => null
+  }
   def contextSummary(origin: Origin): String = origin.context match {
     case null => ""
     case ctx => ctx.summary
