@@ -31,9 +31,31 @@ object FilePartitionShims extends SplitFiles {
     }
   }
 
-  def getFiles(p: FilePartition): Array[PartitionedFile] = p.innerFiles
+  def getFiles(p: FilePartition): Array[PartitionedFile] = p.filesWithAbsolutePaths
 
   def copyWithFiles(p: FilePartition, newFiles: Array[PartitionedFile]): FilePartition = {
     p.copy(innerFiles = newFiles)
+  }
+
+  // On Databricks 17.3, Delta/UC-managed tables store bare filenames in
+  // FilePartition.innerFiles and rely on pathPrefix for absolute resolution. Preserve
+  // that prefix when GPU planning recreates partitions via FilePartition.getFilePartitions.
+  def getFilePartitions(
+      relation: HadoopFsRelation,
+      splitFiles: Seq[PartitionedFile],
+      maxSplitBytes: Long): Seq[FilePartition] = {
+    val partitions =
+      FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
+    val rootPaths = relation.location.rootPaths
+    if (rootPaths.size == 1) {
+      val prefix = rootPaths.head.toString
+      partitions.map { p =>
+        if (p.pathPrefix.isEmpty) p.copy(pathPrefix = Some(prefix)) else p
+      }
+    } else {
+      // Do not synthesize a prefix for multi-root relations: one prefix cannot safely
+      // resolve every file, so keep Spark's partitions unchanged.
+      partitions
+    }
   }
 }
