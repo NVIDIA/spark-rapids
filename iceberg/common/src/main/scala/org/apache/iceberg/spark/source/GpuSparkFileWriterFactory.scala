@@ -34,11 +34,9 @@ import org.apache.spark.util.SerializableConfiguration
 
 class GpuSparkFileWriterFactory(val table: Table,
   val dataFileFormat: FileFormat,
-  val dataSchema: Schema,
   val dataSparkType: StructType,
   val dataSortOrder: SortOrder,
   val deleteFileFormat: FileFormat,
-  val deleteSchema: Schema,
   val deleteSparkType: StructType,
   val columnarOutputWriterFactory: ColumnarOutputWriterFactory,
   val taskStatsTracker: ColumnarWriteTaskStatsTracker,
@@ -61,7 +59,7 @@ class GpuSparkFileWriterFactory(val table: Table,
     partition: StructLike): DataWriter[SpillableColumnarBatch] = {
     val location = file.encryptingOutputFile().location()
     new DataWriter[SpillableColumnarBatch](
-      createAppender(location, dataSparkType, dataSchema),
+      createAppender(location, dataSparkType),
       dataFileFormat,
       location,
       partitionSpec,
@@ -87,7 +85,7 @@ class GpuSparkFileWriterFactory(val table: Table,
                                  partition: StructLike): GpuPositionDeleteFileWriter = {
     val location = file.encryptingOutputFile().location()
     new GpuPositionDeleteFileWriter(
-      createAppender(location, deleteSparkType, deleteSchema),
+      createAppender(location, deleteSparkType),
       deleteFileFormat,
       location,
       spec,
@@ -97,8 +95,7 @@ class GpuSparkFileWriterFactory(val table: Table,
 
 
   private def createAppender(path: String,
-                             sparkType: StructType,
-                             schema: Schema): GpuIcebergParquetAppender = {
+                             sparkType: StructType): GpuIcebergParquetAppender = {
     val taskAttemptContext = newTaskAttemptContext(sparkType)
     val gpuWriter =  columnarOutputWriterFactory.newInstance(
       path = path,
@@ -111,7 +108,6 @@ class GpuSparkFileWriterFactory(val table: Table,
     new GpuIcebergParquetAppender(
       gpuWriter,
       metricsConfig = MetricsConfig.forTable(table),
-      schema = schema,
       fileIO = new IcebergFileIO(table.io())
     )
   }

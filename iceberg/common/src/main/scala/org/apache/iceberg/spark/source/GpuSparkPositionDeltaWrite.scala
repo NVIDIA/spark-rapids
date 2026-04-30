@@ -219,11 +219,9 @@ class GpuPositionDeltaWriterFactory(
     val writerFactory = new GpuSparkFileWriterFactory(
       table,
       context.dataFileFormat,
-      GpuSparkPositionDeltaWrite.dataWriterSchemaFor(command, context),
       GpuSparkPositionDeltaWrite.dataWriterSparkTypeFor(command, context),
       table.sortOrder(),
       context.deleteFileFormat,
-      DeleteSchemaUtil.pathPosSchema(),
       positionDeleteSparkType,
       outputWriterFactory,
       statsTracker.newTaskInstance(),
