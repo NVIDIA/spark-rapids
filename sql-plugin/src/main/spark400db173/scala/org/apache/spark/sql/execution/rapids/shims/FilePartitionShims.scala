@@ -34,6 +34,9 @@ object FilePartitionShims extends SplitFiles {
   def getFiles(p: FilePartition): Array[PartitionedFile] = p.filesWithAbsolutePaths
 
   def copyWithFiles(p: FilePartition, newFiles: Array[PartitionedFile]): FilePartition = {
+    // newFiles may already contain absolute paths from filesWithAbsolutePaths above. Keep
+    // pathPrefix intact: DB-17.3 makePathsAbsolute checks Path.isAbsolute before applying
+    // the prefix, so calling filesWithAbsolutePaths again remains idempotent.
     p.copy(innerFiles = newFiles)
   }
 

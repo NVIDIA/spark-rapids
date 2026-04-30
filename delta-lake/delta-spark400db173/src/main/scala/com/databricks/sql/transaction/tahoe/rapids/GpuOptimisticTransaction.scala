@@ -254,10 +254,10 @@ class GpuOptimisticTransaction(
       val options = writeOptions match {
         case None => Map.empty[String, String]
         case Some(writeOptions) =>
-          writeOptions.options.filterKeys { key =>
+          writeOptions.options.filter { case (key, _) =>
             key.equalsIgnoreCase(DeltaOptions.MAX_RECORDS_PER_FILE) ||
                 key.equalsIgnoreCase(DeltaOptions.COMPRESSION)
-          }.toMap
+          }
       }
       val deltaFileFormat = deltaLog.fileFormat(deltaLog.unsafeVolatileSnapshot.protocol, metadata)
       val gpuFileFormat = if (deltaFileFormat.getClass == classOf[DeltaParquetFileFormat]) {

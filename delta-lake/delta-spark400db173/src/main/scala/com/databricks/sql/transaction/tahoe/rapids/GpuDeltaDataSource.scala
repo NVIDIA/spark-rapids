@@ -53,7 +53,7 @@ class GpuDeltaDataSource(rapidsConf: RapidsConf) extends GpuCreatableRelationPro
         new DeltaOptions(parameters, sqlContext.sparkSession.sessionState.conf),
         partitionColumns = partitionColumns,
         configuration = DeltaConfigs.validateConfigurations(
-          parameters.filterKeys(_.startsWith("delta.")).toMap),
+          parameters.filter { case (key, _) => key.startsWith("delta.") }),
         data = data)).run(sqlContext.sparkSession)
 
     gpuDeltaLog.deltaLog.createRelation()
