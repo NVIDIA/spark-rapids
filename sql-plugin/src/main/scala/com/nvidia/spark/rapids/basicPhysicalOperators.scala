@@ -53,6 +53,9 @@ class GpuProjectExecMeta(
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r)
     with Logging {
+  override protected lazy val outputTypeMetas: Option[Seq[DataTypeMeta]] =
+    Some(childExprs.map(_.typeMeta))
+
   override def convertToGpu(): GpuExec = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
     val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
@@ -299,7 +302,6 @@ trait GpuProjectExecLike extends GpuPartitioningPreservingUnaryExecNode with Gpu
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
-  // The same as what feeds us
   override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
@@ -768,8 +770,6 @@ case class GpuProjectExec(
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
   override def outputBatching: CoalesceGoal = if (enablePreSplit) {
-    // Pre-split will make sure the size of each output batch will not be larger
-    // than the splitUntilSize.
     TargetSize(PreProjectSplitIterator.getSplitUntilSize)
   } else {
     super.outputBatching
