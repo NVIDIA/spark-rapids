@@ -1011,6 +1011,14 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new UnaryExprMeta[Bin](a, conf, p, r) {
         override def convertToGpu(child: Expression): GpuBin = GpuBin(child)
       }),
+    expr[Hex](
+      "Returns the hex string representation of a value",
+      ExprChecks.unaryProject(TypeSig.STRING, TypeSig.STRING,
+        TypeSig.LONG + TypeSig.STRING + TypeSig.BINARY,
+        TypeSig.LONG + TypeSig.STRING + TypeSig.BINARY),
+      (a, conf, p, r) => new UnaryExprMeta[Hex](a, conf, p, r) {
+        override def convertToGpu(child: Expression): GpuExpression = GpuHex(child)
+      }),
     expr[WindowExpression](
       "Calculates a return value for every input row of a table based on a group (or " +
         "\"window\") of rows",
