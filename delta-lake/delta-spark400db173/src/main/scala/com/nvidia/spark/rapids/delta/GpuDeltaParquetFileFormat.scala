@@ -19,9 +19,9 @@ package com.nvidia.spark.rapids.delta
 import com.databricks.sql.transaction.tahoe.{DeltaColumnMappingMode, DeltaParquetFileFormat, IdMapping}
 import com.databricks.sql.transaction.tahoe.actions.{Metadata, Protocol}
 import com.nvidia.spark.rapids.{GpuMetric, SparkPlanMeta}
-
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.FileSourceScanExec

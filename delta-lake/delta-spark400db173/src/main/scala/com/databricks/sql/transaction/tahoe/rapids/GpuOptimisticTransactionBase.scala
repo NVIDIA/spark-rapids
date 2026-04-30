@@ -24,8 +24,8 @@ package com.databricks.sql.transaction.tahoe.rapids
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.actions.FileAction
 import com.databricks.sql.transaction.tahoe.constraints.{Constraint, DeltaInvariantCheckerExec}
-import com.databricks.sql.transaction.tahoe.files.TransactionalWriteOptions
 import com.databricks.sql.transaction.tahoe.files.TahoeBatchFileIndex
+import com.databricks.sql.transaction.tahoe.files.TransactionalWriteOptions
 import com.databricks.sql.transaction.tahoe.metering.DeltaLogging
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._

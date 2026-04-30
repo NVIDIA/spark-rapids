@@ -40,13 +40,12 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkException
 import org.apache.spark.sql.{DataFrame, Dataset}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, RuntimeReplaceable}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, FileFormatWriter}
 import org.apache.spark.sql.functions.to_json
 import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuWriteJobStatsTracker}
-import org.apache.spark.sql.catalyst.expressions.RuntimeReplaceable
 import org.apache.spark.sql.rapids.delta.GpuIdentityColumn
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.types._
