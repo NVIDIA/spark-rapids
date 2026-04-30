@@ -26,9 +26,9 @@ import com.nvidia.spark.rapids.jni.GpuMapZipWithUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCoercion
-import org.apache.spark.sql.catalyst.expressions.{Add, And, ArrayAggregate, Attribute, AttributeReference, AttributeSeq, Cast, Expression, ExprId, Greatest, LambdaFunction, Least, Multiply, NamedExpression, NamedLambdaVariable, Or}
+import org.apache.spark.sql.catalyst.expressions.{Add, And, ArrayAggregate, Attribute, AttributeReference, AttributeSeq, CaseWhen, Cast, Expression, ExprId, Greatest, If, LambdaFunction, Least, Literal, Multiply, NamedExpression, NamedLambdaVariable, Or}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, DataType, DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType, Metadata, NumericType, ShortType, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, DataType, Decimal, DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType, Metadata, NumericType, ShortType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -922,6 +922,12 @@ sealed trait AggOp {
   /** Identity scalar typed to match `t` so ifElse / binaryOp don't hit width mismatch. */
   def identityScalar(t: DataType): cudf.Scalar
   /**
+   * Catalyst-side identity, used by the decomposer to plug into `If`/`CaseWhen` branches
+   * that are bare `acc` (treated as `op(acc, identity)` so the branch can be lifted out).
+   * Must satisfy `op(acc, identityLiteral(t)) == acc` for any acc of type `t`.
+   */
+  def identityLiteral(t: DataType): Literal
+  /**
    * `reduced OP zero`, typed to outDType, with Spark-matching null propagation. `zero` is
    * a `BinaryOperable` so callers can pass either a `cudf.Scalar` (when the Spark-side
    * `zero` is a Literal — saves one full-row column allocation per batch) or a `ColumnView`
@@ -952,6 +958,18 @@ case object SumOp extends AggOp {
     case d: DecimalType => GpuScalar.from(0, d)
     case other => throw new IllegalStateException(s"SUM identity not defined for $other")
   }
+  // Each arm builds the value at exactly the right Scala type so Spark's Literal
+  // type-compatibility check (validateLiteralValue) doesn't reject e.g. Int into LongType.
+  def identityLiteral(t: DataType): Literal = t match {
+    case ByteType => Literal(0.toByte, ByteType)
+    case ShortType => Literal(0.toShort, ShortType)
+    case IntegerType => Literal(0, IntegerType)
+    case LongType => Literal(0L, LongType)
+    case FloatType => Literal(0.0f, FloatType)
+    case DoubleType => Literal(0.0, DoubleType)
+    case d: DecimalType => Literal(Decimal(0L, d.precision, d.scale), d)
+    case other => throw new IllegalStateException(s"SUM identity literal not defined for $other")
+  }
   def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.add(z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case a: Add => Some((a.left, a.right))
@@ -973,6 +991,16 @@ case object ProductOp extends AggOp {
     case FloatType => cudf.Scalar.fromFloat(1.0f)
     case DoubleType => cudf.Scalar.fromDouble(1.0)
     case other => throw new IllegalStateException(s"PRODUCT identity not defined for $other")
+  }
+  def identityLiteral(t: DataType): Literal = t match {
+    case ByteType => Literal(1.toByte, ByteType)
+    case ShortType => Literal(1.toShort, ShortType)
+    case IntegerType => Literal(1, IntegerType)
+    case LongType => Literal(1L, LongType)
+    case FloatType => Literal(1.0f, FloatType)
+    case DoubleType => Literal(1.0, DoubleType)
+    case other => throw new IllegalStateException(
+      s"PRODUCT identity literal not defined for $other")
   }
   def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.mul(z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
@@ -1019,6 +1047,13 @@ case object MaxOp extends ExtremumOp {
     case LongType => cudf.Scalar.fromLong(Long.MinValue)
     case other => throw new IllegalStateException(s"MAX identity not defined for $other")
   }
+  def identityLiteral(t: DataType): Literal = t match {
+    case ByteType => Literal(Byte.MinValue, ByteType)
+    case ShortType => Literal(Short.MinValue, ShortType)
+    case IntegerType => Literal(Int.MinValue, IntegerType)
+    case LongType => Literal(Long.MinValue, LongType)
+    case other => throw new IllegalStateException(s"MAX identity literal not defined for $other")
+  }
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case g: Greatest if g.children.size == 2 => Some((g.children.head, g.children(1)))
     case _ => None
@@ -1036,6 +1071,13 @@ case object MinOp extends ExtremumOp {
     case LongType => cudf.Scalar.fromLong(Long.MaxValue)
     case other => throw new IllegalStateException(s"MIN identity not defined for $other")
   }
+  def identityLiteral(t: DataType): Literal = t match {
+    case ByteType => Literal(Byte.MaxValue, ByteType)
+    case ShortType => Literal(Short.MaxValue, ShortType)
+    case IntegerType => Literal(Int.MaxValue, IntegerType)
+    case LongType => Literal(Long.MaxValue, LongType)
+    case other => throw new IllegalStateException(s"MIN identity literal not defined for $other")
+  }
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case l: Least if l.children.size == 2 => Some((l.children.head, l.children(1)))
     case _ => None
@@ -1048,6 +1090,7 @@ case object AllOp extends AggOp {
   // INCLUDE: matches Spark's 3VL for AND (null AND true = null, null AND false = false).
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
   def identityScalar(t: DataType): cudf.Scalar = cudf.Scalar.fromBool(true)
+  def identityLiteral(t: DataType): Literal = Literal(true, BooleanType)
   def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.and(z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case a: And => Some((a.left, a.right))
@@ -1061,6 +1104,7 @@ case object AnyOp extends AggOp {
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.any()
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
   def identityScalar(t: DataType): cudf.Scalar = cudf.Scalar.fromBool(false)
+  def identityLiteral(t: DataType): Literal = Literal(false, BooleanType)
   def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.or(z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case o: Or => Some((o.left, o.right))
@@ -1074,17 +1118,17 @@ case object AnyOp extends AggOp {
  * Result of successfully matching a Spark ArrayAggregate's merge lambda against a
  * registered AggOp.
  *
- * @param op                   the chosen aggregation operator
- * @param gIsLeftOfMergeBody   whether `g(x)` is the left child of the merge body's binary op
- *                             (true) or the right child (false). convertToGpuImpl uses this
- *                             index to pick the matching meta-child without re-walking the
- *                             Catalyst tree
- * @param accVarExprId         the accumulator NamedLambdaVariable's exprId
- * @param elemVar              the element NamedLambdaVariable (used to build the g lambda)
+ * @param op             the chosen aggregation operator
+ * @param g              the lifted Catalyst sub-expression for `g(x)`. For a plain
+ *                       `op(acc, g(x))` body this is the body's non-acc child; for an
+ *                       `If` / `CaseWhen` body it is rebuilt with bare-acc branches
+ *                       replaced by `op.identityLiteral` so it never references acc
+ * @param accVarExprId   the accumulator NamedLambdaVariable's exprId
+ * @param elemVar        the element NamedLambdaVariable (used to build the g lambda)
  */
 case class ArrayAggregateDecomposition(
     op: AggOp,
-    gIsLeftOfMergeBody: Boolean,
+    g: Expression,
     accVarExprId: ExprId,
     elemVar: NamedLambdaVariable)
 
@@ -1121,18 +1165,13 @@ object ArrayAggregateDecomposer {
     val body = mergeLambda.function
     val accId = accVar.exprId
     val matched = allOps.view.flatMap { op =>
-      op.matchBinary(body).flatMap { case (l, r) =>
-        if (isAccRef(l, accId) && !containsAccRef(r, accId)) {
-          Some((op, r, /* gIsLeftOfMergeBody = */ false))
-        } else if (isAccRef(r, accId) && !containsAccRef(l, accId)) {
-          Some((op, l, /* gIsLeftOfMergeBody = */ true))
-        } else None
-      }
+      extractG(body, accId, op, zeroType).map { case (g, gIsLeft) => (op, g, gIsLeft) }
     }.headOption
 
-    val (op, g, gIsLeft) = matched.getOrElse {
+    val (op, g, _) = matched.getOrElse {
       return Left("merge body does not match (acc, x) -> op(acc, g(x)) for any registered " +
-        "op (" + allOps.map(_.name).mkString(", ") + ")")
+        "op (" + allOps.map(_.name).mkString(", ") + "); If / CaseWhen branches must each " +
+        "be op-of-acc with acc on a consistent side")
     }
 
     if (!op.supportsType(zeroType)) {
@@ -1157,7 +1196,127 @@ object ArrayAggregateDecomposer {
       }
     }
 
-    Right(ArrayAggregateDecomposition(op, gIsLeft, accId, elemVar))
+    Right(ArrayAggregateDecomposition(op, g, accId, elemVar))
+  }
+
+  /**
+   * Try to extract g from the merge body, given a candidate op. Returns
+   * `Some((g, gIsLeft))` on success — `gIsLeft` is internal bookkeeping used by
+   * `alignSides` to ensure all branches of an If/CaseWhen agree on which side acc lives;
+   * it is not exposed in the final Decomposition (the lifted g already encodes the
+   * answer structurally).
+   *
+   * Three accepted shapes:
+   *   1. body is `op(acc, g)` or `op(g, acc)`     — direct match.
+   *   2. body is `If(cond, t, f)` where each of `t`, `f` is itself accepted by this
+   *      function (recursively) with `acc` on the *same* side, and `cond` doesn't
+   *      reference `acc`. Lifted to `op(acc, If(cond, g_t, g_f))` (or the symmetric form
+   *      with acc on the left).
+   *   3. body is `CaseWhen(branches, Some(else))` — generalised If for N branches.
+   *
+   * Bare `acc` in a branch is treated as `op(acc, identityLiteral)` — that's how we
+   * support the `If(cond, acc + 1, acc)` form: the right branch is bare acc, replaced
+   * with `acc + 0`, then the whole If lifts out as `acc + If(cond, 1, 0)`.
+   */
+  private def extractG(
+      body: Expression,
+      accId: ExprId,
+      op: AggOp,
+      accType: DataType): Option[(Expression, Boolean)] = {
+    matchOpOfAcc(body, accId, op).orElse(extractFromBranching(body, accId, op, accType))
+  }
+
+  /** body matches op directly: returns `(g, gIsLeft)` if body is `op(acc, g)` / `op(g, acc)`. */
+  private def matchOpOfAcc(
+      e: Expression,
+      accId: ExprId,
+      op: AggOp): Option[(Expression, Boolean)] = {
+    op.matchBinary(e).flatMap { case (l, r) =>
+      if (isAccRef(l, accId) && !containsAccRef(r, accId)) Some((r, false))
+      else if (isAccRef(r, accId) && !containsAccRef(l, accId)) Some((l, true))
+      else None
+    }
+  }
+
+  /**
+   * Decompose a single If/CaseWhen branch. Either it's an op-of-acc form (returns the
+   * non-acc side and whether acc was on the left), or it's a bare acc-ref (returns the
+   * op's identity literal, gIsLeft=false — the placeholder side doesn't matter, we only
+   * need branches to agree on it later).
+   *
+   * Recursively delegates to `extractG` so nested If is handled.
+   */
+  private def extractBranch(
+      branch: Expression,
+      accId: ExprId,
+      op: AggOp,
+      accType: DataType): Option[(Expression, Boolean)] = {
+    if (isAccRef(branch, accId)) {
+      Some((op.identityLiteral(accType), /* gIsLeft = */ false))
+    } else {
+      extractG(branch, accId, op, accType)
+    }
+  }
+
+  private def extractFromBranching(
+      body: Expression,
+      accId: ExprId,
+      op: AggOp,
+      accType: DataType): Option[(Expression, Boolean)] = body match {
+    case If(cond, t, f) if !containsAccRef(cond, accId) =>
+      for {
+        (tG, tIsLeft) <- extractBranch(t, accId, op, accType)
+        (fG, fIsLeft) <- extractBranch(f, accId, op, accType)
+        // The "bare acc" case picks gIsLeft=false. If a branch is bare acc, accept either
+        // side from the other branch — we'll just rebuild to that side.
+        gIsLeft <- alignSides(t, f, tIsLeft, fIsLeft, accId)
+      } yield (If(cond, tG, fG), gIsLeft)
+
+    case CaseWhen(branches, Some(elseValue))
+        if branches.forall { case (c, _) => !containsAccRef(c, accId) } =>
+      // Decompose every (cond, val) branch + the else branch. All op-of-acc branches must
+      // agree on which side acc is on; bare-acc branches don't constrain.
+      val branchDecs = branches.map { case (c, v) => (c, extractBranch(v, accId, op, accType)) }
+      val elseDec = extractBranch(elseValue, accId, op, accType)
+      if (branchDecs.exists(_._2.isEmpty) || elseDec.isEmpty) {
+        None
+      } else {
+        val allBranchExprs: Seq[Expression] = branches.map(_._2) :+ elseValue
+        val allSides: Seq[Boolean] = branchDecs.map(_._2.get._2) :+ elseDec.get._2
+        val constrainedSides = allBranchExprs.zip(allSides).collect {
+          case (br, side) if !isAccRef(br, accId) => side
+        }
+        if (constrainedSides.distinct.size > 1) {
+          None
+        } else {
+          val gIsLeft = constrainedSides.headOption.getOrElse(false)
+          val gBranches = branchDecs.map { case (c, dec) => (c, dec.get._1) }
+          Some((CaseWhen(gBranches, Some(elseDec.get._1)), gIsLeft))
+        }
+      }
+
+    case _ => None
+  }
+
+  /**
+   * Reconcile the gIsLeft flags from two If branches. Bare-acc branches don't constrain
+   * (their identity placeholder is symmetric), so this is `agree if both constrained,
+   * else borrow from the constrained one`.
+   */
+  private def alignSides(
+      tBranch: Expression,
+      fBranch: Expression,
+      tIsLeft: Boolean,
+      fIsLeft: Boolean,
+      accId: ExprId): Option[Boolean] = {
+    val tBare = isAccRef(tBranch, accId)
+    val fBare = isAccRef(fBranch, accId)
+    (tBare, fBare) match {
+      case (true, true) => Some(false) // both bare acc — fold has no actual op to apply
+      case (true, false) => Some(fIsLeft)
+      case (false, true) => Some(tIsLeft)
+      case (false, false) => if (tIsLeft == fIsLeft) Some(tIsLeft) else None
+    }
   }
 
   private def isFinishIdentity(finish: Expression): Boolean = finish match {
@@ -1337,13 +1496,18 @@ class GpuArrayAggregateMeta(
 
     val argGpu = childExprs.head.convertToGpu()
     val zeroGpu = childExprs(1).convertToGpu()
-    // childExprs(2) is the merge lambda meta; its first child is the op body meta. The
-    // decomposer already recorded which side `g(x)` is on (gIsLeftOfMergeBody), so pick by
-    // index. Meta children mirror Catalyst children order, which is stable for every op
-    // matchBinary accepts (Add/Multiply/And/Or are commutative-shape, Greatest/Least take
-    // a Seq[Expression] in declaration order).
-    val bodyMeta = childExprs(2).childExprs.head
-    val gMeta = if (d.gIsLeftOfMergeBody) bodyMeta.childExprs.head else bodyMeta.childExprs(1)
+    // The lifted g may have a different shape from any sub-tree of the original merge body
+    // (If/CaseWhen branches get rewritten and identity literals get inserted), so we can't
+    // pick it out of childExprs(2)'s meta tree by index. Wrap g as a fresh ExprMeta and let
+    // spark-rapids tag/convert it. Sub-expressions inherited from the original body get
+    // re-tagged here, but tag is idempotent and they were already proven GPU-compatible
+    // when the parent ArrayAggregate was tagged.
+    val gMeta = GpuOverrides.wrapExpr(d.g, this.conf, Some(this))
+    gMeta.tagForGpu()
+    if (!gMeta.canThisBeReplaced) {
+      throw new IllegalStateException(
+        s"could not convert g sub-expression ${d.g} to GPU: ${gMeta.explain(all = false)}")
+    }
     val gGpu = gMeta.convertToGpu()
     val elemVarGpu = GpuNamedLambdaVariable(
       d.elemVar.name, d.elemVar.dataType, d.elemVar.nullable, d.elemVar.exprId)

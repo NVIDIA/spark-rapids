@@ -34,15 +34,6 @@ def test_tiered_project_with_complex_transform():
     assert_gpu_and_cpu_are_equal_collect(do_project, conf=confs)
 
 
-# --- ArrayAggregate tests ---
-#
-# The decomposer accepts lambdas of the form `(acc, x) -> op(acc, g(x))` with an identity
-# finish, where `op` is one of SUM/PRODUCT/MAX/MIN/ALL/ANY. Other shapes fall back to CPU.
-
-
-# Happy path for each supported numeric op. Product uses a narrow range to keep the test
-# output numerically tame (GPU and CPU both wrap consistently, but small numbers make the
-# test easier to read when debugging a failure).
 @pytest.mark.parametrize('lambda_sql, init_sql, gen_max', [
     ('(acc, x) -> acc + CAST(x as BIGINT)', '0L', 100),
     ('(acc, x) -> acc * CAST(x as BIGINT)', '1L', 3),
@@ -58,9 +49,6 @@ def test_array_aggregate_numeric_ops(lambda_sql, init_sql, gen_max):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# Same ops exercised on the native element type (no Cast in the lambda body), so the
-# identityScalar / combineWithZero paths for Int / Long are hit directly. Covers the
-# INCLUDE-policy null-element propagation for SUM on a nullable element type too.
 @pytest.mark.parametrize('gen, lambda_sql, init_sql', [
     (IntegerGen(min_val=-100, max_val=100), '(acc, x) -> acc + x', '0'),
     (LongGen(min_val=-100, max_val=100), '(acc, x) -> acc + x', '0L'),
@@ -77,10 +65,8 @@ def test_array_aggregate_native_integer_ops(gen, lambda_sql, init_sql):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# Happy path for the boolean ops. Elements must be non-null because cuDF's segmented ALL/
-# ANY with INCLUDE nulls don't match Spark's AND/OR 3VL for mixed null+bool (specifically,
-# `false AND null = false` short-circuit; `true OR null = true`). The tag-time guard falls
-# back to CPU when the element type is nullable, so here we use a non-nullable BooleanGen.
+# Elements are non-null because the tag-time guard falls back to CPU when the element type
+# is nullable.
 @pytest.mark.parametrize('lambda_sql, init_sql', [
     ('(acc, x) -> acc AND x', 'true'),
     ('(acc, x) -> acc OR x', 'false'),
@@ -94,8 +80,6 @@ def test_array_aggregate_boolean_ops(lambda_sql, init_sql):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# When array elements may contain nulls, ALL/ANY must fall back to CPU (cuDF's INCLUDE-
-# nulls semantics don't match Spark's AND/OR 3VL).
 @pytest.mark.parametrize('lambda_sql, init_sql', [
     ('(acc, x) -> acc AND x', 'true'),
     ('(acc, x) -> acc OR x', 'false'),
@@ -109,7 +93,6 @@ def test_array_aggregate_boolean_ops_nullable_elements_fallback(lambda_sql, init
         'ArrayAggregate')
 
 
-# Count-if pattern: aggregate(array, 0, (acc, x) -> acc + CASE WHEN ... THEN 1 ELSE 0 END).
 @disable_ansi_mode
 def test_array_aggregate_count_if_int():
     assert_gpu_and_cpu_are_equal_collect(
@@ -118,7 +101,29 @@ def test_array_aggregate_count_if_int():
             'aggregate(a, 0L, (acc, x) -> acc + CAST(CASE WHEN x IS NULL THEN 1 ELSE 0 END as BIGINT)) as null_cnt'))
 
 
-# Composed pattern: filter + aggregate with split / GetArrayItem / IN inside the lambda.
+# `if(cond, acc + t, acc)` shape — branches lifted via op identity. Same count-if
+# pattern as above but written naturally instead of using `CASE WHEN ... THEN 1 ELSE 0`.
+@disable_ansi_mode
+def test_array_aggregate_if_count():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(int_gen, max_length=15)).selectExpr(
+            'aggregate(a, 0L, (acc, x) -> if(x > 0, acc + 1L, acc)) as pos_cnt',
+            'aggregate(a, 0L, (acc, x) -> if(x is null, acc, acc + 1L)) as nonnull_cnt'))
+
+
+# CaseWhen with several acc+t branches and a bare-acc else.
+@disable_ansi_mode
+def test_array_aggregate_casewhen_multi_branch():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(int_gen, max_length=15)).selectExpr(
+            '''aggregate(a, 0L,
+                 (acc, x) -> CASE
+                   WHEN x > 100 THEN acc + 10L
+                   WHEN x > 0 THEN acc + 1L
+                   ELSE acc
+                 END) as weighted_cnt'''))
+
+
 @disable_ansi_mode
 def test_array_aggregate_with_filter_and_split():
     field_gen = StringGen('[a-z]{2}')
@@ -138,7 +143,6 @@ def test_array_aggregate_with_filter_and_split():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# Non-zero init: result should include the init.
 @disable_ansi_mode
 def test_array_aggregate_non_zero_init():
     assert_gpu_and_cpu_are_equal_collect(
@@ -146,7 +150,6 @@ def test_array_aggregate_non_zero_init():
             'aggregate(a, 100L, (acc, x) -> acc + CAST(x as BIGINT)) as sum_with_init'))
 
 
-# null array -> null, empty array -> finish(init) = init.
 @disable_ansi_mode
 def test_array_aggregate_null_array():
     assert_gpu_and_cpu_are_equal_collect(
@@ -164,7 +167,6 @@ def test_array_aggregate_empty_array():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# Lambda body references an outer attribute — exercises boundIntermediate plumbing.
 @disable_ansi_mode
 def test_array_aggregate_lambda_refs_outer_column():
     def do_it(spark):
@@ -173,7 +175,6 @@ def test_array_aggregate_lambda_refs_outer_column():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# zero is an outer column, not a literal.
 @disable_ansi_mode
 def test_array_aggregate_zero_is_outer_column():
     def do_it(spark):
@@ -182,7 +183,6 @@ def test_array_aggregate_zero_is_outer_column():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# array<struct>: accumulate over a struct field.
 @disable_ansi_mode
 def test_array_aggregate_over_struct_field():
     def do_it(spark):
@@ -192,7 +192,16 @@ def test_array_aggregate_over_struct_field():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# Deeper g body without acc references (x * 2 + 1).
+@disable_ansi_mode
+def test_array_aggregate_over_binary():
+    # GpuLength only accepts STRING, so we hex(binary) → string first to keep the
+    # whole lambda on the GPU. Result: 2 × byte count of each element, summed.
+    def do_it(spark):
+        return unary_op_df(spark, ArrayGen(BinaryGen(max_length=10), max_length=8)).selectExpr(
+            'aggregate(a, 0L, (acc, x) -> acc + CAST(length(hex(x)) as BIGINT)) as total_hex_len')
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
 @disable_ansi_mode
 def test_array_aggregate_deeper_g_body():
     assert_gpu_and_cpu_are_equal_collect(
@@ -200,7 +209,7 @@ def test_array_aggregate_deeper_g_body():
             'aggregate(a, 0L, (acc, x) -> acc + CAST(x * 2 + 1 as BIGINT)) as sum_poly'))
 
 
-# Long-overflow wrap-around matches between Spark SUM and cudf SUM in non-ANSI mode.
+# Long overflow wraps in non-ANSI mode on both Spark SUM and cuDF SUM.
 @disable_ansi_mode
 def test_array_aggregate_long_overflow_wraps():
     def do_it(spark):
@@ -210,8 +219,6 @@ def test_array_aggregate_long_overflow_wraps():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# Decimal SUM: zero must be widened to DECIMAL(38,2) (Spark's cap) with the element Cast to
-# match so that merge.dataType == zero.dataType (Spark's checkInputDataTypes).
 @disable_ansi_mode
 def test_array_aggregate_decimal_sum():
     decimal_gen = DecimalGen(precision=10, scale=2)
@@ -222,9 +229,6 @@ def test_array_aggregate_decimal_sum():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
-# Shapes the decomposer rejects must fall back to CPU. Covered: non-associative op
-# (Subtract, Divide), variadic op with wrong arity (Greatest with 3 children), and a lambda
-# whose g sub-expression references the accumulator.
 @pytest.mark.parametrize('lambda_sql, init_sql', [
     ('(acc, x) -> acc - CAST(x as BIGINT)', '0L'),
     ('(acc, x) -> CAST(acc / CAST(x + 1 as BIGINT) as BIGINT)', '1L'),
@@ -240,8 +244,6 @@ def test_array_aggregate_fallback_shapes(lambda_sql, init_sql):
         'ArrayAggregate')
 
 
-# Non-identity finish is kept as its own test because its SQL shape (4-arg aggregate with
-# a separate finish lambda) differs from the merge-only fallbacks above.
 @disable_ansi_mode
 @allow_non_gpu('ProjectExec')
 def test_array_aggregate_non_identity_finish_falls_back():
@@ -251,10 +253,6 @@ def test_array_aggregate_non_identity_finish_falls_back():
         'ArrayAggregate')
 
 
-# MAX / MIN on float/double arrays must fall back: cuDF's segmented max/min follow IEEE 754
-# where NaN is absorbed (`fmax(NaN, x) = x`), while Spark's `Greatest`/`Least` propagate NaN
-# via `Double.compare`. Rather than paper over this for now we restrict ExtremumOp to
-# integral types and fall back on float/double.
 @pytest.mark.parametrize('lambda_sql, init_sql', [
     ('(acc, x) -> greatest(acc, x)', 'CAST("-Infinity" as DOUBLE)'),
     ('(acc, x) -> least(acc, x)', 'CAST("Infinity" as DOUBLE)'),

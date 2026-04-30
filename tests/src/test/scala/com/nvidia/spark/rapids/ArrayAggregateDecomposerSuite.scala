@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.expressions.{Add, And, Cast, Divide, Expression,
-  Greatest, LambdaFunction, Least, Literal, Multiply, NamedExpression, NamedLambdaVariable,
-  Or, Subtract}
+import org.apache.spark.sql.catalyst.expressions.{Add, And, CaseWhen, Cast, Divide, EqualTo,
+  Expression, GreaterThan, Greatest, If, LambdaFunction, Least, Literal, Multiply,
+  NamedExpression, NamedLambdaVariable, Or, Subtract}
 import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, DoubleType, IntegerType,
   LongType}
 
@@ -48,15 +48,16 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
       acc: NamedLambdaVariable,
       x: NamedLambdaVariable,
       expectedOp: AggOp,
-      expectedGIsLeft: Boolean,
+      expectedG: Option[Expression] = None,
       zeroType: DataType = IntegerType,
       argType: Option[DataType] = None): ArrayAggregateDecomposition = {
     val d = decompose(merge(body, acc, x), identityFinish(acc),
       argType.getOrElse(arrTy(zeroType)), zeroType)
     val r = d.getOrElse(fail(s"expected decomposition for body=$body, got Left: $d"))
     assert(r.op == expectedOp)
-    assert(r.gIsLeftOfMergeBody == expectedGIsLeft,
-      s"expected gIsLeftOfMergeBody=$expectedGIsLeft, got ${r.gIsLeftOfMergeBody}")
+    expectedG.foreach { g =>
+      assert(r.g.fastEquals(g), s"expected g=$g, got ${r.g}")
+    }
     assert(r.accVarExprId == acc.exprId)
     assert(r.elemVar.exprId == x.exprId)
     r
@@ -75,56 +76,56 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
 
   test("Add(acc, x) -> SUM, g on the right") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Add(acc, x), acc, x, SumOp, expectedGIsLeft = false)
+    assertDecomposes(Add(acc, x), acc, x, SumOp)
   }
 
   test("Add(x, acc) (commuted) -> SUM, g on the left") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Add(x, acc), acc, x, SumOp, expectedGIsLeft = true)
+    assertDecomposes(Add(x, acc), acc, x, SumOp)
   }
 
   test("Multiply(acc, x) -> PRODUCT") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Multiply(acc, x), acc, x, ProductOp, expectedGIsLeft = false)
+    assertDecomposes(Multiply(acc, x), acc, x, ProductOp)
   }
 
   test("Greatest(acc, x) -> MAX") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Greatest(Seq(acc, x)), acc, x, MaxOp, expectedGIsLeft = false)
+    assertDecomposes(Greatest(Seq(acc, x)), acc, x, MaxOp)
   }
 
   test("Least(acc, x) -> MIN") {
     val acc = lv("acc"); val x = lv("x")
-    assertDecomposes(Least(Seq(acc, x)), acc, x, MinOp, expectedGIsLeft = false)
+    assertDecomposes(Least(Seq(acc, x)), acc, x, MinOp)
   }
 
   test("And(acc, x) -> ALL") {
     val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
-    assertDecomposes(And(acc, x), acc, x, AllOp, expectedGIsLeft = false,
+    assertDecomposes(And(acc, x), acc, x, AllOp,
       zeroType = BooleanType)
   }
 
   test("Or(acc, x) -> ANY") {
     val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
-    assertDecomposes(Or(acc, x), acc, x, AnyOp, expectedGIsLeft = false,
+    assertDecomposes(Or(acc, x), acc, x, AnyOp,
       zeroType = BooleanType)
   }
 
   test("Complex g(x) with no acc ref decomposes (g on the right)") {
     val acc = lv("acc", LongType); val x = lv("x", IntegerType)
     val g = Cast(Add(Multiply(x, Literal(2)), Literal(1)), LongType)
-    assertDecomposes(Add(acc, g), acc, x, SumOp, expectedGIsLeft = false, zeroType = LongType)
+    assertDecomposes(Add(acc, g), acc, x, SumOp, zeroType = LongType)
   }
 
   test("Cast wrapping the acc side is unwrapped (single layer)") {
     val acc = lv("acc", LongType); val x = lv("x", IntegerType)
-    assertDecomposes(Add(Cast(acc, IntegerType), x), acc, x, SumOp, expectedGIsLeft = false)
+    assertDecomposes(Add(Cast(acc, IntegerType), x), acc, x, SumOp)
   }
 
   test("Cast wrapping the acc side is unwrapped (chained)") {
     val acc = lv("acc"); val x = lv("x")
     val doubleCastAcc = Cast(Cast(acc, LongType), IntegerType)
-    assertDecomposes(Add(doubleCastAcc, x), acc, x, SumOp, expectedGIsLeft = false)
+    assertDecomposes(Add(doubleCastAcc, x), acc, x, SumOp)
   }
 
   test("Subtract is not an associative op we recognize") {
@@ -227,5 +228,87 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
       "g type mismatch should fall back",
       zeroType = LongType)
     assert(msg.contains("does not match"), s"expected type-mismatch error, got: $msg")
+  }
+
+  // If / CaseWhen normalize: branches that are op-of-acc (or bare acc treated as
+  // op(acc, identity)) get lifted out so cond-driven count-if patterns run on the GPU.
+
+  test("If(cond, acc + t, acc) decomposes to SUM (revans's pattern)") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = If(EqualTo(x, Literal(7)), Add(acc, Literal(1)), acc)
+    assertDecomposes(body, acc, x, SumOp)
+  }
+
+  test("If(cond, acc, acc + t) decomposes to SUM (commuted branches)") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = If(EqualTo(x, Literal(7)), acc, Add(acc, Literal(1)))
+    assertDecomposes(body, acc, x, SumOp)
+  }
+
+  test("If(cond, acc + t1, acc + t2) — both branches op-of-acc — decomposes") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = If(GreaterThan(x, Literal(0)), Add(acc, x), Add(acc, Literal(0)))
+    assertDecomposes(body, acc, x, SumOp)
+  }
+
+  test("If with MAX (greatest(acc, x)) on one branch and bare acc on the other") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = If(GreaterThan(x, Literal(0)), Greatest(Seq(acc, x)), acc)
+    assertDecomposes(body, acc, x, MaxOp)
+  }
+
+  test("If with And on boolean acc decomposes to ALL") {
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
+    val body = If(EqualTo(x, Literal(true)), And(acc, x), acc)
+    assertDecomposes(body, acc, x, AllOp,
+      zeroType = BooleanType)
+  }
+
+  test("CaseWhen with multiple acc+t branches and acc else decomposes") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = CaseWhen(
+      Seq(
+        (EqualTo(x, Literal(1)), Add(acc, Literal(10))),
+        (EqualTo(x, Literal(2)), Add(acc, Literal(20)))),
+      Some(acc))
+    assertDecomposes(body, acc, x, SumOp)
+  }
+
+  test("If condition references acc — rejected (g must not depend on acc)") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = If(GreaterThan(acc, Literal(100)), Add(acc, Literal(1)), acc)
+    assertRejects(merge(body, acc, x), identityFinish(acc),
+      "cond referencing acc breaks per-element parallelism")
+  }
+
+  test("If branches use different ops — rejected") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = If(GreaterThan(x, Literal(0)), Add(acc, Literal(1)), Multiply(acc, Literal(2)))
+    assertRejects(merge(body, acc, x), identityFinish(acc),
+      "branches mixing Add and Multiply have no single op to lift")
+  }
+
+  test("If branches put acc on different sides — rejected") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = If(GreaterThan(x, Literal(0)), Add(acc, x), Add(x, acc))
+    assertRejects(merge(body, acc, x), identityFinish(acc),
+      "branches with acc on different sides can't share a single lifted form")
+  }
+
+  test("CaseWhen without else — rejected") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = CaseWhen(
+      Seq((EqualTo(x, Literal(1)), Add(acc, Literal(10)))),
+      None)
+    assertRejects(merge(body, acc, x), identityFinish(acc),
+      "CaseWhen with no else has implicit null fallthrough we don't model")
+  }
+
+  test("Nested If is decomposed recursively") {
+    val acc = lv("acc"); val x = lv("x")
+    // if(c1, if(c2, acc + 1, acc + 2), acc)
+    val inner = If(GreaterThan(x, Literal(10)), Add(acc, Literal(1)), Add(acc, Literal(2)))
+    val outer = If(GreaterThan(x, Literal(0)), inner, acc)
+    assertDecomposes(outer, acc, x, SumOp)
   }
 }

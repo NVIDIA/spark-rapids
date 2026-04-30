@@ -2359,7 +2359,7 @@ are limited.
 <tr>
 <td rowSpan="5">ArrayAggregate</td>
 <td rowSpan="5">`aggregate`</td>
-<td rowSpan="5">Aggregate elements in an array using an accumulator function and finishing transformation. Currently only lambdas of the form (acc, x) -> acc + g(x) with an identity finish are executed on the GPU; other shapes fall back to CPU.</td>
+<td rowSpan="5">Aggregate elements in an array using an accumulator function and finishing transformation. Currently only lambdas of the form (acc, x) -> op(acc, g(x)) with an identity finish are executed on the GPU, where op is one of SUM/PRODUCT/MAX/MIN/ALL/ANY. If/CaseWhen branches are accepted as long as each branch is itself op-of-acc (or bare acc) with op consistent across branches; other shapes fall back to CPU.</td>
 <td rowSpan="5">None</td>
 <td rowSpan="5">project</td>
 <td>zero</td>
@@ -2469,7 +2469,7 @@ are limited.
 <td> </td>
 <td> </td>
 <td> </td>
-<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types BINARY, CALENDAR, ARRAY, MAP, UDT, DAYTIME, YEARMONTH</em></td>
+<td><em>PS<br/>UTC is only supported TZ for child TIMESTAMP;<br/>unsupported child types CALENDAR, ARRAY, MAP, UDT, DAYTIME, YEARMONTH</em></td>
 <td> </td>
 <td> </td>
 <td> </td>

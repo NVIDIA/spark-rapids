@@ -2964,15 +2964,18 @@ object GpuOverrides extends Logging {
       }),
     expr[ArrayAggregate](
       "Aggregate elements in an array using an accumulator function and finishing " +
-          "transformation. Currently only lambdas of the form (acc, x) -> acc + g(x) with an " +
-          "identity finish are executed on the GPU; other shapes fall back to CPU.",
+          "transformation. Currently only lambdas of the form (acc, x) -> op(acc, g(x)) with " +
+          "an identity finish are executed on the GPU, where op is one of SUM/PRODUCT/MAX/" +
+          "MIN/ALL/ANY. If/CaseWhen branches are accepted as long as each branch is itself " +
+          "op-of-acc (or bare acc) with op consistent across branches; other shapes fall " +
+          "back to CPU.",
       ExprChecks.projectOnly(
         TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
         TypeSig.all,
         Seq(
           ParamCheck("argument",
             TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-                TypeSig.STRUCT),
+                TypeSig.BINARY + TypeSig.STRUCT),
             TypeSig.ARRAY.nested(TypeSig.all)),
           ParamCheck("zero",
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
