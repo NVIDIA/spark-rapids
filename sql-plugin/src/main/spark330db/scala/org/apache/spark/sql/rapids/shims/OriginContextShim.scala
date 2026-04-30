@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,25 +15,19 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "330"}
 {"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
-{"spark": "334"}
+{"spark": "332db"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.types.DataType
-import org.apache.spark.unsafe.types.UTF8String
+import org.apache.spark.sql.catalyst.trees.{Origin, SQLQueryContext}
 
-object GpuCastToNumberErrorShim {
-
-  def invalidInputInCastToNumberError(
-      to: DataType,
-      s: UTF8String,
-      errorContext: String = ""): NumberFormatException = {
-    QueryExecutionErrors.invalidInputInCastToNumberError(to, s, errorContext)
+// Databricks 3.3.x back-ported SPARK-39175 and typed `Origin.context` as
+// `SQLQueryContext` directly — same shape as Apache 3.4+.
+object OriginContextShim {
+  def queryContext(origin: Origin): SQLQueryContext = origin.context
+  def contextSummary(origin: Origin): String = origin.context match {
+    case null => ""
+    case ctx => ctx.summary
   }
 }

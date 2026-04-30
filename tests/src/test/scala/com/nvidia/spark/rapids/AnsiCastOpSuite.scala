@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -415,23 +415,27 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.DoubleType)(frame)
   }
 
+  // Str->float/double cast errors now flow through GpuCastToNumberErrorShim,
+  // which produces the Spark-native CAST_INVALID_INPUT ANSI error. Match on a
+  // fragment that is stable across Spark 3.3+ (3.3 omits the bracketed error
+  // class prefix that 3.5+ includes).
   testCastFailsForBadInputs("Test bad cast 1 from strings to floats", invalidFloatStringsDf,
-      msg = INVALID_ROW_VALUE_MSG) {
+      msg = "because it is malformed") {
     frame =>frame.select(col("c0").cast(FloatType))
   }
 
   testCastFailsForBadInputs("Test bad cast 2 from strings to floats", invalidFloatStringsDf,
-      msg = INVALID_ROW_VALUE_MSG) {
+      msg = "because it is malformed") {
     frame =>frame.select(col("c1").cast(FloatType))
   }
 
   testCastFailsForBadInputs("Test bad cast 1 from strings to double", invalidFloatStringsDf,
-      msg = INVALID_ROW_VALUE_MSG) {
+      msg = "because it is malformed") {
     frame =>frame.select(col("c0").cast(DoubleType))
   }
 
   testCastFailsForBadInputs("Test bad cast 2 from strings to double", invalidFloatStringsDf,
-      msg = INVALID_ROW_VALUE_MSG) {
+      msg = "because it is malformed") {
     frame =>frame.select(col("c1").cast(DoubleType))
   }
 
@@ -502,7 +506,7 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     val schema = FuzzerUtils.createSchema(Seq(dataType))
     val childExpr: GpuBoundReference =
       GpuBoundReference(0, dataType, nullable = false)(NamedExpression.newExprId, "arg")
-    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType, ansiMode = true),
+    checkEvaluateGpuUnaryExpression(GpuCast(childExpr, DataTypes.StringType, ansiMode = true)(),
       dataType,
       DataTypes.StringType,
       expectedFun = castToStringExpectedFun[T],

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -91,6 +91,13 @@ object RapidsErrorUtils extends RapidsQueryErrorUtils
   }
 
   def invalidInputSyntaxForBooleanError(s: UTF8String): RuntimeException = {
+    QueryExecutionErrors.invalidInputSyntaxForBooleanError(s)
+  }
+
+  def invalidInputSyntaxForBooleanError(
+      s: UTF8String,
+      errorContext: String): RuntimeException = {
+    // Spark 3.2.x has no error-context overload; drop it.
     QueryExecutionErrors.invalidInputSyntaxForBooleanError(s)
   }
 }
