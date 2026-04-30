@@ -33,7 +33,6 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
 import scala.annotation.tailrec
-import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ColumnVector, NvtxColor, Scalar}
@@ -41,10 +40,8 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{ShimExpression, ShimUnaryExecNode}
 
-import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
@@ -222,44 +219,13 @@ class GpuMergeBatchIterator(
     numOutputBatches: GpuMetric,
     opTime: GpuMetric) extends Iterator[ColumnarBatch] {
 
-  // Queue yields O(1) dequeue vs ArrayBuffer.remove(0) O(n); size is typically small
-  // (one entry per instruction per input batch) but using Queue makes the intent clear.
-  private val pendingOutputs = new mutable.Queue[SpillableColumnarBatch]()
-
-  Option(TaskContext.get()).foreach { tc =>
-    onTaskCompletion(tc) {
-      pendingOutputs.foreach(_.close())
-      pendingOutputs.clear()
-    }
-  }
-
-  // hasNext must drain the input until a non-empty batch is produced so that it faithfully
-  // predicts next(). Because processBatch can produce only zero-row outputs (which we drop to
-  // avoid inflating numOutputBatches and pushing empty batches downstream), a plain
-  // `inputIter.hasNext` check is not enough -- downstream operators could see hasNext=true but
-  // next() would throw when every remaining input batch filtered to zero rows.
-  override def hasNext: Boolean = {
-    while (pendingOutputs.isEmpty && inputIter.hasNext) {
-      val batch = inputIter.next()
-      withResource(new NvtxWithMetrics("GpuMergeBatchIterator", NvtxColor.CYAN, opTime)) { _ =>
-        processBatch(batch).foreach { spillable =>
-          if (spillable.numRows() > 0) {
-            pendingOutputs.enqueue(spillable)
-          } else {
-            spillable.close()
-          }
-        }
-      }
-    }
-    pendingOutputs.nonEmpty
-  }
+  override def hasNext: Boolean = inputIter.hasNext
 
   override def next(): ColumnarBatch = {
-    if (!hasNext) {
-      throw new NoSuchElementException("next on empty GpuMergeBatchIterator")
-    }
-    withResource(pendingOutputs.dequeue()) { spillable =>
-      val result = spillable.getColumnarBatch()
+
+    val batch = inputIter.next()
+    withResource(new NvtxWithMetrics("GpuMergeBatchIterator", NvtxColor.CYAN, opTime)) { _ =>
+      val result = processBatch(batch)
       numOutputBatches += 1
       numOutputRows += result.numRows()
       result
@@ -269,7 +235,8 @@ class GpuMergeBatchIterator(
   /**
    * Process a single columnar batch, applying merge logic.
    */
-  private def processBatch(batch: ColumnarBatch): Seq[SpillableColumnarBatch] = {
+  private def processBatch(batch: ColumnarBatch): ColumnarBatch = {
+
     withRetryNoSplit(batch) { _ =>
       // Evaluate presence flags
       val outputs = new ArrayBuffer[SpillableColumnarBatch](
@@ -302,7 +269,13 @@ class GpuMergeBatchIterator(
           }
         }
       }
-      outputs.toSeq
+      // TODO: There is a small chance that the output batch is much larger input batch,
+      //  e.g. all cases need to update split, which leads to a result batch whose row
+      //  count is twice of input batch. We need to handle this case by splitting the outputs
+      // https://github.com/NVIDIA/spark-rapids/issues/13712
+      withResource(GpuBatchUtils.concatSpillBatchesAndClose(outputs.toSeq)) { spillable =>
+        spillable.get.getColumnarBatch()
+      }
     }
   }
 
