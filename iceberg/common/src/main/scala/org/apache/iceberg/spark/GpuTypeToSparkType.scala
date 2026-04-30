@@ -47,7 +47,24 @@ object GpuTypeToSparkType {
     builder.build()
   }
 
-  private def nestedMetadataJson(fieldType: org.apache.iceberg.types.Type): Option[String] = {
+  /**
+   * Recursively encode the Iceberg field ids inside a nested type as a JSON-serialized
+   * Spark Metadata.
+   *
+   * Spark `StructField` metadata only attaches to top-level fields, so for a list/map column
+   * the parent's metadata carries the element/key/value ids under the
+   * `LIST_ELEMENT_FIELD_ID_METADATA_KEY` / `MAP_KEY_FIELD_ID_METADATA_KEY` /
+   * `MAP_VALUE_FIELD_ID_METADATA_KEY` keys. When those nested elements are themselves
+   * containers, their child ids are not addressable from the parent's flat key namespace, so
+   * we serialize them as a sub-Metadata under the matching `_NESTED_IDS_METADATA_KEY`.
+   * `SchemaUtils.writerOptionsFromField` reads these keys back when wiring cuDF
+   * `ColumnWriterOptions`, so the field id round-trip is end-to-end.
+   *
+   * Returns `None` when there are no nested ids to record (i.e. an empty Metadata serializes
+   * to `"{}"`), so callers can avoid attaching an empty string.
+   */
+  private[spark] def nestedMetadataJson(
+      fieldType: org.apache.iceberg.types.Type): Option[String] = {
     val builder = new MetadataBuilder()
     appendNestedFieldIdMetadata(builder, fieldType)
     val json = builder.build().json
@@ -58,7 +75,13 @@ object GpuTypeToSparkType {
     }
   }
 
-  private def appendNestedFieldIdMetadata(
+  /**
+   * Populate `builder` with the nested Iceberg field ids of `fieldType`. Non-container types
+   * are no-ops because their field id is already attached to the enclosing `StructField`.
+   * For containers, each immediate child's id is written under a flat key, and any further
+   * nested ids are recursed into via `nestedMetadataJson` and stored as a JSON sub-Metadata.
+   */
+  private[spark] def appendNestedFieldIdMetadata(
       builder: MetadataBuilder,
       fieldType: org.apache.iceberg.types.Type): Unit = {
     fieldType match {
