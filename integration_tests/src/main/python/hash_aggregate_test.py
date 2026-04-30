@@ -2554,8 +2554,7 @@ def test_no_fallback_when_ansi_enabled(data_gen, kudo_enabled):
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 @pytest.mark.parametrize("kudo_enabled", ["true", "false"], ids=idfn)
 def test_std_variance(data_gen, conf, kudo_enabled):
-    if (data_gen is _std_variance_issue_14681_gen and
-            (conf is _float_smallbatch_conf or conf is _float_conf_skipagg)):
+    if data_gen is _std_variance_issue_14681_gen:
         pytest.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/14681')
 
     local_conf = copy_and_update(conf, {
