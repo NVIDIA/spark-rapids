@@ -26,9 +26,9 @@ import com.nvidia.spark.rapids.jni.GpuMapZipWithUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCoercion
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
+import org.apache.spark.sql.catalyst.expressions.{Add, And, ArrayAggregate, Attribute, AttributeReference, AttributeSeq, CaseWhen, Cast, Expression, ExprId, Greatest, If, LambdaFunction, Least, Literal, Multiply, NamedExpression, NamedLambdaVariable, Or}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, MapType, Metadata, StructField, StructType}
+import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, DataType, Decimal, DecimalType, DoubleType, FloatType, IntegerType, LongType, MapType, Metadata, NumericType, ShortType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -213,6 +213,12 @@ trait GpuSimpleHigherOrderFunction extends GpuHigherOrderFunction with GpuBind {
 }
 
 
+/**
+ * Common explode + lambda projection plumbing for higher-order functions over arrays.
+ * Subclasses choose how to consume the lambda's per-element result by either extending
+ * GpuArrayElementWiseTransform (one row in -> one row out via transformListColumnView) or
+ * implementing columnarEval themselves (e.g. segmented reductions like GpuArrayAggregate).
+ */
 trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
   def isBound: Boolean
   def boundIntermediate: Seq[GpuExpression]
@@ -222,7 +228,7 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
     boundIntermediate.map(_.dataType) ++ lambdaFunction.arguments.map(_.dataType)
   }
 
-  private[this] def makeElementProjectBatch(
+  protected def makeElementProjectBatch(
       inputBatch: ColumnarBatch,
       argColumn: GpuColumnVector): ColumnarBatch = {
     assert(argColumn.getBase.getType.equals(DType.LIST))
@@ -275,6 +281,14 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
     }
   }
 
+}
+
+/**
+ * Specialization for HOFs that produce one output row per input row by post-processing the
+ * lambda's elementwise result. Subclasses implement transformListColumnView and inherit the
+ * standard columnarEval that drives the explode -> lambda eval -> rewrap chain.
+ */
+trait GpuArrayElementWiseTransform extends GpuArrayTransformBase {
   /*
    * Post-process the column view of the array after applying the function parameter.
    * @param lambdaTransformedCV the results of the lambda expression running
@@ -303,7 +317,7 @@ case class GpuArrayTransform(
   argument: Expression,
   function: Expression,
   isBound: Boolean = false,
-  boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayTransformBase {
+  boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayElementWiseTransform {
 
   override def dataType: ArrayType = ArrayType(function.dataType, function.nullable)
 
@@ -326,7 +340,7 @@ case class GpuArrayExists(
     function: Expression,
     followThreeValuedLogic: Boolean,
     isBound: Boolean = false,
-    boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayTransformBase {
+    boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayElementWiseTransform {
 
   override def dataType: DataType = BooleanType
 
@@ -424,7 +438,7 @@ case class GpuArrayFilter(
     argument: Expression,
     function: Expression,
     isBound: Boolean = false,
-    boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayTransformBase {
+    boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayElementWiseTransform {
 
   override def dataType: DataType = argument.dataType
 
@@ -893,5 +907,612 @@ case class GpuMapFilter(argument: Expression,
         }
       }
     }
+  }
+}
+
+
+// Registered segmented reductions used by GpuArrayAggregate. To add a new op: define the
+// case object, wire matchBinary to its Catalyst shape, and append it to
+// ArrayAggregateDecomposer.allOps.
+
+sealed trait AggOp {
+  def name: String
+  def cudfAgg: cudf.SegmentedReductionAggregation
+  def nullPolicy: cudf.NullPolicy
+  /** Identity scalar typed to match `t` so ifElse / binaryOp don't hit width mismatch. */
+  def identityScalar(t: DataType): cudf.Scalar
+  /**
+   * Catalyst-side identity, used by the decomposer to plug into `If`/`CaseWhen` branches
+   * that are bare `acc` (treated as `op(acc, identity)` so the branch can be lifted out).
+   * Must satisfy `op(acc, identityLiteral(t)) == acc` for any acc of type `t`.
+   */
+  def identityLiteral(t: DataType): Literal
+  /**
+   * `reduced OP zero`, typed to outDType, with Spark-matching null propagation. `zero` is
+   * a `BinaryOperable` so callers can pass either a `cudf.Scalar` (when the Spark-side
+   * `zero` is a Literal — saves one full-row column allocation per batch) or a `ColumnView`
+   * (when `zero` references an outer column).
+   */
+  def combineWithZero(
+      reduced: cudf.ColumnVector,
+      zero: cudf.BinaryOperable,
+      outDType: DType): cudf.ColumnVector
+  /** Return (left, right) if the body is this op's Catalyst shape. */
+  def matchBinary(body: Expression): Option[(Expression, Expression)]
+  def supportsType(sparkType: DataType): Boolean
+}
+
+case object SumOp extends AggOp {
+  val name = "SUM"
+  def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.sum()
+  // INCLUDE: Spark iteratively computes `acc + x` and null poisons the accumulator, so
+  // one null element anywhere in the list yields null.
+  val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
+  def identityScalar(t: DataType): cudf.Scalar = t match {
+    case ByteType => cudf.Scalar.fromByte(0.toByte)
+    case ShortType => cudf.Scalar.fromShort(0.toShort)
+    case IntegerType => cudf.Scalar.fromInt(0)
+    case LongType => cudf.Scalar.fromLong(0L)
+    case FloatType => cudf.Scalar.fromFloat(0.0f)
+    case DoubleType => cudf.Scalar.fromDouble(0.0)
+    case d: DecimalType => GpuScalar.from(0, d)
+    case other => throw new IllegalStateException(s"SUM identity not defined for $other")
+  }
+  // Each arm builds the value at exactly the right Scala type so Spark's Literal
+  // type-compatibility check (validateLiteralValue) doesn't reject e.g. Int into LongType.
+  def identityLiteral(t: DataType): Literal = t match {
+    case ByteType => Literal(0.toByte, ByteType)
+    case ShortType => Literal(0.toShort, ShortType)
+    case IntegerType => Literal(0, IntegerType)
+    case LongType => Literal(0L, LongType)
+    case FloatType => Literal(0.0f, FloatType)
+    case DoubleType => Literal(0.0, DoubleType)
+    case d: DecimalType => Literal(Decimal(0L, d.precision, d.scale), d)
+    case other => throw new IllegalStateException(s"SUM identity literal not defined for $other")
+  }
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.add(z, out)
+  def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
+    case a: Add => Some((a.left, a.right))
+    case _ => None
+  }
+  def supportsType(t: DataType): Boolean = t.isInstanceOf[NumericType]
+}
+
+case object ProductOp extends AggOp {
+  val name = "PRODUCT"
+  def cudfAgg: cudf.SegmentedReductionAggregation =
+    cudf.SegmentedReductionAggregation.product()
+  val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
+  def identityScalar(t: DataType): cudf.Scalar = t match {
+    case ByteType => cudf.Scalar.fromByte(1.toByte)
+    case ShortType => cudf.Scalar.fromShort(1.toShort)
+    case IntegerType => cudf.Scalar.fromInt(1)
+    case LongType => cudf.Scalar.fromLong(1L)
+    case FloatType => cudf.Scalar.fromFloat(1.0f)
+    case DoubleType => cudf.Scalar.fromDouble(1.0)
+    case other => throw new IllegalStateException(s"PRODUCT identity not defined for $other")
+  }
+  def identityLiteral(t: DataType): Literal = t match {
+    case ByteType => Literal(1.toByte, ByteType)
+    case ShortType => Literal(1.toShort, ShortType)
+    case IntegerType => Literal(1, IntegerType)
+    case LongType => Literal(1L, LongType)
+    case FloatType => Literal(1.0f, FloatType)
+    case DoubleType => Literal(1.0, DoubleType)
+    case other => throw new IllegalStateException(
+      s"PRODUCT identity literal not defined for $other")
+  }
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.mul(z, out)
+  def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
+    case m: Multiply => Some((m.left, m.right))
+    case _ => None
+  }
+  // Decimal would need DecimalUtils.multiplyDecimals for overflow handling — exclude for now.
+  def supportsType(t: DataType): Boolean = t match {
+    case _: NumericType => !t.isInstanceOf[DecimalType]
+    case _ => false
+  }
+}
+
+/**
+ * MaxOp / MinOp share EXCLUDE null policy: Spark's Greatest / Least skip null operands.
+ * combineWithZero uses cuDF's NULL_MAX / NULL_MIN (the same primitive GpuGreatest/GpuLeast
+ * use), which returns the non-null operand when one side is null — exactly Spark's
+ * behavior on integral types.
+ *
+ * Float / Double are unsupported: cuDF's segmented `max` / `min` follow IEEE 754, where
+ * `fmax(NaN, x) = x` (NaN is absorbed). Spark's `Greatest` / `Least` use `Double.compare`,
+ * which treats NaN as larger than every other value and propagates it. Until we add an
+ * explicit NaN-propagation step, restrict to integral types.
+ */
+sealed trait ExtremumOp extends AggOp {
+  val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.EXCLUDE
+  def binaryOp: cudf.BinaryOp
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType)
+      : cudf.ColumnVector = r.binaryOp(binaryOp, z, out)
+  def supportsType(t: DataType): Boolean = t match {
+    case ByteType | ShortType | IntegerType | LongType => true
+    case _ => false
+  }
+}
+
+case object MaxOp extends ExtremumOp {
+  val name = "MAX"
+  def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.max()
+  val binaryOp: cudf.BinaryOp = cudf.BinaryOp.NULL_MAX
+  def identityScalar(t: DataType): cudf.Scalar = t match {
+    case ByteType => cudf.Scalar.fromByte(Byte.MinValue)
+    case ShortType => cudf.Scalar.fromShort(Short.MinValue)
+    case IntegerType => cudf.Scalar.fromInt(Int.MinValue)
+    case LongType => cudf.Scalar.fromLong(Long.MinValue)
+    case other => throw new IllegalStateException(s"MAX identity not defined for $other")
+  }
+  def identityLiteral(t: DataType): Literal = t match {
+    case ByteType => Literal(Byte.MinValue, ByteType)
+    case ShortType => Literal(Short.MinValue, ShortType)
+    case IntegerType => Literal(Int.MinValue, IntegerType)
+    case LongType => Literal(Long.MinValue, LongType)
+    case other => throw new IllegalStateException(s"MAX identity literal not defined for $other")
+  }
+  def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
+    case g: Greatest if g.children.size == 2 => Some((g.children.head, g.children(1)))
+    case _ => None
+  }
+}
+
+case object MinOp extends ExtremumOp {
+  val name = "MIN"
+  def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.min()
+  val binaryOp: cudf.BinaryOp = cudf.BinaryOp.NULL_MIN
+  def identityScalar(t: DataType): cudf.Scalar = t match {
+    case ByteType => cudf.Scalar.fromByte(Byte.MaxValue)
+    case ShortType => cudf.Scalar.fromShort(Short.MaxValue)
+    case IntegerType => cudf.Scalar.fromInt(Int.MaxValue)
+    case LongType => cudf.Scalar.fromLong(Long.MaxValue)
+    case other => throw new IllegalStateException(s"MIN identity not defined for $other")
+  }
+  def identityLiteral(t: DataType): Literal = t match {
+    case ByteType => Literal(Byte.MaxValue, ByteType)
+    case ShortType => Literal(Short.MaxValue, ShortType)
+    case IntegerType => Literal(Int.MaxValue, IntegerType)
+    case LongType => Literal(Long.MaxValue, LongType)
+    case other => throw new IllegalStateException(s"MIN identity literal not defined for $other")
+  }
+  def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
+    case l: Least if l.children.size == 2 => Some((l.children.head, l.children(1)))
+    case _ => None
+  }
+}
+
+case object AllOp extends AggOp {
+  val name = "ALL"
+  def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.all()
+  // INCLUDE: matches Spark's 3VL for AND (null AND true = null, null AND false = false).
+  val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
+  def identityScalar(t: DataType): cudf.Scalar = cudf.Scalar.fromBool(true)
+  def identityLiteral(t: DataType): Literal = Literal(true, BooleanType)
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.and(z, out)
+  def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
+    case a: And => Some((a.left, a.right))
+    case _ => None
+  }
+  def supportsType(t: DataType): Boolean = t == BooleanType
+}
+
+case object AnyOp extends AggOp {
+  val name = "ANY"
+  def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.any()
+  val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
+  def identityScalar(t: DataType): cudf.Scalar = cudf.Scalar.fromBool(false)
+  def identityLiteral(t: DataType): Literal = Literal(false, BooleanType)
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.or(z, out)
+  def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
+    case o: Or => Some((o.left, o.right))
+    case _ => None
+  }
+  def supportsType(t: DataType): Boolean = t == BooleanType
+}
+
+
+/**
+ * Result of successfully matching a Spark ArrayAggregate's merge lambda against a
+ * registered AggOp.
+ *
+ * @param op             the chosen aggregation operator
+ * @param g              the lifted Catalyst sub-expression for `g(x)`. For a plain
+ *                       `op(acc, g(x))` body this is the body's non-acc child; for an
+ *                       `If` / `CaseWhen` body it is rebuilt with bare-acc branches
+ *                       replaced by `op.identityLiteral` so it never references acc
+ * @param accVarExprId   the accumulator NamedLambdaVariable's exprId
+ * @param elemVar        the element NamedLambdaVariable (used to build the g lambda)
+ */
+case class ArrayAggregateDecomposition(
+    op: AggOp,
+    g: Expression,
+    accVarExprId: ExprId,
+    elemVar: NamedLambdaVariable)
+
+
+/**
+ * Decomposes a Spark ArrayAggregate's merge lambda of shape `(acc, x) -> op(acc, g(x))`
+ * where `op` is one of the registered AggOps and the finish lambda is identity.
+ *
+ * decompose owns every reason ArrayAggregate cannot run on the GPU — shape, type, and
+ * nullability — so the meta layer is just a single Either match.
+ */
+object ArrayAggregateDecomposer {
+
+  /** All ops the decomposer will try, in order. */
+  val allOps: Seq[AggOp] = Seq(SumOp, ProductOp, MaxOp, MinOp, AllOp, AnyOp)
+
+  def decompose(
+      merge: Expression,
+      finish: Expression,
+      argType: DataType,
+      zeroType: DataType): Either[String, ArrayAggregateDecomposition] = {
+    val mergeLambda = merge match {
+      case lf: LambdaFunction => lf
+      case _ => return Left("merge expression is not a LambdaFunction")
+    }
+    val (accVar, elemVar) = mergeLambda.arguments match {
+      case Seq(a: NamedLambdaVariable, e: NamedLambdaVariable) => (a, e)
+      case _ => return Left("merge lambda must take exactly 2 NamedLambdaVariable arguments")
+    }
+    if (!isFinishIdentity(finish)) {
+      return Left("finish lambda is not an identity (only `acc -> acc` is supported)")
+    }
+
+    val body = mergeLambda.function
+    val accId = accVar.exprId
+    val matched = allOps.view.flatMap { op =>
+      extractG(body, accId, op, zeroType).map { case (g, gIsLeft) => (op, g, gIsLeft) }
+    }.headOption
+
+    val (op, g, _) = matched.getOrElse {
+      return Left("merge body does not match (acc, x) -> op(acc, g(x)) for any registered " +
+        "op (" + allOps.map(_.name).mkString(", ") + "); If / CaseWhen branches must each " +
+        "be op-of-acc with acc on a consistent side")
+    }
+
+    if (!op.supportsType(zeroType)) {
+      return Left(s"${op.name} is not supported on GPU for type $zeroType")
+    }
+    // g's output type must equal the accumulator/zero type so the segmented reduce output
+    // matches the Spark-expected result type directly.
+    if (!DataType.equalsStructurally(g.dataType, zeroType, ignoreNullability = true)) {
+      return Left(s"g(x) output type (${g.dataType}) does not match accumulator/zero type " +
+        s"($zeroType)")
+    }
+    // cuDF's segmented ALL/ANY with INCLUDE nulls doesn't match Spark's AND/OR 3VL
+    // (specifically: `false AND null = false` short-circuit, or `true OR null = true`, are
+    // both missed by cuDF which returns null whenever any null is present). Fall back to
+    // CPU when the input array can contain nulls.
+    if (op == AllOp || op == AnyOp) {
+      argType match {
+        case ArrayType(_, true) =>
+          return Left(s"${op.name} is not supported on GPU for arrays that may contain " +
+            "nulls; cuDF's INCLUDE-nulls semantics don't match Spark's AND/OR 3VL")
+        case _ =>
+      }
+    }
+
+    Right(ArrayAggregateDecomposition(op, g, accId, elemVar))
+  }
+
+  /**
+   * Try to extract g from the merge body, given a candidate op. Returns
+   * `Some((g, gIsLeft))` on success — `gIsLeft` is internal bookkeeping used by
+   * `alignSides` to ensure all branches of an If/CaseWhen agree on which side acc lives;
+   * it is not exposed in the final Decomposition (the lifted g already encodes the
+   * answer structurally).
+   *
+   * Three accepted shapes:
+   *   1. body is `op(acc, g)` or `op(g, acc)`     — direct match.
+   *   2. body is `If(cond, t, f)` where each of `t`, `f` is itself accepted by this
+   *      function (recursively) with `acc` on the *same* side, and `cond` doesn't
+   *      reference `acc`. Lifted to `op(acc, If(cond, g_t, g_f))` (or the symmetric form
+   *      with acc on the left).
+   *   3. body is `CaseWhen(branches, Some(else))` — generalised If for N branches.
+   *
+   * Bare `acc` in a branch is treated as `op(acc, identityLiteral)` — that's how we
+   * support the `If(cond, acc + 1, acc)` form: the right branch is bare acc, replaced
+   * with `acc + 0`, then the whole If lifts out as `acc + If(cond, 1, 0)`.
+   */
+  private def extractG(
+      body: Expression,
+      accId: ExprId,
+      op: AggOp,
+      accType: DataType): Option[(Expression, Boolean)] = {
+    matchOpOfAcc(body, accId, op).orElse(extractFromBranching(body, accId, op, accType))
+  }
+
+  /** body matches op directly: returns `(g, gIsLeft)` if body is `op(acc, g)` / `op(g, acc)`. */
+  private def matchOpOfAcc(
+      e: Expression,
+      accId: ExprId,
+      op: AggOp): Option[(Expression, Boolean)] = {
+    op.matchBinary(e).flatMap { case (l, r) =>
+      if (isAccRef(l, accId) && !containsAccRef(r, accId)) Some((r, false))
+      else if (isAccRef(r, accId) && !containsAccRef(l, accId)) Some((l, true))
+      else None
+    }
+  }
+
+  /**
+   * Decompose a single If/CaseWhen branch. Either it's an op-of-acc form (returns the
+   * non-acc side and whether acc was on the left), or it's a bare acc-ref (returns the
+   * op's identity literal, gIsLeft=false — the placeholder side doesn't matter, we only
+   * need branches to agree on it later).
+   *
+   * Recursively delegates to `extractG` so nested If is handled.
+   */
+  private def extractBranch(
+      branch: Expression,
+      accId: ExprId,
+      op: AggOp,
+      accType: DataType): Option[(Expression, Boolean)] = {
+    if (isAccRef(branch, accId)) {
+      Some((op.identityLiteral(accType), /* gIsLeft = */ false))
+    } else {
+      extractG(branch, accId, op, accType)
+    }
+  }
+
+  private def extractFromBranching(
+      body: Expression,
+      accId: ExprId,
+      op: AggOp,
+      accType: DataType): Option[(Expression, Boolean)] = body match {
+    case If(cond, t, f) if !containsAccRef(cond, accId) =>
+      for {
+        (tG, tIsLeft) <- extractBranch(t, accId, op, accType)
+        (fG, fIsLeft) <- extractBranch(f, accId, op, accType)
+        // The "bare acc" case picks gIsLeft=false. If a branch is bare acc, accept either
+        // side from the other branch — we'll just rebuild to that side.
+        gIsLeft <- alignSides(t, f, tIsLeft, fIsLeft, accId)
+      } yield (If(cond, tG, fG), gIsLeft)
+
+    case CaseWhen(branches, Some(elseValue))
+        if branches.forall { case (c, _) => !containsAccRef(c, accId) } =>
+      // Decompose every (cond, val) branch + the else branch. All op-of-acc branches must
+      // agree on which side acc is on; bare-acc branches don't constrain.
+      val branchDecs = branches.map { case (c, v) => (c, extractBranch(v, accId, op, accType)) }
+      val elseDec = extractBranch(elseValue, accId, op, accType)
+      if (branchDecs.exists(_._2.isEmpty) || elseDec.isEmpty) {
+        None
+      } else {
+        val allBranchExprs: Seq[Expression] = branches.map(_._2) :+ elseValue
+        val allSides: Seq[Boolean] = branchDecs.map(_._2.get._2) :+ elseDec.get._2
+        val constrainedSides = allBranchExprs.zip(allSides).collect {
+          case (br, side) if !isAccRef(br, accId) => side
+        }
+        if (constrainedSides.distinct.size > 1) {
+          None
+        } else {
+          val gIsLeft = constrainedSides.headOption.getOrElse(false)
+          val gBranches = branchDecs.map { case (c, dec) => (c, dec.get._1) }
+          Some((CaseWhen(gBranches, Some(elseDec.get._1)), gIsLeft))
+        }
+      }
+
+    case _ => None
+  }
+
+  /**
+   * Reconcile the gIsLeft flags from two If branches. Bare-acc branches don't constrain
+   * (their identity placeholder is symmetric), so this is `agree if both constrained,
+   * else borrow from the constrained one`.
+   */
+  private def alignSides(
+      tBranch: Expression,
+      fBranch: Expression,
+      tIsLeft: Boolean,
+      fIsLeft: Boolean,
+      accId: ExprId): Option[Boolean] = {
+    val tBare = isAccRef(tBranch, accId)
+    val fBare = isAccRef(fBranch, accId)
+    (tBare, fBare) match {
+      case (true, true) => Some(false) // both bare acc — fold has no actual op to apply
+      case (true, false) => Some(fIsLeft)
+      case (false, true) => Some(tIsLeft)
+      case (false, false) => if (tIsLeft == fIsLeft) Some(tIsLeft) else None
+    }
+  }
+
+  private def isFinishIdentity(finish: Expression): Boolean = finish match {
+    case LambdaFunction(body, Seq(accVar: NamedLambdaVariable), _) =>
+      isAccRef(body, accVar.exprId)
+    case _ => false
+  }
+
+  private def isAccRef(e: Expression, id: ExprId): Boolean = e match {
+    case v: NamedLambdaVariable => v.exprId == id
+    case c: Cast => isAccRef(c.child, id)
+    case _ => false
+  }
+
+  private def containsAccRef(e: Expression, id: ExprId): Boolean = e.exists {
+    case v: NamedLambdaVariable if v.exprId == id => true
+    case _ => false
+  }
+}
+
+
+/**
+ * GPU implementation of ArrayAggregate for lambdas decomposable via ArrayAggregateDecomposer.
+ * Runtime steps:
+ *   1. Evaluate g(x) over the array children (reusing GpuArrayTransformBase's explode path).
+ *   2. Rewrap as list<g_type> with the original offsets and validity.
+ *   3. cuDF segmented reduce with the op's null policy.
+ *   4. Substitute op's identity into rows where reduce returned null due to "no elements
+ *      contributed" (the exact condition depends on null policy; see `substituteMask`).
+ *   5. Combine with zero: `result = reduced OP zero`.
+ */
+case class GpuArrayAggregate(
+    argument: Expression,
+    zero: Expression,
+    function: Expression,
+    op: AggOp,
+    isBound: Boolean = false,
+    boundIntermediate: Seq[GpuExpression] = Seq.empty) extends GpuArrayTransformBase {
+
+  override def dataType: DataType = zero.dataType
+
+  // Matches Spark's ArrayAggregate.nullable = argument.nullable || finish.nullable. The
+  // finish lambda's accumulator variable is bound with nullable=true (Spark's
+  // ArrayAggregate.bind uses `zero.dataType -> true` for the acc slot), so the CPU side
+  // is effectively always true. Also covers the INCLUDE-policy case where a null element
+  // in a non-null list poisons the reduce and yields a null output row.
+  override def nullable: Boolean = true
+
+  override def prettyName: String = "array_aggregate"
+
+  override def children: Seq[Expression] = argument :: zero :: function :: Nil
+
+  override def bind(input: AttributeSeq): GpuExpression = {
+    val (boundFunc, boundArg, boundInter) = bindLambdaFunc(input)
+    val boundZero = GpuBindReferences.bindGpuReferenceNoMetrics(zero, input)
+    GpuArrayAggregate(boundArg, boundZero, boundFunc, op, isBound = true, boundInter)
+  }
+
+  /**
+   * Mask of rows where the reduce result must be replaced with the op's identity.
+   *
+   * INCLUDE ops (SUM/PRODUCT/ALL/ANY): only empty-and-not-null lists. Null-poisoned
+   * reduces stay null and propagate through the combine step, matching Spark's iterative
+   * `acc op null = null` semantics.
+   *
+   * EXCLUDE ops (MAX/MIN): any reduce-null over a non-null list — covers both empty lists
+   * and all-null lists, matching Spark's Greatest/Least which skip nulls entirely.
+   */
+  private def substituteMask(
+      listCol: cudf.ColumnView,
+      reduced: cudf.ColumnVector): cudf.ColumnVector = {
+    val reducedIsEmpty = op.nullPolicy match {
+      case cudf.NullPolicy.INCLUDE =>
+        // Empty-and-not-null only. Null-poisoned reduces stay null to match Spark's
+        // iterative `acc op null = null` semantics.
+        withResource(listCol.countElements()) { counts =>
+          withResource(cudf.Scalar.fromInt(0)) { zero =>
+            counts.equalTo(zero)
+          }
+        }
+      case cudf.NullPolicy.EXCLUDE =>
+        // Any reduce-null: empty list OR all-null list (both mean "no element contributed"),
+        // matching Spark's Greatest/Least which skip nulls.
+        reduced.isNull
+    }
+    // Exclude null-list rows from the mask so the final null-restoration step handles them.
+    // Skip when the input list has no nulls — `m.and(all-true)` is a wasted kernel.
+    if (listCol.getNullCount > 0) {
+      withResource(reducedIsEmpty) { m =>
+        withResource(listCol.isNotNull) { isNotNull => m.and(isNotNull) }
+      }
+    } else {
+      reducedIsEmpty
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    val outDType = GpuColumnVector.getNonNestedRapidsType(dataType)
+    withResource(argument.asInstanceOf[GpuExpression].columnarEval(batch)) { arg =>
+      // Step 1: g(x) over children + segmented reduce.
+      val reduced: cudf.ColumnVector =
+        withResource(makeElementProjectBatch(batch, arg)) { cb =>
+          withResource(function.asInstanceOf[GpuExpression].columnarEval(cb)) {
+            transformedData =>
+              withResource(GpuListUtils.replaceListDataColumnAsView(
+                  arg.getBase, transformedData.getBase)) { listOfGView =>
+                listOfGView.listReduce(op.cudfAgg, op.nullPolicy, outDType)
+              }
+          }
+        }
+
+      // Step 2: substitute op's identity for rows the reduce couldn't cover.
+      val adjusted: cudf.ColumnVector = withResource(reduced) { reduced =>
+        withResource(substituteMask(arg.getBase, reduced)) { mask =>
+          withResource(op.identityScalar(dataType)) { idScalar =>
+            mask.ifElse(idScalar, reduced)
+          }
+        }
+      }
+
+      // Step 3: combine with zero. When `zero` is a Literal (the common 4-arg
+      // `aggregate(arr, 0, ...)` shape) skip the per-batch column broadcast and pass a
+      // cudf.Scalar instead — `add/mul/and/or/binaryOp` all accept BinaryOperable.
+      val combined: cudf.ColumnVector = withResource(adjusted) { adjusted =>
+        zero match {
+          case lit: GpuLiteral =>
+            withResource(GpuScalar.from(lit.value, lit.dataType)) { zeroScalar =>
+              op.combineWithZero(adjusted, zeroScalar, outDType)
+            }
+          case _ =>
+            withResource(zero.asInstanceOf[GpuExpression].columnarEval(batch)) { zeroCv =>
+              op.combineWithZero(adjusted, zeroCv.getBase, outDType)
+            }
+        }
+      }
+
+      // Step 4: restore null on rows where the input list itself was null. cuDF NULL_MAX /
+      // NULL_MIN / LOGICAL_AND / LOGICAL_OR don't propagate null the way Spark's 3VL would,
+      // so the combine step alone can't preserve it. Skip outright when the list has no nulls.
+      if (arg.getBase.getNullCount > 0) {
+        withResource(combined) { combined =>
+          GpuColumnVector.from(NullUtilities.mergeNulls(combined, arg.getBase), dataType)
+        }
+      } else {
+        GpuColumnVector.from(combined, dataType)
+      }
+    }
+  }
+}
+
+
+/**
+ * Expression-level meta for Spark's ArrayAggregate. Accepts lambdas that
+ * ArrayAggregateDecomposer can decompose into one of the registered AggOps with an
+ * identity finish; falls back to CPU otherwise.
+ */
+class GpuArrayAggregateMeta(
+    expr: ArrayAggregate,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+  extends ExprMeta[ArrayAggregate](expr, conf, parent, rule) {
+
+  private var decomposition: Option[ArrayAggregateDecomposition] = None
+
+  override def tagExprForGpu(): Unit = {
+    ArrayAggregateDecomposer.decompose(
+      expr.merge, expr.finish, expr.argument.dataType, expr.zero.dataType) match {
+      case Left(reason) => willNotWorkOnGpu(reason)
+      case Right(d) => decomposition = Some(d)
+    }
+  }
+
+  override def convertToGpuImpl(): GpuExpression = {
+    val d = decomposition.getOrElse(
+      throw new IllegalStateException("tagExprForGpu must succeed before convertToGpu"))
+
+    val argGpu = childExprs.head.convertToGpu()
+    val zeroGpu = childExprs(1).convertToGpu()
+    // The lifted g may have a different shape from any sub-tree of the original merge body
+    // (If/CaseWhen branches get rewritten and identity literals get inserted), so we can't
+    // pick it out of childExprs(2)'s meta tree by index. Wrap g as a fresh ExprMeta and let
+    // spark-rapids tag/convert it. Sub-expressions inherited from the original body get
+    // re-tagged here, but tag is idempotent and they were already proven GPU-compatible
+    // when the parent ArrayAggregate was tagged.
+    val gMeta = GpuOverrides.wrapExpr(d.g, this.conf, Some(this))
+    gMeta.tagForGpu()
+    if (!gMeta.canThisBeReplaced) {
+      throw new IllegalStateException(
+        s"could not convert g sub-expression ${d.g} to GPU: ${gMeta.explain(all = false)}")
+    }
+    val gGpu = gMeta.convertToGpu()
+    val elemVarGpu = GpuNamedLambdaVariable(
+      d.elemVar.name, d.elemVar.dataType, d.elemVar.nullable, d.elemVar.exprId)
+    val gLambda = GpuLambdaFunction(gGpu, Seq(elemVarGpu))
+
+    GpuArrayAggregate(argGpu, zeroGpu, gLambda, d.op)
   }
 }
