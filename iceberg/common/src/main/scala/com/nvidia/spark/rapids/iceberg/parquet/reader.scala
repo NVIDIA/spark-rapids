@@ -61,9 +61,9 @@ case class IcebergPartitionedFile(
     GpuIcebergParquetReader.buildReaderOptions(file.getDelegate, split)
   }
 
-  def newReader: ParquetFileReader = {
+  def newReader(metrics: Map[String, GpuMetric] = Map.empty): ParquetFileReader = {
     try {
-      ParquetFileReader.open(GpuParquetIO.file(file.getDelegate), parquetReadOptions)
+      GpuParquetIO.openReader(file, path, parquetReadOptions, metrics)
     } catch {
       case e: IOException =>
         throw new UncheckedIOException(s"Failed to newInputFile Parquet file: " +
@@ -203,7 +203,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
 
   def filterParquetBlocks(file: IcebergPartitionedFile,
       requiredSchema: Schema): (ParquetFileInfoWithBlockMeta, ShadedMessageType) = {
-    withResource(file.newReader) { reader =>
+    withResource(file.newReader(conf.metrics)) { reader =>
       val fileSchema = reader.getFileMetaData.getSchema
 
       val rowGroupFirstRowIndices = new Array[Long](reader.getRowGroups.size())
