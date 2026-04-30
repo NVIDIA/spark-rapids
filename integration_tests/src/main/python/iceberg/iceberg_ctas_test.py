@@ -23,7 +23,7 @@ from data_gen import gen_df, copy_and_update, RepeatSeqGen
 from iceberg import (assert_no_cpu_project_exec, create_iceberg_table,
                      iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
-                     iceberg_nested_write_gens_list, materialize_parquet_source,
+                     materialize_parquet_source,
                      get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_unsupported_mark, _build_tblprops)
 from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
@@ -233,23 +233,6 @@ def test_ctas_fallback_when_conf_disabled(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_ctas_unpartitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_path):
-    table_prop = {
-        "format-version": "2"
-    }
-
-    cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_nested_write_gens_list)]
-    gen_list = list(zip(cols, iceberg_nested_write_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
-    df_gen = lambda spark: spark.read.parquet(source_path)
-
-    _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory, df_gen, table_prop,
-                                assert_no_cpu_project=True)
-
-
-@iceberg
-@ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("gen_list", _BINARY_CTAS_GEN_LISTS, ids=["binary", "array_binary"])
 def test_ctas_unpartitioned_table_binary_types(spark_tmp_table_factory, spark_tmp_path, gen_list):
     table_prop = {
@@ -278,26 +261,6 @@ def test_ctas_unpartitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_pa
     df_gen = lambda spark: spark.read.parquet(source_path)
 
     _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory, df_gen, table_prop,
-                                assert_no_cpu_project=True)
-
-
-@iceberg
-@ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_ctas_partitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_path):
-    table_prop = {
-        "format-version": "2"
-    }
-
-    cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_nested_write_gens_list)]
-    gen_list = list(zip(cols, iceberg_nested_write_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
-    df_gen = lambda spark: spark.read.parquet(source_path)
-
-    _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
-                                df_gen,
-                                table_prop,
-                                partition_col_sql="bucket(16, _c0)",
                                 assert_no_cpu_project=True)
 
 

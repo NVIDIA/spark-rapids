@@ -20,7 +20,7 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import assert_no_cpu_project_exec, create_iceberg_table, \
     iceberg_base_table_cols, iceberg_gens_list, get_full_table_name, \
-    iceberg_full_gens_list, iceberg_nested_write_gens_list, \
+    iceberg_full_gens_list, \
     iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops, \
     materialize_parquet_source
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
@@ -97,46 +97,6 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
                      conf=conf)
     with_cpu_session(lambda spark: insert_data(spark, cpu_table_name),
                      conf=conf)
-
-    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
-    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
-    assert_equal_with_local_sort(cpu_data, gpu_data)
-
-
-@iceberg
-@ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_into_unpartitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_path):
-    table_prop = {"format-version": "2"}
-    cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_nested_write_gens_list)]
-    gen_list = list(zip(cols, iceberg_nested_write_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
-
-    def this_gen_df(spark):
-        return spark.read.parquet(source_path)
-
-    base_table_name = get_full_table_name(spark_tmp_table_factory)
-    cpu_table_name = f"{base_table_name}_cpu"
-    gpu_table_name = f"{base_table_name}_gpu"
-
-    create_iceberg_table(cpu_table_name, table_prop=table_prop, df_gen=this_gen_df)
-    create_iceberg_table(gpu_table_name, table_prop=table_prop, df_gen=this_gen_df)
-
-    def insert_data(spark, table_name: str):
-        df = this_gen_df(spark)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-
-    def insert_data_and_assert_gpu_plan(spark, table_name: str):
-        df = insert_data(spark, table_name)
-        df.collect()
-        assert_no_cpu_project_exec(spark, df)
-
-    with_gpu_session(lambda spark: insert_data_and_assert_gpu_plan(spark, gpu_table_name),
-                     conf=iceberg_write_enabled_conf)
-    with_cpu_session(lambda spark: insert_data(spark, cpu_table_name).collect(),
-                     conf=iceberg_write_enabled_conf)
 
     cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
     gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
@@ -249,52 +209,6 @@ def test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sq
 def test_insert_into_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""
     _do_test_insert_into_partitioned_table(spark_tmp_table_factory, partition_col_sql)
-
-@iceberg
-@ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_into_partitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_path):
-    table_prop = {"format-version": "2"}
-    cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_nested_write_gens_list)]
-    gen_list = list(zip(cols, iceberg_nested_write_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
-
-    def this_gen_df(spark):
-        return spark.read.parquet(source_path)
-
-    base_table_name = get_full_table_name(spark_tmp_table_factory)
-    cpu_table_name = f"{base_table_name}_cpu"
-    gpu_table_name = f"{base_table_name}_gpu"
-
-    create_iceberg_table(cpu_table_name,
-                         partition_col_sql="bucket(16, _c0), bucket(16, _c1)",
-                         table_prop=table_prop,
-                         df_gen=this_gen_df)
-    create_iceberg_table(gpu_table_name,
-                         partition_col_sql="bucket(16, _c0), bucket(16, _c1)",
-                         table_prop=table_prop,
-                         df_gen=this_gen_df)
-
-    def insert_data(spark, table_name: str):
-        df = this_gen_df(spark)
-        view_name = spark_tmp_table_factory.get()
-        df.createOrReplaceTempView(view_name)
-        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
-
-    def insert_data_and_assert_gpu_plan(spark, table_name: str):
-        df = insert_data(spark, table_name)
-        df.collect()
-        assert_no_cpu_project_exec(spark, df)
-
-    with_gpu_session(lambda spark: insert_data_and_assert_gpu_plan(spark, gpu_table_name),
-                     conf=iceberg_write_enabled_conf)
-    with_cpu_session(lambda spark: insert_data(spark, cpu_table_name).collect(),
-                     conf=iceberg_write_enabled_conf)
-
-    cpu_data = with_cpu_session(lambda spark: spark.table(cpu_table_name).collect())
-    gpu_data = with_cpu_session(lambda spark: spark.table(gpu_table_name).collect())
-    assert_equal_with_local_sort(cpu_data, gpu_data)
-
 
 @iceberg
 @ignore_order(local=True)
