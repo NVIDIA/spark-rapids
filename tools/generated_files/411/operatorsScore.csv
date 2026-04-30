@@ -6,6 +6,7 @@ FileSourceScanExec,3.0
 FilterExec,2.8
 GenerateExec,3.0
 GlobalLimitExec,3.0
+Hex,4
 LocalLimitExec,3.0
 OneRowRelationExec,3.0
 ProjectExec,3.0

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, Me
 import org.apache.iceberg._
 import org.apache.iceberg.deletes.DeleteGranularity
 import org.apache.iceberg.io._
+import org.apache.iceberg.io.DeleteSchemaUtil
 import org.apache.iceberg.spark.GpuTypeToSparkType
 import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.spark.source.GpuSparkWrite.supports
@@ -116,13 +117,14 @@ class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
       tmpJob
     }
 
+    val dataSparkTypeWithFieldIds = GpuSparkPositionDeltaWrite.dataWriterSparkTypeFor(
+      command, context)
+
     val outputWriterFactory = new GpuParquetFileFormat().prepareWrite(
       SparkSession.active,
       job,
-      Map.empty,
-//      writeProps,
-//      context.dataSparkType
-      positionDeleteSparkType
+      writeProps,
+      dataSparkTypeWithFieldIds
     )
 
     val serializedHadoopConf = new SerializableConfiguration(job.getConfiguration)
@@ -144,6 +146,21 @@ class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
 
 
 object GpuSparkPositionDeltaWrite {
+  private[source] def dataWriterSchemaFor(command: Command, context: GpuWriteContext): Schema = {
+    if (command == Command.DELETE) {
+      DeleteSchemaUtil.pathPosSchema()
+    } else {
+      Option(context.dataSchema).getOrElse(
+        throw new IllegalStateException(s"Missing data schema for delta command: $command"))
+    }
+  }
+
+  private[source] def dataWriterSparkTypeFor(
+      command: Command,
+      context: GpuWriteContext): StructType = {
+    toSparkType(dataWriterSchemaFor(command, context))
+  }
+
   def tableOf(deltaWrite: DeltaWrite): Table = {
     FieldUtils.readField(deltaWrite, "table", true).asInstanceOf[Table]
   }
@@ -202,7 +219,7 @@ class GpuPositionDeltaWriterFactory(
     val writerFactory = new GpuSparkFileWriterFactory(
       table,
       context.dataFileFormat,
-      context.dataSparkType,
+      GpuSparkPositionDeltaWrite.dataWriterSparkTypeFor(command, context),
       table.sortOrder(),
       context.deleteFileFormat,
       positionDeleteSparkType,
