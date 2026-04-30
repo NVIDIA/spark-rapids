@@ -597,7 +597,7 @@ class SpillablePartialFileHandle private (
    *
    * @param commit if true, the spill is happening due to a shuffle commit phase
    *               do not track the time/bytes in our spill metric.
-   * @return
+   * @return the number of bytes written to disk, or 0 if spilling was skipped
    */
   private def spillInternal(commit: Boolean): Long = {
     if (storageMode != PartialFileStorageMode.MEMORY_WITH_SPILL) {
