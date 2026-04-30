@@ -189,7 +189,6 @@ def test_iceberg_delete_partitioned_table_full_coverage(spark_tmp_table_factory,
     """Full partition coverage test - skipped for remote catalogs."""
     _do_test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col_sql, delete_mode)
 
-@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
@@ -501,7 +500,6 @@ def test_iceberg_delete_after_drop_partition_field(spark_tmp_table_factory, dele
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
-@allow_non_gpu("ColumnarToRowExec", "BatchScanExec")
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
