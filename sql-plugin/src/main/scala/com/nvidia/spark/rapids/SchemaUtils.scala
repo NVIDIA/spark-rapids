@@ -56,7 +56,7 @@ object SchemaUtils {
   // cuDF's Java list/map builder path drops the container's parquet field id and has no
   // public setter for `isBinary` on a built options object, so we reach into the private
   // fields here. TODO(cuDF): remove once public setters are exposed upstream.
-  // Tracking issue: https://github.com/rapidsai/cudf/issues/NEW (file before merging).
+  // Tracking issue: https://github.com/rapidsai/cudf/issues/22347.
   private def accessibleField(name: String): java.lang.reflect.Field = {
     try {
       val field = classOf[ColumnWriterOptions].getDeclaredField(name)
