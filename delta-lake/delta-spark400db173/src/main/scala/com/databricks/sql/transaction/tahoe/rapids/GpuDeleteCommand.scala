@@ -21,10 +21,9 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.command.LeafRunnableCommand
 
-// Stub on DB-17.3. The shared Databricks `DeleteCommandMeta.convertToGpu` constructs
-// this case class unconditionally, so the type must exist with a matching signature.
-// At runtime, `DeleteCommandMetaShim.tagForGpu` forces CPU fallback, so this is
-// unreachable — GPU DELETE for DB-17.3 is tracked in GitHub issue #14597.
+// The shared Databricks conversion path still expects a GPU DELETE command type.
+// DB-17.3 DELETE is tagged to run on CPU, so this placeholder exists only to satisfy
+// that signature and to fail clearly if the guard is missed.
 case class GpuDeleteCommand(
     gpuDeltaLog: GpuDeltaLog,
     target: LogicalPlan,

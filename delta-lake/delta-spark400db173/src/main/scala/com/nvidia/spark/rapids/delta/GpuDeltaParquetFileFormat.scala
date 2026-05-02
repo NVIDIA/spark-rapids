@@ -34,14 +34,10 @@ import org.apache.spark.sql.types.StructType
 /**
  * Minimal GPU Delta Parquet file format for Databricks 17.3.
  *
- * DB-17.3 uses a fundamentally different DV mechanism than DB-14.3:
- * - No broadcastDvMap / broadcastHadoopConf
- * - Per-file DV via PartitionedFile.otherConstantMetadataColumnValues
- * - Constructor takes (protocol, metadata, ...) instead of (relation, columnMappingMode, ...)
- *
- * This first DB-17.3 Delta PR supports only the base Delta Parquet scan shape. DV,
- * row-index, and row-tracking metadata scans are tagged as CPU fallback until those
- * reader fields are ported.
+ * DB-17.3 passes deletion-vector and row-tracking state through PartitionedFile metadata
+ * instead of the DB-14.3 broadcast fields. This shim only converts scans that use the base
+ * Delta Parquet reader contract; scans needing those additional metadata fields stay on CPU
+ * until the GPU reader carries them.
  */
 case class GpuDeltaParquetFileFormat(
     protocol: Protocol,
@@ -79,8 +75,8 @@ case class GpuDeltaParquetFileFormat(
       hadoopConf: Configuration,
       metrics: Map[String, GpuMetric])
   : PartitionedFile => Iterator[InternalRow] = {
-    // This first DB-17.3 Delta PR only supports the base Parquet reader shape.
-    // DV and row-tracking scans are tagged as CPU fallback in tagSupportForGpuFileSourceScan.
+    // This path is used only after tagSupportForGpuFileSourceScan rejects scans requiring
+    // DB-17.3 Delta metadata such as deletion vectors, row indexes, or row tracking.
     super.buildReaderWithPartitionValuesAndMetrics(
       sparkSession,
       dataSchema,
@@ -100,8 +96,8 @@ object GpuDeltaParquetFileFormat {
       meta.willNotWorkOnGpu(
         s"reading metadata columns starting with prefix _databricks_internal is not supported")
     }
-    // Keep DB-17.3 DV and row-tracking metadata scans on CPU until those reader fields are
-    // explicitly ported into the GPU Delta file format.
+    // These flags require metadata that the current GPU file format does not pass through
+    // to the reader. Keep those scans on CPU instead of dropping Delta semantics.
     val format = meta.wrapped.relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
     if (format.tablePath.isDefined) {
       meta.willNotWorkOnGpu("deletion vector reads are not yet supported for DB-17.3")

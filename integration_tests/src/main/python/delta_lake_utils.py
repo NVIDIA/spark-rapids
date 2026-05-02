@@ -60,11 +60,9 @@ deletion_vector_values = deletion_vector_values_with_350DB143_xfail_reasons()
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
 
-# Reduced row count for wide-schema (`delta_write_gens`) Delta tests on DB-17.3.
-# These tests materialize ~33 MB of generated rows into the RDDScanExec attributes
-# baked into the task closure, which causes a driver-side task-serialization OOM
-# in `TaskSetManager.prepareLaunchingTask`. 128 rows still exercises every column
-# type while keeping the serialized task body small. Default (2048) elsewhere.
+# DB-17.3 serializes generated wide-schema rows into RDDScanExec task closures for these
+# Delta write tests. The default 2048 rows can produce ~33 MB task bodies and OOM in
+# TaskSetManager.prepareLaunchingTask; 128 rows still covers every column generator.
 delta_db173_wide_schema_gen_length = 128 if is_databricks173_or_later() else 2048
 
 delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,WriteFilesExec,DeltaInvariantCheckerExec" if is_databricks122_or_later() else "ExecutedCommandExec"

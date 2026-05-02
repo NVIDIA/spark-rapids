@@ -52,10 +52,9 @@ import org.apache.spark.sql.types.StructType
  * @param existingTableOpt The existing table for the same identifier if exists
  * @param mode The save mode when writing data. Relevant when the query is empty or set to Ignore
  *             with `CREATE TABLE IF NOT EXISTS`.
- * @param query The query to commit into the Delta table when present. For DB-17.3, catalog
- *              CTAS/RTAS plans using WriteIntoDeltaEdge are tagged as CPU fallback before
- *              conversion; the case below is a defensive fail-fast if one reaches here.
- *              Other query shapes include saveAsTable and older WriteIntoDelta plans.
+ * @param query The query to commit into the Delta table when present. Catalog CTAS/RTAS plans
+ *              using WriteIntoDeltaEdge stay on CPU for DB-17.3 because this shim does not yet
+ *              carry the new command semantics; the run-time match below is a defensive guard.
  */
 case class GpuCreateDeltaTableCommand(
     table: CatalogTable,
@@ -130,9 +129,9 @@ case class GpuCreateDeltaTableCommand(
             assertPathEmpty(hadoopConf, tableWithLocation)
           }
         }
-        // DB-17.3 catalog CTAS/RTAS uses WriteIntoDeltaEdge and is tagged as CPU fallback by
-        // the provider. If one reaches this command, fail fast instead of running it as a
-        // generic RunnableCommand outside the GPU transaction.
+        // WriteIntoDeltaEdge carries DB-17.3 CTAS/RTAS semantics that this shim does not
+        // implement yet. The provider should already keep those plans on CPU; fail here if
+        // conversion reaches this command anyway.
         query.get match {
           case _: WriteIntoDeltaEdge =>
             throw new UnsupportedOperationException(

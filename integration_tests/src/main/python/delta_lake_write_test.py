@@ -461,8 +461,9 @@ def test_delta_overwrite_dynamic_missing_clauses(spark_tmp_table_factory, spark_
 @allow_non_gpu_delta_write_if(is_before_spark_353(), reason="Dynamic partition overwrites are not supported before Spark 3.5.3")
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-# DB-17.3 routes this SQL through the V1 WriteIntoDeltaCommand path; older shims resolve
-# via V2 OverwriteByExpressionExecV1 (intercepted by GpuOverwriteByExpressionExecV1).
+# DB-17.3 plans this INSERT OVERWRITE through V1 WriteIntoDeltaCommand, which is still
+# tracked by issue #11169. Older shims resolve the same SQL through V2
+# OverwriteByExpressionExecV1 and can be intercepted by GpuOverwriteByExpressionExecV1.
 @pytest.mark.xfail(is_databricks173_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11169")
 @pytest.mark.parametrize("mode", [
     "STATIC",
@@ -1199,9 +1200,9 @@ def test_delta_write_optimized_partitioned(spark_tmp_path):
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
-# DB-17.3 routes overwrite-with-replaceWhere through the V1 WriteIntoDeltaCommand path
-# (V1Writes adds WriteFilesExec + DeltaInvariantChecker for the replaceWhere predicate);
-# older shims resolve via V2 OverwriteByExpressionExecV1 (intercepted on GPU).
+# In DB-17.3, replaceWhere adds V1 WriteFilesExec plus DeltaInvariantChecker for the
+# predicate, so this follows the unsupported WriteIntoDeltaCommand path tracked by #11169.
+# Older shims reach V2 OverwriteByExpressionExecV1 and are intercepted on GPU.
 @pytest.mark.xfail(is_databricks173_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/11169")
 def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
     gen_list = [("a", int_gen),

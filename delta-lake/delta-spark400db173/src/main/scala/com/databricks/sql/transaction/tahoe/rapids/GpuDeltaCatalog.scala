@@ -148,9 +148,9 @@ class GpuDeltaCatalog(
   }
 
   /**
-   * Creates or replaces a Delta table through the GPU catalog wrapper. For DB-17.3, catalog
-   * CTAS/RTAS writes are intentionally tagged as CPU fallback until the full
-   * CreateDeltaTableCommand semantics are ported.
+   * Creates or replaces a Delta table through the GPU catalog wrapper. DB-17.3 catalog
+   * CTAS/RTAS writes stay on CPU until the GPU CreateDeltaTableCommand preserves the new
+   * table-creation semantics.
    *
    * @param ident              The identifier of the table
    * @param schema             The schema of the table
@@ -220,8 +220,8 @@ class GpuDeltaCatalog(
 
   /**
    * A staged Delta table wrapper used to keep Databricks catalog staging behavior while adding
-   * profiling. In DB-17.3, staged CTAS/RTAS is still tagged as CPU fallback by the provider;
-   * this class remains for create/replace plumbing shared with older Delta catalog code.
+   * profiling. DB-17.3 staged CTAS/RTAS still runs on CPU, but create/replace plumbing is shared
+   * with older Delta catalog code.
    */
   protected class GpuStagedDeltaTableV2WithLogging(
       ident: Identifier,

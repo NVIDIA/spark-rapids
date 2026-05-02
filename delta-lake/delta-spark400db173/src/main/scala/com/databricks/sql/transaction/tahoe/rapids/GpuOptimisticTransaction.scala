@@ -312,8 +312,8 @@ class GpuOptimisticTransaction(
     }
     val fileActions = resultFiles.toSeq ++ committer.changeFiles
 
-    // DB-17.3 auto-compaction after GPU writes is intentionally out of scope for this
-    // first support PR and is tracked in GitHub issue #14599.
+    // DB-17.3 auto-compaction needs post-write handling beyond the file actions returned
+    // here. Keep GPU writes to the collected actions until issue #14599 ports that path.
 
     (fileActions, queryExecution)
   }
@@ -342,9 +342,9 @@ class GpuOptimisticTransaction(
     fileActions
   }
 
-  // Older Delta call sites still use the 3-arg API. DB-17.3 callers that carry write flags
-  // should use the overloads below so optimize, ordering, CDC, and liquid-clustering state is
-  // not lost.
+  // Keep the legacy 3-argument overload for older Delta callers. DB-17.3 paths that carry
+  // TransactionalWriteOptions must use the overloads below so optimize-write, ordering, CDC,
+  // and liquid-clustering flags are preserved.
   override def writeFiles(
       inputData: Dataset[_],
       writeOptions: Option[DeltaOptions],
@@ -354,7 +354,8 @@ class GpuOptimisticTransaction(
     fileActions
   }
 
-  // DB-17.3 WriteIntoDeltaEdge entry point that returns file actions and the QueryExecution.
+  // WriteIntoDeltaEdge uses this overload when it needs both file actions and the
+  // QueryExecution for follow-up Delta bookkeeping.
   override def writeFilesAndGetQueryExecution(
       inputData: Dataset[_],
       writeOptions: TransactionalWriteOptions,
@@ -379,9 +380,9 @@ class GpuOptimisticTransaction(
       context)
   }
 
-  // DB-17.3 WriteIntoDeltaEdge entry point that returns the executed SparkPlan. CTAS/RTAS GPU
-  // conversion is tagged off today; keep this override for the DB-17.3 API surface and future
-  // create-table work.
+  // CTAS/RTAS callers use this DB-17.3 overload to obtain the executed plan. Those commands
+  // currently run on CPU, but keeping the override documents the API contract and prevents
+  // future create-table support from dropping write flags.
   override def writeFilesAndGetExecutedPlan(
       inputData: Dataset[_],
       writeOptions: Either[Option[DeltaOptions], TransactionalWriteOptions],

@@ -34,15 +34,16 @@ object FilePartitionShims extends SplitFiles {
   def getFiles(p: FilePartition): Array[PartitionedFile] = p.filesWithAbsolutePaths
 
   def copyWithFiles(p: FilePartition, newFiles: Array[PartitionedFile]): FilePartition = {
-    // newFiles may already contain absolute paths from filesWithAbsolutePaths above. Keep
-    // pathPrefix intact: DB-17.3 makePathsAbsolute checks Path.isAbsolute before applying
-    // the prefix, so calling filesWithAbsolutePaths again remains idempotent.
+    // DB-17.3 filesWithAbsolutePaths may have already expanded bare Delta filenames using
+    // pathPrefix. Preserve that prefix when replacing innerFiles so later calls can still
+    // resolve any relative paths.
     p.copy(innerFiles = newFiles)
   }
 
-  // On Databricks 17.3, Delta/UC-managed tables store bare filenames in
-  // FilePartition.innerFiles and rely on pathPrefix for absolute resolution. Preserve
-  // that prefix when GPU planning recreates partitions via FilePartition.getFilePartitions.
+  // Delta tables in DB-17.3, including UC-managed tables, may store relative file names in
+  // FilePartition.innerFiles and resolve them with pathPrefix. When GPU planning rebuilds
+  // partitions from split files, carry the single relation root forward so Spark keeps the
+  // same resolution behavior.
   def getFilePartitions(
       relation: HadoopFsRelation,
       splitFiles: Seq[PartitionedFile],
@@ -56,8 +57,8 @@ object FilePartitionShims extends SplitFiles {
         if (p.pathPrefix.isEmpty) p.copy(pathPrefix = Some(prefix)) else p
       }
     } else {
-      // Do not synthesize a prefix for multi-root relations: one prefix cannot safely
-      // resolve every file, so keep Spark's partitions unchanged.
+      // With multiple roots there is no single pathPrefix that can resolve every file safely.
+      // Leave Spark's partitions unchanged.
       partitions
     }
   }

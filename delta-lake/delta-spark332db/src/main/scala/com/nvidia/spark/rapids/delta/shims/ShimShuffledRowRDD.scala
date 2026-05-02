@@ -22,7 +22,8 @@ import org.apache.spark.sql.execution.{ShuffledRowRDD, ShufflePartitionSpec}
 import org.apache.spark.sql.execution.metric.SQLMetric
 
 /**
- * Shim for ShuffledRowRDD construction for pre-DB-17.3 Databricks runtimes.
+ * Keeps Optimize Write independent of the ShuffledRowRDD constructor differences introduced
+ * in DB-17.3.
  */
 object ShimShuffledRowRDD {
   def create(

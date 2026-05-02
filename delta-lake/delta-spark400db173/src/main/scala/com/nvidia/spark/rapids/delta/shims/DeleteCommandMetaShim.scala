@@ -18,14 +18,14 @@ package com.nvidia.spark.rapids.delta.shims
 
 import com.nvidia.spark.rapids.delta.{DeleteCommandEdgeMeta, DeleteCommandMeta}
 
+// DB-17.3 DELETE has a command placeholder for shared conversion code, but the operation
+// stays on CPU until issue #14597 ports this path.
 object DeleteCommandMetaShim {
   def tagForGpu(meta: DeleteCommandMeta): Unit = {
-    // GPU DELETE not yet enabled for DB-17.3 (will be enabled in a follow-up issue)
     meta.willNotWorkOnGpu("Delta Lake DELETE is not yet supported on GPU for DB-17.3")
   }
 
   def tagForGpu(meta: DeleteCommandEdgeMeta): Unit = {
-    // GPU DELETE not yet enabled for DB-17.3 (will be enabled in a follow-up issue)
     meta.willNotWorkOnGpu("Delta Lake DELETE is not yet supported on GPU for DB-17.3")
   }
 }

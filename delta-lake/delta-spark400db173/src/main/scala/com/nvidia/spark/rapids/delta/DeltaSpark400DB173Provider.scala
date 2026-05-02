@@ -62,7 +62,7 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
           val session = data.sparkSession
           val deltaLog = writeConfig.deltaLog
 
-          // The V1 write adapter does not expose transaction metadata configuration.
+          // The V1 write adapter does not carry DB-17.3 transaction metadata options.
           // Seed WriteIntoDeltaEdge from the current snapshot, matching existing DB shims.
           val cpuWrite = WriteIntoDeltaEdge(
             deltaLog,
@@ -102,11 +102,9 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
     super.tagForGpu(cpuExec, meta)
   }
 
-  // CTAS/RTAS are disabled for this first DB-17.3 Delta PR because CreateDeltaTableCommand
-  // gained semantics this shim does not port yet. Keep these feature-specific tags so the
-  // explain output names the concrete feature involved, and so the checks are already in
-  // place when create-table support is re-enabled incrementally. Each fall-back is tracked
-  // separately:
+  // Keep CTAS/RTAS on CPU for DB-17.3 until GpuCreateDeltaTableCommand preserves the new
+  // table-creation semantics. The feature-specific tags below make explain output name the
+  // exact unsupported Delta feature instead of only the broad CTAS/RTAS fallback:
   //   - row filter / column mask             -> https://github.com/NVIDIA/spark-rapids/issues/14601
   //   - catalog-owned / coordinated commits  -> https://github.com/NVIDIA/spark-rapids/issues/14601
   //   - liquid clustering / auto TTL         -> https://github.com/NVIDIA/spark-rapids/issues/14599
@@ -142,12 +140,11 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
       meta.willNotWorkOnGpu(
         "Delta CTAS/RTAS configuring coordinated commits is not supported on GPU")
     }
-    // DB-17.3 enables DV at create time when either the table property is set explicitly
-    // or the session's default-property conf is set. The CPU CreateDeltaTableCommand calls
-    // DeletionVectorEnablementHelper.shouldEnable + enableInMetadata; the GPU command does
-    // not, so a table that the user expects to have DV enabled would be created without it.
-    // Auto-enable triggers are not covered here (they depend on table-shape heuristics) -
-    // tracked alongside the broader DB-17.3 create-command port in
+    // DB-17.3 can enable deletion vectors during table creation from either an explicit table
+    // property or the session default-property conf. The CPU CreateDeltaTableCommand updates
+    // metadata for that case; the GPU command does not yet, so keep the plan on CPU rather than
+    // creating a table with DV unexpectedly disabled. Heuristic auto-enable cases are covered by
+    // the broader create-command port tracked in
     // https://github.com/NVIDIA/spark-rapids/issues/14601.
     val dvConf = DeltaConfigs.ENABLE_DELETION_VECTORS_CREATION
     val dvKeys = (dvConf.key +: dvConf.alternateKeys).toSet

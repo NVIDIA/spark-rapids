@@ -23,18 +23,16 @@ import org.apache.spark.sql.execution.metric.SQLMetric
 
 /**
  * DB-17.3 shim for ShuffledRowRDD construction.
- * DB-17.3's ShuffledRowRDD requires PrismMetrics, numMappers, and refHolder params.
  *
- * prismMetrics=null is safe: only consumed by PrismFetchQueueFactory.createIfEnabled,
- * which is Photon-only and null-tolerant when Prism is disabled (the GPU plugin path).
- * numMappers=-1 matches Databricks' own ShuffleExchangeExec.doExecute convention for
- * "not applicable".
+ * Databricks 17.3 extends ShuffledRowRDD with Prism and mapper-count constructor
+ * parameters. The GPU Optimize Write path does not use Prism; Databricks' own
+ * ShuffleExchangeExec passes null and -1 for the same unused fields.
  */
 object ShimShuffledRowRDD {
   def create(
       dep: ShuffleDependency[Int, InternalRow, InternalRow],
       metrics: Map[String, SQLMetric]): ShuffledRowRDD = {
-    // 5-arg: (dep, metrics, prismMetrics, numMappers, refHolder)
+    // Constructor shape: (dep, metrics, prismMetrics, numMappers, refHolder)
     new ShuffledRowRDD(dep, metrics, null, -1, None)
   }
 
@@ -42,7 +40,7 @@ object ShimShuffledRowRDD {
       dep: ShuffleDependency[Int, InternalRow, InternalRow],
       metrics: Map[String, SQLMetric],
       specs: Array[ShufflePartitionSpec]): ShuffledRowRDD = {
-    // 7-arg: (dep, metrics, specs, prismMetrics, isBarrier, numMappers, refHolder)
+    // Constructor shape: (dep, metrics, specs, prismMetrics, isBarrier, numMappers, refHolder)
     new ShuffledRowRDD(dep, metrics, specs, null, false, -1, None)
   }
 }

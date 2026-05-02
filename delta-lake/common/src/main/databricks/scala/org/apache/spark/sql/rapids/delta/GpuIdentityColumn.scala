@@ -47,8 +47,8 @@ object GpuIdentityColumn {
       s"expected $highWaterMarks found $identityInfo")
 
     val columns = identityInfo.map { case (name, useMax) =>
-      // Use UnresolvedAttribute.quoted (not col(name)) so identity column names with dots
-      // resolve as a single field name rather than a nested struct field traversal.
+      // Build from a quoted unresolved attribute so dots in identity column names are treated
+      // as literal name characters, not nested field traversal.
       val column = DFUDFShims.exprToColumn(UnresolvedAttribute.quoted(name))
       if (useMax) {
         max(column)

@@ -18,14 +18,14 @@ package com.nvidia.spark.rapids.delta.shims
 
 import com.nvidia.spark.rapids.delta.{UpdateCommandEdgeMeta, UpdateCommandMeta}
 
+// DB-17.3 UPDATE has a command placeholder for shared conversion code, but the operation
+// stays on CPU until issue #14597 ports this path.
 object UpdateCommandMetaShim {
   def tagForGpu(meta: UpdateCommandMeta): Unit = {
-    // GPU UPDATE not yet enabled for DB-17.3 (will be enabled in a follow-up issue)
     meta.willNotWorkOnGpu("Delta Lake UPDATE is not yet supported on GPU for DB-17.3")
   }
 
   def tagForGpu(meta: UpdateCommandEdgeMeta): Unit = {
-    // GPU UPDATE not yet enabled for DB-17.3 (will be enabled in a follow-up issue)
     meta.willNotWorkOnGpu("Delta Lake UPDATE is not yet supported on GPU for DB-17.3")
   }
 }

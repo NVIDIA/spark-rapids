@@ -23,11 +23,9 @@ import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 
 import org.apache.spark.sql.rapids.{GpuFileFormatWriterBase, GpuWriteJobDescription}
 
-// On Databricks 17.3 the Delta `DelayedCommitProtocol.parsePartitions` expects a
-// Databricks-specific `PartitionedTaskAttemptContextImpl` when writing a partitioned
-// table — the CPU path supplies it, and the GPU path must match, or it throws a
-// ClassCastException at the first task. Mirror the pattern used by the OSS
-// `delta-33x` / `delta-40x` modules.
+// Delta's DB-17.3 commit protocol casts partitioned task contexts to Databricks'
+// PartitionedTaskAttemptContextImpl. Use the same context for GPU partitioned writes
+// so parsePartitions sees the contract it expects.
 object GpuDeltaFileFormatWriter extends GpuFileFormatWriterBase {
   override def createTaskAttemptContext(
       description: GpuWriteJobDescription,

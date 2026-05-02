@@ -127,10 +127,10 @@ case class GpuCheckDeltaInvariant(
 }
 
 object GpuCheckDeltaInvariant extends Logging {
-  // CheckDeltaInvariant has variable child arity on DB-17.3+ (child + one expression per
-  // columnExtractor); on older Databricks runtimes it is a UnaryExpression with a single
-  // child. projectOnly + repeatingParamCheck accepts both. The OSS Delta rule in
-  // delta-io/.../GpuCheckDeltaInvariant.scala uses the same shape for the same reason.
+  // Databricks 17.3 changed CheckDeltaInvariant from a unary expression to an expression
+  // whose check child is followed by one extractor per referenced column. Register the
+  // required check child plus optional extractor children so this shared rule accepts both
+  // constructor shapes.
   private val exprRule = GpuOverrides.expr[CheckDeltaInvariant](
     "checks a Delta Lake invariant expression",
     ExprChecks.projectOnly(
@@ -183,7 +183,8 @@ class GpuCheckDeltaInvariantMeta(
     val child = childExprs.head.convertToGpu()
     GpuCheckDeltaInvariant(
       child,
-      wrapped.columnExtractors.toMap,  // .toMap for Spark 4.0 compat (Seq→Map)
+      // Spark 4.0 exposes columnExtractors as a Seq; the GPU expression keeps the Map shape.
+      wrapped.columnExtractors.toMap,
       wrapped.constraint)
   }
 }

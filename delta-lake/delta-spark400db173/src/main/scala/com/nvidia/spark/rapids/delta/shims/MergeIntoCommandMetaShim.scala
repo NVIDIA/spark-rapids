@@ -22,8 +22,8 @@ import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommand
 
 import org.apache.spark.sql.execution.command.RunnableCommand
 
-// GPU MERGE is not yet enabled for DB-17.3 — tracked in GitHub issue #14598.
-// `tagForGpu` unconditionally forces CPU fallback, so `convertToGpu` is unreachable.
+// Keep MERGE on CPU for DB-17.3 until issue #14598 ports both command shapes.
+// The convertToGpu methods throw so a missed tag fails during planning.
 object MergeIntoCommandMetaShim {
   def tagForGpu(meta: MergeIntoCommandMeta, mergeCmd: MergeIntoCommand): Unit =
     meta.willNotWorkOnGpu("Delta Lake MERGE INTO is not yet supported on GPU for DB-17.3")
