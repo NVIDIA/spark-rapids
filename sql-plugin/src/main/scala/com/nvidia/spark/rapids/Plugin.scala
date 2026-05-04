@@ -36,6 +36,7 @@ import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, F
 import com.nvidia.spark.rapids.io.async.TrafficController
 import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, Hash, JSONUtils, RmmSpark, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
+import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.commons.lang3.exception.ExceptionUtils
 
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
@@ -53,11 +54,28 @@ class PluginException(msg: String) extends RuntimeException(msg)
 
 case class CudfVersionMismatchException(errorMsg: String) extends PluginException(errorMsg)
 
+/**
+ * Columnar rule that chains the RAPIDS GPU override rules.
+ *
+ * preColumnarTransitions (runs before Spark's ColumnarToRow/RowToColumnar):
+ *   1. Spark-version shims may prepare plans before CPU-to-GPU conversion.
+ *      The default shim implementation is a no-op.
+ *   2. GpuOverrides - the main CPU-to-GPU conversion pass.
+ *
+ * postColumnarTransitions (runs after transitions):
+ *   GpuTransitionOverrides - adds GPU-to-CPU data format transitions.
+ */
 case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   lazy val overrides: Rule[SparkPlan] = GpuOverrides()
   lazy val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
 
-  override def preColumnarTransitions : Rule[SparkPlan] = overrides
+  override def preColumnarTransitions: Rule[SparkPlan] = {
+    new Rule[SparkPlan] {
+      override def apply(plan: SparkPlan): SparkPlan = {
+        overrides.apply(SparkShimImpl.applyPreGpuOverridesRules(plan))
+      }
+    }
+  }
 
   override def postColumnarTransitions: Rule[SparkPlan] = overrideTransitions
 }

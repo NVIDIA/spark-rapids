@@ -196,6 +196,8 @@ trait SparkShims {
 
   def applyShimPlanRules(plan: SparkPlan, conf: RapidsConf): SparkPlan = plan
 
+  def applyPreGpuOverridesRules(plan: SparkPlan): SparkPlan = plan
+
   def applyPostShimPlanRules(plan: SparkPlan): SparkPlan = plan
 
   /**
