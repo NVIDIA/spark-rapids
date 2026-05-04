@@ -362,7 +362,8 @@ object AsyncProfilerOnExecutor extends Logging {
                 } else {
                   // If compression fails, copy the original file
                   log.warn("JFR compression failed, copying uncompressed file")
-                  withResource(fs.create(new Path(asyncProfilerPrefix.get, baseFileName), false)) { out =>
+                  withResource(
+                    fs.create(new Path(asyncProfilerPrefix.get, baseFileName), false)) { out =>
                     Files.copy(tempFilePath, out)
                   }
                 }
