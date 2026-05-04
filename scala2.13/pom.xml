@@ -73,12 +73,7 @@
         <module>tools</module>
         <module>udf-compiler</module>
 
-        <!--
-            Workaround to enforce the build order
-            ROOT -> jdk-profiles -> shim-deps -> ...
-        -->
         <module>shim-deps</module>
-        <module>jdk-profiles</module>
     </modules>
     <profiles>
         <profile>
@@ -716,11 +711,26 @@
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
                 <slf4j.version>2.0.7</slf4j.version>
+                <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing,-options|-Werror</scala.javac.args>
             </properties>
             <modules>
                 <module>delta-lake/delta-stub</module>
                 <module>iceberg/iceberg-stub</module>
             </modules>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>net.alchim31.maven</groupId>
+                            <artifactId>scala-maven-plugin</artifactId>
+                            <configuration>
+                                <release combine.self="override"/>
+                                <target>${java.major.version}</target>
+                            </configuration>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
         </profile>
         <!-- #endif scala-2.13 -->
         <profile>
@@ -816,6 +826,7 @@
         <buildver>330</buildver>
         <maven.compiler.source>1.8</maven.compiler.source>
         <java.major.version>8</java.major.version>
+        <scala.compiler.release>${java.major.version}</scala.compiler.release>
         <spark.version>${spark350.version}</spark.version>
         <spark.test.version>${spark.version}</spark.test.version>
         <parquet.hadoop.version>1.10.1</parquet.hadoop.version>
@@ -901,8 +912,9 @@
         <spark402.version>4.0.2</spark402.version>
         <spark411.version>4.1.1</spark411.version>
         <mockito.version>3.12.4</mockito.version>
-        <!-- same as Apache Spark 4.0.0 for Scala 2.13 except for cloudera shims -->
-        <scala.plugin.version>4.9.2</scala.plugin.version>
+        <!-- 4.7.1 required: later versions auto-derive -release from -target,
+             preventing JDK 17 boot classpath access with JDK 8 classfile output -->
+        <scala.plugin.version>4.7.1</scala.plugin.version>
         <maven.install.plugin.version>3.1.1</maven.install.plugin.version>
         <maven.jar.plugin.version>3.3.0</maven.jar.plugin.version>
         <scalatest-maven-plugin.version>2.0.2</scalatest-maven-plugin.version>
@@ -1014,6 +1026,13 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+              <groupId>com.nvidia</groupId>
+              <artifactId>rapids-4-spark-sql_${scala.binary.version}</artifactId>
+              <version>${project.version}</version>
+              <classifier>${spark.version.classifier}</classifier>
+              <scope>provided</scope>
+            </dependency>
             <dependency>
               <groupId>com.nvidia</groupId>
               <artifactId>spark-rapids-jni</artifactId>
@@ -1394,6 +1413,7 @@ This will force full Scala code rebuild in downstream modules.
                         </execution>
                     </executions>
                     <configuration>
+                        <release>${scala.compiler.release}</release>
                         <scalaVersion>${scala.version}</scalaVersion>
                         <checkMultipleScalaVersions>true</checkMultipleScalaVersions>
                         <failOnMultipleScalaVersions>true</failOnMultipleScalaVersions>
