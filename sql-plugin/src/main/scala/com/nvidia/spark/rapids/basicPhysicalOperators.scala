@@ -267,11 +267,14 @@ object GpuProjectExec {
       while (resultIter.hasNext) {
         pieces += resultIter.next()
       }
-      val outputTypes = (0 until pieces.head.numCols()).map { i =>
-        pieces.head.column(i).asInstanceOf[GpuColumnVector].dataType()
-      }.toArray
-      ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(pieces.toArray, outputTypes)
     }
+    // Hand pieces over to buildNonEmptyBatchFromTypes; it closes them in its
+    // own finally block, so do not wrap the call in closeOnExcept here or we
+    // would double-close on a concat-time failure.
+    val outputTypes = (0 until pieces.head.numCols()).map { i =>
+      pieces.head.column(i).asInstanceOf[GpuColumnVector].dataType()
+    }.toArray
+    ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(pieces.toArray, outputTypes)
   }
 }
 
