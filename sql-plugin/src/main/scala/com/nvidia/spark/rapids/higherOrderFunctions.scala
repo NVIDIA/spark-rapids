@@ -975,6 +975,10 @@ case object SumOp extends AggOp {
     case a: Add => Some((a.left, a.right))
     case _ => None
   }
+  // Float/Double are gated behind `spark.rapids.sql.variableFloatAgg.enabled` (same conf
+  // as scalar GpuSum/GpuAverage) — cuDF's parallel tree-reduction sums in a different
+  // order than Spark's sequential left-fold, so the low-bit answer can differ even though
+  // both are valid IEEE 754 results. The check happens in GpuArrayAggregateMeta.
   def supportsType(t: DataType): Boolean = t.isInstanceOf[NumericType]
 }
 
@@ -1007,7 +1011,9 @@ case object ProductOp extends AggOp {
     case m: Multiply => Some((m.left, m.right))
     case _ => None
   }
-  // Decimal would need DecimalUtils.multiplyDecimals for overflow handling — exclude for now.
+  // Float/Double gated by variableFloatAgg.enabled (see SumOp). Decimal would also need
+  // DecimalUtils.multiplyDecimals for overflow handling — out of scope, so PRODUCT
+  // excludes Decimal entirely.
   def supportsType(t: DataType): Boolean = t match {
     case _: NumericType => !t.isInstanceOf[DecimalType]
     case _ => false
@@ -1486,7 +1492,14 @@ class GpuArrayAggregateMeta(
     ArrayAggregateDecomposer.decompose(
       expr.merge, expr.finish, expr.argument.dataType, expr.zero.dataType) match {
       case Left(reason) => willNotWorkOnGpu(reason)
-      case Right(d) => decomposition = Some(d)
+      case Right(d) =>
+        // SUM/PRODUCT on Float/Double diverge between cuDF's parallel tree-reduction
+        // and Spark's sequential left-fold. Same conf gate as GpuSum / GpuAverage —
+        // willNotWorkOnGpu when variableFloatAgg.enabled=false.
+        if (d.op == SumOp || d.op == ProductOp) {
+          GpuOverrides.checkAndTagFloatAgg(expr.zero.dataType, this.conf, this)
+        }
+        decomposition = Some(d)
     }
   }
 

@@ -264,3 +264,25 @@ def test_array_aggregate_double_extremum_falls_back(lambda_sql, init_sql):
         lambda spark: unary_op_df(spark, ArrayGen(double_gen, max_length=5)).selectExpr(
             f'aggregate(a, {init_sql}, {lambda_sql}) as res'),
         'ArrayAggregate')
+
+
+# SUM / PRODUCT on FLOAT and DOUBLE: cuDF's parallel tree-reduction sums in a different
+# order than Spark's sequential left-fold, so GPU vs CPU can differ in the low bits. Gated
+# by `spark.rapids.sql.variableFloatAgg.enabled` (default true, same as scalar GpuSum) —
+# we only verify the fallback path here, since the GPU path under default conf accepts
+# minor numeric divergence and cannot use strict-equality assertions.
+@pytest.mark.parametrize('elem_gen, lambda_sql, init_sql', [
+    (float_gen, '(acc, x) -> acc + x', 'CAST(0 as FLOAT)'),
+    (double_gen, '(acc, x) -> acc + x', 'CAST(0 as DOUBLE)'),
+    (float_gen, '(acc, x) -> acc * x', 'CAST(1 as FLOAT)'),
+    (double_gen, '(acc, x) -> acc * x', 'CAST(1 as DOUBLE)'),
+], ids=['float-sum', 'double-sum', 'float-product', 'double-product'])
+@disable_ansi_mode
+@allow_non_gpu('ProjectExec')
+def test_array_aggregate_float_sum_product_falls_back_when_variable_float_agg_disabled(
+        elem_gen, lambda_sql, init_sql):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(elem_gen, max_length=5)).selectExpr(
+            f'aggregate(a, {init_sql}, {lambda_sql}) as res'),
+        'ArrayAggregate',
+        conf={'spark.rapids.sql.variableFloatAgg.enabled': 'false'})
