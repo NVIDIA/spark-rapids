@@ -34,6 +34,14 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
   private val intAttr = AttributeReference("int", IntegerType)(ExprId(10))
   private val batchAttrs = Seq(intAttr)
 
+  // Reset retry counters so a leaked count from one test cannot mask a
+  // missed injection in the next.
+  override def afterEach(): Unit = {
+    RmmSpark.getAndResetNumRetryThrow(/*taskId*/ 1)
+    RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1)
+    super.afterEach()
+  }
+
   private def buildBatch(): ColumnarBatch = {
     val ints = 0 until NUM_ROWS
     new ColumnarBatch(

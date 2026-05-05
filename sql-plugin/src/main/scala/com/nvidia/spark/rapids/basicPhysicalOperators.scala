@@ -232,9 +232,9 @@ object GpuProjectExec {
   /**
    * Run a deterministic projection with row-split retry. On GPU OOM the retry
    * framework calls splitSpillableInHalfByRows to halve the input batch and
-   * re-runs the projection on each half. The resulting sub-batches are
-   * concatenated back into a single output batch to preserve the single-batch
-   * contract of projectAndCloseWithRetrySingleBatch.
+   * re-runs the projection on each half; sub-batches are concatenated back
+   * into a single output batch to preserve the single-batch contract of
+   * projectAndCloseWithRetrySingleBatch.
    *
    * Caller must ensure the projection driven by `runProject` is purely
    * deterministic — non-deterministic expressions cannot be safely
@@ -259,47 +259,15 @@ object GpuProjectExec {
         }
       }
     }
-    // Drain the retry iterator. Each piece is an independently-projected
-    // sub-batch. If draining itself throws (e.g. a later split also OOMs and
-    // retry is exhausted), close any pieces collected so far before
-    // propagating.
     val pieces = ArrayBuffer[ColumnarBatch]()
     closeOnExcept(pieces) { _ =>
       while (resultIter.hasNext) {
         pieces += resultIter.next()
       }
-    }
-    if (pieces.length == 1) {
-      pieces.head
-    } else {
-      concatColumnarBatches(pieces.toArray)
-    }
-  }
-
-  /**
-   * Concatenate a non-empty array of ColumnarBatches into a single ColumnarBatch.
-   * Closes all input batches on success; on failure, the input batches are also
-   * closed via closeOnExcept. The returned batch's device buffers are
-   * independent of the inputs (Table.concatenate copies).
-   *
-   * Note: if the concatenation itself OOMs, it will be caught by whatever outer
-   * retry layer surrounds the caller. We don't try to recover here because by
-   * definition the retry framework already split the input as far as it could.
-   */
-  private def concatColumnarBatches(pieces: Array[ColumnarBatch]): ColumnarBatch = {
-    require(pieces.nonEmpty, "concatColumnarBatches requires at least one piece")
-    closeOnExcept(pieces) { _ =>
-      val outputTypes: Array[DataType] = (0 until pieces.head.numCols()).map { i =>
+      val outputTypes = (0 until pieces.head.numCols()).map { i =>
         pieces.head.column(i).asInstanceOf[GpuColumnVector].dataType()
       }.toArray
-      val result = withResource(pieces.safeMap(GpuColumnVector.from)) { tables =>
-        withResource(Table.concatenate(tables: _*)) { concatenated =>
-          GpuColumnVector.from(concatenated, outputTypes)
-        }
-      }
-      // Result holds independent device buffers; release the input pieces.
-      pieces.foreach(_.close())
-      result
+      ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(pieces.toArray, outputTypes)
     }
   }
 }
