@@ -175,7 +175,10 @@ object GpuProjectExec {
     if (new RapidsConf(SQLConf.get).isProjectSplitRetryEnabled &&
         boundExprs.forall(_.deterministic)) {
       val retryables = GpuExpressionsUtils.collectRetryables(boundExprs)
-      return runWithSplitRetry(sb, retryables, project(_, boundExprs))
+      // runWithSplitRetry takes ownership of the SpillableColumnarBatch; bump
+      // the ref count so the caller (which is responsible for closing `sb`,
+      // per this method's contract) doesn't double-close it.
+      return runWithSplitRetry(sb.incRefCount(), retryables, project(_, boundExprs))
     }
 
     // First off we want to find/run all of the expressions that are not retryable,

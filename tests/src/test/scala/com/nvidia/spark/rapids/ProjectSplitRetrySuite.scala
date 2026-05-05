@@ -174,9 +174,9 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
     }
   }
 
-  // A plain GpuRetryOOM under the new path is resolved before the
-  // splitter is invoked, so the result comes back as a single piece —
-  // exercising the `pieces.length == 1` early-return in runWithSplitRetry.
+  // A plain GpuRetryOOM under the new path is resolved before the splitter
+  // is invoked, so the result comes back as a single piece — exercising the
+  // single-piece path through ConcatAndConsumeAll.buildNonEmptyBatchFromTypes.
   test("plain GpuRetryOOM under split-retry path returns a single piece") {
     val out = withInjectedOOM {
       RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
