@@ -63,11 +63,19 @@ import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter,
 
 object BloomFilterShims extends Logging {
 
+  // Double-gated probe-side instrumentation. Both flags default to false; both must be
+  // true to wire a `BloomFilterProbeAccumulator` into `GpuBloomFilterMightContain` (per-batch
+  // (rowsIn, rowsPassed) updates). When either flag is off, the probe path runs without
+  // instrumentation and behaves exactly like the OSS BloomFilterMightContain replacement.
+  // The same keys gate build-cost updaters in InlineBFBuildReplacement.
   private val RUNTIME_FEEDBACK_ENABLED_KEY =
     "spark.rapids.sql.cuBloomFilter.runtimeFeedback.enabled"
   private val RUNTIME_FEEDBACK_INSTRUMENTATION_ENABLED_KEY =
     "spark.rapids.sql.cuBloomFilter.runtimeFeedback.instrumentation.enabled"
 
+  // Probe-side leaf node emitted by the optional planner module. The execution layer discovers it
+  // by FQCN to extract the `bfId` for accumulator wiring. If the planner module is absent, the
+  // lookup silently returns None and the probe path runs without instrumentation.
   private val TryReadBFRegistryExecClassName =
     "com.nvidia.spark.rapids.optimizer.cubloomfilter.TryReadBFRegistryExec"
 

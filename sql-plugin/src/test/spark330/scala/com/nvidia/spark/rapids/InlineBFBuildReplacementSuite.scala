@@ -52,6 +52,10 @@ import org.scalatest.funsuite.AnyFunSuite
  */
 class InlineBFBuildReplacementSuite extends AnyFunSuite {
 
+  // V1 BloomFilter wire format header: version(4) + numHashes(4) + numWords(4) = 12 bytes.
+  // Data section starts at offset V1_HEADER_SIZE.
+  private val V1_HEADER_SIZE = 12
+
   test("BloomFilterBuildAccumulator merge produces correct union") {
     val acc1 = new BloomFilterBuildAccumulator()
     val acc2 = new BloomFilterBuildAccumulator()
@@ -73,8 +77,8 @@ class InlineBFBuildReplacementSuite extends AnyFunSuite {
     acc1.merge(acc2)
     val merged = acc1.value
     // Data byte should be OR of 0x0F and 0xF0 = 0xFF
-    assert((merged(19) & 0xFF) == 0xFF,
-      s"Expected 0xFF, got ${merged(19) & 0xFF}")
+    assert((merged(V1_HEADER_SIZE + 7) & 0xFF) == 0xFF,
+      s"Expected 0xFF, got ${merged(V1_HEADER_SIZE + 7) & 0xFF}")
     // Header unchanged
     assert(merged(3) == 1, "Version should be 1")
     assert(merged(7) == 1, "NumHashes should be 1")
@@ -103,7 +107,15 @@ class InlineBFBuildReplacementSuite extends AnyFunSuite {
       0, 0, 0, 0, 0, 0, 0, 42)
     acc.add(bf)
     assert(!acc.isZero)
-    assert(acc.value(19) == 42)
+    assert(acc.value(V1_HEADER_SIZE + 7) == 42)
+  }
+
+  test("BloomFilterBuildAccumulator.add(null) is a defensive no-op") {
+    val acc = new BloomFilterBuildAccumulator()
+    acc.add(null)
+    assert(acc.isZero,
+      "add(null) must not mutate state; production never calls this path " +
+        "but the guard closes the NPE surface for future callers")
   }
 
   test("InlineBFBuildReplacement class name is resolvable") {
@@ -152,6 +164,26 @@ class InlineBFBuildReplacementSuite extends AnyFunSuite {
     assert(specs.map(_.keyColumnIndex) == Seq(0, 1))
     assert(specs.map(_.numHashes) == Seq(5, 5))
     assert(specs.map(_.numBits) == Seq(100000L, 100000L))
+  }
+
+  case class FakeBrokenInlineExec(child: Any) {
+    // Required accessor that always throws — exercises the NonFatal catch path
+    // in replaceWithGpu / readSpecs reflection.
+    def specs: Seq[Any] = throw new RuntimeException("synthetic reflection failure")
+    def bfVersion: Int = 1
+    def seed: Int = 0
+    def xxHashSeed: Long = 42L
+  }
+
+  test("readSpecs propagates reflective accessor failure (fail-closed contract)") {
+    val broken = FakeBrokenInlineExec(null)
+    val ex = intercept[Exception] {
+      InlineBFBuildReplacement().readSpecs(broken)
+    }
+    // The exception must surface so the apply-level NonFatal catch can
+    // discard the replacement and return the original plan unchanged.
+    assert(ex.getCause != null || ex.getMessage != null,
+      "reflection failure must surface as an exception, not silently succeed")
   }
 
   test("legacy_fallback_tolerates_old_single_spec") {

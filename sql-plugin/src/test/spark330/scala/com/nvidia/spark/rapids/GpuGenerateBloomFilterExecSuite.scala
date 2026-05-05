@@ -55,6 +55,10 @@ import org.apache.spark.sql.execution.SparkPlan
 class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
     with BeforeAndAfterAll {
 
+  // V1 BloomFilter wire format header: version(4) + numHashes(4) + numWords(4) = 12 bytes.
+  // Data section starts at offset V1_HEADER_SIZE.
+  private val V1_HEADER_SIZE = 12
+
   @transient private var spark: SparkSession = _
 
   override def beforeAll(): Unit = {
@@ -156,10 +160,10 @@ class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
     // (not 0xFF) and bf-A is 0xFF (not 0x33).
     val bfA = accs("bf-A").value
     val bfB = accs("bf-B").value
-    assert((bfA(19) & 0xFF) == 0xFF,
-      s"bf-A data expected 0xFF, got ${bfA(19) & 0xFF}")
-    assert((bfB(19) & 0xFF) == 0x33,
-      s"bf-B data expected 0x33, got ${bfB(19) & 0xFF}")
+    assert((bfA(V1_HEADER_SIZE + 7) & 0xFF) == 0xFF,
+      s"bf-A data expected 0xFF, got ${bfA(V1_HEADER_SIZE + 7) & 0xFF}")
+    assert((bfB(V1_HEADER_SIZE + 7) & 0xFF) == 0x33,
+      s"bf-B data expected 0x33, got ${bfB(V1_HEADER_SIZE + 7) & 0xFF}")
     // Headers preserved
     assert(bfA(3) == 1 && bfB(3) == 1, "BF version header corrupted")
   }
@@ -357,6 +361,18 @@ class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
     exec.recordBuildUpdate("cubf-unknown", 1000L, 512L)
     assert(spy.invocationCount === 0,
       "updater must not fire for an unknown bfId")
+  }
+
+  test("isNeeded returns false for plan without markers") {
+    val plan = spark.range(10).queryExecution.executedPlan
+    assert(!InlineBFBuildReplacement.isNeeded(plan),
+      "isNeeded must return false when no InlineBFBuildExec markers are present")
+  }
+
+  test("applyIfNeeded returns plan unchanged when no markers are present") {
+    val plan = spark.range(10).queryExecution.executedPlan
+    assert(InlineBFBuildReplacement.applyIfNeeded(plan) eq plan,
+      "applyIfNeeded must return the original plan reference unchanged")
   }
 
   test("buildCostUpdaters do not break canonical transparency") {

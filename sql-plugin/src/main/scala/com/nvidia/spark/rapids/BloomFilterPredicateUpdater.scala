@@ -19,12 +19,14 @@ package com.nvidia.spark.rapids
 /**
  * Per-batch update sink for bloom-filter predicate observability.
  *
- * Implementations receive `(rowsIn, rowsPassed)` once per columnar
- * batch from `GpuBloomFilterMightContain.columnarEval`, never once
- * per row. The trait keeps the per-batch contract testable without
- * a GPU dependency:
- * unit tests substitute a counting spy and assert `update` is
- * invoked once per batch.
+ * Implementations receive `(rowsIn, rowsPassed)` once per columnar batch from
+ * `GpuBloomFilterMightContain.columnarEval`, never once per row. The trait keeps the per-batch
+ * contract testable without a GPU dependency: unit tests substitute a counting spy and assert
+ * `update` is invoked once per batch.
+ *
+ * Extension point — semver stability applies: The planner layer supplies implementations
+ * of this trait to the execution layer's `GpuBloomFilterMightContain`. Changes to this interface
+ * must be coordinated across both modules.
  */
 trait BloomFilterPredicateUpdater {
   def update(rowsIn: Long, rowsPassed: Long): Unit

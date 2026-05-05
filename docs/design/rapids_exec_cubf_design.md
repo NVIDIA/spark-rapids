@@ -404,6 +404,15 @@ Merge invariants:
    a 16-byte header that includes an additional 4-byte hash seed field.
 4. A size mismatch is a contract violation and must not be silently merged.
 
+| Field          | V1 Size | V2 Size | Notes                              |
+|----------------|---------|---------|------------------------------------|
+| Version        | 4 bytes | 4 bytes | V1=1, V2=2                         |
+| NumHashes      | 4 bytes | 4 bytes |                                    |
+| Seed           | —       | 4 bytes | V2 only                            |
+| NumWords       | 4 bytes | 4 bytes |                                    |
+| Data           | N bytes | N bytes | N = numWords * 8                   |
+| **Skip Sentinel** | **4 bytes** | — | **All-zero; smaller than min valid BF** |
+
 Skip behavior uses a four-byte all-zero sentinel. The sentinel is not a valid
 serialized bloom filter because real bloom filter payloads start with a non-zero
 version header. Once any partition or driver-side guard publishes the sentinel,
@@ -442,6 +451,11 @@ AQE can wrap the subquery plan in `AdaptiveSparkPlanExec`, discovery also probes
 AQE plan accessors reflectively to reach the underlying physical plan.
 If discovery fails at any step, `bfId` and `probeUpdater` remain `None` and the
 expression behaves as the standard OSS replacement.
+
+AQE plan discovery probes accessors in priority order:
+`executedPlan` > `currentPhysicalPlan` > `initialPlan` > `inputPlan`.
+The first non-null result is used; normal `children` traversal is the
+final fallback.
 
 Probe-side discovery flow:
 
@@ -524,6 +538,9 @@ Current profile behavior is split into three tiers:
 | Pre-3.3.0 profiles | No Spark bloom filter expression support is registered. |
 | Databricks shim variants | Spark bloom filter expression support is retained, but CuBF build exec wiring and pre-`GpuOverrides` replacement are not enabled. These profiles fall through to the base shim identity and remain inert for CuBF build markers. |
 | OSS Spark 3.3.0+ profiles | Spark bloom filter expression support, `InlineBFBuildReplacement`, and `GpuGenerateBloomFilterExec` registration are enabled. |
+
+The canonical source for supported profiles is the `spark-rapids-shim-json-lines`
+annotation header in `GpuGenerateBloomFilterExec.scala`.
 
 ## 6. Inertness & Compatibility
 
@@ -677,6 +694,12 @@ kernel launch overhead is roughly 5 to 10 microseconds each. For `K=3` and 50
 batches per partition, that is 300 launches, or about 1.5 to 3 ms total, which
 is negligible relative to batch processing time.
 
+Build wall time reported via `BloomFilterBuildCostUpdater` is
+partition-level (one measurement per task), shared across all specs
+in the operator. With K specs per operator, the same wall-time
+value appears in K updater calls. Driver-side cost analysis must
+divide by spec count for per-BF attribution.
+
 ### 8.3 Build-Side Overhead Total
 
 Network overhead from executors to the driver is:
@@ -689,6 +712,8 @@ Network_build = P_build * K * bf_bytes
 serialized byte arrays to the driver through Spark's accumulator protocol as
 part of task completion messages, not as separate transfers. This is the
 dominant build-side overhead for large bloom filters with many partitions.
+See § 11.2 for the relationship between per-task accumulator payload
+and `spark.driver.maxResultSize`.
 
 Driver heap for merged bloom filters is:
 
@@ -1104,6 +1129,9 @@ unbounded and should be cleaned up in long-lived sessions.
 **Remedy.** No cleanup mechanism exists today. This is tracked as future work
 (Section 12, item 8). A listener-based cleanup keyed on query completion is the
 expected fix.
+The recommended cleanup hook is `SparkListenerSQLExecutionEnd`, which
+fires once per SQL execution and carries the `executionId` needed to
+identify related accumulators.
 
 ### 11.5 Configuration Derivation Summary
 

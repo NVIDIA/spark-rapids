@@ -64,6 +64,10 @@ case class InlineBFBuildReplacement() extends Rule[SparkPlan] with Logging {
 
   import InlineBFBuildReplacement._
 
+  // The FQCN matches a CPU stub from the optional planner module.
+  // Reflection-only detection means this rule has zero compile-time
+  // dependency on planner classes: when the planner JAR is absent,
+  // the lookup never matches and the rule is a no-op.
   private val inlineBFClassName =
     "com.nvidia.spark.rapids.optimizer.cubloomfilter.InlineBFBuildExec"
 
@@ -146,6 +150,10 @@ case class InlineBFBuildReplacement() extends Rule[SparkPlan] with Logging {
    *
    * Legacy fallback: if no `specs` method exists, read the old
    * single-field accessors and wrap in a single-element Seq.
+   *
+   * Both paths produce a uniform `Seq[BFSpec]` so downstream
+   * `GpuGenerateBloomFilterExec` sees a single shape regardless of
+   * which planner-module exec shape produced it.
    */
   private[rapids] def readSpecs(exec: Any): Seq[BFSpec] = {
     val execClass = exec.getClass
@@ -199,7 +207,9 @@ object InlineBFBuildReplacement {
     }
   }
 
-  /** Quick check if any InlineBFBuildExec nodes exist in the plan. */
+  // Fast-path: avoid constructing the Rule + transformUp when no
+  // InlineBFBuildExec markers are present (the common case without
+  // the planner module).
   def isNeeded(plan: SparkPlan): Boolean = {
     plan.find(_.getClass.getName == inlineBFClassName).isDefined
   }

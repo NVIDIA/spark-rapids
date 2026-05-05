@@ -246,8 +246,10 @@ case class GpuGenerateBloomFilterExec(
 
         private def finalizeAllBFs(): Unit = {
           try {
-            // Compute wall time once per finalize and reuse it for every spec
-            // in this task.
+            // Compute wall time once per finalize and reuse it for every spec in this task.
+            // Wall time is partition-level, not per-spec: the operator runs a
+            // single fused columnar pass over all specs. Driver-side consumers
+            // must normalize by spec count if per-BF cost attribution is needed.
             val wallNanos = if (taskStartNanos != 0L) {
               System.nanoTime() - taskStartNanos
             } else 0L
@@ -262,8 +264,7 @@ case class GpuGenerateBloomFilterExec(
               } else {
                 val bf = bfs(i)
                 if (bf != null) {
-                  val bytes =
-                    GpuGenerateBloomFilterExec.scalarToHostBytes(bf)
+                  val bytes = GpuGenerateBloomFilterExec.scalarToHostBytes(bf)
                   accMap(spec.bfId).add(bytes)
                   logInfo(s"[CuBF-GpuBuild] bfId=${spec.bfId} " +
                     s"partition=$partId SENT ${bytes.length} bytes " +
@@ -322,10 +323,11 @@ object GpuGenerateBloomFilterExec extends Logging {
    /**
    * Driver-side lookup of `SparkVersionBFCaps.effectiveMaxFilterBytes(Long)`.
    *
-   * Resolved reflectively to avoid a compile-time classpath dependency
-   * on optional planner code. If reflection fails, return the V1
-   * indexing ceiling instead of `Long.MaxValue`, keeping the overshoot
-   * guard fail-closed.
+   * Optional capability helper supplied by the planner module. Resolved
+   * reflectively to avoid a compile-time classpath dependency on optional
+   * planner code. If reflection fails, return the V1 indexing ceiling
+   * (~256 MB) instead of `Long.MaxValue`, keeping the overshoot guard
+   * fail-closed.
    */
   def resolveEffectiveMaxFilterBytes(): Long = {
     try {
@@ -440,6 +442,13 @@ class BloomFilterBuildAccumulator extends AccumulatorV2[Array[Byte], Array[Byte]
   }
 
   override def add(partial: Array[Byte]): Unit = {
+    // Defensive null guard. Production callers (`finalizeAllBFs` and `merge`) both null-check
+    // before invoking `add`, so this branch is unreachable today. The guard exists to close the
+    // NPE surface (`partial.clone()` below) for any future caller and to make the contract
+    // explicit: a null partial is a no-op, not a sentinel and not a contract violation.
+    if (partial == null) {
+      return
+    }
     if (isSkipShape(partial) || isSkipShape(merged)) {
       merged = SkipSentinel
     } else if (merged == null) {
@@ -458,9 +467,14 @@ class BloomFilterBuildAccumulator extends AccumulatorV2[Array[Byte], Array[Byte]
 
   override def value: Array[Byte] = merged
 
-  /** Length-4 all-zero check covers both the driver-local sentinel
-   *  identity and the deserialized content-equivalent form after
-   *  task-to-driver accumulator shipping. */
+  /**
+   * Length-4 all-zero check covers both the driver-local sentinel identity and the deserialized
+   * content-equivalent form after task-to-driver accumulator shipping.
+   *
+   * The skip-sentinel (4 bytes, all zero) is safe by construction:
+   * valid serialized BFs are >= 12 bytes (V1/V2 header) with a non-zero version field in the
+   * first 4 bytes. Any 4-byte all-zero payload is unambiguously a sentinel, not a truncated BF.
+   */
   private def isSkipShape(bytes: Array[Byte]): Boolean = {
     if (bytes == null) false
     else if (bytes eq SkipSentinel) true

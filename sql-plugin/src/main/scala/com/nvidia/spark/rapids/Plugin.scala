@@ -69,6 +69,8 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   lazy val overrides: Rule[SparkPlan] = GpuOverrides()
   lazy val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
 
+  // Wrapper is stateless — caching it would save only the object header.
+  // The heavy work (GpuOverrides construction) is cached in `overrides`.
   override def preColumnarTransitions: Rule[SparkPlan] = {
     new Rule[SparkPlan] {
       override def apply(plan: SparkPlan): SparkPlan = {

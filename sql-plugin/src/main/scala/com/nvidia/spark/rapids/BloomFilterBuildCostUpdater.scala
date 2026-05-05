@@ -17,14 +17,15 @@
 package com.nvidia.spark.rapids
 
 /**
- * Per-build update sink for bloom-filter build-side cost
- * observability.
+ * Per-build update sink for bloom-filter build-side cost observability.
  *
- * Implementations receive `(buildWallNanos, bfBytes)` once per BF
- * build at finalize time, never once per input batch. The trait
- * keeps the per-build contract testable without a GPU dependency:
- * unit tests substitute a counting spy and assert `update` is
- * invoked once per BF build.
+ * Implementations receive `(buildWallNanos, bfBytes)` once per BF build at finalize time, never
+ * once per input batch. The trait keeps the per-build contract testable without a GPU dependency:
+ * unit tests substitute a counting spy and assert `update` is invoked once per BF build.
+ *
+ * Extension point — semver stability applies: The planner layer supplies implementations of this
+ * trait to the execution layer's `GpuGenerateBloomFilterExec`. Changes to this interface must be
+ * coordinated across both modules.
  */
 trait BloomFilterBuildCostUpdater {
   def update(buildWallNanos: Long, bfBytes: Long): Unit

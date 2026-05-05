@@ -54,10 +54,16 @@ package com.nvidia.spark.rapids.optimizer.cubloomfilter {
   import org.apache.spark.sql.catalyst.expressions.Attribute
   import org.apache.spark.sql.execution.LeafExecNode
 
-  /** Test-only stub whose FQCN matches
-   *  `BloomFilterShims.TryReadBFRegistryExecClassName`. Exposes a
-   *  no-arg `bfId` method (Scala case-class field accessor) that
-   *  the production reflection path invokes. */
+  /**
+   * Test-only stub whose FQCN matche `BloomFilterShims.TryReadBFRegistryExecClassName`.
+   * Exposes a no-arg `bfId` method (Scala case-class field accessor) that the production
+   * reflection path invokes.
+   * LIFECYCLE NOTE: This stub exists because the planner module
+   * (optimizer.cubloomfilter.TryReadBFRegistryExec) ships in a separate JAR that is not on
+   * the test classpath today. When the planner module lands as a dependency, this stub must
+   * be deleted — the real class will satisfy the reflection path directly. Until then,
+   * this stub is the only way to exercise the production FQCN lookup in unit tests.
+   */
   case class TryReadBFRegistryExec(bfId: String) extends LeafExecNode {
     override def output: Seq[Attribute] = Seq.empty
     override protected def doExecute(): RDD[InternalRow] =

@@ -138,8 +138,8 @@ case class GpuBloomFilterMightContain(
               }
               recordBatchUpdate(batch.numRows().toLong, rowsPassed)
             }
+            GpuColumnVector.from(resultBase, BooleanType)
           }
-          GpuColumnVector.from(resultBase, BooleanType)
         }
       }
     }
