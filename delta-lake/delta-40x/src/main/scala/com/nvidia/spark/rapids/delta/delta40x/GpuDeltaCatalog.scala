@@ -1,5 +1,10 @@
 /*
- * Copyright (c) 2026, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ *
+ * This file was derived from DeltaDataSource.scala in the
+ * Delta Lake project at https://github.com/delta-io/delta.
+ *
+ * Copyright (2021) The Delta Lake Project Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,26 +19,21 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.delta.rapids
+package com.nvidia.spark.rapids.delta.delta40x
 
 import com.nvidia.spark.rapids.RapidsConf
-import com.nvidia.spark.rapids.delta.GpuDeltaCatalogBase
 
 import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.commands.TableCreationModes
+import org.apache.spark.sql.delta.rapids.{GpuDeltaCatalog4x, GpuWriteIntoDelta}
+import org.apache.spark.sql.delta.rapids.delta40x.GpuCreateDeltaTableCommand
 
-/**
- * Shared GPU Delta catalog base for the Delta 4.0 and 4.1 shims.
- *
- * The catalog logic is identical across these runtimes; only the version-specific
- * `GpuCreateDeltaTableCommand` construction differs.
- */
-abstract class GpuDeltaCatalog4x(
+class GpuDeltaCatalog(
     cpuCatalog: DeltaCatalog,
     rapidsConf: RapidsConf)
-  extends GpuDeltaCatalogBase(cpuCatalog, rapidsConf) {
+  extends GpuDeltaCatalog4x(cpuCatalog, rapidsConf) {
 
   override protected def createGpuCreateDeltaTableCommand(
       withDb: CatalogTable,
@@ -42,5 +42,14 @@ abstract class GpuDeltaCatalog4x(
       writer: Option[GpuWriteIntoDelta],
       operation: TableCreationModes.CreationMode,
       isByPath: Boolean,
-      tableCreateFunc: Option[CatalogTable => Unit]): Unit
+      tableCreateFunc: Option[CatalogTable => Unit]): Unit = {
+    GpuCreateDeltaTableCommand(
+      withDb,
+      existingTableOpt,
+      operation.mode,
+      writer,
+      operation,
+      tableByPath = isByPath,
+      createTableFunc = tableCreateFunc)(rapidsConf).run(spark)
+  }
 }

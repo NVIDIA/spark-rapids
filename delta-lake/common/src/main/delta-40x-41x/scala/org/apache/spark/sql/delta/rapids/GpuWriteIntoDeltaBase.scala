@@ -76,7 +76,7 @@ abstract class GpuWriteIntoDeltaBase(
    * 4.0 still uses the shorter constructor, so subclasses supply the version-specific metadata
    * object here.
    */
-  protected def buildWriteOperation: DeltaOperations.Operation
+  protected def buildCommitMetadata: DeltaOperations.Operation
 
   /**
    * Recreate the GPU write command around an updated CPU `WriteIntoDelta` while preserving the
@@ -95,7 +95,7 @@ abstract class GpuWriteIntoDeltaBase(
       )
       txn.commitIfNeeded(
         taggedCommitData.actions,
-        buildWriteOperation,
+        buildCommitMetadata,
         tags = taggedCommitData.stringTags)
     }
     Seq.empty

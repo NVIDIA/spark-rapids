@@ -78,26 +78,25 @@ abstract class GpuDeltaCatalogBase(
   }
 
   private lazy val isUnityCatalog: Boolean = {
-    // This is a defensive superclass walk, not a version-specific shim split: supported Delta
-    // catalogs expose the same `isUnityCatalog` flag, but wrapper subclasses may inherit it rather
-    // than redeclare it on the concrete runtime class we receive here.
     @scala.annotation.tailrec
-    def findField(clazz: Class[_]): Option[java.lang.reflect.Field] = {
+    def findRequiredField(clazz: Class[_]): java.lang.reflect.Field = {
       if (clazz == null) {
-        None
-      } else {
-        try {
-          Some(clazz.getDeclaredField("isUnityCatalog"))
-        } catch {
-          case _: NoSuchFieldException => findField(clazz.getSuperclass)
-        }
+        throw new IllegalStateException(
+          s"Unable to locate Delta catalog field isUnityCatalog on " +
+            s"${cpuCatalog.getClass.getName}; add a version-specific shim if this changed.")
+      }
+      try {
+        clazz.getDeclaredField("isUnityCatalog")
+      } catch {
+        case _: NoSuchFieldException => findRequiredField(clazz.getSuperclass)
       }
     }
 
-    findField(cpuCatalog.getClass).exists { field =>
-      field.setAccessible(true)
-      field.getBoolean(cpuCatalog)
-    }
+    // Delta 4.1 may wrap the concrete catalog class, but supported Delta runtimes still expose
+    // `isUnityCatalog` somewhere in the catalog hierarchy.
+    val field = findRequiredField(cpuCatalog.getClass)
+    field.setAccessible(true)
+    field.getBoolean(cpuCatalog)
   }
 
   protected def isPathIdentifier(ident: Identifier): Boolean = {

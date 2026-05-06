@@ -30,7 +30,7 @@ case class GpuWriteIntoDelta(
     override val cpuWrite: WriteIntoDelta)
     extends GpuWriteIntoDeltaBase(gpuDeltaLog, cpuWrite) {
 
-  override protected def buildWriteOperation: DeltaOperations.Operation = {
+  override protected def buildCommitMetadata: DeltaOperations.Operation = {
     DeltaOperations.Write(
       cpuWrite.mode,
       Option(cpuWrite.partitionColumns),

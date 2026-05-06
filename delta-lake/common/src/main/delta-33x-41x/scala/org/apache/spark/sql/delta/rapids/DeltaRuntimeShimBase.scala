@@ -48,7 +48,7 @@ abstract class DeltaRuntimeShimBase extends DeltaRuntimeShim {
   override def getTightBoundColumnOnFileInitDisabled(spark: SparkSession): Boolean = false
 
   // Catalog wiring remains runtime-specific because Delta 3.3 and Delta 4.x use different
-  // create-table command implementations, even though Delta 4.0/4.1 now share the same wrapper.
+  // create-table command implementations, even though Delta 4.0/4.1 now share the same base.
   override def getGpuDeltaCatalog(cpuCatalog: DeltaCatalog,
       rapidsConf: RapidsConf): StagingTableCatalog
 
