@@ -117,8 +117,8 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
   } {
     val dsLabel = if (v1SourceList == "orc") "v1" else "v2"
     test(s"ORC timezone matrix ($dsLabel) for writer timezone $writerTimeZone") {
-      val runSeed = scala.util.Random.nextLong()
-      println(s"OrcTimezoneSuite random seed: $runSeed")
+      // Use a fixed seed for reproducibility; tests must not be non-deterministic.
+      val runSeed = 42L
       val random = new Random(runSeed)
       val conf = baseConf(v1SourceList)
       val existClass = if (v1SourceList == "orc") "GpuFileSourceScanExec" else "GpuBatchScan"
