@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.shims.InvalidateCacheShims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, EqualTo, Literal}
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
@@ -233,6 +233,9 @@ object DVPredicatePushdown extends ShimPredicateHelper {
         case GpuEqualTo(left, right) =>
           isRowDeletedColumnRef(left) && isLiteralZero(right) ||
             isRowDeletedColumnRef(right) && isLiteralZero(left)
+        case EqualTo(left, right) =>
+          isRowDeletedColumnRef(left) && isLiteralZero(right) ||
+            isRowDeletedColumnRef(right) && isLiteralZero(left)
         case _ => false
       }
     }
@@ -247,6 +250,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
     def isLiteralZero(expr: Expression): Boolean = {
       expr match {
         case GpuLiteral(value: Number, _) if value.longValue() == 0L => true
+        case Literal(value: Number, _) if value.longValue() == 0L => true
         case _ => false
       }
     }
@@ -261,7 +265,8 @@ object DVPredicatePushdown extends ShimPredicateHelper {
             _.name == IS_ROW_DELETED_COLUMN_NAME),
             requiredSchema = StructType(
               fsse.requiredSchema.filterNot(_.name == IS_ROW_DELETED_COLUMN_NAME)
-            ))(fsse.rapidsConf)
+            ),
+            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(fsse.rapidsConf)
       }
     }
 

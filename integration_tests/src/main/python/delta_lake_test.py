@@ -663,7 +663,8 @@ def test_delta_deletion_vector_ignore_corrupt_files(spark_tmp_path, reader_type)
                     reason="Deletion vector scan is not supported on Databricks")
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
-def test_delta_filter_out_metadata_col(spark_tmp_path):
+@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
+def test_delta_filter_out_metadata_col(spark_tmp_path, dv_predicate_pushdown):
     data_path = spark_tmp_path + "/DELTA_DATA"
 
     col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[])
@@ -679,11 +680,12 @@ def test_delta_filter_out_metadata_col(spark_tmp_path):
 
     def read_table(spark):
         df = spark.sql(f"SELECT * FROM delta.`{data_path}`")
-        assert "__delta_internal_is_row_deleted" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "extended")
+        # The `is_row_deleted` column is removed from the plan when the pushdown is enabled.
+        assert not dv_predicate_pushdown == "__delta_internal_is_row_deleted" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "extended")
         return df
 
     with_cpu_session(create_delta)
-    assert_gpu_and_cpu_are_equal_collect(read_table)
+    assert_gpu_and_cpu_are_equal_collect(read_table, conf={'spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled': dv_predicate_pushdown})
 
 
 @allow_non_gpu(*delta_meta_allow)
