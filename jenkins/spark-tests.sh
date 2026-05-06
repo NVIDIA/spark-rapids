@@ -19,8 +19,6 @@ set -ex
 
 nvidia-smi
 
-MVN_SETTINGS=${MVN_SETTINGS:-"jenkins/settings.xml"}
-
 . jenkins/version-def.sh
 . jenkins/shuffle-common.sh
 
@@ -99,9 +97,7 @@ tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 $WGET_CMD $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
 
 # Download parquet-hadoop jar for parquet-read encryption tests
-PARQUET_HADOOP_VER=$($MVN -B help:evaluate \
-  -q -N $MVN_URM_MIRROR -Dexpression=parquet.hadoop.version -DforceStdout \
-  -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/})
+PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`
 if [[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]]; then
   $WGET_CMD $SPARK_REPO/org/apache/parquet/parquet-hadoop/$PARQUET_HADOOP_VER/parquet-hadoop-$PARQUET_HADOOP_VER-tests.jar
 fi
