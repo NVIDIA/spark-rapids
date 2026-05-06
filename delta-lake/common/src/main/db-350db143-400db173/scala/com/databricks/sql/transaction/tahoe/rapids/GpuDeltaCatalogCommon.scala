@@ -23,12 +23,11 @@ package com.databricks.sql.transaction.tahoe.rapids
 
 import java.util
 
-import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaErrors, DeltaLog, DeltaOptions}
-import com.databricks.sql.transaction.tahoe.commands.{TableCreationModes, WriteIntoDeltaEdge}
+import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaErrors}
+import com.databricks.sql.transaction.tahoe.commands.TableCreationModes
 import com.databricks.sql.transaction.tahoe.metering.DeltaLogging
 import com.databricks.sql.transaction.tahoe.sources.DeltaSourceUtils
 import com.nvidia.spark.rapids.RapidsConf
-import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.{AnalysisException, DataFrame, SaveMode}
 import org.apache.spark.sql.catalyst.TableIdentifier
@@ -40,28 +39,10 @@ import org.apache.spark.sql.execution.command.LeafRunnableCommand
 import org.apache.spark.sql.execution.datasources.PartitioningUtils
 import org.apache.spark.sql.types.StructType
 
-class GpuDeltaCatalog(
+abstract class GpuDeltaCatalogCommon(
     override val cpuCatalog: StagingTableCatalog,
     override val rapidsConf: RapidsConf)
   extends GpuDeltaCatalogBase with SupportsPathIdentifier with DeltaLogging {
-
-  override protected def getWriter(sourceQuery: Option[DataFrame],
-     path: Path,
-     comment: Option[String],
-     schema: Option[StructType],
-     saveMode: SaveMode,
-     catalogTable: CatalogTable): Option[LogicalPlan] = {
-    sourceQuery.map { df =>
-      WriteIntoDeltaEdge(
-        DeltaLog.forTable(spark, path),
-        saveMode,
-        new DeltaOptions(catalogTable.storage.properties, spark.sessionState.conf),
-        catalogTable.partitionColumnNames,
-        catalogTable.properties ++ comment.map("comment" -> _),
-        df,
-        schemaInCatalog = schema)
-    }
-  }
 
   override protected def buildGpuCreateDeltaTableCommand(
       rapidsConf: RapidsConf,
@@ -148,9 +129,7 @@ class GpuDeltaCatalog(
   }
 
   /**
-   * Creates or replaces a Delta table through the GPU catalog wrapper. DB-17.3 catalog
-   * CTAS/RTAS writes stay on CPU until the GPU CreateDeltaTableCommand preserves the new
-   * table-creation semantics.
+   * Creates a Delta table using GPU for writing the data.
    *
    * @param ident              The identifier of the table
    * @param schema             The schema of the table
@@ -220,8 +199,7 @@ class GpuDeltaCatalog(
 
   /**
    * A staged Delta table wrapper used to keep Databricks catalog staging behavior while adding
-   * profiling. DB-17.3 staged CTAS/RTAS still runs on CPU, but create/replace plumbing is shared
-   * with older Delta catalog code.
+   * profiling.
    */
   protected class GpuStagedDeltaTableV2WithLogging(
       ident: Identifier,
