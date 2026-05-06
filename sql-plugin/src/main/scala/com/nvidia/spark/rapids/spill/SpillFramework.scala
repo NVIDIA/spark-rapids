@@ -285,7 +285,7 @@ trait DeviceStoreHandle extends SpillableHandle {
 }
 
 /**
- * Spillable handles that can be materialized on the device and spilled to host.
+ * Spillable handles that can be materialized on the device.
  * @tparam T an auto closeable subclass. `dev` tracks an instance of this object,
  *           on the device.
  */
@@ -327,6 +327,13 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends DeviceStoreHandle {
 }
 
 object SharedRecomputableDeviceHandle {
+  /**
+   * A scoped lease that pins a shared recomputable device object.
+   * Holding a lease prevents the object from being closed.
+   * 
+   * @param handle the handle that the lease is on
+   * @param resource the object that the lease is on
+   */
   final class Lease[T <: AutoCloseable] private[spill] (
       handle: SharedRecomputableDeviceHandle[T],
       val resource: T) extends AutoCloseable {
@@ -352,16 +359,19 @@ object SharedRecomputableDeviceHandle {
 }
 
 /**
- * Handle for device-only state that is cheaper to recompute than to spill.
+ * Handle for device-only object that is shared amongst threads and is cheap to recompute.
  *
  * When this handle is selected for spilling, it does not copy anything to host or disk. Instead
- * it marks the current device state as evicted and returns `approxSizeInBytes` so the spill
- * framework accounts for the freed device memory. The actual close of the evicted state is
- * deferred to `releaseSpilled`, after device synchronization has completed.
+ * it marks the current device object as evicted and returns `approxSizeInBytes` so the spill
+ * framework accounts for the freed device memory. The actual close of the evicted object is
+ * deferred to `releaseSpilled` after device synchronization.
  *
- * The protected device state does not expose reference counts, so spillability cannot follow the
- * usual `getRefCount == 1` pattern used by cuDF tables and buffers. Instead, callers must pin the
- * state through `acquire`, and spillability is derived from an application-level pin count.
+ * The protected device object may not expose cuDF-style reference counts (e.g. cuDF hash tables).
+ * Instead we maintain a pin count on the object, and callers must pin the object through `acquire`.
+ * The object is spillable only when the pin count is 0.
+ *
+ * The `rebuild` function is used to recreate the device object after it has been evicted. It is
+ * called by the first thread that calls `acquire` after a successful spill.
  */
 class SharedRecomputableDeviceHandle[T <: AutoCloseable] private[spill] (
     override val approxSizeInBytes: Long,
@@ -378,6 +388,13 @@ class SharedRecomputableDeviceHandle[T <: AutoCloseable] private[spill] (
     super.spillable && dev.isDefined && pinCount == 0
   }
 
+  /**
+   * Acquire a lease on the shared recomputable device object:
+   * - If `dev` is defined, increment the pin count and return a lease on it.
+   * - If `dev` is missing and another thread is rebuilding, wait for build completion.
+   * - If `dev` is missing and no other thread is rebuilding, set `rebuilding=true` (exclusively)
+   *   and rebuild the object. After rebuild, set `dev`, notify waiters, and track the handle.
+   */
   def acquire(): Lease[T] = {
     var materialized: Option[T] = None
     var shouldBuild = false
@@ -420,6 +437,8 @@ class SharedRecomputableDeviceHandle[T <: AutoCloseable] private[spill] (
           }
         } catch {
           case t: Throwable =>
+            // Rebuild failed; release any rebuilt object, clear rebuilding,
+            // and notify waiters before rethrowing
             rebuilt.foreach(_.close())
             synchronized {
               rebuilding = false

@@ -172,6 +172,7 @@ abstract class GpuBroadcastHashJoinExecBase(
           broadcastRelation,
           buildSchema,
           new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime))
+      // Check that the broadcast batch is not an empty relation before we pass it to the join.
       val broadcastBatch = broadcastRelation.value match {
         case batch: SerializeConcatHostBuffersDeserializeBatch => Some(batch)
         case _ => None

@@ -299,82 +299,6 @@ object JoinImpl {
     GatherMapsResult.makeFromLeft(leftRet)
   }
 
-  def innerHashJoinBuildLeft(
-      rightKeys: Table,
-      leftHashJoin: CudfHashJoin,
-      outputRowCount: Option[Long] = None): GatherMapsResult = {
-    val arrayRet = outputRowCount.map(rightKeys.innerJoinGatherMaps(leftHashJoin, _))
-      .getOrElse(rightKeys.innerJoinGatherMaps(leftHashJoin))
-    GatherMapsResult(arrayRet(1), arrayRet(0))
-  }
-
-  def innerHashJoinBuildRight(
-      leftKeys: Table,
-      rightHashJoin: CudfHashJoin,
-      outputRowCount: Option[Long] = None): GatherMapsResult = {
-    val arrayRet = outputRowCount.map(leftKeys.innerJoinGatherMaps(rightHashJoin, _))
-      .getOrElse(leftKeys.innerJoinGatherMaps(rightHashJoin))
-    GatherMapsResult(arrayRet(0), arrayRet(1))
-  }
-
-  def leftOuterHashJoinBuildRight(
-      leftKeys: Table,
-      rightHashJoin: CudfHashJoin,
-      outputRowCount: Option[Long] = None): GatherMapsResult = {
-    val arrayRet = outputRowCount.map(leftKeys.leftJoinGatherMaps(rightHashJoin, _))
-      .getOrElse(leftKeys.leftJoinGatherMaps(rightHashJoin))
-    GatherMapsResult(arrayRet(0), arrayRet(1))
-  }
-
-  def rightOuterHashJoinBuildLeft(
-      rightKeys: Table,
-      leftHashJoin: CudfHashJoin,
-      outputRowCount: Option[Long] = None): GatherMapsResult = {
-    val arrayRet = outputRowCount.map(rightKeys.leftJoinGatherMaps(leftHashJoin, _))
-      .getOrElse(rightKeys.leftJoinGatherMaps(leftHashJoin))
-    GatherMapsResult(arrayRet(1), arrayRet(0))
-  }
-
-  def innerDistinctHashJoinBuildLeft(
-      rightKeys: Table,
-      leftHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
-    val arrayRet = rightKeys.innerJoinGatherMaps(leftHashJoin)
-    GatherMapsResult(arrayRet(1), arrayRet(0))
-  }
-
-  def innerDistinctHashJoinBuildRight(
-      leftKeys: Table,
-      rightHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
-    val arrayRet = leftKeys.innerJoinGatherMaps(rightHashJoin)
-    GatherMapsResult(arrayRet(0), arrayRet(1))
-  }
-
-  def leftOuterDistinctHashJoinBuildRight(
-      leftKeys: Table,
-      rightHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
-    val rightRet = leftKeys.leftDistinctJoinGatherMap(rightHashJoin)
-    GatherMapsResult.makeFromRight(rightRet)
-  }
-
-  def rightOuterDistinctHashJoinBuildLeft(
-      rightKeys: Table,
-      leftHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
-    val leftRet = rightKeys.leftDistinctJoinGatherMap(leftHashJoin)
-    GatherMapsResult.makeFromLeft(leftRet)
-  }
-
-  def innerHashJoinBuildLeftRowCount(rightKeys: Table, leftHashJoin: CudfHashJoin): Long =
-    rightKeys.innerJoinRowCount(leftHashJoin)
-
-  def innerHashJoinBuildRightRowCount(leftKeys: Table, rightHashJoin: CudfHashJoin): Long =
-    leftKeys.innerJoinRowCount(rightHashJoin)
-
-  def leftOuterHashJoinBuildRightRowCount(leftKeys: Table, rightHashJoin: CudfHashJoin): Long =
-    leftKeys.leftJoinRowCount(rightHashJoin)
-
-  def rightOuterHashJoinBuildLeftRowCount(rightKeys: Table, leftHashJoin: CudfHashJoin): Long =
-    rightKeys.leftJoinRowCount(leftHashJoin)
-
   /**
    * Do an inner hash join with the build table as the left table.
    * @param leftKeys the left equality join keys
@@ -389,6 +313,18 @@ object JoinImpl {
     // Then switch the gather maps result
     GatherMapsResult(arrayRet(1), arrayRet(0))
   }
+
+  def innerHashJoinBuildLeft(
+      rightKeys: Table,
+      leftHashJoin: CudfHashJoin,
+      outputRowCount: Option[Long] = None): GatherMapsResult = {
+    val arrayRet = outputRowCount.map(rightKeys.innerJoinGatherMaps(leftHashJoin, _))
+      .getOrElse(rightKeys.innerJoinGatherMaps(leftHashJoin))
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  def innerHashJoinBuildLeftRowCount(rightKeys: Table, leftHashJoin: CudfHashJoin): Long =
+    rightKeys.innerJoinRowCount(leftHashJoin)
 
   /**
    * Do an inner hash join with the build table as the left table. Note that the
@@ -428,6 +364,18 @@ object JoinImpl {
     val arrayRet = JoinPrimitives.hashInnerJoin(leftKeys, rightKeys, compareNullsEqual)
     GatherMapsResult(arrayRet(0), arrayRet(1))
   }
+
+  def innerHashJoinBuildRight(
+      leftKeys: Table,
+      rightHashJoin: CudfHashJoin,
+      outputRowCount: Option[Long] = None): GatherMapsResult = {
+    val arrayRet = outputRowCount.map(leftKeys.innerJoinGatherMaps(rightHashJoin, _))
+      .getOrElse(leftKeys.innerJoinGatherMaps(rightHashJoin))
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  def innerHashJoinBuildRightRowCount(leftKeys: Table, rightHashJoin: CudfHashJoin): Long =
+    leftKeys.innerJoinRowCount(rightHashJoin)
 
   /**
    * Do an inner hash join with the build table as the right table. Note that the
@@ -551,6 +499,18 @@ object JoinImpl {
     GatherMapsResult(arrayRet(0), arrayRet(1))
   }
 
+  def leftOuterHashJoinBuildRight(
+      leftKeys: Table,
+      rightHashJoin: CudfHashJoin,
+      outputRowCount: Option[Long] = None): GatherMapsResult = {
+    val arrayRet = outputRowCount.map(leftKeys.leftJoinGatherMaps(rightHashJoin, _))
+      .getOrElse(leftKeys.leftJoinGatherMaps(rightHashJoin))
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  def leftOuterHashJoinBuildRightRowCount(leftKeys: Table, rightHashJoin: CudfHashJoin): Long =
+    leftKeys.leftJoinRowCount(rightHashJoin)
+
   /**
    * Do a left outer hash join with the build table as the right table. Note that the
    * AST complied expression must also be compiled for left table then right table.
@@ -585,6 +545,18 @@ object JoinImpl {
     // Then switch the output so the gather maps are correct
     GatherMapsResult(arrayRet(1), arrayRet(0))
   }
+
+  def rightOuterHashJoinBuildLeft(
+      rightKeys: Table,
+      leftHashJoin: CudfHashJoin,
+      outputRowCount: Option[Long] = None): GatherMapsResult = {
+    val arrayRet = outputRowCount.map(rightKeys.leftJoinGatherMaps(leftHashJoin, _))
+      .getOrElse(rightKeys.leftJoinGatherMaps(leftHashJoin))
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  def rightOuterHashJoinBuildLeftRowCount(rightKeys: Table, leftHashJoin: CudfHashJoin): Long =
+    rightKeys.leftJoinRowCount(leftHashJoin)
 
   /**
    * Do a right outer hash join with the build table as the left table. Note that the
@@ -671,6 +643,34 @@ object JoinImpl {
                                  nullEquality: NullEquality): GatherMapsResult = {
     val leftRet = Table.mixedLeftAntiJoinGatherMap(leftKeys, rightKeys, leftTable, rightTable,
       compiledCondition, nullEquality)
+    GatherMapsResult.makeFromLeft(leftRet)
+  }
+
+  def innerDistinctHashJoinBuildLeft(
+      rightKeys: Table,
+      leftHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
+    val arrayRet = rightKeys.innerJoinGatherMaps(leftHashJoin)
+    GatherMapsResult(arrayRet(1), arrayRet(0))
+  }
+
+  def innerDistinctHashJoinBuildRight(
+      leftKeys: Table,
+      rightHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
+    val arrayRet = leftKeys.innerJoinGatherMaps(rightHashJoin)
+    GatherMapsResult(arrayRet(0), arrayRet(1))
+  }
+
+  def leftOuterDistinctHashJoinBuildRight(
+      leftKeys: Table,
+      rightHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
+    val rightRet = leftKeys.leftDistinctJoinGatherMap(rightHashJoin)
+    GatherMapsResult.makeFromRight(rightRet)
+  }
+
+  def rightOuterDistinctHashJoinBuildLeft(
+      rightKeys: Table,
+      leftHashJoin: CudfDistinctHashJoin): GatherMapsResult = {
+    val leftRet = rightKeys.leftDistinctJoinGatherMap(leftHashJoin)
     GatherMapsResult.makeFromLeft(leftRet)
   }
 }
@@ -1120,7 +1120,7 @@ abstract class BaseHashJoinIterator(
     built: LazySpillableColumnarBatch,
     boundBuiltKeys: Seq[GpuExpression],
     buildStatsOpt: Option[JoinBuildSideStats],
-    cachedBuildSide: Option[CachedBuildSide],
+    cachedBuildSideSupplier: Option[() => CachedBuildSide],
     stream: Iterator[LazySpillableColumnarBatch],
     boundStreamKeys: Seq[GpuExpression],
     streamAttributes: Seq[Attribute],
@@ -1141,7 +1141,12 @@ abstract class BaseHashJoinIterator(
       joinOptions.sizeEstimateThreshold,
       opTime = opTime,
       joinTime = joinTime) {
-  // We can cache this because the build side is not changing
+  // The cached build side is lazy to avoid unnecessary builds, since some iterators are
+  // not currently wired up to use the build side cache (e.g. conditional joins).
+  private[this] lazy val cachedBuildSide: Option[CachedBuildSide] =
+    cachedBuildSideSupplier.map(_())
+
+  // We can cache the stats within an iterator because the build side is not changing
   protected lazy val buildStats: JoinBuildSideStats = buildStatsOpt
       .orElse(cachedBuildSide.map(_.buildStats)).getOrElse {
     joinType match {
@@ -1158,14 +1163,16 @@ abstract class BaseHashJoinIterator(
     }
   }
 
-  private[this] var cachedBuildSideDisabled = !enableBuildSideReuse || cachedBuildSide.isEmpty
+  private[this] var cachedBuildSideDisabled =
+    !enableBuildSideReuse || cachedBuildSideSupplier.isEmpty
 
+  // Check that the requested physical build side matches the cached build side. This should be
+  // true for cached probe paths because they disable dynamic build side selection.
   private def canUseCachedBuildSide(expectedBuildSide: GpuBuildSide): Boolean = {
-    !cachedBuildSideDisabled &&
-      expectedBuildSide == buildSide &&
-      cachedBuildSide.isDefined
+    !cachedBuildSideDisabled && expectedBuildSide == buildSide && cachedBuildSideSupplier.isDefined
   }
 
+  // Safety check to ensure the handle type matches the expected build.
   protected def canUseCachedHashJoin(expectedBuildSide: GpuBuildSide): Boolean = {
     canUseCachedBuildSide(expectedBuildSide) && cachedBuildSide.exists(_.isInstanceOf[CachedHashJoin])
   }
@@ -1175,6 +1182,8 @@ abstract class BaseHashJoinIterator(
       cachedBuildSide.exists(_.isInstanceOf[CachedDistinctHashJoin])
   }
 
+  // Borrow the shared cuDF hash table while probing. Acquires a lease so that the table cannot
+  // be spilled until we are done probing.
   protected def withCachedHashJoin[T](expectedBuildSide: GpuBuildSide)(f: CudfHashJoin => T): Option[T] = {
     if (!canUseCachedHashJoin(expectedBuildSide)) {
       None
@@ -1537,12 +1546,12 @@ class HashJoinIterator(
     opTime: GpuMetric,
     private val joinTime: GpuMetric,
     enableBuildSideReuse: Boolean = false,
-    cachedBuildSide: Option[CachedBuildSide] = None)
+    cachedBuildSideSupplier: Option[() => CachedBuildSide] = None)
     extends BaseHashJoinIterator(
       built,
       boundBuiltKeys,
       buildStatsOpt,
-      cachedBuildSide,
+      cachedBuildSideSupplier,
       stream,
       boundStreamKeys,
       streamAttributes,
@@ -1566,7 +1575,7 @@ class HashJoinIterator(
           withRestoreOnRetry(cb) {
             withResource(GpuProjectExec.project(cb.getBatch, boundStreamKeys)) { streamKeys =>
               withResource(GpuColumnVector.from(streamKeys)) { streamKeysTable =>
-                exactNumJoinRows(streamKeysTable).getOrElse(fallback)
+                tryCachedExactNumJoinRows(streamKeysTable).getOrElse(fallback)
               }
             }
           }
@@ -1612,7 +1621,8 @@ class HashJoinIterator(
     }
   }
 
-  private def exactNumJoinRows(streamKeys: Table): Option[Long] = {
+  // If we have a cached build side, try to get the exact row count directly from the cached handle.
+  private def tryCachedExactNumJoinRows(streamKeys: Table): Option[Long] = {
     joinType match {
       case _: InnerLike =>
         buildSide match {
@@ -1638,10 +1648,14 @@ class HashJoinIterator(
     }
   }
 
-  private def cachedGenericInnerJoin(
+  // tryCached* methods attempt to use the reusable hash join handle. They return None when
+  // the cached build side doesn't match the requested join so callers can fall back.
+  private def tryCachedInnerHashJoin(
       leftKeys: Table,
       rightKeys: Table,
       outputRowCount: Option[Long]): Option[GatherMapsResult] = {
+    // If we have a cached hash table, skip dynamic build-side selection and probe the cached side, 
+    // since it is better to avoid a re-build than to switch sides.
     buildSide match {
       case GpuBuildRight =>
         withCachedHashJoin(GpuBuildRight) { hashJoin =>
@@ -1654,7 +1668,7 @@ class HashJoinIterator(
     }
   }
 
-  private def reusedGenericLeftSemi(
+  private def tryCachedLeftSemiHashJoinBuildRight(
       leftKeys: Table): Option[GatherMapsResult] = {
     withCachedHashJoin(GpuBuildRight) { hashJoin =>
       withResource(JoinImpl.innerHashJoinBuildRight(leftKeys, hashJoin)) { innerMaps =>
@@ -1663,7 +1677,7 @@ class HashJoinIterator(
     }
   }
 
-  private def reusedGenericLeftAnti(
+  private def tryCachedLeftAntiHashJoinBuildRight(
       leftKeys: Table): Option[GatherMapsResult] = {
     withCachedHashJoin(GpuBuildRight) { hashJoin =>
       withResource(JoinImpl.innerHashJoinBuildRight(leftKeys, hashJoin)) { innerMaps =>
@@ -1675,7 +1689,7 @@ class HashJoinIterator(
   private def computeDistinctJoin(
       leftKeys: Table,
       rightKeys: Table): GatherMapsResult = {
-    val reused = withCachedDistinctHashJoin(buildSide) { distinctHashJoin =>
+    val cachedResult = withCachedDistinctHashJoin(buildSide) { distinctHashJoin =>
       logJoinCardinality(leftKeys, rightKeys, "distinct (reused)")
       joinType match {
         case LeftOuter =>
@@ -1700,7 +1714,7 @@ class HashJoinIterator(
           computeDistinctJoinWithoutReuse(leftKeys, rightKeys)
       }
     }
-    reused.getOrElse(computeDistinctJoinWithoutReuse(leftKeys, rightKeys))
+    cachedResult.getOrElse(computeDistinctJoinWithoutReuse(leftKeys, rightKeys))
   }
 
   private def computeDistinctJoinWithoutReuse(
@@ -1776,7 +1790,7 @@ class HashJoinIterator(
     }
     logJoinCardinality(leftKeys, rightKeys, implName)
 
-    val innerMaps = cachedGenericInnerJoin(leftKeys, rightKeys, numJoinRows).getOrElse {
+    val innerMaps = tryCachedInnerHashJoin(leftKeys, rightKeys, numJoinRows).getOrElse {
       JoinImpl.innerHashJoin(leftKeys, rightKeys, compareNullsEqual,
         joinOptions.buildSideSelection, buildSide)
     }
@@ -1823,15 +1837,15 @@ class HashJoinIterator(
         }
           .getOrElse(JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual))
       case _: InnerLike =>
-        cachedGenericInnerJoin(leftKeys, rightKeys, numJoinRows).getOrElse {
+        tryCachedInnerHashJoin(leftKeys, rightKeys, numJoinRows).getOrElse {
           JoinImpl.innerHashJoin(leftKeys, rightKeys, compareNullsEqual,
             joinOptions.buildSideSelection, buildSide)
         }
       case LeftSemi =>
-        reusedGenericLeftSemi(leftKeys)
+        tryCachedLeftSemiHashJoinBuildRight(leftKeys)
           .getOrElse(JoinImpl.leftSemiHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual))
       case LeftAnti =>
-        reusedGenericLeftAnti(leftKeys)
+        tryCachedLeftAntiHashJoinBuildRight(leftKeys)
           .getOrElse(JoinImpl.leftAntiHashJoinBuildRight(leftKeys, rightKeys, compareNullsEqual))
       case _ =>
         throw new NotImplementedError(s"Join Type ${joinType.getClass} is not currently" +
@@ -1862,12 +1876,12 @@ class ConditionalHashJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric,
     enableBuildSideReuse: Boolean = false,
-    cachedBuildSide: Option[CachedBuildSide] = None)
+    cachedBuildSideSupplier: Option[() => CachedBuildSide] = None)
     extends BaseHashJoinIterator(
       built,
       boundBuiltKeys,
       buildStatsOpt,
-      cachedBuildSide,
+      cachedBuildSideSupplier,
       stream,
       boundStreamKeys,
       streamAttributes,
@@ -2084,12 +2098,12 @@ class HashJoinStreamSideIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric,
     enableBuildSideReuse: Boolean = false,
-    cachedBuildSide: Option[CachedBuildSide] = None)
+    cachedBuildSideSupplier: Option[() => CachedBuildSide] = None)
     extends BaseHashJoinIterator(
       built,
       boundBuiltKeys,
       buildStatsOpt,
-      cachedBuildSide,
+      cachedBuildSideSupplier,
       stream,
       boundStreamKeys,
       streamAttributes,
@@ -2132,7 +2146,7 @@ class HashJoinStreamSideIterator(
 
   private[this] var builtSideTracker: Option[SpillableColumnarBatch] = buildSideTrackerInit
 
-  private def cachedUnconditionalInnerHashJoin(
+  private def tryCachedInnerHashJoin(
       leftKeys: Table,
       rightKeys: Table): Option[GatherMapsResult] = {
     cudfBuildSide match {
@@ -2147,7 +2161,7 @@ class HashJoinStreamSideIterator(
     }
   }
 
-  private def computeDistinctUnconditionalJoin(
+  private def computeUnconditionalDistinctJoin(
       leftKeys: Table,
       rightKeys: Table,
       originalJoinType: Option[JoinType]): GatherMapsResult = {
@@ -2204,7 +2218,7 @@ class HashJoinStreamSideIterator(
     // The distinct outer path only produces a single gather map for LeftOuter/RightOuter,
     // but HashJoinStreamSideIterator always needs both maps to update tracking state.
     if (buildStats.isDistinct && subJoinType == Inner) {
-      return computeDistinctUnconditionalJoin(leftKeys, rightKeys, originalJoinType)
+      return computeUnconditionalDistinctJoin(leftKeys, rightKeys, originalJoinType)
     }
 
     // Apply heuristics to select the effective strategy for unconditional joins
@@ -2253,7 +2267,7 @@ class HashJoinStreamSideIterator(
     }
     logJoinCardinality(leftKeys, rightKeys, implName, originalJoinType)
 
-    val innerMaps = cachedUnconditionalInnerHashJoin(leftKeys, rightKeys).getOrElse {
+    val innerMaps = tryCachedInnerHashJoin(leftKeys, rightKeys).getOrElse {
       JoinImpl.innerHashJoin(leftKeys, rightKeys, compareNullsEqual,
         joinOptions.buildSideSelection, cudfBuildSide)
     }
@@ -2304,7 +2318,7 @@ class HashJoinStreamSideIterator(
         }
           .getOrElse(JoinImpl.rightOuterHashJoinBuildLeft(leftKeys, rightKeys, compareNullsEqual))
       case Inner =>
-        cachedUnconditionalInnerHashJoin(leftKeys, rightKeys).getOrElse {
+        tryCachedInnerHashJoin(leftKeys, rightKeys).getOrElse {
           JoinImpl.innerHashJoin(leftKeys, rightKeys, compareNullsEqual,
             joinOptions.buildSideSelection, cudfBuildSide)
         }
@@ -2629,14 +2643,14 @@ class HashOuterJoinIterator(
     opTime: GpuMetric,
     joinTime: GpuMetric,
     enableBuildSideReuse: Boolean = false,
-    cachedBuildSide: Option[CachedBuildSide] = None)
+    cachedBuildSideSupplier: Option[() => CachedBuildSide] = None)
     extends Iterator[ColumnarBatch] with TaskAutoCloseableResource {
 
   private val streamJoinIter = new HashJoinStreamSideIterator(joinType, built, boundBuiltKeys,
     buildStats, buildSideTrackerInit, stream, boundStreamKeys, streamAttributes,
     lazyCompiledCondition,
     joinOptions, buildSide, compareNullsEqual, conditionForLogging, opTime, joinTime,
-    enableBuildSideReuse, cachedBuildSide)
+    enableBuildSideReuse, cachedBuildSideSupplier)
 
   private var finalBatch: Option[ColumnarBatch] = None
 
@@ -2948,13 +2962,15 @@ trait GpuHashJoin extends GpuJoinExec {
 
     val filterOutNull = GpuHashJoin.buildSideNeedsNullFilter(joinType, compareNullsEqual,
       buildSide, buildKeys)
-    val cachedBuildSide = if (enableBuildSideReuse) {
-      broadcastBatch.map(_.getCachedBuildSide(
-        boundBuildKeys,
-        compareNullsEqual,
-        filterOutNull,
-        buildSideCacheBuilds,
-        buildSideCacheHits))
+    val cachedBuildSideSupplier: Option[() => CachedBuildSide] = if (enableBuildSideReuse) {
+      broadcastBatch.map { batch => () =>
+        batch.getOrCreateCachedBuildSide(
+          boundBuildKeys,
+          compareNullsEqual,
+          filterOutNull,
+          buildSideCacheBuilds,
+          buildSideCacheHits)
+      }
     } else {
       None
     }
@@ -3005,8 +3021,8 @@ trait GpuHashJoin extends GpuJoinExec {
           lazyStream, boundStreamKeys, streamedPlan.output,
           lazyCond, joinOptions, buildSide,
           compareNullsEqual, condition, opTime, joinTime,
-          enableBuildSideReuse = enableBuildSideReuse,
-          cachedBuildSide = cachedBuildSide)
+          enableBuildSideReuse = enableBuildSideReuse && lazyCond.isEmpty,
+          cachedBuildSideSupplier = if (lazyCond.isEmpty) cachedBuildSideSupplier else None)
       case _ =>
         if (boundConditionLeftRight.isDefined) {
           // ConditionalHashJoinIterator will close the LazyCompiledCondition
@@ -3019,14 +3035,14 @@ trait GpuHashJoin extends GpuJoinExec {
             lazyStream, boundStreamKeys, streamedPlan.output, lazyCond,
             joinOptions, joinType, buildSide,
             compareNullsEqual, condition, opTime, joinTime,
-            enableBuildSideReuse = enableBuildSideReuse,
-            cachedBuildSide = cachedBuildSide)
+            enableBuildSideReuse = false,
+            cachedBuildSideSupplier = None)
         } else {
           new HashJoinIterator(spillableBuiltBatch, boundBuildKeys, None,
             lazyStream, boundStreamKeys, streamedPlan.output, joinOptions,
             joinType, buildSide, compareNullsEqual, condition, opTime, joinTime,
             enableBuildSideReuse = enableBuildSideReuse,
-            cachedBuildSide = cachedBuildSide)
+            cachedBuildSideSupplier = cachedBuildSideSupplier)
         }
     }
 

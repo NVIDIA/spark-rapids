@@ -24,6 +24,12 @@ import com.nvidia.spark.rapids.spill.SharedRecomputableDeviceHandle
 
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+/**
+ * Native build-side state derived from one broadcast batch/key projection.
+ *
+ * This is not the full build-side data. It contains the projected build-key statistics plus a
+ * spillable/recomputable cuDF hash join handle built from those keys.
+ */
 sealed trait CachedBuildSide extends AutoCloseable {
   def buildStats: JoinBuildSideStats
 }
@@ -40,11 +46,20 @@ final class CachedDistinctHashJoin(
   override def close(): Unit = handle.close()
 }
 
+/**
+ * Identifies cached build-side state for a given broadcast batch.
+ *
+ * The same broadcast can feed joins with different key projections or null filtering behavior, so
+ * those are included as part of the key.
+ */
 case class BroadcastCachedBuildSideKey(
     projectedBuildKeys: Seq[String],
     compareNullsEqual: Boolean,
     filterOutNulls: Boolean)
 
+/**
+ * Factory to create a cached build-side hash table from a broadcast batch.
+ */
 object BroadcastCachedBuildSide {
   def key(
       boundBuiltKeys: Seq[GpuExpression],
@@ -94,11 +109,6 @@ object BroadcastCachedBuildSide {
     }
   }
 
-  /**
-   * cuDF's reusable hash join handles are safe for concurrent probes. The executor-wide cache
-   * therefore pins the live handle while a task is probing it and relies on
-   * `SharedRecomputableDeviceHandle` to track spillability with an application-level pin count.
-   */
   def create(
       broadcastBatch: SpillableColumnarBatch,
       boundBuiltKeys: Seq[GpuExpression],
@@ -118,6 +128,8 @@ object BroadcastCachedBuildSide {
 
     withBuildKeys(broadcastBatch, boundBuiltKeys, filterOutNulls) { buildKeys =>
       val stats = JoinBuildSideStats.fromTable(buildKeys)
+      // cuDF does not expose the size of the native hash-table;
+      // using the projected build-key table size as an approximation for spill accounting
       val approxSizeInBytes = buildKeys.getDeviceMemorySize
       if (stats.isDistinct) {
         new CachedDistinctHashJoin(
