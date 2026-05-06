@@ -26,7 +26,11 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-MVN=${MVN:-"mvn"}
+if [[ -z "${MVN:-}" && -n "${MVN_SETTINGS:-}" ]]; then
+    MVN="mvn -s $MVN_SETTINGS"
+else
+    MVN=${MVN:-"mvn"}
+fi
 
 GLUTEN_VERSION=${GLUTEN_VERSION:-"1.2.0"}
 # TODO: https://github.com/NVIDIA/spark-rapids/issues/12278
