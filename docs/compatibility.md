@@ -67,6 +67,9 @@ joins on a floating point value, which is not wise to do anyways, and the value 
 floating point aggregation then the join may fail to work properly with the plugin but would have
 worked with plain Spark. This is behavior is enabled by default but can be disabled with the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](additional-functionality/advanced_configs.md#sql.variableFloatAgg.enabled).
+This applies to scalar aggregations (`sum`, `avg`, etc.) and to array-level aggregations
+(the `aggregate` / `reduce` higher-order function with SUM or PRODUCT) — both delegate to cuDF
+parallel reductions and are governed by the same config.
 
 ### `0.0` vs `-0.0`
 

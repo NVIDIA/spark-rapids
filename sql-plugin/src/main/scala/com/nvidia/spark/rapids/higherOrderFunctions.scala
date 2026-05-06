@@ -1493,11 +1493,24 @@ class GpuArrayAggregateMeta(
       expr.merge, expr.finish, expr.argument.dataType, expr.zero.dataType) match {
       case Left(reason) => willNotWorkOnGpu(reason)
       case Right(d) =>
-        // SUM/PRODUCT on Float/Double diverge between cuDF's parallel tree-reduction
-        // and Spark's sequential left-fold. Same conf gate as GpuSum / GpuAverage —
-        // willNotWorkOnGpu when variableFloatAgg.enabled=false.
         if (d.op == SumOp || d.op == ProductOp) {
+          // SUM/PRODUCT on Float/Double diverge between cuDF's parallel tree-reduction
+          // and Spark's sequential left-fold. Same conf gate as GpuSum / GpuAverage —
+          // willNotWorkOnGpu when variableFloatAgg.enabled=false.
           GpuOverrides.checkAndTagFloatAgg(expr.zero.dataType, this.conf, this)
+          // ANSI: row-wise GpuAdd/GpuMultiply check overflow and raise, but cuDF's
+          // segmented reduce we delegate to here has no overflow-checking variant —
+          // it wraps. Fall back to CPU for the integer/decimal cases that ANSI
+          // requires to raise.
+          if (SQLConf.get.ansiEnabled) {
+            expr.zero.dataType match {
+              case ByteType | ShortType | IntegerType | LongType | _: DecimalType =>
+                willNotWorkOnGpu(s"${d.op.name} in ANSI mode is not yet supported on " +
+                  "GPU; cuDF segmented reduce wraps on overflow rather than raising " +
+                  "ArithmeticException")
+              case _ =>
+            }
+          }
         }
         decomposition = Some(d)
     }

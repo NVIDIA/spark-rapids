@@ -2359,7 +2359,7 @@ are limited.
 <tr>
 <td rowSpan="5">ArrayAggregate</td>
 <td rowSpan="5">`aggregate`</td>
-<td rowSpan="5">Aggregate elements in an array using an accumulator function and finishing transformation. Currently only lambdas of the form (acc, x) -> op(acc, g(x)) with an identity finish are executed on the GPU, where op is one of SUM/PRODUCT/MAX/MIN/ALL/ANY. If/CaseWhen branches are accepted as long as each branch is itself op-of-acc (or bare acc) with op consistent across branches; other shapes fall back to CPU.</td>
+<td rowSpan="5">Aggregate elements in an array using an accumulator function and finishing transformation. Currently only lambdas of the form (acc, x) -> op(acc, g(x)) with an identity finish are executed on the GPU, where op is one of SUM/PRODUCT/MAX/MIN/ALL/ANY. If/CaseWhen branches are accepted as long as each branch is itself op-of-acc (or bare acc) with op consistent across branches; other shapes fall back to CPU. SUM/PRODUCT on float/double share the same parallel-reduction non-determinism as GpuSum and are gated by spark.rapids.sql.variableFloatAgg.enabled. SUM/PRODUCT on integer/decimal in ANSI mode fall back to CPU because cuDF segmented reduce wraps on overflow instead of raising.</td>
 <td rowSpan="5">None</td>
 <td rowSpan="5">project</td>
 <td>zero</td>

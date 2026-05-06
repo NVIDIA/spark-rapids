@@ -66,12 +66,11 @@ def test_array_aggregate_native_integer_ops(gen, lambda_sql, init_sql):
 
 
 # Elements are non-null because the tag-time guard falls back to CPU when the element type
-# is nullable.
+# is nullable. ALL/ANY don't overflow so ANSI mode doesn't change behaviour.
 @pytest.mark.parametrize('lambda_sql, init_sql', [
     ('(acc, x) -> acc AND x', 'true'),
     ('(acc, x) -> acc OR x', 'false'),
 ], ids=['all', 'any'])
-@disable_ansi_mode
 def test_array_aggregate_boolean_ops(lambda_sql, init_sql):
     non_null_bool = BooleanGen(nullable=False)
     def do_it(spark):
@@ -84,7 +83,6 @@ def test_array_aggregate_boolean_ops(lambda_sql, init_sql):
     ('(acc, x) -> acc AND x', 'true'),
     ('(acc, x) -> acc OR x', 'false'),
 ], ids=['all', 'any'])
-@disable_ansi_mode
 @allow_non_gpu('ProjectExec')
 def test_array_aggregate_boolean_ops_nullable_elements_fallback(lambda_sql, init_sql):
     assert_gpu_fallback_collect(
@@ -257,7 +255,6 @@ def test_array_aggregate_non_identity_finish_falls_back():
     ('(acc, x) -> greatest(acc, x)', 'CAST("-Infinity" as DOUBLE)'),
     ('(acc, x) -> least(acc, x)', 'CAST("Infinity" as DOUBLE)'),
 ], ids=['max', 'min'])
-@disable_ansi_mode
 @allow_non_gpu('ProjectExec')
 def test_array_aggregate_double_extremum_falls_back(lambda_sql, init_sql):
     assert_gpu_fallback_collect(
@@ -277,7 +274,6 @@ def test_array_aggregate_double_extremum_falls_back(lambda_sql, init_sql):
     (float_gen, '(acc, x) -> acc * x', 'CAST(1 as FLOAT)'),
     (double_gen, '(acc, x) -> acc * x', 'CAST(1 as DOUBLE)'),
 ], ids=['float-sum', 'double-sum', 'float-product', 'double-product'])
-@disable_ansi_mode
 @allow_non_gpu('ProjectExec')
 def test_array_aggregate_float_sum_product_falls_back_when_variable_float_agg_disabled(
         elem_gen, lambda_sql, init_sql):
@@ -286,3 +282,23 @@ def test_array_aggregate_float_sum_product_falls_back_when_variable_float_agg_di
             f'aggregate(a, {init_sql}, {lambda_sql}) as res'),
         'ArrayAggregate',
         conf={'spark.rapids.sql.variableFloatAgg.enabled': 'false'})
+
+
+# ANSI mode + integer/decimal SUM/PRODUCT must fall back: cuDF segmented reduce wraps
+# on overflow rather than raising ArithmeticException, which violates ANSI semantics.
+# MAX/MIN/ALL/ANY don't overflow and stay on GPU under ANSI.
+@pytest.mark.parametrize('elem_gen, lambda_sql, init_sql', [
+    (LongGen(min_val=-100, max_val=100, nullable=False),
+        '(acc, x) -> acc + x', '0L'),
+    (LongGen(min_val=-100, max_val=100, nullable=False),
+        '(acc, x) -> acc * x', '1L'),
+    (DecimalGen(precision=10, scale=2, nullable=False),
+        '(acc, x) -> acc + cast(x as decimal(38,2))', 'cast(0 as decimal(38,2))'),
+], ids=['long-sum', 'long-product', 'decimal-sum'])
+@allow_non_gpu('ProjectExec')
+def test_array_aggregate_ansi_sum_product_falls_back(elem_gen, lambda_sql, init_sql):
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(elem_gen, max_length=5)).selectExpr(
+            f'aggregate(a, {init_sql}, {lambda_sql}) as res'),
+        'ArrayAggregate',
+        conf=ansi_enabled_conf)
