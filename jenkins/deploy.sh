@@ -102,7 +102,7 @@ if [ "$SIGN_FILE" == true ]; then
             ;;
     esac
 else
-    DEPLOY_CMD="$MVN -B deploy:deploy-file -s jenkins/settings.xml"
+    DEPLOY_CMD="$MVN -B deploy:deploy-file"
 fi
 DEPLOY_CMD="$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID"
 echo "Deploy CMD: $DEPLOY_CMD"
