@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,20 @@ case class GpuBroadcastToRowExec(
       session, GpuBroadcastToRowExec.executionContext) {
       val broadcastBatch = child.executeBroadcast[Any]()
       val rows: Array[InternalRow] = broadcastBatch.value match {
-        case b: SerializeConcatHostBuffersDeserializeBatch => projectSerializedBatch(b)
+        case b: SerializeConcatHostBuffersDeserializeBatch =>
+          // Same memoization as GpuSubqueryBroadcastExec. This call site projects *all*
+          // columns with no broadcast-mode key projection, so the indices set is fixed for
+          // a given child schema and modeKeys are absent. Cache key uses the "broadcastRow"
+          // discriminator so it never collides with a "subquery" key on the same shared
+          // SerializeConcatHostBuffersDeserializeBatch.
+          val key = ProjectedRowsKey(
+            "broadcastRow",
+            (0 until child.output.size).toList,
+            buildKeys.map(_.canonicalized),
+            None)
+          b.projectedRowsOrCompute(key) {
+            projectSerializedBatch(b)
+          }
         case b if SparkShimImpl.isEmptyRelation(b) => Array.empty
         case b => throw new IllegalStateException(s"Unexpected broadcast type: ${b.getClass}")
       }
