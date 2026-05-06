@@ -96,16 +96,19 @@ tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 . jenkins/hadoop-def.sh $SPARK_VER ${SCALA_BINARY_VER}
 $WGET_CMD $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
 
-# Download parquet-hadoop jar for parquet-read encryption tests
-PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`
-if [[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]]; then
-  $WGET_CMD $SPARK_REPO/org/apache/parquet/parquet-hadoop/$PARQUET_HADOOP_VER/parquet-hadoop-$PARQUET_HADOOP_VER-tests.jar
-fi
-
 export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-$BIN_HADOOP_VER"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
+
+# Download parquet-hadoop jar for parquet-read encryption tests
+PARQUET_HADOOP_JAR=$(find "$SPARK_HOME/jars" -maxdepth 1 -type f -name 'parquet-hadoop-[0-9]*.jar' | head -n1)
+PARQUET_HADOOP_VER=${PARQUET_HADOOP_JAR##*/parquet-hadoop-}
+PARQUET_HADOOP_VER=${PARQUET_HADOOP_VER%.jar}
+if [[ -n "$PARQUET_HADOOP_VER" && "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]]; then
+  $WGET_CMD $SPARK_REPO/org/apache/parquet/parquet-hadoop/$PARQUET_HADOOP_VER/parquet-hadoop-$PARQUET_HADOOP_VER-tests.jar
+fi
+
 # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
 TMP_PYTHON=/tmp/$(date +"%Y%m%d")
 rm -rf $TMP_PYTHON && mkdir -p $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
