@@ -368,12 +368,15 @@ object GpuGenerateBloomFilterExec extends Logging {
 /**
  * GpuOverrides registration for GpuGenerateBloomFilterExec.
  *
- * Since InlineBFBuildReplacement converts InlineBFBuildExec to
- * GpuGenerateBloomFilterExec BEFORE GpuOverrides runs, GpuOverrides
- * needs to recognize GpuGenerateBloomFilterExec as an already-GPU
- * node. This registers it with a pass-through meta: tagPlanForGpu()
- * is a no-op (always eligible) and convertToGpu() returns the node
- * unchanged.
+ * Since InlineBFBuildReplacement converts InlineBFBuildExec to GpuGenerateBloomFilterExec
+ * BEFORE GpuOverrides runs, GpuOverrides needs to recognize it as an already-GPU node. This
+ * registers it with a pass-through meta: tagPlanForGpu() is a no-op (always eligible) and
+ * convertToGpu() wires children through the standard convertIfNeeded() path.
+ *
+ * The planner emits InlineBFBuildExec over an already-GPU child, so in practice the child is
+ * already converted. The explicit childPlans.head.convertIfNeeded() call aligns with the
+ * canonical pattern used by every other exec rule in the codebase and ensures correct conversion
+ * even if the planner contract changes.
  */
 object InlineBFBuildGpuOverride {
   val execRules: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
@@ -384,7 +387,8 @@ object InlineBFBuildGpuOverride {
       (exec, conf, parent, rule) =>
         new SparkPlanMeta[GpuGenerateBloomFilterExec](exec, conf, parent, rule) {
           override def tagPlanForGpu(): Unit = {}
-          override def convertToGpu(): GpuExec = exec
+          override def convertToGpu(): GpuExec =
+            exec.copy(child = childPlans.head.convertIfNeeded())
         }
     )
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
