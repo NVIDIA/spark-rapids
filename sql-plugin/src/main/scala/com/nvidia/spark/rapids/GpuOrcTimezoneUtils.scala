@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import java.time.{LocalDateTime, ZoneId}
-import java.util.Optional
+import java.util.{Optional, TimeZone}
 import scala.collection.mutable.ArrayBuffer
 
 object GpuOrcTimezoneUtils {
@@ -173,7 +173,16 @@ object GpuOrcTimezoneUtils {
    */
   def rebaseOrcTimestamps(input: Table, writerTimezone: String): Table = {
     val readerTz = ZoneId.systemDefault().getId
-    val writerTz = if (writerTimezone.isEmpty) readerTz else writerTimezone
+    // Normalize the writer TZ from the ORC footer using java.util.TimeZone first.
+    // ORC footers can carry legacy/short IDs (e.g. "PST", "CST", "ACT") that
+    // java.util.TimeZone accepts but ZoneId.of() rejects on JDK 21. Going through
+    // TimeZone.toZoneId returns a canonical ZoneId ID safe for the cross-TZ path
+    // and the JNI kernel.
+    val writerTz = if (writerTimezone.isEmpty) {
+      readerTz
+    } else {
+      TimeZone.getTimeZone(writerTimezone).toZoneId.getId
+    }
 
     if (hasSameTimezoneRules(writerTz, readerTz)) {
       rebaseWithReaderTimezoneBaseOffset(input)
@@ -183,8 +192,8 @@ object GpuOrcTimezoneUtils {
   }
 
   private def hasSameTimezoneRules(tz1: String, tz2: String): Boolean = {
-    val zone1 = java.util.TimeZone.getTimeZone(tz1)
-    val zone2 = java.util.TimeZone.getTimeZone(tz2)
+    val zone1 = TimeZone.getTimeZone(tz1)
+    val zone2 = TimeZone.getTimeZone(tz2)
     zone1.hasSameRules(zone2)
   }
 
