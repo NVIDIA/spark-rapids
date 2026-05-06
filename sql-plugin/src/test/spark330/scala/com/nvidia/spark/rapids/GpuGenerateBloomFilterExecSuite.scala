@@ -41,6 +41,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.BloomFilterTestHelpers._
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -48,16 +49,11 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.SparkPlan
 
 /**
- * Tests for multi-spec `GpuGenerateBloomFilterExec`. These exercise
- * driver-side wiring, accumulator registration, and per-spec
- * independence without running GPU kernels.
+ * Tests for multi-spec `GpuGenerateBloomFilterExec`. These exercise driver-side wiring,
+ * accumulator registration, and per-spec independence without running GPU kernels.
  */
 class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
     with BeforeAndAfterAll {
-
-  // V1 BloomFilter wire format header: version(4) + numHashes(4) + numWords(4) = 12 bytes.
-  // Data section starts at offset V1_HEADER_SIZE.
-  private val V1_HEADER_SIZE = 12
 
   @transient private var spark: SparkSession = _
 
@@ -128,44 +124,33 @@ class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
     assert(accs("single").name.contains("cuBF-single"))
   }
 
-  test("multi_spec_produces_N_bfs_no_cross_contamination") {
-    // Simulates per-partition finalize: each spec's accumulator
-    // receives distinct partial BF bytes. After merging across
-    // two "partitions", each accumulator still holds only its own
-    // data; no bytes leak between accumulators.
-    val specs = Seq(
-      BFSpec("bf-A", 0, 1, 64),
-      BFSpec("bf-B", 1, 1, 64))
-    val exec = GpuGenerateBloomFilterExec(
-      specs = specs,
-      bfVersion = 1,
-      seed = 0,
-      xxHashSeed = 42L,
-      child = stubChild())
-    val accs = exec.accumulators
-    // V1 BF wire format: version(4) + numHashes(4) + numWords(4)
-    // + data; use a 20-byte buffer (header 12B + data 8B) per spec.
-    def makeBf(dataByte: Int): Array[Byte] = Array[Byte](
-      0, 0, 0, 1, // version=1
-      0, 0, 0, 1, // numHashes=1
-      0, 0, 0, 1, // numWords=1
-      0, 0, 0, 0, 0, 0, 0, dataByte.toByte) // data
-    // Simulate two partitions per BF with different bit patterns.
-    accs("bf-A").add(makeBf(0x0F))
-    accs("bf-A").add(makeBf(0xF0))
-    accs("bf-B").add(makeBf(0x11))
-    accs("bf-B").add(makeBf(0x22))
-    // After per-partition OR-merge, bf-A's data byte is 0xFF and
-    // bf-B's data byte is 0x33. No cross-bleed means bf-B is 0x33
-    // (not 0xFF) and bf-A is 0xFF (not 0x33).
-    val bfA = accs("bf-A").value
-    val bfB = accs("bf-B").value
-    assert((bfA(V1_HEADER_SIZE + 7) & 0xFF) == 0xFF,
-      s"bf-A data expected 0xFF, got ${bfA(V1_HEADER_SIZE + 7) & 0xFF}")
-    assert((bfB(V1_HEADER_SIZE + 7) & 0xFF) == 0x33,
-      s"bf-B data expected 0x33, got ${bfB(V1_HEADER_SIZE + 7) & 0xFF}")
-    // Headers preserved
-    assert(bfA(3) == 1 && bfB(3) == 1, "BF version header corrupted")
+  Seq(1, 2).foreach { version =>
+    test(s"multi_spec_produces_N_bfs_no_cross_contamination [v$version]") {
+      val specs = Seq(
+        BFSpec("bf-A", 0, 1, 64),
+        BFSpec("bf-B", 1, 1, 64))
+      val exec = GpuGenerateBloomFilterExec(
+        specs = specs,
+        bfVersion = version,
+        seed = 0,
+        xxHashSeed = 42L,
+        child = stubChild())
+      val accs = exec.accumulators
+      accs("bf-A").add(makeBfBytes(version = version, dataLastByte = 0x0F))
+      accs("bf-A").add(makeBfBytes(version = version, dataLastByte = 0xF0))
+      accs("bf-B").add(makeBfBytes(version = version, dataLastByte = 0x11))
+      accs("bf-B").add(makeBfBytes(version = version, dataLastByte = 0x22))
+      // After per-partition OR-merge, bf-A's data byte is 0xFF and bf-B's is 0x33.
+      // No cross-bleed: bf-B stays 0x33 (not 0xFF) and bf-A stays 0xFF (not 0x33).
+      val bfA = accs("bf-A").value
+      val bfB = accs("bf-B").value
+      val dataLastIdx = headerSize(version) + 7
+      assert((bfA(dataLastIdx) & 0xFF) == 0xFF,
+        s"bf-A data expected 0xFF, got ${bfA(dataLastIdx) & 0xFF}")
+      assert((bfB(dataLastIdx) & 0xFF) == 0x33,
+        s"bf-B data expected 0x33, got ${bfB(dataLastIdx) & 0xFF}")
+      assert(bfA(3) == version && bfB(3) == version, "BF version header corrupted")
+    }
   }
 
   test("canonical_is_always_transparent") {
@@ -181,15 +166,12 @@ class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
         BFSpec("bf-A", 0, 5, 100000L),
         BFSpec("bf-B", 1, 5, 100000L)),
       bfVersion = 1, seed = 0, xxHashSeed = 42L, child = child)
-    // Both single-spec and multi-spec wrappers canonicalize to the
-    // child's canonical form.
     assert(execSingle.canonicalized == child.canonicalized,
       "single-spec GpuGenerateBloomFilterExec must be transparent")
     assert(execMulti.canonicalized == child.canonicalized,
       "multi-spec GpuGenerateBloomFilterExec must be transparent")
-    // And the two wrappers canonicalize to each other. What matters
-    // for ReuseExchange is that sibling operators with
-    // identical specs produce identical canonical forms.
+    // Sibling wrappers with identical specs must canonicalize to each other so that
+    // ReuseExchange treats them as the same physical exchange.
     val execMulti2 = GpuGenerateBloomFilterExec(
       specs = Seq(
         BFSpec("bf-A", 0, 5, 100000L),
@@ -212,27 +194,23 @@ class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
       "markSkipped must leave the sentinel identity in `value`")
   }
 
-  test("accumulator_merge_sentinel_wins_over_real_bf") {
-    val sentinel = BloomFilterBuildAccumulator.SkipSentinel
-    // Real partial BF bytes (a real V1 header is non-zero in byte 3).
-    val realBytes = Array[Byte](
-      0, 0, 0, 1,        // version=1
-      0, 0, 0, 1,        // numHashes=1
-      0, 0, 0, 1,        // numWords=1
-      0, 0, 0, 0, 0, 0, 0, 0x42.toByte)
+  Seq(1, 2).foreach { version =>
+    test(s"accumulator_merge_sentinel_wins_over_real_bf [v$version]") {
+      val sentinel = BloomFilterBuildAccumulator.SkipSentinel
+      val realBytes = makeBfBytes(version = version, dataLastByte = 0x42)
 
-    // sentinel plus real = sentinel (skip wins from either order).
-    val a1 = new BloomFilterBuildAccumulator()
-    a1.add(sentinel.clone())
-    a1.add(realBytes)
-    assert(a1.value eq sentinel,
-      "sentinel-then-real must canonicalize to the sentinel identity")
+      val a1 = new BloomFilterBuildAccumulator()
+      a1.add(sentinel.clone())
+      a1.add(realBytes)
+      assert(a1.value eq sentinel,
+        "sentinel-then-real must canonicalize to the sentinel identity")
 
-    val a2 = new BloomFilterBuildAccumulator()
-    a2.add(realBytes)
-    a2.add(sentinel.clone())
-    assert(a2.value eq sentinel,
-      "real-then-sentinel must end on the sentinel identity")
+      val a2 = new BloomFilterBuildAccumulator()
+      a2.add(realBytes)
+      a2.add(sentinel.clone())
+      assert(a2.value eq sentinel,
+        "real-then-sentinel must end on the sentinel identity")
+    }
   }
 
   test("accumulator_merge_sentinel_x_sentinel_yields_sentinel") {
@@ -242,17 +220,16 @@ class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
     assert(a.value eq BloomFilterBuildAccumulator.SkipSentinel)
   }
 
-  test("accumulator_merge_real_x_real_does_not_canonicalize_to_sentinel") {
-    val a = new BloomFilterBuildAccumulator()
-    val left = Array[Byte](
-      0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0x0F.toByte)
-    val right = Array[Byte](
-      0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0xF0.toByte)
-    a.add(left)
-    a.add(right)
-    assert(a.value ne BloomFilterBuildAccumulator.SkipSentinel,
-      "two real BFs must not canonicalize to the sentinel")
-    assert((a.value(15) & 0xFF) == 0xFF, "OR-merge expected 0xFF data")
+  Seq(1, 2).foreach { version =>
+    test(s"accumulator_merge_real_x_real_does_not_canonicalize_to_sentinel [v$version]") {
+      val a = new BloomFilterBuildAccumulator()
+      a.add(makeBfBytes(version = version, dataLastByte = 0x0F))
+      a.add(makeBfBytes(version = version, dataLastByte = 0xF0))
+      assert(a.value ne BloomFilterBuildAccumulator.SkipSentinel,
+        "two real BFs must not canonicalize to the sentinel")
+      assert((a.value(headerSize(version) + 7) & 0xFF) == 0xFF,
+        "OR-merge expected 0xFF data")
+    }
   }
 
   test("resolveEffectiveMaxFilterBytes is fail-safe on missing capability helper") {
@@ -274,22 +251,6 @@ class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
     }
     assert(ex.getMessage.contains("at least one"),
       s"unexpected message: ${ex.getMessage}")
-  }
-
-  /**
-   * Counting spy `BloomFilterBuildCostUpdater`. Records every
-   * `update` call's args + count.
-   */
-  private final class CountingBuildUpdater extends BloomFilterBuildCostUpdater {
-    var invocationCount: Int = 0
-    var lastBuildWallNanos: Long = -1L
-    var lastBfBytes: Long = -1L
-
-    override def update(buildWallNanos: Long, bfBytes: Long): Unit = {
-      invocationCount += 1
-      lastBuildWallNanos = buildWallNanos
-      lastBfBytes = bfBytes
-    }
   }
 
   test("recordBuildUpdate invokes updater exactly once per BF build") {

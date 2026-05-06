@@ -41,6 +41,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.BloomFilterTestHelpers.CountingPredicateUpdater
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.expressions.Literal
@@ -49,31 +50,16 @@ import org.apache.spark.sql.types.{BinaryType, LongType}
 /**
  * GPU-free unit tests for `GpuBloomFilterMightContain` observability wiring.
  *
- * Substitutes a counting spy `BloomFilterPredicateUpdater` to
- * assert the per-batch contract structurally without the GPU
- * `mightContainLong` / `sum(DType.INT64)` path. Also verifies that
- * two instances differing only in `bfId` / `probeUpdater`
- * canonicalize equal.
+ * Substitutes a counting spy `BloomFilterPredicateUpdater` to assert the per-batch
+ * contract structurally without the GPU `mightContainLong` / `sum(DType.INT64)` path.
+ * Also verifies that two instances differing only in `bfId` / `probeUpdater` canonicalize
+ * equal.
  */
 class GpuBloomFilterMightContainSuite extends AnyFunSuite {
 
-  /** Counting spy. Records every `update` call's args + count. */
-  private final class CountingUpdater extends BloomFilterPredicateUpdater {
-    var invocationCount: Int = 0
-    var lastRowsIn: Long = -1L
-    var lastRowsPassed: Long = -1L
-
-    override def update(rowsIn: Long, rowsPassed: Long): Unit = {
-      invocationCount += 1
-      lastRowsIn = rowsIn
-      lastRowsPassed = rowsPassed
-    }
-  }
-
   private def newExpr(
       bfId: Option[String],
-      updater: Option[BloomFilterPredicateUpdater]
-  ): GpuBloomFilterMightContain = {
+      updater: Option[BloomFilterPredicateUpdater]): GpuBloomFilterMightContain = {
     GpuBloomFilterMightContain(
       bloomFilterExpression = Literal(null, BinaryType),
       valueExpression = Literal(0L, LongType),
@@ -82,7 +68,7 @@ class GpuBloomFilterMightContainSuite extends AnyFunSuite {
   }
 
   test("recordBatchUpdate invokes updater exactly once per call") {
-    val spy = new CountingUpdater
+    val spy = new CountingPredicateUpdater
     val expr = newExpr(bfId = Some("cubf-test-r7"), updater = Some(spy))
     expr.recordBatchUpdate(1000000L, 700000L)
     assert(spy.invocationCount === 1, "update must fire once per batch, never per row")
@@ -91,7 +77,7 @@ class GpuBloomFilterMightContainSuite extends AnyFunSuite {
   }
 
   test("multi-batch invocation count matches batch count") {
-    val spy = new CountingUpdater
+    val spy = new CountingPredicateUpdater
     val expr = newExpr(bfId = Some("cubf-test-multi"), updater = Some(spy))
     expr.recordBatchUpdate(500000L, 350000L)
     expr.recordBatchUpdate(500000L, 200000L)
@@ -104,13 +90,12 @@ class GpuBloomFilterMightContainSuite extends AnyFunSuite {
   test("recordBatchUpdate is a no-op when probeUpdater is None") {
     val expr = newExpr(bfId = Some("cubf-no-updater"), updater = None)
     expr.recordBatchUpdate(1000000L, 700000L)
-    // No spy, no assertion to fire; passing through to assert no exception.
     succeed
   }
 
   test("canonicalized drops bfId so distinct instances compare equal") {
-    val spy1 = new CountingUpdater
-    val spy2 = new CountingUpdater
+    val spy1 = new CountingPredicateUpdater
+    val spy2 = new CountingPredicateUpdater
     val a = newExpr(bfId = Some("cubf-aaaa"), updater = Some(spy1))
     val b = newExpr(bfId = Some("cubf-bbbb"), updater = Some(spy2))
     val c = newExpr(bfId = None, updater = None)
@@ -121,7 +106,7 @@ class GpuBloomFilterMightContainSuite extends AnyFunSuite {
   }
 
   test("canonicalized leaves bfId / probeUpdater as None") {
-    val spy = new CountingUpdater
+    val spy = new CountingPredicateUpdater
     val a = newExpr(bfId = Some("cubf-xyz"), updater = Some(spy))
     val canon = a.canonicalized.asInstanceOf[GpuBloomFilterMightContain]
     assert(canon.bfId.isEmpty)

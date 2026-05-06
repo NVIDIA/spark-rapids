@@ -41,47 +41,31 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.BloomFilterTestHelpers._
+import com.nvidia.spark.rapids.FakeInlineExecs._
 import org.scalatest.funsuite.AnyFunSuite
 
 /**
- * Tests for InlineBFBuildReplacement, GpuOverrides registration,
- * and BloomFilterBuildAccumulator.
- *
- * These verify the reflection-based replacement mechanism and
- * accumulator merge logic without needing GPU or SparkSession.
+ * Tests for InlineBFBuildReplacement, GpuOverrides registration, and
+ * BloomFilterBuildAccumulator. These verify the reflection-based replacement
+ * mechanism and accumulator merge logic without needing GPU or SparkSession.
  */
 class InlineBFBuildReplacementSuite extends AnyFunSuite {
 
-  // V1 BloomFilter wire format header: version(4) + numHashes(4) + numWords(4) = 12 bytes.
-  // Data section starts at offset V1_HEADER_SIZE.
-  private val V1_HEADER_SIZE = 12
-
-  test("BloomFilterBuildAccumulator merge produces correct union") {
-    val acc1 = new BloomFilterBuildAccumulator()
-    val acc2 = new BloomFilterBuildAccumulator()
-    // V1 format: version(4) + numHashes(4) + numWords(4) + data
-    val bf1 = Array[Byte](
-      0, 0, 0, 1, // version=1
-      0, 0, 0, 1, // numHashes=1
-      0, 0, 0, 1, // numWords=1
-      0, 0, 0, 0, 0, 0, 0, 0x0F // data: low 4 bits set
-    )
-    val bf2 = Array[Byte](
-      0, 0, 0, 1,
-      0, 0, 0, 1,
-      0, 0, 0, 1,
-      0, 0, 0, 0, 0, 0, 0, 0xF0.toByte // data: high 4 bits
-    )
-    acc1.add(bf1)
-    acc2.add(bf2)
-    acc1.merge(acc2)
-    val merged = acc1.value
-    // Data byte should be OR of 0x0F and 0xF0 = 0xFF
-    assert((merged(V1_HEADER_SIZE + 7) & 0xFF) == 0xFF,
-      s"Expected 0xFF, got ${merged(V1_HEADER_SIZE + 7) & 0xFF}")
-    // Header unchanged
-    assert(merged(3) == 1, "Version should be 1")
-    assert(merged(7) == 1, "NumHashes should be 1")
+  Seq(1, 2).foreach { version =>
+    test(s"BloomFilterBuildAccumulator merge produces correct union [v$version]") {
+      val acc1 = new BloomFilterBuildAccumulator()
+      val acc2 = new BloomFilterBuildAccumulator()
+      acc1.add(makeBfBytes(version = version, dataLastByte = 0x0F))
+      acc2.add(makeBfBytes(version = version, dataLastByte = 0xF0))
+      acc1.merge(acc2)
+      val merged = acc1.value
+      val dataLastIdx = headerSize(version) + 7
+      assert((merged(dataLastIdx) & 0xFF) == 0xFF,
+        s"Expected 0xFF, got ${merged(dataLastIdx) & 0xFF}")
+      assert(merged(3) == version, s"Version byte should be $version")
+      assert(merged(7) == 1, "NumHashes should be 1")
+    }
   }
 
   test("BloomFilterBuildAccumulator is zero when empty") {
@@ -92,22 +76,40 @@ class InlineBFBuildReplacementSuite extends AnyFunSuite {
 
   test("BloomFilterBuildAccumulator copy is independent") {
     val acc = new BloomFilterBuildAccumulator()
-    val bf = Array[Byte](0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
-      1, 2, 3, 4, 5, 6, 7, 8)
-    acc.add(bf)
+    acc.add(makeBfBytes(dataLastByte = 1))
     val copy = acc.copy()
     acc.reset()
     assert(acc.isZero)
     assert(!copy.asInstanceOf[BloomFilterBuildAccumulator].isZero)
   }
 
-  test("BloomFilterBuildAccumulator single partition") {
+  Seq(1, 2).foreach { version =>
+    test(s"BloomFilterBuildAccumulator single partition [v$version]") {
+      val acc = new BloomFilterBuildAccumulator()
+      acc.add(makeBfBytes(version = version, dataLastByte = 42))
+      assert(!acc.isZero)
+      assert(acc.value(headerSize(version) + 7) == 42)
+    }
+  }
+
+  test("accumulator_merge_v2_preserves_seed_header_field") {
+    // The V2 wire format carries a 4-byte seed at offsets 8..11. `mergeBytes`
+    // selects dataOffset=16 for V2 and OR-merges only data bytes (offset >= 16);
+    // the seed bytes must survive the merge unchanged. Without this guarantee a
+    // multi-partition V2 merge would corrupt the seed and break probe-side hashing.
+    val left  = makeBfBytes(version = 2, seed = 0xDEADBEEF, dataLastByte = 0x0F)
+    val right = makeBfBytes(version = 2, seed = 0xDEADBEEF, dataLastByte = 0xF0)
     val acc = new BloomFilterBuildAccumulator()
-    val bf = Array[Byte](0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1,
-      0, 0, 0, 0, 0, 0, 0, 42)
-    acc.add(bf)
-    assert(!acc.isZero)
-    assert(acc.value(V1_HEADER_SIZE + 7) == 42)
+    acc.add(left)
+    acc.add(right)
+    val merged = acc.value
+    assert(merged(8)  == 0xDE.toByte, "seed byte 0 preserved")
+    assert(merged(9)  == 0xAD.toByte, "seed byte 1 preserved")
+    assert(merged(10) == 0xBE.toByte, "seed byte 2 preserved")
+    assert(merged(11) == 0xEF.toByte, "seed byte 3 preserved")
+    assert((merged(V2_HEADER_SIZE + 7) & 0xFF) == 0xFF,
+      "data byte OR-merged across partitions")
+    assert(merged(3) == 2, "V2 version header byte preserved")
   }
 
   test("BloomFilterBuildAccumulator.add(null) is a defensive no-op") {
@@ -119,60 +121,26 @@ class InlineBFBuildReplacementSuite extends AnyFunSuite {
   }
 
   test("InlineBFBuildReplacement class name is resolvable") {
-    // Verify the class name pattern is well-formed. The optional
-    // planner class is not expected to be present in unit tests,
-    // but the constant should be well-formed.
+    // The optional planner class is not on the unit-test classpath; only the
+    // class-name constant inside the rule needs to be well-formed.
     val replacement = InlineBFBuildReplacement()
     assert(replacement != null)
   }
-
-  /** Stand-in for an inline-build exec carrying the
-   * `specs: Seq[BFSpec]` shape. Lives in this test so we can
-   * exercise the reflection path without optional planner classes.
-   */
-  case class FakeSpec(bfId: String, keyColumnIndex: Int,
-      numHashes: Int, numBits: Long)
-
-  case class FakeMultiSpecInlineExec(
-      specs: Seq[FakeSpec],
-      bfVersion: Int,
-      seed: Int,
-      xxHashSeed: Long,
-      child: Any)
-
-  case class FakeLegacyInlineExec(
-      bfId: String,
-      keyColumnIndex: Int,
-      numHashes: Int,
-      numBits: Long,
-      bfVersion: Int,
-      seed: Int,
-      xxHashSeed: Long,
-      child: Any)
 
   test("reflects_multi_spec_field") {
     val fake: FakeMultiSpecInlineExec = FakeMultiSpecInlineExec(
       Seq(FakeSpec("bf-A", 0, 5, 100000L),
         FakeSpec("bf-B", 1, 5, 100000L)),
-      1,    // bfVersion
-      0,    // seed
-      42L,  // xxHashSeed
-      null) // child
+      bfVersion = 1,
+      seed = 0,
+      xxHashSeed = 42L,
+      child = null)
     val specs = InlineBFBuildReplacement().readSpecs(fake)
     assert(specs.size == 2)
     assert(specs.map(_.bfId) == Seq("bf-A", "bf-B"))
     assert(specs.map(_.keyColumnIndex) == Seq(0, 1))
     assert(specs.map(_.numHashes) == Seq(5, 5))
     assert(specs.map(_.numBits) == Seq(100000L, 100000L))
-  }
-
-  case class FakeBrokenInlineExec(child: Any) {
-    // Required accessor that always throws — exercises the NonFatal catch path
-    // in replaceWithGpu / readSpecs reflection.
-    def specs: Seq[Any] = throw new RuntimeException("synthetic reflection failure")
-    def bfVersion: Int = 1
-    def seed: Int = 0
-    def xxHashSeed: Long = 42L
   }
 
   test("readSpecs propagates reflective accessor failure (fail-closed contract)") {
@@ -187,19 +155,18 @@ class InlineBFBuildReplacementSuite extends AnyFunSuite {
   }
 
   test("legacy_fallback_tolerates_old_single_spec") {
-    // When only the legacy single-field accessors are available,
-    // readSpecs must wrap a single BFSpec so downstream
-    // GpuGenerateBloomFilterExec always sees a uniform Seq[BFSpec]
-    // shape.
+    // When only the legacy single-field accessors are available, readSpecs must
+    // wrap a single BFSpec so downstream GpuGenerateBloomFilterExec always sees
+    // a uniform Seq[BFSpec] shape.
     val legacy: FakeLegacyInlineExec = FakeLegacyInlineExec(
-      "legacy-single", // bfId
-      3,               // keyColumnIndex
-      7,               // numHashes
-      524288L,         // numBits
-      1,               // bfVersion
-      0,               // seed
-      42L,             // xxHashSeed
-      null)            // child
+      bfId = "legacy-single",
+      keyColumnIndex = 3,
+      numHashes = 7,
+      numBits = 524288L,
+      bfVersion = 1,
+      seed = 0,
+      xxHashSeed = 42L,
+      child = null)
     val specs = InlineBFBuildReplacement().readSpecs(legacy)
     assert(specs.size == 1,
       s"expected 1 legacy spec, got ${specs.size}")
