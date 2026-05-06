@@ -18,8 +18,8 @@ package org.apache.spark.sql.delta.rapids.delta40x
 
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.DeltaProvider
-import com.nvidia.spark.rapids.delta.delta40x.GpuDeltaCatalog
 import com.nvidia.spark.rapids.delta.delta40x.Delta40xProvider
+import com.nvidia.spark.rapids.delta.delta40x.GpuDeltaCatalog
 
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
