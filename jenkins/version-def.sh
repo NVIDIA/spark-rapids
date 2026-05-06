@@ -26,7 +26,8 @@ for VAR in $OVERWRITE_PARAMS; do
 done
 IFS=$PRE_IFS
 
-MVN=${MVN:-"mvn"}
+MVN_SETTINGS=${MVN_SETTINGS:-"jenkins/settings.xml"}
+MVN=${MVN:-"mvn -s $MVN_SETTINGS"}
 
 GLUTEN_VERSION=${GLUTEN_VERSION:-"1.2.0"}
 # TODO: https://github.com/NVIDIA/spark-rapids/issues/12278
