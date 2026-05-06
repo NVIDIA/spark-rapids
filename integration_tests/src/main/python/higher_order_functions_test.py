@@ -242,9 +242,10 @@ def test_array_aggregate_fallback_shapes(lambda_sql, init_sql):
         'ArrayAggregate')
 
 
-@disable_ansi_mode
 @allow_non_gpu('ProjectExec')
 def test_array_aggregate_non_identity_finish_falls_back():
+    # Fallback path; ANSI mode doesn't change GPU behaviour and the small CPU sum
+    # (5 ints into a long acc, doubled) doesn't overflow.
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, ArrayGen(int_gen, max_length=5)).selectExpr(
             'aggregate(a, 0L, (acc, x) -> acc + CAST(x as BIGINT), acc -> acc * 2) as doubled'),
