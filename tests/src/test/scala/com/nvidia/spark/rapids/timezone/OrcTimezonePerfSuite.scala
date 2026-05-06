@@ -57,7 +57,10 @@ class OrcTimezonePerfSuite extends SparkQueryCompareTestSuite with BeforeAndAfte
   private val warmupRounds = 1
   private val measuredRounds = 5
 
-  private val path = "/tmp/tmp_OrcTimezonePerfSuite"
+  // Use a per-run unique path under java.io.tmpdir to avoid cross-run interference
+  // when multiple test runs share the same host (e.g., CI matrix).
+  private val path = System.getProperty("java.io.tmpdir") + "/tmp_OrcTimezonePerfSuite_" +
+    java.util.UUID.randomUUID().toString
 
   private def setSessionTimeZone(spark: SparkSession, tzId: String): Unit = {
     TimeZone.setDefault(TimeZone.getTimeZone(tzId))
