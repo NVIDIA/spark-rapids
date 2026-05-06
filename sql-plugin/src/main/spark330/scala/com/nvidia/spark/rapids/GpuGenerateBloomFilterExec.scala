@@ -173,6 +173,12 @@ case class GpuGenerateBloomFilterExec(
     child.executeColumnar().mapPartitions { iter =>
       val ctx = TaskContext.get()
       val partId = ctx.partitionId()
+      // Defensive: acquire the GPU semaphore before any BloomFilter / Hash GPU allocation
+      // or kernel in the build loop. The upstream operator typically holds it across the
+      // iterator, but if the planner emits this build over a transition or first-GPU stage
+      // the guarantee is implicit. This mirrors the pattern in GpuCartesianProductExec,
+      // GpuArrowEvalPythonExec, GpuShuffleExchangeExecBase, etc.
+      GpuSemaphore.acquireIfNecessary(ctx)
       val numSpecs = specsCapture.size
       val bfs: Array[Scalar] = new Array[Scalar](numSpecs)
       val rowsProcessed: Array[Long] = Array.fill(numSpecs)(0L)
@@ -419,7 +425,8 @@ object InlineBFBuildGpuOverride {
  * payload cannot collide with this shape: every serialized
  * `BloomFilter` starts with a non-zero 4-byte version header.
  */
-class BloomFilterBuildAccumulator extends AccumulatorV2[Array[Byte], Array[Byte]] {
+class BloomFilterBuildAccumulator extends AccumulatorV2[Array[Byte], Array[Byte]]
+    with Logging {
 
   import BloomFilterBuildAccumulator.SkipSentinel
 
@@ -493,10 +500,21 @@ class BloomFilterBuildAccumulator extends AccumulatorV2[Array[Byte], Array[Byte]
   /**
    * Bitwise OR the data portion of `other` into `merged`.
    * The header is skipped (identical across all partials).
+   *
+   * A length mismatch indicates a planner-side contract violation (different `numBits` for
+   * the same `bfId` across partitions). Fail closed by publishing the skip sentinel rather
+   * than throwing — a thrown exception escapes into Spark's DAGScheduler accumulator-merge
+   * path, which catches via `NonFatal` and continues, leaving the accumulator with one
+   * partition's contribution missing. That partial filter would produce probe-side false
+   * negatives. Skip sentinel matches the oversize/unsafe-build fail-closed contract.
    */
   private def mergeBytes(other: Array[Byte]): Unit = {
-    require(merged.length == other.length,
-      s"BF size mismatch: ${merged.length} vs ${other.length}")
+    if (merged.length != other.length) {
+      logWarning(s"[CuBF-Accumulator] BF size mismatch: ${merged.length} vs " +
+        s"${other.length} -> SKIP")
+      merged = SkipSentinel
+      return
+    }
     // Detect header size from version byte
     val version = ((merged(0) & 0xFF) << 24) | ((merged(1) & 0xFF) << 16) |
       ((merged(2) & 0xFF) << 8) | (merged(3) & 0xFF)

@@ -120,6 +120,33 @@ class InlineBFBuildReplacementSuite extends AnyFunSuite {
         "but the guard closes the NPE surface for future callers")
   }
 
+  test("BloomFilterBuildAccumulator size mismatch fails closed via skip sentinel") {
+    // A length mismatch in mergeBytes indicates a planner-side bug emitting different
+    // numBits for the same bfId across partitions. The accumulator must NOT throw — a
+    // thrown exception escapes into Spark's DAGScheduler accumulator-merge path, which
+    // catches it via NonFatal and continues; the BF would then be shipped to the probe
+    // side missing one partition's contribution, producing false negatives in
+    // mightContainLong and dropping rows that should match the join. Instead, the
+    // accumulator must publish the skip sentinel so the probe side applies no filter —
+    // matching the oversize-skip and unsafe-build fail-closed contract elsewhere in
+    // GpuGenerateBloomFilterExec.
+    val acc = new BloomFilterBuildAccumulator()
+    val partitionA = makeBfBytes(version = 1, numWords = 1, dataLastByte = 0x0F)
+    val partitionB = makeBfBytes(version = 1, numWords = 2, dataLastByte = 0xF0)
+    assert(partitionA.length != partitionB.length,
+      "test fixtures must differ in length to exercise the size-mismatch path")
+    acc.add(partitionA)
+    acc.add(partitionB)
+    val observedValue = if (acc.value == null) {
+      "null"
+    } else {
+      s"length ${acc.value.length}"
+    }
+    assert(acc.value eq BloomFilterBuildAccumulator.SkipSentinel,
+      "size-mismatch merge must canonicalize to the skip sentinel, not throw or " +
+        s"leave a partial value (got $observedValue)")
+  }
+
   test("InlineBFBuildReplacement class name is resolvable") {
     // The optional planner class is not on the unit-test classpath; only the
     // class-name constant inside the rule needs to be well-formed.
