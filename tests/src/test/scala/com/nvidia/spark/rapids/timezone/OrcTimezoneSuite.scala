@@ -35,8 +35,10 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
  *   - `America/New_York`
  *   - `America/Los_Angeles`
  *   - `Asia/Shanghai`
+ *   - `US/Pacific` (alias of `America/Los_Angeles`)
+ *   - `PST` (legacy short ID)
  *
- * For each of the 16 writer/reader timezone pairs x 2 datasource versions (v1/v2), the suite:
+ * For each writer/reader timezone pair x 2 datasource versions (v1/v2), the suite:
  *   1. Writes an ORC file on CPU with JVM default timezone set to the writer timezone.
  *   2. Reads it back with JVM default timezone set to each reader timezone.
  *   3. Compares CPU and GPU read results for correctness.
@@ -56,11 +58,17 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
 
   private val RowCount = 1024L * 1024L
 
+  // Includes legacy/alias IDs ("US/Pacific", "PST") alongside canonical region IDs to
+  // exercise the read path against the kinds of writer-timezone strings ORC footers can
+  // actually carry. java.util.TimeZone accepts these even though ZoneId.of rejects them
+  // on JDK 21.
   private val timezones = Seq(
     "UTC",
     "America/New_York",
     "America/Los_Angeles",
-    "Asia/Shanghai"
+    "Asia/Shanghai",
+    "US/Pacific",
+    "PST"
   )
 
   // start timestamp from 1970-01-02 instead of 1970-01-01 to avoid the epoch boundary issue:
