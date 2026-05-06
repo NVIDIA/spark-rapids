@@ -1554,12 +1554,25 @@ private case class GpuOrcFileFilterHandler(
         sargApp, sargColumns, ignoreNonUtf8BloomFilter,
         writerVersion, fileIncluded, columnMapping).toSeq
       val distinctTzs = writerTimezones.distinct
+      // Compare by timezone rule-equivalence (e.g. "US/Pacific" vs "America/Los_Angeles",
+      // "UTC" vs "GMT", "" vs the JVM default) rather than by raw string equality, so that
+      // semantically equivalent IDs across stripes don't trigger a spurious failure.
       val writerTz = if (distinctTzs.length <= 1) {
         distinctTzs.headOption.getOrElse("")
       } else {
-        throw new IOException(
-          s"ORC file has stripes with different writer timezones: " +
-          s"${distinctTzs.mkString(", ")}. This is not supported on GPU.")
+        val readerDefaultTz = java.util.TimeZone.getDefault
+        val zones = distinctTzs.map { tz =>
+          if (tz.isEmpty) readerDefaultTz else java.util.TimeZone.getTimeZone(tz)
+        }
+        val head = zones.head
+        if (zones.tail.forall(head.hasSameRules)) {
+          // Prefer the first non-empty TZ string so downstream code carries an explicit ID.
+          distinctTzs.find(_.nonEmpty).getOrElse("")
+        } else {
+          throw new IOException(
+            s"ORC file has stripes with different writer timezones: " +
+            s"${distinctTzs.mkString(", ")}. This is not supported on GPU.")
+        }
       }
       (outputStripes, writerTz)
     }
