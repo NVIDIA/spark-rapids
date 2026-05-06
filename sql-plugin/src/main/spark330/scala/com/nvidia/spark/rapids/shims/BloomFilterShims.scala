@@ -63,16 +63,6 @@ import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter,
 
 object BloomFilterShims extends Logging {
 
-  // Double-gated probe-side instrumentation. Both flags default to false; both must be
-  // true to wire a `BloomFilterProbeAccumulator` into `GpuBloomFilterMightContain` (per-batch
-  // (rowsIn, rowsPassed) updates). When either flag is off, the probe path runs without
-  // instrumentation and behaves exactly like the OSS BloomFilterMightContain replacement.
-  // The same keys gate build-cost updaters in InlineBFBuildReplacement.
-  private val RUNTIME_FEEDBACK_ENABLED_KEY =
-    "spark.rapids.sql.cuBloomFilter.runtimeFeedback.enabled"
-  private val RUNTIME_FEEDBACK_INSTRUMENTATION_ENABLED_KEY =
-    "spark.rapids.sql.cuBloomFilter.runtimeFeedback.instrumentation.enabled"
-
   // Probe-side leaf node emitted by the optional planner module. The execution layer discovers it
   // by FQCN to extract the `bfId` for accumulator wiring. If the planner module is absent, the
   // lookup silently returns None and the probe path runs without instrumentation.
@@ -146,11 +136,7 @@ object BloomFilterShims extends Logging {
   private def resolveProbeWiring(
       bloomFilterExpression: Expression
   ): (Option[String], Option[BloomFilterPredicateUpdater]) = {
-    val conf = SQLConf.get
-    val feedbackEnabled = confFlagEnabled(conf, RUNTIME_FEEDBACK_ENABLED_KEY)
-    val instrumentationEnabled =
-      confFlagEnabled(conf, RUNTIME_FEEDBACK_INSTRUMENTATION_ENABLED_KEY)
-    if (!(feedbackEnabled && instrumentationEnabled)) {
+    if (!CuBFFeedbackFlags.isEnabled(SQLConf.get)) {
       (None, None)
     } else {
       val bfIdOpt = extractBfId(bloomFilterExpression)
@@ -159,14 +145,6 @@ object BloomFilterShims extends Logging {
         spark <- SparkSession.getActiveSession
       } yield BloomFilterProbeAccumulator.driverGetOrCreate(spark.sparkContext, bfId)
       (bfIdOpt, updaterOpt)
-    }
-  }
-
-  private def confFlagEnabled(conf: SQLConf, key: String): Boolean = {
-    try {
-      conf.getConfString(key, "false").toBoolean
-    } catch {
-      case NonFatal(_) => false
     }
   }
 

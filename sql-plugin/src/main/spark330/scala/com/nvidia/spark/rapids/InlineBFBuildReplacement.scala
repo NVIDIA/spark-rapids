@@ -64,13 +64,6 @@ case class InlineBFBuildReplacement() extends Rule[SparkPlan] with Logging {
 
   import InlineBFBuildReplacement._
 
-  // The FQCN matches a CPU stub from the optional planner module.
-  // Reflection-only detection means this rule has zero compile-time
-  // dependency on planner classes: when the planner JAR is absent,
-  // the lookup never matches and the rule is a no-op.
-  private val inlineBFClassName =
-    "com.nvidia.spark.rapids.optimizer.cubloomfilter.InlineBFBuildExec"
-
   override def apply(plan: SparkPlan): SparkPlan = {
     plan.transformUp {
       case exec if exec.getClass.getName == inlineBFClassName =>
@@ -121,12 +114,7 @@ case class InlineBFBuildReplacement() extends Rule[SparkPlan] with Logging {
    */
   private def resolveBuildCostUpdaters(
       bfIds: Seq[String]): Map[String, BloomFilterBuildCostUpdater] = {
-    val conf = SQLConf.get
-    val feedbackEnabled =
-      conf.getConfString(RUNTIME_FEEDBACK_ENABLED_KEY, "false").toBoolean
-    val instrumentationEnabled =
-      conf.getConfString(RUNTIME_FEEDBACK_INSTRUMENTATION_ENABLED_KEY, "false").toBoolean
-    if (!(feedbackEnabled && instrumentationEnabled) || bfIds.isEmpty) {
+    if (bfIds.isEmpty || !CuBFFeedbackFlags.isEnabled(SQLConf.get)) {
       return Map.empty
     }
     SparkSession.getActiveSession match {
@@ -188,16 +176,12 @@ case class InlineBFBuildReplacement() extends Rule[SparkPlan] with Logging {
 }
 
 object InlineBFBuildReplacement {
+  // The FQCN matches a CPU stub from the optional planner module.
+  // Reflection-only detection means this rule has zero compile-time
+  // dependency on planner classes: when the planner JAR is absent,
+  // the lookup never matches and the rule is a no-op.
   private val inlineBFClassName =
     "com.nvidia.spark.rapids.optimizer.cubloomfilter.InlineBFBuildExec"
-
-  // Feature-flag keys read at GpuOverrides time. The false default
-  // keeps the build-cost accumulator path inert unless a caller
-  // explicitly enables it.
-  private[rapids] val RUNTIME_FEEDBACK_ENABLED_KEY =
-    "spark.rapids.sql.cuBloomFilter.runtimeFeedback.enabled"
-  private[rapids] val RUNTIME_FEEDBACK_INSTRUMENTATION_ENABLED_KEY =
-    "spark.rapids.sql.cuBloomFilter.runtimeFeedback.instrumentation.enabled"
 
   def applyIfNeeded(plan: SparkPlan): SparkPlan = {
     if (isNeeded(plan)) {
