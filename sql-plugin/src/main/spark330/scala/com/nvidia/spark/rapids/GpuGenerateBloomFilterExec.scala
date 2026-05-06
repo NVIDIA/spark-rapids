@@ -123,9 +123,12 @@ case class GpuGenerateBloomFilterExec(
   // This operator does not change batch sizes; no coalescing needed.
   override val coalesceAfter: Boolean = false
 
-  // Keep this pass-through wrapper invisible to Spark's canonical-form
-  // plan matchers. The optional planner is responsible for only
-  // coalescing equivalent inline-build specifications.
+  // Keep this pass-through wrapper invisible to Spark's canonical-form plan matchers. Safe
+  // under the planner-layer invariants documented in design § 5.1 (items 5 and 6):
+  // content-addressed bfIds plus a sibling-coalescence pre-pass guarantee that any two build
+  // wrappers that canonicalize equal already represent the same logical bloom filter. Distinct
+  // bfIds over the same canonicalized child cannot coexist by construction, so collapsing
+  // equal canonical forms is the desired ReuseExchange outcome — not a correctness regression.
   override protected def doCanonicalize(): SparkPlan = child.canonicalized
 
   /**

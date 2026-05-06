@@ -267,6 +267,19 @@ Key invariants:
 4. All partition-local bloom filters for a given `bfId` have the same serialized
    size and header layout.
 
+Two additional invariants are owned by the planner layer and are required for
+canonicalization safety in §5.2:
+
+5. **Content-addressed `bfId`s.** Two build operations over the same
+   canonicalized child producing equivalent specs must use the same `bfId`.
+   This makes ReuseExchange collapses safe: one accumulator keyed by `bfId`
+   serves all probe-side consumers that reference it. CTE replays of the same
+   filtered dimension are the canonical case.
+6. **Sibling-coalescence pre-pass.** Distinct specs over the same build child
+   are coalesced into a single multi-spec marker before
+   `InlineBFBuildReplacement` runs. Two `InlineBFBuildExec` nodes with
+   different specs and equal canonical children are never emitted.
+
 ### 5.2 `GpuGenerateBloomFilterExec`
 
 `GpuGenerateBloomFilterExec` is a unary `GpuExec` that builds bloom filters
@@ -310,7 +323,11 @@ The operator has pass-through semantics:
 - Batch sizes are not intentionally changed.
 - Row-based execution is unsupported.
 - Canonicalization delegates to the child so the wrapper does not disrupt plan
-  equality and exchange/subquery reuse.
+  equality and exchange/subquery reuse. This is safe under the
+  content-addressed-`bfId` and sibling-coalescence invariants in §5.1: any two
+  build wrappers that canonicalize equal must already represent the same logical
+  bloom filter (same `bfId`, same accumulator), so collapsing them is the
+  desired outcome rather than a correctness regression.
 
 Build behavior:
 
@@ -864,7 +881,7 @@ tables.
 
 ### 8.7 Case Study: NDS SF3K Query 50
 
-The following numbers are from a production EMR-EKS NDS SF3K cluster validation
+The following numbers are from a production NDS SF3K cluster validation
 run on 2026-05-03.
 
 Cluster configuration:

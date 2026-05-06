@@ -336,6 +336,14 @@ class GpuGenerateBloomFilterExecSuite extends AnyFunSuite
       "applyIfNeeded must return the original plan reference unchanged")
   }
 
+  // NOTE: A contract test for `InlineBFBuildGpuOverride.convertToGpu` (asserting it wires
+  // children via `childPlans.head.convertIfNeeded()` rather than returning `exec` unchanged)
+  // belongs in the `tests/` module. Constructing the production meta here triggers
+  // `GpuOverrides.execs` -> `ExternalSource.execRules` -> reflective load of
+  // `com.nvidia.spark.rapids.delta.DeltaProbeImpl`, which is not on the `sql-plugin` test
+  // classpath. The fix itself is enforced by the explicit `exec.copy(child = ...)` idiom in
+  // `InlineBFBuildGpuOverride.execRules` and by the scaladoc on that registration.
+
   test("buildCostUpdaters do not break canonical transparency") {
     // `doCanonicalize` returns `child.canonicalized`, which drops
     // every per-build field including the `buildCostUpdaters` map.
