@@ -38,7 +38,7 @@ This document covers the following topics:
   * [8.4 Probe-Side Overhead Per Task](#84-probe-side-overhead-per-task)
   * [8.5 What Drives Total Overhead](#85-what-drives-total-overhead)
   * [8.6 Sensitivity Analysis](#86-sensitivity-analysis)
-  * [8.7 Case Study: NDS SF3K Query 50](#87-case-study-nds-sf3k-query-50)
+  * [8.7 Worked Sizing Example](#87-worked-sizing-example)
 * [9. Alternatives Considered](#9-alternatives-considered)
   * [9.1 Reuse the Spark OSS Scalar-Subquery Build Path](#91-reuse-the-spark-oss-scalar-subquery-build-path)
   * [9.2 Hard-Link Against Planner-Layer Classes](#92-hard-link-against-planner-layer-classes)
@@ -850,7 +850,7 @@ tasks and stacked bloom filters per task.
 
 | `bf_bytes` | `T*S=1` | `T*S=4` | `T*S=16` | `T*S=48` |
 |------------|---------|---------|----------|----------|
-| 65 KB, q50 observed | 65 KB | 260 KB | 1 MB | 3 MB |
+| 65 KB | 65 KB | 260 KB | 1 MB | 3 MB |
 | 256 KB | 256 KB | 1 MB | 4 MB | 12 MB |
 | 1 MB | 1 MB | 4 MB | 16 MB | 48 MB |
 | 4 MB | 4 MB | 16 MB | 64 MB | 192 MB |
@@ -860,9 +860,9 @@ The `T*S=48` column represents 16 concurrent tasks with 3 stacked bloom filters
 each. At 8 MB per bloom filter this reaches 384 MB per executor, which is
 significant on a 16 to 24 GB GPU. However, all probe-side bloom filters are
 wrapped in `SpillableBuffer`, so they are eligible for RAPIDS memory spilling
-under GPU pressure. In practice, bloom filter sizes observed in NDS SF3K
-cluster runs are 1 KB to 200 KB, placing the operating point firmly in the
-sub-10-MB-per-executor range even at `T*S=48`.
+under GPU pressure. A planner cap that keeps bloom filters in the sub-200-KB
+range places the probe-side operating point below 10 MB per executor even at
+`T*S=48`.
 
 Table C shows network overhead versus build partitions with `K=1`. Network
 overhead is linear in both `bf_bytes` and `P_build`.
@@ -879,32 +879,20 @@ negligible network traffic regardless of bloom filter size. Network overhead
 becomes material only when large bloom filters are built over many-partition
 tables.
 
-### 8.7 Case Study: NDS SF3K Query 50
+### 8.7 Worked Sizing Example
 
-The following numbers are from a production NDS SF3K cluster validation
-run on 2026-05-03.
+This example uses representative values to show how the formulas above should
+be applied. It is not tied to a particular benchmark, deployment, or validation
+run.
 
-Cluster configuration:
+Assume:
 
-- 8 executors, 14 cores each, 1 GPU each.
-- `spark.task.resource.gpu.amount = 0.0625`. GPU resource slots per executor:
-  `1 / 0.0625 = 16`. CPU task slots: `14 / 1 = 14` (default `spark.task.cpus=1`).
-  Effective `T = min(14, 16) = 14`.
-- `spark.sql.shuffle.partitions = 200`.
-- Scale factor: SF3K, or 3 TB.
-
-Query 50 bloom filter parameters:
-
-- 3 CuBF bloom filters sharing one build child, `store_returns` after filters.
-- Multi-spec: one `GpuGenerateBloomFilterExec` with 3 `BFSpec` entries.
-- Probe-side stack depth: `S=3`, all filtering `store_sales`.
-- Build NDV: 110,799.
-- Each bloom filter: `numBits=531007`, `numHashes=3`,
-  `bf_bytes=66388`, about 65 KB, FPP 0.1 (the planner driver log
-  reports data-section size 66376; the full serialized payload adds
-  the 12-byte V1 header).
-- V1 format with a 12-byte header.
-- Probe table: `store_sales`, about 8.25 billion rows.
+- `K=3` bloom filters are coalesced into one build exec.
+- `S=3` bloom filter predicates are stacked on the probe side.
+- `T=14` tasks can run concurrently per executor.
+- `P_build=200` build partitions contribute partial bloom filters.
+- Each serialized bloom filter is about 65 KB including the wire-format header.
+- The build key batch has 1M rows when the hash column is materialized.
 
 Build-side per task:
 
@@ -912,48 +900,26 @@ Build-side per task:
 - GPU hash transient: `1M rows * 8 = 8 MB`, one spec at a time.
 - Host finalize: `3 * 2 * 65 KB = 390 KB`, transient.
 
-Build-side total with `P_build=200`:
+Build-side total:
 
 - Network: `200 * 3 * 65 KB = about 38 MB`.
 - Driver heap: `3 * 65 KB = 195 KB`.
 - Driver merge CPU: `199 * 3 * 65 KB = about 38 MB` OR'd, negligible at this
   filter size.
 
-Probe-side per task with 3 stacked bloom filters:
+Probe-side per task with three stacked bloom filters:
 
 - GPU persistent: `3 * 65 KB = 195 KB`, each in a `SpillableBuffer`.
 - GPU transient: about 1 MB per batch for the `BOOL8` result.
 
-Probe-side per executor with `T=14` and `S=3`:
+Probe-side per executor:
 
 - GPU persistent: `14 * 3 * 65 KB = about 2.7 MB`.
 
-Comparison to data volumes:
-
-- `store_sales` probe data: about 8.25B rows, or about 770 GB.
-- Query 50 observed shuffle reads: about 139 GB.
-- Total CuBF overhead: about 38 MB network, about 2.7 MB GPU per executor, and
-  195 KB driver heap.
-- Overhead ratio: less than 0.03% of the data volume being filtered.
-
-Observed bloom filter size distribution across the full NDS SF3K run of 103
-queries:
-
-| Size range | Count injected | Examples |
-|------------|----------------|----------|
-| < 1 KB | 2 | 5 B tiny dimension; 342 B `household_demographics`, NDV 285 |
-| 1-2 KB | 5 | 1,393-1,880 B, filtered `item` and `customer_demographics` |
-| 2-16 KB | 3 | 5,576-11,280 B, medium dimensions |
-| 64-200 KB | 4 | 66,388 B q50 `store_returns` times 3; 199,319 B q69 `customer_address` |
-| Skipped by size guard | 14 | 15.4-169 MB high-NDV fact-side candidates |
-
-All 15 injected bloom filters were under 200 KB. The 14 oversized candidates,
-from 15 MB to 169 MB, were caught by the size guard before any GPU allocation or
-network transfer. This confirms that the practical operating point is in the
-sub-MB range, with the size guard serving as the critical scalability boundary.
-
-The planner's bloom filter size cap is the primary lever for bounding worst-case
-overhead. Bloom filters exceeding the configured cap are skipped before any GPU
+This example shows why small dimension-style bloom filters have low fixed
+overhead even when multiple filters share the same build side. The planner's
+bloom filter size cap is still the primary lever for bounding worst-case
+overhead: filters exceeding the configured cap are skipped before any GPU
 allocation or network transfer occurs. The sensitivity tables above show the
 overhead envelope for capacity planning when adjusting this cap.
 
@@ -1009,7 +975,7 @@ public or test-only marker stubs.
 
 ## 11. Limitations and Resource Risks
 
-This section summarizes the production resource risks that follow from the cost
+This section summarizes the runtime resource risks that follow from the cost
 analysis in Section 8, the remedies available in the current implementation, and
 how to derive safe configuration values from cluster resources.
 
@@ -1054,8 +1020,8 @@ For example, to stay under 256 MB on a 16 GB GPU with `T=16` and `max(K,S)=3`:
 `bf_bytes_max <= 256 MB / 48 = about 5.3 MB`. Setting the planner's size cap at
 or below 4 MB keeps the footprint under 192 MB with headroom.
 
-In observed NDS SF3K workloads, all injected bloom filters were under 200 KB,
-placing the operating point below 10 MB per executor even at `T*max(K,S)=48`.
+For bloom filters capped below 200 KB, the operating point remains below 10 MB
+per executor even at `T*max(K,S)=48`.
 
 ### 11.2 Network Between Executors and Driver
 
@@ -1179,10 +1145,9 @@ configuration point for GPU, network, per-task payload, and driver heap
 constraints.
 
 In all dimensions, `bf_bytes` is the shared scaling factor. Small dimension-side
-bloom filters (the common case, under 200 KB in NDS SF3K) are well within safe
-bounds on any reasonable cluster configuration. The risk materializes only when
-large fact-side bloom filters are permitted, and the planner's size cap exists
-precisely to prevent that.
+bloom filters are well within safe bounds when capped in the low hundreds of KB.
+The risk materializes only when large fact-side bloom filters are permitted, and
+the planner's size cap exists precisely to prevent that.
 
 ## 12. Future Work
 
