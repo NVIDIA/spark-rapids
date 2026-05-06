@@ -23,7 +23,7 @@ tar -zxf ../spark-rapids-built.tgz
 cd spark-rapids
 echo "Maven mirror is $MVN_URM_MIRROR"
 SERVER_ID='snapshots'
-SERVER_URL="$URM_URL-local"
+SERVER_URL="$ART_URL-local"
 MVN="mvn -Dmaven.wagon.http.retryHandler.count=3 -DretryFailedDeploymentCount=3"
 # Determine Scala version and POM file from Spark version
 if [[ "$BASE_SPARK_VERSION" == 4.* ]]; then
