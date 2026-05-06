@@ -525,7 +525,7 @@ if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
   CUDA_VER_FOR_CUDF=${CUDA_VER_FOR_CUDF:-'12.9'}
 
   conda create -y -n ${CUDF_UDF_ENV} -c rapidsai-nightly -c nvidia -c conda-forge -c defaults \
-    python=${CUDF_UDF_PYTHON_VER} cudf=${CUDF_VER} cuda-version=${CUDA_VER_FOR_CUDF}
+    python=${CUDF_UDF_PYTHON_VER} pip cudf=${CUDF_VER} cuda-version=${CUDA_VER_FOR_CUDF}
 
   # Activate the cudf_udf env and reset PYTHONPATH to use the new env's site-packages
   source activate ${CUDF_UDF_ENV}
