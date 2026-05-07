@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuListUtils
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.GpuListSliceUtils
+import com.nvidia.spark.rapids.jni.{GpuListSliceUtils, MapUtils}
 import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -775,74 +775,18 @@ case class GpuMapFromEntries(child: Expression) extends GpuUnaryExpression with 
   // override def stateful: Boolean = true
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    // Internally the format for a list of key/value structs is the same as a map,
-    // so we can just return the same column with proper validation and deduplication.
+    // MapUtils handles Spark's null-struct-entry semantics and null-key validation.
+    // Valid inputs can be returned zero-copy because Spark MAP<K,V> and
+    // cuDF LIST<STRUCT<K,V>> share the same physical layout.
     val inputBase = input.getBase
-
-    // CPU semantics: if any struct entry in the input array is null (the whole struct is null,
-    // not just a null key inside a valid struct), map_from_entries returns null for that row.
-    // GPU must match this behavior instead of throwing "Cannot use null as map key."
-    withResource(inputBase.listContainsNulls) { hasNullEntry =>
-      withResource(hasNullEntry.any()) { anyNullEntry =>
-        if (!anyNullEntry.isValid || !anyNullEntry.getBoolean) {
-          // Fast path: no null struct entries in any row — original logic unchanged.
-          GpuMapUtils.assertNoNullKeys(inputBase)
-          dedupByPolicy(inputBase)
-        } else {
-          // Slow path: at least one row has null struct entries.
-          // CPU short-circuits: if a row's array contains any null struct entry, the
-          // entire row result is null — even if another entry in the same row has a
-          // null key.  So we must only throw "Cannot use null as map key" for rows
-          // that have NO null struct entries but DO have a null key in a valid struct.
-          // A global `keyNullCount > structNullCount` check is insufficient because it
-          // would throw for the mixed case [null_struct, {null_key,v}] where CPU
-          // returns null.  We need a per-row check instead.
-          withResource(inputBase.getChildColumnView(0)) { structChild =>
-            withResource(structChild.getChildColumnView(GpuMapUtils.KEY_INDEX)) { keyView =>
-              // Per-entry bool: key is null AND parent struct is valid (not null).
-              // isNull() always produces a valid (non-null) boolean column.
-              withResource(keyView.isNull()) { keyIsNull =>
-                withResource(structChild.isNull()) { structIsNull =>
-                  withResource(structIsNull.not()) { structIsValid =>
-                    withResource(keyIsNull.and(structIsValid)) { nullKeyInValidStruct =>
-                      // Wrap as LIST<BOOL> with the same list structure as inputBase,
-                      // then reduce each list to "any true" (max over booleans = any).
-                      withResource(GpuListUtils.replaceListDataColumnAsView(
-                          inputBase, nullKeyInValidStruct)) { nullKeyList =>
-                        withResource(nullKeyList.listReduce(
-                            SegmentedReductionAggregation.max())) { rowHasNullKey =>
-                          // Throw only for rows where: no null struct entry (hasNullEntry=false)
-                          // AND there is a null key in a valid struct.
-                          // For rows with null struct entries (hasNullEntry=true), the entire
-                          // row is masked to null below, so their null keys are irrelevant.
-                          withResource(hasNullEntry.not()) { noNullEntry =>
-                            withResource(noNullEntry.and(rowHasNullKey)) { shouldThrow =>
-                              withResource(shouldThrow.any()) { anyThrow =>
-                                if (anyThrow.isValid && anyThrow.getBoolean) {
-                                  throw new RuntimeException("Cannot use null as map key.")
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-          // Mask rows that contain null struct entries to null outer rows, then dedup.
-          // ifElse with a null scalar produces proper null outer rows (validity bit=0,
-          // empty offsets), so maskedInput's child column contains only entries from
-          // valid rows.  The dedup row-count check in dedupByPolicy is therefore safe.
-          withResource(GpuScalar.from(null, dataType)) { nullMapScalar =>
-            withResource(hasNullEntry.ifElse(nullMapScalar, inputBase)) { maskedInput =>
-              dedupByPolicy(maskedInput)
-            }
-          }
-        }
+    val effective: cudf.ColumnVector =
+      if (MapUtils.isValidMap(inputBase, /*throwOnNullKey=*/true)) {
+        inputBase.incRefCount()
+      } else {
+        MapUtils.mapFromEntries(inputBase, /*throwOnNullKey=*/true)
       }
+    withResource(effective) { eff =>
+      dedupByPolicy(eff)
     }
   }
 
