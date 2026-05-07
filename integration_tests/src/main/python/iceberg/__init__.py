@@ -173,6 +173,7 @@ def get_full_table_name(spark_tmp_table_factory):
 def schema_to_ddl(spark, schema):
     return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
 
+
 # Base table properties applied to every Iceberg test table.
 # Disables the fanout writer to prevent OOM in CI.  S3TablesCatalog does not
 # honor catalog-level table-default properties, so this must be set per table.
