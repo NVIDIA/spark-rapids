@@ -24,6 +24,7 @@ import org.scalatest.BeforeAndAfterAll
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql._
+import org.apache.spark.sql.FileUtils
 import org.apache.spark.sql.functions._
 
 /**
