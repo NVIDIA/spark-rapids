@@ -305,9 +305,9 @@ class SerializeConcatHostBuffersDeserializeBatch(
     data = null
     batchInternal = null
     // Drop the projected-row memoizations so the InternalRow arrays become collectable.
-    // Safe to call on `null` because `projectedRowsCache` is a lazy val initialized on first
-    // touch; clear() on an initialized map releases the entries, and a never-touched map
-    // simply stays unmaterialized.
+    // Touching `projectedRowsCache` here forces the lazy val to initialize if it had never
+    // been used, but that just allocates an empty ConcurrentHashMap — a one-time, negligible
+    // cost on the GC path.
     projectedRowsCache.clear()
   }
 
