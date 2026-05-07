@@ -40,9 +40,9 @@ import org.apache.spark.sql.types._
  *
  * Schema projection is supported: `decodedSchema` contains only the top-level fields and
  * nested children that are actually referenced by downstream operators. Downstream
- * `GetStructField` and `GetArrayStructFields` nodes have their ordinals rewritten via
- * `PRUNED_ORDINAL_TAG` to index into the pruned schema. Unreferenced fields are never
- * accessed, so no null-column filling is needed.
+ * `GetStructField` and `GetArrayStructFields` nodes derive their GPU ordinals from the
+ * converted child schema, so they index into the pruned schema directly. Unreferenced fields
+ * are never accessed, so no null-column filling is needed.
  *
  * @param decodedSchema The pruned schema containing only the fields decoded by the GPU.
  *                      Only fields referenced by downstream operators are included;

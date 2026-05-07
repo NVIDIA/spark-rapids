@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
+import scala.util.{Left => EitherLeft, Right => EitherRight}
+
 import ai.rapids.cudf.{BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import ai.rapids.cudf.ColumnView.FindOptions
 import com.nvidia.spark.rapids.{BinaryExprMeta, DataFromReplacementRule, GpuBinaryExpression, GpuColumnVector, GpuExpression, GpuExpressionsUtils, GpuListUtils, GpuMapUtils, GpuScalar, GpuUnaryExpression, RapidsConf, RapidsMeta, UnaryExprMeta}
@@ -412,11 +414,6 @@ case class GpuArrayPosition(left: Expression, right: Expression)
   }
 }
 
-object GpuStructFieldOrdinalTag {
-  val PRUNED_ORDINAL_TAG =
-    new org.apache.spark.sql.catalyst.trees.TreeNodeTag[Int]("GPU_PRUNED_ORDINAL")
-}
-
 class GpuGetStructFieldMeta(
     expr: GetStructField,
     conf: RapidsConf,
@@ -424,64 +421,157 @@ class GpuGetStructFieldMeta(
     rule: DataFromReplacementRule)
   extends UnaryExprMeta[GetStructField](expr, conf, parent, rule) {
 
-  def convertToGpu(child: Expression): GpuExpression = {
-    val effectiveOrd = GpuGetStructFieldMeta.effectiveOrdinal(expr)
+  override def tagExprForGpu(): Unit = {
+    childExprs.head.typeMeta.dataType.foreach { convertedChildType =>
+      GpuGetStructFieldMeta.resolveField(expr, convertedChildType) match {
+        case EitherRight((_, field)) =>
+          if (field.dataType != expr.dataType) {
+            overrideDataType(field.dataType)
+          }
+        case EitherLeft(reason) =>
+          willNotWorkOnGpu(reason)
+      }
+    }
+  }
+
+  override def convertToGpu(child: Expression): GpuExpression = {
+    val effectiveOrd = GpuGetStructFieldMeta.effectiveOrdinal(expr, child)
     GpuGetStructField(child, effectiveOrd, expr.name)
   }
 }
 
 object GpuGetStructFieldMeta {
-  def effectiveOrdinal(expr: GetStructField): Int = {
-    val runtimeOrd = expr.getTagValue(
-      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
-    if (runtimeOrd >= 0) {
-      runtimeOrd
-    } else {
-      expr.ordinal
-    }
+  def resolveField(
+      expr: GetStructField,
+      convertedChildType: DataType): Either[String, (Int, StructField)] = {
+    GpuStructFieldRemap.resolveField(
+      expr.child.dataType, convertedChildType, expr.ordinal, "GetStructField")
+  }
+
+  def effectiveOrdinal(expr: GetStructField, child: Expression): Int = {
+    resolveField(expr, child.dataType).fold(
+      reason => throw new IllegalStateException(reason),
+      _._1)
   }
 }
 
 class GpuGetArrayStructFieldsMeta(
-     expr: GetArrayStructFields,
-     conf: RapidsConf,
-     parent: Option[RapidsMeta[_, _, _]],
-     rule: DataFromReplacementRule)
+    expr: GetArrayStructFields,
+    conf: RapidsConf,
+    parent: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
   extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
 
-  def convertToGpu(child: Expression): GpuExpression = {
-    val effectiveOrd = GpuGetArrayStructFieldsMeta.effectiveOrdinal(expr)
-    val runtimeOrd = expr.getTagValue(
-      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
-    val effectiveNumFields =
-      GpuGetArrayStructFieldsMeta.effectiveNumFields(child, expr, runtimeOrd)
-    GpuGetArrayStructFields(child, expr.field,
+  override def tagExprForGpu(): Unit = {
+    childExprs.head.typeMeta.dataType.foreach { convertedChildType =>
+      GpuGetArrayStructFieldsMeta.resolveField(expr, convertedChildType) match {
+        case EitherRight((_, field, _)) =>
+          val convertedType = ArrayType(field.dataType, expr.containsNull)
+          if (convertedType != expr.dataType) {
+            overrideDataType(convertedType)
+          }
+        case EitherLeft(reason) =>
+          willNotWorkOnGpu(reason)
+      }
+    }
+  }
+
+  override def convertToGpu(child: Expression): GpuExpression = {
+    val (effectiveOrd, effectiveField, effectiveNumFields) =
+      GpuGetArrayStructFieldsMeta.resolveField(expr, child.dataType).fold(
+        reason => throw new IllegalStateException(reason),
+        identity)
+    GpuGetArrayStructFields(child, effectiveField,
       effectiveOrd, effectiveNumFields, expr.containsNull)
   }
 }
 
 object GpuGetArrayStructFieldsMeta {
-  def effectiveOrdinal(expr: GetArrayStructFields): Int = {
-    val runtimeOrd = expr.getTagValue(
-      GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).getOrElse(-1)
-    if (runtimeOrd >= 0) {
-      runtimeOrd
-    } else {
-      expr.ordinal
+  def resolveField(
+      expr: GetArrayStructFields,
+      convertedChildType: DataType): Either[String, (Int, StructField, Int)] = {
+    GpuStructFieldRemap.resolveArrayStructField(
+      expr.child.dataType, convertedChildType, expr.ordinal, "GetArrayStructFields")
+  }
+
+  def effectiveOrdinal(expr: GetArrayStructFields, child: Expression): Int = {
+    resolveField(expr, child.dataType).fold(
+      reason => throw new IllegalStateException(reason),
+      _._1)
+  }
+
+  def effectiveField(expr: GetArrayStructFields, child: Expression): StructField = {
+    resolveField(expr, child.dataType).fold(
+      reason => throw new IllegalStateException(reason),
+      _._2)
+  }
+
+  def effectiveNumFields(expr: GetArrayStructFields, child: Expression): Int = {
+    resolveField(expr, child.dataType).fold(
+      reason => throw new IllegalStateException(reason),
+      _._3)
+  }
+}
+
+private object GpuStructFieldRemap {
+  def resolveField(
+      originalChildType: DataType,
+      convertedChildType: DataType,
+      ordinal: Int,
+      context: String): Either[String, (Int, StructField)] = {
+    (originalChildType, convertedChildType) match {
+      case (originalStruct: StructType, convertedStruct: StructType) =>
+        resolveStructField(originalStruct, convertedStruct, ordinal, context)
+      case _ =>
+        EitherLeft(s"$context expected a converted StructType child but found $convertedChildType")
     }
   }
 
-  def effectiveNumFields(
-      child: Expression,
-      expr: GetArrayStructFields,
-      runtimeOrd: Int): Int = {
-    if (runtimeOrd >= 0) {
-      child.dataType match {
-        case ArrayType(st: StructType, _) => st.fields.length
-        case _ => expr.numFields
-      }
+  def resolveArrayStructField(
+      originalChildType: DataType,
+      convertedChildType: DataType,
+      ordinal: Int,
+      context: String): Either[String, (Int, StructField, Int)] = {
+    (originalChildType, convertedChildType) match {
+      case (
+          ArrayType(originalStruct: StructType, _),
+          ArrayType(convertedStruct: StructType, _)) =>
+        resolveStructField(originalStruct, convertedStruct, ordinal, context).map {
+          case (effectiveOrdinal, field) =>
+            (effectiveOrdinal, field, convertedStruct.fields.length)
+        }
+      case _ =>
+        EitherLeft(s"$context expected a converted ArrayType(StructType) child but found " +
+          s"$convertedChildType")
+    }
+  }
+
+  private def resolveStructField(
+      originalStruct: StructType,
+      convertedStruct: StructType,
+      ordinal: Int,
+      context: String): Either[String, (Int, StructField)] = {
+    if (ordinal < 0 || ordinal >= originalStruct.fields.length) {
+      return EitherLeft(s"$context ordinal $ordinal is outside the original struct schema")
+    }
+
+    val originalField = originalStruct.fields(ordinal)
+    if (ordinal < convertedStruct.fields.length &&
+        convertedStruct.fields(ordinal).name == originalField.name) {
+      EitherRight((ordinal, convertedStruct.fields(ordinal)))
     } else {
-      expr.numFields
+      val matches = convertedStruct.fields.zipWithIndex.filter {
+        case (field, _) => field.name == originalField.name
+      }
+      matches match {
+        case Array((field, effectiveOrdinal)) =>
+          EitherRight((effectiveOrdinal, field))
+        case Array() =>
+          EitherLeft(
+            s"$context field '${originalField.name}' is not present in the converted schema")
+        case _ =>
+          EitherLeft(s"$context field '${originalField.name}' is ambiguous in the converted schema")
+      }
     }
   }
 }

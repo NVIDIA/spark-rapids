@@ -2500,8 +2500,8 @@ def test_from_protobuf_bug3_unrelated_struct_name_collision(spark_tmp_path, from
         # We only select decoded.ad_info.winfoid, so dummy is pruned.
         # winfoid gets ordinal 0 in the pruned schema.
         # But for other_struct, winfoid is ordinal 1.
-        # GpuGetStructFieldMeta will see "winfoid", query the ThreadLocal, get 0, 
-        # and extract ordinal 0 ("hello") for other_winfoid, causing a mismatch!
+        # Regression coverage: protobuf nested pruning must not affect unrelated structs
+        # that happen to use the same field name.
         return read_df.select(
             decoded.getField("ad_info").getField("winfoid").alias("pb_winfoid"),
             f.col("other_struct").getField("winfoid").alias("other_winfoid")

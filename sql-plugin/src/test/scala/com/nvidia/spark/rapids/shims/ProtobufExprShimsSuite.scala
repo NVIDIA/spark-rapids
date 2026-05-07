@@ -22,13 +22,14 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.spark.sql.catalyst.expressions.{
   Expression,
   GetArrayStructFields,
+  GetStructField,
   UnaryExpression
 }
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
 import org.apache.spark.sql.rapids.{
   GpuFromProtobuf,
   GpuGetArrayStructFieldsMeta,
-  GpuStructFieldOrdinalTag
+  GpuGetStructFieldMeta
 }
 import org.apache.spark.sql.rapids.protobuf._
 import org.apache.spark.sql.types._
@@ -515,7 +516,24 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     assert(validation.left.toOption.exists(_.contains("non-STRUCT parent")))
   }
 
-  test("array struct field meta uses pruned child field count after ordinal remap") {
+  test("struct field meta resolves ordinal from converted child schema") {
+    val originalStruct = StructType(Seq(
+      StructField("a", IntegerType, nullable = true),
+      StructField("b", IntegerType, nullable = true),
+      StructField("c", IntegerType, nullable = true)))
+    val prunedStruct = StructType(Seq(StructField("c", IntegerType, nullable = true)))
+    val originalChild = FakeTypedUnaryExpr(originalStruct)
+    val sparkExpr = GetStructField(originalChild, 2, Some("c"))
+    val prunedChild = FakeTypedUnaryExpr(prunedStruct)
+
+    assert(GpuGetStructFieldMeta.effectiveOrdinal(sparkExpr, prunedChild) == 0)
+    GpuGetStructFieldMeta.resolveField(sparkExpr, prunedChild.dataType) match {
+      case Right((_, field)) => assert(field == prunedStruct.fields.head)
+      case Left(reason) => fail(reason)
+    }
+  }
+
+  test("array struct field meta resolves ordinal and numFields from converted child schema") {
     val originalStruct = StructType(Seq(
       StructField("a", IntegerType, nullable = true),
       StructField("b", IntegerType, nullable = true),
@@ -528,14 +546,13 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       ordinal = 1,
       numFields = originalStruct.fields.length,
       containsNull = true)
-    sparkExpr.setTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG, 0)
 
     val prunedChild = FakeTypedUnaryExpr(ArrayType(prunedStruct, containsNull = true))
-    val runtimeOrd = sparkExpr.getTagValue(GpuStructFieldOrdinalTag.PRUNED_ORDINAL_TAG).get
 
-    assert(runtimeOrd == 0)
-    assert(
-      GpuGetArrayStructFieldsMeta.effectiveNumFields(prunedChild, sparkExpr, runtimeOrd) == 1)
+    assert(GpuGetArrayStructFieldsMeta.effectiveOrdinal(sparkExpr, prunedChild) == 0)
+    assert(GpuGetArrayStructFieldsMeta.effectiveField(sparkExpr, prunedChild) ==
+      prunedStruct.fields.head)
+    assert(GpuGetArrayStructFieldsMeta.effectiveNumFields(sparkExpr, prunedChild) == 1)
   }
 
   test("GpuFromProtobuf semantic equality is content-based for schema arrays") {
