@@ -185,7 +185,7 @@ public class ColumnarCopyHelper {
       for (int i = 0; i < rows; i++) {
         byte[] value = cv.getBinary(i);
         b.appendByteList(value);
-        bytesCopied += value.length;
+        bytesCopied += value.length + Integer.BYTES;
       }
       return bytesCopied;
     }
@@ -195,7 +195,7 @@ public class ColumnarCopyHelper {
       } else {
         byte[] value = cv.getBinary(i);
         b.appendByteList(value);
-        bytesCopied += value.length;
+        bytesCopied += value.length + Integer.BYTES;
       }
     }
     return bytesCopied;
