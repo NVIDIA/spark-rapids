@@ -1481,7 +1481,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
             if (needsBasicOverflowCheck) {
               withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { updated =>
                 closeOnExcept(mask.ifElse(updated, windowedColumnOutput)) { ret =>
-                  AddOverflowChecks.basicOpOverflowCheck(updated, prev, ret, Some(mask))
+                  AddOverflowChecks.basicOpOverflowCheck(updated, prev, ret, mask = Some(mask))
                   ret
                 }
               }
@@ -2145,9 +2145,9 @@ case class GpuPercentRank(children: Seq[Expression]) extends GpuReplaceWindowFun
       fullUnboundedFrame)
     val count = GpuWindowExpression(GpuCount(Seq(GpuLiteral(1))), fullUnboundedSpec)
     val rank = GpuWindowExpression(GpuRank(children), spec)
-    val rankMinusOne = GpuCast(GpuSubtract(rank, GpuLiteral(1), isAnsi), DoubleType, isAnsi)
-    val countMinusOne = GpuCast(GpuSubtract(count, GpuLiteral(1L), isAnsi), DoubleType, isAnsi)
-    val divided = GpuDivide(rankMinusOne, countMinusOne, failOnError = isAnsi)
+    val rankMinusOne = GpuCast(GpuSubtract(rank, GpuLiteral(1), isAnsi)(), DoubleType, isAnsi)
+    val countMinusOne = GpuCast(GpuSubtract(count, GpuLiteral(1L), isAnsi)(), DoubleType, isAnsi)
+    val divided = GpuDivide(rankMinusOne, countMinusOne, isAnsi)()
     GpuCoalesce(Seq(divided, GpuLiteral(0.0)))
   }
 }

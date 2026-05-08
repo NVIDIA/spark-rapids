@@ -516,7 +516,8 @@ object ParquetSchemaUtils {
     SchemaUtils.evolveSchemaIfNeededAndClose(table, fileSparkSchema, sparkSchema,
       caseSensitive, Some(evolveSchemaCasts),
       existsUnsignedType(fileSchema.asGroupType()) ||
-          TrampolineUtil.dataTypeExistsRecursively(sparkSchema, _.isInstanceOf[BinaryType]))
+          TrampolineUtil.dataTypeExistsRecursively(sparkSchema, _.isInstanceOf[BinaryType]),
+      allowNonStructWrapping = true)
   }
 
   /**

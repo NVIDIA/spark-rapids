@@ -28,6 +28,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression}
 
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.trees.{CurrentOrigin, Origin}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 
@@ -45,7 +46,11 @@ abstract class CudfBinaryArithmetic extends CudfBinaryOperator with NullIntolera
 case class GpuIntegralDivide(
     left: Expression,
     right: Expression,
-    failOnError: Boolean = SQLConf.get.ansiEnabled) extends GpuIntegralDivideParent(left, right)
+    failOnError: Boolean = SQLConf.get.ansiEnabled)(
+    override val origin: Origin = CurrentOrigin.get)
+    extends GpuIntegralDivideParent(left, right) {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
+}
 
 object GpuDecimalDivide {
   def apply(left: Expression, right: Expression, dataType: DecimalType): GpuDecimalDivide = {
@@ -90,12 +95,20 @@ case class GpuDecimalMultiply(
 case class GpuAdd(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuAddBase
+    failOnError: Boolean)(
+    override val origin: Origin = CurrentOrigin.get)
+    extends GpuAddBase {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
+}
 
 case class GpuSubtract(
     left: Expression,
     right: Expression,
-    failOnError: Boolean) extends GpuSubtractBase
+    failOnError: Boolean)(
+    override val origin: Origin = CurrentOrigin.get)
+    extends GpuSubtractBase {
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
+}
 
 case class GpuRemainder(
     left: Expression,

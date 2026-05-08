@@ -61,6 +61,12 @@ object RapidsErrorUtils extends RapidsQueryErrorUtils
     new ArithmeticException(message)
   }
 
+  def arithmeticOverflowError(
+      message: String,
+      origin: Origin): ArithmeticException = {
+    new ArithmeticException(message)
+  }
+
   def cannotChangeDecimalPrecisionError(      
       value: Decimal,
       toType: DecimalType,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,10 +86,10 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
       case SingleFile =>
         new GpuSingleThreadIcebergParquetReader(rapidsFileIO, files, constantsMap,
           gpuDeleteFiterMap, conf)
-      case MultiThread(_, _) =>
+      case _: MultiThread =>
         new GpuMultiThreadIcebergParquetReader(rapidsFileIO, files, constantsMap,
           gpuDeleteFiterMap, conf)
-      case MultiFile(_) =>
+      case _: MultiFile =>
         new GpuCoalescingIcebergParquetReader(rapidsFileIO, files, constantsMap, conf)
     }
   }

@@ -72,7 +72,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     try {
       val expr = GpuAlias(GpuAdd(
         GpuBoundReference(0, LongType, true)(NamedExpression.newExprId, "a"),
-        GpuBoundReference(1, LongType, true)(NamedExpression.newExprId, "b"), false),
+        GpuBoundReference(1, LongType, true)(NamedExpression.newExprId, "b"), false)(),
         "ret")()
       val sb = buildProjectBatch()
 
@@ -103,8 +103,8 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
     try {
       val a = AttributeReference("a", LongType)()
       val b = AttributeReference("b", LongType)()
-      val simpleAdd = GpuAdd(a, b, false)
-      val fullAdd = GpuAlias(GpuAdd(simpleAdd, simpleAdd, false), "ret")()
+      val simpleAdd = GpuAdd(a, b, false)()
+      val fullAdd = GpuAlias(GpuAdd(simpleAdd, simpleAdd, false)(), "ret")()
       val tp = GpuBindReferences.bindGpuReferencesTiered(Seq(fullAdd), Seq(a, b), new SQLConf(),
         Map.empty)
       val sb = buildProjectBatch()
@@ -139,7 +139,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       val sb = buildProjectBatch()
       val expr = GpuAlias(GpuAdd(
         GpuBoundReference(0, LongType, true)(NamedExpression.newExprId, "a"),
-        GpuBoundReference(1, LongType, true)(NamedExpression.newExprId, "b"), false),
+        GpuBoundReference(1, LongType, true)(NamedExpression.newExprId, "b"), false)(),
         "ret")()
       val mockPlan = mock(classOf[SparkPlan])
       when(mockPlan.output).thenReturn(Seq(a, b))

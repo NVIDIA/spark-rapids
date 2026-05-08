@@ -19,23 +19,66 @@ package com.nvidia.spark.rapids.iceberg.parquet.converter
 import java.io.EOFException
 import java.nio.ByteBuffer
 
-import org.apache.iceberg.io.{InputFile, SeekableInputStream}
 import org.apache.iceberg.shaded.org.apache.parquet.io.{
   InputFile => ShadedInputFile,
   SeekableInputStream => ShadedSeekableInputStream}
+import org.apache.iceberg.io.{
+  InputFile => IcebergInputFile,
+  SeekableInputStream => IcebergSeekableInputStream}
+import org.apache.parquet.io.{
+  InputFile => ParquetInputFile,
+  SeekableInputStream => ParquetSeekableInputStream}
 
+/**
+ * Adapters to Iceberg's shaded parquet types.
+ */
 object ToIcebergShaded {
-  def inputFile(file: InputFile): ShadedInputFile = {
+  def inputFile(file: IcebergInputFile): ShadedInputFile = {
+    if (file == null) {
+      return null
+    }
     new ShadedInputFile {
       override def getLength: Long = file.getLength
 
       override def newStream(): ShadedSeekableInputStream =
         new IcebergShadedSeekableInputStream(file.newStream())
+
+      override def toString: String = file.toString
+    }
+  }
+
+  def shade(inputFile: ParquetInputFile): ShadedInputFile = {
+    if (inputFile == null) {
+      return null
+    }
+    new ShadedInputFile {
+      override def getLength: Long = inputFile.getLength
+      override def newStream(): ShadedSeekableInputStream = shade(inputFile.newStream())
+      override def toString: String = inputFile.toString
+    }
+  }
+
+  def shade(inputStream: ParquetSeekableInputStream): ShadedSeekableInputStream = {
+    if (inputStream == null) {
+      return null
+    }
+    new ShadedSeekableInputStream {
+      override def getPos: Long = inputStream.getPos
+      override def seek(newPos: Long): Unit = inputStream.seek(newPos)
+      override def read(): Int = inputStream.read()
+      override def read(bytes: Array[Byte], start: Int, len: Int): Int =
+        inputStream.read(bytes, start, len)
+      override def readFully(bytes: Array[Byte]): Unit = inputStream.readFully(bytes)
+      override def readFully(bytes: Array[Byte], start: Int, len: Int): Unit =
+        inputStream.readFully(bytes, start, len)
+      override def read(buf: ByteBuffer): Int = inputStream.read(buf)
+      override def readFully(buf: ByteBuffer): Unit = inputStream.readFully(buf)
+      override def close(): Unit = inputStream.close()
     }
   }
 }
 
-private class IcebergShadedSeekableInputStream(stream: SeekableInputStream)
+private class IcebergShadedSeekableInputStream(stream: IcebergSeekableInputStream)
   extends ShadedSeekableInputStream {
 
   override def getPos: Long = stream.getPos
