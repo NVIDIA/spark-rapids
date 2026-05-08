@@ -112,10 +112,13 @@ class RapidsSubquerySuite
 
       val plan = df.queryExecution.executedPlan
       val gpuScans = collect(plan) { case s: GpuFileSourceScanExec => s }
-      assert(gpuScans.size == 1, s"expected 1 GpuFileSourceScanExec, got ${gpuScans.size}")
-      val fs = gpuScans.head
-      assert(fs.partitionFilters.exists(ExecSubqueryExpression.hasSubquery),
-        "partition filters should contain a subquery (pushdown failed)")
+      // Pick the scan whose partitionFilters contain a subquery (pushdown target)
+      // rather than asserting on total scan count, so the test stays robust if
+      // additional file scans (e.g. table `b` inside the scalar subquery) become
+      // GpuFileSourceScanExec as GPU coverage expands.
+      val fs = gpuScans.find(_.partitionFilters.exists(ExecSubqueryExpression.hasSubquery))
+        .getOrElse(fail(s"expected a GpuFileSourceScanExec with a subquery in partitionFilters " +
+          s"(pushdown failed); found ${gpuScans.size} GPU scan(s) total"))
       val readFiles = fs.dynamicallySelectedPartitions.flatMap(_.files)
       assert(readFiles.nonEmpty, "no files selected after dynamic pruning")
       assert(readFiles.forall(_.getPath.toString.contains("p=0")),
