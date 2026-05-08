@@ -44,8 +44,10 @@ class GpuTypeToSparkTypeSuite extends AnyFunSuite {
 
   test("nestedMetadataJson for a flat list records only the element id") {
     val listType = Types.ListType.ofOptional(11, Types.IntegerType.get())
-    val md = parse(GpuTypeToSparkType.nestedMetadataJson(listType))
+    val json = GpuTypeToSparkType.nestedMetadataJson(listType).get
+    assert(json == """{"rapids.parquet.list.element.field.id":11}""")
 
+    val md = Metadata.fromJson(json)
     assert(md.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 11L)
     assert(!md.contains(LIST_ELEMENT_NESTED_IDS_METADATA_KEY))
   }
@@ -53,8 +55,11 @@ class GpuTypeToSparkTypeSuite extends AnyFunSuite {
   test("nestedMetadataJson for a flat map records only the key/value ids") {
     val mapType = Types.MapType.ofOptional(
       21, 22, Types.StringType.get(), Types.IntegerType.get())
-    val md = parse(GpuTypeToSparkType.nestedMetadataJson(mapType))
+    val json = GpuTypeToSparkType.nestedMetadataJson(mapType).get
+    assert(json ==
+      """{"rapids.parquet.map.key.field.id":21,"rapids.parquet.map.value.field.id":22}""")
 
+    val md = Metadata.fromJson(json)
     assert(md.getLong(MAP_KEY_FIELD_ID_METADATA_KEY) == 21L)
     assert(md.getLong(MAP_VALUE_FIELD_ID_METADATA_KEY) == 22L)
     assert(!md.contains(MAP_KEY_NESTED_IDS_METADATA_KEY))
@@ -64,11 +69,15 @@ class GpuTypeToSparkTypeSuite extends AnyFunSuite {
   test("nestedMetadataJson recurses through list-of-list") {
     val inner = Types.ListType.ofOptional(31, Types.IntegerType.get())
     val outer = Types.ListType.ofOptional(30, inner)
-    val md = parse(GpuTypeToSparkType.nestedMetadataJson(outer))
+    val json = GpuTypeToSparkType.nestedMetadataJson(outer).get
+    assert(json ==
+      """{"rapids.parquet.list.element.field.id":30,""" +
+        """"rapids.parquet.list.element.nested.ids":""" +
+        """"{\"rapids.parquet.list.element.field.id\":31}"}""")
 
+    val md = Metadata.fromJson(json)
     assert(md.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 30L)
-    val innerJson = md.getString(LIST_ELEMENT_NESTED_IDS_METADATA_KEY)
-    val innerMd = Metadata.fromJson(innerJson)
+    val innerMd = Metadata.fromJson(md.getString(LIST_ELEMENT_NESTED_IDS_METADATA_KEY))
     assert(innerMd.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 31L)
     assert(!innerMd.contains(LIST_ELEMENT_NESTED_IDS_METADATA_KEY))
   }
@@ -77,8 +86,16 @@ class GpuTypeToSparkTypeSuite extends AnyFunSuite {
     val keyList = Types.ListType.ofOptional(41, Types.StringType.get())
     val valueList = Types.ListType.ofOptional(42, Types.IntegerType.get())
     val mapType = Types.MapType.ofOptional(43, 44, keyList, valueList)
-    val md = parse(GpuTypeToSparkType.nestedMetadataJson(mapType))
+    val json = GpuTypeToSparkType.nestedMetadataJson(mapType).get
+    assert(json ==
+      """{"rapids.parquet.map.key.field.id":43,""" +
+        """"rapids.parquet.map.key.nested.ids":""" +
+        """"{\"rapids.parquet.list.element.field.id\":41}",""" +
+        """"rapids.parquet.map.value.field.id":44,""" +
+        """"rapids.parquet.map.value.nested.ids":""" +
+        """"{\"rapids.parquet.list.element.field.id\":42}"}""")
 
+    val md = Metadata.fromJson(json)
     assert(md.getLong(MAP_KEY_FIELD_ID_METADATA_KEY) == 43L)
     assert(md.getLong(MAP_VALUE_FIELD_ID_METADATA_KEY) == 44L)
 
@@ -154,8 +171,4 @@ class GpuTypeToSparkTypeSuite extends AnyFunSuite {
     assert(outerStruct("inner_b").metadata.getLong(FIELD_ID_METADATA_KEY) == 102L)
   }
 
-  private def parse(json: Option[String]): Metadata = {
-    Metadata.fromJson(json.getOrElse(
-      throw new AssertionError("expected nested metadata JSON, got None")))
-  }
 }
