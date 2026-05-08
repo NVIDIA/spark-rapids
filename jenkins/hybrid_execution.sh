@@ -17,7 +17,8 @@
 
 set -ex
 
-MVN_SETTINGS=${MVN_SETTINGS:-"jenkins/settings.xml"}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MVN_SETTINGS="$SCRIPT_DIR/settings.xml"
 MVN=${MVN:-"mvn -s $MVN_SETTINGS"}
 
 # Explicitly export HYBRID_BACKEND_JARS for hybrid execution tests.
