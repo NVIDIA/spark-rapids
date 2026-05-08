@@ -53,11 +53,6 @@ For a non-default Iceberg catalog (e.g. one you have configured under
 --conf spark.sql.catalog.my_catalog.warehouse=s3://my-bucket/warehouse/
 ```
 
-Both classes extend the corresponding iceberg classes
-(`SparkSessionCatalog` / `SparkCatalog`) and forward all calls to them; the
-only behavioral difference is that loaded `SparkTable` instances are wrapped
-so that `newScanBuilder(options)` can merge in session-level overrides.
-
 ## Setting per-table options
 
 Per-table overrides use the prefix
