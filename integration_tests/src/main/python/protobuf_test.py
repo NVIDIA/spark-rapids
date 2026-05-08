@@ -1438,6 +1438,223 @@ def test_from_protobuf_nested_required_field_pruned_permissive(
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
+# ---------------------------------------------------------------------------
+# Schema-projection validation parity / gap
+#
+# CPU `ProtobufDataToCatalyst` calls `DynamicMessage.parseFrom(bytes)` which
+# validates the *entire* wire payload (varints, lengths, wire types) before
+# Catalyst extracts any field. With GPU schema projection, fields not
+# referenced downstream are scanned past rather than fully decoded, so we
+# need parity tests to make sure validation is preserved.
+#
+# Empirically:
+#   - top-level scalar fields: the GPU kernel reads varints and length
+#     prefixes during its outer scan, so malformed bytes in a pruned
+#     scalar field are still rejected. The first three tests pin that
+#     parity so a future kernel refactor that drops outer validation
+#     would be caught here.
+#   - pruned nested messages: the outer scan only reads the message's
+#     length varint and skips that many bytes; it does not recurse into
+#     the inner buffer. So malformed bytes nested *inside* a pruned
+#     message are not seen by the GPU but are caught by CPU's recursive
+#     parse. The last two tests are xfail until validation grows down
+#     into pruned messages. Tracked in
+#     https://github.com/NVIDIA/spark-rapids/pull/14354#issuecomment-4405284242
+# ---------------------------------------------------------------------------
+
+# Eleven 0x80 bytes — a varint that never terminates. CPU
+# `CodedInputStream.readRawVarint64` raises "CodedInputStream encountered
+# a malformed varint." after 10 continuation bytes.
+_MALFORMED_VARINT = b"\x80" * 11
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_pruned_scalar_malformed_varint_permissive(
+        spark_tmp_path, from_protobuf_fn):
+    """PERMISSIVE: malformed varint inside a pruned non-required scalar field.
+
+    GPU's outer scan reads the varint to advance past field 3 and rejects
+    the unterminated value, matching CPU's null-row PERMISSIVE behavior.
+    Pins that parity.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
+    message_name = "test.Simple"
+
+    # Valid b=true, valid i32=42, then a malformed varint as the value of
+    # field 3 (i64, wire type 0). All other fields are absent.
+    row = (_encode_tag(1, 0) + _encode_varint(1) +
+           _encode_tag(2, 0) + _encode_varint(42) +
+           _encode_tag(3, 0) + _MALFORMED_VARINT)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        # Only reference b and i32 so projection prunes i64/f32/f64/s.
+        return df.select(
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("b").alias("b"),
+            decoded.getField("i32").alias("i32"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_pruned_scalar_malformed_varint_failfast(
+        spark_tmp_path, from_protobuf_fn):
+    """FAILFAST: malformed varint inside a pruned non-required scalar field.
+
+    Both CPU and GPU throw — pins that GPU outer-scan validation surfaces
+    the same error class as CPU.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
+    message_name = "test.Simple"
+
+    row = (_encode_tag(1, 0) + _encode_varint(1) +
+           _encode_tag(2, 0) + _encode_varint(42) +
+           _encode_tag(3, 0) + _MALFORMED_VARINT)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
+        return df.select(
+            decoded.getField("b").alias("b"),
+            decoded.getField("i32").alias("i32"),
+        ).collect()
+
+    assert_gpu_and_cpu_error(run_on_spark, conf={}, error_message="Malformed")
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_pruned_string_truncated_length_permissive(
+        spark_tmp_path, from_protobuf_fn):
+    """PERMISSIVE: length-delimited field declares more bytes than available.
+
+    Field 6 (`s`) declares length=100 but only 5 payload bytes follow. The
+    GPU outer scan tries to advance 100 bytes from position 5 and detects
+    the buffer underrun, matching CPU's null-row PERMISSIVE behavior.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
+    message_name = "test.Simple"
+
+    row = (_encode_tag(1, 0) + _encode_varint(1) +
+           _encode_tag(2, 0) + _encode_varint(42) +
+           _encode_tag(6, 2) + _encode_varint(100) + b"short")
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("b").alias("b"),
+            decoded.getField("i32").alias("i32"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@pytest.mark.xfail(
+    strict=True,
+    reason="GPU pruning skips inner-message validation. "
+           "Tracked in PR #14354 review.")
+@ignore_order(local=True)
+def test_from_protobuf_pruned_nested_malformed_inner_permissive(
+        spark_tmp_path, from_protobuf_fn):
+    """PERMISSIVE: malformed varint inside a pruned nested message.
+
+    CPU recursively `parseFrom`s the nested message and rejects the
+    malformed inner varint, nulling the whole row. GPU schema projection
+    prunes `nested_msg` at the top level and never recurses, so the row
+    decodes successfully.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested.desc", _build_nested_descriptor_set_bytes)
+    message_name = "test.WithNested"
+
+    # Inner payload: an unknown-field tag followed by a malformed varint.
+    # CPU's recursive parseFrom fails when it tries to skip the unknown
+    # field and finds an unterminated varint.
+    inner_malformed = _encode_tag(99, 0) + _MALFORMED_VARINT
+
+    row = (_encode_tag(1, 0) + _encode_varint(42) +              # simple_int = 42
+           _encode_tag(2, 2) + _encode_varint(5) + b"hello" +    # simple_str = "hello"
+           _encode_tag(4, 0) + _encode_varint(99) +              # simple_long = 99
+           _encode_tag(3, 2) +                                   # nested_msg
+               _encode_varint(len(inner_malformed)) + inner_malformed)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        # Only reference top-level scalars so nested_msg gets pruned.
+        return df.select(
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("simple_int").alias("simple_int"),
+            decoded.getField("simple_str").alias("simple_str"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@pytest.mark.xfail(
+    strict=True,
+    reason="GPU pruning skips inner-message validation. "
+           "Tracked in PR #14354 review.")
+@ignore_order(local=True)
+def test_from_protobuf_pruned_nested_truncated_inner_permissive(
+        spark_tmp_path, from_protobuf_fn):
+    """PERMISSIVE: pruned nested message contains an inner length-delimited
+    field whose declared length exceeds the inner buffer.
+
+    Same shape as the malformed-varint case but exercises the
+    length-delimited validation path inside the nested message. CPU's
+    recursive parseFrom rejects the underrun; GPU outer scan skips the
+    nested by its (well-formed) outer length and never sees the inner
+    overflow.
+    """
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        spark_tmp_path, "nested.desc", _build_nested_descriptor_set_bytes)
+    message_name = "test.WithNested"
+
+    # Inner: an unknown length-delimited field declaring 100 bytes with
+    # only 1 byte of payload. CPU recursively parses inner and throws on
+    # the buffer underrun.
+    inner_truncated = _encode_tag(50, 2) + _encode_varint(100) + b"x"
+
+    row = (_encode_tag(1, 0) + _encode_varint(42) +
+           _encode_tag(2, 2) + _encode_varint(5) + b"hello" +
+           _encode_tag(4, 0) + _encode_varint(99) +
+           _encode_tag(3, 2) +
+               _encode_varint(len(inner_truncated)) + inner_truncated)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row,)], schema="bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select(
+            decoded.isNull().alias("decoded_is_null"),
+            decoded.getField("simple_int").alias("simple_int"),
+            decoded.getField("simple_str").alias("simple_str"),
+        )
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
 def _build_default_value_descriptor_set_bytes(spark):
     """Build a descriptor for proto2 scalar default-value behavior."""
     return _build_proto2_descriptor(spark, "defaults.proto", [
