@@ -31,7 +31,7 @@ def test_iceberg_version_detection():
 
     def check(spark):
         jvm = spark.sparkContext._jvm
-        actual = jvm.com.nvidia.spark.rapids.iceberg.IcebergProvider.detectedVersion()
+        actual = jvm.com.nvidia.spark.rapids.iceberg.IcebergProviderInfo.detectedVersion()
         assert actual == expected, \
             "Iceberg version detection mismatch: expected '{}' on Spark {}, got '{}'".format(
                 expected, spark_version(), actual)

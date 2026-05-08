@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,10 @@
  * limitations under the License.
  */
 
-package org.apache.iceberg.parquet
+package com.nvidia.spark.rapids.iceberg
 
-import com.nvidia.spark.rapids.iceberg.parquet.converter.ToIcebergShaded
-import org.apache.iceberg.io.InputFile
-import org.apache.iceberg.shaded.org.apache.parquet.io.{InputFile => ShadedInputFile}
-
-object GpuParquetIO {
-  def file(file: InputFile): ShadedInputFile = {
-    ToIcebergShaded.inputFile(file)
-  }
+object IcebergProviderInfo {
+  def detectedVersion(): String = IcebergProvider.detectedVersion
+  def shimPackage(): String = IcebergProvider.shimPackage
+  def isSupportedSparkVersion(): Boolean = IcebergProvider.isSupportedSparkVersion()
 }

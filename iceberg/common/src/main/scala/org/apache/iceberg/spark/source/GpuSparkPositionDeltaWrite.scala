@@ -60,8 +60,10 @@ import org.apache.spark.util.SerializableConfiguration
  * GPU version of Iceberg's SparkPositionDeltaWrite.
  * This class handles merge-on-read DELETE operations that write position delete files.
  */
-class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
+class GpuSparkPositionDeltaWrite(cpu: DeltaWrite)
   extends GpuDeltaWrite with RequiresDistributionAndOrdering {
+  private val cpuDistribution = cpu.asInstanceOf[RequiresDistributionAndOrdering]
+
   private[source] val table = FieldUtils.readField(cpu, "table", true)
     .asInstanceOf[Table]
 
@@ -76,16 +78,16 @@ class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
     "GpuSparkWrite does not support streaming write")
 
   override def toString: String = s"GpuSparkPositionDeltaWrite(table=$table)"
-  
+
   private[source] def abort(messages: Array[WriterCommitMessage]): Unit = {
     MethodUtils.invokeMethod(cpu, true, "abort", messages.asInstanceOf[Array[Object]])
   }
 
-  override def requiredDistribution(): Distribution = cpu.requiredDistribution()
+  override def requiredDistribution(): Distribution = cpuDistribution.requiredDistribution()
 
-  override def requiredOrdering(): Array[SortOrder] = cpu.requiredOrdering()
+  override def requiredOrdering(): Array[SortOrder] = cpuDistribution.requiredOrdering()
 
-  override def advisoryPartitionSizeInBytes(): Long = cpu.advisoryPartitionSizeInBytes()
+  override def advisoryPartitionSizeInBytes(): Long = cpuDistribution.advisoryPartitionSizeInBytes()
 
   private[source] def createDeltaWriterFactory: DeltaWriterFactory = {
     val sparkContext: JavaSparkContext = FieldUtils.readField(cpu, "sparkContext", true)
@@ -144,13 +146,33 @@ class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
 
 
 object GpuSparkPositionDeltaWrite {
+  private val SparkPositionDeltaTaskCommitClassName =
+    "org.apache.iceberg.spark.source.SparkPositionDeltaWrite$DeltaTaskCommit"
+
+  private[source] def newDeltaTaskCommit(result: AnyRef): WriterCommitMessage = {
+    val taskCommitClass = GpuSparkWrite.loadIcebergClass(SparkPositionDeltaTaskCommitClassName)
+    val constructor = taskCommitClass.getDeclaredConstructors
+      .find { constructor =>
+        constructor.getParameterCount == 1 &&
+          constructor.getParameterTypes.head.isAssignableFrom(result.getClass)
+      }
+      .getOrElse {
+        throw new IllegalArgumentException(
+          s"Unable to find $SparkPositionDeltaTaskCommitClassName constructor for " +
+            result.getClass.getName)
+      }
+    constructor.setAccessible(true)
+    constructor.newInstance(result).asInstanceOf[WriterCommitMessage]
+  }
+
   def tableOf(deltaWrite: DeltaWrite): Table = {
     FieldUtils.readField(deltaWrite, "table", true).asInstanceOf[Table]
   }
 
   def tagForGpu(deltaWrite: DeltaWrite, meta: SparkPlanMeta[_]): Unit = {
     if (!supports(deltaWrite.getClass)) {
-      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports ${classOf[SparkWrite].getName}, " +
+      meta.willNotWorkOnGpu(
+        s"GpuSparkWrite only supports ${GpuSparkWrite.SparkWriteClassName}, " +
         s"but got: ${deltaWrite.getClass.getName}")
       return
     }
@@ -172,7 +194,7 @@ object GpuSparkPositionDeltaWrite {
   }
 
   def convert(deltaWrite: DeltaWrite): GpuSparkPositionDeltaWrite = {
-    new GpuSparkPositionDeltaWrite(deltaWrite.asInstanceOf[SparkPositionDeltaWrite])
+    new GpuSparkPositionDeltaWrite(deltaWrite)
   }
 }
 
@@ -490,7 +512,7 @@ trait GpuDeleteAndDataDeltaWriter extends GpuDeltaWriter {
   override def commit(): WriterCommitMessage = {
     close()
     val result = delegate.result()
-    new SparkPositionDeltaWrite.DeltaTaskCommit(result)
+    GpuSparkPositionDeltaWrite.newDeltaTaskCommit(result)
   }
 
   override def abort(): Unit = {
@@ -614,7 +636,7 @@ class GpuDeleteOnlyDeltaWriter(
   override def commit(): WriterCommitMessage = {
     close()
     val result = delegate.result()
-    new SparkPositionDeltaWrite.DeltaTaskCommit(result)
+    GpuSparkPositionDeltaWrite.newDeltaTaskCommit(result)
   }
 
   override def abort(): Unit = {

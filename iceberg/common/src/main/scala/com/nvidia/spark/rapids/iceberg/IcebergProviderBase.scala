@@ -26,7 +26,6 @@ import org.apache.iceberg.spark.GpuTypeToSparkType.toSparkType
 import org.apache.iceberg.spark.functions.{BucketFunction, DaysFunction, GpuBucketExpression, GpuDaysExpression, GpuHoursExpression, GpuMonthsExpression, GpuTruncateExpression, GpuYearsExpression, HoursFunction, MonthsFunction, TruncateFunction, YearsFunction}
 import org.apache.iceberg.spark.source.{GpuSparkPositionDeltaWrite, GpuSparkScan, GpuSparkWrite}
 import org.apache.iceberg.spark.source.GpuSparkPositionDeltaWrite.tableOf
-import org.apache.iceberg.spark.supportsCatalog
 
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.read.Scan
@@ -160,7 +159,7 @@ abstract class IcebergProviderBase extends IcebergProvider {
   }
 
   override def isSupportedCatalog(catalogClass: Class[_]): Boolean = {
-    supportsCatalog(catalogClass)
+    IcebergProviderBase.supportsCatalog(catalogClass)
   }
 
   private def tagForGpu(
@@ -407,6 +406,19 @@ abstract class IcebergProviderBase extends IcebergProvider {
 }
 
 object IcebergProviderBase {
+  private val BaseCatalogClassName = "org.apache.iceberg.spark.BaseCatalog"
+
+  def supportsCatalog(catalogClass: Class[_]): Boolean = {
+    var current = catalogClass
+    while (current != null) {
+      if (current.getName == BaseCatalogClassName) {
+        return true
+      }
+      current = current.getSuperclass
+    }
+    false
+  }
+
   def checkChildPlan[T <: SparkPlan](meta: SparkPlanMeta[T]): Unit = {
     if (meta.childPlans.nonEmpty) {
       val childMeta = meta.childPlans.head

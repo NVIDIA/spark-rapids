@@ -17,14 +17,15 @@
 package org.apache.iceberg.spark.source
 
 import com.nvidia.spark.rapids.RapidsConf
-import org.apache.iceberg.{Schema, SchemaParser}
+import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.MethodUtils
+import org.apache.iceberg.{ScanTaskGroup, Schema, SchemaParser, Table}
 
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{HasPartitionKey, InputPartition}
 import org.apache.spark.util.SerializableConfiguration
 
-class GpuSparkInputPartition(val cpuPartition: SparkInputPartition,
+class GpuSparkInputPartition(val cpuPartition: InputPartition,
     rapidsConf: RapidsConf,
     val hadoopConf: Broadcast[SerializableConfiguration],
     val expectedSchemaStr: String) extends
@@ -52,7 +53,18 @@ class GpuSparkInputPartition(val cpuPartition: SparkInputPartition,
 
 
   override def preferredLocations(): Array[String] = cpuPartition.preferredLocations()
-  override def partitionKey(): InternalRow = cpuPartition.partitionKey()
+  override def partitionKey(): InternalRow =
+    cpuPartition.asInstanceOf[HasPartitionKey].partitionKey()
+
+  def taskGroup(): ScanTaskGroup[_] =
+    MethodUtils.invokeMethod(cpuPartition, true, "taskGroup").asInstanceOf[ScanTaskGroup[_]]
+
+  def table(): Table =
+    MethodUtils.invokeMethod(cpuPartition, true, "table").asInstanceOf[Table]
+
+  def isCaseSensitive: Boolean =
+    MethodUtils.invokeMethod(cpuPartition, true, "isCaseSensitive")
+      .asInstanceOf[java.lang.Boolean]
 
   @transient lazy val expectedSchema: Schema = {
     SchemaParser.fromJson(expectedSchemaStr)

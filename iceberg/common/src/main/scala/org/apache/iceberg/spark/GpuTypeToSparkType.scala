@@ -20,7 +20,7 @@ import scala.collection.JavaConverters._
 
 import org.apache.iceberg.{MetadataColumns, Schema}
 import org.apache.iceberg.spark.GpuTypeToSparkType.fieldMetadataOf
-import org.apache.iceberg.types.{Types, TypeUtil}
+import org.apache.iceberg.types.{Type, Types, TypeUtil}
 
 import org.apache.spark.sql.catalyst.util.METADATA_COL_ATTR_KEY
 import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils.FIELD_ID_METADATA_KEY
@@ -47,7 +47,9 @@ object GpuTypeToSparkType {
   }
 }
 
-class GpuTypeToSparkType extends TypeToSparkType {
+class GpuTypeToSparkType extends TypeUtil.SchemaVisitor[DataType] {
+  override def schema(schema: Schema, struct: DataType): DataType = struct
+
   override def struct(struct: Types.StructType,
                       fieldResults: java.util.List[DataType]): DataType = {
 
@@ -64,5 +66,45 @@ class GpuTypeToSparkType extends TypeToSparkType {
       }
 
     StructType(sparkFields.toSeq)
+  }
+
+  override def field(field: Types.NestedField, fieldResult: DataType): DataType = fieldResult
+
+  override def list(list: Types.ListType, elementResult: DataType): DataType =
+    ArrayType(elementResult, list.isElementOptional)
+
+  override def map(
+      map: Types.MapType,
+      keyResult: DataType,
+      valueResult: DataType): DataType =
+    MapType(keyResult, valueResult, map.isValueOptional)
+
+  override def primitive(primitive: Type.PrimitiveType): DataType = {
+    primitive.typeId() match {
+      case Type.TypeID.BOOLEAN => BooleanType
+      case Type.TypeID.INTEGER => IntegerType
+      case Type.TypeID.LONG => LongType
+      case Type.TypeID.FLOAT => FloatType
+      case Type.TypeID.DOUBLE => DoubleType
+      case Type.TypeID.DATE => DateType
+      case Type.TypeID.TIME =>
+        throw new UnsupportedOperationException("Spark does not support time fields")
+      case Type.TypeID.TIMESTAMP =>
+        val timestamp = primitive.asInstanceOf[Types.TimestampType]
+        if (timestamp.shouldAdjustToUTC) {
+          TimestampType
+        } else {
+          TimestampNTZType
+        }
+      case Type.TypeID.STRING => StringType
+      case Type.TypeID.UUID => StringType
+      case Type.TypeID.FIXED => BinaryType
+      case Type.TypeID.BINARY => BinaryType
+      case Type.TypeID.DECIMAL =>
+        val decimal = primitive.asInstanceOf[Types.DecimalType]
+        DecimalType(decimal.precision(), decimal.scale())
+      case _ =>
+        throw new UnsupportedOperationException(s"Cannot convert $primitive to Spark type")
+    }
   }
 }
