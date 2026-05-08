@@ -1492,27 +1492,8 @@ object GpuCast {
     if (ansiMode) {
       withResource(outOfBounds.any()) { isAny =>
         if (isAny.isValid && isAny.getBoolean) {
-          // Match Spark CPU's overflow message format
-          // ("Decimal(expanded, ${value}, ${p}, ${s}) cannot be represented as
-          // Decimal(${p'}, ${s'}). If necessary set ...") instead of a generic
-          // "overflow occurred" — this is what CheckOverflow on CPU produces
-          // and what the Spark UT for SPARK-28067 / SPARK-28224 / SPARK-35955
-          // asserts on. The decimal value's natural precision is preserved
-          // by using Decimal(BigDecimal) — the (value, p, s) constructor would
-          // cap precision at 38 and throw "Decimal precision N exceeds max
-          // precision 38" when the overflow value's BigDecimal precision
-          // exceeds the cuDF storage type's max.
-          // See https://github.com/NVIDIA/spark-rapids/issues/14143
-          val rowId = withResource(outOfBounds.copyToHost()) { hcv =>
-            (0L until outOfBounds.getRowCount)
-              .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
-              .get
-          }
-          val bigDecimalValue = withResource(input.copyToHost()) { hcv =>
-            hcv.getBigDecimal(rowId)
-          }
-          throw RapidsErrorUtils.cannotChangeDecimalPrecisionError(
-            Decimal(bigDecimalValue), targetType)
+          throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
+            input, outOfBounds, targetType)
         }
       }
       input.copyToColumnVector()
@@ -1535,7 +1516,6 @@ object GpuCast {
 
   private def checkNFixDecimalBounds(
       input: ColumnView,
-      fromType: DecimalType,
       toType: DecimalType,
       ansiMode: Boolean,
       originCol: ColumnView): ColumnVector = {
@@ -1545,7 +1525,7 @@ object GpuCast {
         withResource(outOfBounds.any()) { isAny =>
           if (isAny.isValid && isAny.getBoolean) {
             throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(originCol, outOfBounds,
-              fromType, toType)
+              toType)
           }
         }
         input.copyToColumnVector()
@@ -1598,7 +1578,7 @@ object GpuCast {
           // We need to check for out of bound values.
           // The wholeNumberUpcast is obvious why we have to check, but we also have to check it
           // when we rounded, because rounding can add a digit to the effective precision.
-          checkNFixDecimalBounds(rounded, from, to, ansiMode, input)
+          checkNFixDecimalBounds(rounded, to, ansiMode, input)
         } else {
           rounded.incRefCount()
         }
