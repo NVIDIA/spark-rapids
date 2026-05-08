@@ -40,17 +40,15 @@ MVN_SETTINGS=${MVN_SETTINGS:-"$SCRIPT_DIR/settings.xml"}
 MVN=${MVN:-"mvn -s $MVN_SETTINGS"}
 rm -rf $DEST_PATH && mkdir -p $DEST_PATH
 
+# Download the Maven dependency plugin into $M2_CACHE using -s $MVN_SETTINGS.
+$MVN -B dependency:get -Dmaven.repo.local=$M2_CACHE -Dartifact=org.apache.maven.plugins:maven-dependency-plugin:2.8
 remote_maven_repo=$SERVER_ID::default::$SERVER_URL
-# Get the spark-rapids-jni, spark-rapids-private, hybrid jars from OSS Snapshot maven repo
-if [ "$SERVER_ID" == "snapshots" ]; then
-    oss_snapshot_url="https://central.sonatype.com/repository/maven-snapshots/"
-    remote_maven_repo="$remote_maven_repo,$SERVER_ID::default::$oss_snapshot_url"
-fi
 while read -r line; do
     artifact=$line # artifact=groupId:artifactId:version:[[packaging]:classifier]
     # Clean up $M2_CACHE to avoid side-effect of previous dependency:get
     rm -rf $M2_CACHE/com/nvida
-    $MVN -B dependency:get -DremoteRepositories=$remote_maven_repo -Dmaven.repo.local=$M2_CACHE -Dartifact=$artifact -Ddest=$DEST_PATH
+    # Dependency checks should run without -s $MVN_SETTINGS.
+    mvn -B dependency:get -DremoteRepositories=$remote_maven_repo -Dmaven.repo.local=$M2_CACHE -Dartifact=$artifact -Ddest=$DEST_PATH
 done < $ARTIFACT_FILE
 
 ls -l $DEST_PATH
