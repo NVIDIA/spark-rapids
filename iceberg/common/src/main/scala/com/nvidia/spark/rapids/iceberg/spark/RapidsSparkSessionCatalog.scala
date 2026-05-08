@@ -17,7 +17,6 @@
 package com.nvidia.spark.rapids.iceberg.spark
 
 import com.nvidia.spark.rapids.iceberg.spark.source.RapidsSparkTable
-
 import org.apache.iceberg.spark.SparkSessionCatalog
 import org.apache.iceberg.spark.source.SparkTable
 
