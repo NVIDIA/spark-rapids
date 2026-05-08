@@ -78,16 +78,9 @@ abstract class GpuDeltaCatalogBase(
   }
 
   protected lazy val isUnityCatalog: Boolean = {
-    val field = try {
-      cpuCatalog.getClass.getDeclaredField("isUnityCatalog")
-    } catch {
-      case _: NoSuchFieldException =>
-        throw new IllegalStateException(
-          s"Unable to locate Delta catalog field isUnityCatalog on " +
-            s"${cpuCatalog.getClass.getName}; add a version-specific shim if this changed.")
-    }
-    field.setAccessible(true)
-    field.getBoolean(cpuCatalog)
+    val cpuIsUnityCatalogField = classOf[DeltaCatalog].getDeclaredField("isUnityCatalog")
+    cpuIsUnityCatalogField.setAccessible(true)
+    cpuIsUnityCatalogField.getBoolean(cpuCatalog)
   }
 
   protected def isPathIdentifier(ident: Identifier): Boolean = {
