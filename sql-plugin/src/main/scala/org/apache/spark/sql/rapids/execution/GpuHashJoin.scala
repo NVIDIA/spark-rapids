@@ -1150,7 +1150,7 @@ abstract class BaseHashJoinIterator(
   protected lazy val buildStats: JoinBuildSideStats = buildStatsOpt
       .orElse(cachedBuildSide.map(_.buildStats)).getOrElse {
     joinType match {
-      case _: InnerLike | LeftOuter | RightOuter | FullOuter | LeftSemi | LeftAnti =>
+      case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
         built.checkpoint()
         withRetryNoSplit {
           withRestoreOnRetry(built) {
@@ -1565,27 +1565,44 @@ class HashJoinIterator(
       joinTime = joinTime) {
 
   override def computeNumJoinRows(cb: LazySpillableColumnarBatch): Long = {
-    lazy val fallback = super.computeNumJoinRows(cb)
-    if (buildStats.isDistinct) {
-      fallback
-    } else {
-      cb.checkpoint()
-      try {
-        withRetryNoSplit {
-          withRestoreOnRetry(cb) {
-            withResource(GpuProjectExec.project(cb.getBatch, boundStreamKeys)) { streamKeys =>
-              withResource(GpuColumnVector.from(streamKeys)) { streamKeysTable =>
-                tryCachedExactNumJoinRows(streamKeysTable).getOrElse(fallback)
+    tryCachedExactNumJoinRows(cb).getOrElse(super.computeNumJoinRows(cb))
+  }
+
+  private def tryCachedExactNumJoinRows(cb: LazySpillableColumnarBatch): Option[Long] = {
+    // If we have a cached hash join, we try to get the exact row count directly from the cached handle.
+    val maybeProbe: Option[(GpuBuildSide, (Table, CudfHashJoin) => Long)] = joinType match {
+      case _: InnerLike => buildSide match {
+        case GpuBuildRight => Some((GpuBuildRight, JoinImpl.innerHashJoinBuildRightRowCount _))
+        case GpuBuildLeft  => Some((GpuBuildLeft,  JoinImpl.innerHashJoinBuildLeftRowCount _))
+      }
+      case LeftOuter  => Some((GpuBuildRight, JoinImpl.leftOuterHashJoinBuildRightRowCount _))
+      case RightOuter => Some((GpuBuildLeft,  JoinImpl.rightOuterHashJoinBuildLeftRowCount _))
+      case _ => None
+    }
+    maybeProbe.flatMap { case (expectedBuildSide, rowCount) =>
+      // return None early if we do not have a cached hash join
+      if (!canUseCachedHashJoin(expectedBuildSide)) None
+      else {
+        cb.checkpoint()
+        try {
+          withRetryNoSplit {
+            withRestoreOnRetry(cb) {
+              withResource(GpuProjectExec.project(cb.getBatch, boundStreamKeys)) { streamKeys =>
+                withResource(GpuColumnVector.from(streamKeys)) { streamKeysTable =>
+                  withCachedHashJoin(expectedBuildSide) { hashJoin =>
+                    rowCount(streamKeysTable, hashJoin)
+                  }
+                }
               }
             }
           }
+        } catch {
+          case _: OutOfMemoryError | _: GpuOOM =>
+            disableCachedBuildSide()
+            None
+        } finally {
+          cb.allowSpilling()
         }
-      } catch {
-        case _: OutOfMemoryError | _: GpuOOM =>
-          disableCachedBuildSide()
-          fallback
-      } finally {
-        cb.allowSpilling()
       }
     }
   }
@@ -1618,33 +1635,6 @@ class HashJoinIterator(
         
         makeGatherer(maps, leftData, rightData, joinType)
       }
-    }
-  }
-
-  // If we have a cached build side, try to get the exact row count directly from the cached handle.
-  private def tryCachedExactNumJoinRows(streamKeys: Table): Option[Long] = {
-    joinType match {
-      case _: InnerLike =>
-        buildSide match {
-          case GpuBuildRight =>
-            withCachedHashJoin(GpuBuildRight) { hashJoin =>
-              JoinImpl.innerHashJoinBuildRightRowCount(streamKeys, hashJoin)
-            }
-          case GpuBuildLeft =>
-            withCachedHashJoin(GpuBuildLeft) { hashJoin =>
-              JoinImpl.innerHashJoinBuildLeftRowCount(streamKeys, hashJoin)
-            }
-        }
-      case LeftOuter =>
-        withCachedHashJoin(GpuBuildRight) { hashJoin =>
-          JoinImpl.leftOuterHashJoinBuildRightRowCount(streamKeys, hashJoin)
-        }
-      case RightOuter =>
-        withCachedHashJoin(GpuBuildLeft) { hashJoin =>
-          JoinImpl.rightOuterHashJoinBuildLeftRowCount(streamKeys, hashJoin)
-        }
-      case _ =>
-        None
     }
   }
 
