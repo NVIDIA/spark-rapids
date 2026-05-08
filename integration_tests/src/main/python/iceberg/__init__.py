@@ -100,6 +100,13 @@ def materialize_parquet_source(spark_tmp_path: str,
                                gen_list,
                                seed: Optional[int] = None,
                                length: int = 2048) -> str:
+    """Generate `gen_list` once on a CPU session and write it to Parquet on disk.
+
+    The Iceberg DML tests run a CPU session and a GPU session and compare results.
+    Calling `gen_df` separately in each session can drift (per-partition seed,
+    partition count) so we materialize the source once and have both sessions
+    read the same Parquet files. Returns the temp directory path.
+    """
     temp_dir = tempfile.mkdtemp(dir=spark_tmp_path)
 
     def write_parquet(spark: SparkSession):
