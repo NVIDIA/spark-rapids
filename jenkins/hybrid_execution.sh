@@ -17,10 +17,6 @@
 
 set -ex
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MVN_SETTINGS="$SCRIPT_DIR/settings.xml"
-MVN=${MVN:-"mvn -s $MVN_SETTINGS"}
-
 # Explicitly export HYBRID_BACKEND_JARS for hybrid execution tests.
 export HYBRID_BACKEND_JARS
 
@@ -36,8 +32,9 @@ hybrid_prepare(){
     fi
 
     echo "Downloading hybrid execution dependency jars..."
-    # This script may run outside the project root path, so we use -f $WORKSPACE to target the project's pom.xml
-    RAPIDS_HYBRID_VER=${RAPIDS_HYBRID_VER:-$($MVN -f $WORKSPACE -B -q help:evaluate -Dexpression=spark-rapids-hybrid.version -DforceStdout)}
+    # Read spark-rapids-hybrid.version directly from pom.xml; avoids an mvn call (and Maven Central plugin downloads).
+    # Assumes the property is a literal value, not a Maven property reference.
+    RAPIDS_HYBRID_VER=${RAPIDS_HYBRID_VER:-$(sed -n 's|.*<spark-rapids-hybrid\.version>\([^<]*\)</spark-rapids-hybrid\.version>.*|\1|p' "$WORKSPACE/pom.xml")}
     RAPIDS_HYBRID_URL=${RAPIDS_HYBRID_URL:-$ART_URL}
     GLUTEN_BUNDLE_JAR="gluten-velox-bundle-${GLUTEN_VERSION}-spark${spark_prefix}_${SCALA_BINARY_VER}-${os_version}_${cup_arch}.jar"
     HYBRID_JAR="rapids-4-spark-hybrid_${SCALA_BINARY_VER}-${RAPIDS_HYBRID_VER}.jar"
