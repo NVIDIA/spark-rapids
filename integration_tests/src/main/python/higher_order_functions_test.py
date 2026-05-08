@@ -91,6 +91,21 @@ def test_array_aggregate_boolean_ops_nullable_elements_fallback(lambda_sql, init
         'ArrayAggregate')
 
 
+@pytest.mark.parametrize('lambda_sql, init_sql', [
+    ('''(acc, x) -> acc AND
+          CASE WHEN x THEN CAST(NULL AS BOOLEAN) ELSE false END''', 'true'),
+    ('''(acc, x) -> acc OR
+          CASE WHEN x THEN CAST(NULL AS BOOLEAN) ELSE true END''', 'false'),
+], ids=['all', 'any'])
+@allow_non_gpu('ProjectExec')
+def test_array_aggregate_boolean_ops_nullable_g_fallback(lambda_sql, init_sql):
+    non_null_bool = BooleanGen(nullable=False)
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(non_null_bool, max_length=8)).selectExpr(
+            f'aggregate(a, {init_sql}, {lambda_sql}) as res'),
+        'ArrayAggregate')
+
+
 @disable_ansi_mode
 def test_array_aggregate_count_if_int():
     assert_gpu_and_cpu_are_equal_collect(
@@ -107,6 +122,14 @@ def test_array_aggregate_if_count():
         lambda spark: unary_op_df(spark, ArrayGen(int_gen, max_length=15)).selectExpr(
             'aggregate(a, 0L, (acc, x) -> if(x > 0, acc + 1L, acc)) as pos_cnt',
             'aggregate(a, 0L, (acc, x) -> if(x is null, acc, acc + 1L)) as nonnull_cnt'))
+
+
+@disable_ansi_mode
+def test_array_aggregate_if_mixed_acc_sides():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(int_gen, max_length=15)).selectExpr(
+            '''aggregate(a, 0L,
+                 (acc, x) -> if(x > 0, acc + CAST(x AS BIGINT), 1L + acc)) as res'''))
 
 
 # CaseWhen with several acc+t branches and a bare-acc else.
@@ -162,6 +185,16 @@ def test_array_aggregate_empty_array():
             [([1, 2, 3],), ([],), ([7],), ([],)],
             'a array<int>').selectExpr(
                 'aggregate(a, 42L, (acc, x) -> acc + CAST(x as BIGINT)) as sum_with_empty')
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
+def test_array_aggregate_extremum_nullable_zero_no_contribution():
+    def do_it(spark):
+        return spark.createDataFrame(
+            [([1, None],), ([],), ([None],), (None,)],
+            'a array<int>').selectExpr(
+                'aggregate(a, CAST(NULL AS INT), (acc, x) -> greatest(acc, x)) as max_res',
+                'aggregate(a, CAST(NULL AS INT), (acc, x) -> least(acc, x)) as min_res')
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
@@ -249,6 +282,15 @@ def test_array_aggregate_non_identity_finish_falls_back():
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, ArrayGen(int_gen, max_length=5)).selectExpr(
             'aggregate(a, 0L, (acc, x) -> acc + CAST(x as BIGINT), acc -> acc * 2) as doubled'),
+        'ArrayAggregate')
+
+
+@allow_non_gpu('ProjectExec')
+def test_array_aggregate_finish_cast_falls_back():
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(
+            spark, ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=5)).selectExpr(
+            'aggregate(a, 0, (acc, x) -> acc + x, acc -> CAST(acc AS BIGINT)) as res'),
         'ArrayAggregate')
 
 

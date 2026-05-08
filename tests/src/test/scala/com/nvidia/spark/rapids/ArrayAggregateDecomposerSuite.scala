@@ -28,8 +28,11 @@ import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, DoubleType,
 class ArrayAggregateDecomposerSuite extends GpuUnitTests {
   import ArrayAggregateDecomposer.decompose
 
-  private def lv(name: String, dt: DataType = IntegerType): NamedLambdaVariable =
-    NamedLambdaVariable(name, dt, nullable = true, exprId = NamedExpression.newExprId)
+  private def lv(
+      name: String,
+      dt: DataType = IntegerType,
+      nullable: Boolean = true): NamedLambdaVariable =
+    NamedLambdaVariable(name, dt, nullable, exprId = NamedExpression.newExprId)
 
   private def merge(
       body: Expression,
@@ -100,13 +103,13 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
   }
 
   test("And(acc, x) -> ALL") {
-    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType, nullable = false)
     assertDecomposes(And(acc, x), acc, x, AllOp,
       zeroType = BooleanType)
   }
 
   test("Or(acc, x) -> ANY") {
-    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType, nullable = false)
     assertDecomposes(Or(acc, x), acc, x, AnyOp,
       zeroType = BooleanType)
   }
@@ -182,6 +185,14 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
       "finish body refers to a variable that isn't its own arg")
   }
 
+  test("finish cast of acc is rejected") {
+    val acc = lv("acc"); val x = lv("x")
+    val finishAcc = lv("finishAcc")
+    val badFinish = LambdaFunction(Cast(finishAcc, LongType), Seq(finishAcc))
+    assertRejects(merge(Add(acc, x), acc, x), badFinish,
+      "finish body must be the exact lambda variable")
+  }
+
   test("merge with wrong arg count is rejected") {
     val acc = lv("acc"); val x = lv("x"); val extra = lv("extra")
     val body = LambdaFunction(Add(acc, x), Seq(acc, x, extra))
@@ -212,12 +223,32 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
   }
 
   test("ALL on array<bool> with containsNull rejects") {
-    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType, nullable = false)
     val msg = assertRejects(merge(And(acc, x), acc, x), identityFinish(acc),
       "ALL on null-bearing array should fall back",
       zeroType = BooleanType,
       argType = Some(ArrayType(BooleanType, containsNull = true)))
     assert(msg.contains("ALL"), s"expected ALL-related error, got: $msg")
+  }
+
+  test("ALL rejects when lifted g is nullable") {
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType, nullable = false)
+    val nullableG = If(EqualTo(x, Literal(true)), Literal.create(null, BooleanType),
+      Literal(false))
+    val msg = assertRejects(merge(And(acc, nullableG), acc, x), identityFinish(acc),
+      "ALL with nullable g should fall back",
+      zeroType = BooleanType)
+    assert(msg.contains("nullable"), s"expected nullable-related error, got: $msg")
+  }
+
+  test("ANY rejects when lifted g is nullable") {
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType, nullable = false)
+    val nullableG = If(EqualTo(x, Literal(true)), Literal.create(null, BooleanType),
+      Literal(true))
+    val msg = assertRejects(merge(Or(acc, nullableG), acc, x), identityFinish(acc),
+      "ANY with nullable g should fall back",
+      zeroType = BooleanType)
+    assert(msg.contains("nullable"), s"expected nullable-related error, got: $msg")
   }
 
   test("g type mismatch with zero type rejects") {
@@ -258,7 +289,7 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
   }
 
   test("If with And on boolean acc decomposes to ALL") {
-    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType)
+    val acc = lv("acc", BooleanType); val x = lv("x", BooleanType, nullable = false)
     val body = If(EqualTo(x, Literal(true)), And(acc, x), acc)
     assertDecomposes(body, acc, x, AllOp,
       zeroType = BooleanType)
@@ -288,11 +319,20 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
       "branches mixing Add and Multiply have no single op to lift")
   }
 
-  test("If branches put acc on different sides — rejected") {
+  test("If branches put acc on different sides — decomposes") {
     val acc = lv("acc"); val x = lv("x")
     val body = If(GreaterThan(x, Literal(0)), Add(acc, x), Add(x, acc))
-    assertRejects(merge(body, acc, x), identityFinish(acc),
-      "branches with acc on different sides can't share a single lifted form")
+    assertDecomposes(body, acc, x, SumOp)
+  }
+
+  test("CaseWhen branches put acc on different sides — decomposes") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = CaseWhen(
+      Seq(
+        (EqualTo(x, Literal(1)), Add(acc, Literal(10))),
+        (EqualTo(x, Literal(2)), Add(Literal(20), acc))),
+      Some(acc))
+    assertDecomposes(body, acc, x, SumOp)
   }
 
   test("CaseWhen without else — rejected") {

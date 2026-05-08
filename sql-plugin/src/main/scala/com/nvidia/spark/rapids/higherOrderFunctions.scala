@@ -1171,13 +1171,13 @@ object ArrayAggregateDecomposer {
     val body = mergeLambda.function
     val accId = accVar.exprId
     val matched = allOps.view.flatMap { op =>
-      extractG(body, accId, op, zeroType).map { case (g, gIsLeft) => (op, g, gIsLeft) }
+      extractG(body, accId, op, zeroType).map { g => (op, g) }
     }.headOption
 
-    val (op, g, _) = matched.getOrElse {
+    val (op, g) = matched.getOrElse {
       return Left("merge body does not match (acc, x) -> op(acc, g(x)) for any registered " +
-        "op (" + allOps.map(_.name).mkString(", ") + "); If / CaseWhen branches must each " +
-        "be op-of-acc with acc on a consistent side")
+        "op (" + allOps.map(_.name).mkString(", ") + "); If / CaseWhen branches must be " +
+        "op-of-acc or bare acc")
     }
 
     if (!op.supportsType(zeroType)) {
@@ -1192,7 +1192,7 @@ object ArrayAggregateDecomposer {
     // cuDF's segmented ALL/ANY with INCLUDE nulls doesn't match Spark's AND/OR 3VL
     // (specifically: `false AND null = false` short-circuit, or `true OR null = true`, are
     // both missed by cuDF which returns null whenever any null is present). Fall back to
-    // CPU when the input array can contain nulls.
+    // CPU when either the input array can contain nulls or the lifted g(x) can produce nulls.
     if (op == AllOp || op == AnyOp) {
       argType match {
         case ArrayType(_, true) =>
@@ -1200,24 +1200,23 @@ object ArrayAggregateDecomposer {
             "nulls; cuDF's INCLUDE-nulls semantics don't match Spark's AND/OR 3VL")
         case _ =>
       }
+      if (g.nullable) {
+        return Left(s"${op.name} is not supported on GPU when lifted g(x) can be nullable; " +
+          "cuDF's INCLUDE-nulls semantics don't match Spark's AND/OR 3VL")
+      }
     }
 
     Right(ArrayAggregateDecomposition(op, g, accId, elemVar))
   }
 
   /**
-   * Try to extract g from the merge body, given a candidate op. Returns
-   * `Some((g, gIsLeft))` on success — `gIsLeft` is internal bookkeeping used by
-   * `alignSides` to ensure all branches of an If/CaseWhen agree on which side acc lives;
-   * it is not exposed in the final Decomposition (the lifted g already encodes the
-   * answer structurally).
+   * Try to extract g from the merge body, given a candidate op.
    *
    * Three accepted shapes:
    *   1. body is `op(acc, g)` or `op(g, acc)`     — direct match.
    *   2. body is `If(cond, t, f)` where each of `t`, `f` is itself accepted by this
-   *      function (recursively) with `acc` on the *same* side, and `cond` doesn't
-   *      reference `acc`. Lifted to `op(acc, If(cond, g_t, g_f))` (or the symmetric form
-   *      with acc on the left).
+   *      function (recursively), and `cond` doesn't reference `acc`. Lifted to
+   *      `op(acc, If(cond, g_t, g_f))`.
    *   3. body is `CaseWhen(branches, Some(else))` — generalised If for N branches.
    *
    * Bare `acc` in a branch is treated as `op(acc, identityLiteral)` — that's how we
@@ -1228,27 +1227,25 @@ object ArrayAggregateDecomposer {
       body: Expression,
       accId: ExprId,
       op: AggOp,
-      accType: DataType): Option[(Expression, Boolean)] = {
+      accType: DataType): Option[Expression] = {
     matchOpOfAcc(body, accId, op).orElse(extractFromBranching(body, accId, op, accType))
   }
 
-  /** body matches op directly: returns `(g, gIsLeft)` if body is `op(acc, g)` / `op(g, acc)`. */
+  /** body matches op directly: returns `g` if body is `op(acc, g)` / `op(g, acc)`. */
   private def matchOpOfAcc(
       e: Expression,
       accId: ExprId,
-      op: AggOp): Option[(Expression, Boolean)] = {
+      op: AggOp): Option[Expression] = {
     op.matchBinary(e).flatMap { case (l, r) =>
-      if (isAccRef(l, accId) && !containsAccRef(r, accId)) Some((r, false))
-      else if (isAccRef(r, accId) && !containsAccRef(l, accId)) Some((l, true))
+      if (isAccRef(l, accId) && !containsAccRef(r, accId)) Some(r)
+      else if (isAccRef(r, accId) && !containsAccRef(l, accId)) Some(l)
       else None
     }
   }
 
   /**
    * Decompose a single If/CaseWhen branch. Either it's an op-of-acc form (returns the
-   * non-acc side and whether acc was on the left), or it's a bare acc-ref (returns the
-   * op's identity literal, gIsLeft=false — the placeholder side doesn't matter, we only
-   * need branches to agree on it later).
+   * non-acc side), or it's a bare acc-ref (returns the op's identity literal).
    *
    * Recursively delegates to `extractG` so nested If is handled.
    */
@@ -1256,9 +1253,9 @@ object ArrayAggregateDecomposer {
       branch: Expression,
       accId: ExprId,
       op: AggOp,
-      accType: DataType): Option[(Expression, Boolean)] = {
+      accType: DataType): Option[Expression] = {
     if (isAccRef(branch, accId)) {
-      Some((op.identityLiteral(accType), /* gIsLeft = */ false))
+      Some(op.identityLiteral(accType))
     } else {
       extractG(branch, accId, op, accType)
     }
@@ -1268,66 +1265,34 @@ object ArrayAggregateDecomposer {
       body: Expression,
       accId: ExprId,
       op: AggOp,
-      accType: DataType): Option[(Expression, Boolean)] = body match {
+      accType: DataType): Option[Expression] = body match {
     case If(cond, t, f) if !containsAccRef(cond, accId) =>
       for {
-        (tG, tIsLeft) <- extractBranch(t, accId, op, accType)
-        (fG, fIsLeft) <- extractBranch(f, accId, op, accType)
-        // The "bare acc" case picks gIsLeft=false. If a branch is bare acc, accept either
-        // side from the other branch — we'll just rebuild to that side.
-        gIsLeft <- alignSides(t, f, tIsLeft, fIsLeft, accId)
-      } yield (If(cond, tG, fG), gIsLeft)
+        tG <- extractBranch(t, accId, op, accType)
+        fG <- extractBranch(f, accId, op, accType)
+      } yield If(cond, tG, fG)
 
     case CaseWhen(branches, Some(elseValue))
         if branches.forall { case (c, _) => !containsAccRef(c, accId) } =>
-      // Decompose every (cond, val) branch + the else branch. All op-of-acc branches must
-      // agree on which side acc is on; bare-acc branches don't constrain.
+      // Decompose every (cond, val) branch + the else branch.
       val branchDecs = branches.map { case (c, v) => (c, extractBranch(v, accId, op, accType)) }
       val elseDec = extractBranch(elseValue, accId, op, accType)
       if (branchDecs.exists(_._2.isEmpty) || elseDec.isEmpty) {
         None
       } else {
-        val allBranchExprs: Seq[Expression] = branches.map(_._2) :+ elseValue
-        val allSides: Seq[Boolean] = branchDecs.map(_._2.get._2) :+ elseDec.get._2
-        val constrainedSides = allBranchExprs.zip(allSides).collect {
-          case (br, side) if !isAccRef(br, accId) => side
-        }
-        if (constrainedSides.distinct.size > 1) {
-          None
-        } else {
-          val gIsLeft = constrainedSides.headOption.getOrElse(false)
-          val gBranches = branchDecs.map { case (c, dec) => (c, dec.get._1) }
-          Some((CaseWhen(gBranches, Some(elseDec.get._1)), gIsLeft))
-        }
+        val gBranches = branchDecs.map { case (c, dec) => (c, dec.get) }
+        Some(CaseWhen(gBranches, Some(elseDec.get)))
       }
 
     case _ => None
   }
 
-  /**
-   * Reconcile the gIsLeft flags from two If branches. Bare-acc branches don't constrain
-   * (their identity placeholder is symmetric), so this is `agree if both constrained,
-   * else borrow from the constrained one`.
-   */
-  private def alignSides(
-      tBranch: Expression,
-      fBranch: Expression,
-      tIsLeft: Boolean,
-      fIsLeft: Boolean,
-      accId: ExprId): Option[Boolean] = {
-    val tBare = isAccRef(tBranch, accId)
-    val fBare = isAccRef(fBranch, accId)
-    (tBare, fBare) match {
-      case (true, true) => Some(false) // both bare acc — fold has no actual op to apply
-      case (true, false) => Some(fIsLeft)
-      case (false, true) => Some(tIsLeft)
-      case (false, false) => if (tIsLeft == fIsLeft) Some(tIsLeft) else None
-    }
-  }
-
   private def isFinishIdentity(finish: Expression): Boolean = finish match {
     case LambdaFunction(body, Seq(accVar: NamedLambdaVariable), _) =>
-      isAccRef(body, accVar.exprId)
+      body match {
+        case v: NamedLambdaVariable => v.exprId == accVar.exprId
+        case _ => false
+      }
     case _ => false
   }
 
@@ -1350,9 +1315,9 @@ object ArrayAggregateDecomposer {
  *   1. Evaluate g(x) over the array children (reusing GpuArrayTransformBase's explode path).
  *   2. Rewrap as list<g_type> with the original offsets and validity.
  *   3. cuDF segmented reduce with the op's null policy.
- *   4. Substitute op's identity into rows where reduce returned null due to "no elements
- *      contributed" (the exact condition depends on null policy; see `substituteMask`).
+ *   4. For INCLUDE ops, substitute op's identity into empty non-null rows.
  *   5. Combine with zero: `result = reduced OP zero`.
+ *   6. Restore null on rows where the input list itself was null.
  */
 case class GpuArrayAggregate(
     argument: Expression,
@@ -1382,40 +1347,23 @@ case class GpuArrayAggregate(
   }
 
   /**
-   * Mask of rows where the reduce result must be replaced with the op's identity.
-   *
-   * INCLUDE ops (SUM/PRODUCT/ALL/ANY): only empty-and-not-null lists. Null-poisoned
-   * reduces stay null and propagate through the combine step, matching Spark's iterative
-   * `acc op null = null` semantics.
-   *
-   * EXCLUDE ops (MAX/MIN): any reduce-null over a non-null list — covers both empty lists
-   * and all-null lists, matching Spark's Greatest/Least which skip nulls entirely.
+   * Mask of empty-and-not-null lists where an INCLUDE-policy reduce needs the op identity.
+   * Null-poisoned reduces stay null and propagate through the combine step.
    */
-  private def substituteMask(
-      listCol: cudf.ColumnView,
-      reduced: cudf.ColumnVector): cudf.ColumnVector = {
-    val reducedIsEmpty = op.nullPolicy match {
-      case cudf.NullPolicy.INCLUDE =>
-        // Empty-and-not-null only. Null-poisoned reduces stay null to match Spark's
-        // iterative `acc op null = null` semantics.
-        withResource(listCol.countElements()) { counts =>
-          withResource(cudf.Scalar.fromInt(0)) { zero =>
-            counts.equalTo(zero)
-          }
-        }
-      case cudf.NullPolicy.EXCLUDE =>
-        // Any reduce-null: empty list OR all-null list (both mean "no element contributed"),
-        // matching Spark's Greatest/Least which skip nulls.
-        reduced.isNull
+  private def emptyIncludeListMask(listCol: cudf.ColumnView): cudf.ColumnVector = {
+    val isEmpty = withResource(listCol.countElements()) { counts =>
+      withResource(cudf.Scalar.fromInt(0)) { zero =>
+        counts.equalTo(zero)
+      }
     }
     // Exclude null-list rows from the mask so the final null-restoration step handles them.
     // Skip when the input list has no nulls — `m.and(all-true)` is a wasted kernel.
     if (listCol.getNullCount > 0) {
-      withResource(reducedIsEmpty) { m =>
+      withResource(isEmpty) { m =>
         withResource(listCol.isNotNull) { isNotNull => m.and(isNotNull) }
       }
     } else {
-      reducedIsEmpty
+      isEmpty
     }
   }
 
@@ -1434,11 +1382,17 @@ case class GpuArrayAggregate(
           }
         }
 
-      // Step 2: substitute op's identity for rows the reduce couldn't cover.
+      // Step 2: substitute op's identity where needed.
       val adjusted: cudf.ColumnVector = withResource(reduced) { reduced =>
-        withResource(substituteMask(arg.getBase, reduced)) { mask =>
-          withResource(op.identityScalar(dataType)) { idScalar =>
-            mask.ifElse(idScalar, reduced)
+        if (op.nullPolicy == cudf.NullPolicy.EXCLUDE) {
+          // MAX/MIN should keep no-contribution rows as null until combineWithZero.
+          // NULL_MAX/NULL_MIN then return zero when it is non-null, and preserve a null zero.
+          reduced.incRefCount()
+        } else {
+          withResource(emptyIncludeListMask(arg.getBase)) { mask =>
+            withResource(op.identityScalar(dataType)) { idScalar =>
+              mask.ifElse(idScalar, reduced)
+            }
           }
         }
       }
