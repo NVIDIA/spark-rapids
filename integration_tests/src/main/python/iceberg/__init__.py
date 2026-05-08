@@ -119,8 +119,10 @@ def materialize_parquet_source(spark_tmp_path: str,
 def assert_no_cpu_project_exec(spark: SparkSession, df: DataFrame) -> None:
     """Assert that the Spark plan for `df` does not contain a CPU ProjectExec.
 
-    Used by positive write tests to confirm the entire write pipeline stays on
-    GPU (no Project operator is left behind on CPU).
+    Used by positive Iceberg write tests to confirm the entire write pipeline
+    stays on GPU. A correctness-only CPU-vs-GPU result comparison would still
+    pass if the GPU side silently fell back to a CPU ProjectExec, so this guard
+    catches a silent regression of the GPU plan.
     """
     jvm = spark.sparkContext._jvm
     jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertNotContain(
