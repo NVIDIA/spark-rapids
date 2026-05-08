@@ -31,6 +31,7 @@ import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimE
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
+import org.apache.spark.sql.catalyst.trees.{CurrentOrigin, Origin}
 import org.apache.spark.sql.catalyst.util.{GenericArrayData, TypeUtils}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -446,14 +447,17 @@ object GpuElementAtMeta {
           } else {
             in.failOnError
           }
-          GpuElementAt(lhs, rhs, failOnError)
+          GpuElementAt(lhs, rhs, failOnError)(in.origin)
         }
       })
   }
 }
 
-case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolean)
+case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolean)(
+    override val origin: Origin = CurrentOrigin.get)
   extends GpuBinaryExpression with ExpectsInputTypes {
+
+  override def otherCopyArgs: Seq[AnyRef] = origin :: Nil
 
   override def hasSideEffects: Boolean = super.hasSideEffects || failOnError || {
     right match {

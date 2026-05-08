@@ -59,5 +59,5 @@ abstract class GetMapValueMeta (
   extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
 
     override def convertToGpu(map: Expression, key: Expression): GpuExpression =
-        GpuGetMapValue(map, key, false)
+        GpuGetMapValue(map, key, false)(expr.origin)
 }
