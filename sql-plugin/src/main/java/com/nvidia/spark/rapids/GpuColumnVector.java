@@ -1072,6 +1072,14 @@ public class GpuColumnVector extends GpuColumnVectorBase {
         }
         Cuda.DEFAULT_STREAM.sync();
       } catch (Exception e) {
+        // Async D->H copies may still be in flight into the host buffers owned
+        // by hostCols; sync before closing to avoid a use-after-free on pinned
+        // memory.
+        try {
+          Cuda.DEFAULT_STREAM.sync();
+        } catch (Exception syncEx) {
+          e.addSuppressed(syncEx);
+        }
         for (RapidsHostColumnVector hostCol : hostCols) {
           if (hostCol != null) {
             try {
