@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2024-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2024-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,6 +35,9 @@ SERVER_ID=${SERVER_ID:-"snapshots"}
 SERVER_URL=${SERVER_URL:-"file:/tmp/local-release-repo"}
 M2_CACHE=${M2_CACHE:-"/tmp/m2-cache"}
 DEST_PATH=${DEST_PATH:-"/tmp/test-get-dest"}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MVN_SETTINGS=${MVN_SETTINGS:-"$SCRIPT_DIR/settings.xml"}
+MVN=${MVN:-"mvn -s $MVN_SETTINGS"}
 rm -rf $DEST_PATH && mkdir -p $DEST_PATH
 
 remote_maven_repo=$SERVER_ID::default::$SERVER_URL
@@ -47,7 +50,7 @@ while read -r line; do
     artifact=$line # artifact=groupId:artifactId:version:[[packaging]:classifier]
     # Clean up $M2_CACHE to avoid side-effect of previous dependency:get
     rm -rf $M2_CACHE/com/nvida
-    mvn -B dependency:get -DremoteRepositories=$remote_maven_repo -Dmaven.repo.local=$M2_CACHE -Dartifact=$artifact -Ddest=$DEST_PATH
+    $MVN -B dependency:get -DremoteRepositories=$remote_maven_repo -Dmaven.repo.local=$M2_CACHE -Dartifact=$artifact -Ddest=$DEST_PATH
 done < $ARTIFACT_FILE
 
 ls -l $DEST_PATH
