@@ -433,8 +433,11 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
           acc + table.getHeader.getTotalDataLen + table.getHeader.getSerializedSize
         }
         val offsetsBufSize = 8L * (kudoTables.length + 1)
-        withResource(KudoBuffers(HostMemoryBuffer.allocate(dataBufSize),
-          HostMemoryBuffer.allocate(offsetsBufSize))) { case KudoBuffers(dataHost, offsetsHost) =>
+        val dataHostBuf = HostMemoryBuffer.allocate(dataBufSize)
+        val hostBuffers = closeOnExcept(dataHostBuf) { _ =>
+          KudoBuffers(dataHostBuf, HostMemoryBuffer.allocate(offsetsBufSize))
+        }
+        withResource(hostBuffers) { case KudoBuffers(dataHost, offsetsHost) =>
           var currentOffset = 0L
           kudoTables.zipWithIndex.foreach { case (table, i) =>
             offsetsHost.setLong(i * 8L, currentOffset)
@@ -446,9 +449,11 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
             currentOffset += table.getHeader.getTotalDataLen
           }
           offsetsHost.setLong(kudoTables.length * 8L, currentOffset)
-          withResource(KudoBuffers(DeviceMemoryBuffer.allocate(dataHost.getLength),
-            DeviceMemoryBuffer.allocate(offsetsHost.getLength))) {
-              case KudoBuffers(dataDev, offsetsDev) =>
+          val dataDevBuf = DeviceMemoryBuffer.allocate(dataHost.getLength)
+          val devBuffers = closeOnExcept(dataDevBuf) { _ =>
+            KudoBuffers(dataDevBuf, DeviceMemoryBuffer.allocate(offsetsHost.getLength))
+          }
+          withResource(devBuffers) { case KudoBuffers(dataDev, offsetsDev) =>
             dataDev.copyFromHostBuffer(dataHost)
             offsetsDev.copyFromHostBuffer(offsetsHost)
 
