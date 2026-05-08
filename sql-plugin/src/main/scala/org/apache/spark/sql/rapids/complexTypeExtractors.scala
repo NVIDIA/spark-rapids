@@ -413,7 +413,8 @@ class GpuGetStructFieldMeta(
 
   override def tagExprForGpu(): Unit = {
     childExprs.head.typeMeta.dataType.foreach { convertedChildType =>
-      GpuGetStructFieldMeta.resolveField(expr, convertedChildType) match {
+      GpuStructFieldRemap.resolveField(
+        expr.child.dataType, convertedChildType, expr.ordinal, "GetStructField") match {
         case EitherRight((_, field)) =>
           if (field.dataType != expr.dataType) {
             overrideDataType(field.dataType)
@@ -425,23 +426,11 @@ class GpuGetStructFieldMeta(
   }
 
   override def convertToGpu(child: Expression): GpuExpression = {
-    val effectiveOrd = GpuGetStructFieldMeta.effectiveOrdinal(expr, child)
+    val (effectiveOrd, _) = GpuStructFieldRemap.resolveField(
+      expr.child.dataType, child.dataType, expr.ordinal, "GetStructField").fold(
+        reason => throw new IllegalStateException(reason),
+        identity)
     GpuGetStructField(child, effectiveOrd, expr.name)
-  }
-}
-
-object GpuGetStructFieldMeta {
-  def resolveField(
-      expr: GetStructField,
-      convertedChildType: DataType): Either[String, (Int, StructField)] = {
-    GpuStructFieldRemap.resolveField(
-      expr.child.dataType, convertedChildType, expr.ordinal, "GetStructField")
-  }
-
-  def effectiveOrdinal(expr: GetStructField, child: Expression): Int = {
-    resolveField(expr, child.dataType).fold(
-      reason => throw new IllegalStateException(reason),
-      _._1)
   }
 }
 
@@ -454,7 +443,9 @@ class GpuGetArrayStructFieldsMeta(
 
   override def tagExprForGpu(): Unit = {
     childExprs.head.typeMeta.dataType.foreach { convertedChildType =>
-      GpuGetArrayStructFieldsMeta.resolveField(expr, convertedChildType) match {
+      GpuStructFieldRemap.resolveArrayStructField(
+        expr.child.dataType, convertedChildType, expr.ordinal,
+        "GetArrayStructFields") match {
         case EitherRight((_, field, _)) =>
           val convertedType = ArrayType(field.dataType, expr.containsNull)
           if (convertedType != expr.dataType) {
@@ -468,42 +459,17 @@ class GpuGetArrayStructFieldsMeta(
 
   override def convertToGpu(child: Expression): GpuExpression = {
     val (effectiveOrd, effectiveField, effectiveNumFields) =
-      GpuGetArrayStructFieldsMeta.resolveField(expr, child.dataType).fold(
-        reason => throw new IllegalStateException(reason),
-        identity)
+      GpuStructFieldRemap.resolveArrayStructField(
+        expr.child.dataType, child.dataType, expr.ordinal,
+        "GetArrayStructFields").fold(
+          reason => throw new IllegalStateException(reason),
+          identity)
     GpuGetArrayStructFields(child, effectiveField,
       effectiveOrd, effectiveNumFields, expr.containsNull)
   }
 }
 
-object GpuGetArrayStructFieldsMeta {
-  def resolveField(
-      expr: GetArrayStructFields,
-      convertedChildType: DataType): Either[String, (Int, StructField, Int)] = {
-    GpuStructFieldRemap.resolveArrayStructField(
-      expr.child.dataType, convertedChildType, expr.ordinal, "GetArrayStructFields")
-  }
-
-  def effectiveOrdinal(expr: GetArrayStructFields, child: Expression): Int = {
-    resolveField(expr, child.dataType).fold(
-      reason => throw new IllegalStateException(reason),
-      _._1)
-  }
-
-  def effectiveField(expr: GetArrayStructFields, child: Expression): StructField = {
-    resolveField(expr, child.dataType).fold(
-      reason => throw new IllegalStateException(reason),
-      _._2)
-  }
-
-  def effectiveNumFields(expr: GetArrayStructFields, child: Expression): Int = {
-    resolveField(expr, child.dataType).fold(
-      reason => throw new IllegalStateException(reason),
-      _._3)
-  }
-}
-
-private object GpuStructFieldRemap {
+object GpuStructFieldRemap {
   def resolveField(
       originalChildType: DataType,
       convertedChildType: DataType,

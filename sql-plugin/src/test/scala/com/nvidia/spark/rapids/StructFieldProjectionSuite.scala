@@ -18,15 +18,8 @@ package com.nvidia.spark.rapids
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import org.apache.spark.sql.catalyst.expressions.{
-  BoundReference,
-  GetArrayStructFields,
-  GetStructField
-}
-import org.apache.spark.sql.rapids.{
-  GpuGetArrayStructFieldsMeta,
-  GpuGetStructFieldMeta
-}
+import org.apache.spark.sql.catalyst.expressions.{BoundReference, GetArrayStructFields, GetStructField}
+import org.apache.spark.sql.rapids.GpuStructFieldRemap
 import org.apache.spark.sql.types._
 
 class StructFieldProjectionSuite extends AnyFunSuite {
@@ -35,61 +28,62 @@ class StructFieldProjectionSuite extends AnyFunSuite {
     StructField("b", StringType),
     StructField("c", LongType)))
 
-  test("struct field meta keeps ordinal for matching converted child schema") {
-    val child = BoundReference(0, originalStruct, nullable = true)
-    val sparkExpr = GetStructField(child, ordinal = 1, Some("b"))
+  test("resolveField keeps ordinal when converted child schema matches the original") {
+    val sparkExpr = GetStructField(
+      BoundReference(0, originalStruct, nullable = true), ordinal = 1, Some("b"))
 
-    assert(GpuGetStructFieldMeta.effectiveOrdinal(sparkExpr, child) == 1)
-    GpuGetStructFieldMeta.resolveField(sparkExpr, child.dataType) match {
+    GpuStructFieldRemap.resolveField(
+      sparkExpr.child.dataType, originalStruct, sparkExpr.ordinal, "GetStructField") match {
       case Right((ordinal, field)) =>
         assert(ordinal == 1)
         assert(field == originalStruct.fields(1))
-      case Left(reason) =>
-        fail(reason)
+      case Left(reason) => fail(reason)
     }
   }
 
-  test("struct field meta resolves ordinal from projected child schema") {
-    val originalChild = BoundReference(0, originalStruct, nullable = true)
+  test("resolveField remaps ordinal when converted child schema drops earlier fields") {
     val projectedStruct = StructType(Seq(originalStruct.fields(2)))
-    val projectedChild = BoundReference(0, projectedStruct, nullable = true)
-    val sparkExpr = GetStructField(originalChild, ordinal = 2, Some("c"))
+    val sparkExpr = GetStructField(
+      BoundReference(0, originalStruct, nullable = true), ordinal = 2, Some("c"))
 
-    assert(GpuGetStructFieldMeta.effectiveOrdinal(sparkExpr, projectedChild) == 0)
-    GpuGetStructFieldMeta.resolveField(sparkExpr, projectedChild.dataType) match {
+    GpuStructFieldRemap.resolveField(
+      sparkExpr.child.dataType, projectedStruct, sparkExpr.ordinal, "GetStructField") match {
       case Right((ordinal, field)) =>
         assert(ordinal == 0)
         assert(field == projectedStruct.fields(0))
-      case Left(reason) =>
-        fail(reason)
+      case Left(reason) => fail(reason)
     }
   }
 
-  test("array struct field meta resolves ordinal and numFields from projected child schema") {
+  test("resolveArrayStructField returns ordinal, field and numFields from converted schema") {
     val originalArrayType = ArrayType(originalStruct, containsNull = true)
-    val originalChild = BoundReference(0, originalArrayType, nullable = true)
     val projectedStruct = StructType(Seq(originalStruct.fields(1)))
-    val projectedChild = BoundReference(0,
-      ArrayType(projectedStruct, containsNull = true), nullable = true)
     val sparkExpr = GetArrayStructFields(
-      originalChild,
+      BoundReference(0, originalArrayType, nullable = true),
       field = originalStruct.fields(1),
       ordinal = 1,
       numFields = originalStruct.fields.length,
       containsNull = true)
 
-    assert(GpuGetArrayStructFieldsMeta.effectiveOrdinal(sparkExpr, projectedChild) == 0)
-    assert(GpuGetArrayStructFieldsMeta.effectiveField(sparkExpr, projectedChild) ==
-      projectedStruct.fields(0))
-    assert(GpuGetArrayStructFieldsMeta.effectiveNumFields(sparkExpr, projectedChild) == 1)
+    GpuStructFieldRemap.resolveArrayStructField(
+      sparkExpr.child.dataType, ArrayType(projectedStruct, containsNull = true),
+      sparkExpr.ordinal, "GetArrayStructFields") match {
+      case Right((ordinal, field, numFields)) =>
+        assert(ordinal == 0)
+        assert(field == projectedStruct.fields(0))
+        assert(numFields == 1)
+      case Left(reason) => fail(reason)
+    }
   }
 
-  test("struct field meta rejects a converted child schema without the requested field") {
-    val originalChild = BoundReference(0, originalStruct, nullable = true)
+  test("resolveField rejects a converted child schema without the requested field") {
     val projectedStruct = StructType(Seq(originalStruct.fields(0)))
-    val sparkExpr = GetStructField(originalChild, ordinal = 2, Some("c"))
+    val sparkExpr = GetStructField(
+      BoundReference(0, originalStruct, nullable = true), ordinal = 2, Some("c"))
 
-    val error = GpuGetStructFieldMeta.resolveField(sparkExpr, projectedStruct).left.toOption
+    val error = GpuStructFieldRemap.resolveField(
+      sparkExpr.child.dataType, projectedStruct, sparkExpr.ordinal, "GetStructField")
+      .left.toOption
     assert(error.exists(_.contains("field 'c' is not present")))
   }
 }
