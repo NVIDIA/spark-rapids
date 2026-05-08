@@ -35,7 +35,8 @@ SERVER_ID=${SERVER_ID:-"snapshots"}
 SERVER_URL=${SERVER_URL:-"file:/tmp/local-release-repo"}
 M2_CACHE=${M2_CACHE:-"/tmp/m2-cache"}
 DEST_PATH=${DEST_PATH:-"/tmp/test-get-dest"}
-MVN_SETTINGS=${MVN_SETTINGS:-"jenkins/settings.xml"}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MVN_SETTINGS=${MVN_SETTINGS:-"$SCRIPT_DIR/settings.xml"}
 MVN=${MVN:-"mvn -s $MVN_SETTINGS"}
 rm -rf $DEST_PATH && mkdir -p $DEST_PATH
 
