@@ -77,24 +77,15 @@ abstract class GpuDeltaCatalogBase(
     ident.namespace().length == 1 && DeltaSourceUtils.isDeltaDataSourceName(ident.namespace().head)
   }
 
-  private lazy val isUnityCatalog: Boolean = {
-    @scala.annotation.tailrec
-    def findRequiredField(clazz: Class[_]): java.lang.reflect.Field = {
-      if (clazz == null) {
+  protected lazy val isUnityCatalog: Boolean = {
+    val field = try {
+      cpuCatalog.getClass.getDeclaredField("isUnityCatalog")
+    } catch {
+      case _: NoSuchFieldException =>
         throw new IllegalStateException(
           s"Unable to locate Delta catalog field isUnityCatalog on " +
             s"${cpuCatalog.getClass.getName}; add a version-specific shim if this changed.")
-      }
-      try {
-        clazz.getDeclaredField("isUnityCatalog")
-      } catch {
-        case _: NoSuchFieldException => findRequiredField(clazz.getSuperclass)
-      }
     }
-
-    // Delta 4.1 may wrap the concrete catalog class, but supported Delta runtimes still expose
-    // `isUnityCatalog` somewhere in the catalog hierarchy.
-    val field = findRequiredField(cpuCatalog.getClass)
     field.setAccessible(true)
     field.getBoolean(cpuCatalog)
   }

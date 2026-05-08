@@ -27,7 +27,7 @@ import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.commands.TableCreationModes
-import org.apache.spark.sql.delta.rapids.{GpuDeltaCatalog4x, GpuWriteIntoDelta}
+import org.apache.spark.sql.delta.rapids.{GpuCreateDeltaTableCommand40x41xBase, GpuDeltaCatalog4x, GpuWriteIntoDelta}
 import org.apache.spark.sql.delta.rapids.delta40x.GpuCreateDeltaTableCommand
 
 class GpuDeltaCatalog(
@@ -35,14 +35,14 @@ class GpuDeltaCatalog(
     rapidsConf: RapidsConf)
   extends GpuDeltaCatalog4x(cpuCatalog, rapidsConf) {
 
-  override protected def createGpuCreateDeltaTableCommand(
+  override protected def buildGpuCreateDeltaTableCommand(
       withDb: CatalogTable,
       existingTableOpt: Option[CatalogTable],
       mode: SaveMode,
       writer: Option[GpuWriteIntoDelta],
       operation: TableCreationModes.CreationMode,
       isByPath: Boolean,
-      tableCreateFunc: Option[CatalogTable => Unit]): Unit = {
+      tableCreateFunc: Option[CatalogTable => Unit]): GpuCreateDeltaTableCommand40x41xBase = {
     GpuCreateDeltaTableCommand(
       withDb,
       existingTableOpt,
@@ -50,6 +50,6 @@ class GpuDeltaCatalog(
       writer,
       operation,
       tableByPath = isByPath,
-      createTableFunc = tableCreateFunc)(rapidsConf).run(spark)
+      createTableFunc = tableCreateFunc)(rapidsConf)
   }
 }

@@ -27,7 +27,7 @@ import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.commands.TableCreationModes
-import org.apache.spark.sql.delta.rapids.{GpuDeltaCatalog4x, GpuWriteIntoDelta}
+import org.apache.spark.sql.delta.rapids.{GpuCreateDeltaTableCommand40x41xBase, GpuDeltaCatalog4x, GpuWriteIntoDelta}
 import org.apache.spark.sql.delta.rapids.delta41x.GpuCreateDeltaTableCommand
 
 class GpuDeltaCatalog(
@@ -35,14 +35,34 @@ class GpuDeltaCatalog(
     rapidsConf: RapidsConf)
   extends GpuDeltaCatalog4x(cpuCatalog, rapidsConf) {
 
-  override protected def createGpuCreateDeltaTableCommand(
+  override protected lazy val isUnityCatalog: Boolean = {
+    @scala.annotation.tailrec
+    def findRequiredField(clazz: Class[_]): java.lang.reflect.Field = {
+      if (clazz == null) {
+        throw new IllegalStateException(
+          s"Unable to locate Delta catalog field isUnityCatalog on " +
+            s"${cpuCatalog.getClass.getName}; add a version-specific shim if this changed.")
+      }
+      try {
+        clazz.getDeclaredField("isUnityCatalog")
+      } catch {
+        case _: NoSuchFieldException => findRequiredField(clazz.getSuperclass)
+      }
+    }
+
+    val field = findRequiredField(cpuCatalog.getClass)
+    field.setAccessible(true)
+    field.getBoolean(cpuCatalog)
+  }
+
+  override protected def buildGpuCreateDeltaTableCommand(
       withDb: CatalogTable,
       existingTableOpt: Option[CatalogTable],
       mode: SaveMode,
       writer: Option[GpuWriteIntoDelta],
       operation: TableCreationModes.CreationMode,
       isByPath: Boolean,
-      tableCreateFunc: Option[CatalogTable => Unit]): Unit = {
+      tableCreateFunc: Option[CatalogTable => Unit]): GpuCreateDeltaTableCommand40x41xBase = {
     GpuCreateDeltaTableCommand(
       withDb,
       existingTableOpt,
@@ -50,6 +70,6 @@ class GpuDeltaCatalog(
       writer,
       operation,
       tableByPath = isByPath,
-      createTableFunc = tableCreateFunc)(rapidsConf).run(spark)
+      createTableFunc = tableCreateFunc)(rapidsConf)
   }
 }
