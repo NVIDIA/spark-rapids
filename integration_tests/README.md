@@ -694,7 +694,7 @@ It is advised that tests be added for all applicable literal types, for an opera
 
 Note that for most operations, if all inputs are literal values, the Spark Catalyst optimizer will evaluate
 the expression during the logical planning phase of query compilation, via
-[Constant Folding](https://jaceklaskowski.gitbooks.io/mastering-spark-sql/content/spark-sql-Optimizer-ConstantFolding.html)
+[Constant Folding](https://en.wikipedia.org/wiki/Constant_folding)
 E.g. Consider this query:
 ```sql
 SELECT SUM(1+2+3) FROM ...
