@@ -268,13 +268,29 @@ object GpuProjectExec {
         pieces += resultIter.next()
       }
     }
-    // Hand pieces over to buildNonEmptyBatchFromTypes; it closes them in its
-    // own finally block, so do not wrap the call in closeOnExcept here or we
-    // would double-close on a concat-time failure.
-    val outputTypes = (0 until pieces.head.numCols()).map { i =>
-      pieces.head.column(i).asInstanceOf[GpuColumnVector].dataType()
-    }.toArray
-    ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(pieces.toArray, outputTypes)
+    val spillablePieces = ArrayBuffer[SpillableColumnarBatch]()
+    closeOnExcept(pieces) { _ =>
+      closeOnExcept(spillablePieces) { _ =>
+        while (pieces.nonEmpty) {
+          val piece = pieces.remove(0)
+          val spillablePiece = closeOnExcept(piece) { _ =>
+            SpillableColumnarBatch(piece, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+          }
+          closeOnExcept(spillablePiece) { _ =>
+            spillablePieces += spillablePiece
+          }
+        }
+      }
+    }
+    withRetryNoSplit(spillablePieces.toSeq) { attempt =>
+      val batches = attempt.safeMap(_.getColumnarBatch()).toArray
+      val outputTypes = closeOnExcept(batches) { _ =>
+        GpuColumnVector.extractTypes(batches.head)
+      }
+      // Hand batches over to buildNonEmptyBatchFromTypes; it closes them in
+      // its own finally block, so do not wrap the concat call in closeOnExcept.
+      ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(batches, outputTypes)
+    }
   }
 }
 
