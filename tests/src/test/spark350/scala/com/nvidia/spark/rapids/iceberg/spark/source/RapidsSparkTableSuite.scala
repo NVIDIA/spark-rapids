@@ -27,8 +27,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.iceberg.spark.source
 
-import java.util.Collections
 import java.util.{HashMap => JHashMap, Map => JMap}
+import java.util.Collections
 
 import com.nvidia.spark.rapids.iceberg.spark.RapidsSparkSessionCatalog
 import org.apache.iceberg.spark.SparkReadOptions
@@ -127,8 +127,9 @@ class RapidsSparkTableSuite extends AnyFunSuite {
 
   test("confs with the right suffix but different table prefix are ignored") {
     val confs = new JHashMap[String, String]()
-    confs.put(s"${RapidsSparkTable.CONF_PREFIX}other_catalog.default.other_tbl.read-split-target-size",
-      "2147483648")
+    val otherKey = s"${RapidsSparkTable.CONF_PREFIX}other_catalog.default" +
+      ".other_tbl.read-split-target-size"
+    confs.put(otherKey, "2147483648")
     val merged = RapidsSparkTable.mergeFromConfs(emptyOptions, catalog, ns, tbl, confs)
     assert(merged.isEmpty)
   }
