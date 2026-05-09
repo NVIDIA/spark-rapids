@@ -33,69 +33,59 @@ import org.apache.iceberg.types.Types
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils.FIELD_ID_METADATA_KEY
-import org.apache.spark.sql.types.{ArrayType, IntegerType, MapType, Metadata, MetadataBuilder, StructType}
+import org.apache.spark.sql.types.{ArrayType, IntegerType, MapType, Metadata, StructType}
 
 class GpuTypeToSparkTypeSuite extends AnyFunSuite {
 
-  test("nestedMetadataJson returns None for primitives") {
-    assert(GpuTypeToSparkType.nestedMetadataJson(Types.IntegerType.get()).isEmpty)
-    assert(GpuTypeToSparkType.nestedMetadataJson(Types.StringType.get()).isEmpty)
+  private def fieldOf(field: Types.NestedField): Metadata = {
+    val schema = new Schema(field)
+    GpuTypeToSparkType.toSparkType(schema)(field.name()).metadata
   }
 
-  test("nestedMetadataJson for a flat list records only the element id") {
-    val listType = Types.ListType.ofOptional(11, Types.IntegerType.get())
-    val json = GpuTypeToSparkType.nestedMetadataJson(listType).get
-    assert(json == """{"rapids.parquet.list.element.field.id":11}""")
+  test("toSparkType records no nested ids for a primitive top-level field") {
+    val md = fieldOf(Types.NestedField.required(1, "id", Types.IntegerType.get()))
+    assert(md.getLong(FIELD_ID_METADATA_KEY) == 1L)
+    assert(!md.contains(LIST_ELEMENT_FIELD_ID_METADATA_KEY))
+    assert(!md.contains(LIST_ELEMENT_NESTED_IDS_METADATA_KEY))
+  }
 
-    val md = Metadata.fromJson(json)
+  test("toSparkType: flat list records only the element id") {
+    val md = fieldOf(Types.NestedField.optional(10, "tags",
+      Types.ListType.ofOptional(11, Types.IntegerType.get())))
+    assert(md.getLong(FIELD_ID_METADATA_KEY) == 10L)
     assert(md.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 11L)
     assert(!md.contains(LIST_ELEMENT_NESTED_IDS_METADATA_KEY))
   }
 
-  test("nestedMetadataJson for a flat map records only the key/value ids") {
-    val mapType = Types.MapType.ofOptional(
-      21, 22, Types.StringType.get(), Types.IntegerType.get())
-    val json = GpuTypeToSparkType.nestedMetadataJson(mapType).get
-    assert(json ==
-      """{"rapids.parquet.map.key.field.id":21,"rapids.parquet.map.value.field.id":22}""")
-
-    val md = Metadata.fromJson(json)
+  test("toSparkType: flat map records only the key/value ids") {
+    val md = fieldOf(Types.NestedField.optional(20, "props",
+      Types.MapType.ofOptional(21, 22,
+        Types.StringType.get(), Types.IntegerType.get())))
+    assert(md.getLong(FIELD_ID_METADATA_KEY) == 20L)
     assert(md.getLong(MAP_KEY_FIELD_ID_METADATA_KEY) == 21L)
     assert(md.getLong(MAP_VALUE_FIELD_ID_METADATA_KEY) == 22L)
     assert(!md.contains(MAP_KEY_NESTED_IDS_METADATA_KEY))
     assert(!md.contains(MAP_VALUE_NESTED_IDS_METADATA_KEY))
   }
 
-  test("nestedMetadataJson recurses through list-of-list") {
+  test("toSparkType: list-of-list nests the inner element id under NESTED_IDS") {
     val inner = Types.ListType.ofOptional(31, Types.IntegerType.get())
-    val outer = Types.ListType.ofOptional(30, inner)
-    val json = GpuTypeToSparkType.nestedMetadataJson(outer).get
-    assert(json ==
-      """{"rapids.parquet.list.element.field.id":30,""" +
-        """"rapids.parquet.list.element.nested.ids":""" +
-        """"{\"rapids.parquet.list.element.field.id\":31}"}""")
+    val md = fieldOf(Types.NestedField.optional(30, "nested_lists",
+      Types.ListType.ofOptional(32, inner)))
 
-    val md = Metadata.fromJson(json)
-    assert(md.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 30L)
+    assert(md.getLong(FIELD_ID_METADATA_KEY) == 30L)
+    assert(md.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 32L)
     val innerMd = Metadata.fromJson(md.getString(LIST_ELEMENT_NESTED_IDS_METADATA_KEY))
     assert(innerMd.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 31L)
     assert(!innerMd.contains(LIST_ELEMENT_NESTED_IDS_METADATA_KEY))
   }
 
-  test("nestedMetadataJson recurses through map-of-(list, list)") {
+  test("toSparkType: map-of-(list, list) nests both key and value element ids") {
     val keyList = Types.ListType.ofOptional(41, Types.StringType.get())
     val valueList = Types.ListType.ofOptional(42, Types.IntegerType.get())
-    val mapType = Types.MapType.ofOptional(43, 44, keyList, valueList)
-    val json = GpuTypeToSparkType.nestedMetadataJson(mapType).get
-    assert(json ==
-      """{"rapids.parquet.map.key.field.id":43,""" +
-        """"rapids.parquet.map.key.nested.ids":""" +
-        """"{\"rapids.parquet.list.element.field.id\":41}",""" +
-        """"rapids.parquet.map.value.field.id":44,""" +
-        """"rapids.parquet.map.value.nested.ids":""" +
-        """"{\"rapids.parquet.list.element.field.id\":42}"}""")
+    val md = fieldOf(Types.NestedField.optional(40, "m",
+      Types.MapType.ofOptional(43, 44, keyList, valueList)))
 
-    val md = Metadata.fromJson(json)
     assert(md.getLong(MAP_KEY_FIELD_ID_METADATA_KEY) == 43L)
     assert(md.getLong(MAP_VALUE_FIELD_ID_METADATA_KEY) == 44L)
 
@@ -106,10 +96,51 @@ class GpuTypeToSparkTypeSuite extends AnyFunSuite {
     assert(valueMd.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 42L)
   }
 
-  test("appendNestedFieldIdMetadata is a no-op for primitives") {
-    val builder = new MetadataBuilder()
-    GpuTypeToSparkType.appendNestedFieldIdMetadata(builder, Types.IntegerType.get())
-    assert(builder.build().json == "{}")
+  test("toSparkType: list-of-list-of-struct keeps the struct's child ids on inner StructFields") {
+    // Ray's `List<List<Struct<a, b>>>` case: the outer field's nested-ids JSON only carries
+    // list element ids; the struct's child ids (`aId`, `bId`) live on the inner StructFields
+    // built by the visitor, where SchemaUtils reads them from the StructType directly.
+    val innerStruct = Types.StructType.of(
+      Types.NestedField.required(53, "a", Types.IntegerType.get()),
+      Types.NestedField.optional(54, "b", Types.StringType.get()))
+    val innerList = Types.ListType.ofOptional(52, innerStruct)
+    val outerField = Types.NestedField.optional(50, "lol",
+      Types.ListType.ofOptional(51, innerList))
+
+    val outerMd = fieldOf(outerField)
+    assert(outerMd.getLong(FIELD_ID_METADATA_KEY) == 50L)
+    assert(outerMd.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 51L)
+    val innerListMd =
+      Metadata.fromJson(outerMd.getString(LIST_ELEMENT_NESTED_IDS_METADATA_KEY))
+    assert(innerListMd.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 52L)
+    // Struct's child ids are *not* serialized into the parent's nested-ids JSON.
+    assert(!innerListMd.contains(LIST_ELEMENT_NESTED_IDS_METADATA_KEY))
+
+    // Instead, they are attached to the inner StructFields:
+    val sparkSchema = GpuTypeToSparkType.toSparkType(new Schema(outerField))
+    val outerArray = sparkSchema("lol").dataType.asInstanceOf[ArrayType]
+    val innerArray = outerArray.elementType.asInstanceOf[ArrayType]
+    val struct = innerArray.elementType.asInstanceOf[StructType]
+    assert(struct("a").metadata.getLong(FIELD_ID_METADATA_KEY) == 53L)
+    assert(struct("b").metadata.getLong(FIELD_ID_METADATA_KEY) == 54L)
+  }
+
+  test("toSparkType: list-element-struct with a nested list keeps ids on the inner StructField") {
+    // `List<Struct<x: int, ys: List<long>>>`: the struct's `ys` field needs LIST_ELEMENT
+    // metadata on its own StructField for SchemaUtils to wire its element id.
+    val innerStruct = Types.StructType.of(
+      Types.NestedField.required(63, "x", Types.IntegerType.get()),
+      Types.NestedField.optional(64, "ys",
+        Types.ListType.ofOptional(65, Types.LongType.get())))
+    val outerField = Types.NestedField.optional(60, "los",
+      Types.ListType.ofOptional(62, innerStruct))
+
+    val sparkSchema = GpuTypeToSparkType.toSparkType(new Schema(outerField))
+    val outerArray = sparkSchema("los").dataType.asInstanceOf[ArrayType]
+    val struct = outerArray.elementType.asInstanceOf[StructType]
+    val ys = struct("ys")
+    assert(ys.metadata.getLong(FIELD_ID_METADATA_KEY) == 64L)
+    assert(ys.metadata.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 65L)
   }
 
   test("toSparkType attaches nested field-id metadata to the parent StructField") {
@@ -137,22 +168,6 @@ class GpuTypeToSparkTypeSuite extends AnyFunSuite {
     assert(propsField.metadata.getLong(FIELD_ID_METADATA_KEY) == 4L)
     assert(propsField.metadata.getLong(MAP_KEY_FIELD_ID_METADATA_KEY) == 5L)
     assert(propsField.metadata.getLong(MAP_VALUE_FIELD_ID_METADATA_KEY) == 6L)
-  }
-
-  test("toSparkType serializes deeply-nested ids as JSON sub-Metadata") {
-    val schema = new Schema(
-      Types.NestedField.optional(10, "nested_lists",
-        Types.ListType.ofOptional(11,
-          Types.ListType.ofOptional(12, Types.IntegerType.get()))))
-
-    val sparkSchema = GpuTypeToSparkType.toSparkType(schema)
-    val field = sparkSchema("nested_lists")
-
-    assert(field.metadata.getLong(FIELD_ID_METADATA_KEY) == 10L)
-    assert(field.metadata.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 11L)
-    val nestedJson = field.metadata.getString(LIST_ELEMENT_NESTED_IDS_METADATA_KEY)
-    val nestedMd = Metadata.fromJson(nestedJson)
-    assert(nestedMd.getLong(LIST_ELEMENT_FIELD_ID_METADATA_KEY) == 12L)
   }
 
   test("toSparkType handles a struct of struct preserving each child's id") {
