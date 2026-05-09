@@ -20,7 +20,7 @@ import ai.rapids.cudf.{ColumnView, DType, Scalar, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
-import java.time.{LocalDateTime, ZoneId}
+import java.time.{DateTimeException, LocalDateTime, ZoneId}
 import java.util.{Optional, TimeZone}
 import scala.collection.mutable.ArrayBuffer
 
@@ -173,15 +173,21 @@ object GpuOrcTimezoneUtils {
    */
   def rebaseOrcTimestamps(input: Table, writerTimezone: String): Table = {
     val readerTz = ZoneId.systemDefault().getId
-    // Normalize the writer TZ from the ORC footer using java.util.TimeZone first.
     // ORC footers can carry legacy/short IDs (e.g. "PST", "CST", "ACT") that
-    // java.util.TimeZone accepts but ZoneId.of() rejects on JDK 21. Going through
-    // TimeZone.toZoneId returns a canonical ZoneId ID safe for the cross-TZ path
-    // and the JNI kernel.
+    // ZoneId.of() rejects on its own, so resolve via the SHORT_IDS alias map.
+    // We deliberately avoid TimeZone.getTimeZone here because it silently
+    // returns "GMT" for any unrecognized id, which would silently corrupt
+    // cross-TZ reads. ZoneId.of throws DateTimeException instead.
     val writerTz = if (writerTimezone.isEmpty) {
       readerTz
     } else {
-      TimeZone.getTimeZone(writerTimezone).toZoneId.getId
+      try {
+        ZoneId.of(writerTimezone, ZoneId.SHORT_IDS).getId
+      } catch {
+        case e: DateTimeException =>
+          throw new IllegalArgumentException(
+            s"Unrecognized writer timezone in ORC stripe footer: '$writerTimezone'", e)
+      }
     }
 
     if (hasSameTimezoneRules(writerTz, readerTz)) {
