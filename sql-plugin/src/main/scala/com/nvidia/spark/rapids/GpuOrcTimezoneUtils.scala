@@ -21,7 +21,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
 import java.time.{DateTimeException, LocalDateTime, ZoneId}
-import java.util.{Optional, TimeZone}
+import java.util.Optional
 import scala.collection.mutable.ArrayBuffer
 
 object GpuOrcTimezoneUtils {
@@ -198,9 +198,15 @@ object GpuOrcTimezoneUtils {
   }
 
   private def hasSameTimezoneRules(tz1: String, tz2: String): Boolean = {
-    val zone1 = TimeZone.getTimeZone(tz1)
-    val zone2 = TimeZone.getTimeZone(tz2)
-    zone1.hasSameRules(zone2)
+    // Compare via ZoneId, not TimeZone.getTimeZone. ZoneId.SHORT_IDS rewrites
+    // "EST"/"MST"/"HST" to numeric offsets ("-05:00"/"-07:00"/"-10:00"), and
+    // TimeZone.getTimeZone silently maps any unrecognized id (including those
+    // numeric offsets) to GMT, which would make e.g. "-05:00" compare equal to
+    // "UTC" and skip the rebase entirely. ZoneId.of("-05:00") returns a real
+    // ZoneOffset whose rules differ from UTC. Both inputs here have already
+    // been canonicalized via ZoneId.of(..., SHORT_IDS).getId, so ZoneId.of
+    // will not throw.
+    ZoneId.of(tz1).getRules == ZoneId.of(tz2).getRules
   }
 
   /**
