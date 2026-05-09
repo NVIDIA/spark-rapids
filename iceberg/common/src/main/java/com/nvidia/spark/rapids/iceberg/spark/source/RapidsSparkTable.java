@@ -47,7 +47,6 @@ import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
 import scala.Option;
-import scala.collection.JavaConverters;
 
 /**
  * Wraps an iceberg {@link SparkTable} so that scan options can be augmented from
@@ -211,7 +210,15 @@ public class RapidsSparkTable implements Table,
       return options;
     }
     RuntimeConfig sparkConf = sparkOpt.get().conf();
-    Map<String, String> allConfs = JavaConverters.mapAsJavaMap(sparkConf.getAll());
+    // Avoid scala.collection.JavaConverters.mapAsJavaMap (deprecated under
+    // Scala 2.13) — iterate the immutable scala Map directly into a HashMap.
+    scala.collection.immutable.Map<String, String> scalaConfs = sparkConf.getAll();
+    Map<String, String> allConfs = new HashMap<>(scalaConfs.size());
+    scala.collection.Iterator<scala.Tuple2<String, String>> it = scalaConfs.iterator();
+    while (it.hasNext()) {
+      scala.Tuple2<String, String> entry = it.next();
+      allConfs.put(entry._1(), entry._2());
+    }
     return mergeFromConfs(options, catalogName, namespace, tableName, allConfs);
   }
 
