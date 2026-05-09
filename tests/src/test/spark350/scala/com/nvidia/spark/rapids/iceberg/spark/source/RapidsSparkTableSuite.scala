@@ -27,8 +27,7 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.iceberg.spark.source
 
-import java.util.{HashMap => JHashMap, Map => JMap}
-import java.util.Collections
+import java.util.{Collections, HashMap => JHashMap, Map => JMap}
 
 import com.nvidia.spark.rapids.iceberg.spark.RapidsSparkSessionCatalog
 import org.apache.iceberg.spark.SparkReadOptions
