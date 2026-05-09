@@ -194,14 +194,19 @@ _decimals_with_no_nulls = [
 _init_list_with_decimals = _init_list + [
     _decimals_with_nulls, _decimals_with_no_nulls]
 
-_std_variance_issue_14681_gen = [
-    ('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', DoubleGen()), ('c', DoubleGen())]
+_std_variance_common_fp_gens = [
+    [('a', RepeatSeqGen(IntegerGen(), length=20)),
+        ('b', DoubleGen(min_exp=-200, max_exp=200, no_nans=True)),
+        ('c', DoubleGen(min_exp=-200, max_exp=200, no_nans=True))],
+    [('a', RepeatSeqGen(IntegerGen(), length=20)),
+        ('b', FloatGen(no_nans=True)),
+        ('c', FloatGen(no_nans=True))]]
 
-# Grouped FP gens using bare DoubleGen()/FloatGen() on the aggregated columns.
-# Their default special_cases inject NaN, -0.0, +-Inf, and max-fraction values,
-# which exercise the corner-case paths for FP aggregate functions.
-_init_list_with_decimals_and_floats = _init_list_with_decimals + [
-    _std_variance_issue_14681_gen,
+_init_list_with_decimals_and_common_floats = (
+    _init_list_with_decimals + _std_variance_common_fp_gens)
+
+_std_variance_extreme_fp_gens = [
+    [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', DoubleGen()), ('c', DoubleGen())],
     [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', FloatGen()), ('c', FloatGen())]]
 
 # Used to test ANSI-mode fallback
@@ -2346,16 +2351,7 @@ def test_no_fallback_when_ansi_enabled(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true'})
 
-# Tests for standard deviation and variance aggregations.
-@ignore_order(local=True)
-@approximate_float
-@incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_decimals_and_floats, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-def test_std_variance(data_gen, conf):
-    if data_gen is _std_variance_issue_14681_gen:
-        pytest.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/14681')
-
+def _assert_std_variance(data_gen, conf, nan_inf_equivalent_for_overflow=False):
     local_conf = copy_and_update(conf, {
         'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
@@ -2369,7 +2365,8 @@ def test_std_variance(data_gen, conf):
         'var_pop(b),' +
         'var_samp(b)' +
         ' from data_table group by a',
-        conf=local_conf)
+        conf=local_conf,
+        nan_inf_equivalent_for_overflow=nan_inf_equivalent_for_overflow)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1000),
         "data_table",
@@ -2377,7 +2374,31 @@ def test_std_variance(data_gen, conf):
         'stddev(b),' +
         'stddev_samp(b)'
         ' from data_table',
-        conf=local_conf)
+        conf=local_conf,
+        nan_inf_equivalent_for_overflow=nan_inf_equivalent_for_overflow)
+
+
+# Tests for standard deviation and variance aggregations on common finite values.
+@ignore_order(local=True)
+@approximate_float
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_decimals_and_common_floats, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_std_variance(data_gen, conf):
+    _assert_std_variance(data_gen, conf)
+
+
+# Extremely large FP inputs can make the true variance overflow double precision.
+# Spark CPU and GPU may surface that overflow as NaN or +/-Inf depending only on
+# accumulation order. Keep this corner coverage, but compare those overflow
+# sentinels loosely. See https://github.com/NVIDIA/spark-rapids/issues/14681.
+@ignore_order(local=True)
+@approximate_float
+@incompat
+@pytest.mark.parametrize('data_gen', _std_variance_extreme_fp_gens, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_std_variance_extreme_floating_point(data_gen, conf):
+    _assert_std_variance(data_gen, conf, nan_inf_equivalent_for_overflow=True)
 
 
 @ignore_order(local=True)
