@@ -120,6 +120,25 @@ def test_map_from_entries_basic(key_gen, value_gen):
 
 
 @pytest.mark.parametrize('key_gen,value_gen', [
+    (IntegerGen(nullable=False), IntegerGen()),
+    (StringGen(nullable=False), StringGen()),
+    (LongGen(nullable=False), DoubleGen()),
+    (IntegerGen(nullable=False), ArrayGen(IntegerGen())),
+    (StringGen(nullable=False), StructGen([['child', IntegerGen()]])),
+], ids=idfn)
+def test_map_from_entries_null_struct_entries(key_gen, value_gen):
+    struct_gen = StructGen([
+        ('key', key_gen),
+        ('value', value_gen)
+    ], nullable=True)
+    array_gen = ArrayGen(struct_gen, max_length=10)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, array_gen).selectExpr(
+                'map_from_entries(a)'),
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+
+@pytest.mark.parametrize('key_gen,value_gen', [
     (IntegerGen(nullable=True), IntegerGen()),
     (StringGen(nullable=True), StringGen()),
     (LongGen(nullable=True), DoubleGen()),
