@@ -47,15 +47,27 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
  */
 class RapidsSparkTable(
     val delegate: SparkTable,
-    catalogName: String,
-    namespace: Array[String],
-    tableName: String)
+    catalogName: String)
   extends Table
     with SupportsRead
     with SupportsWrite
     with SupportsDeleteV2
     with SupportsRowLevelOperations
     with SupportsMetadataColumns {
+
+  // Iceberg's `Table.name()` returns `<icebergCatalog>.<namespaceParts>.<table>`,
+  // so namespace and table can be recovered from the delegate by dropping the
+  // leading iceberg-catalog component.
+  private lazy val (namespace: Array[String], tableName: String) = {
+    val parts = delegate.table().name().split('.')
+    if (parts.length < 2) {
+      throw new IllegalStateException(
+        s"Cannot derive namespace and table from iceberg table name " +
+        s"'${delegate.table().name()}': expected " +
+        s"'<catalog>.<namespace>.<table>'.")
+    }
+    (parts.slice(1, parts.length - 1), parts.last)
+  }
 
   override def name(): String = delegate.name()
 

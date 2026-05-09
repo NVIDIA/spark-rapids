@@ -36,11 +36,11 @@ import org.apache.spark.sql.connector.catalog.{Identifier, Table}
 class RapidsSparkCatalog extends SparkCatalog {
 
   override def loadTable(ident: Identifier): Table =
-    RapidsSparkSessionCatalog.wrap(name(), ident, super.loadTable(ident))
+    RapidsSparkSessionCatalog.wrap(name(), super.loadTable(ident))
 
   override def loadTable(ident: Identifier, version: String): Table =
-    RapidsSparkSessionCatalog.wrap(name(), ident, super.loadTable(ident, version))
+    RapidsSparkSessionCatalog.wrap(name(), super.loadTable(ident, version))
 
   override def loadTable(ident: Identifier, timestamp: Long): Table =
-    RapidsSparkSessionCatalog.wrap(name(), ident, super.loadTable(ident, timestamp))
+    RapidsSparkSessionCatalog.wrap(name(), super.loadTable(ident, timestamp))
 }

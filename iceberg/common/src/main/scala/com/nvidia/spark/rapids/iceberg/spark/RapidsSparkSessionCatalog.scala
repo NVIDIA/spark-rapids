@@ -41,20 +41,20 @@ class RapidsSparkSessionCatalog[T <: TableCatalog
   extends SparkSessionCatalog[T] {
 
   override def loadTable(ident: Identifier): Table =
-    RapidsSparkSessionCatalog.wrap(name(), ident, super.loadTable(ident))
+    RapidsSparkSessionCatalog.wrap(name(), super.loadTable(ident))
 
   override def loadTable(ident: Identifier, version: String): Table =
-    RapidsSparkSessionCatalog.wrap(name(), ident, super.loadTable(ident, version))
+    RapidsSparkSessionCatalog.wrap(name(), super.loadTable(ident, version))
 
   override def loadTable(ident: Identifier, timestamp: Long): Table =
-    RapidsSparkSessionCatalog.wrap(name(), ident, super.loadTable(ident, timestamp))
+    RapidsSparkSessionCatalog.wrap(name(), super.loadTable(ident, timestamp))
 }
 
 object RapidsSparkSessionCatalog {
-  private[spark] def wrap(catalogName: String, ident: Identifier, table: Table): Table =
+  private[spark] def wrap(catalogName: String, table: Table): Table =
     table match {
       case sparkTable: SparkTable =>
-        new RapidsSparkTable(sparkTable, catalogName, ident.namespace(), ident.name())
+        new RapidsSparkTable(sparkTable, catalogName)
       case other =>
         other
     }
