@@ -981,13 +981,25 @@ trait OrcCommonFunctions extends OrcCodecWritingHelper { self: FilePartitionRead
       return true
     }
 
-    if (nextMeta.writerTimezone != curMeta.writerTimezone) {
+    if (nextMeta.writerTimezone != curMeta.writerTimezone &&
+        !writerTimezonesShareRules(curMeta.writerTimezone, nextMeta.writerTimezone)) {
+      // Compare by timezone rule-equivalence (e.g. "US/Pacific" vs "America/Los_Angeles",
+      // "UTC" vs "GMT", "" vs the JVM default) rather than by raw string equality, so that
+      // semantically equivalent IDs across files don't trigger a spurious split. Mirrors
+      // the intra-file check in buildOutputStripes.
       logInfo(s"ORC writer timezone for the next file ${nextMeta.filePath}" +
         s" doesn't match current ${curMeta.filePath}, splitting it into another batch!")
       return true
     }
 
     false
+  }
+
+  private def writerTimezonesShareRules(a: String, b: String): Boolean = {
+    val readerDefaultTz = java.util.TimeZone.getDefault
+    val tzA = if (a.isEmpty) readerDefaultTz else java.util.TimeZone.getTimeZone(a)
+    val tzB = if (b.isEmpty) readerDefaultTz else java.util.TimeZone.getTimeZone(b)
+    tzA.hasSameRules(tzB)
   }
 
   protected implicit def toStripe(block: DataBlockBase): OrcStripeWithMeta =
