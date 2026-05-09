@@ -85,8 +85,7 @@ def _assert_equal(cpu, gpu, float_check, path, nan_inf_equivalent_for_overflow=F
         # so sort the items to do our best with ignoring the order of dicts
         cpu_items = list(cpu.items()).sort(key=_RowCmp)
         gpu_items = list(gpu.items()).sort(key=_RowCmp)
-        _assert_equal(cpu_items, gpu_items, float_check, path + ["map"],
-            nan_inf_equivalent_for_overflow)
+        _assert_equal(cpu_items, gpu_items, float_check, path + ["map"])
     elif (t is int):
         assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) int values are different at {path}"
     elif (t is float):
