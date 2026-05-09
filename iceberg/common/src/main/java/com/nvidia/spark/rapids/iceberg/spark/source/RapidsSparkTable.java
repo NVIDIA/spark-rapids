@@ -97,24 +97,15 @@ public class RapidsSparkTable implements Table,
   private final String catalogName;
   // Iceberg's Table.name() returns "<icebergCatalog>.<namespaceParts>.<table>",
   // so namespace and table are recovered from the delegate by dropping the
-  // leading iceberg-catalog component. Computed lazily in initIdentifier().
-  private String[] namespace;
-  private String tableName;
-  private boolean identifierInitialized;
+  // leading iceberg-catalog component. Computed eagerly so concurrent
+  // newScanBuilder calls on a shared (catalog-cached) instance see a fully
+  // initialized identifier under the JVM memory model.
+  private final String[] namespace;
+  private final String tableName;
 
   public RapidsSparkTable(SparkTable delegate, String catalogName) {
     this.delegate = delegate;
     this.catalogName = catalogName;
-  }
-
-  public SparkTable delegate() {
-    return delegate;
-  }
-
-  private void initIdentifier() {
-    if (identifierInitialized) {
-      return;
-    }
     String name = delegate.table().name();
     String[] parts = name.split("\\.");
     if (parts.length < 2) {
@@ -124,7 +115,10 @@ public class RapidsSparkTable implements Table,
     }
     this.namespace = Arrays.copyOfRange(parts, 1, parts.length - 1);
     this.tableName = parts[parts.length - 1];
-    this.identifierInitialized = true;
+  }
+
+  public SparkTable delegate() {
+    return delegate;
   }
 
   @Override
@@ -160,7 +154,6 @@ public class RapidsSparkTable implements Table,
 
   @Override
   public ScanBuilder newScanBuilder(CaseInsensitiveStringMap options) {
-    initIdentifier();
     CaseInsensitiveStringMap merged =
         mergeSessionOptions(options, catalogName, namespace, tableName);
     return delegate.newScanBuilder(merged);
