@@ -83,8 +83,8 @@ def _assert_equal(cpu, gpu, float_check, path, nan_inf_equivalent_for_overflow=F
     elif (t is dict):
         # The order of key/values is not guaranteed in python dicts, nor are they guaranteed by Spark
         # so sort the items to do our best with ignoring the order of dicts
-        cpu_items = sorted(cpu.items(), key=_RowCmp)
-        gpu_items = sorted(gpu.items(), key=_RowCmp)
+        cpu_items = list(cpu.items()).sort(key=_RowCmp)
+        gpu_items = list(gpu.items()).sort(key=_RowCmp)
         _assert_equal(cpu_items, gpu_items, float_check, path + ["map"],
             nan_inf_equivalent_for_overflow)
     elif (t is int):
