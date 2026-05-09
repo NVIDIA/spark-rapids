@@ -117,11 +117,12 @@ as if the rapids catalog wrapper were not in use.
   to form the conf key prefix, so a `.` inside any of those identifiers makes
   the prefix ambiguous (`catalog=hadoop.prod` + `namespace=[ns]` + `table=tbl`
   produces the same prefix as `catalog=hadoop` + `namespace=[prod, ns]` +
-  `table=tbl`). The wrapper detects this and throws an
-  `IllegalArgumentException` from `RapidsSparkTable` rather than silently
-  picking the wrong override. If you need to tune such a table, either
-  rename the identifier or set the iceberg `read.split.*` table property
-  directly.
+  `table=tbl`). Tables with such identifiers stay as a pure pass-through as
+  long as no `spark.rapids.iceberg.<…>.*` conf is set for them. If a matching
+  conf is set, the wrapper throws an `IllegalArgumentException` from
+  `RapidsSparkTable` rather than silently picking the wrong override; in
+  that case, either rename the identifier or set the iceberg `read.split.*`
+  table property directly.
 - The wrapper applies to scans only. Writes go through the underlying iceberg
   `SparkTable.newWriteBuilder` unchanged.
 - The session-conf lookup happens once per `newScanBuilder(options)` call (a

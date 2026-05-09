@@ -84,8 +84,10 @@ class RapidsSparkTableSuite extends AnyFunSuite {
     assert(merged.get(SparkReadOptions.SPLIT_SIZE) == "536870912")
   }
 
-  test("dot in catalog component is rejected with a clear error") {
+  test("dot in catalog component is rejected when a conf would apply") {
     val confs = new JHashMap[String, String]()
+    confs.put(s"${RapidsSparkTable.CONF_PREFIX}hadoop.prod.${ns.mkString(".")}.$tbl." +
+      "read-split-target-size", "2147483648")
     val ex = intercept[IllegalArgumentException] {
       RapidsSparkTable.mergeFromConfs(emptyOptions, "hadoop.prod", ns, tbl, confs)
     }
@@ -93,12 +95,24 @@ class RapidsSparkTableSuite extends AnyFunSuite {
     assert(ex.getMessage.contains("hadoop.prod"))
   }
 
-  test("dot in namespace component is rejected") {
+  test("dot in namespace component is rejected when a conf would apply") {
     val confs = new JHashMap[String, String]()
+    confs.put(s"${RapidsSparkTable.CONF_PREFIX}$catalog.a.b.$tbl." +
+      "read-split-target-size", "2147483648")
     val ex = intercept[IllegalArgumentException] {
       RapidsSparkTable.mergeFromConfs(emptyOptions, catalog, Array("a.b"), tbl, confs)
     }
     assert(ex.getMessage.contains("ambiguous"))
+  }
+
+  test("identifier with dots is a pure pass-through when no conf applies") {
+    // Even if catalog/namespace/table contains '.', simply enabling the wrapper
+    // must not break scans on tables the user has not explicitly tuned.
+    val confs = new JHashMap[String, String]()
+    confs.put("unrelated.conf", "v")
+    val result = RapidsSparkTable.mergeFromConfs(
+      emptyOptions, "hadoop.prod", Array("a.b"), tbl, confs)
+    assert(result eq emptyOptions)
   }
 
   test("unrecognized suffix under our prefix is rejected") {

@@ -230,15 +230,33 @@ public class RapidsSparkTable implements Table,
       String[] namespace,
       String tableName,
       Map<String, String> allConfs) {
-    // Conf keys are joined with '.', so a '.' in catalog / namespace / table makes
-    // the resulting prefix ambiguous (catalog="hadoop.prod" + namespace=["ns"] +
-    // table="tbl" and catalog="hadoop" + namespace=["prod","ns"] + table="tbl"
-    // both produce the same prefix). Fail loudly rather than silently picking the
-    // wrong override.
     String[] components = new String[1 + namespace.length + 1];
     components[0] = catalogName;
     System.arraycopy(namespace, 0, components, 1, namespace.length);
     components[components.length - 1] = tableName;
+    String tableKey = String.join(".", components);
+    String prefix = CONF_PREFIX + tableKey + ".";
+
+    // Pure pass-through when nothing under our prefix is set for this table —
+    // identifiers containing '.' must not break scans for tables the user has
+    // not explicitly tuned.
+    boolean hasMatchingConfs = false;
+    for (String key : allConfs.keySet()) {
+      if (key.startsWith(prefix)) {
+        hasMatchingConfs = true;
+        break;
+      }
+    }
+    if (!hasMatchingConfs) {
+      return options;
+    }
+
+    // Conf keys are joined with '.', so a '.' in catalog / namespace / table makes
+    // the resulting prefix ambiguous (catalog="hadoop.prod" + namespace=["ns"] +
+    // table="tbl" and catalog="hadoop" + namespace=["prod","ns"] + table="tbl"
+    // both produce the same prefix). Fail loudly rather than silently picking the
+    // wrong override — only when the user actually configured something for this
+    // table.
     String[] ambiguous = Arrays.stream(components)
         .filter(c -> c.indexOf('.') >= 0)
         .toArray(String[]::new);
@@ -250,8 +268,6 @@ public class RapidsSparkTable implements Table,
           " contain '.', which makes the conf prefix ambiguous. Rename the " +
           "identifier or set the iceberg read.split.* table property directly.");
     }
-    String tableKey = String.join(".", components);
-    String prefix = CONF_PREFIX + tableKey + ".";
 
     // Reject any conf under our prefix whose suffix is not one of the recognized
     // ones, so misspelled / unsupported keys fail loudly instead of being a no-op.
