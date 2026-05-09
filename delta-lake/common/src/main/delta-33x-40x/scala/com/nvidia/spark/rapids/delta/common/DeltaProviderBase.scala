@@ -266,6 +266,10 @@ object DVPredicatePushdown extends ShimPredicateHelper {
             requiredSchema = StructType(
               fsse.requiredSchema.filterNot(_.name == IS_ROW_DELETED_COLUMN_NAME)
             ),
+            // AQE expects expressions in dataFilters to exist in the output of the scan.
+            // It will not reuse the stage of the scan otherwise. Since we are removing
+            // the IS_ROW_DELETED_COLUMN_NAME column from scan's output, we should
+            // remove the DV condition as well from the dataFilters.
             dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(fsse.rapidsConf)
       }
     }
