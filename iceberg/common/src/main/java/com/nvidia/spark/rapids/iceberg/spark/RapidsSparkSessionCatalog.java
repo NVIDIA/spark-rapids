@@ -59,7 +59,7 @@ public class RapidsSparkSessionCatalog<T extends TableCatalog & FunctionCatalog
     return wrap(name(), super.loadTable(ident, timestamp));
   }
 
-  static Table wrap(String catalogName, Table table) {
+  public static Table wrap(String catalogName, Table table) {
     if (table instanceof SparkTable) {
       return new RapidsSparkTable((SparkTable) table, catalogName);
     }

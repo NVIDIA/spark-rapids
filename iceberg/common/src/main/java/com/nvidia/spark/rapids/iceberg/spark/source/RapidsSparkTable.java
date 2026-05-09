@@ -217,6 +217,19 @@ public class RapidsSparkTable implements Table,
     if (sparkOpt.isEmpty()) {
       return options;
     }
+    RuntimeConfig sparkConf = sparkOpt.get().conf();
+    Map<String, String> allConfs = JavaConverters.mapAsJavaMap(sparkConf.getAll());
+    return mergeFromConfs(options, catalogName, namespace, tableName, allConfs);
+  }
+
+  // Pure-logic core of mergeSessionOptions: takes the conf map directly so it can
+  // be exercised from unit tests without an active SparkSession.
+  static CaseInsensitiveStringMap mergeFromConfs(
+      CaseInsensitiveStringMap options,
+      String catalogName,
+      String[] namespace,
+      String tableName,
+      Map<String, String> allConfs) {
     // Conf keys are joined with '.', so a '.' in catalog / namespace / table makes
     // the resulting prefix ambiguous (catalog="hadoop.prod" + namespace=["ns"] +
     // table="tbl" and catalog="hadoop" + namespace=["prod","ns"] + table="tbl"
@@ -239,11 +252,9 @@ public class RapidsSparkTable implements Table,
     }
     String tableKey = String.join(".", components);
     String prefix = CONF_PREFIX + tableKey + ".";
-    RuntimeConfig sparkConf = sparkOpt.get().conf();
 
     // Reject any conf under our prefix whose suffix is not one of the recognized
     // ones, so misspelled / unsupported keys fail loudly instead of being a no-op.
-    Map<String, String> allConfs = JavaConverters.mapAsJavaMap(sparkConf.getAll());
     for (String key : allConfs.keySet()) {
       if (key.startsWith(prefix)) {
         String suffix = key.substring(prefix.length());
@@ -263,9 +274,9 @@ public class RapidsSparkTable implements Table,
       String optionKey = entry.getValue();
       // Explicit DataFrame option always wins over session-level overrides.
       if (!options.containsKey(optionKey)) {
-        Option<String> value = sparkConf.getOption(prefix + suffix);
-        if (value.isDefined()) {
-          merged.put(optionKey, value.get());
+        String value = allConfs.get(prefix + suffix);
+        if (value != null) {
+          merged.put(optionKey, value);
           changed = true;
         }
       }
