@@ -21,7 +21,6 @@ import java.util.{HashMap => JHashMap, Map => JMap, Set => JSet}
 import org.apache.iceberg.spark.SparkReadOptions
 import org.apache.iceberg.spark.source.SparkTable
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.{MetadataColumn, SupportsDeleteV2, SupportsMetadataColumns, SupportsRead, SupportsRowLevelOperations, SupportsWrite, Table, TableCapability}
 import org.apache.spark.sql.connector.expressions.Transform
@@ -99,7 +98,7 @@ class RapidsSparkTable(
   override def hashCode(): Int = delegate.hashCode()
 }
 
-object RapidsSparkTable extends Logging {
+object RapidsSparkTable {
   /** Prefix used for per-table session-level scan option overrides. */
   val CONF_PREFIX: String = "spark.rapids.iceberg."
 
@@ -130,22 +129,34 @@ object RapidsSparkTable extends Logging {
     // Conf keys are joined with `.`, so a `.` in catalog / namespace / table makes
     // the resulting prefix ambiguous: e.g. catalog="hadoop.prod" + namespace=["ns"]
     // + table="tbl" and catalog="hadoop" + namespace=["prod", "ns"] + table="tbl"
-    // both produce `spark.rapids.iceberg.hadoop.prod.ns.tbl.<suffix>`. Rather than
-    // silently picking the wrong override, log once and skip the merge for this
-    // call. The user can rename the identifier or set the iceberg
-    // `read.split.target-size` table property directly if they hit this.
+    // both produce `spark.rapids.iceberg.hadoop.prod.ns.tbl.<suffix>`. Fail loudly
+    // rather than silently picking the wrong override.
     val components = catalogName +: namespace :+ tableName
     val ambiguous = components.filter(_.contains('.'))
     if (ambiguous.nonEmpty) {
-      logWarning(s"Skipping spark.rapids.iceberg.* session overrides for " +
+      throw new IllegalArgumentException(
+        s"Cannot apply ${CONF_PREFIX}* session overrides for " +
         s"$catalogName.${namespace.mkString(".")}.$tableName: identifier " +
         s"component(s) ${ambiguous.mkString("[", ", ", "]")} contain '.', " +
-        s"which makes the conf prefix ambiguous.")
-      return options
+        s"which makes the conf prefix ambiguous. Rename the identifier or " +
+        s"set the iceberg read.split.* table property directly.")
     }
     val sparkConf = sparkOpt.get.conf
     val tableKey = components.mkString(".")
     val prefix = s"$CONF_PREFIX$tableKey."
+    // Reject any conf under our prefix whose suffix is not one of the recognized
+    // ones, so misspelled / unsupported keys fail loudly instead of being a no-op.
+    val validSuffixes = SUFFIX_TO_READ_OPTION.map(_._1).toSet
+    sparkConf.getAll.foreach { case (key, _) =>
+      if (key.startsWith(prefix)) {
+        val suffix = key.substring(prefix.length)
+        if (!validSuffixes.contains(suffix)) {
+          throw new IllegalArgumentException(
+            s"Unrecognized suffix '$suffix' in conf '$key'. Supported " +
+            s"suffixes: ${validSuffixes.toSeq.sorted.mkString("[", ", ", "]")}.")
+        }
+      }
+    }
     val merged = new JHashMap[String, String](options.asCaseSensitiveMap())
     var changed = false
     SUFFIX_TO_READ_OPTION.foreach { case (suffix, optionKey) =>

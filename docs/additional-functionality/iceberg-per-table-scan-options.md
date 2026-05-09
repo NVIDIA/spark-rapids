@@ -108,17 +108,20 @@ as if the rapids catalog wrapper were not in use.
 
 ## Caveats
 
-- Suffixes other than the three listed above are silently ignored. Mistyping
-  a key (e.g. `read.split.target-size` with dots, or `target-size` without
-  the `read-split-` prefix) will look like a no-op.
+- Suffixes other than the three listed above are rejected with an
+  `IllegalArgumentException` on the first scan of the matching table.
+  Mistyping a key (e.g. `read.split.target-size` with dots, or `target-size`
+  without the `read-split-` prefix) is therefore caught loudly rather than
+  being a silent no-op.
 - The catalog name, namespace components, and table name are joined with `.`
   to form the conf key prefix, so a `.` inside any of those identifiers makes
   the prefix ambiguous (`catalog=hadoop.prod` + `namespace=[ns]` + `table=tbl`
   produces the same prefix as `catalog=hadoop` + `namespace=[prod, ns]` +
-  `table=tbl`). The wrapper detects this and logs a `WARN` from
-  `RapidsSparkTable`, skipping the session override for that scan. If you
-  need to tune such a table, either rename the identifier or set the iceberg
-  `read.split.*` table property directly.
+  `table=tbl`). The wrapper detects this and throws an
+  `IllegalArgumentException` from `RapidsSparkTable` rather than silently
+  picking the wrong override. If you need to tune such a table, either
+  rename the identifier or set the iceberg `read.split.*` table property
+  directly.
 - The wrapper applies to scans only. Writes go through the underlying iceberg
   `SparkTable.newWriteBuilder` unchanged.
 - The session-conf lookup happens once per `newScanBuilder(options)` call (a
