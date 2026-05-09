@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright (c) 2020-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -102,17 +102,13 @@ if [ "$SIGN_FILE" == true ]; then
             ;;
     esac
 else
-    DEPLOY_CMD="$MVN -B deploy:deploy-file -s jenkins/settings.xml"
+    DEPLOY_CMD="$MVN -B deploy:deploy-file"
 fi
 DEPLOY_CMD="$DEPLOY_CMD -Durl=$SERVER_URL -DrepositoryId=$SERVER_ID"
 echo "Deploy CMD: $DEPLOY_CMD"
 
 ###### Deploy the parent pom file ######
 $DEPLOY_CMD -Dfile=./pom.xml -DpomFile=./pom.xml
-
-###### Deploy the jdk-profile pom file ######
-JDK_PROFILES=${JDK_PROFILES:-"jdk-profiles"}
-$DEPLOY_CMD -Dfile=$JDK_PROFILES/pom.xml -DpomFile=$JDK_PROFILES/pom.xml
 
 ###### Deploy the artifact jar(s) ######
 $DEPLOY_CMD -DpomFile=$POM_FILE \
