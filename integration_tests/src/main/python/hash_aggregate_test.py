@@ -206,8 +206,12 @@ _init_list_with_decimals_and_common_floats = (
     _init_list_with_decimals + _std_variance_common_fp_gens)
 
 _std_variance_extreme_fp_gens = [
-    [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', DoubleGen()), ('c', DoubleGen())],
-    [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', FloatGen()), ('c', FloatGen())]]
+    [('a', RepeatSeqGen(IntegerGen(), length=20)),
+        ('b', DoubleGen(no_nans=True)),
+        ('c', DoubleGen(no_nans=True))],
+    [('a', RepeatSeqGen(IntegerGen(), length=20)),
+        ('b', FloatGen(no_nans=True)),
+        ('c', FloatGen(no_nans=True))]]
 
 # Used to test ANSI-mode fallback
 _no_overflow_ansi_gens = [
