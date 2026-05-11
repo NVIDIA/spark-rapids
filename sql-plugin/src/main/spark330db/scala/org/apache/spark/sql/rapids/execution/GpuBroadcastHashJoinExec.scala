@@ -46,13 +46,9 @@ class GpuBroadcastHashJoinMeta(
     rule: DataFromReplacementRule) extends GpuBroadcastHashJoinMetaBase(join, conf, parent, rule) {
 
   override def convertToGpu(): GpuExec = {
-    val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
-      (condition, None)
-    } else {
-      (None, condition)
-    }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+    val extractedCondition = GpuHashJoin.extractJoinConditionIfNeeded(
+      conditionMeta, join.joinType, left, right)
     // The broadcast part of this must be a BroadcastExchangeExec
     val buildSideMeta = buildSide match {
       case GpuBuildLeft => left
@@ -64,14 +60,16 @@ class GpuBroadcastHashJoinMeta(
       rightKeys.map(_.convertToGpu()),
       join.joinType,
       buildSide,
-      joinCondition,
-      left,
-      right,
+      extractedCondition.joinCondition,
+      extractedCondition.left,
+      extractedCondition.right,
       join.isNullAwareAntiJoin,
       join.isExecutorBroadcast)
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
+    val filteredJoinExec =
+      extractedCondition.filterCondition.map(c => GpuFilterExec(c, joinExec)()).getOrElse(joinExec)
+    extractedCondition.projectIfNeeded(filteredJoinExec)
   }
 }
 
@@ -121,7 +119,7 @@ case class GpuBroadcastHashJoinExec(
       case ReusedExchangeExec(_, g: GpuShuffleExchangeExec) => g
       case _ => throw new IllegalStateException(s"cannot locate GPU shuffle in $p")
     }
-    buildPlan match {
+    getBroadcastPlan(buildPlan) match {
       case gpu: GpuShuffleExchangeExec => gpu
       case sqse: ShuffleQueryStageExec => from(sqse)
       case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuShuffleExchangeExec]
@@ -151,7 +149,8 @@ case class GpuBroadcastHashJoinExec(
       }
       val buildBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(buildRelation,
           buildSchema, buildOutput, metricsMap, targetSize)
-      (buildBatch, bufferedStreamIter)
+      val projectedBuildBatch = buildSidePostProjection.map(_(buildBatch)).getOrElse(buildBatch)
+      (projectedBuildBatch, bufferedStreamIter)
     }
   }
 
@@ -171,8 +170,8 @@ case class GpuBroadcastHashJoinExec(
         .asInstanceOf[RDD[ColumnarBatch]]
 
     val rdd = streamedPlan.executeColumnar()
-    val localBuildSchema = buildPlan.schema
-    val localBuildOutput = buildPlan.output
+    val localBuildSchema = getBroadcastPlan(buildPlan).schema
+    val localBuildOutput = getBroadcastPlan(buildPlan).output
     val localIsNullAwareAntiJoin = isNullAwareAntiJoin
     rdd.mapPartitions { it =>
       val (builtBatch, streamIter) =
@@ -220,4 +219,3 @@ case class GpuBroadcastHashJoinExec(
     }
   }
 }
-
