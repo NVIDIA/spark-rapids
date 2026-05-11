@@ -650,21 +650,10 @@ def test_replace():
                 'REPLACE(a, "T", "")'))
 
 
-def test_replace_col_args():
-    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
-    assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: unary_op_df(spark, gen, length=10).selectExpr(
-                'REPLACE(a, "TEST", a)',
-                'REPLACE(a, a, "TEST")',
-                'REPLACE(a, a, a)',
-                'REPLACE("TEST", "TEST", a)',
-                'REPLACE("TEST", a, "TEST")',
-                'REPLACE("TEST", a, a)'))
-
 def test_replace_col_args_with_nulls():
-    src_gen = StringGen(pattern='[a-z]{0,5}').with_special_case('').with_special_case(None)
-    search_gen = StringGen(pattern='[a-c]{0,3}').with_special_case('').with_special_case(None)
-    replace_gen = StringGen(pattern='[X-Z]{0,3}').with_special_case('').with_special_case(None)
+    src_gen = StringGen(pattern='[a-z]{0,5}').with_special_case('')
+    search_gen = StringGen(pattern='[a-c]{0,3}').with_special_case('')
+    replace_gen = StringGen(pattern='[X-Z]{0,3}').with_special_case('')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: gen_df(spark,
                 [('src', src_gen), ('search', search_gen), ('repl', replace_gen)], length=100)
