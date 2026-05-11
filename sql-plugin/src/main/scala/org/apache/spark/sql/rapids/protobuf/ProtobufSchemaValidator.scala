@@ -34,7 +34,8 @@ object ProtobufSchemaValidator {
       fieldInfo: ProtobufFieldInfo,
       parentIdx: Int,
       depth: Int,
-      outputTypeId: Int): Either[String, FlattenedFieldDescriptor] = {
+      outputTypeId: Int,
+      isOutput: Boolean): Either[String, FlattenedFieldDescriptor] = {
     validateFieldInfo(path, field, fieldInfo).flatMap { _ =>
       ProtobufSchemaExtractor
         .getWireType(fieldInfo.protoTypeName, fieldInfo.encoding)
@@ -58,6 +59,7 @@ object ProtobufSchemaValidator {
               isRepeated = fieldInfo.isRepeated,
               isRequired = fieldInfo.isRequired,
               hasDefaultValue = fieldInfo.hasDefaultValue,
+              isOutput = isOutput,
               defaultInt = defaults.defaultInt,
               defaultFloat = defaults.defaultFloat,
               defaultBool = defaults.defaultBool,
@@ -86,6 +88,11 @@ object ProtobufSchemaValidator {
         return Left(
           s"Protobuf field at position $idx has a non-STRUCT parent at ${field.parentIdx}")
       }
+      if (field.parentIdx >= 0 && field.isOutput != flatFields(field.parentIdx).isOutput) {
+        return Left(
+          s"Protobuf field at position $idx has an output flag different from parent " +
+            s"${field.parentIdx}")
+      }
       if (field.encoding == GpuFromProtobuf.ENC_ENUM_STRING) {
         if (field.enumValidValues == null || field.enumNames == null) {
           return Left(s"Enum-string field at position $idx is missing enum metadata")
@@ -110,6 +117,7 @@ object ProtobufSchemaValidator {
       isRepeated = flatFields.map(_.isRepeated),
       isRequired = flatFields.map(_.isRequired),
       hasDefaultValue = flatFields.map(_.hasDefaultValue),
+      isOutput = flatFields.map(_.isOutput),
       defaultInts = flatFields.map(_.defaultInt),
       defaultFloats = flatFields.map(_.defaultFloat),
       defaultBools = flatFields.map(_.defaultBool),

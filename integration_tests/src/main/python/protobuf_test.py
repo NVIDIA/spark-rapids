@@ -1454,12 +1454,9 @@ def test_from_protobuf_nested_required_field_pruned_permissive(
 #     parity so a future kernel refactor that drops outer validation
 #     would be caught here.
 #   - pruned nested messages: the outer scan only reads the message's
-#     length varint and skips that many bytes; it does not recurse into
-#     the inner buffer. So malformed bytes nested *inside* a pruned
-#     message are not seen by the GPU but are caught by CPU's recursive
-#     parse. The last two tests are xfail until validation grows down
-#     into pruned messages. Tracked in
-#     https://github.com/NVIDIA/spark-rapids/pull/14354#issuecomment-4405284242
+#     length varint. GPU still needs to recurse into validation-only
+#     message fields so malformed bytes nested *inside* a pruned message
+#     match CPU's recursive parseFrom behavior.
 # ---------------------------------------------------------------------------
 
 # Eleven 0x80 bytes — a varint that never terminates. CPU
@@ -1565,10 +1562,6 @@ def test_from_protobuf_pruned_string_truncated_length_permissive(
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.xfail(
-    strict=True,
-    reason="GPU pruning skips inner-message validation. "
-           "Tracked in PR #14354 review.")
 @ignore_order(local=True)
 def test_from_protobuf_pruned_nested_malformed_inner_permissive(
         spark_tmp_path, from_protobuf_fn):
@@ -1610,10 +1603,6 @@ def test_from_protobuf_pruned_nested_malformed_inner_permissive(
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.xfail(
-    strict=True,
-    reason="GPU pruning skips inner-message validation. "
-           "Tracked in PR #14354 review.")
 @ignore_order(local=True)
 def test_from_protobuf_pruned_nested_truncated_inner_permissive(
         spark_tmp_path, from_protobuf_fn):

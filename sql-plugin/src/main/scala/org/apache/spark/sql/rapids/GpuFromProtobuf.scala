@@ -56,6 +56,8 @@ import org.apache.spark.sql.types._
  * @param isRepeated Whether each field is repeated
  * @param isRequired Whether each field is required
  * @param hasDefaultValue Whether each field has a default value
+ * @param isOutput Whether each field should be included in the returned cudf STRUCT. Fields
+ *                 marked false are decoded only to validate pruned nested protobuf messages.
  * @param defaultInts Default int/long values
  * @param defaultFloats Default float/double values
  * @param defaultBools Default bool values
@@ -75,6 +77,7 @@ case class GpuFromProtobuf(
     isRepeated: Array[Boolean],
     isRequired: Array[Boolean],
     hasDefaultValue: Array[Boolean],
+    isOutput: Array[Boolean],
     defaultInts: Array[Long],
     defaultFloats: Array[Double],
     defaultBools: Array[Boolean],
@@ -103,6 +106,7 @@ case class GpuFromProtobuf(
         Arrays.equals(isRepeated, that.isRepeated) &&
         Arrays.equals(isRequired, that.isRequired) &&
         Arrays.equals(hasDefaultValue, that.hasDefaultValue) &&
+        Arrays.equals(isOutput, that.isOutput) &&
         Arrays.equals(defaultInts, that.defaultInts) &&
         Arrays.equals(defaultFloats, that.defaultFloats) &&
         Arrays.equals(defaultBools, that.defaultBools) &&
@@ -125,6 +129,7 @@ case class GpuFromProtobuf(
     result = 31 * result + Arrays.hashCode(isRepeated)
     result = 31 * result + Arrays.hashCode(isRequired)
     result = 31 * result + Arrays.hashCode(hasDefaultValue)
+    result = 31 * result + Arrays.hashCode(isOutput)
     result = 31 * result + Arrays.hashCode(defaultInts)
     result = 31 * result + Arrays.hashCode(defaultFloats)
     result = 31 * result + Arrays.hashCode(defaultBools)
@@ -140,7 +145,7 @@ case class GpuFromProtobuf(
   // It does not own native resources, so task-scoped close hooks are not required here.
   @transient private lazy val protobufSchema = new ProtobufSchemaDescriptor(
     fieldNumbers, parentIndices, depthLevels, wireTypes, outputTypeIds, encodings,
-    isRepeated, isRequired, hasDefaultValue, defaultInts, defaultFloats, defaultBools,
+    isRepeated, isRequired, hasDefaultValue, isOutput, defaultInts, defaultFloats, defaultBools,
     defaultStrings, enumValidValues, enumNames)
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {

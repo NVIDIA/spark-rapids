@@ -417,7 +417,8 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fieldInfo = info,
       parentIdx = 0,
       depth = 1,
-      outputTypeId = 6)
+      outputTypeId = 6,
+      isOutput = true)
 
     assert(flat.isRight)
     assert(flat.toOption.get.defaultInt == 1L)
@@ -447,7 +448,8 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fieldInfo = info,
       parentIdx = 0,
       depth = 1,
-      outputTypeId = 6)
+      outputTypeId = 6,
+      isOutput = true)
 
     assert(flat.left.toOption.exists(_.contains("missing enum metadata")))
   }
@@ -471,7 +473,8 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fieldInfo = info,
       parentIdx = 0,
       depth = 1,
-      outputTypeId = 6)
+      outputTypeId = 6,
+      isOutput = true)
 
     assert(flat.left.toOption.exists(
       _.contains("Incompatible default value for protobuf field 'common.score'")))
@@ -489,6 +492,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
         isRepeated = false,
         isRequired = false,
         hasDefaultValue = false,
+        isOutput = true,
         defaultInt = 0L,
         defaultFloat = 0.0,
         defaultBool = false,
@@ -505,6 +509,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
         isRepeated = false,
         isRequired = false,
         hasDefaultValue = false,
+        isOutput = true,
         defaultInt = 0L,
         defaultFloat = 0.0,
         defaultBool = false,
@@ -569,6 +574,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       isRepeated = Array(false, false),
       isRequired = Array(false, false),
       hasDefaultValue = Array(false, false),
+      isOutput = Array(true, true),
       defaultInts = Array(0L, 0L),
       defaultFloats = Array(0.0, 0.0),
       defaultBools = Array(false, false),
@@ -589,6 +595,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       isRepeated = Array(false, false),
       isRequired = Array(false, false),
       hasDefaultValue = Array(false, false),
+      isOutput = Array(true, true),
       defaultInts = Array(0L, 0L),
       defaultFloats = Array(0.0, 0.0),
       defaultBools = Array(false, false),
@@ -621,6 +628,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       isRepeated = false,
       isRequired = false,
       hasDefaultValue = true,
+      isOutput = true,
       defaultInt = 0L,
       defaultFloat = 0.0,
       defaultBool = false,
@@ -637,6 +645,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       isRepeated = false,
       isRequired = false,
       hasDefaultValue = true,
+      isOutput = true,
       defaultInt = 0L,
       defaultFloat = 0.0,
       defaultBool = false,

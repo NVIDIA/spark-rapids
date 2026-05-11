@@ -115,6 +115,7 @@ final case class FlattenedFieldDescriptor(
     isRepeated: Boolean,
     isRequired: Boolean,
     hasDefaultValue: Boolean,
+    isOutput: Boolean,
     defaultInt: Long,
     defaultFloat: Double,
     defaultBool: Boolean,
@@ -132,6 +133,7 @@ final case class FlattenedFieldDescriptor(
         isRepeated == that.isRepeated &&
         isRequired == that.isRequired &&
         hasDefaultValue == that.hasDefaultValue &&
+        isOutput == that.isOutput &&
         defaultInt == that.defaultInt &&
         java.lang.Double.compare(defaultFloat, that.defaultFloat) == 0 &&
         defaultBool == that.defaultBool &&
@@ -153,6 +155,7 @@ final case class FlattenedFieldDescriptor(
     result = 31 * result + isRepeated.hashCode()
     result = 31 * result + isRequired.hashCode()
     result = 31 * result + hasDefaultValue.hashCode()
+    result = 31 * result + isOutput.hashCode()
     result = 31 * result + defaultInt.hashCode()
     result = 31 * result + defaultFloat.hashCode()
     result = 31 * result + defaultBool.hashCode()
@@ -173,6 +176,7 @@ final case class FlattenedSchemaArrays(
     isRepeated: Array[Boolean],
     isRequired: Array[Boolean],
     hasDefaultValue: Array[Boolean],
+    isOutput: Array[Boolean],
     defaultInts: Array[Long],
     defaultFloats: Array[Double],
     defaultBools: Array[Boolean],
@@ -190,6 +194,7 @@ final case class FlattenedSchemaArrays(
         Arrays.equals(isRepeated, that.isRepeated) &&
         Arrays.equals(isRequired, that.isRequired) &&
         Arrays.equals(hasDefaultValue, that.hasDefaultValue) &&
+        Arrays.equals(isOutput, that.isOutput) &&
         Arrays.equals(defaultInts, that.defaultInts) &&
         Arrays.equals(defaultFloats, that.defaultFloats) &&
         Arrays.equals(defaultBools, that.defaultBools) &&
@@ -215,6 +220,7 @@ final case class FlattenedSchemaArrays(
     result = 31 * result + Arrays.hashCode(isRepeated)
     result = 31 * result + Arrays.hashCode(isRequired)
     result = 31 * result + Arrays.hashCode(hasDefaultValue)
+    result = 31 * result + Arrays.hashCode(isOutput)
     result = 31 * result + Arrays.hashCode(defaultInts)
     result = 31 * result + Arrays.hashCode(defaultFloats)
     result = 31 * result + Arrays.hashCode(defaultBools)

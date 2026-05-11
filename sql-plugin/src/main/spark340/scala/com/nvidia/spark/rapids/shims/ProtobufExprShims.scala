@@ -106,13 +106,14 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         private var flatIsRepeated: Array[Boolean] = _
         private var flatIsRequired: Array[Boolean] = _
         private var flatHasDefaultValue: Array[Boolean] = _
+        private var flatIsOutput: Array[Boolean] = _
         private var flatDefaultInts: Array[Long] = _
         private var flatDefaultFloats: Array[Double] = _
         private var flatDefaultBools: Array[Boolean] = _
         private var flatDefaultStrings: Array[Array[Byte]] = _
         private var flatEnumValidValues: Array[Array[Int]] = _
         private var flatEnumNames: Array[Array[Array[Byte]]] = _
-        // Indices in fullSchema for top-level fields that were decoded (for schema projection)
+        // Indices in fullSchema for top-level fields visible in the returned decoded schema.
         private var decodedTopLevelIndices: Array[Int] = _
 
         override def tagExprForGpu(): Unit = {
@@ -184,7 +185,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           val protoRequiredFieldNames = fieldsInfoMap.collect {
             case (name, info) if info.isRequired => name
           }.toSet
-          val allFieldsToDecode = requiredFieldNames ++ protoRequiredFieldNames
+          val outputFieldNames = requiredFieldNames ++ protoRequiredFieldNames
 
           // Step 2c: When nested pruning selects only some children of a struct,
           // proto2 required children must still be included so their presence
@@ -192,7 +193,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           augmentNestedRequirementsWithRequired(msgDesc)
 
           // Step 3: Check if all fields to be decoded are supported
-          val unsupportedRequired = allFieldsToDecode.filter { name =>
+          val unsupportedRequired = outputFieldNames.filter { name =>
             fieldsInfoMap.get(name).exists(!_.isSupported)
           }
 
@@ -206,10 +207,20 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             return
           }
 
-          // Step 4: Identify which fields in fullSchema need to be decoded
-          val indicesToDecode = fullSchema.fields.zipWithIndex.collect {
-            case (sf, idx) if allFieldsToDecode.contains(sf.name) => idx
+          // Step 4: Identify which fields in fullSchema need output decoding and which
+          // top-level message fields are needed only for validation. Spark CPU parses embedded
+          // messages even when Catalyst later prunes them, so GPU must still recurse into pruned
+          // message fields to catch malformed inner payloads.
+          val outputTopLevelIndices = fullSchema.fields.zipWithIndex.collect {
+            case (sf, idx) if outputFieldNames.contains(sf.name) => idx
           }
+          val outputIndexSet = outputTopLevelIndices.toSet
+          val indicesToDecode = fullSchema.fields.indices.filter { idx =>
+            outputIndexSet.contains(idx) ||
+              fieldsInfoMap.get(fullSchema.fields(idx).name).exists { info =>
+                info.protoTypeName == "MESSAGE" && info.isSupported
+              }
+          }.toArray
 
           // Verify all fields to be decoded are actually supported
           // (This catches edge cases where field analysis might have issues)
@@ -248,6 +259,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 parentIdx: Int,
                 depth: Int,
                 containingMsgDesc: ProtobufMessageDescriptor,
+                isOutput: Boolean,
                 pathPrefix: String = ""): Unit = {
 
               val currentIdx = flatFields.size
@@ -284,7 +296,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 info,
                 parentIdx,
                 depth,
-                outputType).fold({ reason =>
+                outputType,
+                isOutput).fold({ reason =>
                 failStep5(reason)
                 return
               }, flatFields += _)
@@ -296,11 +309,11 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                   // Repeated message parents and plain struct parents share the same child
                   // expansion path; the flat parent entry's isRepeated flag distinguishes them.
                   addChildFieldsFromStruct(
-                    st, containingMsgDesc, sf.name, currentIdx, depth, pathPrefix)
+                    st, containingMsgDesc, sf.name, currentIdx, depth, isOutput, pathPrefix)
                   
                 case ArrayType(st: StructType, _) if containingMsgDesc != null =>
                   addChildFieldsFromStruct(
-                    st, containingMsgDesc, sf.name, currentIdx, depth, pathPrefix)
+                    st, containingMsgDesc, sf.name, currentIdx, depth, isOutput, pathPrefix)
                   
                 case _ => // Not a struct, no children to add
               }
@@ -315,6 +328,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 fieldName: String,
                 parentIdx: Int,
                 parentDepth: Int,
+                isOutput: Boolean,
                 pathPrefix: String): Unit = {
               val path = if (pathPrefix.isEmpty) fieldName else s"$pathPrefix.$fieldName"
               // containingMsgDesc is the descriptor of the message that directly contains
@@ -327,12 +341,15 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               } else {
                 parentField.get.messageDescriptor match {
                   case Some(childMsgDesc) =>
-                    val requiredChildren = nestedFieldRequirements.get(path)
-                    val filteredFields = requiredChildren match {
-                      case Some(Some(childNames)) =>
-                        st.fields.filter(f => childNames.contains(f.name))
-                      case _ =>
-                        st.fields
+                    val filteredFields = if (!isOutput) {
+                      st.fields
+                    } else {
+                      nestedFieldRequirements.get(path) match {
+                        case Some(Some(childNames)) =>
+                          st.fields.filter(f => childNames.contains(f.name))
+                        case _ =>
+                          st.fields
+                      }
                     }
                     filteredFields.foreach { childSf =>
                       childMsgDesc.findField(childSf.name) match {
@@ -356,7 +373,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                               } else {
                                 addFieldWithChildren(
                                   childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc,
-                                  path)
+                                  isOutput, path)
                               }
                           }
                       }
@@ -373,12 +390,12 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             // This significantly reduces GPU memory and computation for schemas with many
             // fields when only a few are needed. Struct extractors remap ordinals from the
             // converted child schema during GPU conversion.
-            decodedTopLevelIndices = indicesToDecode
+            decodedTopLevelIndices = outputTopLevelIndices
             indicesToDecode.foreach { schemaIdx =>
               if (!step5Failed) {
                 val sf = fullSchema.fields(schemaIdx)
                 val info = fieldsInfoMap(sf.name)
-                addFieldWithChildren(sf, info, -1, 0, msgDesc)
+                addFieldWithChildren(sf, info, -1, 0, msgDesc, outputIndexSet.contains(schemaIdx))
               }
             }
 
@@ -402,6 +419,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             flatIsRepeated = arrays.isRepeated
             flatIsRequired = arrays.isRequired
             flatHasDefaultValue = arrays.hasDefaultValue
+            flatIsOutput = arrays.isOutput
             flatDefaultInts = arrays.defaultInts
             flatDefaultFloats = arrays.defaultFloats
             flatDefaultBools = arrays.defaultBools
@@ -836,7 +854,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             decodedSchema,
             flatFieldNumbers, flatParentIndices,
             flatDepthLevels, flatWireTypes, flatOutputTypeIds, flatEncodings,
-            flatIsRepeated, flatIsRequired, flatHasDefaultValue, flatDefaultInts,
+            flatIsRepeated, flatIsRequired, flatHasDefaultValue, flatIsOutput, flatDefaultInts,
             flatDefaultFloats, flatDefaultBools, flatDefaultStrings, flatEnumValidValues,
             flatEnumNames, failOnErrors, child)
         }
