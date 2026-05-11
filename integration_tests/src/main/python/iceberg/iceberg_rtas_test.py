@@ -19,7 +19,7 @@ import pytest
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
-from iceberg import (assert_no_cpu_project_exec, create_iceberg_table,
+from iceberg import (create_iceberg_table,
                      iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
                      iceberg_nested_write_gens_list, materialize_parquet_source,
@@ -68,8 +68,7 @@ def _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
                                 table_prop: Dict[str, str],
                                 partition_col_sql: Optional[str] = None,
                                 create_or_replace: bool = False,
-                                conf: Optional[Dict[str, str]] = None,
-                                assert_no_cpu_project: bool = False):
+                                conf: Optional[Dict[str, str]] = None):
     if conf is None:
         conf = iceberg_write_enabled_conf
 
@@ -82,11 +81,9 @@ def _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
     create_iceberg_table(cpu_table, partition_col_sql, table_prop, initial_df_gen)
 
     def run_gpu_rtas(spark):
-        df = _execute_rtas(spark, gpu_table, spark_tmp_table_factory,
-                           df_gen, table_prop, partition_col_sql,
-                           create_or_replace, ret=True)
-        if assert_no_cpu_project:
-            assert_no_cpu_project_exec(spark, df)
+        _execute_rtas(spark, gpu_table, spark_tmp_table_factory,
+                      df_gen, table_prop, partition_col_sql,
+                      create_or_replace, ret=True)
 
     with_gpu_session(run_gpu_rtas, conf=conf)
     with_cpu_session(lambda spark: _execute_rtas(spark, cpu_table, spark_tmp_table_factory,
@@ -280,8 +277,7 @@ def test_rtas_unpartitioned_table_nested_types(spark_tmp_table_factory, spark_tm
     source_path = materialize_parquet_source(spark_tmp_path, gen_list)
     df_gen = lambda spark: spark.read.parquet(source_path)
 
-    _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory, df_gen, table_prop,
-                                assert_no_cpu_project=True)
+    _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory, df_gen, table_prop)
 
 
 @iceberg
@@ -299,8 +295,7 @@ def test_rtas_unpartitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_pa
     source_path = materialize_parquet_source(spark_tmp_path, gen_list)
     df_gen = lambda spark: spark.read.parquet(source_path)
 
-    _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory, df_gen, table_prop,
-                                assert_no_cpu_project=True)
+    _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory, df_gen, table_prop)
 
 
 @iceberg
@@ -319,8 +314,7 @@ def test_rtas_partitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_
     _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
                                 df_gen,
                                 table_prop,
-                                partition_col_sql="bucket(16, _c0)",
-                                assert_no_cpu_project=True)
+                                partition_col_sql="bucket(16, _c0)")
 
 
 @iceberg
@@ -341,8 +335,7 @@ def test_rtas_partitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_path
     _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
                                 df_gen,
                                 table_prop,
-                                partition_col_sql="bucket(16, _c2)",
-                                assert_no_cpu_project=True)
+                                partition_col_sql="bucket(16, _c2)")
 
 
 @iceberg

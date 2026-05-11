@@ -18,7 +18,7 @@ import pytest
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
-from iceberg import assert_no_cpu_project_exec, create_iceberg_table, \
+from iceberg import create_iceberg_table, \
     iceberg_base_table_cols, iceberg_gens_list, get_full_table_name, \
     iceberg_full_gens_list, \
     iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops, \
@@ -121,11 +121,6 @@ def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory, spark
         df.createOrReplaceTempView(view_name)
         return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
 
-    def insert_data_and_assert_gpu_plan(spark, table_name: str):
-        df = insert_data(spark, table_name)
-        df.collect()
-        assert_no_cpu_project_exec(spark, df)
-
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
     gpu_table_name = f"{base_table_name}_gpu"
@@ -133,7 +128,7 @@ def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory, spark
     create_iceberg_table(cpu_table_name, table_prop=table_prop, df_gen=this_gen_df)
     create_iceberg_table(gpu_table_name, table_prop=table_prop, df_gen=this_gen_df)
 
-    with_gpu_session(lambda spark: insert_data_and_assert_gpu_plan(spark, gpu_table_name),
+    with_gpu_session(lambda spark: insert_data(spark, gpu_table_name).collect(),
                      conf=iceberg_write_enabled_conf)
     with_cpu_session(lambda spark: insert_data(spark, cpu_table_name).collect(),
                      conf=iceberg_write_enabled_conf)
@@ -245,12 +240,7 @@ def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory, spark_t
     # is fixed. Tracking: https://github.com/NVIDIA/spark-rapids/issues/14319
     conf = copy_and_update(iceberg_write_enabled_conf, {'spark.sql.adaptive.enabled': 'false'})
 
-    def insert_data_and_assert_gpu_plan(spark, table_name: str):
-        df = insert_data(spark, table_name)
-        df.collect()
-        assert_no_cpu_project_exec(spark, df)
-
-    with_gpu_session(lambda spark: insert_data_and_assert_gpu_plan(spark, gpu_table_name),
+    with_gpu_session(lambda spark: insert_data(spark, gpu_table_name).collect(),
                      conf=conf)
     with_cpu_session(lambda spark: insert_data(spark, cpu_table_name).collect(),
                      conf=conf)

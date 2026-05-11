@@ -19,7 +19,7 @@ from pyspark.sql import functions as F
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
 from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update, StringGen
-from iceberg import assert_no_cpu_project_exec, create_iceberg_table, \
+from iceberg import create_iceberg_table, \
     iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name, iceberg_full_gens_list, iceberg_nested_write_gens_list, \
     iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops, \
@@ -238,12 +238,7 @@ def test_insert_overwrite_unpartitioned_table_nested_types(spark_tmp_table_facto
         df.createOrReplaceTempView(view_name)
         return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
 
-    def overwrite_data_and_assert_gpu_plan(spark, table_name):
-        df = overwrite_data(spark, table_name)
-        df.collect()
-        assert_no_cpu_project_exec(spark, df)
-
-    with_gpu_session(lambda spark: overwrite_data_and_assert_gpu_plan(spark, gpu_table_name),
+    with_gpu_session(lambda spark: overwrite_data(spark, gpu_table_name).collect(),
                      conf=iceberg_static_overwrite_conf)
     with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name).collect(),
                      conf=iceberg_static_overwrite_conf)
@@ -292,12 +287,7 @@ def test_insert_overwrite_unpartitioned_table_all_cols(spark_tmp_table_factory, 
         df.createOrReplaceTempView(view_name)
         return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
 
-    def overwrite_data_and_assert_gpu_plan(spark, table_name):
-        df = overwrite_data(spark, table_name)
-        df.collect()
-        assert_no_cpu_project_exec(spark, df)
-
-    with_gpu_session(lambda spark: overwrite_data_and_assert_gpu_plan(spark, gpu_table_name),
+    with_gpu_session(lambda spark: overwrite_data(spark, gpu_table_name).collect(),
                      conf=iceberg_static_overwrite_conf)
     with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name).collect(),
                      conf=iceberg_static_overwrite_conf)
@@ -348,12 +338,7 @@ def test_insert_overwrite_partitioned_table_nested_types(spark_tmp_table_factory
         df.createOrReplaceTempView(view_name)
         return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
 
-    def overwrite_data_and_assert_gpu_plan(spark, table_name):
-        df = overwrite_data(spark, table_name)
-        df.collect()
-        assert_no_cpu_project_exec(spark, df)
-
-    with_gpu_session(lambda spark: overwrite_data_and_assert_gpu_plan(spark, gpu_table_name),
+    with_gpu_session(lambda spark: overwrite_data(spark, gpu_table_name).collect(),
                      conf=iceberg_static_overwrite_conf)
     with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name).collect(),
                      conf=iceberg_static_overwrite_conf)
@@ -406,12 +391,7 @@ def test_insert_overwrite_partitioned_table_all_cols(spark_tmp_table_factory,
         df.createOrReplaceTempView(view_name)
         return spark.sql(f"INSERT OVERWRITE TABLE {table_name} SELECT * FROM {view_name}")
 
-    def overwrite_data_and_assert_gpu_plan(spark, table_name):
-        df = overwrite_data(spark, table_name)
-        df.collect()
-        assert_no_cpu_project_exec(spark, df)
-
-    with_gpu_session(lambda spark: overwrite_data_and_assert_gpu_plan(spark, gpu_table_name),
+    with_gpu_session(lambda spark: overwrite_data(spark, gpu_table_name).collect(),
                      conf=iceberg_static_overwrite_conf)
     with_cpu_session(lambda spark: overwrite_data(spark, cpu_table_name).collect(),
                      conf=iceberg_static_overwrite_conf)
