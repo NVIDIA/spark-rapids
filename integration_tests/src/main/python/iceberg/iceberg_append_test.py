@@ -21,8 +21,7 @@ from data_gen import gen_df, copy_and_update
 from iceberg import create_iceberg_table, \
     iceberg_base_table_cols, iceberg_gens_list, get_full_table_name, \
     iceberg_full_gens_list, \
-    iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops, \
-    materialize_parquet_source
+    iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session
 
@@ -106,14 +105,13 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_path):
+def test_insert_into_unpartitioned_table_all_cols(spark_tmp_table_factory):
     table_prop = {"format-version": "2"}
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
     gen_list = list(zip(cols, iceberg_full_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
 
     def this_gen_df(spark):
-        return spark.read.parquet(source_path)
+        return gen_df(spark, gen_list)
 
     def insert_data(spark, table_name: str):
         df = this_gen_df(spark)
@@ -208,14 +206,13 @@ def test_insert_into_partitioned_table_full_coverage(spark_tmp_table_factory, pa
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_path):
+def test_insert_into_partitioned_table_all_cols(spark_tmp_table_factory):
     table_prop = {"format-version": "2"}
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
     gen_list = list(zip(cols, iceberg_full_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
 
     def this_gen_df(spark):
-        return spark.read.parquet(source_path)
+        return gen_df(spark, gen_list)
 
     def insert_data(spark, table_name: str):
         df = this_gen_df(spark)

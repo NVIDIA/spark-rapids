@@ -22,7 +22,7 @@ from data_gen import gen_df, copy_and_update
 from iceberg import (create_iceberg_table,
                      iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
-                     iceberg_nested_write_gens_list, materialize_parquet_source,
+                     iceberg_nested_write_gens_list,
                      get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_unsupported_mark, _build_tblprops)
 from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
@@ -267,15 +267,14 @@ def test_rtas_fallback_when_conf_disabled(spark_tmp_table_factory,
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_rtas_unpartitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_path):
+def test_rtas_unpartitioned_table_nested_types(spark_tmp_table_factory):
     table_prop = {
         "format-version": "2"
     }
 
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_nested_write_gens_list)]
     gen_list = list(zip(cols, iceberg_nested_write_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
-    df_gen = lambda spark: spark.read.parquet(source_path)
+    df_gen = lambda spark: gen_df(spark, gen_list)
 
     _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory, df_gen, table_prop)
 
@@ -284,7 +283,7 @@ def test_rtas_unpartitioned_table_nested_types(spark_tmp_table_factory, spark_tm
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
-def test_rtas_unpartitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_path):
+def test_rtas_unpartitioned_table_all_cols(spark_tmp_table_factory):
     """Test RTAS on unpartitioned table with all Iceberg write types on GPU."""
     table_prop = {
         "format-version": "2"
@@ -292,8 +291,7 @@ def test_rtas_unpartitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_pa
 
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
     gen_list = list(zip(cols, iceberg_full_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
-    df_gen = lambda spark: spark.read.parquet(source_path)
+    df_gen = lambda spark: gen_df(spark, gen_list)
 
     _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory, df_gen, table_prop)
 
@@ -301,15 +299,14 @@ def test_rtas_unpartitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_pa
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_rtas_partitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_path):
+def test_rtas_partitioned_table_nested_types(spark_tmp_table_factory):
     table_prop = {
         "format-version": "2"
     }
 
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_nested_write_gens_list)]
     gen_list = list(zip(cols, iceberg_nested_write_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
-    df_gen = lambda spark: spark.read.parquet(source_path)
+    df_gen = lambda spark: gen_df(spark, gen_list)
 
     _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
                                 df_gen,
@@ -321,7 +318,7 @@ def test_rtas_partitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
-def test_rtas_partitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_path):
+def test_rtas_partitioned_table_all_cols(spark_tmp_table_factory):
     """Test RTAS on partitioned table with all Iceberg write types on GPU."""
     table_prop = {
         "format-version": "2"
@@ -329,8 +326,7 @@ def test_rtas_partitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_path
 
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
     gen_list = list(zip(cols, iceberg_full_gens_list))
-    source_path = materialize_parquet_source(spark_tmp_path, gen_list)
-    df_gen = lambda spark: spark.read.parquet(source_path)
+    df_gen = lambda spark: gen_df(spark, gen_list)
 
     _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
                                 df_gen,

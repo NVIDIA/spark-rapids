@@ -22,8 +22,7 @@ from data_gen import gen_df, copy_and_update, StringGen
 from iceberg import create_iceberg_table, \
     iceberg_base_table_cols, iceberg_gens_list, \
     get_full_table_name, iceberg_full_gens_list, iceberg_nested_write_gens_list, \
-    iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops, \
-    materialize_parquet_source
+    iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session
 
@@ -203,16 +202,14 @@ def test_insert_overwrite_partitioned_table_full_coverage(spark_tmp_table_factor
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_overwrite_unpartitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_path):
+def test_insert_overwrite_unpartitioned_table_nested_types(spark_tmp_table_factory):
     """Test INSERT OVERWRITE with Iceberg-native nested types on GPU."""
     table_prop = {"format-version": "2"}
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_nested_write_gens_list)]
     gen_list = list(zip(cols, iceberg_nested_write_gens_list))
-    initial_source_path = materialize_parquet_source(spark_tmp_path, gen_list, seed=INITIAL_INSERT_SEED)
-    overwrite_source_path = materialize_parquet_source(spark_tmp_path, gen_list)
 
     def this_gen_df(spark):
-        return spark.read.parquet(overwrite_source_path)
+        return gen_df(spark, gen_list)
 
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
@@ -222,7 +219,7 @@ def test_insert_overwrite_unpartitioned_table_nested_types(spark_tmp_table_facto
     create_iceberg_table(gpu_table_name, table_prop=table_prop, df_gen=this_gen_df)
 
     def insert_initial_data(spark, table_name):
-        df = spark.read.parquet(initial_source_path)
+        df = gen_df(spark, gen_list, seed=INITIAL_INSERT_SEED)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
         spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
@@ -251,17 +248,14 @@ def test_insert_overwrite_unpartitioned_table_nested_types(spark_tmp_table_facto
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_overwrite_unpartitioned_table_all_cols(spark_tmp_table_factory, spark_tmp_path):
+def test_insert_overwrite_unpartitioned_table_all_cols(spark_tmp_table_factory):
     """Test INSERT OVERWRITE on unpartitioned table with all Iceberg write types on GPU."""
     table_prop = {"format-version": "2"}
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
     gen_list = list(zip(cols, iceberg_full_gens_list))
-    initial_source_path = materialize_parquet_source(spark_tmp_path, gen_list,
-                                                     seed=INITIAL_INSERT_SEED)
-    overwrite_source_path = materialize_parquet_source(spark_tmp_path, gen_list)
 
     def this_gen_df(spark):
-        return spark.read.parquet(overwrite_source_path)
+        return gen_df(spark, gen_list)
 
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
@@ -271,7 +265,7 @@ def test_insert_overwrite_unpartitioned_table_all_cols(spark_tmp_table_factory, 
     create_iceberg_table(gpu_table_name, table_prop=table_prop, df_gen=this_gen_df)
 
     def insert_initial_data(spark, table_name):
-        df = spark.read.parquet(initial_source_path)
+        df = gen_df(spark, gen_list, seed=INITIAL_INSERT_SEED)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
         spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
@@ -300,17 +294,15 @@ def test_insert_overwrite_unpartitioned_table_all_cols(spark_tmp_table_factory, 
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_overwrite_partitioned_table_nested_types(spark_tmp_table_factory, spark_tmp_path):
+def test_insert_overwrite_partitioned_table_nested_types(spark_tmp_table_factory):
     """Test INSERT OVERWRITE on partitioned table with Iceberg-native nested types on GPU."""
     table_prop = {"format-version": "2"}
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_nested_write_gens_list)]
     gen_list = list(zip(cols, iceberg_nested_write_gens_list))
     partition_col_sql = "bucket(16, _c0), bucket(16, _c1)"
-    initial_source_path = materialize_parquet_source(spark_tmp_path, gen_list, seed=INITIAL_INSERT_SEED)
-    overwrite_source_path = materialize_parquet_source(spark_tmp_path, gen_list)
 
     def this_gen_df(spark):
-        return spark.read.parquet(overwrite_source_path)
+        return gen_df(spark, gen_list)
 
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
@@ -322,7 +314,7 @@ def test_insert_overwrite_partitioned_table_nested_types(spark_tmp_table_factory
                          table_prop=table_prop, df_gen=this_gen_df)
 
     def insert_initial_data(spark, table_name):
-        df = spark.read.parquet(initial_source_path)
+        df = gen_df(spark, gen_list, seed=INITIAL_INSERT_SEED)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
         spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
@@ -351,19 +343,15 @@ def test_insert_overwrite_partitioned_table_nested_types(spark_tmp_table_factory
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_overwrite_partitioned_table_all_cols(spark_tmp_table_factory,
-                                                     spark_tmp_path):
+def test_insert_overwrite_partitioned_table_all_cols(spark_tmp_table_factory):
     """Test INSERT OVERWRITE on partitioned table with all Iceberg write types on GPU."""
     table_prop = {"format-version": "2"}
     cols = [f"_c{idx}" for idx, _ in enumerate(iceberg_full_gens_list)]
     gen_list = list(zip(cols, iceberg_full_gens_list))
     partition_col_sql = "bucket(16, _c2), bucket(16, _c3)"
-    initial_source_path = materialize_parquet_source(spark_tmp_path, gen_list,
-                                                     seed=INITIAL_INSERT_SEED)
-    overwrite_source_path = materialize_parquet_source(spark_tmp_path, gen_list)
 
     def this_gen_df(spark):
-        return spark.read.parquet(overwrite_source_path)
+        return gen_df(spark, gen_list)
 
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
@@ -375,7 +363,7 @@ def test_insert_overwrite_partitioned_table_all_cols(spark_tmp_table_factory,
                          table_prop=table_prop, df_gen=this_gen_df)
 
     def insert_initial_data(spark, table_name):
-        df = spark.read.parquet(initial_source_path)
+        df = gen_df(spark, gen_list, seed=INITIAL_INSERT_SEED)
         view_name = spark_tmp_table_factory.get()
         df.createOrReplaceTempView(view_name)
         spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
