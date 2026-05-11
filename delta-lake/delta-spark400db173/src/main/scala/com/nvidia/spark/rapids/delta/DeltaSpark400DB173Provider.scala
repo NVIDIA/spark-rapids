@@ -28,7 +28,6 @@ import com.databricks.sql.transaction.tahoe.coordinatedcommits.{
   CoordinatedCommitsUtils
 }
 import com.databricks.sql.transaction.tahoe.rapids.{
-  GpuDeltaCatalog,
   GpuDeltaLog,
   GpuDeltaV1Write,
   GpuWriteIntoDelta
@@ -43,10 +42,6 @@ import org.apache.spark.sql.execution.datasources.LogicalRelation
 import org.apache.spark.sql.execution.datasources.v2.{
   AtomicCreateTableAsSelectExec,
   AtomicReplaceTableAsSelectExec
-}
-import org.apache.spark.sql.execution.datasources.v2.rapids.{
-  GpuAtomicCreateTableAsSelectExec,
-  GpuAtomicReplaceTableAsSelectExec
 }
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.sources.InsertableRelation
@@ -87,19 +82,23 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
   override def tagForGpu(
       cpuExec: AtomicCreateTableAsSelectExec,
       meta: AtomicCreateTableAsSelectExecMeta): Unit = {
-    meta.willNotWorkOnGpu(
-      "Delta CTAS is not yet supported on GPU for DB-17.3")
     tagDB173UnsupportedTableSpec(meta, cpuExec.tableSpec, cpuExec.session)
     super.tagForGpu(cpuExec, meta)
+    if (meta.canThisBeReplaced) {
+      meta.willNotWorkOnGpu(
+        "Delta CTAS is not yet supported on GPU for DB-17.3")
+    }
   }
 
   override def tagForGpu(
       cpuExec: AtomicReplaceTableAsSelectExec,
       meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
-    meta.willNotWorkOnGpu(
-      "Delta RTAS is not yet supported on GPU for DB-17.3")
     tagDB173UnsupportedTableSpec(meta, cpuExec.tableSpec, cpuExec.session)
     super.tagForGpu(cpuExec, meta)
+    if (meta.canThisBeReplaced) {
+      meta.willNotWorkOnGpu(
+        "Delta RTAS is not yet supported on GPU for DB-17.3")
+    }
   }
 
   // Keep CTAS/RTAS on CPU for DB-17.3 until GpuCreateDeltaTableCommand preserves the new
@@ -165,33 +164,4 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
 
   private def trueOrInvalidBoolean(value: String): Boolean =
     !value.trim.equalsIgnoreCase("false")
-
-  override def convertToGpu(
-      cpuExec: AtomicCreateTableAsSelectExec,
-      meta: AtomicCreateTableAsSelectExecMeta): GpuExec = {
-    GpuAtomicCreateTableAsSelectExec(
-      cpuExec.output,
-      new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
-      cpuExec.ident,
-      cpuExec.partitioning,
-      cpuExec.query,
-      cpuExec.tableSpec,
-      cpuExec.writeOptions,
-      cpuExec.ifNotExists)
-  }
-
-  override def convertToGpu(
-      cpuExec: AtomicReplaceTableAsSelectExec,
-      meta: AtomicReplaceTableAsSelectExecMeta): GpuExec = {
-    GpuAtomicReplaceTableAsSelectExec(
-      cpuExec.output,
-      new GpuDeltaCatalog(cpuExec.catalog, meta.conf),
-      cpuExec.ident,
-      cpuExec.partitioning,
-      cpuExec.query,
-      cpuExec.tableSpec,
-      cpuExec.writeOptions,
-      cpuExec.orCreate,
-      cpuExec.invalidateCache)
-  }
 }

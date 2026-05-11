@@ -21,16 +21,17 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
-import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaOptions, Snapshot}
+import com.databricks.sql.transaction.tahoe.{CommittedTransaction, DeltaLog, DeltaOptions, Snapshot}
 import com.databricks.sql.transaction.tahoe.actions.FileAction
 import com.databricks.sql.transaction.tahoe.constraints.Constraint
 import com.databricks.sql.transaction.tahoe.files.TransactionalWriteOptions
+import com.databricks.sql.transaction.tahoe.hooks.{AutoCompact, PostCommitHook}
 import com.nvidia.spark.rapids.{ColumnarFileFormat, RapidsConf}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.io.FileCommitProtocol
-import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.{Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, RuntimeReplaceable}
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter
@@ -51,6 +52,17 @@ class GpuOptimisticTransaction(
   override protected def normalizeGpuStatsColExpr(expr: Expression): Expression = {
     expr.transform {
       case rr: RuntimeReplaceable => rr.replacement
+    }
+  }
+
+  override protected def handlePostWriteAutoCompact(
+      spark: SparkSession,
+      isOptimize: Boolean,
+      fileActions: Seq[FileAction]): Unit = {
+    val autoCompactEnabled =
+      AutoCompact.getAutoCompactType(spark.sessionState.conf, metadata).isDefined
+    if (!isOptimize && autoCompactEnabled && fileActions.nonEmpty) {
+      registerPostCommitHook(GpuAutoCompactCpuFallback)
     }
   }
 
@@ -174,6 +186,24 @@ class GpuOptimisticTransaction(
           forcePreserveInputOrder,
           context)
       (fileActions, qe.executedPlan)
+    }
+  }
+}
+
+private object GpuAutoCompactCpuFallback extends PostCommitHook {
+  override val name: String = AutoCompact.name
+
+  override def run(spark: SparkSession, txn: CommittedTransaction): Unit = {
+    val rapidsEnabled = RapidsConf.SQL_ENABLED.key
+    val original = spark.conf.getOption(rapidsEnabled)
+    spark.conf.set(rapidsEnabled, "false")
+    try {
+      AutoCompact.run(spark, txn)
+    } finally {
+      original match {
+        case Some(value) => spark.conf.set(rapidsEnabled, value)
+        case None => spark.conf.unset(rapidsEnabled)
+      }
     }
   }
 }

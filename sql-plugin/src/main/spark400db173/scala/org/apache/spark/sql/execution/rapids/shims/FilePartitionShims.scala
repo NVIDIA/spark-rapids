@@ -34,10 +34,10 @@ object FilePartitionShims extends SplitFiles {
   def getFiles(p: FilePartition): Array[PartitionedFile] = p.filesWithAbsolutePaths
 
   def copyWithFiles(p: FilePartition, newFiles: Array[PartitionedFile]): FilePartition = {
-    // DB-17.3 filesWithAbsolutePaths may have already expanded bare Delta filenames using
-    // pathPrefix. Preserve that prefix when replacing innerFiles so later calls can still
-    // resolve any relative paths.
-    p.copy(innerFiles = newFiles)
+    // The caller obtains newFiles through filesWithAbsolutePaths, so any relative paths have
+    // already been resolved. Clear pathPrefix to avoid re-applying a relation root if this
+    // partition is processed again.
+    p.copy(innerFiles = newFiles, pathPrefix = None)
   }
 
   // Delta tables in DB-17.3, including UC-managed tables, may store relative file names in

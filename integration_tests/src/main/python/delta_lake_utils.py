@@ -62,7 +62,8 @@ delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "tru
 
 # DB-17.3 serializes generated wide-schema rows into RDDScanExec task closures for these
 # Delta write tests. The default 2048 rows can produce ~33 MB task bodies and OOM in
-# TaskSetManager.prepareLaunchingTask; 128 rows still covers every column generator.
+# TaskSetManager.prepareLaunchingTask. Keep this DB-17.3-only reduction visible until
+# https://github.com/NVIDIA/spark-rapids/issues/14775 restores the normal 2048-row coverage.
 delta_db173_wide_schema_gen_length = 128 if is_databricks173_or_later() else 2048
 
 delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,WriteFilesExec,DeltaInvariantCheckerExec" if is_databricks122_or_later() else "ExecutedCommandExec"
