@@ -46,7 +46,7 @@ remote_maven_repo=$SERVER_ID::default::$SERVER_URL
 while read -r line; do
     artifact=$line # artifact=groupId:artifactId:version:[[packaging]:classifier]
     # Clean up $M2_CACHE to avoid side-effect of previous dependency:get
-    rm -rf $M2_CACHE/com/nvida
+    rm -rf $M2_CACHE/com/nvidia
     # Dependency checks should run without -s $MVN_SETTINGS.
     mvn -B dependency:get -DremoteRepositories=$remote_maven_repo -Dmaven.repo.local=$M2_CACHE -Dartifact=$artifact -Ddest=$DEST_PATH
 done < $ARTIFACT_FILE
