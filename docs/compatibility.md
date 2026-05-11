@@ -68,6 +68,14 @@ floating point aggregation then the join may fail to work properly with the plug
 worked with plain Spark. This is behavior is enabled by default but can be disabled with the config
 [`spark.rapids.sql.variableFloatAgg.enabled`](additional-functionality/advanced_configs.md#sql.variableFloatAgg.enabled).
 
+For standard deviation and variance aggregations (`stddev`, `stddev_pop`, `stddev_samp`,
+`variance`, `var_pop`, and `var_samp`) on very large finite floating-point values, the exact
+mathematical result can exceed the range of a double. In these overflow cases Spark CPU and the
+RAPIDS Accelerator may report different IEEE floating-point sentinels, such as `NaN` versus
+`+Infinity` or `-Infinity`, because partial aggregate state can be merged in a different order.
+This is limited to overflow behavior for extreme inputs; ordinary finite inputs should still match
+within normal floating-point tolerance.
+
 ### `0.0` vs `-0.0`
 
 Floating point allows zero to be encoded as `0.0` and `-0.0`, but the IEEE standard says that they
