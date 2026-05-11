@@ -52,56 +52,6 @@ object SchemaUtils {
   val MAP_VALUE_NESTED_IDS_METADATA_KEY =
     "rapids.parquet.map.value.nested.ids"
 
-  // Reflection-based access to private fields on cuDF's ColumnWriterOptions.
-  // cuDF's Java list/map builder path drops the container's parquet field id and has no
-  // public setter for `isBinary` on a built options object, so we reach into the private
-  // fields here. TODO(cuDF): remove once public setters are exposed upstream.
-  // Tracking issue: https://github.com/rapidsai/cudf/issues/22347.
-  private def accessibleField(name: String): java.lang.reflect.Field = {
-    try {
-      val field = classOf[ColumnWriterOptions].getDeclaredField(name)
-      field.setAccessible(true)
-      field
-    } catch {
-      case e @ (_: NoSuchFieldException | _: SecurityException) =>
-        throw new IllegalStateException(
-          s"Unable to access ColumnWriterOptions.$name via reflection. " +
-          s"The cuDF version on the classpath may have renamed or removed this field; " +
-          s"see SchemaUtils in spark-rapids.", e)
-    }
-  }
-
-  private lazy val hasParquetFieldIdField = accessibleField("hasParquetFieldId")
-  private lazy val parquetFieldIdField = accessibleField("parquetFieldId")
-  private lazy val isBinaryField = accessibleField("isBinary")
-
-  private def setParquetFieldId(
-      options: ColumnWriterOptions,
-      parquetFieldId: Option[Int],
-      parquetFieldIdWriteEnabled: Boolean): Unit = {
-    if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
-      hasParquetFieldIdField.setBoolean(options, true)
-      parquetFieldIdField.setInt(options, parquetFieldId.get)
-    }
-  }
-
-  private def markAsBinary(options: ColumnWriterOptions): Unit = {
-    isBinaryField.setBoolean(options, true)
-  }
-
-  private def buildBinaryOptions(
-      name: String,
-      nullable: Boolean,
-      parquetFieldId: Option[Int],
-      parquetFieldIdWriteEnabled: Boolean): ListColumnWriterOptions = {
-    val binaryOptions = listBuilder(name, nullable)
-      .withColumns(false, "BINARY_DATA")
-      .build()
-    markAsBinary(binaryOptions)
-    setParquetFieldId(binaryOptions, parquetFieldId, parquetFieldIdWriteEnabled)
-    binaryOptions
-  }
-
   /**
    * Convert a TypeDescription to a Catalyst StructType.
    */
@@ -371,6 +321,11 @@ object SchemaUtils {
         val elementFieldMetadata = nestedFieldMetadata(
           LIST_ELEMENT_FIELD_ID_METADATA_KEY,
           LIST_ELEMENT_NESTED_IDS_METADATA_KEY)
+        val outerListBuilder = if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          listBuilder(name, nullable, parquetFieldId.get)
+        } else {
+          listBuilder(name, nullable)
+        }
         val listOptions = a.elementType match {
           case BinaryType =>
             val elementParquetFieldId = if (elementFieldMetadata.contains(FIELD_ID_METADATA_KEY)) {
@@ -378,16 +333,16 @@ object SchemaUtils {
             } else {
               Option.empty
             }
-            listBuilder(name, nullable)
-              .withListColumn(buildBinaryOptions(
-                "element",
-                a.containsNull,
-                elementParquetFieldId,
-                parquetFieldIdWriteEnabled))
-              .build()
+            if (parquetFieldIdWriteEnabled && elementParquetFieldId.nonEmpty) {
+              outerListBuilder
+                .withBinaryColumn("element", a.containsNull, elementParquetFieldId.get)
+                .build()
+            } else {
+              outerListBuilder.withBinaryColumn("element", a.containsNull).build()
+            }
           case _ =>
             writerOptionsFromField(
-              listBuilder(name, nullable),
+              outerListBuilder,
               a.elementType,
               "element",
               a.containsNull,
@@ -395,47 +350,48 @@ object SchemaUtils {
               elementFieldMetadata,
               parquetFieldIdWriteEnabled).build()
         }
-        setParquetFieldId(listOptions, parquetFieldId, parquetFieldIdWriteEnabled)
         builder.withListColumn(listOptions)
       case m: MapType =>
         // It is ok to use `StructBuilder` here for key and value, since either
         // `OrcWriterOptions.Builder` or `ParquetWriterOptions.Builder` is actually an
         // `AbstractStructBuilder`, and here only handles the common column metadata things.
-        val mapOptions = mapColumn(name,
-          writerOptionsFromField(
-            // This nullable is useless because we use the child of struct column
-            structBuilder(name, nullable),
-            m.keyType,
-            "key",
-            nullable = false,
-            writeInt96,
-            nestedFieldMetadata(
-              MAP_KEY_FIELD_ID_METADATA_KEY,
-              MAP_KEY_NESTED_IDS_METADATA_KEY),
-            parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0),
-          writerOptionsFromField(
-            structBuilder(name, nullable),
-            m.valueType,
-            "value",
-            m.valueContainsNull,
-            writeInt96,
-            nestedFieldMetadata(
-              MAP_VALUE_FIELD_ID_METADATA_KEY,
-              MAP_VALUE_NESTED_IDS_METADATA_KEY),
-            parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0),
-          // set the nullable for this map
-          // if `m` is a key of another map, this `nullable` should be false
-          // e.g.: map1(map2(int,int), int), the map2 is the map
-          // key of map1, map2 should be non-nullable
-          nullable)
-        setParquetFieldId(mapOptions, parquetFieldId, parquetFieldIdWriteEnabled)
+        val keyOptions = writerOptionsFromField(
+          // This nullable is useless because we use the child of struct column
+          structBuilder(name, nullable),
+          m.keyType,
+          "key",
+          nullable = false,
+          writeInt96,
+          nestedFieldMetadata(
+            MAP_KEY_FIELD_ID_METADATA_KEY,
+            MAP_KEY_NESTED_IDS_METADATA_KEY),
+          parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0)
+        val valueOptions = writerOptionsFromField(
+          structBuilder(name, nullable),
+          m.valueType,
+          "value",
+          m.valueContainsNull,
+          writeInt96,
+          nestedFieldMetadata(
+            MAP_VALUE_FIELD_ID_METADATA_KEY,
+            MAP_VALUE_NESTED_IDS_METADATA_KEY),
+          parquetFieldIdWriteEnabled).build().getChildColumnOptions()(0)
+        // set the nullable for this map
+        // if `m` is a key of another map, this `nullable` should be false
+        // e.g.: map1(map2(int,int), int), the map2 is the map
+        // key of map1, map2 should be non-nullable
+        val mapOptions = if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          mapColumn(name, keyOptions, valueOptions, nullable, parquetFieldId.get)
+        } else {
+          mapColumn(name, keyOptions, valueOptions, nullable)
+        }
         builder.withMapColumn(mapOptions)
       case BinaryType =>
-        builder.withListColumn(buildBinaryOptions(
-          name,
-          nullable,
-          parquetFieldId,
-          parquetFieldIdWriteEnabled))
+        if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
+          builder.withBinaryColumn(name, nullable, parquetFieldId.get)
+        } else {
+          builder.withBinaryColumn(name, nullable)
+        }
       case _ =>
         if (parquetFieldIdWriteEnabled && parquetFieldId.nonEmpty) {
           builder.withColumn(nullable, name, parquetFieldId.get)
