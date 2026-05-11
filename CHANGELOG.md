@@ -1,5 +1,5 @@
 # Change log
-Generated on 2026-04-29
+Generated on 2026-05-11
 
 ## Release 26.04
 
@@ -95,6 +95,9 @@ Generated on 2026-04-29
 ### PRs
 |||
 |:---|:---|
+|[#14769](https://github.com/NVIDIA/spark-rapids/pull/14769)|[DOC] update download page for 26.04.2 [skip ci]|
+|[#14714](https://github.com/NVIDIA/spark-rapids/pull/14714)|Shuffle bytes double count metric fix + tests to cover shuffle removal at unregister|
+|[#14697](https://github.com/NVIDIA/spark-rapids/pull/14697)|Update changelog for the v26.04.1 release [skip ci]|
 |[#14686](https://github.com/NVIDIA/spark-rapids/pull/14686)|[BUG] Fix unregister/remove path for wrapped shuffle resolver|
 |[#14650](https://github.com/NVIDIA/spark-rapids/pull/14650)|[DOC] Fix configs.md example: drop -SNAPSHOT jar name and swap conGPUTask conf [skip ci]|
 |[#14629](https://github.com/NVIDIA/spark-rapids/pull/14629)|[DOC] call out know issue 14574 in download page [skip ci]|
