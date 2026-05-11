@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1603,7 +1603,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
         }
       }
       withResource(outOfBounds) { _ =>
-        closeOnExcept(GpuCast.fixDecimalBounds(ret, outOfBounds, isAnsi)) { replaced =>
+        closeOnExcept(GpuCast.fixDecimalBounds(ret, outOfBounds, dt, isAnsi)) { replaced =>
           updateState(replaced, Some(outOfBounds))
           replaced
         }
