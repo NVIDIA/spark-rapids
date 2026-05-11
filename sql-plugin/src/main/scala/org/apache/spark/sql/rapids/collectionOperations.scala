@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.ArrayIndexUtils.firstIndexAndNumElementUnchecked
 import com.nvidia.spark.rapids.BoolUtils.isAllValidTrue
 import com.nvidia.spark.rapids.GpuListUtils
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.jni.GpuListSliceUtils
+import com.nvidia.spark.rapids.jni.{GpuListSliceUtils, MapUtils}
 import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimExpression}
 
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
@@ -779,31 +779,38 @@ case class GpuMapFromEntries(child: Expression) extends GpuUnaryExpression with 
   // override def stateful: Boolean = true
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
-    // Internally the format for a list of key/value structs is the same as a map,
-    // so we can just return the same column with proper validation and deduplication.
+    // MapUtils handles Spark's null-struct-entry semantics and null-key validation.
+    // Valid inputs can be returned zero-copy because Spark MAP<K,V> and
+    // cuDF LIST<STRUCT<K,V>> share the same physical layout.
     val inputBase = input.getBase
-    
-    // Check for null keys
-    GpuMapUtils.assertNoNullKeys(inputBase)
-    
-    // Handle duplicate keys based on the policy.
+    val effective: cudf.ColumnVector =
+      if (MapUtils.isValidMap(inputBase, /*throwOnNullKey=*/true)) {
+        inputBase.incRefCount()
+      } else {
+        MapUtils.mapFromEntries(inputBase, /*throwOnNullKey=*/true)
+      }
+    withResource(effective) { eff =>
+      dedupByPolicy(eff)
+    }
+  }
+
+  private def dedupByPolicy(col: cudf.ColumnVector): cudf.ColumnVector = {
     // Spark 4.1+ returns an enum value instead of String, so use toString first.
     mapKeyDedupPolicy.toString.toUpperCase match {
       case "EXCEPTION" =>
-        // Check if there are any duplicate keys
-        withResource(inputBase.dropListDuplicatesWithKeysValues()) { deduped =>
+        // Check if any duplicate keys were removed
+        withResource(col.dropListDuplicatesWithKeysValues()) { deduped =>
           withResource(deduped.getChildColumnView(0)) { dedupedChild =>
-            withResource(inputBase.getChildColumnView(0)) { originalChild =>
+            withResource(col.getChildColumnView(0)) { originalChild =>
               if (dedupedChild.getRowCount != originalChild.getRowCount) {
                 throw GpuMapUtils.duplicateMapKeyFoundError
               }
             }
           }
         }
-        inputBase.incRefCount()
+        col.incRefCount()
       case "LAST_WIN" =>
-        // Remove duplicates, keeping the last occurrence
-        inputBase.dropListDuplicatesWithKeysValues()
+        col.dropListDuplicatesWithKeysValues()
       case other =>
         throw new IllegalArgumentException(
           s"Unsupported map key deduplication policy: $other")
