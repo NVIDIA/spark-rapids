@@ -287,13 +287,15 @@ object GpuDeltaParquetFileFormat {
         }
         hasUnsupportedCachedFilter || tahoeFileIndex.matchingFiles(
           Seq(TrueLiteral), Seq(TrueLiteral)).exists { addFile =>
-          try {
-            tahoeFileIndex.getRowIndexFilterForFile(addFile.path).exists {
-              _.getRowIndexFilterType != RowIndexFilterType.IF_CONTAINED
-            }
+          val provider = try {
+            tahoeFileIndex.getRowIndexFilterForFile(addFile.path)
           } catch {
-            case _: AssertionError =>
-              false
+            case e: AssertionError
+                if RapidsDeletionVectors.isMissingRowIndexFilterAssertion(e) =>
+              None
+          }
+          provider.exists {
+            _.getRowIndexFilterType != RowIndexFilterType.IF_CONTAINED
           }
         }
       case _ => false

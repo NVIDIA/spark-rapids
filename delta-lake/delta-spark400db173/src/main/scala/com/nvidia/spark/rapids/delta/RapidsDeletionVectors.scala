@@ -47,11 +47,15 @@ case class RapidsDeletionVectorReadInfo(
 
 object RapidsDeletionVectors extends Logging {
   private val DELTA_BITMAP_MAGIC_NUMBER_BYTE_SIZE = 4
+  private val MISSING_ROW_INDEX_FILTER_MESSAGE = "Row index filter not found. file="
 
   case class DeletionVectorLookupResult(
       dvDescriptor: Option[String],
       filterType: Option[RowIndexFilterType],
       rowIndexFilterProvider: Option[RowIndexFilterProvider])
+
+  private[delta] def isMissingRowIndexFilterAssertion(e: AssertionError): Boolean =
+    Option(e.getMessage).exists(_.contains(MISSING_ROW_INDEX_FILTER_MESSAGE))
 
   /**
    * Translates filters to use physical column names instead of logical column names. This is
@@ -139,16 +143,15 @@ object RapidsDeletionVectors extends Logging {
               fileKeys(path).map(_ -> provider)
             }
           val fromMatchingFiles = matchingFiles.flatMap { addFile =>
-            try {
-              tahoeFileIndex.getRowIndexFilterForFile(addFile.path).toSeq.flatMap { provider =>
-                fileKeys(addFile.path).map(_ -> provider)
-              }
+            val provider = try {
+              tahoeFileIndex.getRowIndexFilterForFile(addFile.path)
             } catch {
               // DB-17.3 can assert here when the AddFile path and candidate path are equivalent
               // but rendered differently. The direct rowIndexFilters map and DV descriptor map
               // still cover the file lookup, so skip this optional provider path.
-              case _: AssertionError => Seq.empty
+              case e: AssertionError if isMissingRowIndexFilterAssertion(e) => None
             }
+            provider.toSeq.flatMap { p => fileKeys(addFile.path).map(_ -> p) }
           }
           (fromRowIndexFilters ++ fromMatchingFiles).toMap
         }

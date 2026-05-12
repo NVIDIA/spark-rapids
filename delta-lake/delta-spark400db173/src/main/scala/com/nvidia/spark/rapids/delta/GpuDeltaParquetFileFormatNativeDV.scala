@@ -392,7 +392,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
      * Computes the number of deleted rows within the given row ranges
      * in the bitmap.
      */
-    private def countDeletedRows(
+    def countDeletedRows(
         scalaBitmap: RoaringBitmapArray,
         rowGroupOffsets: Array[Long],
         rowGroupNumRows: Array[Int]): Long = {
@@ -808,7 +808,11 @@ case class GpuDeltaParquetFileFormatNativeDV(
 
     private case class DeletionVectorMetadata(
         metadatas: Array[SingleBufferDVMetadata]
-    )
+    ) extends AutoCloseable {
+      override def close(): Unit = {
+        metadatas.flatMap(_.maybeDvInfo).safeClose()
+      }
+    }
 
     private object DeletionVectorMetadata {
       def forSingleBuffer(maybeDvInfo: Option[SpillableDeletionVectorInfo]) = {
@@ -958,34 +962,44 @@ case class GpuDeltaParquetFileFormatNativeDV(
       val maybeSerializedDV = tablePathOpt.map(tp =>
         RapidsDeletionVectors.loadDeletionVector(conf, partitionedFile, tp, deletionVectorReadInfo))
       withResource(maybeSerializedDV) { _ =>
-        val dvMetadataArray = memBuffersAndSize.map { singleHMBAndMeta =>
-          val dataBlocks = singleHMBAndMeta.blockMeta
-            .map(_.asInstanceOf[ParquetDataBlock].dataBlock)
-          val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
-            .getRowGroupMetadata(dataBlocks)
-          DeletionVectorMetadata.forSingleBuffer(
-            maybeSerializedDV.map { serializedDV =>
-              serializedDV.incRefCount()
-              SpillableDeletionVectorInfo(
-                serializedDV,
-                maybeScalaBitmap.get,
-                rowGroupOffsets,
-                rowGroupNumRows)
-            })
+        val dvMetadataArray = closeOnExcept(ArrayBuffer.empty[DeletionVectorMetadata]) { dvMetadata =>
+          memBuffersAndSize.foreach { singleHMBAndMeta =>
+            val dataBlocks = singleHMBAndMeta.blockMeta
+              .map(_.asInstanceOf[ParquetDataBlock].dataBlock)
+            val (rowGroupOffsets, rowGroupNumRows) = RapidsDeletionVectors
+              .getRowGroupMetadata(dataBlocks)
+            val singleDvMetadata = DeletionVectorMetadata.forSingleBuffer(
+              maybeSerializedDV.map { serializedDV =>
+                serializedDV.incRefCount()
+                closeOnExcept(serializedDV) { bitmap =>
+                  SpillableDeletionVectorInfo(
+                    bitmap,
+                    maybeScalaBitmap.get,
+                    rowGroupOffsets,
+                    rowGroupNumRows)
+                }
+              })
+            closeOnExcept(singleDvMetadata) { metadata =>
+              dvMetadata += metadata
+            }
+          }
+          dvMetadata.toArray
         }
 
-        DeltaParquetHostMemoryBuffersWithMetaData(
-          partitionedFile,
-          memBuffersAndSize,
-          bytesRead,
-          fileBlockMeta.dateRebaseMode,
-          fileBlockMeta.timestampRebaseMode,
-          fileBlockMeta.hasInt96Timestamps,
-          fileBlockMeta.schema,
-          fileBlockMeta.readSchema,
-          None,
-          dvMetadataArray
-        )
+        closeOnExcept(dvMetadataArray) { _ =>
+          DeltaParquetHostMemoryBuffersWithMetaData(
+            partitionedFile,
+            memBuffersAndSize,
+            bytesRead,
+            fileBlockMeta.dateRebaseMode,
+            fileBlockMeta.timestampRebaseMode,
+            fileBlockMeta.hasInt96Timestamps,
+            fileBlockMeta.schema,
+            fileBlockMeta.readSchema,
+            None,
+            dvMetadataArray
+          )
+        }
       }
     }
 
@@ -1219,25 +1233,8 @@ case class GpuDeltaParquetFileFormatNativeDV(
               val scalaBitmap = RapidsDeletionVectors.loadScalaBitmap(
                 conf, entry.dvDescriptor, filterTypeOpt, entry.rowIndexFilterProvider, tp)
               val totalRows = entry.rowGroupNumRows.map(_.toLong).sum
-              val numDeleted: Long = if (scalaBitmap.cardinality == 0) {
-                0L
-              } else {
-                // Computes the number of rows deleted within given row ranges.
-                // This currently requires iterating through the bitmap and
-                // checking each deleted index against the row ranges.
-                // This is a temporary solution until we add a dedicated API in cuDF.
-                var count = 0L
-                val rowRanges = entry.rowGroupOffsets.zip(entry.rowGroupNumRows)
-                scalaBitmap.forEach { deletedIndex: Long =>
-                  rowRanges.find { case (offset, numRows) =>
-                    deletedIndex >= offset && deletedIndex < offset + numRows
-                  }.foreach { _ =>
-                    // If the deleted index falls within this row group, count it as deleted.
-                    count += 1L
-                  }
-                }
-                count
-              }
+              val numDeleted = SpillableDeletionVectorInfo.countDeletedRows(
+                scalaBitmap, entry.rowGroupOffsets, entry.rowGroupNumRows)
               require(numDeleted <= totalRows,
                 s"Deletion vector cardinality ($numDeleted) exceeds " +
                   s"file row count ($totalRows)")
