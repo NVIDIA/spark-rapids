@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2025, NVIDIA CORPORATION.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import pytest
 import re
 
 from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, is_databricks143_or_later, \
-    with_cpu_session, with_gpu_session
+    is_databricks173_or_later, with_cpu_session, with_gpu_session
 from asserts import assert_equal
 from conftest import spark_jvm
 
@@ -37,17 +37,17 @@ delta_meta_allow = [
 
 delta_write = ["RapidsDeltaWrite"]
 
-# Disable Deletion Vectors except for Databricks 14.3
+# Parameterize Deletion Vectors only on runtimes that expose the feature in these tests.
 def deletion_vector_values_with_350DB143_xfail_reasons(enabled_xfail_reason=None, disabled_xfail_reason=None):
-    # We will always set the deletion vectors to False
-    # in case of DB 14.3, if there is no reason provided it's False otherwise False with xfail reason
+    # Always include the DV-disabled case. On DB 14.3+ the disabled case can be marked xfail
+    # when the caller needs to document a runtime-specific expectation.
     if not is_databricks143_or_later() or disabled_xfail_reason is None:
         enable_deletion_vector = [False]
-    elif disabled_xfail_reason is not None: 
+    elif disabled_xfail_reason is not None:
         enable_deletion_vector = [pytest.param(False, marks=pytest.mark.xfail(reason=disabled_xfail_reason))]
 
-    # We only set the deletion vectors to true for DB 14.3
-    # If there is an xfail reason provided then that is included as part of the parameter.
+    # Add the DV-enabled case for DB 14.3+. This parameterizes the feature; it does not imply
+    # every later runtime has GPU DV scan coverage.
     if is_databricks143_or_later():
         if enabled_xfail_reason is None:
             enable_deletion_vector.append(True)
@@ -59,6 +59,12 @@ def deletion_vector_values_with_350DB143_xfail_reasons(enabled_xfail_reason=None
 deletion_vector_values = deletion_vector_values_with_350DB143_xfail_reasons()
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
+
+# DB-17.3 serializes generated wide-schema rows into RDDScanExec task closures for these
+# Delta write tests. The default 2048 rows can produce ~33 MB task bodies and OOM in
+# TaskSetManager.prepareLaunchingTask. Keep this DB-17.3-only reduction visible until
+# https://github.com/NVIDIA/spark-rapids/issues/14775 restores the normal 2048-row coverage.
+delta_db173_wide_schema_gen_length = 128 if is_databricks173_or_later() else 2048
 
 delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,WriteFilesExec,DeltaInvariantCheckerExec" if is_databricks122_or_later() else "ExecutedCommandExec"
 delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"

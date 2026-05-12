@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,16 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
-import com.databricks.sql.transaction.tahoe.DeltaUDF
+import com.nvidia.spark.rapids.delta.{UpdateCommandEdgeMeta, UpdateCommandMeta}
 
-import org.apache.spark.sql.expressions.UserDefinedFunction
+// DB-17.3 UPDATE has a command placeholder for shared conversion code, but the operation
+// stays on CPU until issue #14597 ports this path.
+object UpdateCommandMetaShim {
+  def tagForGpu(meta: UpdateCommandMeta): Unit = {
+    meta.willNotWorkOnGpu("Delta Lake UPDATE is not yet supported on GPU for DB-17.3")
+  }
 
-object ShimDeltaUDF {
-  def stringStringUdf(f: String => String): UserDefinedFunction = DeltaUDF.stringFromString(f)
+  def tagForGpu(meta: UpdateCommandEdgeMeta): Unit = {
+    meta.willNotWorkOnGpu("Delta Lake UPDATE is not yet supported on GPU for DB-17.3")
+  }
 }

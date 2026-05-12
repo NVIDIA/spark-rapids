@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,18 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.delta.shims
 
-import com.databricks.sql.transaction.tahoe.constraints.Constraints._
-import com.databricks.sql.transaction.tahoe.schema.DeltaInvariantViolationException
-import com.databricks.sql.transaction.tahoe.schema.InvariantViolationException
+import com.nvidia.spark.rapids.delta.{DeleteCommandEdgeMeta, DeleteCommandMeta}
 
-object InvariantViolationExceptionShim {
-  def apply(c: Check, m: Map[String, Any]): InvariantViolationException = {
-    DeltaInvariantViolationException(c, m)
+// DB-17.3 DELETE has a command placeholder for shared conversion code, but the operation
+// stays on CPU until issue #14597 ports this path.
+object DeleteCommandMetaShim {
+  def tagForGpu(meta: DeleteCommandMeta): Unit = {
+    meta.willNotWorkOnGpu("Delta Lake DELETE is not yet supported on GPU for DB-17.3")
   }
 
-  def apply(c: NotNull): InvariantViolationException = {
-    DeltaInvariantViolationException(c)
+  def tagForGpu(meta: DeleteCommandEdgeMeta): Unit = {
+    meta.willNotWorkOnGpu("Delta Lake DELETE is not yet supported on GPU for DB-17.3")
   }
 }

@@ -640,11 +640,11 @@
                 <hadoop.client.version>3.3.1</hadoop.client.version>
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
-                <rapids.delta.artifactId1>rapids-4-spark-delta-stub</rapids.delta.artifactId1>
+                <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
             </properties>
             <modules>
                 <module>shim-deps/databricks</module>
-                <module>delta-lake/delta-stub</module>
+                <module>delta-lake/delta-spark400db173</module>
                 <module>iceberg/iceberg-stub</module>
             </modules>
         </profile>

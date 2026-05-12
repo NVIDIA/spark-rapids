@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * This file was derived from DeltaDataSource.scala in the
  * Delta Lake project at https://github.com/delta-io/delta.
@@ -23,12 +23,11 @@ package com.databricks.sql.transaction.tahoe.rapids
 
 import java.util
 
-import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaErrors, DeltaLog, DeltaOptions}
-import com.databricks.sql.transaction.tahoe.commands.{TableCreationModes, WriteIntoDeltaEdge}
+import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaErrors}
+import com.databricks.sql.transaction.tahoe.commands.TableCreationModes
 import com.databricks.sql.transaction.tahoe.metering.DeltaLogging
 import com.databricks.sql.transaction.tahoe.sources.DeltaSourceUtils
 import com.nvidia.spark.rapids.RapidsConf
-import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.{AnalysisException, DataFrame, SaveMode}
 import org.apache.spark.sql.catalyst.TableIdentifier
@@ -40,28 +39,10 @@ import org.apache.spark.sql.execution.command.LeafRunnableCommand
 import org.apache.spark.sql.execution.datasources.PartitioningUtils
 import org.apache.spark.sql.types.StructType
 
-class GpuDeltaCatalog(
+abstract class GpuDeltaCatalogCommon(
     override val cpuCatalog: StagingTableCatalog,
     override val rapidsConf: RapidsConf)
   extends GpuDeltaCatalogBase with SupportsPathIdentifier with DeltaLogging {
-
-  override protected def getWriter(sourceQuery: Option[DataFrame],
-     path: Path,
-     comment: Option[String],
-     schema: Option[StructType],
-     saveMode: SaveMode,
-     catalogTable: CatalogTable): Option[LogicalPlan] = {
-    sourceQuery.map { df =>
-      WriteIntoDeltaEdge(
-        DeltaLog.forTable(spark, path),
-        saveMode,
-        new DeltaOptions(catalogTable.storage.properties, spark.sessionState.conf),
-        catalogTable.partitionColumnNames,
-        catalogTable.properties ++ comment.map("comment" -> _),
-        df,
-        schemaInCatalog = schema)
-    }
-  }
 
   override protected def buildGpuCreateDeltaTableCommand(
       rapidsConf: RapidsConf,
@@ -148,7 +129,7 @@ class GpuDeltaCatalog(
   }
 
   /**
-   * Creates a Delta table using GPU for writing the data
+   * Creates a Delta table using GPU for writing the data.
    *
    * @param ident              The identifier of the table
    * @param schema             The schema of the table
@@ -217,9 +198,8 @@ class GpuDeltaCatalog(
     }
 
   /**
-   * A staged Delta table, which creates a HiveMetaStore entry and appends data if this was a
-   * CTAS/RTAS command. We have a ugly way of using this API right now, but it's the best way to
-   * maintain old behavior compatibility between Databricks Runtime and OSS Delta Lake.
+   * A staged Delta table wrapper used to keep Databricks catalog staging behavior while adding
+   * profiling.
    */
   protected class GpuStagedDeltaTableV2WithLogging(
       ident: Identifier,

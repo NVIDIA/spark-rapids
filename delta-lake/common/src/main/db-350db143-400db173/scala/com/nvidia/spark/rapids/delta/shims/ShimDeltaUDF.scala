@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.nvidia.spark.rapids.delta.shims
 
-import com.databricks.sql.transaction.tahoe.stats.DeltaStatistics
+import com.databricks.sql.transaction.tahoe.DeltaUDF
 
-trait ShimUsesMetadataFields {
-  val NUM_RECORDS = DeltaStatistics.NUM_RECORDS
-  val MIN = DeltaStatistics.MIN
-  val MAX = DeltaStatistics.MAX
-  val NULL_COUNT = DeltaStatistics.NULL_COUNT
+import org.apache.spark.sql.expressions.UserDefinedFunction
+
+object ShimDeltaUDF {
+  def stringStringUdf(f: String => String): UserDefinedFunction = DeltaUDF.stringFromString(f)
 }
