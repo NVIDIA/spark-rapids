@@ -27,6 +27,7 @@ import org.apache.parquet.hadoop.ParquetFileReader
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.io.FileCommitProtocol
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol
 import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
@@ -104,6 +105,44 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  test("parquet writer row group size rows config") {
+    // cuDF row group boundaries are page-fragment based, so use a value that is observable.
+    val rowGroupRows = 5000
+    val numRows = rowGroupRows * 2 + 2000
+    val conf = new SparkConf()
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.key, rowGroupRows.toString)
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key, "1m")
+    withGpuSparkSession(spark => {
+      withTempPath { writePath =>
+        spark.range(0, numRows, 1, 1).write.mode("overwrite").parquet(writePath.getAbsolutePath)
+
+        assertResult(Seq(rowGroupRows.toLong, rowGroupRows.toLong, 2000L)) {
+          getSingleParquetFileRowGroupCounts(spark, writePath)
+        }
+      }
+    }, conf)
+  }
+
+  test("parquet writer row group size bytes config") {
+    val conf = new SparkConf()
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.key, "1000000")
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key, "1024")
+    withGpuSparkSession(spark => {
+      withTempPath { writePath =>
+        spark.range(0, 10000, 1, 1)
+          .selectExpr("id", "id + 1 as id2")
+          .write.mode("overwrite")
+          .parquet(writePath.getAbsolutePath)
+
+        val rowGroupCounts = getSingleParquetFileRowGroupCounts(spark, writePath)
+        assert(rowGroupCounts.length > 1, s"Expected multiple row groups, got $rowGroupCounts")
+        assertResult(10000L) {
+          rowGroupCounts.sum
+        }
+      }
+    }, conf)
+  }
+
   private def listAllFiles(f: File): Array[File] = {
     if (f.isFile()) {
       Array(f)
@@ -113,6 +152,21 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         .flatMap(f => listAllFiles(f))
     } else {
       Array.empty
+    }
+  }
+
+  private def getSingleParquetFileRowGroupCounts(
+      spark: SparkSession,
+      parquetPath: File): Seq[Long] = {
+    val parquetFiles = listAllFiles(parquetPath).filter(_.getName.endsWith(".parquet"))
+    assertResult(1) {
+      parquetFiles.length
+    }
+    val footer = ParquetFileReader.readFooters(spark.sparkContext.hadoopConfiguration,
+      new Path(parquetFiles.head.getAbsolutePath)).get(0)
+    val blocks = footer.getParquetMetadata.getBlocks
+    (0 until blocks.size()).map { i =>
+      blocks.get(i).getRowCount
     }
   }
 

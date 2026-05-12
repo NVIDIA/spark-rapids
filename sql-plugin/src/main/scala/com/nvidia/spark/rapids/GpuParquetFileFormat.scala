@@ -280,6 +280,10 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     // holdGpuBetweenBatches is on by default if asyncOutputWriteEnabled is on
     val holdGpuBetweenBatches = RapidsConf.ASYNC_QUERY_OUTPUT_WRITE_HOLD_GPU_IN_TASK.get(sqlConf)
       .getOrElse(asyncOutputWriteEnabled)
+    val parquetWriterRowGroupSizeRows =
+      RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.get(sqlConf)
+    val parquetWriterRowGroupSizeBytes =
+      RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.get(sqlConf)
 
     new ColumnarOutputWriterFactory {
         override def newInstance(
@@ -291,7 +295,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
           fileIO: RapidsFileIO): ColumnarOutputWriter = {
         new GpuParquetWriter(path, dataSchema, compressionType, outputTimestampType.toString,
           dateTimeRebaseMode, timestampRebaseMode, context, parquetFieldIdWriteEnabled,
-          statsTrackers, debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled, fileIO)
+          parquetWriterRowGroupSizeRows, parquetWriterRowGroupSizeBytes, statsTrackers,
+          debugOutputPath, holdGpuBetweenBatches, asyncOutputWriteEnabled, fileIO)
       }
 
       override def getFileExtension(context: TaskAttemptContext): String = {
@@ -299,8 +304,9 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       }
 
       override def partitionFlushSize(context: TaskAttemptContext): Long =
-        context.getConfiguration.getLong("write.parquet.row-group-size-bytes",
-          128L * 1024L * 1024L) // 128M
+        parquetWriterRowGroupSizeBytes.getOrElse(
+          context.getConfiguration.getLong("write.parquet.row-group-size-bytes",
+            128L * 1024L * 1024L)) // 128M
     }
   }
 }
@@ -314,6 +320,8 @@ class GpuParquetWriter(
     timestampRebaseMode: DateTimeRebaseMode,
     context: TaskAttemptContext,
     parquetFieldIdEnabled: Boolean,
+    parquetWriterRowGroupSizeRows: Option[Integer],
+    parquetWriterRowGroupSizeBytes: Option[Long],
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugDumpPath: Option[String],
     holdGpuBetweenBatches: Boolean,
@@ -407,6 +415,12 @@ class GpuParquetWriter(
         parquetFieldIdEnabled)
       .withMetadata(writeContext.getExtraMetaData)
       .withCompressionType(compressionType)
+    parquetWriterRowGroupSizeRows.foreach { rowGroupSizeRows =>
+      builder.withRowGroupSizeRows(rowGroupSizeRows)
+    }
+    parquetWriterRowGroupSizeBytes.foreach { rowGroupSizeBytes =>
+      builder.withRowGroupSizeBytes(rowGroupSizeBytes)
+    }
     Table.writeParquetChunked(builder.build(), this)
   }
 }

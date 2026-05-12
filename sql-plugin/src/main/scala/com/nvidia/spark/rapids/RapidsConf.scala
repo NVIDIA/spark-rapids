@@ -1343,6 +1343,27 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val PARQUET_WRITER_ROW_GROUP_SIZE_ROWS =
+    conf("spark.rapids.sql.format.parquet.writer.rowGroupSizeRows")
+      .doc("Maximum number of rows in a Parquet row group written by the GPU writer. " +
+        "This is a best-effort limit because the cuDF writer does not split row groups " +
+        "below its page fragment granularity. If not set, the cuDF writer default is used.")
+      .internal()
+      .integerConf
+      .checkValue(v => v > 0, "The Parquet writer row group size rows must be positive.")
+      .createOptional
+
+  val PARQUET_WRITER_ROW_GROUP_SIZE_BYTES =
+    conf("spark.rapids.sql.format.parquet.writer.rowGroupSizeBytes")
+      .doc("Maximum size in bytes of a Parquet row group written by the GPU writer. " +
+        "This is a best-effort limit because the cuDF writer does not split row groups " +
+        "below its page fragment granularity. If not set, the cuDF writer default is used.")
+      .internal()
+      .bytesConf(ByteUnit.BYTE)
+      .checkValue(v => v >= 1024L,
+        "The Parquet writer row group size bytes must be at least 1024.")
+      .createOptional
+
   object ParquetFooterReaderType extends Enumeration {
     val JAVA, NATIVE, AUTO = Value
   }
@@ -3563,6 +3584,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isParquetEnabled: Boolean = get(ENABLE_PARQUET)
 
   lazy val isParquetInt96WriteEnabled: Boolean = get(ENABLE_PARQUET_INT96_WRITE)
+
+  lazy val parquetWriterRowGroupSizeRows: Option[Integer] =
+    get(PARQUET_WRITER_ROW_GROUP_SIZE_ROWS)
+
+  lazy val parquetWriterRowGroupSizeBytes: Option[Long] =
+    get(PARQUET_WRITER_ROW_GROUP_SIZE_BYTES)
 
   lazy val parquetReaderFooterType: ParquetFooterReaderType.Value = {
     get(PARQUET_READER_FOOTER_TYPE) match {

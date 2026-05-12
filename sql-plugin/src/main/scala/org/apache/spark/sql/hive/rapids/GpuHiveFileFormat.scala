@@ -207,6 +207,10 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
 
     // Avoid referencing the outer object.
     val compressionType = compType
+    val parquetWriterRowGroupSizeRows =
+      RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.get(sparkSession.sessionState.conf)
+    val parquetWriterRowGroupSizeBytes =
+      RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.get(sparkSession.sessionState.conf)
     new ColumnarOutputWriterFactory {
       override def getFileExtension(context: TaskAttemptContext): String =
         compressionType match {
@@ -221,7 +225,7 @@ class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFo
           debugOutputPath: Option[String],
           fileIO: RapidsFileIO): ColumnarOutputWriter = {
         new GpuHiveParquetWriter(path, dataSchema, context, compressionType, statsTrackers,
-          debugOutputPath, fileIO)
+          debugOutputPath, parquetWriterRowGroupSizeRows, parquetWriterRowGroupSizeBytes, fileIO)
       }
     }
   }
@@ -231,6 +235,8 @@ class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
     context: TaskAttemptContext, compType: CompressionType,
     statsTrackers: Seq[ColumnarWriteTaskStatsTracker],
     debugOutputPath: Option[String],
+    parquetWriterRowGroupSizeRows: Option[Integer],
+    parquetWriterRowGroupSizeBytes: Option[Long],
     fileIO: RapidsFileIO)
   extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, true,
     statsTrackers, debugOutputPath, false, false, fileIO) {
@@ -242,6 +248,12 @@ class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
         writeInt96 = true,      // Hive 1.2 write timestamp as INT96
         parquetFieldIdEnabled = false)
       .withCompressionType(compType)
+    parquetWriterRowGroupSizeRows.foreach { rowGroupSizeRows =>
+      optionsBuilder.withRowGroupSizeRows(rowGroupSizeRows)
+    }
+    parquetWriterRowGroupSizeBytes.foreach { rowGroupSizeBytes =>
+      optionsBuilder.withRowGroupSizeBytes(rowGroupSizeBytes)
+    }
     Table.writeParquetChunked(optionsBuilder.build(), this)
   }
 
@@ -331,4 +343,3 @@ class GpuHiveTextWriter(override val path: String,
     Table.getCSVBufferWriter(writeOptions, this)
   }
 }
-
