@@ -32,6 +32,17 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-32908: maximum target error in percentile_approx", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14635"))
   enableSuite[RapidsDataFrameJoinSuite]
     .exclude("SPARK-24690 enables star schema detection even if CBO disabled", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14653"))
+  enableSuite[RapidsDynamicPartitionPruningV1SuiteAEOff]
+    .exclude("Make sure dynamic pruning works on uncorrelated queries", ADJUST_UT("Replaced by testRapids version that checks GpuSubqueryBroadcastExec"))
+    .exclude("static scan metrics", ADJUST_UT("Replaced by testRapids version that checks GpuFileSourceScanExec metrics"))
+    .exclude("avoid reordering broadcast join keys to match input hash partitioning", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10147"))
+    .exclude("Plan broadcast pruning only when the broadcast can be reused", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10147"))
+    .exclude("SPARK-32659: Fix the data issue when pruning DPP on non-atomic type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10147"))
+    .exclude("SPARK-32817: DPP throws error when the broadcast side is empty", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10147"))
+    .exclude("SPARK-38148: Do not add dynamic partition pruning if there exists static partition pruning", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10147"))
+  enableSuite[RapidsDynamicPartitionPruningV1SuiteAEOn]
+    .exclude("Make sure dynamic pruning works on uncorrelated queries", ADJUST_UT("Replaced by testRapids version that checks GpuSubqueryBroadcastExec"))
+    .exclude("SPARK-32659: Fix the data issue when pruning DPP on non-atomic type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10147"))
   enableSuite[RapidsDataFrameSelfJoinSuite]
   enableSuite[RapidsDataFrameWindowFramesSuite]
   enableSuite[RapidsDataFrameTimeWindowingSuite]
