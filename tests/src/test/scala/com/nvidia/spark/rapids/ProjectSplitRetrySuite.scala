@@ -25,7 +25,7 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, ExprId, Na
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuAdd
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
-import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
@@ -60,12 +60,24 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
       failOnError = false)(),
       "plus_one")())
 
-  private def mixedRandExprs(): Seq[GpuExpression] = Seq(
+  private case class GpuNonRetryablePassthrough(ordinal: Int, dataType: DataType)
+      extends GpuLeafExpression {
+    override lazy val deterministic: Boolean = false
+    override def nullable: Boolean = false
+    override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
+      batch.column(ordinal).asInstanceOf[GpuColumnVector].incRefCount()
+  }
+
+  private def mixedNonRetryableExprs(): Seq[GpuExpression] =
+    addOneExprs() :+ GpuAlias(GpuNonRetryablePassthrough(0, IntegerType),
+      "non_retryable")()
+
+  private def mixedRandExprs(doContextCheck: Boolean): Seq[GpuExpression] = Seq(
     GpuAlias(GpuAdd(
       GpuBoundReference(0, IntegerType, true)(NamedExpression.newExprId, "int"),
       GpuLiteral(1, IntegerType),
       failOnError = false)(), "plus_one")(),
-    GpuAlias(GpuRand(GpuLiteral(RAND_SEED, IntegerType), false), "rnd")())
+    GpuAlias(GpuRand(GpuLiteral(RAND_SEED, IntegerType), doContextCheck), "rnd")())
 
   private def collectInts(cb: ColumnarBatch, col: Int): Array[Int] = {
     val gcv = cb.column(col).asInstanceOf[GpuColumnVector]
@@ -78,6 +90,19 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
     val gcv = cb.column(col).asInstanceOf[GpuColumnVector]
     withResource(gcv.copyToHost()) { hcv =>
       (0 until cb.numRows()).map(hcv.getDouble).toArray
+    }
+  }
+
+  private def assertMixedRandBatchesEqual(retried: ColumnarBatch, ref: ColumnarBatch): Unit = {
+    assertResult(ref.numRows())(retried.numRows())
+    assertResult(ref.numCols())(retried.numCols())
+    val refPlus = collectInts(ref, 0)
+    val retPlus = collectInts(retried, 0)
+    val refRand = collectDoubles(ref, 1)
+    val retRand = collectDoubles(retried, 1)
+    (0 until NUM_ROWS).foreach { i =>
+      assertResult(refPlus(i))(retPlus(i))
+      assertResult(refRand(i))(retRand(i))
     }
   }
 
@@ -125,7 +150,7 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
   test("tiered project split-retry produces correct output") {
     val tier = GpuBindReferences.bindGpuReferencesTiered(
       addOneExprs(), batchAttrs, new SQLConf(), Map.empty)
-    assert(tier.areAllRetryable && tier.areAllDeterministic)
+    assert(tier.areAllRetryable)
     val out = withInjectedOOM {
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
         RmmSpark.OomInjectionType.GPU.ordinal, 0)
@@ -142,17 +167,11 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
     assert(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1) > 0)
   }
 
-  // A non-deterministic projection (containing GpuRand) must NOT take the
-  // split path even when the conf is on, because row-splitting would
-  // change rand state across the halves and break the row-aligned stitch
-  // between deterministic and rand columns. forceRetryOOM (plain, not
-  // split) verifies the legacy withRetryNoSplit path is selected and
-  // checkpoint/restore reproduces the rand sequence on retry.
-  test("mixed deterministic + GpuRand falls back to legacy retry path") {
+  test("mixed deterministic + GpuRand supports plain retry in split-retry path") {
     val batches = Seq(true, false).safeMap { forceRetry =>
       val tier = GpuBindReferences.bindGpuReferencesTiered(
-        mixedRandExprs(), batchAttrs, new SQLConf(), Map.empty)
-      assert(tier.areAllRetryable && !tier.areAllDeterministic)
+        mixedRandExprs(doContextCheck = true), batchAttrs, new SQLConf(), Map.empty)
+      assert(tier.areAllRetryable)
       val sb = newSpillable()
       if (forceRetry) {
         RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
@@ -161,33 +180,60 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
       tier.projectAndCloseWithRetrySingleBatch(sb)
     }
     withResource(batches) { case Seq(retried, ref) =>
-      assertResult(ref.numRows())(retried.numRows())
-      assertResult(ref.numCols())(retried.numCols())
-      val refPlus = collectInts(ref, 0)
-      val retPlus = collectInts(retried, 0)
-      val refRand = collectDoubles(ref, 1)
-      val retRand = collectDoubles(retried, 1)
-      (0 until NUM_ROWS).foreach { i =>
-        assertResult(refPlus(i))(retPlus(i))
-        assertResult(refRand(i))(retRand(i))
-      }
+      assertMixedRandBatchesEqual(retried, ref)
     }
   }
 
-  test("flat mixed deterministic + GpuRand stays off split-retry path") {
-    val sb = newSpillable()
-    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
-      RmmSpark.OomInjectionType.GPU.ordinal, 0)
-    assertThrows[GpuSplitAndRetryOOM] {
-      GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, mixedRandExprs()).close()
+  test("flat mixed deterministic + GpuRand supports split-retry path") {
+    val batches = Seq(true, false).safeMap { forceSplit =>
+      val sb = newSpillable()
+      if (forceSplit) {
+        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      }
+      GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+        sb, mixedRandExprs(doContextCheck = true))
+    }
+    withResource(batches) { case Seq(retried, ref) =>
+      assertMixedRandBatchesEqual(retried, ref)
     }
     assert(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1) > 0)
   }
 
-  test("tiered mixed deterministic + GpuRand stays off split-retry path") {
+  test("tiered mixed deterministic + GpuRand supports split-retry path") {
+    val batches = Seq(true, false).safeMap { forceSplit =>
+      val tier = GpuBindReferences.bindGpuReferencesTiered(
+        mixedRandExprs(doContextCheck = true), batchAttrs, new SQLConf(), Map.empty)
+      assert(tier.areAllRetryable)
+      val sb = newSpillable()
+      if (forceSplit) {
+        RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+          RmmSpark.OomInjectionType.GPU.ordinal, 0)
+      }
+      tier.projectAndCloseWithRetrySingleBatch(sb)
+    }
+    withResource(batches) { case Seq(retried, ref) =>
+      assertMixedRandBatchesEqual(retried, ref)
+    }
+    assert(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1) > 0)
+  }
+
+  test("flat mixed retryable + non-retryable stays on no-split path") {
+    val exprs = mixedNonRetryableExprs()
+    assert(!exprs.forall(_.retryable))
+    val sb = newSpillable()
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+    assertThrows[GpuSplitAndRetryOOM] {
+      GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprs).close()
+    }
+    assert(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1) > 0)
+  }
+
+  test("tiered mixed retryable + non-retryable stays on no-split path") {
     val tier = GpuBindReferences.bindGpuReferencesTiered(
-      mixedRandExprs(), batchAttrs, new SQLConf(), Map.empty)
-    assert(tier.areAllRetryable && !tier.areAllDeterministic)
+      mixedNonRetryableExprs(), batchAttrs, new SQLConf(), Map.empty)
+    assert(!tier.areAllRetryable)
     val sb = newSpillable()
     RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)

@@ -2738,13 +2738,11 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .createOptional
 
   val PROJECT_SPLIT_RETRY_ENABLED = conf("spark.rapids.sql.projectExec.splitRetry.enabled")
-      .doc("When true, GpuProjectExec uses split-and-retry on GPU OOM for purely " +
-          "deterministic projections: the input batch is halved by rows and the " +
-          "projection is re-run on each half. Mixed deterministic + non-deterministic " +
-          "projections fall back to the existing withRetryNoSplit path because the " +
-          "non-deterministic side is computed once on the full batch and stitched " +
-          "row-by-row to the deterministic side, which row-splitting would break. " +
-          "Disable this to revert to the prior behavior.")
+      .doc("When true, GpuProjectExec uses split-and-retry on GPU OOM for retryable " +
+          "projections: the input batch is halved by rows and the projection is re-run on " +
+          "each half. Projections that include non-retryable expressions fall back to the " +
+          "existing withRetryNoSplit path because those expressions cannot be safely " +
+          "re-evaluated on row-split inputs. Disable this to revert to the prior behavior.")
       .internal()
       .booleanConf
       .createWithDefault(true)

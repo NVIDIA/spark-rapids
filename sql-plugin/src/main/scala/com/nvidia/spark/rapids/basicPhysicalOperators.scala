@@ -163,17 +163,16 @@ object GpuProjectExec {
   def projectWithRetrySingleBatch(sb: SpillableColumnarBatch,
       boundExprs: Seq[Expression]): ColumnarBatch = {
 
-    // For purely deterministic projections, use split-retry: on GPU OOM, halve
-    // the input batch by rows and re-run on each half. This recovers from
-    // cuDF-internal scratch allocations that the pre-split estimator cannot
-    // see (e.g. regex / string-replace working memory).
+    // For retryable expressions, use split-retry: on GPU OOM, halve the input
+    // batch by rows and re-run on each half. This recovers from cuDF-internal
+    // scratch allocations that the pre-split estimator cannot see (e.g. regex
+    // / string-replace working memory).
     //
-    // Mixed deterministic + non-deterministic projections fall through to the
-    // existing withRetryNoSplit path: the non-deterministic side is computed
-    // once on the full input batch and stitched row-by-row to the deterministic
-    // side, and row-splitting either side would break that alignment.
-    if (new RapidsConf(SQLConf.get).isProjectSplitRetryEnabled &&
-        boundExprs.forall(_.deterministic)) {
+    // Mixed retryable + non-retryable projections fall through to the
+    // withRetryNoSplit path: non-retryable expressions are computed once on the
+    // full input batch and stitched row-by-row to the retryable results.
+    if (RapidsConf.PROJECT_SPLIT_RETRY_ENABLED.get(SQLConf.get) &&
+        boundExprs.forall(_.asInstanceOf[GpuExpression].retryable)) {
       val retryables = GpuExpressionsUtils.collectRetryables(boundExprs)
       // runWithSplitRetry takes ownership of the SpillableColumnarBatch; bump
       // the ref count so the caller (which is responsible for closing `sb`,
@@ -197,9 +196,9 @@ object GpuProjectExec {
     }
 
     withResource(snd) { snd =>
-      retryables.foreach(_.checkpoint())
       RmmRapidsRetryIterator.withRetryNoSplit {
-        val deterministicResults = withResource(sb.getColumnarBatch()) { cb =>
+        retryables.foreach(_.checkpoint())
+        val retryableResults = withResource(sb.getColumnarBatch()) { cb =>
           withRestoreOnRetry(retryables) {
             // For now we are just going to run all of these and deal with losing work...
             project(cb, retryableExprs)
@@ -207,18 +206,18 @@ object GpuProjectExec {
         }
         if (snd.isEmpty) {
           // We are done and the order should be the same so we don't need to do anything...
-          deterministicResults
+          retryableResults
         } else {
-          // There was a mix of deterministic and non-deterministic...
-          withResource(deterministicResults) { _ =>
+          // There was a mix of retryable and non-retryable expressions.
+          withResource(retryableResults) { _ =>
             withResource(snd.get.getColumnarBatch()) { nd =>
               var ndAt = 0
-              var detAt = 0
+              var retryableAt = 0
               val outputColumns = ArrayBuffer[ColumnVector]()
               boundExprs.foreach { expr =>
-                if (expr.deterministic) {
-                  outputColumns += deterministicResults.column(detAt)
-                  detAt += 1
+                if (expr.asInstanceOf[GpuExpression].retryable) {
+                  outputColumns += retryableResults.column(retryableAt)
+                  retryableAt += 1
                 } else {
                   outputColumns += nd.column(ndAt)
                   ndAt += 1
@@ -233,15 +232,15 @@ object GpuProjectExec {
   }
 
   /**
-   * Run a deterministic projection with row-split retry. On GPU OOM the retry
+   * Run a retryable projection with row-split retry. On GPU OOM the retry
    * framework calls splitSpillableInHalfByRows to halve the input batch and
-   * re-runs the projection on each half; sub-batches are concatenated back
-   * into a single output batch to preserve the single-batch contract of
+   * re-runs the projection on each half; sub-batches are concatenated back into
+   * a single output batch to preserve the single-batch contract of
    * projectAndCloseWithRetrySingleBatch.
    *
-   * Caller must ensure the projection driven by `runProject` is purely
-   * deterministic — non-deterministic expressions cannot be safely
-   * re-evaluated on row-split sub-batches.
+   * Caller must ensure the projection driven by `runProject` is retryable.
+   * Non-deterministic expressions are safe here only when they implement
+   * Retryable and can restore their state for each split attempt.
    *
    * `runProject` receives a (non-spillable) ColumnarBatch and returns the
    * projected ColumnarBatch. It must not close its input (the framework will).
@@ -254,8 +253,8 @@ object GpuProjectExec {
       sb: SpillableColumnarBatch,
       retryables: Seq[Retryable],
       runProject: ColumnarBatch => ColumnarBatch): ColumnarBatch = {
-    retryables.foreach(_.checkpoint())
     val resultIter = withRetry(sb, splitSpillableInHalfByRows) { spillable =>
+      retryables.foreach(_.checkpoint())
       withResource(spillable.getColumnarBatch()) { cb =>
         withRestoreOnRetry(retryables) {
           runProject(cb)
@@ -1027,17 +1026,6 @@ case class GpuProjectAstExec(
     }
   }
 
-  /**
-   * Are all expressions across all tiers deterministic. This is a stricter
-   * check than [[areAllRetryable]] — a Retryable but non-deterministic
-   * expression (e.g. GpuRand) is retryable but cannot be safely re-evaluated
-   * on a row-split sub-batch. Used by the split-retry path to gate row
-   * splitting.
-   */
-  lazy val areAllDeterministic = exprTiers.forall { tier =>
-    tier.forall(_.deterministic)
-  }
-
   lazy val retryables: Seq[Retryable] = exprTiers.flatMap(GpuExpressionsUtils.collectRetryables)
 
   lazy val outputExprs = exprTiers.last.toArray
@@ -1088,7 +1076,7 @@ case class GpuProjectAstExec(
       // If all of the expressions are retryable we can just run everything and retry it
       // at the top level. If some things are not retryable we need to split them up and
       // do the processing in a way that makes it so retries are more likely to succeed.
-      if (areAllDeterministic && new RapidsConf(SQLConf.get).isProjectSplitRetryEnabled) {
+      if (RapidsConf.PROJECT_SPLIT_RETRY_ENABLED.get(SQLConf.get)) {
         // Split-retry path: on GPU OOM, halve the input batch by rows and
         // re-run the projection on each half. runWithSplitRetry takes
         // ownership of the SpillableColumnarBatch and closes it; if the
