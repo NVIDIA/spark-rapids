@@ -21,7 +21,9 @@
 
 package com.nvidia.spark.rapids.delta
 
+import com.databricks.sql.execution.metric.IncrementMetric
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaOptions}
+import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat
 import com.databricks.sql.transaction.tahoe.commands.WriteIntoDeltaEdge
 import com.databricks.sql.transaction.tahoe.coordinatedcommits.{
   CatalogOwnedTableUtils,
@@ -32,21 +34,118 @@ import com.databricks.sql.transaction.tahoe.rapids.{
   GpuDeltaV1Write,
   GpuWriteIntoDelta
 }
+import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
+import com.nvidia.spark.rapids.shims.ShimPredicateHelper
 
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.TableSpec
 import org.apache.spark.sql.connector.write.V1Write
-import org.apache.spark.sql.execution.datasources.LogicalRelation
+import org.apache.spark.sql.execution.{FileSourceScanExec, FilterExec, ProjectExec, SparkPlan}
+import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.execution.datasources.v2.{
   AtomicCreateTableAsSelectExec,
   AtomicReplaceTableAsSelectExec
 }
+import org.apache.spark.sql.rapids.{GpuAnd, GpuEqualTo, GpuFileSourceScanExec, GpuNot}
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.sources.InsertableRelation
+import org.apache.spark.sql.types.StructType
 
 object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
+
+  override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean =
+    super.isSupportedFormat(format) ||
+      format == classOf[GpuDeltaParquetFileFormat] ||
+      format == classOf[GpuDeltaParquetFileFormatNativeDV]
+
+  override def getReadFileFormat(
+      relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat = {
+    val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
+    if (canPushDVPredicateDownToScan(rapidsConf)) {
+      GpuDeltaParquetFileFormatNativeDV(
+        relation = relation,
+        protocol = fmt.protocol,
+        metadata = fmt.metadata,
+        generateRowIndexFilterId = fmt.generateRowIndexFilterId,
+        generateRowIndexFilterColumn = fmt.generateRowIndexFilterColumn,
+        nullableRowTrackingConstantFields = fmt.nullableRowTrackingConstantFields,
+        nullableRowTrackingGeneratedFields = fmt.nullableRowTrackingGeneratedFields,
+        optimizationsEnabled = fmt.optimizationsEnabled,
+        tablePath = fmt.tablePath,
+        isCDCRead = fmt.isCDCRead)
+    } else {
+      GpuDeltaParquetFileFormat.convertToGpu(relation)
+    }
+  }
+
+  override def canPushDVPredicateDownToScan(conf: RapidsConf): Boolean = {
+    val dvConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
+    val useMetadataRowIndex = conf.getStr(dvConf.key)
+      .getOrElse(dvConf.defaultValueString).toBoolean
+    useMetadataRowIndex && conf.isDeltaDeletionVectorPredicatePushdownEnabled
+  }
+
+  override def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
+    val pushed = DB173DVPredicatePushdown.pushToScan(plan)
+    DB173DVPredicatePushdown.mergeIdenticalProjects(pushed)
+  }
+
+  override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
+    plan match {
+      case dvRoot @ GpuProjectExec(outputList,
+      dvFilter @ GpuFilterExec(condition,
+      dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
+          if condition.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) &&
+          !outputList.flatMap(_.references).exists(_.name == "_metadata") &&
+          inputList.exists(_.name == "_metadata") =>
+        dvRoot.withNewChildren(Seq(
+          dvFilter.withNewChildren(Seq(
+            dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
+              .withNewChildren(Seq(
+                fsse.copy(
+                  originalOutput = fsse.originalOutput
+                    .filterNot(_.name == "_tmp_metadata_row_index"),
+                  requiredSchema = StructType(fsse.requiredSchema
+                    .filterNot(_.name == "_tmp_metadata_row_index"))
+                )(fsse.rapidsConf)))))))
+      case _ =>
+        plan.withNewChildren(plan.children.map(pruneFileMetadata))
+    }
+  }
+
+  override def isDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = {
+    val maybeDVScan = meta.parent.flatMap(_.parent).flatMap(_.parent).map(_.wrapped)
+    maybeDVScan.exists {
+      case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _))) =>
+        condition.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) &&
+          inputList.exists(_.name == "_metadata") &&
+          !outputList.flatMap(_.references).exists(_.name == "_metadata")
+      case _ => false
+    }
+  }
+
+  def isDmlMetricDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = {
+    def hasMetricSkipRowFilter(parent: Option[RapidsMeta[_, _, _]]): Boolean = {
+      parent.exists { p =>
+        p.wrapped match {
+          case FilterExec(condition, _) =>
+            condition.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) &&
+              condition.exists(_.isInstanceOf[IncrementMetric])
+          case _ =>
+            hasMetricSkipRowFilter(p.parent)
+        }
+      }
+    }
+
+    hasMetricSkipRowFilter(meta.parent)
+  }
+
+  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
+    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
+      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
 
   override protected def toGpuWrite(
      writeConfig: DeltaWriteV1Config,
@@ -164,4 +263,97 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
 
   private def trueOrInvalidBoolean(value: String): Boolean =
     !value.trim.equalsIgnoreCase("false")
+}
+
+private object DB173DVPredicatePushdown extends ShimPredicateHelper {
+
+  def pushToScan(plan: SparkPlan): SparkPlan = {
+    def isDVCondition(condition: Expression): Boolean = {
+      condition match {
+        case GpuEqualTo(left, right) =>
+          isDeletionVectorSkipRowColumnRef(left) && isFalseLiteral(right) ||
+            isDeletionVectorSkipRowColumnRef(right) && isFalseLiteral(left)
+        case GpuNot(child) =>
+          isDeletionVectorSkipRowColumnRef(child)
+        case GpuIsNotNull(child) =>
+          isDeletionVectorSkipRowColumnRef(child)
+        case GpuIf(predicateExpr, trueExpr, falseExpr) =>
+          isDVCondition(predicateExpr) &&
+            isDVCondition(trueExpr) &&
+            !falseExpr.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name))
+        case _ => false
+      }
+    }
+
+    def isDeletionVectorSkipRowColumnRef(expr: Expression): Boolean = {
+      expr match {
+        case attr: AttributeReference if isDeletionVectorSkipRowColumn(attr.name) => true
+        case _ => false
+      }
+    }
+
+    def isFalseLiteral(expr: Expression): Boolean = {
+      expr match {
+        case GpuLiteral(value: Number, _) if value.longValue() == 0L => true
+        case GpuLiteral(value: Boolean, _) if !value => true
+        case _ => false
+      }
+    }
+
+    def pruneDeletionVectorSkipRowColumn(plan: SparkPlan): SparkPlan = {
+      plan.transformUp {
+        case project @ GpuProjectExec(projectList, _, _) =>
+          project.copy(projectList = projectList.filterNot(isDeletionVectorSkipRowColumnRef))
+        case fsse: GpuFileSourceScanExec =>
+          fsse.copy(
+            originalOutput = fsse.originalOutput.filterNot(attr =>
+              isDeletionVectorSkipRowColumn(attr.name)),
+            requiredSchema = StructType(fsse.requiredSchema.filterNot(field =>
+              isDeletionVectorSkipRowColumn(field.name))))(fsse.rapidsConf)
+      }
+    }
+
+    plan.transformUp {
+      case filter @ GpuFilterExec(condition, child)
+          if condition.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) =>
+        val conjuncts = splitConjunctivePredicates(condition)
+        val (dvPredicates, otherPredicates) = conjuncts.partition { predicate =>
+          predicate.references.size == 1 &&
+            predicate.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) &&
+            isDVCondition(predicate)
+        }
+        val otherPredicatesReadingSkipRow = otherPredicates.exists { predicate =>
+          predicate.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name))
+        }
+        val newChild = if (dvPredicates.nonEmpty && !otherPredicatesReadingSkipRow) {
+          pruneDeletionVectorSkipRowColumn(child)
+        } else {
+          child
+        }
+        if (otherPredicates.isEmpty) {
+          newChild
+        } else {
+          filter.copy(condition = otherPredicates.reduce(GpuAnd),
+            child = newChild)(filter.coalesceAfter)
+        }
+    }
+  }
+
+  def mergeIdenticalProjects(plan: SparkPlan): SparkPlan = {
+    plan.transformUp {
+      case p @ GpuProjectExec(projList1,
+      GpuProjectExec(projList2, child, enablePreSplit1), enablePreSplit2) =>
+        val projSet1 = projList1.map(_.exprId).toSet
+        val projSet2 = projList2.map(_.exprId).toSet
+        if (projSet1 == projSet2) {
+          GpuProjectExec(projList1, child, enablePreSplit1 && enablePreSplit2)
+        } else {
+          p
+        }
+    }
+  }
+
+  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
+    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
+      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
 }
