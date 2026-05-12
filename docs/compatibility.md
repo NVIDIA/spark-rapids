@@ -538,9 +538,10 @@ The following shapes fall back to CPU:
   `checkInputDataTypes` rule).
 - `MAX` / `MIN` on `float` / `double`: cuDF's `fmax(NaN, x) = x` absorbs NaN, while Spark's
   `Greatest` / `Least` use `Double.compare` which propagates NaN.
-- `ALL` / `ANY` on a nullable element array: cuDF's INCLUDE-null segmented all/any returns
-  null whenever any element is null, while Spark's 3VL short-circuits
-  (`false AND null = false`, `true OR null = true`).
+- `ALL` / `ANY` when the input array can contain null elements or the lifted `g(x)` expression
+  can produce nulls: cuDF's INCLUDE-null segmented all/any returns null whenever any element is
+  null, while Spark's 3VL short-circuits (`false AND null = false`,
+  `true OR null = true`).
 - `SUM` / `PRODUCT` on `float` / `double` when
   `spark.rapids.sql.variableFloatAgg.enabled=false`: cuDF's parallel tree-reduction sums in a
   different order than Spark's sequential left-fold.

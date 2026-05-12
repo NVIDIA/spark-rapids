@@ -276,9 +276,7 @@ def test_array_aggregate_fallback_shapes(lambda_sql, init_sql):
 
 
 @allow_non_gpu('ProjectExec')
-def test_array_aggregate_non_identity_finish_falls_back():
-    # Fallback path; ANSI mode doesn't change GPU behaviour and the small CPU sum
-    # (5 ints into a long acc, doubled) doesn't overflow.
+def test_array_aggregate_non_identity_finish_fallback():
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, ArrayGen(int_gen, max_length=5)).selectExpr(
             'aggregate(a, 0L, (acc, x) -> acc + CAST(x as BIGINT), acc -> acc * 2) as doubled'),
@@ -286,7 +284,7 @@ def test_array_aggregate_non_identity_finish_falls_back():
 
 
 @allow_non_gpu('ProjectExec')
-def test_array_aggregate_finish_cast_falls_back():
+def test_array_aggregate_finish_cast_fallback():
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(
             spark, ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=5)).selectExpr(
@@ -299,7 +297,7 @@ def test_array_aggregate_finish_cast_falls_back():
     ('(acc, x) -> least(acc, x)', 'CAST("Infinity" as DOUBLE)'),
 ], ids=['max', 'min'])
 @allow_non_gpu('ProjectExec')
-def test_array_aggregate_double_extremum_falls_back(lambda_sql, init_sql):
+def test_array_aggregate_double_extremum_fallback(lambda_sql, init_sql):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, ArrayGen(double_gen, max_length=5)).selectExpr(
             f'aggregate(a, {init_sql}, {lambda_sql}) as res'),
@@ -318,7 +316,7 @@ def test_array_aggregate_double_extremum_falls_back(lambda_sql, init_sql):
     (double_gen, '(acc, x) -> acc * x', 'CAST(1 as DOUBLE)'),
 ], ids=['float-sum', 'double-sum', 'float-product', 'double-product'])
 @allow_non_gpu('ProjectExec')
-def test_array_aggregate_float_sum_product_falls_back_when_variable_float_agg_disabled(
+def test_array_aggregate_float_sum_product_fallback_when_variable_float_agg_disabled(
         elem_gen, lambda_sql, init_sql):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, ArrayGen(elem_gen, max_length=5)).selectExpr(
@@ -327,19 +325,21 @@ def test_array_aggregate_float_sum_product_falls_back_when_variable_float_agg_di
         conf={'spark.rapids.sql.variableFloatAgg.enabled': 'false'})
 
 
-# ANSI mode + integer/decimal SUM/PRODUCT must fall back: cuDF segmented reduce wraps
-# on overflow rather than raising ArithmeticException, which violates ANSI semantics.
+# ANSI mode + integer/decimal SUM/PRODUCT must fall back: Spark requires overflow detection
+# and type-specific failure behaviour, while cuDF segmented reduce wraps on overflow.
 # MAX/MIN/ALL/ANY don't overflow and stay on GPU under ANSI.
 @pytest.mark.parametrize('elem_gen, lambda_sql, init_sql', [
+    (IntegerGen(min_val=-100, max_val=100, nullable=False),
+        '(acc, x) -> acc + CAST(x as BIGINT)', '0L'),
     (LongGen(min_val=-100, max_val=100, nullable=False),
         '(acc, x) -> acc + x', '0L'),
     (LongGen(min_val=-100, max_val=100, nullable=False),
         '(acc, x) -> acc * x', '1L'),
     (DecimalGen(precision=10, scale=2, nullable=False),
         '(acc, x) -> acc + cast(x as decimal(38,2))', 'cast(0 as decimal(38,2))'),
-], ids=['long-sum', 'long-product', 'decimal-sum'])
+], ids=['int-to-long-sum', 'long-sum', 'long-product', 'decimal-sum'])
 @allow_non_gpu('ProjectExec')
-def test_array_aggregate_ansi_sum_product_falls_back(elem_gen, lambda_sql, init_sql):
+def test_array_aggregate_ansi_sum_product_fallback(elem_gen, lambda_sql, init_sql):
     assert_gpu_fallback_collect(
         lambda spark: unary_op_df(spark, ArrayGen(elem_gen, max_length=5)).selectExpr(
             f'aggregate(a, {init_sql}, {lambda_sql}) as res'),
