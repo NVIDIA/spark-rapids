@@ -20,8 +20,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 
 import org.apache.iceberg.spark.SparkReadOptions;
 import org.apache.iceberg.spark.source.SparkTable;
@@ -186,14 +186,19 @@ public class RapidsSparkTable implements Table,
   @Override
   public boolean equals(Object other) {
     if (other instanceof RapidsSparkTable) {
-      return delegate.equals(((RapidsSparkTable) other).delegate);
+      RapidsSparkTable that = (RapidsSparkTable) other;
+      // catalogName is part of identity: it drives the session-conf prefix used
+      // to merge per-table scan overrides, so two wrappers with the same iceberg
+      // delegate but different Spark catalog names produce different scans.
+      return delegate.equals(that.delegate) &&
+          Objects.equals(catalogName, that.catalogName);
     }
     return false;
   }
 
   @Override
   public int hashCode() {
-    return delegate.hashCode();
+    return Objects.hash(delegate, catalogName);
   }
 
   static CaseInsensitiveStringMap mergeSessionOptions(
@@ -209,45 +214,30 @@ public class RapidsSparkTable implements Table,
     if (sparkOpt.isEmpty()) {
       return options;
     }
-    RuntimeConfig sparkConf = sparkOpt.get().conf();
-    // Avoid scala.collection.JavaConverters.mapAsJavaMap (deprecated under
-    // Scala 2.13) — iterate the immutable scala Map directly into a HashMap.
-    scala.collection.immutable.Map<String, String> scalaConfs = sparkConf.getAll();
-    Map<String, String> allConfs = new HashMap<>(scalaConfs.size());
-    scala.collection.Iterator<scala.Tuple2<String, String>> it = scalaConfs.iterator();
-    while (it.hasNext()) {
-      scala.Tuple2<String, String> entry = it.next();
-      allConfs.put(entry._1(), entry._2());
-    }
-    return mergeFromConfs(options, catalogName, namespace, tableName, allConfs);
-  }
 
-  // Pure-logic core of mergeSessionOptions: takes the conf map directly so it can
-  // be exercised from unit tests without an active SparkSession.
-  static CaseInsensitiveStringMap mergeFromConfs(
-      CaseInsensitiveStringMap options,
-      String catalogName,
-      String[] namespace,
-      String tableName,
-      Map<String, String> allConfs) {
     String[] components = new String[1 + namespace.length + 1];
     components[0] = catalogName;
     System.arraycopy(namespace, 0, components, 1, namespace.length);
     components[components.length - 1] = tableName;
-    String tableKey = String.join(".", components);
-    String prefix = CONF_PREFIX + tableKey + ".";
+    String prefix = CONF_PREFIX + String.join(".", components) + ".";
 
-    // Pure pass-through when nothing under our prefix is set for this table —
-    // identifiers containing '.' must not break scans for tables the user has
-    // not explicitly tuned.
-    boolean hasMatchingConfs = false;
-    for (String key : allConfs.keySet()) {
-      if (key.startsWith(prefix)) {
-        hasMatchingConfs = true;
-        break;
+    // Iterate the scala session conf once, picking only keys under our prefix.
+    // Per-table overrides are 0-3 entries, so copying the entire SparkConf into
+    // a Java map would be wasteful.
+    Map<String, String> matchingConfs = new HashMap<>();
+    scala.collection.Iterator<scala.Tuple2<String, String>> it =
+        sparkOpt.get().conf().getAll().iterator();
+    while (it.hasNext()) {
+      scala.Tuple2<String, String> entry = it.next();
+      if (entry._1().startsWith(prefix)) {
+        matchingConfs.put(entry._1(), entry._2());
       }
     }
-    if (!hasMatchingConfs) {
+
+    // Pure pass-through when no conf is set for this table — identifiers
+    // containing '.' must not break scans for tables the user has not
+    // explicitly tuned.
+    if (matchingConfs.isEmpty()) {
       return options;
     }
 
@@ -269,17 +259,14 @@ public class RapidsSparkTable implements Table,
           "identifier or set the iceberg read.split.* table property directly.");
     }
 
-    // Reject any conf under our prefix whose suffix is not one of the recognized
-    // ones, so misspelled / unsupported keys fail loudly instead of being a no-op.
-    for (String key : allConfs.keySet()) {
-      if (key.startsWith(prefix)) {
-        String suffix = key.substring(prefix.length());
-        if (!SUFFIX_TO_READ_OPTION.containsKey(suffix)) {
-          Set<String> sortedSuffixes = new TreeSet<>(SUFFIX_TO_READ_OPTION.keySet());
-          throw new IllegalArgumentException(
-              "Unrecognized suffix '" + suffix + "' in conf '" + key +
-              "'. Supported suffixes: " + sortedSuffixes + ".");
-        }
+    // Reject any conf whose suffix is not one of the recognized ones, so
+    // misspelled / unsupported keys fail loudly instead of being a no-op.
+    for (String key : matchingConfs.keySet()) {
+      String suffix = key.substring(prefix.length());
+      if (!SUFFIX_TO_READ_OPTION.containsKey(suffix)) {
+        throw new IllegalArgumentException(
+            "Unrecognized suffix '" + suffix + "' in conf '" + key +
+            "'. Supported suffixes: " + SUFFIX_TO_READ_OPTION.keySet() + ".");
       }
     }
 
@@ -290,7 +277,7 @@ public class RapidsSparkTable implements Table,
       String optionKey = entry.getValue();
       // Explicit DataFrame option always wins over session-level overrides.
       if (!options.containsKey(optionKey)) {
-        String value = allConfs.get(prefix + suffix);
+        String value = matchingConfs.get(prefix + suffix);
         if (value != null) {
           merged.put(optionKey, value);
           changed = true;

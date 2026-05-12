@@ -41,7 +41,13 @@ catalog (`spark_catalog`):
 --conf spark.sql.catalog.spark_catalog=com.nvidia.spark.rapids.iceberg.spark.RapidsSparkSessionCatalog
 --conf spark.sql.catalog.spark_catalog.type=hadoop
 --conf spark.sql.catalog.spark_catalog.warehouse=s3://my-bucket/warehouse/
+--conf spark.sql.catalog.spark_catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO
 ```
+
+The `io-impl=org.apache.iceberg.aws.s3.S3FileIO` line is required when the
+warehouse lives on S3 — without it, iceberg falls back to the hadoop
+`FileSystem` API and you have to deal with `s3a://` URI rewrites yourself.
+Drop the line for non-S3 warehouses.
 
 For a non-default Iceberg catalog (e.g. one you have configured under
 `spark.sql.catalog.<name>`), replace the catalog class with
@@ -51,6 +57,7 @@ For a non-default Iceberg catalog (e.g. one you have configured under
 --conf spark.sql.catalog.my_catalog=com.nvidia.spark.rapids.iceberg.spark.RapidsSparkCatalog
 --conf spark.sql.catalog.my_catalog.type=hadoop
 --conf spark.sql.catalog.my_catalog.warehouse=s3://my-bucket/warehouse/
+--conf spark.sql.catalog.my_catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO
 ```
 
 ## Setting per-table options
