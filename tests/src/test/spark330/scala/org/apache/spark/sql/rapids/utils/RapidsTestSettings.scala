@@ -30,6 +30,13 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsApproximatePercentileQuerySuite]
     .exclude("percentile_approx(col, ...), input rows contains null, with group by", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14634"))
     .exclude("SPARK-32908: maximum target error in percentile_approx", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14635"))
+  enableSuite[RapidsDataFrameSelfJoinSuite]
+  enableSuite[RapidsDataFrameWindowFramesSuite]
+  enableSuite[RapidsDataFrameTimeWindowingSuite]
+  enableSuite[RapidsDataFrameSessionWindowingSuite]
+  enableSuite[RapidsDataFrameStatSuite]
+  enableSuite[RapidsTypedImperativeAggregateSuite]
+  enableSuite[RapidsDatasetAggregatorSuite]
   enableSuite[RapidsArithmeticExpressionSuite]
   enableSuite[RapidsBitwiseExpressionsSuite]
   enableSuite[RapidsComplexTypeSuite]

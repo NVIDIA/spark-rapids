@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.util.Objects
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
+import com.nvidia.spark.rapids.{CombineConf, DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
@@ -116,9 +116,16 @@ case object SingleFile extends ThreadConf
 
 case class MultiThread(
     poolConfBuilder: ThreadPoolConfBuilder,
-    maxNumFilesProcessed: Int) extends ThreadConf
+    maxNumFilesProcessed: Int,
+    combineConf: CombineConf,
+    disableCombining: Boolean,
+    hasFilePathMetadata: Boolean,
+    hasRowPositionMetadata: Boolean) extends ThreadConf
 
-case class MultiFile(poolConfBuilder: ThreadPoolConfBuilder) extends ThreadConf
+case class MultiFile(
+    poolConfBuilder: ThreadPoolConfBuilder,
+    hasFilePathMetadata: Boolean,
+    hasRowPositionMetadata: Boolean) extends ThreadConf
 
 
 case class GpuIcebergParquetReaderConf(

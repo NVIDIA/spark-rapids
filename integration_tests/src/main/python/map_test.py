@@ -723,7 +723,8 @@ def test_map_element_at_ansi_null(data_gen):
 
 
 @disable_ansi_mode  # ANSI mode failures are tested separately.
-@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value +
+    decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_transform_values(data_gen):
     def do_it(spark):
@@ -734,7 +735,8 @@ def test_transform_values(data_gen):
                    'transform_values(a, (key, value) -> key) as indexed',
                    'transform_values(a, (key, value) -> b) as b_val']
         value_type = data_gen.data_type.valueType
-        # decimal types can grow too large so we are avoiding those here for now
+        # Arithmetic expansions below can overflow decimal precision, so they
+        # run only on IntegralType values.
         if isinstance(value_type, IntegralType):
             columns.extend([
                 'transform_values(a, (key, value) -> value + 1) as add',
