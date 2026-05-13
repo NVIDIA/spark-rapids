@@ -27,29 +27,15 @@ public final class RapidsInputFiles {
     private RapidsInputFiles() {}
 
     /**
-     * Cached value of {@code spark.rapids.perfio.s3.enabled}. The conf is marked
-     * startupOnly, so caching after the first non-null {@link SparkEnv} read is
-     * safe and avoids repeated {@link SparkEnv}/conf lookups on every input-file
-     * factory call.
-     */
-    private static volatile Boolean s3PerfEnabledCache;
-
-    /**
      * True iff {@code spark.rapids.perfio.s3.enabled} is set to {@code true} on
      * the active SparkConf. Returns false when no {@link SparkEnv} is initialized
      * (e.g. before driver bring-up) so callers default to the non-PerfIO path.
      */
     public static boolean isS3PerfEnabled() {
-        Boolean cached = s3PerfEnabledCache;
-        if (cached != null) {
-            return cached;
-        }
         SparkEnv env = SparkEnv.get();
         if (env == null) {
             return false;
         }
-        boolean enabled = env.conf().getBoolean(PerfIOConf.S3PERF_ENABLED().key(), false);
-        s3PerfEnabledCache = enabled;
-        return enabled;
+        return env.conf().getBoolean(PerfIOConf.S3PERF_ENABLED().key(), false);
     }
 }

@@ -58,7 +58,9 @@ class S3InputFile private (
     val ranges = copyRanges.asScala.map { r =>
       IntRangeWithOffset(r.getInputOffset, r.getLength, r.getOutputOffset)
     }.toSeq
-    PerfIO.readToHostMemory(hadoopConf, output, fileUri, ranges)
+    require(
+      PerfIO.readToHostMemory(hadoopConf, output, fileUri, ranges).isDefined,
+      "expected to use PerfIO to read")
   }
 
   /**
@@ -75,7 +77,9 @@ class S3InputFile private (
       throw new IllegalArgumentException("length must be non-negative")
     }
     val ranges = Seq[RangeWithOffset](SuffixRangeWithOffset(length, /*destOffset*/ 0L))
-    PerfIO.readToHostMemory(hadoopConf, output, fileUri, ranges)
+    require(
+      PerfIO.readToHostMemory(hadoopConf, output, fileUri, ranges).isDefined,
+      "expected to use PerfIO to read")
   }
 }
 
