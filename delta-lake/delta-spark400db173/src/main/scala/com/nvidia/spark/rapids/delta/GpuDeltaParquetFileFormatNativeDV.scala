@@ -716,23 +716,24 @@ case class GpuDeltaParquetFileFormatNativeDV(
       val allPartValues: Option[Array[(Long, InternalRow)]] = deltaBuffer.allPartValues
       val dvMetadata: DeletionVectorMetadata = deltaBuffer.dvMetadata.head
 
-      val parseOpts = closeOnExcept(hostBuffers) { _ =>
-        getParquetOptions(readDataSchema, clippedSchema, useFieldId)
-      }
-      val colTypes = readDataSchema.fields.map(f => f.dataType)
+      val (parseOpts, colTypes, dvInfos) = closeOnExcept(hostBuffers) { _ =>
+        val parsedOptions = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
+        val columnTypes = readDataSchema.fields.map(f => f.dataType)
+        val deletionVectorInfos: Array[SpillableDeletionVectorInfo] =
+          if (tablePathOpt.isDefined) {
+            val filteredDvInfos = dvMetadata.metadatas
+              .filter(_.maybeDvInfo.isDefined)
+              .map(_.maybeDvInfo.get)
 
-      val dvInfos: Array[SpillableDeletionVectorInfo] = if (tablePathOpt.isDefined) {
-        val filteredDvInfos = dvMetadata.metadatas
-          .filter(_.maybeDvInfo.isDefined)
-          .map(_.maybeDvInfo.get)
-
-        closeOnExcept(filteredDvInfos.map(_.serializedBitmap)) { _ =>
-          require(filteredDvInfos.length == dvMetadata.metadatas.length,
-            "Every DeletionVectorInfo must exist if tablePath is defined")
-        }
-        filteredDvInfos
-      } else {
-        Array()
+            closeOnExcept(filteredDvInfos.map(_.serializedBitmap)) { _ =>
+              require(filteredDvInfos.length == dvMetadata.metadatas.length,
+                "Every DeletionVectorInfo must exist if tablePath is defined")
+            }
+            filteredDvInfos
+          } else {
+            Array()
+          }
+        (parsedOptions, columnTypes, deletionVectorInfos)
       }
 
       withResource(hostBuffers) { _ =>
