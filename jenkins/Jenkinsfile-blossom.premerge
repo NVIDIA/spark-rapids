@@ -24,7 +24,7 @@ import hudson.model.Result
 import hudson.model.Run
 import jenkins.model.CauseOfInterruption.UserInterruption
 
-@Library('blossom-lib@m2-cache_v2')
+@Library('blossom-lib')
 @Library('blossom-github-lib@master')
 import ipp.blossom.*
 
