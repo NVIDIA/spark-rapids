@@ -283,6 +283,7 @@ def test_array_aggregate_non_identity_finish_fallback():
         'ArrayAggregate')
 
 
+@disable_ansi_mode
 @allow_non_gpu('ProjectExec')
 def test_array_aggregate_finish_cast_fallback():
     assert_gpu_fallback_collect(
