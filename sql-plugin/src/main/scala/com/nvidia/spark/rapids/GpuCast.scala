@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -889,10 +889,8 @@ object GpuCast {
       Seq(leftStr, rightStr, emptyStr, options.nullString).safeMap(Scalar.fromString)
     ){ case Seq(left, right, empty, nullRep) =>
       val strChildContainsNull = withResource(input.getChildColumnView(0)) {child =>
-        doCast(
-          child, elementType, StringType, options)
+        doCast(child, elementType, StringType, options)
       }
-
       val concatenated = withResource(strChildContainsNull) { _ =>
         withResource(input.replaceListChild(strChildContainsNull)) {
           concatenateStringArrayElements(_, options, castingBinaryData)
@@ -1487,11 +1485,13 @@ object GpuCast {
 
   def fixDecimalBounds(input: ColumnView,
       outOfBounds: ColumnView,
+      targetType: DecimalType,
       ansiMode: Boolean): ColumnVector = {
     if (ansiMode) {
       withResource(outOfBounds.any()) { isAny =>
         if (isAny.isValid && isAny.getBoolean) {
-          throw RapidsErrorUtils.arithmeticOverflowError(OVERFLOW_MESSAGE)
+          throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
+            input, outOfBounds, targetType)
         }
       }
       input.copyToColumnVector()
@@ -1508,13 +1508,12 @@ object GpuCast {
       ansiMode: Boolean): ColumnVector = {
     assert(input.getType.isDecimalType)
     withResource(DecimalUtil.outOfBounds(input, to)) { outOfBounds =>
-      fixDecimalBounds(input, outOfBounds, ansiMode)
+      fixDecimalBounds(input, outOfBounds, to, ansiMode)
     }
   }
 
   private def checkNFixDecimalBounds(
       input: ColumnView,
-      fromType: DecimalType,
       toType: DecimalType,
       ansiMode: Boolean,
       originCol: ColumnView): ColumnVector = {
@@ -1524,7 +1523,7 @@ object GpuCast {
         withResource(outOfBounds.any()) { isAny =>
           if (isAny.isValid && isAny.getBoolean) {
             throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(originCol, outOfBounds,
-              fromType, toType)
+              toType)
           }
         }
         input.copyToColumnVector()
@@ -1577,7 +1576,7 @@ object GpuCast {
           // We need to check for out of bound values.
           // The wholeNumberUpcast is obvious why we have to check, but we also have to check it
           // when we rounded, because rounding can add a digit to the effective precision.
-          checkNFixDecimalBounds(rounded, from, to, ansiMode, input)
+          checkNFixDecimalBounds(rounded, to, ansiMode, input)
         } else {
           rounded.incRefCount()
         }

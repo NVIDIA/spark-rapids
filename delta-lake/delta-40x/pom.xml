@@ -50,9 +50,15 @@
         </dependency>
         <dependency>
             <groupId>io.delta</groupId>
-            <artifactId>delta-spark_${scala.binary.version}</artifactId>
+            <artifactId>${delta40x.spark.artifactId}</artifactId>
             <version>${delta40x.version}</version>
             <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.unitycatalog</groupId>
+                    <artifactId>unitycatalog-client</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
@@ -76,7 +82,8 @@
                             <sources>
                                  <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/scala</source>
                                  <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/delta-io/scala</source>
-                                 <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/delta-33x-40x/scala</source>
+                                 <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/delta-33x-41x/scala</source>
+                                  <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/delta-40x-41x/scala</source>
                                  <source>${spark.rapids.source.basedir}/delta-lake/common/src/main/delta-40x/scala</source>
                             </sources>
                         </configuration>
