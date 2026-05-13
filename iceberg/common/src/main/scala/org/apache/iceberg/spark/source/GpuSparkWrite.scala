@@ -33,7 +33,6 @@ import org.apache.iceberg.io._
 import org.apache.iceberg.spark.{GpuTypeToSparkType, Spark3Util, SparkSchemaUtil}
 import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
 import org.apache.iceberg.spark.source.GpuWriteContext.positionDeleteSparkType
-import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.broadcast.Broadcast
@@ -53,7 +52,9 @@ import org.apache.spark.util.SerializableConfiguration
 
 
 
-class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionAndOrdering  {
+class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrdering  {
+  private val cpuDistribution = cpu.asInstanceOf[RequiresDistributionAndOrdering]
+
   private[source] val table: Table = FieldUtils.readField(cpu, "table", true).asInstanceOf[Table]
   private[source] val format: FileFormat = FieldUtils.readField(cpu, "format", true)
     .asInstanceOf[FileFormat]
@@ -86,18 +87,18 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
   override def toString: String = s"GpuIcebergWrite(table=$table, format=$format)"
 
   private[source] def abort(messages: Array[WriterCommitMessage]): Unit = {
-    MethodUtils.invokeMethod(cpu, true, "abort", messages)
+    MethodUtils.invokeMethod(cpu, true, "abort", messages.asInstanceOf[Array[Object]])
   }
 
-  override def distributionStrictlyRequired(): Boolean = cpu.distributionStrictlyRequired()
+  override def distributionStrictlyRequired(): Boolean = cpuDistribution.distributionStrictlyRequired()
 
-  override def requiredNumPartitions(): Int = cpu.requiredNumPartitions()
+  override def requiredNumPartitions(): Int = cpuDistribution.requiredNumPartitions()
 
-  override def advisoryPartitionSizeInBytes(): Long = cpu.advisoryPartitionSizeInBytes()
+  override def advisoryPartitionSizeInBytes(): Long = cpuDistribution.advisoryPartitionSizeInBytes()
 
-  override def requiredDistribution(): Distribution = cpu.requiredDistribution()
+  override def requiredDistribution(): Distribution = cpuDistribution.requiredDistribution()
 
-  override def requiredOrdering(): Array[SortOrder] = cpu.requiredOrdering()
+  override def requiredOrdering(): Array[SortOrder] = cpuDistribution.requiredOrdering()
 
   private[source] def createDataWriterFactory: DataWriterFactory = {
     val sparkContext: JavaSparkContext = FieldUtils.readField(cpu, "sparkContext", true)
@@ -160,7 +161,8 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
 
   private[source] def files(messages: Array[WriterCommitMessage]): Seq[DataFile] = {
     messages.filter(_ != null)
-      .flatMap(_.asInstanceOf[TaskCommit].files)
+      .flatMap(message => MethodUtils.invokeMethod(message, true, "files")
+        .asInstanceOf[Array[DataFile]])
       .toSeq
   }
 
@@ -170,9 +172,52 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
 }
 
 object GpuSparkWrite {
+  private[source] val SparkWriteClassName = "org.apache.iceberg.spark.source.SparkWrite"
+  private val SparkPositionDeltaWriteClassName =
+    "org.apache.iceberg.spark.source.SparkPositionDeltaWrite"
+  private val SparkWriteTaskCommitClassName = s"$SparkWriteClassName$$TaskCommit"
+
+  private def hasClassInHierarchy(cpuClass: Class[_], className: String): Boolean = {
+    var current = cpuClass
+    while (current != null) {
+      if (current.getName == className) {
+        return true
+      }
+      current = current.getSuperclass
+    }
+    false
+  }
+
+  private[source] def loadIcebergClass(className: String): Class[_] = {
+    val candidateLoaders = Seq(
+      Thread.currentThread().getContextClassLoader,
+      getClass.getClassLoader,
+      classOf[Table].getClassLoader)
+      .filter(_ != null)
+      .distinct
+
+    candidateLoaders.iterator.flatMap { loader =>
+      try {
+        Some(Class.forName(className, false, loader))
+      } catch {
+        case _: ClassNotFoundException => None
+      }
+    }.toSeq.headOption.getOrElse(Class.forName(className))
+  }
+
+  private[source] def newTaskCommit(result: DataWriteResult): WriterCommitMessage = {
+    val taskCommitClass = loadIcebergClass(SparkWriteTaskCommitClassName)
+    val constructor = taskCommitClass.getDeclaredConstructor(classOf[Array[DataFile]])
+    constructor.setAccessible(true)
+    val commit = constructor.newInstance(
+      result.dataFiles().toArray(new Array[DataFile](0))).asInstanceOf[WriterCommitMessage]
+    MethodUtils.invokeMethod(commit, true, "reportOutputMetrics")
+    commit
+  }
+
   def supports(cpuClass: Class[_ <: Write]): Boolean = {
-    classOf[SparkWrite].isAssignableFrom(cpuClass)  ||
-      classOf[SparkPositionDeltaWrite].isAssignableFrom(cpuClass)
+    hasClassInHierarchy(cpuClass, SparkWriteClassName) ||
+      hasClassInHierarchy(cpuClass, SparkPositionDeltaWriteClassName)
   }
 
   /**
@@ -228,7 +273,7 @@ object GpuSparkWrite {
 
   def tagForGpu(cpuWrite: Write, meta: SparkPlanMeta[_]): Unit = {
     if (!supports(cpuWrite.getClass)) {
-      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports ${classOf[SparkWrite].getName}, " +
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports $SparkWriteClassName, " +
         s"but got: ${cpuWrite.getClass.getName}")
       return
     }
@@ -309,7 +354,7 @@ object GpuSparkWrite {
   }
 
   def convert(cpuWrite: Write): GpuSparkWrite = {
-    new GpuSparkWrite(cpuWrite.asInstanceOf[SparkWrite])
+    new GpuSparkWrite(cpuWrite)
   }
 
 }
@@ -391,9 +436,7 @@ class GpuUnpartitionedDataWriter(
     close()
 
     val result = delegate.result()
-    val taskCommit = new TaskCommit(result.dataFiles().toArray(new Array(0)))
-    taskCommit.reportOutputMetrics()
-    taskCommit
+    GpuSparkWrite.newTaskCommit(result)
   }
 
   override def abort(): Unit = {
@@ -441,9 +484,7 @@ class GpuPartitionedDataWriter(
     close()
 
     val result = delegate.result()
-    val taskCommit = new TaskCommit(result.dataFiles().toArray(new Array(0)))
-    taskCommit.reportOutputMetrics()
-    taskCommit
+    GpuSparkWrite.newTaskCommit(result)
   }
 
   override def abort(): Unit = {

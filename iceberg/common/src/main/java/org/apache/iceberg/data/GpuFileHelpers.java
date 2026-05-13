@@ -30,6 +30,7 @@ import org.apache.iceberg.types.Types;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.List;
 
 /**
@@ -51,10 +52,7 @@ public class GpuFileHelpers {
     int[] equalityFieldIds =
         deleteRowSchema.columns().stream().mapToInt(Types.NestedField::fieldId).toArray();
     FileWriterFactory<Record> factory =
-        GenericFileWriterFactory.builderFor(table)
-            .equalityDeleteRowSchema(deleteRowSchema)
-            .equalityFieldIds(equalityFieldIds)
-            .build();
+        newFileWriterFactory(table, deleteRowSchema, equalityFieldIds);
 
     EqualityDeleteWriter<Record> writer =
         factory.newEqualityDeleteWriter(encrypt(out), table.spec(), partition);
@@ -67,5 +65,32 @@ public class GpuFileHelpers {
 
   private static EncryptedOutputFile encrypt(OutputFile out) {
     return EncryptedFiles.encryptedOutput(out, EncryptionKeyMetadata.EMPTY);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static FileWriterFactory<Record> newFileWriterFactory(
+      Table table, Schema deleteRowSchema, int[] equalityFieldIds) throws IOException {
+    try {
+      Class<?> factoryClass = Class.forName("org.apache.iceberg.data.GenericFileWriterFactory");
+      Method builderFor = factoryClass.getDeclaredMethod("builderFor", Table.class);
+      builderFor.setAccessible(true);
+
+      Object builder = builderFor.invoke(null, table);
+      builder = invoke(builder, "equalityDeleteRowSchema",
+          new Class<?>[] {Schema.class}, deleteRowSchema);
+      builder = invoke(builder, "equalityFieldIds",
+          new Class<?>[] {int[].class}, equalityFieldIds);
+      return (FileWriterFactory<Record>) invoke(builder, "build", new Class<?>[] {});
+    } catch (ReflectiveOperationException e) {
+      throw new IOException("Unable to build Iceberg GenericFileWriterFactory", e);
+    }
+  }
+
+  private static Object invoke(
+      Object target, String methodName, Class<?>[] parameterTypes, Object... args)
+      throws ReflectiveOperationException {
+    Method method = target.getClass().getDeclaredMethod(methodName, parameterTypes);
+    method.setAccessible(true);
+    return method.invoke(target, args);
   }
 }

@@ -17,11 +17,14 @@
 package org.apache.iceberg.spark
 
 import com.nvidia.spark.rapids.iceberg.spark.{GpuSparkReadOptions, GpuSparkSQLProperties}
-import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
+import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 
 class GpuSparkReadConf(val delegate: SparkReadConf) {
   private val confParser = FieldUtils.readField(delegate, "confParser", true)
-    .asInstanceOf[SparkConfParser]
+    .asInstanceOf[AnyRef]
+
+  private def invoke(target: AnyRef, methodName: String, args: AnyRef*): AnyRef =
+    MethodUtils.invokeMethod(target, true, methodName, args: _*)
 
   /**
    * Enables reading a timestamp without time zone as a timestamp with time zone.
@@ -36,9 +39,13 @@ class GpuSparkReadConf(val delegate: SparkReadConf) {
    *
    * @return boolean indicating if reading timestamps without timezone is allowed
    */
-  def handleTimestampWithoutZone(): Boolean = confParser.booleanConf()
-    .option(GpuSparkReadOptions.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE)
-    .sessionConf(GpuSparkSQLProperties.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE)
-    .defaultValue(GpuSparkSQLProperties.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE_DEFAULT)
-    .parse()
+  def handleTimestampWithoutZone(): Boolean = {
+    val booleanConf = invoke(confParser, "booleanConf")
+    val option = invoke(booleanConf, "option", GpuSparkReadOptions.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE)
+    val sessionConf = invoke(option, "sessionConf",
+      GpuSparkSQLProperties.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE)
+    val defaultValue = invoke(sessionConf, "defaultValue",
+      Boolean.box(GpuSparkSQLProperties.HANDLE_TIMESTAMP_WITHOUT_TIMEZONE_DEFAULT))
+    invoke(defaultValue, "parse").asInstanceOf[java.lang.Boolean]
+  }
 }

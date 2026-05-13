@@ -26,7 +26,7 @@ import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionRead
 import org.apache.spark.util.SerializableConfiguration
 
 class GpuSparkBatch(
-    val cpuBatch: SparkBatch,
+    val cpuBatch: Batch,
     val parentScan: GpuSparkScan,
 ) extends Batch  {
   override def createReaderFactory(): PartitionReaderFactory = {
@@ -46,7 +46,7 @@ class GpuSparkBatch(
       new SerializableConfiguration(sparkContext.hadoopConfiguration))
 
     cpuBatch.planInputPartitions().map { partition =>
-      new GpuSparkInputPartition(partition.asInstanceOf[SparkInputPartition],
+      new GpuSparkInputPartition(partition,
         parentScan.rapidsConf,
         hadoopConf,
         expectedSchemaString)

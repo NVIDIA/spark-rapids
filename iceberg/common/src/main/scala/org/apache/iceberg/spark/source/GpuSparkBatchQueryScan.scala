@@ -27,14 +27,16 @@ import org.apache.iceberg.expressions.Expression
 
 import org.apache.spark.sql.connector.expressions.NamedReference
 import org.apache.spark.sql.connector.expressions.filter.Predicate
-import org.apache.spark.sql.connector.read.{Statistics, SupportsRuntimeV2Filtering}
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeV2Filtering}
 
 class GpuSparkBatchQueryScan(
-    override val cpuScan: SparkBatchQueryScan,
+    cpu: Scan with SupportsRuntimeV2Filtering,
     override val rapidsConf: RapidsConf,
     override val queryUsesInputFile: Boolean) extends
-  GpuSparkPartitioningAwareScan[PartitionScanTask](cpuScan, rapidsConf, queryUsesInputFile)
+  GpuSparkPartitioningAwareScan[PartitionScanTask](cpu, rapidsConf, queryUsesInputFile)
   with SupportsRuntimeV2Filtering {
+
+  private val runtimeFilteringScan: SupportsRuntimeV2Filtering = cpu
 
   private val runtimeFilterExpressions: List[Expression] = FieldUtils.readField(
       cpuScan, "runtimeFilterExpressions", true)
@@ -42,11 +44,9 @@ class GpuSparkBatchQueryScan(
     .asScala
     .toList
 
-  override def filterAttributes(): Array[NamedReference] = cpuScan.filterAttributes()
+  override def filterAttributes(): Array[NamedReference] = runtimeFilteringScan.filterAttributes()
 
-  override def filter(predicates: Array[Predicate]): Unit = cpuScan.filter(predicates)
-
-  override def estimateStatistics(): Statistics = cpuScan.estimateStatistics()
+  override def filter(predicates: Array[Predicate]): Unit = runtimeFilteringScan.filter(predicates)
 
   override def equals(obj: Any): Boolean = {
     obj match {
@@ -62,17 +62,17 @@ class GpuSparkBatchQueryScan(
   }
 
   override def toString: String = {
-    s"GpuSparkBatchQueryScan(table=${cpuScan.table()}, )" +
-      s"branch=${cpuScan.branch()}, " +
-      s"type=${cpuScan.expectedSchema().asStruct()}, " +
-      s"filters=${cpuScan.filterExpressions()}, " +
+    s"GpuSparkBatchQueryScan(table=${GpuSparkScan.table(cpuScan)}, )" +
+      s"branch=${GpuSparkScan.branch(cpuScan)}, " +
+      s"type=${GpuSparkScan.expectedSchema(cpuScan).asStruct()}, " +
+      s"filters=${GpuSparkScan.filterExpressions(cpuScan)}, " +
       s"runtimeFilters=$runtimeFilterExpressions, " +
-      s"caseSensitive=${cpuScan.caseSensitive()}, " +
+      s"caseSensitive=${GpuSparkScan.caseSensitive(cpuScan)}, " +
       s"queryUseInputFile=$queryUsesInputFile"
   }
 
   /** Create a version of this scan with input file name support */
   override def withInputFile(): GpuScan = {
-    new GpuSparkBatchQueryScan(cpuScan, rapidsConf, true)
+    new GpuSparkBatchQueryScan(cpu, rapidsConf, true)
   }
 }

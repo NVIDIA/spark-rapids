@@ -20,18 +20,19 @@ import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids._
-import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.FieldUtils
-import org.apache.iceberg.{BaseMetadataTable, ScanTaskGroup}
+import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
+import org.apache.iceberg.{BaseMetadataTable, Schema, ScanTaskGroup, Table}
+import org.apache.iceberg.expressions.Expression
 import org.apache.iceberg.spark.{GpuSparkReadConf, SparkReadConf}
 import org.apache.iceberg.types.Types
 
 import org.apache.spark.sql.connector.metric.{CustomMetric, CustomTaskMetric}
-import org.apache.spark.sql.connector.read.{Batch, Scan, Statistics, SupportsReportStatistics}
+import org.apache.spark.sql.connector.read.{Batch, Scan, Statistics, SupportsReportStatistics, SupportsRuntimeFiltering, SupportsRuntimeV2Filtering}
 import org.apache.spark.sql.connector.read.streaming.MicroBatchStream
 import org.apache.spark.sql.types.StructType
 
 
-abstract class GpuSparkScan(val cpuScan: SparkScan,
+abstract class GpuSparkScan(val cpuScan: Scan,
     val rapidsConf: RapidsConf,
     val queryUsesInputFile: Boolean,
 ) extends GpuScan with SupportsReportStatistics {
@@ -43,11 +44,11 @@ abstract class GpuSparkScan(val cpuScan: SparkScan,
 
   override def readSchema(): StructType = cpuScan.readSchema()
 
-  override def estimateStatistics(): Statistics = cpuScan.estimateStatistics()
+  override def estimateStatistics(): Statistics =
+    cpuScan.asInstanceOf[SupportsReportStatistics].estimateStatistics()
 
   override def toBatch: Batch = {
-    val cpuBatch = cpuScan.toBatch.asInstanceOf[SparkBatch]
-    new GpuSparkBatch(cpuBatch, this)
+    new GpuSparkBatch(cpuScan.toBatch, this)
   }
 
   override def toMicroBatchStream(checkpointLocation: String): MicroBatchStream =
@@ -65,7 +66,7 @@ abstract class GpuSparkScan(val cpuScan: SparkScan,
   protected def taskGroups(): Seq[_ <: ScanTaskGroup[_]]
 
   def hasNestedType: Boolean = {
-    cpuScan.expectedSchema()
+    GpuSparkScan.expectedSchema(cpuScan)
       .asStruct()
       .fields()
       .asScala
@@ -75,21 +76,64 @@ abstract class GpuSparkScan(val cpuScan: SparkScan,
 
 
 object GpuSparkScan {
+  private val SparkScanClassName = "org.apache.iceberg.spark.source.SparkScan"
+  private val SparkBatchQueryScanClassName =
+    "org.apache.iceberg.spark.source.SparkBatchQueryScan"
+  private val SparkCopyOnWriteScanClassName =
+    "org.apache.iceberg.spark.source.SparkCopyOnWriteScan"
+
+  private def hasClassInHierarchy(cpuClass: Class[_], className: String): Boolean = {
+    var current = cpuClass
+    while (current != null) {
+      if (current.getName == className) {
+        return true
+      }
+      current = current.getSuperclass
+    }
+    false
+  }
+
+  private[source] def isSparkScan(scan: Scan): Boolean =
+    hasClassInHierarchy(scan.getClass, SparkScanClassName)
+
+  private[source] def invokeIcebergMethod[T](target: AnyRef, methodName: String): T =
+    MethodUtils.invokeMethod(target, true, methodName).asInstanceOf[T]
+
+  private[source] def table(scan: Scan): Table = invokeIcebergMethod[Table](scan, "table")
+
+  private[source] def branch(scan: Scan): String = invokeIcebergMethod[String](scan, "branch")
+
+  private[source] def caseSensitive(scan: Scan): Boolean =
+    invokeIcebergMethod[java.lang.Boolean](scan, "caseSensitive")
+
+  private[source] def expectedSchema(scan: Scan): Schema =
+    invokeIcebergMethod[Schema](scan, "expectedSchema")
+
+  private[source] def filterExpressions(scan: Scan): java.util.List[Expression] =
+    invokeIcebergMethod[java.util.List[Expression]](scan, "filterExpressions")
+
+  private[source] def groupingKeyType(scan: Scan): Types.StructType =
+    invokeIcebergMethod[Types.StructType](scan, "groupingKeyType")
+
+  private[source] def taskGroups(scan: Scan): java.util.List[_ <: ScanTaskGroup[_]] =
+    invokeIcebergMethod[java.util.List[_ <: ScanTaskGroup[_]]](scan, "taskGroups")
+
   def isMetadataScan(scan: Scan): Boolean = {
-    scan.asInstanceOf[SparkScan].table().isInstanceOf[BaseMetadataTable]
+    table(scan).isInstanceOf[BaseMetadataTable]
   }
 
   def tryConvert(cpuScan: Scan, rapidsConf: RapidsConf): Try[GpuSparkScan] = {
     Try {
-      cpuScan match {
-        case icebergScan: SparkBatchQueryScan =>
-          new GpuSparkBatchQueryScan(icebergScan, rapidsConf, false)
-        case s: SparkCopyOnWriteScan =>
-          new GpuSparkCopyOnWriteScan(s, rapidsConf, false)
-        case _ =>
-          throw new IllegalArgumentException(
-            s"Currently iceberg support only supports batch query scan and copy-on-write scan, " +
-              s"but got ${cpuScan.getClass.getName}")
+      if (hasClassInHierarchy(cpuScan.getClass, SparkBatchQueryScanClassName)) {
+        new GpuSparkBatchQueryScan(cpuScan.asInstanceOf[Scan with SupportsRuntimeV2Filtering],
+          rapidsConf, false)
+      } else if (hasClassInHierarchy(cpuScan.getClass, SparkCopyOnWriteScanClassName)) {
+        new GpuSparkCopyOnWriteScan(cpuScan.asInstanceOf[Scan with SupportsRuntimeFiltering],
+          rapidsConf, false)
+      } else {
+        throw new IllegalArgumentException(
+          s"Currently iceberg support only supports batch query scan and copy-on-write scan, " +
+            s"but got ${cpuScan.getClass.getName}")
       }
     }
   }

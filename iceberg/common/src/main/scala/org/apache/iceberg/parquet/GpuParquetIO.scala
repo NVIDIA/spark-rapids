@@ -18,6 +18,7 @@ package org.apache.iceberg.parquet
 
 import com.nvidia.spark.rapids.GpuMetric
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
+import com.nvidia.spark.rapids.iceberg.parquet.converter.ToIcebergShaded
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.io.InputFile
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions
@@ -26,7 +27,7 @@ import org.apache.iceberg.shaded.org.apache.parquet.io.{InputFile => ShadedInput
 
 object GpuParquetIO {
   def file(file: InputFile): ShadedInputFile = {
-    ParquetIO.file(file)
+    ToIcebergShaded.inputFile(file)
   }
 
   /**

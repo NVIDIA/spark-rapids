@@ -66,7 +66,6 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
 
   private def calcThreadConf(partition: GpuSparkInputPartition): ThreadConf = {
     val scans = partition
-      .cpuPartition
       .taskGroup()
       .asInstanceOf[ScanTaskGroup[ScanTask]]
       .tasks

@@ -40,7 +40,7 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
 ) extends PartitionReader[ColumnarBatch] {
   private var inited = false
   
-  private lazy val table = task.cpuPartition.table()
+  private lazy val table = task.table()
   private lazy val fileIO = table.io()
   private lazy val rapidsFileIO = new IcebergFileIO(fileIO)
   private lazy val conf = newConf()
@@ -95,7 +95,7 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
   }
 
   private def collectFiles() = {
-    val tasks: Seq[FileScanTask] = task.cpuPartition.taskGroup()
+    val tasks: Seq[FileScanTask] = task.taskGroup()
       .asInstanceOf[ScanTaskGroup[ScanTask]]
       .tasks()
       .asScala
@@ -131,7 +131,7 @@ class GpuIcebergPartitionReader(private val task: GpuSparkInputPartition,
       .map(nm => NameMappingParser.fromJson(nm))
 
     GpuIcebergParquetReaderConf(
-      task.cpuPartition.isCaseSensitive,
+      task.isCaseSensitive,
       task.hadoopConf.value.value,
       task.maxReadBatchSizeRows,
       task.maxReadBatchSizeBytes,
