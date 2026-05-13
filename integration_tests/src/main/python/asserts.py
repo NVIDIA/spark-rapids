@@ -28,34 +28,25 @@ import difflib
 import sys
 import re
 
-def _is_nan_inf_overflow_pair(cpu, gpu):
-    return type(gpu) is float and (
-        (math.isnan(cpu) and math.isinf(gpu)) or
-        (math.isinf(cpu) and math.isnan(gpu)))
-
-def _assert_equal(cpu, gpu, float_check, path, nan_inf_equivalent_for_overflow=False):
+def _assert_equal(cpu, gpu, float_check, path):
     t = type(cpu)
     if (t is Row):
         assert len(cpu) == len(gpu), "CPU and GPU row have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         if hasattr(cpu, "__fields__") and hasattr(gpu, "__fields__"):
             assert cpu.__fields__ == gpu.__fields__, "CPU and GPU row have different fields at {} CPU: {} GPU: {}".format(path, cpu.__fields__, gpu.__fields__)
             for field in cpu.__fields__:
-                _assert_equal(cpu[field], gpu[field], float_check, path + [field],
-                    nan_inf_equivalent_for_overflow)
+                _assert_equal(cpu[field], gpu[field], float_check, path + [field])
         else:
             for index in range(len(cpu)):
-                _assert_equal(cpu[index], gpu[index], float_check, path + [index],
-                    nan_inf_equivalent_for_overflow)
+                _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is list):
         assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         for index in range(len(cpu)):
-            _assert_equal(cpu[index], gpu[index], float_check, path + [index],
-                nan_inf_equivalent_for_overflow)
+            _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is tuple):
         assert len(cpu) == len(gpu), "CPU and GPU list have different lengths at {} CPU: {} GPU: {}".format(path, len(cpu), len(gpu))
         for index in range(len(cpu)):
-            _assert_equal(cpu[index], gpu[index], float_check, path + [index],
-                nan_inf_equivalent_for_overflow)
+            _assert_equal(cpu[index], gpu[index], float_check, path + [index])
     elif (t is pytypes.GeneratorType):
         index = 0
         # generator has no zip :( so we have to do this the hard way
@@ -76,8 +67,7 @@ def _assert_equal(cpu, gpu, float_check, path, nan_inf_equivalent_for_overflow=F
             if done:
                 assert sub_cpu == sub_gpu and sub_cpu == None, "CPU and GPU generators have different lengths at {}".format(path)
             else:
-                _assert_equal(sub_cpu, sub_gpu, float_check, path + [index],
-                    nan_inf_equivalent_for_overflow)
+                _assert_equal(sub_cpu, sub_gpu, float_check, path + [index])
 
             index = index + 1
     elif (t is dict):
@@ -89,8 +79,6 @@ def _assert_equal(cpu, gpu, float_check, path, nan_inf_equivalent_for_overflow=F
     elif (t is int):
         assert cpu == gpu, f"GPU ({gpu}) and CPU ({cpu}) int values are different at {path}"
     elif (t is float):
-        if (nan_inf_equivalent_for_overflow and _is_nan_inf_overflow_pair(cpu, gpu)):
-            return
         if (math.isnan(cpu)):
             assert math.isnan(gpu), f"GPU ({gpu}) and CPU (nan) float values are different at {path}"
         else:
@@ -118,15 +106,14 @@ def _assert_equal(cpu, gpu, float_check, path, nan_inf_equivalent_for_overflow=F
     else:
         assert False, "Found unexpected type {} at {}".format(t, path)
 
-def assert_equal_with_local_sort(cpu, gpu, nan_inf_equivalent_for_overflow=False):
+def assert_equal_with_local_sort(cpu, gpu):
     _sort_locally(cpu, gpu)
-    assert_equal(cpu, gpu, nan_inf_equivalent_for_overflow)
+    assert_equal(cpu, gpu)
 
-def assert_equal(cpu, gpu, nan_inf_equivalent_for_overflow=False):
+def assert_equal(cpu, gpu):
     """Verify that the result from the CPU and the GPU are equal"""
     try:
-        _assert_equal(cpu, gpu, float_check=get_float_check(), path=[],
-            nan_inf_equivalent_for_overflow=nan_inf_equivalent_for_overflow)
+        _assert_equal(cpu, gpu, float_check=get_float_check(), path=[])
     except:
         def to_txt(data):
             try:
@@ -600,8 +587,7 @@ def _assert_gpu_and_cpu_are_equal(func,
     mode,
     conf={},
     is_cpu_first=True,
-    result_canonicalize_func_before_compare=None,
-    nan_inf_equivalent_for_overflow=False):
+    result_canonicalize_func_before_compare=None):
     (bring_back, collect_type) = _prep_func_for_compare(func, mode)
     conf = _prep_incompat_conf(conf)
 
@@ -639,7 +625,7 @@ def _assert_gpu_and_cpu_are_equal(func,
     if should_sort_locally():
         _sort_locally(from_cpu, from_gpu)
 
-    assert_equal(from_cpu, from_gpu, nan_inf_equivalent_for_overflow)
+    assert_equal(from_cpu, from_gpu)
 
 def run_with_cpu(func,
     mode,
@@ -702,8 +688,7 @@ def run_with_cpu_and_gpu(func,
     return (from_cpu, from_gpu)
 
 def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True,
-        result_canonicalize_func_before_compare=None,
-        nan_inf_equivalent_for_overflow=False):
+        result_canonicalize_func_before_compare=None):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is collected back to the driver and compared here, so be
@@ -718,12 +703,9 @@ def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True,
                                                     +Row(a=Row(first=-341142443, second=3.333994866005594e-37))
                                                   Use this func to canonicalize the results.
                                                   Usage of this func is: (cpu, gpu) = result_canonicalize_func_before_compare(original_cpu_result, original_gpu_result)
-    :param nan_inf_equivalent_for_overflow: Treat NaN vs +/-Inf as equivalent for
-                                            documented floating-point overflow tests.
     """
     _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf, is_cpu_first=is_cpu_first,
-        result_canonicalize_func_before_compare=result_canonicalize_func_before_compare,
-        nan_inf_equivalent_for_overflow=nan_inf_equivalent_for_overflow)
+        result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
 
 def assert_gpu_and_cpu_are_equal_iterator(func, conf={}, is_cpu_first=True):
     """
@@ -743,7 +725,7 @@ def assert_gpu_and_cpu_row_counts_equal(func, conf={}, is_cpu_first=True):
 
 def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=False,
         is_cpu_first=True, validate_execs_in_gpu_plan=[],
-        nan_inf_equivalent_for_overflow=False):
+        result_canonicalize_func_before_compare=None):
     """
     Assert that the specified SQL query produces equal results on CPU and GPU.
     :param df_fun: a function that will create the dataframe
@@ -753,8 +735,8 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
     :param debug: Boolean to indicate if the SQL output should be printed
     :param is_cpu_first: Boolean to indicate if the CPU should be run first or not
     :param validate_execs_in_gpu_plan: String list of expressions to be validated in the GPU plan.
-    :param nan_inf_equivalent_for_overflow: Treat NaN vs +/-Inf as equivalent for
-                                            documented floating-point overflow tests.
+    :param result_canonicalize_func_before_compare: Function to canonicalize the CPU and GPU
+        results before comparison.
     :return: Assertion failure, if results from CPU and GPU do not match.
     """
     if conf is None:
@@ -770,7 +752,7 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
         else:
             return spark.sql(sql)
     assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first,
-        nan_inf_equivalent_for_overflow=nan_inf_equivalent_for_overflow)
+        result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
 
 
 def check_exception(actual_error, error_message):

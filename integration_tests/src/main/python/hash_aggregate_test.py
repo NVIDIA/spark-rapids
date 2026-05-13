@@ -21,6 +21,7 @@ from conftest import is_databricks_runtime, spark_jvm
 from conftest import is_not_utc
 from data_gen import *
 from functools import reduce
+from pyspark.sql import Row
 from pyspark.sql.dataframe import DataFrame
 from pyspark.sql.types import *
 from marks import *
@@ -2355,7 +2356,33 @@ def test_no_fallback_when_ansi_enabled(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true'})
 
-def _assert_std_variance(data_gen, conf, nan_inf_equivalent_for_overflow=False):
+_STD_VARIANCE_OVERFLOW_SENTINEL = '__STD_VARIANCE_OVERFLOW__'
+_STD_VARIANCE_FIELDS = {
+    'stddev(b)', 'stddev_pop(b)', 'stddev_samp(b)',
+    'variance(b)', 'var_pop(b)', 'var_samp(b)'
+}
+
+def _canonicalize_std_variance_overflow_value(value):
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return _STD_VARIANCE_OVERFLOW_SENTINEL
+    return value
+
+def _canonicalize_std_variance_overflow_rows(rows):
+    return [
+        Row(**{
+            field: _canonicalize_std_variance_overflow_value(row[field])
+            if field in _STD_VARIANCE_FIELDS else row[field]
+            for field in row.__fields__
+        }) if isinstance(row, Row) and hasattr(row, "__fields__") else row
+        for row in rows
+    ]
+
+def _canonicalize_std_variance_overflow_results(cpu, gpu):
+    return (
+        _canonicalize_std_variance_overflow_rows(cpu),
+        _canonicalize_std_variance_overflow_rows(gpu))
+
+def _assert_std_variance(data_gen, conf, result_canonicalize_func_before_compare=None):
     local_conf = copy_and_update(conf, {
         'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
@@ -2370,7 +2397,7 @@ def _assert_std_variance(data_gen, conf, nan_inf_equivalent_for_overflow=False):
         'var_samp(b)' +
         ' from data_table group by a',
         conf=local_conf,
-        nan_inf_equivalent_for_overflow=nan_inf_equivalent_for_overflow)
+        result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1000),
         "data_table",
@@ -2379,7 +2406,7 @@ def _assert_std_variance(data_gen, conf, nan_inf_equivalent_for_overflow=False):
         'stddev_samp(b)'
         ' from data_table',
         conf=local_conf,
-        nan_inf_equivalent_for_overflow=nan_inf_equivalent_for_overflow)
+        result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
 
 
 # Tests for standard deviation and variance aggregations on common finite values.
@@ -2402,7 +2429,10 @@ def test_std_variance(data_gen, conf):
 @pytest.mark.parametrize('data_gen', _std_variance_extreme_fp_gens, ids=idfn)
 @pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
 def test_std_variance_extreme_floating_point(data_gen, conf):
-    _assert_std_variance(data_gen, conf, nan_inf_equivalent_for_overflow=True)
+    _assert_std_variance(
+        data_gen,
+        conf,
+        result_canonicalize_func_before_compare=_canonicalize_std_variance_overflow_results)
 
 
 @ignore_order(local=True)
