@@ -25,7 +25,6 @@ import scala.collection.JavaConverters._
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.{IntRangeWithOffset, PerfIO, RangeWithOffset, SuffixRangeWithOffset}
 import com.nvidia.spark.rapids.jni.fileio.{RapidsInputFile, SeekableInputStream}
-
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
