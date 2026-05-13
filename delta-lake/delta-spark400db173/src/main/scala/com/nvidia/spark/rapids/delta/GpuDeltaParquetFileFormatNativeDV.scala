@@ -962,7 +962,8 @@ case class GpuDeltaParquetFileFormatNativeDV(
       val maybeSerializedDV = tablePathOpt.map(tp =>
         RapidsDeletionVectors.loadDeletionVector(conf, partitionedFile, tp, deletionVectorReadInfo))
       withResource(maybeSerializedDV) { _ =>
-        val dvMetadataArray = closeOnExcept(ArrayBuffer.empty[DeletionVectorMetadata]) { dvMetadata =>
+        val dvMetadataBuffer = ArrayBuffer.empty[DeletionVectorMetadata]
+        val dvMetadataArray = closeOnExcept(dvMetadataBuffer) { dvMetadata =>
           memBuffersAndSize.foreach { singleHMBAndMeta =>
             val dataBlocks = singleHMBAndMeta.blockMeta
               .map(_.asInstanceOf[ParquetDataBlock].dataBlock)
