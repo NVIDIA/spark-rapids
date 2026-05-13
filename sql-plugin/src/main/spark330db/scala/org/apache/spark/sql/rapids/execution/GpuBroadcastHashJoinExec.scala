@@ -87,6 +87,8 @@ case class GpuBroadcastHashJoinExec(
       leftKeys, rightKeys, joinType, buildSide, condition, left, right, isNullAwareAntiJoin) {
   import GpuMetric._
 
+  private type BuildBatchAndStream = (ColumnarBatch, Iterator[ColumnarBatch])
+
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
     STREAM_TIME -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_STREAM_TIME),
@@ -134,7 +136,8 @@ case class GpuBroadcastHashJoinExec(
       buildSchema: StructType,
       buildOutput: Seq[Attribute],
       streamIter: Iterator[ColumnarBatch],
-      coalesceMetricsMap: Map[String, GpuMetric]): (ColumnarBatch, Iterator[ColumnarBatch]) = {
+      coalesceMetricsMap: Map[String, GpuMetric],
+      postProjectionAndClose: Option[ColumnarBatch => ColumnarBatch]): BuildBatchAndStream = {
     val targetSize = RapidsConf.GPU_BATCH_SIZE_BYTES.get(conf)
     val metricsMap = allMetrics
 
@@ -149,7 +152,7 @@ case class GpuBroadcastHashJoinExec(
       }
       val buildBatch = GpuExecutorBroadcastHelper.getExecutorBroadcastBatch(buildRelation,
           buildSchema, buildOutput, metricsMap, targetSize)
-      val projectedBuildBatch = buildSidePostProjection.map(_(buildBatch)).getOrElse(buildBatch)
+      val projectedBuildBatch = postProjectionAndClose.map(_(buildBatch)).getOrElse(buildBatch)
       (projectedBuildBatch, bufferedStreamIter)
     }
   }
@@ -173,6 +176,7 @@ case class GpuBroadcastHashJoinExec(
     val localBuildSchema = getBroadcastPlan(buildPlan).schema
     val localBuildOutput = getBroadcastPlan(buildPlan).output
     val localIsNullAwareAntiJoin = isNullAwareAntiJoin
+    val postProjectionAndClose = buildSidePostProjection
     rdd.mapPartitions { it =>
       val (builtBatch, streamIter) =
         getExecutorBuiltBatchAndStreamIter(
@@ -180,7 +184,8 @@ case class GpuBroadcastHashJoinExec(
           localBuildSchema,
           localBuildOutput,
           new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime),
-          allMetrics)
+          allMetrics,
+          postProjectionAndClose)
       if (localIsNullAwareAntiJoin) {
         // This is to support the null-aware anti join for the LeftAnti join with
         // BuildRight. See the config "spark.sql.optimizeNullAwareAntiJoin".
