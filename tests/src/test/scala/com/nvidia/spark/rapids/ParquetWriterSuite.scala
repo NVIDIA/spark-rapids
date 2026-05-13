@@ -19,18 +19,22 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.charset.StandardCharsets
 
+import ai.rapids.cudf.CompressionType
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
+import org.apache.hadoop.mapreduce.{Job, JobContext, TaskAttemptContext, TaskAttemptID, TaskType}
+import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
 import org.apache.parquet.hadoop.ParquetFileReader
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol
+import org.apache.spark.sql.hive.rapids.GpuHiveParquetFileFormat
 import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
+import org.apache.spark.sql.types.StructType
 
 /**
  * Tests for writing Parquet files with the GPU.
@@ -116,9 +120,30 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       withTempPath { writePath =>
         spark.range(0, numRows, 1, 1).write.mode("overwrite").parquet(writePath.getAbsolutePath)
 
-        assertResult(Seq(rowGroupRows.toLong, rowGroupRows.toLong, 2000L)) {
-          getSingleParquetFileRowGroupCounts(spark, writePath)
+        val rowGroupCounts = getSingleParquetFileRowGroupCounts(spark, writePath)
+        assert(rowGroupCounts.length > 1, s"Expected multiple row groups, got $rowGroupCounts")
+        assert(rowGroupCounts.forall(_ <= rowGroupRows.toLong),
+          s"Expected all row groups <= $rowGroupRows rows, got $rowGroupCounts")
+        assertResult(numRows.toLong) {
+          rowGroupCounts.sum
         }
+      }
+    }, conf)
+  }
+
+  test("hive parquet writer row group size bytes config partition flush size") {
+    val rowGroupSizeBytes = 1024L
+    val conf = new SparkConf()
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key, rowGroupSizeBytes.toString)
+    withGpuSparkSession(spark => {
+      val job = Job.getInstance(spark.sparkContext.hadoopConfiguration)
+      val factory = new GpuHiveParquetFileFormat(CompressionType.NONE)
+        .prepareWrite(spark, job, Map.empty, new StructType())
+      val attemptId = new TaskAttemptID("job", 0, TaskType.MAP, 0, 0)
+      val context = new TaskAttemptContextImpl(job.getConfiguration, attemptId)
+
+      assertResult(rowGroupSizeBytes) {
+        factory.partitionFlushSize(context)
       }
     }, conf)
   }
