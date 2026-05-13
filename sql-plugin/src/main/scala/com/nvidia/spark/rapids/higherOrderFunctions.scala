@@ -979,7 +979,14 @@ case object SumOp extends AggOp {
   // as scalar GpuSum/GpuAverage) — cuDF's parallel tree-reduction sums in a different
   // order than Spark's sequential left-fold, so the low-bit answer can differ even though
   // both are valid IEEE 754 results. The check happens in GpuArrayAggregateMeta.
-  def supportsType(t: DataType): Boolean = t.isInstanceOf[NumericType]
+  //
+  // Decimal is unsupported: Spark non-ANSI decimal addition returns null on overflow via
+  // CheckOverflow(nullOnOverflow = true), while cuDF's segmented sum has no overflow-to-null
+  // variant.
+  def supportsType(t: DataType): Boolean = t match {
+    case _: NumericType => !t.isInstanceOf[DecimalType]
+    case _ => false
+  }
 }
 
 case object ProductOp extends AggOp {
@@ -1471,11 +1478,10 @@ class GpuArrayAggregateMeta(
           GpuOverrides.checkAndTagFloatAgg(expr.zero.dataType, this.conf, this)
           // ANSI: row-wise GpuAdd/GpuMultiply check overflow and raise, but cuDF's
           // segmented reduce we delegate to here has no overflow-checking variant —
-          // it wraps. Fall back to CPU for the integer/decimal cases that ANSI
-          // requires to raise.
+          // it wraps. Fall back to CPU for the integer cases that ANSI requires to raise.
           if (SQLConf.get.ansiEnabled) {
             expr.zero.dataType match {
-              case ByteType | ShortType | IntegerType | LongType | _: DecimalType =>
+              case ByteType | ShortType | IntegerType | LongType =>
                 willNotWorkOnGpu(s"${d.op.name} in ANSI mode is not yet supported on " +
                   "GPU; cuDF segmented reduce wraps on overflow rather than raising " +
                   "ArithmeticException")

@@ -129,22 +129,26 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
     assertDecomposes(Add(acc, g), acc, x, SumOp, zeroType = LongType)
   }
 
-  test("CheckOverflow around decimal Add does not hide SUM shape") {
+  test("CheckOverflow around decimal Add falls back as unsupported SUM type") {
     val dt = DecimalType(38, 2)
     val acc = lv("acc", dt); val x = lv("x", dt)
     val body = CheckOverflow(Add(acc, x), dt, nullOnOverflow = true)
-    assertDecomposes(body, acc, x, SumOp,
+    val msg = assertRejects(merge(body, acc, x), identityFinish(acc),
+      "Decimal SUM should fall back after unwrapping CheckOverflow",
       zeroType = dt, argType = Some(ArrayType(dt, containsNull = false)))
+    assert(msg.contains("SUM"), s"expected SUM-related error, got: $msg")
   }
 
-  test("PromotePrecision around decimal Add operands does not hide SUM shape") {
+  test("PromotePrecision around decimal Add operands falls back as unsupported SUM type") {
     val dt = DecimalType(38, 2)
     val acc = lv("acc", dt); val x = lv("x", dt)
     withPromotePrecision(acc) { promotedAcc =>
       withPromotePrecision(x) { promotedX =>
         val body = CheckOverflow(Add(promotedAcc, promotedX), dt, nullOnOverflow = true)
-        assertDecomposes(body, acc, x, SumOp,
+        val msg = assertRejects(merge(body, acc, x), identityFinish(acc),
+          "Decimal SUM should fall back after unwrapping PromotePrecision",
           zeroType = dt, argType = Some(ArrayType(dt, containsNull = false)))
+        assert(msg.contains("SUM"), s"expected SUM-related error, got: $msg")
       }
     }
   }

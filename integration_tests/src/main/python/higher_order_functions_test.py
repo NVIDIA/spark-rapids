@@ -251,13 +251,17 @@ def test_array_aggregate_long_overflow_wraps():
 
 
 @disable_ansi_mode
-def test_array_aggregate_decimal_sum():
-    decimal_gen = DecimalGen(precision=10, scale=2)
+@allow_non_gpu('ProjectExec')
+def test_array_aggregate_decimal_sum_overflow_fallback():
     def do_it(spark):
-        return unary_op_df(spark, ArrayGen(decimal_gen, max_length=8)).selectExpr(
-            'aggregate(a, CAST(0 as DECIMAL(38,2)), '
-            '(acc, x) -> acc + CAST(x as DECIMAL(38,2))) as dec_sum')
-    assert_gpu_and_cpu_are_equal_collect(do_it)
+        return spark.sql("""
+            SELECT array(
+              CAST('99999999999999999999999999999999999999' AS DECIMAL(38,0)),
+              CAST('1' AS DECIMAL(38,0))
+            ) AS a
+            """).selectExpr(
+                'aggregate(a, CAST(0 as DECIMAL(38,0)), (acc, x) -> acc + x) as dec_sum')
+    assert_gpu_fallback_collect(do_it, 'ArrayAggregate')
 
 
 @pytest.mark.parametrize('lambda_sql, init_sql', [
@@ -326,8 +330,9 @@ def test_array_aggregate_float_sum_product_fallback_when_variable_float_agg_disa
         conf={'spark.rapids.sql.variableFloatAgg.enabled': 'false'})
 
 
-# ANSI mode + integer/decimal SUM/PRODUCT must fall back: Spark requires overflow detection
+# ANSI mode + integer SUM/PRODUCT must fall back: Spark requires overflow detection
 # and type-specific failure behaviour, while cuDF segmented reduce wraps on overflow.
+# Decimal SUM is included because decimal segmented reductions are unsupported in all modes.
 # MAX/MIN/ALL/ANY don't overflow and stay on GPU under ANSI.
 @pytest.mark.parametrize('elem_gen, lambda_sql, init_sql', [
     (IntegerGen(min_val=-100, max_val=100, nullable=False),

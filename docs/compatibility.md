@@ -505,7 +505,7 @@ each:
 
 | Op       | Catalyst shape         | Element types                     |
 | -------- | ---------------------- | --------------------------------- |
-| SUM      | `Add(acc, g)`          | byte / short / int / long / decimal; float / double gated by `spark.rapids.sql.variableFloatAgg.enabled` |
+| SUM      | `Add(acc, g)`          | byte / short / int / long; float / double gated by `spark.rapids.sql.variableFloatAgg.enabled` |
 | PRODUCT  | `Multiply(acc, g)`     | byte / short / int / long; float / double gated by `spark.rapids.sql.variableFloatAgg.enabled` |
 | MAX      | `Greatest(acc, g)` (2 children only) | byte / short / int / long  |
 | MIN      | `Least(acc, g)` (2 children only)    | byte / short / int / long  |
@@ -530,8 +530,8 @@ The following shapes fall back to CPU:
 
 - Lambdas whose body uses an op that isn't one of the six above (e.g. `Subtract`, `Divide`),
   or `Greatest`/`Least` with three or more children.
-- Lambdas where `g(x)` references `acc`, or where `acc` appears on different sides of the op
-  in different `If`/`CaseWhen` branches, or where different branches use different ops.
+- Lambdas where `g(x)` references `acc`, or where different `If`/`CaseWhen` branches use
+  different ops.
 - A `CaseWhen` without an `else` branch (the implicit-null fall-through is not modelled).
 - A finish lambda that isn't the identity.
 - `g(x).dataType` that doesn't equal the accumulator/zero type (Spark's
@@ -545,9 +545,12 @@ The following shapes fall back to CPU:
 - `SUM` / `PRODUCT` on `float` / `double` when
   `spark.rapids.sql.variableFloatAgg.enabled=false`: cuDF's parallel tree-reduction sums in a
   different order than Spark's sequential left-fold.
-- `SUM` / `PRODUCT` on integer or decimal types under `spark.sql.ansi.enabled=true`: cuDF's
-  segmented reduce wraps on overflow rather than raising `ArithmeticException`. Full ANSI
-  support is tracked as a follow-up.
+- `SUM` / `PRODUCT` on decimal types: Spark decimal arithmetic has overflow-specific behavior
+  (`SUM` returns null on overflow in non-ANSI mode and raises in ANSI mode), while cuDF segmented
+  reductions do not currently provide matching overflow handling.
+- `SUM` / `PRODUCT` on integer types under `spark.sql.ansi.enabled=true`: cuDF's segmented reduce
+  wraps on overflow rather than raising `ArithmeticException`. Full ANSI support is tracked as a
+  follow-up.
 
 Each fallback condition produces a self-contained reason in the query's GPU plan explain output,
 so users can see exactly which rule triggered the CPU fallback for their query.
