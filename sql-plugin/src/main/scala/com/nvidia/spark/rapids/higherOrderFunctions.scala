@@ -1236,7 +1236,7 @@ object ArrayAggregateDecomposer {
       e: Expression,
       accId: ExprId,
       op: AggOp): Option[Expression] = {
-    op.matchBinary(e).flatMap { case (l, r) =>
+    op.matchBinary(unwrapDecimalPatternWrappers(e)).flatMap { case (l, r) =>
       if (isAccRef(l, accId) && !containsAccRef(r, accId)) Some(r)
       else if (isAccRef(r, accId) && !containsAccRef(l, accId)) Some(l)
       else None
@@ -1299,7 +1299,24 @@ object ArrayAggregateDecomposer {
   private def isAccRef(e: Expression, id: ExprId): Boolean = e match {
     case v: NamedLambdaVariable => v.exprId == id
     case c: Cast => isAccRef(c.child, id)
+    case other if isDecimalPatternWrapper(other) && other.children.length == 1 =>
+      isAccRef(other.children.head, id)
     case _ => false
+  }
+
+  private def unwrapDecimalPatternWrappers(e: Expression): Expression = {
+    if (isDecimalPatternWrapper(e) && e.children.length == 1) {
+      unwrapDecimalPatternWrappers(e.children.head)
+    } else {
+      e
+    }
+  }
+
+  // Spark 3.3 and earlier wrap decimal arithmetic as CheckOverflow(PromotePrecision(op(...))).
+  // Use class names so this still compiles on Spark versions where PromotePrecision is gone.
+  private def isDecimalPatternWrapper(e: Expression): Boolean = {
+    val name = e.getClass.getName
+    name.endsWith(".CheckOverflow") || name.endsWith(".PromotePrecision")
   }
 
   private def containsAccRef(e: Expression, id: ExprId): Boolean = e.exists {

@@ -16,11 +16,11 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.expressions.{Add, And, CaseWhen, Cast, Divide, EqualTo,
-  Expression, GreaterThan, Greatest, If, LambdaFunction, Least, Literal, Multiply,
+import org.apache.spark.sql.catalyst.expressions.{Add, And, CaseWhen, Cast, CheckOverflow, Divide,
+  EqualTo, Expression, GreaterThan, Greatest, If, LambdaFunction, Least, Literal, Multiply,
   NamedExpression, NamedLambdaVariable, Or, Subtract}
-import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, DoubleType, IntegerType,
-  LongType}
+import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, DecimalType, DoubleType,
+  IntegerType, LongType}
 
 // Extends GpuUnitTests so SQLConf.get is available for the default evalMode / failOnError
 // parameter on Add/Subtract/Multiply/Divide (the field name differs across Spark versions;
@@ -77,6 +77,15 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
     d.swap.getOrElse(fail("unreachable"))
   }
 
+  private def withPromotePrecision(child: Expression)(f: Expression => Unit): Unit = {
+    try {
+      val cls = Class.forName("org.apache.spark.sql.catalyst.expressions.PromotePrecision")
+      f(cls.getConstructor(classOf[Expression]).newInstance(child).asInstanceOf[Expression])
+    } catch {
+      case _: ClassNotFoundException =>
+    }
+  }
+
   test("Add(acc, x) -> SUM, g on the right") {
     val acc = lv("acc"); val x = lv("x")
     assertDecomposes(Add(acc, x), acc, x, SumOp)
@@ -118,6 +127,26 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
     val acc = lv("acc", LongType); val x = lv("x", IntegerType)
     val g = Cast(Add(Multiply(x, Literal(2)), Literal(1)), LongType)
     assertDecomposes(Add(acc, g), acc, x, SumOp, zeroType = LongType)
+  }
+
+  test("CheckOverflow around decimal Add does not hide SUM shape") {
+    val dt = DecimalType(38, 2)
+    val acc = lv("acc", dt); val x = lv("x", dt)
+    val body = CheckOverflow(Add(acc, x), dt, nullOnOverflow = true)
+    assertDecomposes(body, acc, x, SumOp,
+      zeroType = dt, argType = Some(ArrayType(dt, containsNull = false)))
+  }
+
+  test("PromotePrecision around decimal Add operands does not hide SUM shape") {
+    val dt = DecimalType(38, 2)
+    val acc = lv("acc", dt); val x = lv("x", dt)
+    withPromotePrecision(acc) { promotedAcc =>
+      withPromotePrecision(x) { promotedX =>
+        val body = CheckOverflow(Add(promotedAcc, promotedX), dt, nullOnOverflow = true)
+        assertDecomposes(body, acc, x, SumOp,
+          zeroType = dt, argType = Some(ArrayType(dt, containsNull = false)))
+      }
+    }
   }
 
   test("Cast wrapping the acc side is unwrapped (single layer)") {
