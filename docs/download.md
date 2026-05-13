@@ -19,7 +19,7 @@ classpath on all nodes or submitted with each job that uses the RAPIDS Spark. Se
 guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/overview.html) for
 more details.
 
-## Release v26.04.1
+## Release v26.04.2
 ### Hardware Requirements:
 
 The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Hopper and Blackwell generation datacenter GPUs.  The plugin jar is tested on the following GPUs:
@@ -75,26 +75,26 @@ for your hardware's minimum driver version.
 ### RAPIDS Accelerator's Support Policy for Apache Spark
 The RAPIDS Accelerator maintains support for Apache Spark versions available for download from [Apache Spark](https://spark.apache.org/downloads.html)
 
-### Download RAPIDS Accelerator for Apache Spark v26.04.1
+### Download RAPIDS Accelerator for Apache Spark v26.04.2
 
 #### CUDA 12
 
 | Processor | Scala Version | Download Jar | Download Signature | Download From Maven |
 |-----------|---------------|--------------|--------------------|---------------------|
-| x86_64    | Scala 2.12    | [RAPIDS Accelerator v26.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.1/rapids-4-spark_2.12-26.04.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.1/rapids-4-spark_2.12-26.04.1.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.1&lt;/version&gt;<br/>&lt;/dependency&gt;</pre> |
-| x86_64    | Scala 2.13    | [RAPIDS Accelerator v26.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.1/rapids-4-spark_2.13-26.04.1.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.1/rapids-4-spark_2.13-26.04.1.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.1&lt;/version&gt;<br/>&lt;/dependency&gt;</pre> |
-| arm64     | Scala 2.12    | [RAPIDS Accelerator v26.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.1/rapids-4-spark_2.12-26.04.1-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.1/rapids-4-spark_2.12-26.04.1-cuda12-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.1&lt;/version&gt;<br/>    &lt;classifier&gt;cuda12-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
-| arm64     | Scala 2.13    | [RAPIDS Accelerator v26.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.1/rapids-4-spark_2.13-26.04.1-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.1/rapids-4-spark_2.13-26.04.1-cuda12-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.1&lt;/version&gt;<br/>    &lt;classifier&gt;cuda12-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v26.04.2](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.2/rapids-4-spark_2.12-26.04.2.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.2/rapids-4-spark_2.12-26.04.2.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.2&lt;/version&gt;<br/>&lt;/dependency&gt;</pre> |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v26.04.2](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.2/rapids-4-spark_2.13-26.04.2.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.2/rapids-4-spark_2.13-26.04.2.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.2&lt;/version&gt;<br/>&lt;/dependency&gt;</pre> |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v26.04.2](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.2/rapids-4-spark_2.12-26.04.2-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.2/rapids-4-spark_2.12-26.04.2-cuda12-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.2&lt;/version&gt;<br/>    &lt;classifier&gt;cuda12-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v26.04.2](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.2/rapids-4-spark_2.13-26.04.2-cuda12-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.2/rapids-4-spark_2.13-26.04.2-cuda12-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.2&lt;/version&gt;<br/>    &lt;classifier&gt;cuda12-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
 
 
 #### CUDA 13
 
 | Processor | Scala Version | Download Jar | Download Signature | Download From Maven |
 |-----------|---------------|--------------|--------------------|---------------------|
-| x86_64    | Scala 2.12    | [RAPIDS Accelerator v26.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.1/rapids-4-spark_2.12-26.04.1-cuda13.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.1/rapids-4-spark_2.12-26.04.1-cuda13.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.1&lt;/version&gt;<br/>    &lt;classifier&gt;cuda13&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
-| x86_64    | Scala 2.13    | [RAPIDS Accelerator v26.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.1/rapids-4-spark_2.13-26.04.1-cuda13.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.1/rapids-4-spark_2.13-26.04.1-cuda13.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.1&lt;/version&gt;<br/>    &lt;classifier&gt;cuda13&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
-| arm64     | Scala 2.12    | [RAPIDS Accelerator v26.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.1/rapids-4-spark_2.12-26.04.1-cuda13-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.1/rapids-4-spark_2.12-26.04.1-cuda13-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.1&lt;/version&gt;<br/>    &lt;classifier&gt;cuda13-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
-| arm64     | Scala 2.13    | [RAPIDS Accelerator v26.04.1](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.1/rapids-4-spark_2.13-26.04.1-cuda13-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.1/rapids-4-spark_2.13-26.04.1-cuda13-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.1&lt;/version&gt;<br/>    &lt;classifier&gt;cuda13-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+| x86_64    | Scala 2.12    | [RAPIDS Accelerator v26.04.2](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.2/rapids-4-spark_2.12-26.04.2-cuda13.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.2/rapids-4-spark_2.12-26.04.2-cuda13.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.2&lt;/version&gt;<br/>    &lt;classifier&gt;cuda13&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+| x86_64    | Scala 2.13    | [RAPIDS Accelerator v26.04.2](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.2/rapids-4-spark_2.13-26.04.2-cuda13.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.2/rapids-4-spark_2.13-26.04.2-cuda13.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.2&lt;/version&gt;<br/>    &lt;classifier&gt;cuda13&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+| arm64     | Scala 2.12    | [RAPIDS Accelerator v26.04.2](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.2/rapids-4-spark_2.12-26.04.2-cuda13-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.12/26.04.2/rapids-4-spark_2.12-26.04.2-cuda13-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.12&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.2&lt;/version&gt;<br/>    &lt;classifier&gt;cuda13-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
+| arm64     | Scala 2.13    | [RAPIDS Accelerator v26.04.2](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.2/rapids-4-spark_2.13-26.04.2-cuda13-arm64.jar) | [Signature](https://repo1.maven.org/maven2/com/nvidia/rapids-4-spark_2.13/26.04.2/rapids-4-spark_2.13-26.04.2-cuda13-arm64.jar.asc) | <pre>&lt;dependency&gt;<br/>    &lt;groupId&gt;com.nvidia&lt;/groupId&gt;<br/>    &lt;artifactId&gt;rapids-4-spark_2.13&lt;/artifactId&gt;<br/>    &lt;version&gt;26.04.2&lt;/version&gt;<br/>    &lt;classifier&gt;cuda13-arm64&lt;/classifier&gt;<br/>&lt;/dependency&gt;</pre> |
 
 
 The above packages are built against CUDA 12.9 or CUDA 13.1. They are tested on V100, T4, A10, A100, L4, H100 and GB100 GPUs.
@@ -103,15 +103,20 @@ The above packages are built against CUDA 12.9 or CUDA 13.1. They are tested on 
 * Download the [PUB_KEY](https://keys.openpgp.org/search?q=sw-spark@nvidia.com).
 * Import the public key: `gpg --import PUB_KEY`
 * Verify the signature for Scala 2.12 jar:
-    `gpg --verify rapids-4-spark_2.12-26.04.1.jar.asc rapids-4-spark_2.12-26.04.1.jar`
+    `gpg --verify rapids-4-spark_2.12-26.04.2.jar.asc rapids-4-spark_2.12-26.04.2.jar`
 * Verify the signature for Scala 2.13 jar:
-    `gpg --verify rapids-4-spark_2.13-26.04.1.jar.asc rapids-4-spark_2.13-26.04.1.jar`
+    `gpg --verify rapids-4-spark_2.13-26.04.2.jar.asc rapids-4-spark_2.13-26.04.2.jar`
 
 The output of signature verify:
 
 	gpg: Good signature from "NVIDIA Spark (For the signature of spark-rapids release jars) <sw-spark@nvidia.com>"
 
 ### Release Notes
+v26.04.2 is a hotfix release on top of v26.04.1 with the following fixes:
+* Fix shuffle bytes double-counting in metrics when shuffle blocks are removed at unregister ([#14714](https://github.com/NVIDIA/spark-rapids/pull/14714))
+
+The full v26.04.1 release notes are also included below.
+
 v26.04.1 is a hotfix release on top of v26.04.0 with the following fixes:
 * Fix unregister/remove path for the wrapped shuffle resolver to prevent stale shuffle files from accumulating, which could cause `java.io.IOException: No space left on device` on long running jobs ([#14686](https://github.com/NVIDIA/spark-rapids/pull/14686), [#14683](https://github.com/NVIDIA/spark-rapids/issues/14683))
 * Rebuilt against the latest Databricks 17.3 ML LTS runtime to resolve a `NoSuchMethodError` on `CatalogTable.copy` in `GpuCreateDataSourceTableAsSelectCommand` ([#14682](https://github.com/NVIDIA/spark-rapids/issues/14682))
