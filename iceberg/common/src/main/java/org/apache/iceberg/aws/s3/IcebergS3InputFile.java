@@ -19,12 +19,13 @@ package org.apache.iceberg.aws.s3;
 import ai.rapids.cudf.HostMemoryBuffer;
 import com.nvidia.spark.rapids.IcebergS3RangeCopier;
 import com.nvidia.spark.rapids.IcebergS3RangeCopier.IcebergS3Client;
-import com.nvidia.spark.rapids.PerfIOConf;
+import com.nvidia.spark.rapids.fileio.RapidsInputFiles;
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
 import com.nvidia.spark.rapids.iceberg.ShimUtils;
+import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
+import com.nvidia.spark.rapids.jni.fileio.SeekableInputStream;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
-import org.apache.spark.SparkEnv;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,31 +33,34 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
+import java.util.OptionalLong;
 
 /**
- * S3-backed {@link IcebergInputFile} that delegates byte-range reads to
+ * S3-backed {@link RapidsInputFile} that delegates byte-range reads to
  * {@link IcebergS3RangeCopier}. The supplied {@link FileIO} is only used for
  * its property map and any per-prefix storage-credential overlays.
  *
  * <p>This class lives in {@code org.apache.iceberg.aws.s3} for the package-private
  * {@link BaseS3File} access used to extract the bucket/key URI.
  */
-public final class IcebergS3InputFile extends IcebergInputFile {
+public final class IcebergS3InputFile implements RapidsInputFile {
   private static final Logger LOG = LoggerFactory.getLogger(IcebergS3InputFile.class);
 
+  private final IcebergInputFile delegate;
   private final URI s3Uri;
   private final IcebergS3Client icebergS3Client;
 
-  private IcebergS3InputFile(InputFile delegate, URI s3Uri, IcebergS3Client icebergS3Client) {
-    super(delegate);
+  private IcebergS3InputFile(
+      IcebergInputFile delegate, URI s3Uri, IcebergS3Client icebergS3Client) {
+    this.delegate = delegate;
     this.s3Uri = s3Uri;
     this.icebergS3Client = icebergS3Client;
   }
 
-  public static IcebergInputFile maybeCreate(InputFile inputFile, FileIO fileIO) {
+  public static RapidsInputFile maybeCreate(InputFile inputFile, FileIO fileIO) {
     // When the gating conf is off (or the file is not an S3 file), return the
     // default IcebergInputFile so the standard Iceberg SeekableInputStream path is used.
-    if (!isPerfioS3Enabled() || !(inputFile instanceof BaseS3File)) {
+    if (!RapidsInputFiles.isS3PerfEnabled() || !(inputFile instanceof BaseS3File)) {
       return new IcebergInputFile(inputFile);
     }
     BaseS3File s3File = (BaseS3File) inputFile;
@@ -79,7 +83,36 @@ public final class IcebergS3InputFile extends IcebergInputFile {
         fileIO.properties(),
         ShimUtils.storageCredentialOverlays(fileIO));
     LOG.debug("IcebergS3RangeCopier path active for {}", s3Uri);
-    return new IcebergS3InputFile(inputFile, s3Uri, icebergS3Client);
+    return new IcebergS3InputFile(new IcebergInputFile(inputFile), s3Uri, icebergS3Client);
+  }
+
+  @Override
+  public String path() {
+    return delegate.path();
+  }
+
+  @Override
+  public long getLength() throws IOException {
+    return delegate.getLength();
+  }
+
+  @Override
+  public OptionalLong getLastModificationTime() throws IOException {
+    return delegate.getLastModificationTime();
+  }
+
+  @Override
+  public SeekableInputStream open() throws IOException {
+    return delegate.open();
+  }
+
+  /**
+   * Returns the underlying Iceberg {@link InputFile}, matching
+   * {@link IcebergInputFile#getDelegate()} for use by iceberg-internal
+   * code paths that need direct access to the iceberg API.
+   */
+  public InputFile getDelegate() {
+    return delegate.getDelegate();
   }
 
   @Override
@@ -91,8 +124,7 @@ public final class IcebergS3InputFile extends IcebergInputFile {
   /**
    * Issue a single suffix-range {@code GetObject} ({@code Range: bytes=-N}) for
    * the last {@code length} bytes. Avoids the {@code getLength()} round-trip the
-   * default {@link com.nvidia.spark.rapids.jni.fileio.RapidsInputFile#readTail}
-   * would make.
+   * default {@link RapidsInputFile#readTail} would make.
    */
   @Override
   public void readTail(long length, HostMemoryBuffer output) throws IOException {
@@ -103,13 +135,5 @@ public final class IcebergS3InputFile extends IcebergInputFile {
       throw new IllegalArgumentException("length must be non-negative");
     }
     IcebergS3RangeCopier.copyTailToHMB(icebergS3Client, output, s3Uri, length, /*dstOffset*/ 0L);
-  }
-
-  private static boolean isPerfioS3Enabled() {
-    SparkEnv env = SparkEnv.get();
-    if (env == null) {
-      return false;
-    }
-    return env.conf().getBoolean(PerfIOConf.S3PERF_ENABLED().key(), false);
   }
 }

@@ -38,7 +38,7 @@ import com.nvidia.spark.rapids.RapidsConf.ParquetFooterReaderType
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.filecache.FileCache
-import com.nvidia.spark.rapids.fileio.hadoop.{HadoopFileIO, HadoopInputFile}
+import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
 import com.nvidia.spark.rapids.io.async._
 import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsInputFile}
@@ -2018,21 +2018,8 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     if (filePath.toUri.getScheme.startsWith("s3")) {
       GpuTaskMetrics.get.recordPerfioS3BackendOnce()
     }
-    // HadoopInputFile S3 takes the optimized vectored-read path; other inputs
-    // fall through to the RapidsInputFile default via readVectored.
-    val totalBytesCopied = inputFile match {
-      case _: HadoopInputFile =>
-        val ranges = coalescedRanges.map { r =>
-          IntRangeWithOffset(r.getInputOffset, r.getLength, r.getOutputOffset)
-        }
-        val bytesRead = metrics.getOrElse(READ_FS_TIME, NoopMetric).ns {
-          PerfIO.readToHostMemory(conf, out.buffer, filePath.toUri, ranges)
-        }
-        bytesRead.getOrElse(
-          GpuParquetScan.readRangesToHostMemory(inputFile, out.buffer, coalescedRanges, metrics))
-      case _ =>
-        GpuParquetScan.readRangesToHostMemory(inputFile, out.buffer, coalescedRanges, metrics)
-    }
+    val totalBytesCopied = GpuParquetScan.readRangesToHostMemory(
+      inputFile, out.buffer, coalescedRanges, metrics)
 
     // try to cache the remote ranges that were copied
     remoteCopies.foreach { range =>
