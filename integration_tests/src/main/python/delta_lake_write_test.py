@@ -80,6 +80,87 @@ def _assert_sql(data_path, confs, query):
         confs)
 
 
+TYPE_WIDENING_CASES = [
+    pytest.param(
+        "INT",
+        "BIGINT",
+        "(1L, 1), (2L, 2)",
+        "(3L, CAST(2147483648 AS BIGINT)), (4L, CAST(2147483649 AS BIGINT))",
+        id="int_to_bigint"),
+    pytest.param(
+        "FLOAT",
+        "DOUBLE",
+        "(1L, CAST(1.25 AS FLOAT)), (2L, CAST(2.5 AS FLOAT))",
+        "(3L, CAST(16777217.25 AS DOUBLE)), (4L, CAST(16777218.5 AS DOUBLE))",
+        id="float_to_double"),
+]
+
+
+def _setup_type_widened_table(spark, path, source_type, target_type, initial_rows):
+    _create_table(spark, path, f"id BIGINT, value {source_type}")
+    spark.sql(f"INSERT INTO delta.`{path}` VALUES {initial_rows}")
+    spark.sql(
+        f"ALTER TABLE delta.`{path}` SET TBLPROPERTIES ('delta.enableTypeWidening' = 'true')")
+    spark.sql(f"ALTER TABLE delta.`{path}` ALTER COLUMN value TYPE {target_type}")
+
+
+def _insert_type_widened_rows(spark, path, appended_rows):
+    spark.sql(f"INSERT INTO delta.`{path}` VALUES {appended_rows}")
+
+
+@allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_spark_400_or_later(),
+                    reason="Delta type widening ALTER COLUMN requires Delta 4.0+")
+@pytest.mark.parametrize(
+    "source_type,target_type,initial_rows,appended_rows",
+    TYPE_WIDENING_CASES)
+def test_delta_type_widening_read_round_trip(
+        spark_tmp_path, source_type, target_type, initial_rows, appended_rows):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+
+    def setup_table(spark):
+        _setup_type_widened_table(spark, data_path, source_type, target_type, initial_rows)
+        _insert_type_widened_rows(spark, data_path, appended_rows)
+
+    with_cpu_session(setup_table, conf=writer_confs)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(
+            f"SELECT id, value, typeof(value) AS value_type "
+            f"FROM delta.`{data_path}` ORDER BY id"))
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_spark_400_or_later(),
+                    reason="Delta type widening ALTER COLUMN requires Delta 4.0+")
+@pytest.mark.parametrize(
+    "source_type,target_type,initial_rows,appended_rows",
+    TYPE_WIDENING_CASES)
+def test_delta_write_round_trip_after_type_widening(
+        spark_tmp_path, source_type, target_type, initial_rows, appended_rows):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+
+    def setup_tables(spark):
+        for path in [data_path + "/CPU", data_path + "/GPU"]:
+            _setup_type_widened_table(spark, path, source_type, target_type, initial_rows)
+
+    def do_insert(spark, path):
+        _insert_type_widened_rows(spark, path, appended_rows)
+
+    with_cpu_session(setup_tables, conf=writer_confs)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_insert,
+        lambda spark, path: spark.sql(
+            f"SELECT id, value, typeof(value) AS value_type "
+            f"FROM delta.`{path}` ORDER BY id"),
+        data_path,
+        conf=_delta_confs)
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
