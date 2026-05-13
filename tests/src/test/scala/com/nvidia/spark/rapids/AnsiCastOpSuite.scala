@@ -391,6 +391,28 @@ class AnsiCastOpSuite extends GpuExpressionTestSuite {
     frame => testCastTo(DataTypes.IntegerType)(frame)
   }
 
+  test("ansi_cast whitespace-padded string to decimal overflow") {
+    val expected = "cannot be represented as Decimal(3, 0)"
+    val castToDecimal = (spark: SparkSession) => {
+      val input = makeUnaryDF(spark, Seq(" 1000 "), StringType)
+      input.repartition(1).select(col("c0").cast(DecimalType(3, 0)))
+    }
+
+    val cpuError = intercept[Exception] {
+      withCpuSparkSession(spark => castToDecimal(spark).collect(), sparkConf)
+    }
+    assert(exceptionContains(cpuError, expected),
+      s""""$expected" not in "${cpuError.getMessage}"""")
+
+    val gpuError = intercept[Exception] {
+      withGpuSparkSession(spark => castToDecimal(spark).collect(), sparkConf)
+    }
+    assert(exceptionContains(gpuError, expected),
+      s""""$expected" not in "${gpuError.getMessage}"""")
+    assert(!exceptionContains(gpuError, "because it is malformed"),
+      s""""because it is malformed" found in "${gpuError.getMessage}"""")
+  }
+
   ///////////////////////////////////////////////////////////////////////////
   // Ansi cast from string to floating point
   ///////////////////////////////////////////////////////////////////////////

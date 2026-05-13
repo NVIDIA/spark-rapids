@@ -656,8 +656,9 @@ object GpuCast {
         // CPU parity: unparseable strings raise CAST_INVALID_INPUT, but
         // parseable values that don't fit the target precision raise
         // NUMERIC_VALUE_OUT_OF_RANGE via cannotChangeDecimalPrecisionError.
-        // `Decimal(s)` throws NumberFormatException on unparseable input.
-        val parsed = try Some(Decimal(s)) catch {
+        // Spark trims strings before decimal parsing. Preserve the original
+        // value for malformed-input error reporting below.
+        val parsed = try Some(Decimal(s.trim)) catch {
           case _: NumberFormatException | _: ArithmeticException => None
         }
         parsed match {
