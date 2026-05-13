@@ -346,3 +346,4 @@ class GpuHiveTextWriter(override val path: String,
     Table.getCSVBufferWriter(writeOptions, this)
   }
 }
+
