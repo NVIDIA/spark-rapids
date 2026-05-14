@@ -84,14 +84,18 @@ TYPE_WIDENING_CASES = [
     pytest.param(
         "INT",
         "BIGINT",
-        "(1L, 1), (2L, 2)",
-        "(3L, CAST(2147483648 AS BIGINT)), (4L, CAST(2147483649 AS BIGINT))",
+        "(1L, CAST(NULL AS INT)), (2L, -2147483648), (3L, -1), (4L, 2147483647)",
+        "(5L, CAST(NULL AS BIGINT)), (6L, CAST(-2147483649 AS BIGINT)), "
+        "(7L, CAST(2147483648 AS BIGINT)), (8L, CAST(2147483649 AS BIGINT))",
         id="int_to_bigint"),
     pytest.param(
         "FLOAT",
         "DOUBLE",
-        "(1L, CAST(1.25 AS FLOAT)), (2L, CAST(2.5 AS FLOAT))",
-        "(3L, CAST(16777217.25 AS DOUBLE)), (4L, CAST(16777218.5 AS DOUBLE))",
+        "(1L, CAST(NULL AS FLOAT)), (2L, CAST(-1.25 AS FLOAT)), "
+        "(3L, CAST('NaN' AS FLOAT)), (4L, CAST(3.4028235E38 AS FLOAT))",
+        "(5L, CAST(NULL AS DOUBLE)), (6L, CAST(-16777217.25 AS DOUBLE)), "
+        "(7L, CAST('NaN' AS DOUBLE)), (8L, CAST(-3.4028236E38 AS DOUBLE)), "
+        "(9L, CAST(3.4028236E38 AS DOUBLE))",
         id="float_to_double"),
 ]
 
@@ -108,6 +112,7 @@ def _insert_type_widened_rows(spark, path, appended_rows):
     spark.sql(f"INSERT INTO delta.`{path}` VALUES {appended_rows}")
 
 
+# Collecting rows still goes through ColumnarToRowExec after the Delta scan.
 @allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -128,7 +133,8 @@ def test_delta_type_widening_read_round_trip(
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql(
             f"SELECT id, value, typeof(value) AS value_type "
-            f"FROM delta.`{data_path}` ORDER BY id"))
+            f"FROM delta.`{data_path}` ORDER BY id"),
+        conf=_delta_confs)
 
 
 @allow_non_gpu(*delta_meta_allow)
