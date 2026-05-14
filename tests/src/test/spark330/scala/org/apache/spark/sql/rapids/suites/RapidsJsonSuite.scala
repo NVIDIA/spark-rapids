@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,10 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
+import com.nvidia.spark.rapids.RapidsConf
+import org.scalactic.source.Position
+import org.scalatest.Tag
+
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.execution.datasources.{InMemoryFileIndex, NoopCache}
 import org.apache.spark.sql.execution.datasources.json.JsonSuite
@@ -31,6 +35,29 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 class RapidsJsonSuite
   extends JsonSuite with RapidsSQLTestsBaseTrait with RapidsJsonConfTrait {
+
+  override protected def test(testName: String, testTags: Tag*)(testFun: => Any)
+      (implicit pos: Position): Unit = {
+    val wrappedTestFun = if (RapidsJsonSuite.jsonFloatFallbackTests.contains(testName)) {
+      () => withSQLConf(
+        RapidsConf.ENABLE_READ_JSON_FLOATS.key -> "false",
+        RapidsConf.ENABLE_READ_JSON_DOUBLES.key -> "false") {
+        testFun
+      }
+    } else {
+      () => testFun
+    }
+    super.test(testName, testTags: _*)(wrappedTestFun())(pos)
+  }
+}
+
+object RapidsJsonSuite {
+  private val jsonFloatFallbackTests: Set[String] = Set(
+    "SPARK-18352: Parse normal multi-line JSON files (uncompressed)",
+    "SPARK-18352: Parse normal multi-line JSON files (compressed)",
+    "Applying schemas",
+    "Loading a JSON dataset from a text file with SQL",
+    "Loading a JSON dataset from a text file")
 }
 
 class RapidsJsonV1Suite extends RapidsJsonSuite with RapidsSQLTestsBaseTrait {
