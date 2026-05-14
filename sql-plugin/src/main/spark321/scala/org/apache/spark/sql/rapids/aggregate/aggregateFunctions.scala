@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType, fa
   override lazy val evaluateExpression: Expression = {
     GpuCast(
       GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = failOnError,
-        failOnDivideByZero = false), dataType, ansiMode = failOnError)
+        failOnDivideByZero = false), dataType, ansiMode = failOnError)()
   }
 
   // Window
@@ -52,6 +52,6 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType, fa
       failOnErrorOverride = failOnError), spec)
     GpuCast(
       GpuDecimalDivide(sum, count, intermediateSparkDivideType, failOnError = failOnError,
-        failOnDivideByZero = false), dataType, ansiMode = failOnError)
+        failOnDivideByZero = false), dataType, ansiMode = failOnError)()
   }
 }
