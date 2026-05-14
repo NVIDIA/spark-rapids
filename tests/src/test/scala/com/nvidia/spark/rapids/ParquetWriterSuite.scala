@@ -166,7 +166,8 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         assert(rowGroups.length > 1, s"Expected multiple row groups, got $rowGroups")
         assert(rowGroups.forall(_.rowCount <= rowGroupRows.toLong),
           s"Expected all row groups <= $rowGroupRows rows, got $rowGroups")
-        // cuDF sizes row groups from uncompressed data estimates; footer sizes include page overhead.
+        // cuDF sizes row groups from uncompressed data estimates; footer sizes
+        // include page overhead.
         assert(rowGroups.forall(_.rowCount * bytesPerRow <= rowGroupSizeBytes),
           s"Expected estimated data bytes <= $rowGroupSizeBytes, got $rowGroups")
         assertResult(10000L) {
