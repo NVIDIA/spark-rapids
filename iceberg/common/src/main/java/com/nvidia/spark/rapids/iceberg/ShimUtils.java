@@ -22,6 +22,7 @@ import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.io.FileIO;
 
 import java.util.Map;
 
@@ -51,5 +52,9 @@ public class ShimUtils {
     public static Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema,
                                                     Table table) {
         return IMPL.constantsMap(task, readSchema, table);
+    }
+
+    public static Map<String, Map<String, String>> storageCredentialOverlays(FileIO fileIO) {
+        return IMPL.storageCredentialOverlays(fileIO);
     }
 }

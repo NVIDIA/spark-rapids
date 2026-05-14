@@ -18,10 +18,12 @@ package com.nvidia.spark.rapids.iceberg.iceberg16x;
 
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
 import org.apache.iceberg.*;
+import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.spark.source.GpuBaseReader;
-import org.apache.iceberg.util.PartitionUtil;
 import org.apache.iceberg.types.Types;
+import org.apache.iceberg.util.PartitionUtil;
 
+import java.util.Collections;
 import java.util.Map;
 
 /** Iceberg 1.6.x shim: uses {@code ContentFile.path()} and {@code GpuBaseReader::convertConstant}. */
@@ -41,5 +43,11 @@ public class ShimUtilsImpl implements IcebergShimUtils {
         } else {
             return PartitionUtil.constantsMap(task, GpuBaseReader::convertConstant);
         }
+    }
+
+    /** Iceberg 1.6.x predates {@code SupportsStorageCredentials} — no per-prefix overlays. */
+    @Override
+    public Map<String, Map<String, String>> storageCredentialOverlays(FileIO fileIO) {
+        return Collections.emptyMap();
     }
 }
