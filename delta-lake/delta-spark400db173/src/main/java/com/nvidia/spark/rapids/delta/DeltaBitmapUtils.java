@@ -48,6 +48,9 @@ final class DeltaBitmapUtils {
       throw new IllegalStateException(
           "Serialized deletion vector bitmap is too large: " + serializedSize + " bytes");
     }
+    // Roaring bitmap serialization stores all words in little-endian order by
+    // format contract, independent of the native CPU byte order.
+    // See https://github.com/RoaringBitmap/RoaringFormatSpec#general-layout
     ByteBuffer buffer = ByteBuffer.allocate((int) serializedSize).order(ByteOrder.LITTLE_ENDIAN);
     buffer.putInt(PortableRoaringBitmapArraySerializationFormat.MAGIC_NUMBER());
     PortableRoaringBitmapArraySerializationFormat.serialize(bitmaps, buffer);

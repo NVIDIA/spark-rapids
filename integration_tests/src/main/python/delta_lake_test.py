@@ -792,6 +792,45 @@ def test_delta_deletion_vector_native_footer_multi_row_group(spark_tmp_path, par
         conf=read_conf)
 
 
+@delta_lake
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="DB row-index-filter assertion is specific to Databricks 17.3+")
+def test_db173_missing_row_index_filter_assertion_guard():
+    def run_guard(spark):
+        jvm = spark._sc._jvm
+        gateway = spark._sc._gateway
+        supports_class = jvm.java.lang.Class.forName(
+            "com.databricks.sql.transaction.tahoe.files.SupportsRowIndexFilters")
+        def is_db_message_method(method):
+            param_names = [p.getName() for p in method.getParameterTypes()]
+            return (
+                method.getReturnType().getName() == "java.lang.String" and
+                param_names == ["java.lang.String", "scala.Option"])
+
+        message_methods = [
+            m for m in supports_class.getDeclaredMethods() if is_db_message_method(m)]
+        assert len(message_methods) == 1
+        message_method = message_methods[0]
+        message_method.setAccessible(True)
+        # DB generates this assertion message lazily. If DB changes the wording, this
+        # should fail.
+        message_args = gateway.new_array(jvm.java.lang.Object, 2)
+        message_args[0] = "dbfs:/mnt/table/part-00000.parquet"
+        message_args[1] = getattr(getattr(jvm.scala, "None$"), "MODULE$")
+        db_message = str(message_method.invoke(None, message_args))
+
+        helper = getattr(
+            getattr(jvm.com.nvidia.spark.rapids.delta, "RapidsDeletionVectors$"), "MODULE$")
+        matcher_message_field = helper.getClass().getDeclaredField(
+            "MISSING_ROW_INDEX_FILTER_MESSAGE")
+        matcher_message_field.setAccessible(True)
+        matcher_message = str(matcher_message_field.get(helper))
+
+        assert matcher_message in db_message
+
+    with_cpu_session(run_guard)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)

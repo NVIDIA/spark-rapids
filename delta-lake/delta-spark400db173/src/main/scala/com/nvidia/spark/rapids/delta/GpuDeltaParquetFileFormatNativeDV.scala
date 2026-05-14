@@ -403,7 +403,9 @@ case class GpuDeltaParquetFileFormatNativeDV(
       // in the bitmap (deleted row indices) and checking which row group each
       // belongs to. This is O(deleted_rows * num_row_groups) instead of
       // O(total_rows). The former is usually smaller than the latter.
-      // This is a temporary solution until we add a dedicated API in cuDF.
+      // cuDF added a dedicated API in https://github.com/rapidsai/cudf/pull/21963.
+      // Track the Spark RAPIDS follow-up in
+      // https://github.com/NVIDIA/spark-rapids/issues/14628.
       scalaBitmap.forEach { deletedIndex: Long =>
         rowRanges.find { case (offset, numRows) =>
           deletedIndex >= offset && deletedIndex < offset + numRows
