@@ -911,10 +911,6 @@ case class GpuMapFilter(argument: Expression,
 }
 
 
-// Registered segmented reductions used by GpuArrayAggregate. To add a new op: define the
-// case object, wire matchBinary to its Catalyst shape, and append it to
-// ArrayAggregateDecomposer.allOps.
-
 sealed trait AggOp {
   def name: String
   def cudfAgg: cudf.SegmentedReductionAggregation
@@ -1100,11 +1096,13 @@ case object MinOp extends ExtremumOp {
 case object AllOp extends AggOp {
   val name = "ALL"
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.all()
-  // INCLUDE: matches Spark's 3VL for AND (null AND true = null, null AND false = false).
+  // Nullable elements and nullable g(x) fall back because cuDF segmented ALL does not
+  // implement Spark row-wise 3VL for every mixed-null input.
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
   def identityScalar(t: DataType): cudf.Scalar = cudf.Scalar.fromBool(true)
   def identityLiteral(t: DataType): Literal = Literal(true, BooleanType)
-  def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.and(z, out)
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) =
+    r.binaryOp(cudf.BinaryOp.NULL_LOGICAL_AND, z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case a: And => Some((a.left, a.right))
     case _ => None
@@ -1115,10 +1113,13 @@ case object AllOp extends AggOp {
 case object AnyOp extends AggOp {
   val name = "ANY"
   def cudfAgg: cudf.SegmentedReductionAggregation = cudf.SegmentedReductionAggregation.any()
+  // Nullable elements and nullable g(x) fall back because cuDF segmented ANY does not
+  // implement Spark row-wise 3VL for every mixed-null input.
   val nullPolicy: cudf.NullPolicy = cudf.NullPolicy.INCLUDE
   def identityScalar(t: DataType): cudf.Scalar = cudf.Scalar.fromBool(false)
   def identityLiteral(t: DataType): Literal = Literal(false, BooleanType)
-  def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) = r.or(z, out)
+  def combineWithZero(r: cudf.ColumnVector, z: cudf.BinaryOperable, out: DType) =
+    r.binaryOp(cudf.BinaryOp.NULL_LOGICAL_OR, z, out)
   def matchBinary(e: Expression): Option[(Expression, Expression)] = e match {
     case o: Or => Some((o.left, o.right))
     case _ => None
@@ -1145,6 +1146,8 @@ case class ArrayAggregateDecomposition(
     accVarExprId: ExprId,
     elemVar: NamedLambdaVariable)
 
+private case class ExtractedG(g: Expression, hasBareAccBranch: Boolean)
+
 
 /**
  * Decomposes a Spark ArrayAggregate's merge lambda of shape `(acc, x) -> op(acc, g(x))`
@@ -1162,7 +1165,8 @@ object ArrayAggregateDecomposer {
       merge: Expression,
       finish: Expression,
       argType: DataType,
-      zeroType: DataType): Either[String, ArrayAggregateDecomposition] = {
+      zeroType: DataType,
+      zeroNullable: Boolean = false): Either[String, ArrayAggregateDecomposition] = {
     val mergeLambda = merge match {
       case lf: LambdaFunction => lf
       case _ => return Left("merge expression is not a LambdaFunction")
@@ -1178,14 +1182,15 @@ object ArrayAggregateDecomposer {
     val body = mergeLambda.function
     val accId = accVar.exprId
     val matched = allOps.view.flatMap { op =>
-      extractG(body, accId, op, zeroType).map { g => (op, g) }
+      extractG(body, accId, op, zeroType).map { extracted => (op, extracted) }
     }.headOption
 
-    val (op, g) = matched.getOrElse {
+    val (op, extracted) = matched.getOrElse {
       return Left("merge body does not match (acc, x) -> op(acc, g(x)) for any registered " +
         "op (" + allOps.map(_.name).mkString(", ") + "); If / CaseWhen branches must be " +
         "op-of-acc or bare acc")
     }
+    val g = extracted.g
 
     if (!op.supportsType(zeroType)) {
       return Left(s"${op.name} is not supported on GPU for type $zeroType")
@@ -1212,29 +1217,26 @@ object ArrayAggregateDecomposer {
           "cuDF's INCLUDE-nulls semantics don't match Spark's AND/OR 3VL")
       }
     }
+    if ((op == MaxOp || op == MinOp) && zeroNullable && extracted.hasBareAccBranch) {
+      return Left(s"${op.name} is not supported on GPU when the initial zero can be " +
+        "null and a branch can leave the accumulator unchanged; the rewrite would turn " +
+        "that no-contribution branch into an identity value")
+    }
 
     Right(ArrayAggregateDecomposition(op, g, accId, elemVar))
   }
 
   /**
-   * Try to extract g from the merge body, given a candidate op.
-   *
-   * Three accepted shapes:
-   *   1. body is `op(acc, g)` or `op(g, acc)`     — direct match.
-   *   2. body is `If(cond, t, f)` where each of `t`, `f` is itself accepted by this
-   *      function (recursively), and `cond` doesn't reference `acc`. Lifted to
-   *      `op(acc, If(cond, g_t, g_f))`.
-   *   3. body is `CaseWhen(branches, Some(else))` — generalised If for N branches.
-   *
-   * Bare `acc` in a branch is treated as `op(acc, identityLiteral)` — that's how we
-   * support the `If(cond, acc + 1, acc)` form: the right branch is bare acc, replaced
-   * with `acc + 0`, then the whole If lifts out as `acc + If(cond, 1, 0)`.
+   * Try to extract g from the merge body, given a candidate op. Accepts direct
+   * `op(acc, g)` / `op(g, acc)` and recurses into `If` / `CaseWhen` whose conditions
+   * don't reference `acc`. A bare-acc branch is treated as `op(acc, identityLiteral)`,
+   * so `If(cond, acc + 1, acc)` lifts to `acc + If(cond, 1, 0)`.
    */
   private def extractG(
       body: Expression,
       accId: ExprId,
       op: AggOp,
-      accType: DataType): Option[Expression] = {
+      accType: DataType): Option[ExtractedG] = {
     matchOpOfAcc(body, accId, op).orElse(extractFromBranching(body, accId, op, accType))
   }
 
@@ -1242,10 +1244,10 @@ object ArrayAggregateDecomposer {
   private def matchOpOfAcc(
       e: Expression,
       accId: ExprId,
-      op: AggOp): Option[Expression] = {
+      op: AggOp): Option[ExtractedG] = {
     op.matchBinary(unwrapDecimalPatternWrappers(e)).flatMap { case (l, r) =>
-      if (isAccRef(l, accId) && !containsAccRef(r, accId)) Some(r)
-      else if (isAccRef(r, accId) && !containsAccRef(l, accId)) Some(l)
+      if (isAccRef(l, accId) && !containsAccRef(r, accId)) Some(ExtractedG(r, false))
+      else if (isAccRef(r, accId) && !containsAccRef(l, accId)) Some(ExtractedG(l, false))
       else None
     }
   }
@@ -1260,9 +1262,9 @@ object ArrayAggregateDecomposer {
       branch: Expression,
       accId: ExprId,
       op: AggOp,
-      accType: DataType): Option[Expression] = {
+      accType: DataType): Option[ExtractedG] = {
     if (isAccRef(branch, accId)) {
-      Some(op.identityLiteral(accType))
+      Some(ExtractedG(op.identityLiteral(accType), true))
     } else {
       extractG(branch, accId, op, accType)
     }
@@ -1272,12 +1274,12 @@ object ArrayAggregateDecomposer {
       body: Expression,
       accId: ExprId,
       op: AggOp,
-      accType: DataType): Option[Expression] = body match {
+      accType: DataType): Option[ExtractedG] = body match {
     case If(cond, t, f) if !containsAccRef(cond, accId) =>
       for {
         tG <- extractBranch(t, accId, op, accType)
         fG <- extractBranch(f, accId, op, accType)
-      } yield If(cond, tG, fG)
+      } yield ExtractedG(If(cond, tG.g, fG.g), tG.hasBareAccBranch || fG.hasBareAccBranch)
 
     case CaseWhen(branches, Some(elseValue))
         if branches.forall { case (c, _) => !containsAccRef(c, accId) } =>
@@ -1287,8 +1289,10 @@ object ArrayAggregateDecomposer {
       if (branchDecs.exists(_._2.isEmpty) || elseDec.isEmpty) {
         None
       } else {
-        val gBranches = branchDecs.map { case (c, dec) => (c, dec.get) }
-        Some(CaseWhen(gBranches, Some(elseDec.get)))
+        val gBranches = branchDecs.map { case (c, dec) => (c, dec.get.g) }
+        val hasBareAccBranch = branchDecs.exists(_._2.exists(_.hasBareAccBranch)) ||
+          elseDec.exists(_.hasBareAccBranch)
+        Some(ExtractedG(CaseWhen(gBranches, Some(elseDec.get.g)), hasBareAccBranch))
       }
 
     case _ => None
@@ -1335,13 +1339,7 @@ object ArrayAggregateDecomposer {
 
 /**
  * GPU implementation of ArrayAggregate for lambdas decomposable via ArrayAggregateDecomposer.
- * Runtime steps:
- *   1. Evaluate g(x) over the array children (reusing GpuArrayTransformBase's explode path).
- *   2. Rewrap as list<g_type> with the original offsets and validity.
- *   3. cuDF segmented reduce with the op's null policy.
- *   4. For INCLUDE ops, substitute op's identity into empty non-null rows.
- *   5. Combine with zero: `result = reduced OP zero`.
- *   6. Restore null on rows where the input list itself was null.
+ * See `columnarEval` for the per-batch pipeline.
  */
 case class GpuArrayAggregate(
     argument: Expression,
@@ -1468,7 +1466,8 @@ class GpuArrayAggregateMeta(
 
   override def tagExprForGpu(): Unit = {
     ArrayAggregateDecomposer.decompose(
-      expr.merge, expr.finish, expr.argument.dataType, expr.zero.dataType) match {
+      expr.merge, expr.finish, expr.argument.dataType, expr.zero.dataType,
+      expr.zero.nullable) match {
       case Left(reason) => willNotWorkOnGpu(reason)
       case Right(d) =>
         if (d.op == SumOp || d.op == ProductOp) {
@@ -1502,9 +1501,7 @@ class GpuArrayAggregateMeta(
     // The lifted g may have a different shape from any sub-tree of the original merge body
     // (If/CaseWhen branches get rewritten and identity literals get inserted), so we can't
     // pick it out of childExprs(2)'s meta tree by index. Wrap g as a fresh ExprMeta and let
-    // spark-rapids tag/convert it. Sub-expressions inherited from the original body get
-    // re-tagged here, but tag is idempotent and they were already proven GPU-compatible
-    // when the parent ArrayAggregate was tagged.
+    // spark-rapids tag/convert it.
     val gMeta = GpuOverrides.wrapExpr(d.g, this.conf, Some(this))
     gMeta.tagForGpu()
     if (!gMeta.canThisBeReplaced) {

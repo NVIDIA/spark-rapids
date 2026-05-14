@@ -53,9 +53,10 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
       expectedOp: AggOp,
       expectedG: Option[Expression] = None,
       zeroType: DataType = IntegerType,
-      argType: Option[DataType] = None): ArrayAggregateDecomposition = {
+      argType: Option[DataType] = None,
+      zeroNullable: Boolean = false): ArrayAggregateDecomposition = {
     val d = decompose(merge(body, acc, x), identityFinish(acc),
-      argType.getOrElse(arrTy(zeroType)), zeroType)
+      argType.getOrElse(arrTy(zeroType)), zeroType, zeroNullable)
     val r = d.getOrElse(fail(s"expected decomposition for body=$body, got Left: $d"))
     assert(r.op == expectedOp)
     expectedG.foreach { g =>
@@ -71,8 +72,10 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
       finish: Expression,
       reason: String,
       zeroType: DataType = IntegerType,
-      argType: Option[DataType] = None): String = {
-    val d = decompose(mergeBody, finish, argType.getOrElse(arrTy(zeroType)), zeroType)
+      argType: Option[DataType] = None,
+      zeroNullable: Boolean = false): String = {
+    val d = decompose(mergeBody, finish, argType.getOrElse(arrTy(zeroType)), zeroType,
+      zeroNullable)
     assert(d.isLeft, s"$reason — expected Left but got: $d")
     d.swap.getOrElse(fail("unreachable"))
   }
@@ -121,6 +124,16 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
     val acc = lv("acc", BooleanType); val x = lv("x", BooleanType, nullable = false)
     assertDecomposes(Or(acc, x), acc, x, AnyOp,
       zeroType = BooleanType)
+  }
+
+  test("ALL and ANY accept nullable zero because combineWithZero is null-aware") {
+    val allAcc = lv("allAcc", BooleanType)
+    val anyAcc = lv("anyAcc", BooleanType)
+    val x = lv("x", BooleanType, nullable = false)
+    assertDecomposes(And(allAcc, x), allAcc, x, AllOp,
+      zeroType = BooleanType, zeroNullable = true)
+    assertDecomposes(Or(anyAcc, x), anyAcc, x, AnyOp,
+      zeroType = BooleanType, zeroNullable = true)
   }
 
   test("Complex g(x) with no acc ref decomposes (g on the right)") {
@@ -319,6 +332,28 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
     val acc = lv("acc"); val x = lv("x")
     val body = If(GreaterThan(x, Literal(0)), Greatest(Seq(acc, x)), acc)
     assertDecomposes(body, acc, x, MaxOp)
+  }
+
+  test("If with MAX and bare acc rejects when zero can be nullable") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = If(GreaterThan(x, Literal(0)), Greatest(Seq(acc, x)), acc)
+    val msg = assertRejects(merge(body, acc, x), identityFinish(acc),
+      "MAX with bare acc and nullable zero should fall back",
+      zeroNullable = true)
+    assert(msg.contains("initial zero can be null"),
+      s"expected nullable-zero bare-acc error, got: $msg")
+  }
+
+  test("CaseWhen with MIN and bare acc rejects when zero can be nullable") {
+    val acc = lv("acc"); val x = lv("x")
+    val body = CaseWhen(
+      Seq((GreaterThan(x, Literal(0)), Least(Seq(acc, x)))),
+      Some(acc))
+    val msg = assertRejects(merge(body, acc, x), identityFinish(acc),
+      "MIN with bare acc and nullable zero should fall back",
+      zeroNullable = true)
+    assert(msg.contains("initial zero can be null"),
+      s"expected nullable-zero bare-acc error, got: $msg")
   }
 
   test("If with And on boolean acc decomposes to ALL") {

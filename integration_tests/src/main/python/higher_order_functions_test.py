@@ -79,6 +79,18 @@ def test_array_aggregate_boolean_ops(lambda_sql, init_sql):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
+def test_array_aggregate_boolean_ops_nullable_zero():
+    def do_it(spark):
+        return spark.sql("""
+            SELECT
+              aggregate(array(false), CAST(NULL AS BOOLEAN), (acc, x) -> acc AND x) as all_false,
+              aggregate(array(true), CAST(NULL AS BOOLEAN), (acc, x) -> acc AND x) as all_true,
+              aggregate(array(true), CAST(NULL AS BOOLEAN), (acc, x) -> acc OR x) as any_true,
+              aggregate(array(false), CAST(NULL AS BOOLEAN), (acc, x) -> acc OR x) as any_false
+            """)
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
 @pytest.mark.parametrize('lambda_sql, init_sql', [
     ('(acc, x) -> acc AND x', 'true'),
     ('(acc, x) -> acc OR x', 'false'),
@@ -196,6 +208,19 @@ def test_array_aggregate_extremum_nullable_zero_no_contribution():
                 'aggregate(a, CAST(NULL AS INT), (acc, x) -> greatest(acc, x)) as max_res',
                 'aggregate(a, CAST(NULL AS INT), (acc, x) -> least(acc, x)) as min_res')
     assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
+@allow_non_gpu('ProjectExec')
+def test_array_aggregate_extremum_nullable_zero_bare_acc_fallback():
+    def do_it(spark):
+        return spark.createDataFrame(
+            [([-1, -2],), ([1, -2],), ([],), ([None],)],
+            'a array<int>').selectExpr(
+                '''aggregate(a, CAST(NULL AS INT),
+                     (acc, x) -> if(x > 0, greatest(acc, x), acc)) as max_res''',
+                '''aggregate(a, CAST(NULL AS INT),
+                     (acc, x) -> if(x < 0, least(acc, x), acc)) as min_res''')
+    assert_gpu_fallback_collect(do_it, 'ArrayAggregate')
 
 
 @disable_ansi_mode

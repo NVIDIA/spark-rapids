@@ -520,7 +520,8 @@ The decomposer also accepts these structural variations:
 - **`If` branches**: `If(cond, op(acc, t_g), op(acc, f_g))` is lifted to
   `op(acc, If(cond, t_g, f_g))`. A bare-acc branch (e.g. `If(cond, acc + 1, acc)`) is treated as
   `op(acc, identity)` and lifted to `op(acc, If(cond, t_g, identity))`. `cond` must not
-  reference acc.
+  reference acc. For `MAX` / `MIN`, this structural rewrite falls back when the initial zero can
+  be null because a bare-acc branch must preserve the no-contribution null accumulator state.
 - **`CaseWhen` branches**: same handling as `If`, generalized to N branches with a required
   `else` branch.
 - **Nested `If` / `CaseWhen`**: handled recursively as long as every branch eventually reduces
@@ -538,6 +539,8 @@ The following shapes fall back to CPU:
   `checkInputDataTypes` rule).
 - `MAX` / `MIN` on `float` / `double`: cuDF's `fmax(NaN, x) = x` absorbs NaN, while Spark's
   `Greatest` / `Least` use `Double.compare` which propagates NaN.
+- `MAX` / `MIN` with a nullable initial zero and a bare-acc branch in `If` / `CaseWhen`: replacing
+  bare acc with an identity value would lose Spark's no-contribution null accumulator state.
 - `ALL` / `ANY` when the input array can contain null elements or the lifted `g(x)` expression
   can produce nulls: cuDF's INCLUDE-null segmented all/any returns null whenever any element is
   null, while Spark's 3VL short-circuits (`false AND null = false`,
