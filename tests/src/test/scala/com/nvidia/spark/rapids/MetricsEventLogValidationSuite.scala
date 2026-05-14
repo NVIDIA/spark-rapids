@@ -529,6 +529,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
           f"but was ${operatorTimeRatio * 100.0}%.1f%%")
 
       val stage5Metrics = operatorTimeMetrics.filter(_.stage.contains(5))
+      val stage5TaskTimes = taskTimes.filter(_.stage.contains(5))
       val stage5OperatorTime = stage5Metrics.map(_.value).sum
       val stage5Ratio = if (totalOperatorTime > 0) {
         stage5OperatorTime.toDouble / totalOperatorTime.toDouble
@@ -536,22 +537,26 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
         0.0
       }
       val minExpectedStage5OperatorTime =
-        TimeUnit.MILLISECONDS.toNanos(numWritePartitions * slowFsWriteDelayMs)
+        TimeUnit.MILLISECONDS.toNanos(stage5TaskTimes.length * slowFsWriteDelayMs)
 
       println(f"Parquet write job: Stage 5 operator time: " +
         f"${stage5OperatorTime / 1000000.0}%.2f ms")
       println(f"Parquet write job: Stage 5 ratio: ${stage5Ratio * 100.0}%.1f%% " +
         "of total operator time")
+      println(s"Parquet write job: Stage 5 task count: ${stage5TaskTimes.length}")
       println(f"Parquet write job: Stage 5 expected minimum operator time: " +
         f"${minExpectedStage5OperatorTime / 1000000.0}%.2f ms")
 
       assert(stage5Metrics.nonEmpty,
         "Should find operator time metrics for stage 5 (parquet write stage)")
 
+      assert(stage5TaskTimes.nonEmpty,
+        "Should find executor run times for stage 5 (parquet write stage)")
+
       assert(stage5OperatorTime >= minExpectedStage5OperatorTime,
         f"Stage 5 (parquet write stage) operator time should be at least " +
           f"${minExpectedStage5OperatorTime / 1000000.0}%.2f ms based on " +
-          f"$numWritePartitions write partitions and $slowFsWriteDelayMs ms slowfs delay, " +
+          f"${stage5TaskTimes.length} stage 5 tasks and $slowFsWriteDelayMs ms slowfs delay, " +
           f"but was ${stage5OperatorTime / 1000000.0}%.2f ms")
 
       operatorTimeMetrics.foreach { m =>
