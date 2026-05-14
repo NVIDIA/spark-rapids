@@ -436,6 +436,8 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       // Configure slow filesystem for testing and disable cache to prevent pollution
       val slowFsWriteDelayMs = 100L
       val numWritePartitions = 50
+      // Keep AQE from coalescing the write shuffle partitions used by the slowfs lower bound.
+      spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "false")
       spark.conf.set("fs.slowfs.impl.disable.cache", "true")
       spark.conf.set("fs.slowfs.impl", "com.nvidia.spark.rapids.SlowFileSystem")
       spark.conf.set("slowfs.write.delay.ms", slowFsWriteDelayMs.toString)
@@ -460,10 +462,8 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
         )
         .filter($"total_count" > 5)
 
-      // Write to slow filesystem Parquet format with repartitioning
-      // and take significant time due to filesystem delays
+      // Use many small output tasks so SlowFileSystem delays are visible in write-stage op time.
       testDataDF
-        // Create more output tasks/files, which amplifies SlowFileSystem write delays.
         .repartition(numWritePartitions)
         .write
         .mode("overwrite")
@@ -529,34 +529,30 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
           f"but was ${operatorTimeRatio * 100.0}%.1f%%")
 
       val stage5Metrics = operatorTimeMetrics.filter(_.stage.contains(5))
-      val stage5TaskTimes = taskTimes.filter(_.stage.contains(5))
       val stage5OperatorTime = stage5Metrics.map(_.value).sum
       val stage5Ratio = if (totalOperatorTime > 0) {
         stage5OperatorTime.toDouble / totalOperatorTime.toDouble
       } else {
         0.0
       }
+      // Expect at least one slowfs-delayed write per configured output partition.
       val minExpectedStage5OperatorTime =
-        TimeUnit.MILLISECONDS.toNanos(stage5TaskTimes.length * slowFsWriteDelayMs)
+        TimeUnit.MILLISECONDS.toNanos(numWritePartitions * slowFsWriteDelayMs)
 
       println(f"Parquet write job: Stage 5 operator time: " +
         f"${stage5OperatorTime / 1000000.0}%.2f ms")
       println(f"Parquet write job: Stage 5 ratio: ${stage5Ratio * 100.0}%.1f%% " +
         "of total operator time")
-      println(s"Parquet write job: Stage 5 task count: ${stage5TaskTimes.length}")
       println(f"Parquet write job: Stage 5 expected minimum operator time: " +
         f"${minExpectedStage5OperatorTime / 1000000.0}%.2f ms")
 
       assert(stage5Metrics.nonEmpty,
         "Should find operator time metrics for stage 5 (parquet write stage)")
 
-      assert(stage5TaskTimes.nonEmpty,
-        "Should find executor run times for stage 5 (parquet write stage)")
-
       assert(stage5OperatorTime >= minExpectedStage5OperatorTime,
         f"Stage 5 (parquet write stage) operator time should be at least " +
           f"${minExpectedStage5OperatorTime / 1000000.0}%.2f ms based on " +
-          f"${stage5TaskTimes.length} stage 5 tasks and $slowFsWriteDelayMs ms slowfs delay, " +
+          f"$numWritePartitions write partitions and $slowFsWriteDelayMs ms slowfs delay, " +
           f"but was ${stage5OperatorTime / 1000000.0}%.2f ms")
 
       operatorTimeMetrics.foreach { m =>
