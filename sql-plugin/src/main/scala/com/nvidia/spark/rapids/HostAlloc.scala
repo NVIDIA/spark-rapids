@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.LongAdder
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
+import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PageableMemoryPool, PinnedMemoryPool}
 import com.nvidia.spark.rapids.HostAlloc.bookkeepHostMemoryFree
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{BOOKKEEP_MEMORY, BOOKKEEP_MEMORY_CALLSTACK}
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
@@ -120,8 +120,18 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     ret
   }
 
-  private def tryAllocNonPinned(amount: Long): Option[HostMemoryBuffer] = {
-    val ret = if (isUnlimited) {
+  private def tryAllocNonPinned(amount: Long, usePool: Boolean): Option[HostMemoryBuffer] = {
+    // Try the pre-touched pageable pool first if configured (and not opted out by caller);
+    // fall back to raw malloc. Pool buffers go through the same accounting and close-handler
+    // path as raw allocs so RmmSpark sees a matched cpuAllocate/cpuDeallocate pair and
+    // currentNonPinnedAllocated accurately reflects in-flight non-pinned host bytes.
+    val fromPool = if (usePool) Option(PageableMemoryPool.tryAllocate(amount)) else None
+    val ret: Option[HostMemoryBuffer] = if (fromPool.isDefined) {
+      synchronized {
+        currentNonPinnedAllocated += amount
+      }
+      fromPool
+    } else if (isUnlimited) {
       synchronized {
         currentNonPinnedAllocated += amount
       }
@@ -194,7 +204,8 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
 
   private def tryAllocInternal(amount: Long,
       preferPinned: Boolean,
-      blocking: Boolean): (Option[HostMemoryBuffer], Boolean) = {
+      blocking: Boolean,
+      usePool: Boolean): (Option[HostMemoryBuffer], Boolean) = {
     var retryCount = 0L
     var ret = Option.empty[HostAllocResult]
     var shouldRetry = false
@@ -207,10 +218,10 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
           if (preferPinned) {
             tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
           } else {
-            tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
+            tryAllocNonPinned(amount, usePool).map(HostAllocResult(_, isPinned = false))
           }).orElse {
           if (preferPinned) {
-            tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
+            tryAllocNonPinned(amount, usePool).map(HostAllocResult(_, isPinned = false))
           } else {
             tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
           }
@@ -245,26 +256,28 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     (ret.map(_.buffer), shouldRetry)
   }
 
-  def tryAlloc(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {
+  def tryAlloc(amount: Long, preferPinned: Boolean = true,
+               usePool: Boolean = true): Option[HostMemoryBuffer] = {
     if (canNeverSucceed(amount, preferPinned)) {
       return None
     }
     var shouldRetry = true
     var ret = Option.empty[HostMemoryBuffer]
     while (shouldRetry) {
-      val (r, sr) = tryAllocInternal(amount, preferPinned, blocking = false)
+      val (r, sr) = tryAllocInternal(amount, preferPinned, blocking = false, usePool = usePool)
       ret = r
       shouldRetry = sr
     }
     ret
   }
 
-  def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = {
+  def alloc(amount: Long, preferPinned: Boolean = true,
+            usePool: Boolean = true): HostMemoryBuffer = {
     checkSize(amount, preferPinned)
     var ret = Option.empty[HostMemoryBuffer]
     var count = 0
     while (ret.isEmpty && count < 1000) {
-      val (r, _) = tryAllocInternal(amount, preferPinned, blocking = true)
+      val (r, _) = tryAllocInternal(amount, preferPinned, blocking = true, usePool = usePool)
       ret = r
       count += 1
     }
@@ -299,12 +312,14 @@ object HostAlloc extends Logging {
     DefaultHostMemoryAllocator.set(singleton)
   }
 
-  def tryAlloc(amount: Long, preferPinned: Boolean = true): Option[HostMemoryBuffer] = {
-    getSingleton.tryAlloc(amount, preferPinned)
+  def tryAlloc(amount: Long, preferPinned: Boolean = true,
+               usePool: Boolean = true): Option[HostMemoryBuffer] = {
+    getSingleton.tryAlloc(amount, preferPinned, usePool)
   }
 
-  def alloc(amount: Long, preferPinned: Boolean = true): HostMemoryBuffer = {
-    getSingleton.alloc(amount, preferPinned)
+  def alloc(amount: Long, preferPinned: Boolean = true,
+            usePool: Boolean = true): HostMemoryBuffer = {
+    getSingleton.alloc(amount, preferPinned, usePool)
   }
 
   /**

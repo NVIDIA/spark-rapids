@@ -350,6 +350,26 @@ object RapidsConf extends Logging {
     .booleanConf
     .createWithDefault(true)
 
+  val PAGEABLE_POOL_SIZE = conf("spark.rapids.memory.pageablePool.size")
+    .doc("Size in bytes of a pre-touched pageable host memory pool used as a fallback when " +
+      "the pinned pool is exhausted. Pre-touching pays the page-fault cost once at executor " +
+      "startup so subsequent DtoH copies into this pool avoid the slow first-touch path " +
+      "(~10x faster than freshly-malloc'd pageable). Set to 0 to disable; falls back to " +
+      "raw malloc as before. Independent of " + PINNED_POOL_SIZE.key + ".")
+    .startupOnly()
+    .internal()
+    .bytesConf(ByteUnit.BYTE)
+    .createWithDefault(0)
+
+  val PAGEABLE_POOL_PRETOUCH_THREADS = conf("spark.rapids.memory.pageablePool.pretouchThreads")
+    .doc("Number of worker threads used to pre-touch the pageable pool at startup. More " +
+      "threads parallelize the page-fault work, saturating DRAM bandwidth around 16-32 " +
+      "threads on typical executor hosts.")
+    .startupOnly()
+    .internal()
+    .integerConf
+    .createWithDefault(16)
+
   val OFF_HEAP_LIMIT_ENABLED = conf("spark.rapids.memory.host.offHeapLimit.enabled")
       .doc("Should the off heap limit be enforced or not.")
       .startupOnly()
@@ -3308,6 +3328,10 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val includeImprovedFloat: Boolean = get(IMPROVED_FLOAT_OPS)
 
   lazy val pinnedPoolSize: Long = get(PINNED_POOL_SIZE)
+
+  lazy val pageablePoolSize: Long = get(PAGEABLE_POOL_SIZE)
+
+  lazy val pageablePoolPretouchThreads: Int = get(PAGEABLE_POOL_PRETOUCH_THREADS)
 
   lazy val pinnedPoolCuioDefault: Boolean = get(PINNED_POOL_SET_CUIO_DEFAULT)
 
