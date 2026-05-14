@@ -687,8 +687,7 @@ def run_with_cpu_and_gpu(func,
 
     return (from_cpu, from_gpu)
 
-def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True,
-        result_canonicalize_func_before_compare=None):
+def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True, result_canonicalize_func_before_compare=None):
     """
     Assert when running func on both the CPU and the GPU that the results are equal.
     In this case the data is collected back to the driver and compared here, so be
@@ -704,8 +703,7 @@ def assert_gpu_and_cpu_are_equal_collect(func, conf={}, is_cpu_first=True,
                                                   Use this func to canonicalize the results.
                                                   Usage of this func is: (cpu, gpu) = result_canonicalize_func_before_compare(original_cpu_result, original_gpu_result)
     """
-    _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf, is_cpu_first=is_cpu_first,
-        result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
+    _assert_gpu_and_cpu_are_equal(func, 'COLLECT', conf=conf, is_cpu_first=is_cpu_first, result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
 
 def assert_gpu_and_cpu_are_equal_iterator(func, conf={}, is_cpu_first=True):
     """

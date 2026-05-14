@@ -2363,7 +2363,11 @@ _STD_VARIANCE_FIELDS = {
 }
 
 def _canonicalize_std_variance_overflow_value(value):
-    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+    # Only NaN and +Infinity are accepted overflow sentinels for std/variance
+    # over finite inputs: they can be explained by overflow plus partial merge
+    # order. -Infinity would indicate a different issue (e.g. negative M2 /
+    # sign bug) and must not be canonicalized away.
+    if isinstance(value, float) and (math.isnan(value) or value == math.inf):
         return _STD_VARIANCE_OVERFLOW_SENTINEL
     return value
 
@@ -2420,9 +2424,11 @@ def test_std_variance(data_gen, conf):
 
 
 # Extremely large FP inputs can make the true variance overflow double precision.
-# Spark CPU and GPU may surface that overflow as NaN or +/-Inf depending only on
+# Spark CPU and GPU may surface that overflow as NaN or +Infinity depending only on
 # accumulation order. Keep this corner coverage, but compare those overflow
-# sentinels loosely. See https://github.com/NVIDIA/spark-rapids/issues/14681.
+# sentinels loosely. -Infinity is not an accepted overflow sentinel because
+# stddev/variance over finite inputs cannot reach it via overflow alone.
+# See https://github.com/NVIDIA/spark-rapids/issues/14681.
 @ignore_order(local=True)
 @approximate_float
 @incompat

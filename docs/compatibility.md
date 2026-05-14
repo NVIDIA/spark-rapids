@@ -72,9 +72,10 @@ For standard deviation and variance aggregations (`stddev`, `stddev_pop`, `stdde
 `variance`, `var_pop`, and `var_samp`) on very large finite floating-point values, the exact
 mathematical result can exceed the range of a double. In these overflow cases Spark CPU and the
 RAPIDS Accelerator may report different IEEE floating-point sentinels, such as `NaN` versus
-`+Infinity` or `-Infinity`, because partial aggregate state can be merged in a different order.
-This is limited to overflow behavior for extreme inputs; ordinary finite inputs should still match
-within normal floating-point tolerance.
+`+Infinity`, because partial aggregate state can be merged in a different order. `-Infinity` is
+not an expected outcome for stddev/variance over finite inputs and is not treated as an accepted
+overflow sentinel. This is limited to overflow behavior for extreme inputs; ordinary finite
+inputs should still match within normal floating-point tolerance.
 
 ### `0.0` vs `-0.0`
 
