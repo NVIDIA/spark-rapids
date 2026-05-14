@@ -1463,6 +1463,7 @@ class GpuArrayAggregateMeta(
   extends ExprMeta[ArrayAggregate](expr, conf, parent, rule) {
 
   private var decomposition: Option[ArrayAggregateDecomposition] = None
+  private var gMeta: Option[BaseExprMeta[_]] = None
 
   override def tagExprForGpu(): Unit = {
     ArrayAggregateDecomposer.decompose(
@@ -1488,7 +1489,14 @@ class GpuArrayAggregateMeta(
             }
           }
         }
+        val taggedGMeta = GpuOverrides.wrapExpr(d.g, this.conf, Some(this))
+        taggedGMeta.tagForGpu()
+        if (!taggedGMeta.canExprTreeBeReplaced) {
+          willNotWorkOnGpu(
+            s"lifted g sub-expression cannot run on GPU: ${taggedGMeta.explain(all = false)}")
+        }
         decomposition = Some(d)
+        gMeta = Some(taggedGMeta)
     }
   }
 
@@ -1500,15 +1508,13 @@ class GpuArrayAggregateMeta(
     val zeroGpu = childExprs(1).convertToGpu()
     // The lifted g may have a different shape from any sub-tree of the original merge body
     // (If/CaseWhen branches get rewritten and identity literals get inserted), so we can't
-    // pick it out of childExprs(2)'s meta tree by index. Wrap g as a fresh ExprMeta and let
-    // spark-rapids tag/convert it.
-    val gMeta = GpuOverrides.wrapExpr(d.g, this.conf, Some(this))
-    gMeta.tagForGpu()
-    if (!gMeta.canThisBeReplaced) {
+    // pick it out of childExprs(2)'s meta tree by index. tagExprForGpu wraps and tags it
+    // separately so unsupported lifted expressions fall back instead of failing conversion.
+    val taggedGMeta = gMeta.getOrElse {
       throw new IllegalStateException(
-        s"could not convert g sub-expression ${d.g} to GPU: ${gMeta.explain(all = false)}")
+        "tagExprForGpu must tag g sub-expression before convertToGpu")
     }
-    val gGpu = gMeta.convertToGpu()
+    val gGpu = taggedGMeta.convertToGpu().asInstanceOf[GpuExpression]
     val elemVarGpu = GpuNamedLambdaVariable(
       d.elemVar.name, d.elemVar.dataType, d.elemVar.nullable, d.elemVar.exprId)
     val gLambda = GpuLambdaFunction(gGpu, Seq(elemVarGpu))

@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.catalyst.expressions.{Add, And, CaseWhen, Cast, CheckOverflow, Divide,
-  EqualTo, Expression, GreaterThan, Greatest, If, LambdaFunction, Least, Literal, Multiply,
-  NamedExpression, NamedLambdaVariable, Or, Subtract}
+import org.apache.spark.sql.catalyst.expressions.{Add, And, ArrayAggregate, Ascii,
+  AttributeReference, CaseWhen, Cast, CheckOverflow, Divide, EqualTo, Expression, GreaterThan,
+  Greatest, If, LambdaFunction, Least, Literal, Multiply, NamedExpression, NamedLambdaVariable,
+  Or, Subtract}
 import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, DecimalType, DoubleType,
-  IntegerType, LongType}
+  IntegerType, LongType, StringType}
 
 // Extends GpuUnitTests so SQLConf.get is available for the default evalMode / failOnError
 // parameter on Add/Subtract/Multiply/Divide (the field name differs across Spark versions;
@@ -124,6 +125,23 @@ class ArrayAggregateDecomposerSuite extends GpuUnitTests {
     val acc = lv("acc", BooleanType); val x = lv("x", BooleanType, nullable = false)
     assertDecomposes(Or(acc, x), acc, x, AnyOp,
       zeroType = BooleanType)
+  }
+
+  test("ArrayAggregate tags lifted g sub-expression compatibility") {
+    val a = AttributeReference("a", ArrayType(StringType, containsNull = false),
+      nullable = false)()
+    val acc = lv("acc", IntegerType)
+    val x = lv("x", StringType, nullable = false)
+    val expr = ArrayAggregate(a, Literal(0), merge(Add(acc, Ascii(x)), acc, x),
+      identityFinish(acc))
+    val meta = GpuOverrides.wrapExpr(expr, new RapidsConf(Map.empty[String, String]), None)
+
+    meta.tagForGpu()
+
+    assert(!meta.canThisBeReplaced)
+    val explain = meta.explain(all = false)
+    assert(explain.contains("lifted g sub-expression cannot run on GPU"))
+    assert(explain.contains("Ascii"))
   }
 
   test("ALL and ANY accept nullable zero because combineWithZero is null-aware") {

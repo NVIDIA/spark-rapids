@@ -277,6 +277,16 @@ def test_array_aggregate_long_overflow_wraps():
 
 @disable_ansi_mode
 @allow_non_gpu('ProjectExec')
+def test_array_aggregate_cpu_only_g_fallback():
+    str_gen = StringGen(pattern='[A-Za-z]{1,5}', nullable=False)
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(str_gen, max_length=5)).selectExpr(
+            'aggregate(a, 0, (acc, x) -> acc + ascii(x)) as res'),
+        'ArrayAggregate')
+
+
+@disable_ansi_mode
+@allow_non_gpu('ProjectExec')
 def test_array_aggregate_decimal_sum_overflow_fallback():
     def do_it(spark):
         return spark.sql("""
