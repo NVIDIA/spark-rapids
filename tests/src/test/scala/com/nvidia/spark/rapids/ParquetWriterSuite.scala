@@ -149,9 +149,12 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("parquet writer row group size bytes config") {
+    val rowGroupRows = 1000000
+    val rowGroupSizeBytes = 1024L
+    val bytesPerRow = java.lang.Long.BYTES * 2
     val conf = new SparkConf()
-      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.key, "1000000")
-      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key, "1024")
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.key, rowGroupRows.toString)
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key, rowGroupSizeBytes.toString)
     withGpuSparkSession(spark => {
       withTempPath { writePath =>
         spark.range(0, 10000, 1, 1)
@@ -159,10 +162,15 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
           .write.mode("overwrite")
           .parquet(writePath.getAbsolutePath)
 
-        val rowGroupCounts = getSingleParquetFileRowGroupCounts(spark, writePath)
-        assert(rowGroupCounts.length > 1, s"Expected multiple row groups, got $rowGroupCounts")
+        val rowGroups = getSingleParquetFileRowGroups(spark, writePath)
+        assert(rowGroups.length > 1, s"Expected multiple row groups, got $rowGroups")
+        assert(rowGroups.forall(_.rowCount <= rowGroupRows.toLong),
+          s"Expected all row groups <= $rowGroupRows rows, got $rowGroups")
+        // cuDF sizes row groups from uncompressed data estimates; footer sizes include page overhead.
+        assert(rowGroups.forall(_.rowCount * bytesPerRow <= rowGroupSizeBytes),
+          s"Expected estimated data bytes <= $rowGroupSizeBytes, got $rowGroups")
         assertResult(10000L) {
-          rowGroupCounts.sum
+          rowGroups.map(_.rowCount).sum
         }
       }
     }, conf)
@@ -183,6 +191,14 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   private def getSingleParquetFileRowGroupCounts(
       spark: SparkSession,
       parquetPath: File): Seq[Long] = {
+    getSingleParquetFileRowGroups(spark, parquetPath).map(_.rowCount)
+  }
+
+  private case class ParquetRowGroup(rowCount: Long, totalByteSize: Long)
+
+  private def getSingleParquetFileRowGroups(
+      spark: SparkSession,
+      parquetPath: File): Seq[ParquetRowGroup] = {
     val parquetFiles = listAllFiles(parquetPath).filter(_.getName.endsWith(".parquet"))
     assertResult(1) {
       parquetFiles.length
@@ -191,7 +207,8 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
       new Path(parquetFiles.head.getAbsolutePath)).get(0)
     val blocks = footer.getParquetMetadata.getBlocks
     (0 until blocks.size()).map { i =>
-      blocks.get(i).getRowCount
+      val block = blocks.get(i)
+      ParquetRowGroup(block.getRowCount, block.getTotalByteSize)
     }
   }
 
