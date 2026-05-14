@@ -313,6 +313,16 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
       }
     }
 
+    def hasNativeDeletionVectorGpuScan(plan: SparkPlan): Boolean = {
+      // Only native GPU DV scans can replace the skip-row filter. DB DML bitmap-writing
+      // plans may still need that filter even when the plugin is enabled.
+      plan.exists {
+        case fsse: GpuFileSourceScanExec =>
+          fsse.relation.fileFormat.isInstanceOf[GpuDeltaParquetFileFormatNativeDV]
+        case _ => false
+      }
+    }
+
     plan.transformUp {
       case filter @ GpuFilterExec(condition, child)
           if condition.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) =>
@@ -325,16 +335,18 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
         val otherPredicatesReadingSkipRow = otherPredicates.exists { predicate =>
           predicate.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name))
         }
-        val newChild = if (dvPredicates.nonEmpty && !otherPredicatesReadingSkipRow) {
-          pruneDeletionVectorSkipRowColumn(child)
+        if (dvPredicates.nonEmpty &&
+            !otherPredicatesReadingSkipRow &&
+            hasNativeDeletionVectorGpuScan(child)) {
+          val newChild = pruneDeletionVectorSkipRowColumn(child)
+          if (otherPredicates.isEmpty) {
+            newChild
+          } else {
+            filter.copy(condition = otherPredicates.reduce(GpuAnd),
+              child = newChild)(filter.coalesceAfter)
+          }
         } else {
-          child
-        }
-        if (otherPredicates.isEmpty) {
-          newChild
-        } else {
-          filter.copy(condition = otherPredicates.reduce(GpuAnd),
-            child = newChild)(filter.coalesceAfter)
+          filter
         }
     }
   }
