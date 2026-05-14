@@ -206,15 +206,29 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
     withResource(file.newReader(conf.metrics)) { reader =>
       val fileSchema = reader.getFileMetaData.getSchema
 
-      val rowGroupFirstRowIndices = new Array[Long](reader.getRowGroups.size())
+      // Build file-global first-row index per row group from the FULL footer.
+      // reader.getRowGroups() is filtered by the split's byte range (set via
+      // ParquetReadOptions.withRange), so accumulating over it would produce
+      // task-local offsets starting at 0. That feeds wrong _pos values into
+      // FetchRowPosition and, more critically, into positional-delete matching
+      // on MoR reads, causing silent data corruption. The footer's getBlocks()
+      // is the unfiltered list, so the offsets here are absolute within the
+      // file. Key by getStartingPos so we can look up each filtered block.
+      val firstRowIndexByStartingPos =
+        scala.collection.mutable.HashMap.empty[Long, Long]
       var accumulatedRowCount = 0L
-      for (i <- 0 until reader.getRowGroups.size()) {
-        rowGroupFirstRowIndices(i) = accumulatedRowCount
-        accumulatedRowCount += reader.getRowGroups.get(i).getRowCount
+      val allBlocks = reader.getFooter.getBlocks
+      var i = 0
+      while (i < allBlocks.size()) {
+        val b = allBlocks.get(i)
+        firstRowIndexByStartingPos(b.getStartingPos) = accumulatedRowCount
+        accumulatedRowCount += b.getRowCount
+        i += 1
       }
       val (typeWithIds, fileReadSchema) = projectSchema(fileSchema, requiredSchema)
       val filteredBlocks = filterRowGroups(reader, requiredSchema, typeWithIds, file.filter)
-      val blockFirstRowIndices = filteredBlocks.map(b => rowGroupFirstRowIndices(b._2))
+      val blockFirstRowIndices = filteredBlocks.map(b =>
+        firstRowIndexByStartingPos(b._1.getStartingPos))
       val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks.map(_._1))
 
       val sqlConf = SQLConf.get

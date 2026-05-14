@@ -672,6 +672,31 @@ def test_iceberg_read_metadata_columns_with_partition_evolution(spark_tmp_table_
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_read_pos_with_split_file(spark_tmp_table_factory, reader_type):
+    # Regression for nvbug 6174911: when Iceberg splits a single data file
+    # across multiple read tasks on row-group byte boundaries, _pos must remain
+    # the file-global row position, not task-local. Three table properties
+    # together force the split on a tiny dataset: small row-group size so the
+    # file has many row groups, a tiny split target, and zero per-file open
+    # cost so the planner is willing to split a small file.
+    table = get_full_table_name(spark_tmp_table_factory)
+    def setup_iceberg_table(spark):
+        spark.sql(f"CREATE TABLE {table} (id BIGINT) USING ICEBERG {_NO_FANOUT}")
+        spark.sql(
+            f"ALTER TABLE {table} SET TBLPROPERTIES ("
+            "'write.parquet.row-group-size-bytes' = '4096', "
+            "'read.split.target-size'             = '4096', "
+            "'read.split.open-file-cost'          = '0')")
+        spark.range(0, 1500).coalesce(1).writeTo(table).append()
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT id, _pos FROM {table}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_small_file_combine_with_schema_evolution(spark_tmp_table_factory, reader_type):
     table = get_full_table_name(spark_tmp_table_factory)
     schema_evolution_gens_v1 = [('a', long_gen), ('b', int_gen)]
