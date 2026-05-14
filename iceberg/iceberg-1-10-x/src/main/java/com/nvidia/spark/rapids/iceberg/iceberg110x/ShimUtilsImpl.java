@@ -18,9 +18,9 @@ package com.nvidia.spark.rapids.iceberg.iceberg110x;
 
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
 import org.apache.iceberg.*;
+import org.apache.iceberg.util.PartitionUtil;
 import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.types.Types;
-import org.apache.iceberg.util.PartitionUtil;
 
 import java.util.Map;
 

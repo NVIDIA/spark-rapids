@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,6 @@ class GpuCoalescingIcebergParquetReader(
 
   private var inited = false
   private lazy val reader = createParquetReader()
-  private var curPostProcessor: GpuParquetReaderPostProcessor = _
 
   override def close(): Unit = {
     if (inited) {
@@ -44,14 +43,12 @@ class GpuCoalescingIcebergParquetReader(
 
   override def hasNext: Boolean = reader.next()
 
-  override def next(): ColumnarBatch = {
-    val batch = reader.get()
-    require(curPostProcessor != null,
-      "The post processor should not be null when calling next()")
-    curPostProcessor.process(batch)
-  }
+  override def next(): ColumnarBatch = reader.get()
 
   private def createParquetReader() = {
+    val multiFileConf = conf.threadConf.asInstanceOf[MultiFile]
+    val hasFilePathMetadata = multiFileConf.hasFilePathMetadata
+    val hasRowPositionMetadata = multiFileConf.hasRowPositionMetadata
     val clippedBlocks = files.map(f => (f, super.filterParquetBlocks(f, conf.expectedSchema)))
       .flatMap {
         case (file, (info, shadedFileReadSchema)) =>
@@ -95,25 +92,41 @@ class GpuCoalescingIcebergParquetReader(
       CpuCompressionConfig.disabled(),
       conf.metrics,
       new StructType(), // partitionSchema
-      conf.threadConf.asInstanceOf[MultiFile].poolConfBuilder.build(),
+      multiFileConf.poolConfBuilder.build(),
       false, // ignoreMissingFiles
       false, // ignoreCorruptFiles
       false) // useFieldId
       {
       override def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
           nextBlockInfo: SingleDataBlockInfo): Boolean = {
-        // Iceberg should always use field id for matching columns, so we should always disable
-        // coalescing.
-        true
+        if (currentBlockInfo.filePath == nextBlockInfo.filePath) {
+          return false
+        }
+        if (hasFilePathMetadata || hasRowPositionMetadata) {
+          return true
+        }
+        if (checkIfNeedToSplitBlocks(
+          currentBlockInfo.extraInfo.dateRebaseMode,
+          nextBlockInfo.extraInfo.dateRebaseMode,
+          currentBlockInfo.extraInfo.timestampRebaseMode,
+          nextBlockInfo.extraInfo.timestampRebaseMode,
+          currentBlockInfo.schema,
+          nextBlockInfo.schema,
+          currentBlockInfo.filePath.toString,
+          nextBlockInfo.filePath.toString)) {
+          return true
+        }
+        val curExtra = currentBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
+        val nextExtra = nextBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
+        !curExtra.postProcessor.compatibleForCombining(nextExtra.postProcessor)
       }
 
       override def finalizeOutputBatch(batch: ColumnarBatch,
           extraInfo: ExtraInfo): ColumnarBatch = {
-        GpuCoalescingIcebergParquetReader.this.curPostProcessor = extraInfo
+        extraInfo
           .asInstanceOf[IcebergParquetExtraInfo]
           .postProcessor
-
-        GpuColumnVector.incRefCounts(batch)
+          .process(GpuColumnVector.incRefCounts(batch))
       }
     }
   }

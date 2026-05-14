@@ -120,6 +120,25 @@ def test_map_from_entries_basic(key_gen, value_gen):
 
 
 @pytest.mark.parametrize('key_gen,value_gen', [
+    (IntegerGen(nullable=False), IntegerGen()),
+    (StringGen(nullable=False), StringGen()),
+    (LongGen(nullable=False), DoubleGen()),
+    (IntegerGen(nullable=False), ArrayGen(IntegerGen())),
+    (StringGen(nullable=False), StructGen([['child', IntegerGen()]])),
+], ids=idfn)
+def test_map_from_entries_null_struct_entries(key_gen, value_gen):
+    struct_gen = StructGen([
+        ('key', key_gen),
+        ('value', value_gen)
+    ], nullable=True)
+    array_gen = ArrayGen(struct_gen, max_length=10)
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark: unary_op_df(spark, array_gen).selectExpr(
+                'map_from_entries(a)'),
+            conf={'spark.sql.mapKeyDedupPolicy': 'LAST_WIN'})
+
+
+@pytest.mark.parametrize('key_gen,value_gen', [
     (IntegerGen(nullable=True), IntegerGen()),
     (StringGen(nullable=True), StringGen()),
     (LongGen(nullable=True), DoubleGen()),
@@ -723,7 +742,8 @@ def test_map_element_at_ansi_null(data_gen):
 
 
 @disable_ansi_mode  # ANSI mode failures are tested separately.
-@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value, ids=idfn)
+@pytest.mark.parametrize('data_gen', map_gens_sample + maps_with_binary_value +
+    decimal_128_map_gens + decimal_64_map_gens, ids=idfn)
 @allow_non_gpu(*non_utc_allow)
 def test_transform_values(data_gen):
     def do_it(spark):
@@ -734,7 +754,8 @@ def test_transform_values(data_gen):
                    'transform_values(a, (key, value) -> key) as indexed',
                    'transform_values(a, (key, value) -> b) as b_val']
         value_type = data_gen.data_type.valueType
-        # decimal types can grow too large so we are avoiding those here for now
+        # Arithmetic expansions below can overflow decimal precision, so they
+        # run only on IntegralType values.
         if isinstance(value_type, IntegralType):
             columns.extend([
                 'transform_values(a, (key, value) -> value + 1) as add',

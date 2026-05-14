@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,5 +42,5 @@ abstract class GetMapValueMeta (
   extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
 
     override def convertToGpu(map: Expression, key: Expression): GpuExpression =
-        GpuGetMapValue(map, key, expr.failOnError)
+        GpuGetMapValue(map, key, expr.failOnError)(expr.origin)
 }

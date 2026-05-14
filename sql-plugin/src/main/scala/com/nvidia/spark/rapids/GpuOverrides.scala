@@ -924,8 +924,9 @@ object GpuOverrides extends Logging {
     (IcebergFormatType, FileFormatChecks(
       cudfRead = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT + TypeSig.BINARY +
           TypeSig.ARRAY + TypeSig.MAP + GpuTypeShims.additionalParquetSupportedTypes).nested(),
-      cudfWrite = TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.BINARY +
-        GpuTypeShims.additionalParquetSupportedTypes,
+      cudfWrite = (TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.STRUCT +
+          TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY +
+          GpuTypeShims.additionalParquetSupportedTypes).nested(),
       sparkSig = (TypeSig.cpuAtomics + TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP +
           TypeSig.BINARY + TypeSig.UDT + GpuTypeShims.additionalParquetSupportedTypes).nested())))
 
@@ -3118,8 +3119,9 @@ object GpuOverrides extends Logging {
       "Creates a new map from two arrays",
       ExprChecks.binaryProject(
         TypeSig.MAP.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
-          TypeSig.ARRAY + TypeSig.STRUCT),
-        TypeSig.MAP.nested(TypeSig.all - TypeSig.MAP),
+          TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
+        // Map values may themselves be maps. Map keys remain constrained by the key-array check.
+        TypeSig.MAP.nested(TypeSig.all),
         ("keys",
           TypeSig.ARRAY.nested(
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 +
@@ -3277,8 +3279,8 @@ object GpuOverrides extends Logging {
       "StringReplace operator",
       ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING,
         Seq(ParamCheck("src", TypeSig.STRING, TypeSig.STRING),
-          ParamCheck("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING),
-          ParamCheck("replace", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING))),
+          ParamCheck("search", TypeSig.STRING, TypeSig.STRING),
+          ParamCheck("replace", TypeSig.STRING, TypeSig.STRING))),
       (in, conf, p, r) => new TernaryExprMeta[StringReplace](in, conf, p, r) {
         override def convertToGpu(
             column: Expression,
@@ -3529,7 +3531,7 @@ object GpuOverrides extends Logging {
       "Contains",
       ExprChecks.binaryProject(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
         ("src", TypeSig.STRING, TypeSig.STRING),
-        ("search", TypeSig.lit(TypeEnum.STRING), TypeSig.STRING)),
+        ("search", TypeSig.STRING, TypeSig.STRING)),
       (a, conf, p, r) => new BinaryExprMeta[Contains](a, conf, p, r) {
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuContains(lhs, rhs)
@@ -4656,7 +4658,7 @@ object GpuOverrides extends Logging {
       "The backend for the expand operator",
       ExecChecks(
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 +
-            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
+            TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP + TypeSig.BINARY).nested(),
         TypeSig.all),
       (expand, conf, p, r) => new GpuExpandExecMeta(expand, conf, p, r)),
     exec[WindowExec](
