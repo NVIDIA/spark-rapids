@@ -571,7 +571,8 @@ protected case class GpuParquetFileFilterHandler(
       // We should remove this after https://github.com/NVIDIA/spark-rapids/issues/13306 is
       // implemented.
       val result = PerfIO.readParquetFooterBuffer(filePath, conf, verifyParquetMagic)
-      if (filePath.toUri.getScheme.startsWith("s3")) {
+      val scheme = filePath.toUri.getScheme
+      if (scheme != null && scheme.startsWith("s3")) {
         GpuTaskMetrics.get.recordPerfioS3BackendOnce()
       }
       result.getOrElse(readFooterBufUsingHadoop(fileIO, filePath))
@@ -2015,7 +2016,8 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     }
 
     val coalescedRanges = coalesceReads(remoteCopies)
-    if (filePath.toUri.getScheme.startsWith("s3")) {
+    val scheme = filePath.toUri.getScheme
+    if (scheme != null && scheme.startsWith("s3")) {
       GpuTaskMetrics.get.recordPerfioS3BackendOnce()
     }
     val totalBytesCopied = GpuParquetScan.readRangesToHostMemory(
