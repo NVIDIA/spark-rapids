@@ -29,14 +29,24 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 object GpuNvl {
   def apply(lhs: ColumnVector, rhs: ColumnVector): ColumnVector = {
-    withResource(lhs.isNotNull) { isLhsNotNull =>
-      isLhsNotNull.ifElse(lhs, rhs)
+    // Fast path: if lhs has no nulls, just return lhs directly
+    if (lhs.getNullCount == 0) {
+      lhs.incRefCount()
+    } else {
+      withResource(lhs.isNotNull) { isLhsNotNull =>
+        isLhsNotNull.ifElse(lhs, rhs)
+      }
     }
   }
 
   def apply(lhs: ColumnVector, rhs: Scalar): ColumnVector = {
-    withResource(lhs.isNotNull) { isLhsNotNull =>
-      isLhsNotNull.ifElse(lhs, rhs)
+    // Fast path: if lhs has no nulls, just return lhs directly
+    if (lhs.getNullCount == 0) {
+      lhs.incRefCount()
+    } else {
+      withResource(lhs.isNotNull) { isLhsNotNull =>
+        isLhsNotNull.ifElse(lhs, rhs)
+      }
     }
   }
 }
