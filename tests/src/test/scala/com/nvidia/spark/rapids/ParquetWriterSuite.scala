@@ -152,6 +152,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     val rowGroupRows = 1000000
     val rowGroupSizeBytes = 1024L
     val bytesPerRow = java.lang.Long.BYTES * 2
+    val rowGroupByteSizeOverhead = 512L
     val conf = new SparkConf()
       .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.key, rowGroupRows.toString)
       .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key, rowGroupSizeBytes.toString)
@@ -170,6 +171,9 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         // include page overhead.
         assert(rowGroups.forall(_.rowCount * bytesPerRow <= rowGroupSizeBytes),
           s"Expected estimated data bytes <= $rowGroupSizeBytes, got $rowGroups")
+        assert(rowGroups.forall(_.totalByteSize <= rowGroupSizeBytes + rowGroupByteSizeOverhead),
+          s"Expected row group byte sizes <= $rowGroupSizeBytes plus " +
+            s"$rowGroupByteSizeOverhead bytes of page overhead, got $rowGroups")
         assertResult(10000L) {
           rowGroups.map(_.rowCount).sum
         }
