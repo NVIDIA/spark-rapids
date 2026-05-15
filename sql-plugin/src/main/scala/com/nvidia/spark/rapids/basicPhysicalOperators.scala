@@ -1290,9 +1290,18 @@ case class GpuFilterExec(
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
       conf, allMetrics)
-    rdd.flatMap { batch =>
-      GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
-        numOutputBatches, opTime)
+    // Mirrors GpuProjectExec: mapPartitionsWithIndex (not flatMap) so that
+    // when a downstream coalesce/union wraps this RDD, our lambda fires once
+    // per parent partition with that parent's index. GpuNondeterministic
+    // expressions inside the filter condition (e.g. rand(seed)) are reseeded
+    // per parent partition so their values stay stable across coalesce/union
+    // (SPARK-14393, #14156).
+    rdd.mapPartitionsWithIndex { (partIndex, iter) =>
+      GpuNondeterministic.initializeAll(boundCondition.exprTiers.flatten, partIndex)
+      iter.flatMap { batch =>
+        GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
+          numOutputBatches, opTime)
+      }
     }
   }
 }

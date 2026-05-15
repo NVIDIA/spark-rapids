@@ -31,7 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.Expression
  * stays constant across coalesced inputs (see #14156).
  *
  * For operators that have not yet been updated to plumb the parent partition index
- * (Filter, Aggregate, Window, Generate, etc.), `ensureInitialized` falls back to
+ * (Aggregate, Window, Generate, etc.), `ensureInitialized` falls back to
  * `TaskContext.getPartitionId()` on the first `columnarEval`. This matches the
  * pre-fix behavior for those operators — incorrect under coalesce/union but
  * non-regressing. Follow-up PRs should update each such operator to call
