@@ -505,6 +505,16 @@ else
             SERVER_JARS="${ALL_JARS//:/,}"
         fi
 
+        SPARK_SHELL_ARGS_ARR=(
+            --master local-cluster[1,2,1024]
+            --conf spark.plugins=com.nvidia.spark.SQLPlugin
+            --packages "$CONNECT_PACKAGES"
+            ${SERVER_JARS:+--jars "$SERVER_JARS"}
+        )
+        if [[ -n "$PYSP_TEST_spark_jars_ivySettings" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--conf "spark.jars.ivySettings=${PYSP_TEST_spark_jars_ivySettings}")
+        fi
+
         # Helper: check if port is listening
         check_port() {
             local port=$1
@@ -546,10 +556,7 @@ else
         trap cleanup_connect_server EXIT
 
         if ! start_output=$("${SPARK_HOME}/sbin/start-connect-server.sh" \
-            --master local-cluster[1,2,1024] \
-            --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-            --packages "$CONNECT_PACKAGES" \
-            ${SERVER_JARS:+--jars "$SERVER_JARS"} 2>&1); then
+            "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1); then
           echo "ERROR: Spark Connect server failed to launch"
           printf "%s\n" "$start_output" | tail -n 200
           exit 1
