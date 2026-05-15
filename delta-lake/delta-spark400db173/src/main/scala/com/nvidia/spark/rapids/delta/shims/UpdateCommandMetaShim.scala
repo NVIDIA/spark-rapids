@@ -16,16 +16,30 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
+import com.databricks.sql.transaction.tahoe.commands.DeletionVectorUtils
+import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.delta.{UpdateCommandEdgeMeta, UpdateCommandMeta}
 
-// DB-17.3 UPDATE has a command placeholder for shared conversion code, but the operation
-// stays on CPU until issue #14597 ports this path.
 object UpdateCommandMetaShim {
   def tagForGpu(meta: UpdateCommandMeta): Unit = {
-    meta.willNotWorkOnGpu("Delta Lake UPDATE is not yet supported on GPU for DB-17.3")
+    val deltaLog = meta.updateCmd.tahoeFileIndex.deltaLog
+    val dvFeatureEnabled =
+      DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot)
+
+    if (dvFeatureEnabled && meta.updateCmd.conf.getConf(
+      DeltaSQLConf.UPDATE_USE_PERSISTENT_DELETION_VECTORS)) {
+      meta.willNotWorkOnGpu("Deletion vector writes are not supported on GPU")
+    }
   }
 
   def tagForGpu(meta: UpdateCommandEdgeMeta): Unit = {
-    meta.willNotWorkOnGpu("Delta Lake UPDATE is not yet supported on GPU for DB-17.3")
+    val deltaLog = meta.updateCmd.tahoeFileIndex.deltaLog
+    val dvFeatureEnabled =
+      DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot)
+
+    if (dvFeatureEnabled && meta.updateCmd.conf.getConf(
+      DeltaSQLConf.UPDATE_USE_PERSISTENT_DELETION_VECTORS)) {
+      meta.willNotWorkOnGpu("Deletion vector writes are not supported on GPU")
+    }
   }
 }
