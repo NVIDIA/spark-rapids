@@ -62,7 +62,11 @@ class RapidsSparkTableSuite
   private val warehouse = Files.createTempDirectory("rapids-iceberg-e2e").toFile
   private val ns = Array("default")
   private val tbl = "test_tbl"
-  private val confPrefix = s"spark.rapids.iceberg.spark_catalog.default.$tbl"
+  private val tablePrefix =
+    s"spark.rapids.iceberg.table-setting.spark_catalog.default.$tbl"
+  private val catalogPrefix =
+    "spark.rapids.iceberg.catalog-setting.spark_catalog"
+  private val globalPrefix = "spark.rapids.iceberg.global-setting"
 
   // Non-default values, picked so a "merged from session conf" assertion can't
   // be satisfied by iceberg defaults or by an accidental fallback.
@@ -116,17 +120,44 @@ class RapidsSparkTableSuite
     catalog.loadTable(Identifier.of(ns, tbl)).asInstanceOf[RapidsSparkTable]
   }
 
-  // Wrap a spy of the loaded iceberg delegate in a fresh RapidsSparkTable so
+  // Wrap a spy of the given iceberg delegate in a fresh RapidsSparkTable so
   // the caller can capture the options the wrapper forwards to the delegate.
-  private def captureMergedOptions(
+  private def captureMergedOptionsFor(
+      loaded: RapidsSparkTable,
       catalogName: String = "spark_catalog",
       explicitOptions: CaseInsensitiveStringMap = emptyOptions): CaseInsensitiveStringMap = {
-    val delegateSpy = spy(loadedRapidsTable.delegate())
+    val delegateSpy = spy(loaded.delegate())
     val wrapper = new RapidsSparkTable(delegateSpy, catalogName)
     wrapper.newScanBuilder(explicitOptions)
     val captor = ArgumentCaptor.forClass(classOf[CaseInsensitiveStringMap])
     verify(delegateSpy).newScanBuilder(captor.capture())
     captor.getValue
+  }
+
+  private def captureMergedOptions(
+      catalogName: String = "spark_catalog",
+      explicitOptions: CaseInsensitiveStringMap = emptyOptions): CaseInsensitiveStringMap =
+    captureMergedOptionsFor(loadedRapidsTable, catalogName, explicitOptions)
+
+  // Create an ad-hoc iceberg table under `default.<tblName>` with the given
+  // TBLPROPERTIES, hand the loaded RapidsSparkTable and table name to the
+  // body, and drop the table afterwards. Used by precedence tests that need a
+  // table-scoped conf path matching the ad-hoc table name.
+  private def withTableHavingTblProperty[T](
+      tblName: String, propKey: String, propValue: String)(
+      body: (RapidsSparkTable, String) => T): T = {
+    spark.sql(s"CREATE TABLE default.$tblName (id long) USING iceberg")
+    try {
+      spark.sql(s"ALTER TABLE default.$tblName SET TBLPROPERTIES " +
+        s"('$propKey' = '$propValue')")
+      val catalog = spark.sessionState.catalogManager
+          .catalog("spark_catalog").asInstanceOf[TableCatalog]
+      val loaded = catalog.loadTable(Identifier.of(ns, tblName))
+          .asInstanceOf[RapidsSparkTable]
+      body(loaded, tblName)
+    } finally {
+      spark.sql(s"DROP TABLE IF EXISTS default.$tblName")
+    }
   }
 
   test("scan succeeds and catalog wraps loaded tables with RapidsSparkTable") {
@@ -143,7 +174,7 @@ class RapidsSparkTableSuite
   }
 
   test("single recognized suffix is merged into the scan options") {
-    spark.conf.set(s"$confPrefix.read-split-target-size", splitSize)
+    spark.conf.set(s"$tablePrefix.read-split-target-size", splitSize)
     val merged = captureMergedOptions()
     assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
     assert(!merged.containsKey(SparkReadOptions.LOOKBACK))
@@ -151,34 +182,53 @@ class RapidsSparkTableSuite
   }
 
   test("all three recognized suffixes are merged into the scan options") {
-    spark.conf.set(s"$confPrefix.read-split-target-size", splitSize)
-    spark.conf.set(s"$confPrefix.read-split-planning-lookback", planningLookback)
-    spark.conf.set(s"$confPrefix.read-split-open-file-cost", openFileCost)
+    spark.conf.set(s"$tablePrefix.read-split-target-size", splitSize)
+    spark.conf.set(s"$tablePrefix.read-split-planning-lookback", planningLookback)
+    spark.conf.set(s"$tablePrefix.read-split-open-file-cost", openFileCost)
     val merged = captureMergedOptions()
     assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
     assert(merged.get(SparkReadOptions.LOOKBACK) == planningLookback)
     assert(merged.get(SparkReadOptions.FILE_OPEN_COST) == openFileCost)
   }
 
-  test("explicit DataFrame option wins over session override") {
-    spark.conf.set(s"$confPrefix.read-split-target-size", splitSize)
-    val explicit = new JHashMap[String, String]()
-    explicit.put(SparkReadOptions.SPLIT_SIZE, "536870912")
+  private def explicitMap(key: String, value: String): CaseInsensitiveStringMap = {
+    val m = new JHashMap[String, String]()
+    m.put(key, value)
+    new CaseInsensitiveStringMap(m)
+  }
+
+  test("precedence: explicit option beats table-setting") {
+    spark.conf.set(s"$tablePrefix.read-split-target-size", splitSize)
     val merged = captureMergedOptions(
-      explicitOptions = new CaseInsensitiveStringMap(explicit))
+      explicitOptions = explicitMap(SparkReadOptions.SPLIT_SIZE, "536870912"))
     assert(merged.get(SparkReadOptions.SPLIT_SIZE) == "536870912")
   }
 
-  test("confs for a different table are ignored") {
+  test("precedence: explicit option beats catalog-setting") {
+    spark.conf.set(s"$catalogPrefix.read-split-target-size", splitSize)
+    val merged = captureMergedOptions(
+      explicitOptions = explicitMap(SparkReadOptions.SPLIT_SIZE, "536870912"))
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == "536870912")
+  }
+
+  test("precedence: explicit option beats global-setting") {
+    spark.conf.set(s"$globalPrefix.read-split-target-size", splitSize)
+    val merged = captureMergedOptions(
+      explicitOptions = explicitMap(SparkReadOptions.SPLIT_SIZE, "536870912"))
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == "536870912")
+  }
+
+  test("table-scoped confs for a different table are ignored") {
     spark.conf.set(
-      "spark.rapids.iceberg.spark_catalog.default.other_tbl.read-split-target-size",
+      "spark.rapids.iceberg.table-setting.spark_catalog.default.other_tbl." +
+        "read-split-target-size",
       splitSize)
     val merged = captureMergedOptions()
     assert(merged.isEmpty)
   }
 
-  test("unrecognized suffix under our prefix is rejected") {
-    spark.conf.set(s"$confPrefix.read-split-bogus", "1")
+  test("unrecognized table-scoped suffix is rejected") {
+    spark.conf.set(s"$tablePrefix.read-split-bogus", "1")
     val ex = intercept[IllegalArgumentException] {
       captureMergedOptions()
     }
@@ -186,9 +236,10 @@ class RapidsSparkTableSuite
     assert(ex.getMessage.contains("read-split-bogus"))
   }
 
-  test("dot in catalog component is rejected when a conf would apply") {
+  test("dot in catalog component is rejected when a table-scoped conf would apply") {
     spark.conf.set(
-      s"spark.rapids.iceberg.hadoop.prod.default.$tbl.read-split-target-size",
+      s"spark.rapids.iceberg.table-setting.hadoop.prod.default.$tbl." +
+        "read-split-target-size",
       splitSize)
     val ex = intercept[IllegalArgumentException] {
       captureMergedOptions(catalogName = "hadoop.prod")
@@ -202,6 +253,147 @@ class RapidsSparkTableSuite
     // place must not break scans for tables the user has not explicitly tuned.
     val merged = captureMergedOptions(catalogName = "hadoop.prod")
     assert(merged.isEmpty)
+  }
+
+  test("catalog-scoped conf is merged into the scan options") {
+    spark.conf.set(s"$catalogPrefix.read-split-target-size", splitSize)
+    val merged = captureMergedOptions()
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+  }
+
+  test("global-scoped conf is merged into the scan options") {
+    spark.conf.set(s"$globalPrefix.read-split-target-size", splitSize)
+    val merged = captureMergedOptions()
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+  }
+
+  test("precedence: table-setting beats catalog-setting") {
+    spark.conf.set(s"$catalogPrefix.read-split-target-size", "111")
+    spark.conf.set(s"$tablePrefix.read-split-target-size", splitSize)
+    val merged = captureMergedOptions()
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+  }
+
+  test("precedence: table-setting beats global-setting") {
+    spark.conf.set(s"$globalPrefix.read-split-target-size", "111")
+    spark.conf.set(s"$tablePrefix.read-split-target-size", splitSize)
+    val merged = captureMergedOptions()
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+  }
+
+  test("precedence: table-setting beats catalog- and global-setting together") {
+    spark.conf.set(s"$globalPrefix.read-split-target-size", "111")
+    spark.conf.set(s"$catalogPrefix.read-split-target-size", "222")
+    spark.conf.set(s"$tablePrefix.read-split-target-size", splitSize)
+    val merged = captureMergedOptions()
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+  }
+
+  test("precedence: catalog-setting beats global-setting") {
+    spark.conf.set(s"$globalPrefix.read-split-target-size", "111")
+    spark.conf.set(s"$catalogPrefix.read-split-target-size", splitSize)
+    val merged = captureMergedOptions()
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+  }
+
+  test("precedence: table-setting beats iceberg TBLPROPERTIES") {
+    // TBLPROPERTIES is iceberg's fallback; the wrapper merges the session conf
+    // into the options it forwards, so iceberg sees the session-conf value as
+    // an explicit scan option and uses it instead of TBLPROPERTIES.
+    withTableHavingTblProperty("tbl_vs_tblprops",
+        "read.split.target-size", "999") { (loaded, t) =>
+      spark.conf.set(
+        s"spark.rapids.iceberg.table-setting.spark_catalog.default.$t." +
+          "read-split-target-size",
+        splitSize)
+      val merged = captureMergedOptionsFor(loaded)
+      assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+    }
+  }
+
+  test("precedence: catalog-setting beats iceberg TBLPROPERTIES") {
+    withTableHavingTblProperty("cat_vs_tblprops",
+        "read.split.target-size", "999") { (loaded, _) =>
+      spark.conf.set(s"$catalogPrefix.read-split-target-size", splitSize)
+      val merged = captureMergedOptionsFor(loaded)
+      assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+    }
+  }
+
+  test("precedence: global-setting beats iceberg TBLPROPERTIES") {
+    withTableHavingTblProperty("glob_vs_tblprops",
+        "read.split.target-size", "999") { (loaded, _) =>
+      spark.conf.set(s"$globalPrefix.read-split-target-size", splitSize)
+      val merged = captureMergedOptionsFor(loaded)
+      assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+    }
+  }
+
+  test("scopes merge independently per suffix") {
+    // table-setting contributes target-size, catalog-setting contributes
+    // lookback, global-setting contributes open-file-cost. The merged options
+    // must reflect each scope contributing its own suffix without one scope
+    // shadowing another.
+    spark.conf.set(s"$tablePrefix.read-split-target-size", splitSize)
+    spark.conf.set(s"$catalogPrefix.read-split-planning-lookback", planningLookback)
+    spark.conf.set(s"$globalPrefix.read-split-open-file-cost", openFileCost)
+    val merged = captureMergedOptions()
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+    assert(merged.get(SparkReadOptions.LOOKBACK) == planningLookback)
+    assert(merged.get(SparkReadOptions.FILE_OPEN_COST) == openFileCost)
+  }
+
+  test("unrecognized catalog-scoped suffix is rejected") {
+    spark.conf.set(s"$catalogPrefix.read-split-bogus", "1")
+    val ex = intercept[IllegalArgumentException] {
+      captureMergedOptions()
+    }
+    assert(ex.getMessage.contains("Unrecognized suffix"))
+    assert(ex.getMessage.contains("read-split-bogus"))
+  }
+
+  test("unrecognized global-scoped suffix is rejected") {
+    spark.conf.set(s"$globalPrefix.read-split-bogus", "1")
+    val ex = intercept[IllegalArgumentException] {
+      captureMergedOptions()
+    }
+    assert(ex.getMessage.contains("Unrecognized suffix"))
+    assert(ex.getMessage.contains("read-split-bogus"))
+  }
+
+  test("global conf still applies when catalog name contains '.'") {
+    // Global confs don't carry a catalog in the key, so they aren't ambiguous
+    // and must apply even to tables whose catalog name has '.' in it.
+    spark.conf.set(s"$globalPrefix.read-split-target-size", splitSize)
+    val merged = captureMergedOptions(catalogName = "hadoop.prod")
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+  }
+
+  test("catalog-scoped conf applies when catalog name contains '.'") {
+    // catalog-setting keys carry the catalog name as the only variable
+    // component after the scope marker, so a '.' in the catalog name doesn't
+    // produce ambiguity at this scope.
+    spark.conf.set(
+      "spark.rapids.iceberg.catalog-setting.hadoop.prod.read-split-target-size",
+      splitSize)
+    val merged = captureMergedOptions(catalogName = "hadoop.prod")
+    assert(merged.get(SparkReadOptions.SPLIT_SIZE) == splitSize)
+  }
+
+  test("iceberg TBLPROPERTIES is honored when no session conf applies") {
+    // No spark.rapids.iceberg.* conf is set at any scope, so the wrapper
+    // forwards options unchanged. Iceberg then falls back to TBLPROPERTIES;
+    // verify our wrapper exposes the property so the iceberg-side resolution
+    // has it to read.
+    withTableHavingTblProperty("tblprops_only",
+        "read.split.target-size", splitSize) { (loaded, _) =>
+      val merged = captureMergedOptionsFor(loaded)
+      // Wrapper doesn't set SPLIT_SIZE (no session conf), so iceberg is the
+      // one consulting TBLPROPERTIES. Confirm the property is visible on the
+      // loaded table — that's the channel iceberg reads from.
+      assert(!merged.containsKey(SparkReadOptions.SPLIT_SIZE))
+      assert(loaded.properties().get("read.split.target-size") == splitSize)
+    }
   }
 
   test("wrap returns a RapidsSparkTable for SparkTable inputs") {

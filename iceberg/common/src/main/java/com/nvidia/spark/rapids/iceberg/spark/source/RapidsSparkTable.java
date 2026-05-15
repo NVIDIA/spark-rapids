@@ -50,8 +50,16 @@ import scala.Option;
 
 /**
  * Wraps an iceberg {@link SparkTable} so that scan options can be augmented from
- * Spark session configuration entries with the prefix
- * {@code spark.rapids.iceberg.<catalog>.<namespace>.<table>.}.
+ * Spark session configuration entries. Session-conf overrides are recognized at
+ * three scopes, with the following precedence (most specific wins):
+ * <ol>
+ *   <li>session-table: {@code spark.rapids.iceberg.table-setting.<catalog>.<namespace>.<table>.<suffix>}</li>
+ *   <li>catalog:       {@code spark.rapids.iceberg.catalog-setting.<catalog>.<suffix>}</li>
+ *   <li>global:        {@code spark.rapids.iceberg.global-setting.<suffix>}</li>
+ * </ol>
+ * When no session conf is set at any scope, iceberg falls back to the table's
+ * own {@code TBLPROPERTIES} (e.g. {@code read.split.target-size}) and then to
+ * iceberg's built-in defaults.
  *
  * <p>Supported suffixes (mapped to the corresponding Iceberg read option):
  * <ul>
@@ -64,7 +72,7 @@ import scala.Option;
  * with {@code -} instead of {@code .} so the dot-separated session-conf path stays
  * unambiguous.
  *
- * <p>Explicit DataFrame read options take precedence over session-level overrides.
+ * <p>Explicit DataFrame read options take precedence over all session-level overrides.
  */
 public class RapidsSparkTable implements Table,
     SupportsRead,
@@ -73,8 +81,22 @@ public class RapidsSparkTable implements Table,
     SupportsRowLevelOperations,
     SupportsMetadataColumns {
 
-  /** Prefix used for per-table session-level scan option overrides. */
+  /**
+   * Root prefix for all session-level scan option overrides. The scope of an
+   * individual conf is encoded in what immediately follows this prefix — see
+   * the class javadoc for the table-setting / catalog-setting / global-setting
+   * key shapes.
+   */
   public static final String CONF_PREFIX = "spark.rapids.iceberg.";
+
+  /** Scope marker for {@code spark.rapids.iceberg.table-setting.<…>.<suffix>}. */
+  static final String TABLE_SETTING_PREFIX = CONF_PREFIX + "table-setting.";
+
+  /** Scope marker for {@code spark.rapids.iceberg.catalog-setting.<catalog>.<suffix>}. */
+  static final String CATALOG_SETTING_PREFIX = CONF_PREFIX + "catalog-setting.";
+
+  /** Scope marker for {@code spark.rapids.iceberg.global-setting.<suffix>}. */
+  static final String GLOBAL_SETTING_PREFIX = CONF_PREFIX + "global-setting.";
 
   /**
    * Mapping from session-conf suffix to the iceberg read option key. Suffix names
@@ -219,49 +241,103 @@ public class RapidsSparkTable implements Table,
     components[0] = catalogName;
     System.arraycopy(namespace, 0, components, 1, namespace.length);
     components[components.length - 1] = tableName;
-    String prefix = CONF_PREFIX + String.join(".", components) + ".";
+    String tableKeyPrefix =
+        TABLE_SETTING_PREFIX + String.join(".", components) + ".";
+    String catalogKeyPrefix = CATALOG_SETTING_PREFIX + catalogName + ".";
 
-    // Iterate the scala session conf once, picking only keys under our prefix.
-    // Per-table overrides are 0-3 entries, so copying the entire SparkConf into
-    // a Java map would be wasteful.
-    Map<String, String> matchingConfs = new HashMap<>();
+    // Iterate the scala session conf once, classifying keys by scope. The
+    // scope marker (table-setting / catalog-setting / global-setting) sits
+    // immediately after CONF_PREFIX, so the three scopes occupy disjoint key
+    // spaces. Per-scope overrides for a given table are 0-3 entries each, so
+    // copying the entire SparkConf into a Java map would be wasteful.
+    Map<String, String> tableConfs = new HashMap<>();
+    Map<String, String> catalogConfs = new HashMap<>();
+    Map<String, String> globalConfs = new HashMap<>();
     scala.collection.Iterator<scala.Tuple2<String, String>> it =
         sparkOpt.get().conf().getAll().iterator();
     while (it.hasNext()) {
       scala.Tuple2<String, String> entry = it.next();
-      if (entry._1().startsWith(prefix)) {
-        matchingConfs.put(entry._1(), entry._2());
+      String key = entry._1();
+      if (key.startsWith(tableKeyPrefix)) {
+        tableConfs.put(key, entry._2());
+      } else if (key.startsWith(catalogKeyPrefix)) {
+        // Catalog-scoped: the part after catalogKeyPrefix must be a single
+        // token (no '.'); otherwise the key isn't a well-formed catalog
+        // setting for this table's catalog (and isn't a table-setting key
+        // either, since those have their own scope marker), so skip it.
+        if (key.indexOf('.', catalogKeyPrefix.length()) < 0) {
+          catalogConfs.put(key, entry._2());
+        }
+      } else if (key.startsWith(GLOBAL_SETTING_PREFIX)) {
+        // Global-scoped: same single-token rule applies.
+        if (key.indexOf('.', GLOBAL_SETTING_PREFIX.length()) < 0) {
+          globalConfs.put(key, entry._2());
+        }
       }
     }
 
-    // Pure pass-through when no conf is set for this table — identifiers
+    // Pure pass-through when no conf is set at any scope — identifiers
     // containing '.' must not break scans for tables the user has not
     // explicitly tuned.
-    if (matchingConfs.isEmpty()) {
+    if (tableConfs.isEmpty() && catalogConfs.isEmpty() && globalConfs.isEmpty()) {
       return options;
     }
 
-    // Conf keys are joined with '.', so a '.' in catalog / namespace / table makes
-    // the resulting prefix ambiguous (catalog="hadoop.prod" + namespace=["ns"] +
-    // table="tbl" and catalog="hadoop" + namespace=["prod","ns"] + table="tbl"
-    // both produce the same prefix). Fail loudly rather than silently picking the
-    // wrong override — only when the user actually configured something for this
-    // table.
-    String[] ambiguous = Arrays.stream(components)
-        .filter(c -> c.indexOf('.') >= 0)
-        .toArray(String[]::new);
-    if (ambiguous.length > 0) {
-      throw new IllegalArgumentException(
-          "Cannot apply " + CONF_PREFIX + "* session overrides for " +
-          catalogName + "." + String.join(".", namespace) + "." + tableName +
-          ": identifier component(s) " + Arrays.toString(ambiguous) +
-          " contain '.', which makes the conf prefix ambiguous. Rename the " +
-          "identifier or set the iceberg read.split.* table property directly.");
+    // Conf keys join catalog/namespace/table with '.', so a '.' in any of
+    // those identifiers makes a table-scoped prefix ambiguous (catalog =
+    // "hadoop.prod" + namespace=["ns"] and catalog="hadoop" +
+    // namespace=["prod","ns"] both produce the same prefix). Catalog-scoped
+    // and global-scoped confs don't span multiple identifier components, so
+    // only fail when a table-scoped conf would actually apply.
+    if (!tableConfs.isEmpty()) {
+      String[] ambiguous = Arrays.stream(components)
+          .filter(c -> c.indexOf('.') >= 0)
+          .toArray(String[]::new);
+      if (ambiguous.length > 0) {
+        throw new IllegalArgumentException(
+            "Cannot apply " + TABLE_SETTING_PREFIX + "* session overrides for " +
+            catalogName + "." + String.join(".", namespace) + "." + tableName +
+            ": identifier component(s) " + Arrays.toString(ambiguous) +
+            " contain '.', which makes the conf prefix ambiguous. Rename the " +
+            "identifier or set the iceberg read.split.* table property directly.");
+      }
     }
 
     // Reject any conf whose suffix is not one of the recognized ones, so
     // misspelled / unsupported keys fail loudly instead of being a no-op.
-    for (String key : matchingConfs.keySet()) {
+    rejectUnrecognizedSuffixes(tableConfs, tableKeyPrefix);
+    rejectUnrecognizedSuffixes(catalogConfs, catalogKeyPrefix);
+    rejectUnrecognizedSuffixes(globalConfs, GLOBAL_SETTING_PREFIX);
+
+    // Merge with precedence: table > catalog > global > unset (iceberg then
+    // falls back to TBLPROPERTIES and its built-in default). Explicit
+    // DataFrame options win over every scope.
+    Map<String, String> merged = new HashMap<>(options.asCaseSensitiveMap());
+    boolean changed = false;
+    for (Map.Entry<String, String> entry : SUFFIX_TO_READ_OPTION.entrySet()) {
+      String suffix = entry.getKey();
+      String optionKey = entry.getValue();
+      if (options.containsKey(optionKey)) {
+        continue;
+      }
+      String value = tableConfs.get(tableKeyPrefix + suffix);
+      if (value == null) {
+        value = catalogConfs.get(catalogKeyPrefix + suffix);
+      }
+      if (value == null) {
+        value = globalConfs.get(GLOBAL_SETTING_PREFIX + suffix);
+      }
+      if (value != null) {
+        merged.put(optionKey, value);
+        changed = true;
+      }
+    }
+    return changed ? new CaseInsensitiveStringMap(merged) : options;
+  }
+
+  private static void rejectUnrecognizedSuffixes(
+      Map<String, String> confs, String prefix) {
+    for (String key : confs.keySet()) {
       String suffix = key.substring(prefix.length());
       if (!SUFFIX_TO_READ_OPTION.containsKey(suffix)) {
         throw new IllegalArgumentException(
@@ -269,21 +345,5 @@ public class RapidsSparkTable implements Table,
             "'. Supported suffixes: " + SUFFIX_TO_READ_OPTION.keySet() + ".");
       }
     }
-
-    Map<String, String> merged = new HashMap<>(options.asCaseSensitiveMap());
-    boolean changed = false;
-    for (Map.Entry<String, String> entry : SUFFIX_TO_READ_OPTION.entrySet()) {
-      String suffix = entry.getKey();
-      String optionKey = entry.getValue();
-      // Explicit DataFrame option always wins over session-level overrides.
-      if (!options.containsKey(optionKey)) {
-        String value = matchingConfs.get(prefix + suffix);
-        if (value != null) {
-          merged.put(optionKey, value);
-          changed = true;
-        }
-      }
-    }
-    return changed ? new CaseInsensitiveStringMap(merged) : options;
   }
 }

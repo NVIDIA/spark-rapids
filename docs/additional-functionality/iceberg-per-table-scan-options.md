@@ -1,11 +1,11 @@
 ---
 layout: page
-title: Iceberg per-table session-level scan options
+title: Iceberg session-level scan options
 parent: Additional Functionality
 nav_order: 11
 ---
 
-# Iceberg per-table session-level scan options
+# Iceberg session-level scan options
 
 Iceberg's split-planning knobs (`read.split.target-size`,
 `read.split.planning-lookback`, `read.split.open-file-cost`) are normally tuned
@@ -16,9 +16,10 @@ before a benchmark run, or to try different split sizes against existing tables
 without modifying them.
 
 The RAPIDS Accelerator ships a thin Iceberg session-catalog wrapper that lets
-these options be set per-table via session conf. The wrapper is opt-in and a
-pure pass-through for any table whose conf is not set, so enabling it does not
-change behavior for tables you do not explicitly tune.
+these options be set via session conf at three scopes — per-table, per-catalog,
+and global. The wrapper is opt-in and a pure pass-through for any table whose
+conf is not set at any scope, so enabling it does not change behavior for
+tables you do not explicitly tune.
 
 ## When to use it
 
@@ -60,11 +61,18 @@ For a non-default Iceberg catalog (e.g. one you have configured under
 --conf spark.sql.catalog.my_catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO
 ```
 
-## Setting per-table options
+## Setting options
 
-Per-table overrides use the prefix
-`spark.rapids.iceberg.<catalog>.<namespace>.<table>.<suffix>`. Three suffixes
-are recognized:
+Overrides use the prefix `spark.rapids.iceberg.` followed by a scope marker
+(`table-setting` / `catalog-setting` / `global-setting`):
+
+| Scope     | Key shape                                                                                 | Applies to                                  |
+| --------- | ----------------------------------------------------------------------------------------- | ------------------------------------------- |
+| table     | `spark.rapids.iceberg.table-setting.<catalog>.<namespace>.<table>.<suffix>`               | one specific table                          |
+| catalog   | `spark.rapids.iceberg.catalog-setting.<catalog>.<suffix>`                                 | every table under `<catalog>`               |
+| global    | `spark.rapids.iceberg.global-setting.<suffix>`                                            | every table the wrapper handles             |
+
+Three suffixes are recognized at every scope:
 
 | Session-conf suffix             | Iceberg read option                    | Iceberg `TableProperties` key   | Type        |
 | ------------------------------- | -------------------------------------- | ------------------------------- | ----------- |
@@ -82,27 +90,38 @@ and `<table>` is the iceberg table name.
 
 ### Example
 
-Tune split sizing for the 6 NDS fact tables under the default catalog:
+Set a global default, override it at the catalog scope for one catalog, and
+override it again for one specific hot table:
 
 ```
---conf spark.rapids.iceberg.spark_catalog.default.store_sales.read-split-target-size=2147483648
---conf spark.rapids.iceberg.spark_catalog.default.store_sales.read-split-planning-lookback=1000
---conf spark.rapids.iceberg.spark_catalog.default.store_returns.read-split-target-size=2147483648
---conf spark.rapids.iceberg.spark_catalog.default.store_returns.read-split-planning-lookback=1000
---conf spark.rapids.iceberg.spark_catalog.default.catalog_sales.read-split-target-size=2147483648
---conf spark.rapids.iceberg.spark_catalog.default.catalog_sales.read-split-planning-lookback=1000
---conf spark.rapids.iceberg.spark_catalog.default.catalog_returns.read-split-target-size=2147483648
---conf spark.rapids.iceberg.spark_catalog.default.catalog_returns.read-split-planning-lookback=1000
---conf spark.rapids.iceberg.spark_catalog.default.web_sales.read-split-target-size=2147483648
---conf spark.rapids.iceberg.spark_catalog.default.web_sales.read-split-planning-lookback=1000
---conf spark.rapids.iceberg.spark_catalog.default.web_returns.read-split-target-size=2147483648
---conf spark.rapids.iceberg.spark_catalog.default.web_returns.read-split-planning-lookback=1000
+# Global default for every table the wrapper handles.
+--conf spark.rapids.iceberg.global-setting.read-split-target-size=536870912
+
+# Catalog-scoped override for all tables in spark_catalog.
+--conf spark.rapids.iceberg.catalog-setting.spark_catalog.read-split-target-size=1073741824
+
+# Per-table override for one table in spark_catalog.default.
+--conf spark.rapids.iceberg.table-setting.spark_catalog.default.store_sales.read-split-target-size=2147483648
+--conf spark.rapids.iceberg.table-setting.spark_catalog.default.store_sales.read-split-planning-lookback=1000
 ```
 
 ## Precedence
 
-Explicit DataFrame `.option(...)` calls always win over session-conf
-overrides:
+For a given table, each suffix is resolved by walking the priority list below
+and picking the first value that is set. The four priorities are, from highest
+to lowest:
+
+1. **Session table** — per-table session conf
+   (`spark.rapids.iceberg.table-setting.<catalog>.<namespace>.<table>.<suffix>`)
+2. **Catalog** — catalog-scoped session conf
+   (`spark.rapids.iceberg.catalog-setting.<catalog>.<suffix>`)
+3. **Global** — global session conf
+   (`spark.rapids.iceberg.global-setting.<suffix>`)
+4. **Table itself** — iceberg `TBLPROPERTIES`
+   (e.g. `read.split.target-size`, set via `ALTER TABLE … SET TBLPROPERTIES`)
+
+If none of the four is set, iceberg's built-in default applies. An explicit
+DataFrame `.option(...)` call wins over all four priorities:
 
 ```scala
 spark.read.format("iceberg")
@@ -110,8 +129,9 @@ spark.read.format("iceberg")
   .load("default.store_sales")
 ```
 
-Tables for which no `spark.rapids.iceberg.<…>.*` conf is set behave exactly
-as if the rapids catalog wrapper were not in use.
+Tables for which no `spark.rapids.iceberg.<…>.*` conf is set at any scope and
+no matching `TBLPROPERTIES` is configured behave exactly as if the rapids
+catalog wrapper were not in use.
 
 ## Caveats
 
@@ -120,16 +140,19 @@ as if the rapids catalog wrapper were not in use.
   Mistyping a key (e.g. `read.split.target-size` with dots, or `target-size`
   without the `read-split-` prefix) is therefore caught loudly rather than
   being a silent no-op.
-- The catalog name, namespace components, and table name are joined with `.`
-  to form the conf key prefix, so a `.` inside any of those identifiers makes
-  the prefix ambiguous (`catalog=hadoop.prod` + `namespace=[ns]` + `table=tbl`
-  produces the same prefix as `catalog=hadoop` + `namespace=[prod, ns]` +
-  `table=tbl`). Tables with such identifiers stay as a pure pass-through as
-  long as no `spark.rapids.iceberg.<…>.*` conf is set for them. If a matching
-  conf is set, the wrapper throws an `IllegalArgumentException` from
-  `RapidsSparkTable` rather than silently picking the wrong override; in
-  that case, either rename the identifier or set the iceberg `read.split.*`
-  table property directly.
+- A table-scoped key joins catalog, namespace, and table with `.`, so a `.`
+  inside any of those identifiers makes the table-scoped prefix ambiguous
+  (`catalog=hadoop.prod` + `namespace=[ns]` + `table=tbl` produces the same
+  prefix as `catalog=hadoop` + `namespace=[prod, ns]` + `table=tbl`). Tables
+  with such identifiers stay as a pure pass-through as long as no
+  table-scoped `spark.rapids.iceberg.table-setting.*` conf is set for them.
+  Catalog-scoped and global-scoped confs and `TBLPROPERTIES` still apply,
+  since they don't span multiple identifier components. If a table-scoped
+  conf is set against such an identifier, the wrapper throws an
+  `IllegalArgumentException` from `RapidsSparkTable` rather than silently
+  picking the wrong override; in that case, either rename the identifier,
+  switch to a catalog- or global-scoped conf, or set the iceberg
+  `read.split.*` table property directly.
 - The wrapper applies to scans only. Writes go through the underlying iceberg
   `SparkTable.newWriteBuilder` unchanged.
 - The session-conf lookup happens once per `newScanBuilder(options)` call (a
