@@ -58,6 +58,7 @@ AggregateExpression,4
 Alias,4
 And,4
 ApproximatePercentile,4
+ArrayAggregate,4
 ArrayContains,4
 ArrayDistinct,4
 ArrayExcept,4

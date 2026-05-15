@@ -145,7 +145,7 @@
                                       <equals arg1="${tools.update.shared.docs}" arg2="true"/>
                                       <or>
                                         <equals arg1="spark${env.BASE_VER}" arg2="${spark.version.classifier}"/>
-                                        <equals arg1="spark321" arg2="${spark.version.classifier}"/>
+                                        <equals arg1="spark330" arg2="${spark.version.classifier}"/>
                                       </or>
                                     </and>
                                     <ac:then>
