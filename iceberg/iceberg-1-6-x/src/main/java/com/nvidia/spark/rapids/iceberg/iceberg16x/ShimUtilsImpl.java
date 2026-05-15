@@ -16,13 +16,22 @@
 
 package com.nvidia.spark.rapids.iceberg.iceberg16x;
 
+import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.NoopMetric$;
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
+import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.*;
 import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.parquet.GpuParquetIO;
+import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.iceberg.spark.source.GpuBaseReader;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PartitionUtil;
+import scala.Option;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 
@@ -49,5 +58,25 @@ public class ShimUtilsImpl implements IcebergShimUtils {
     @Override
     public Map<String, Map<String, String>> storageCredentialOverlays(FileIO fileIO) {
         return Collections.emptyMap();
+    }
+
+    /**
+     * Iceberg 1.6.x stub: footer caching is not supported because the shaded
+     * {@code ParquetFileReader} in 1.6.x has no public API to inject pre-parsed footer
+     * metadata. Opens via {@code ParquetFileReader.open(InputFile, ParquetReadOptions)}
+     * which always reads the footer from the file. The footer-miss counter is bumped
+     * on every call so dashboards see non-zero activity instead of silently interpreting
+     * "all zeros" as "everything was cached".
+     */
+    @Override
+    public ParquetFileReader openParquetReader(
+            IcebergInputFile inputFile,
+            Path filePath,
+            ParquetReadOptions options,
+            scala.collection.immutable.Map<String, GpuMetric> metrics) throws IOException {
+        Option<GpuMetric> opt = metrics.get(GpuMetric.FILECACHE_FOOTER_MISSES());
+        GpuMetric missCounter = opt.isDefined() ? opt.get() : NoopMetric$.MODULE$;
+        missCounter.$plus$eq(1L);
+        return ParquetFileReader.open(GpuParquetIO.file(inputFile.getDelegate()), options);
     }
 }

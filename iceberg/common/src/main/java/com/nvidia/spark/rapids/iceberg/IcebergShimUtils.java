@@ -16,12 +16,18 @@
 
 package com.nvidia.spark.rapids.iceberg;
 
+import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
+import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
 
+import java.io.IOException;
 import java.util.Map;
 
 /**
@@ -65,4 +71,19 @@ public interface IcebergShimUtils {
      * against 1.6.x without hard-referencing the missing interface.
      */
     Map<String, Map<String, String>> storageCredentialOverlays(FileIO fileIO);
+
+    /**
+     * Open a shaded {@link ParquetFileReader} for an iceberg {@link IcebergInputFile}.
+     * Footer caching is version-dependent and handled by the per-version impl: 1.10.x can
+     * inject a pre-parsed footer through the 4-arg
+     * {@code (InputFile, ParquetMetadata, ParquetReadOptions, SeekableInputStream)}
+     * constructor and route through {@code FileCache}; 1.6.x / 1.9.x predate that ctor and
+     * fall back to {@code ParquetFileReader.open(InputFile, ParquetReadOptions)} which
+     * always re-reads the footer from the file.
+     */
+    ParquetFileReader openParquetReader(
+            IcebergInputFile inputFile,
+            Path filePath,
+            ParquetReadOptions options,
+            scala.collection.immutable.Map<String, GpuMetric> metrics) throws IOException;
 }
