@@ -39,6 +39,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsDataFrameStatSuite]
   enableSuite[RapidsTypedImperativeAggregateSuite]
   enableSuite[RapidsDatasetAggregatorSuite]
+  enableSuite[RapidsInjectRuntimeFilterSuite]
   enableSuite[RapidsArithmeticExpressionSuite]
   enableSuite[RapidsBitwiseExpressionsSuite]
   enableSuite[RapidsBloomFilterAggregateQuerySuite]
