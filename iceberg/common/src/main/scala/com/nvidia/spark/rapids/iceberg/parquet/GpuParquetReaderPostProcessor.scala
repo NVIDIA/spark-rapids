@@ -165,32 +165,41 @@ private[iceberg] case object FetchRowPosition extends ColumnAction {
     val numRows = ctx.numRows
     val rowPoses = new Array[Long](numRows)
     val processor = ctx.processor
-    var curBlockRowCount = processor.parquetInfo.blocks(processor.curBlockIndex).getRowCount
-    var curBlockRowStart =
-      processor.parquetInfo.blocksFirstRowIndices(processor.curBlockIndex)
+
+    // The wrapping withRetryNoSplit may rerun this lambda after an OOM. Keep all advancing
+    // state in locals here and commit back to the processor only after fromLongs() succeeds,
+    // so a retry restarts from the same processor state.
+    var localBlockIndex = processor.curBlockIndex
+    var localProcessedRowCount = processor.processedRowCount
+    var localProcessedBlockRowCounts = processor.processedBlockRowCounts
+
+    var curBlockRowCount = processor.parquetInfo.blocks(localBlockIndex).getRowCount
+    var curBlockRowStart = processor.parquetInfo.blocksFirstRowIndices(localBlockIndex)
     var curBlockRowEnd = curBlockRowStart + curBlockRowCount
-    var curRowPos = curBlockRowStart + processor.processedRowCount -
-      processor.processedBlockRowCounts
+    var curRowPos = curBlockRowStart + localProcessedRowCount - localProcessedBlockRowCounts
 
     for (i <- 0 until numRows) {
       if (curRowPos >= curBlockRowEnd) {
         // switch to next block
-        processor.curBlockIndex += 1
-        processor.processedBlockRowCounts += curBlockRowCount
-        curRowPos = processor.parquetInfo.blocksFirstRowIndices(processor.curBlockIndex)
+        localBlockIndex += 1
+        localProcessedBlockRowCounts += curBlockRowCount
+        curRowPos = processor.parquetInfo.blocksFirstRowIndices(localBlockIndex)
 
-        curBlockRowCount = processor.parquetInfo.blocks(processor.curBlockIndex).getRowCount
-        curBlockRowStart =
-          processor.parquetInfo.blocksFirstRowIndices(processor.curBlockIndex)
+        curBlockRowCount = processor.parquetInfo.blocks(localBlockIndex).getRowCount
+        curBlockRowStart = processor.parquetInfo.blocksFirstRowIndices(localBlockIndex)
         curBlockRowEnd = curBlockRowStart + curBlockRowCount
       }
 
       rowPoses(i) = curRowPos
       curRowPos += 1
-      processor.processedRowCount += 1
+      localProcessedRowCount += 1
     }
 
-    CudfColumnVector.fromLongs(rowPoses: _*)
+    val result = CudfColumnVector.fromLongs(rowPoses: _*)
+    processor.curBlockIndex = localBlockIndex
+    processor.processedRowCount = localProcessedRowCount
+    processor.processedBlockRowCounts = localProcessedBlockRowCounts
+    result
   }
 
   override def display(indent: Int): String = {
