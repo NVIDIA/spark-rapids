@@ -42,11 +42,12 @@
     <properties>
         <!-- #if scala-2.12 --><!--
         <tools.datagen.dir>${project.basedir}/generated_files/${buildver}</tools.datagen.dir>
+        <tools.update.shared.docs>true</tools.update.shared.docs>
         --><!-- #endif scala-2.12 -->
         <!-- #if scala-2.13 -->
         <tools.datagen.dir>${project.basedir}/../../tools/generated_files/${buildver}</tools.datagen.dir>
-        <!-- #endif scala-2.13 -->
         <tools.update.shared.docs>false</tools.update.shared.docs>
+        <!-- #endif scala-2.13 -->
         <rapids.default.jar.phase>none</rapids.default.jar.phase>
     </properties>
     <profiles>
