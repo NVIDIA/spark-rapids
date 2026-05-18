@@ -587,6 +587,139 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(),
+                    reason="Delta Lake deletion vector support requires Spark 3.5.3+")
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Databricks plan not GPU-convertible for this query")
+def test_delta_deletion_vector_coalescing_interleaved_file_splits(
+        spark_tmp_path, use_metadata_row_index):
+    """
+    Reproduces row-count mismatch in the coalescing reader's DV pipeline.
+
+    Setup engineers two files A (large) and B (small) such that:
+      - A is split into N PartitionedFiles: [max, ..., max, tail].
+      - tail(A) < len(B) < max_split.
+      - maxPartitionNum=1 forces all splits + B into ONE FilePartition,
+        preserving the length-desc stable sort so A's blocks are split
+        non-consecutively around B's.
+    Deletes target the global min(a) (in A) and max(a) (in B) so the
+    aggregate result is directly load-bearing on per-file DV application.
+    """
+    import os
+    import pyarrow.parquet as pq
+
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    max_split = 128 * 1024
+    # Row counts tuned for ~148 B/row uncompressed (two SHA-256 hex strings +
+    # two ints). File A = 3000 rows -> 4 splits ~[131K, 131K, 131K, 50K];
+    # File B = 800 rows -> 1 split ~118K. Gives tail(A) ~50K < B ~118K < 131K.
+    a_lo, a_hi = 0, 3799  # global min/max of column `a`
+    a_rows = 3000
+    b_split = a_rows  # boundary between A's range and B's range
+
+    write_conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.sql.files.maxRecordsPerFile": "0",
+        "parquet.block.size": "16384",
+        "spark.sql.parquet.compression.codec": "uncompressed",
+    }
+    read_conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex":
+            f"{use_metadata_row_index}",
+        "spark.sql.files.maxPartitionBytes": str(max_split),
+        "spark.sql.files.openCostInBytes": "1",
+        # Pin actual maxSplitBytes == maxPartitionBytes. Without this,
+        # FilePartition.maxSplitBytes computes
+        # min(maxPartitionBytes, max(openCost, totalBytes / minPartitionNum)),
+        # which on high-parallelism CI runners collapses to a much smaller
+        # value and breaks the size-engineering below.
+        "spark.sql.files.minPartitionNum": "1",
+        # Repack initial split-per-partition layout into ONE FilePartition.
+        "spark.sql.files.maxPartitionNum": "1",
+    }
+
+    def setup_table(spark):
+        spark.sql(
+            f"CREATE TABLE delta.`{data_path}` "
+            f"(a INT, b INT, payload STRING) USING DELTA "
+            f"TBLPROPERTIES ('delta.enableDeletionVectors' = 'true')")
+        payload_expr = (
+            "concat(sha2(CAST(id AS STRING), 256), "
+            "sha2(CAST(id + 17 AS STRING), 256)) AS payload")
+        # File A: large enough to split into multiple PartitionedFiles with a
+        # tail < max_split, and tuned so tail(A) < len(B) (asserted below).
+        spark.range(a_lo, b_split) \
+             .selectExpr("CAST(id AS INT) AS a",
+                         "CAST(id % 100 AS INT) AS b",
+                         payload_expr) \
+             .repartition(1).write \
+             .option("parquet.enable.dictionary", "false") \
+             .format("delta").mode("append").save(data_path)
+        # File B: single split. Tuned so tail(A) < len(B) < max_split.
+        spark.range(b_split, a_hi + 1) \
+             .selectExpr("CAST(id AS INT) AS a",
+                         "CAST(id % 100 AS INT) AS b",
+                         payload_expr) \
+             .repartition(1).write \
+             .option("parquet.enable.dictionary", "false") \
+             .format("delta").mode("append").save(data_path)
+        # Pin global min(a) in File A and max(a) in File B so mispaired
+        # bitmaps directly perturb min(a)/max(a) on the alive set.
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a IN ({a_lo}, {a_hi})")
+        # Noise: make per-file bitmaps dense so mispairing has many positions
+        # to corrupt.
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a % 17 = 0")
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a % 23 = 5")
+
+    with_cpu_session(setup_table, conf=write_conf)
+
+    # ---- Preconditions on the engineered layout ----------------------------
+    parquet_files = sorted(
+        os.path.join(data_path, f) for f in os.listdir(data_path)
+        if f.endswith(".parquet"))
+    assert len(parquet_files) == 2, \
+        f"Expected exactly 2 data files, got {parquet_files}"
+
+    sizes = sorted((os.path.getsize(p) for p in parquet_files), reverse=True)
+    a_size, b_size = sizes[0], sizes[1]
+    a_tail = a_size % max_split
+    assert a_size > max_split, \
+        f"File A ({a_size}) must exceed max_split ({max_split}) to split"
+    assert 0 < a_tail < b_size < max_split, (
+        f"Sort order won't interleave: a_tail={a_tail}, "
+        f"b={b_size}, max_split={max_split}")
+
+    for p in parquet_files:
+        n_rg = pq.read_metadata(p).num_row_groups
+        assert n_rg > 1, f"{p} has {n_rg} row group(s); need > 1"
+
+    # GPU-side check: maxPartitionNum=1 actually took effect for the GPU
+    # Delta format. The CPU planner uses a different FileFormat with its own
+    # isSplitable behavior, so a CPU partition count would not prove this.
+    num_partitions = with_gpu_session(
+        lambda spark: spark.read.format("delta").load(data_path)
+                           .select("a").rdd.getNumPartitions(),
+        conf=read_conf)
+    assert num_partitions == 1, \
+        f"Expected 1 FilePartition after rescale, got {num_partitions}"
+
+    # ---- Bug surface -------------------------------------------------------
+    # min(a): fails if File A's DV doesn't actually delete a=a_lo.
+    # max(a): fails if File B's DV doesn't actually delete a=a_hi.
+    # sum(a), count(a): backstop wrong-row deletion not touching the extremes.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(
+            f"SELECT count(a), sum(a), min(a), max(a) FROM delta.`{data_path}`"),
+        conf=read_conf)
+
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
 @pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
