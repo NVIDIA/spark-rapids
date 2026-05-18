@@ -735,11 +735,9 @@ case class GpuDeltaParquetFileFormatNativeDV(
         val columnTypes = readDataSchema.fields.map(f => f.dataType)
         val deletionVectorInfos: Array[SpillableDeletionVectorInfo] =
           if (tablePathOpt.isDefined) {
-            val filteredDvInfos = dvMetadata.metadatas
-              .filter(_.maybeDvInfo.isDefined)
-              .map(_.maybeDvInfo.get)
+            val filteredDvInfos = dvMetadata.takeDvInfos()
 
-            closeOnExcept(filteredDvInfos.map(_.serializedBitmap)) { _ =>
+            closeOnExcept(filteredDvInfos) { _ =>
               require(filteredDvInfos.length == dvMetadata.metadatas.length,
                 "Every DeletionVectorInfo must exist if tablePath is defined")
             }
@@ -837,15 +835,28 @@ case class GpuDeltaParquetFileFormatNativeDV(
     /**
      * Deletion vector metadata for a single host memory buffer containing a part of data.
      */
-    private case class SingleBufferDVMetadata(
-        maybeDvInfo: Option[SpillableDeletionVectorInfo]
-    )
+    private class SingleBufferDVMetadata(
+        private var maybeDvInfo: Option[SpillableDeletionVectorInfo]) {
+      def peekDvInfo: Option[SpillableDeletionVectorInfo] = maybeDvInfo
+
+      def takeDvInfo(): Option[SpillableDeletionVectorInfo] = {
+        val ret = maybeDvInfo
+        maybeDvInfo = None
+        ret
+      }
+    }
 
     private case class DeletionVectorMetadata(
         metadatas: Array[SingleBufferDVMetadata]
     ) extends AutoCloseable {
+      def takeDvInfos(): Array[SpillableDeletionVectorInfo] =
+        metadatas.flatMap(_.takeDvInfo())
+
+      def peekDvInfos: Array[SpillableDeletionVectorInfo] =
+        metadatas.flatMap(_.peekDvInfo)
+
       override def close(): Unit = {
-        metadatas.flatMap(_.maybeDvInfo).safeClose()
+        takeDvInfos().safeClose()
       }
     }
 
@@ -853,7 +864,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
       def forSingleBuffer(maybeDvInfo: Option[SpillableDeletionVectorInfo]) = {
         DeletionVectorMetadata(
           Array(
-            SingleBufferDVMetadata(maybeDvInfo)
+            new SingleBufferDVMetadata(maybeDvInfo)
           )
         )
       }
@@ -1079,11 +1090,9 @@ case class GpuDeltaParquetFileFormatNativeDV(
 
       val numDeletedRows = metadata match {
         case emptyMeta: DeltaParquetHostMemoryEmptyMetaData =>
-          emptyMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
-            .map(_.numRowsDeleted).sum
+          emptyMeta.dvMetadata.flatMap(_.peekDvInfos).map(_.numRowsDeleted).sum
         case buffersMeta: DeltaParquetHostMemoryBuffersWithMetaData =>
-          buffersMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
-            .map(_.numRowsDeleted).sum
+          buffersMeta.dvMetadata.flatMap(_.peekDvInfos).map(_.numRowsDeleted).sum
         case _ =>
           throw new IllegalArgumentException(s"Unexpected metadata type ${metadata.getClass()}")
       }
