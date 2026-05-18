@@ -18,7 +18,7 @@ import random
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, \
     assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, \
     assert_cpu_and_gpu_are_equal_collect_with_capture
-from conftest import is_databricks_runtime, get_datagen_seed
+from conftest import is_databricks_runtime, get_datagen_seed, is_dataproc_serverless_runtime
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -38,6 +38,8 @@ _gbk_edge_cases = [
     bytearray(b'Hi\xc4\xe3\xba\xc3World'), # mixed ASCII and Chinese
 ]
 
+@pytest.mark.skipif(is_dataproc_serverless_runtime(),
+                    reason="https://github.com/NVIDIA/spark-rapids/issues/14815")
 @pytest.mark.parametrize('data_gen', [
     # Random CJK ideographs encoded as GBK — tests normal decode path
     BinaryGen(min_length=0, max_length=50, min_val=0x4E00, max_val=0x9FA5, encoding='gbk'),
