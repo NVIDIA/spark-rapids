@@ -702,6 +702,18 @@ case class GpuDeltaParquetFileFormatNativeDV(
       poolConf, maxNumFileProcessed, ignoreMissingFiles, ignoreCorruptFiles, useFieldId,
       queryUsesInputFile, keepReadsInOrder, combineConf) {
 
+    override def readBatches(
+        fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase): Iterator[ColumnarBatch] = {
+      fileBufsAndMeta match {
+        case meta: DeltaParquetHostMemoryEmptyMetaData =>
+          withResource(meta) { _ =>
+            super.readBatches(fileBufsAndMeta)
+          }
+        case _ =>
+          super.readBatches(fileBufsAndMeta)
+      }
+    }
+
     override protected def readBufferToBatches(
         buffer: HostMemoryBuffersWithMetaData): Iterator[ColumnarBatch] = {
       val deltaBuffer = buffer.asInstanceOf[DeltaParquetHostMemoryBuffersWithMetaData]
@@ -802,6 +814,26 @@ case class GpuDeltaParquetFileFormatNativeDV(
       }
     }
 
+    private def closeWithDVMetadata(
+        dvMetadata: Array[DeletionVectorMetadata],
+        closeBase: => Unit): Unit = {
+      var closeException: Throwable = null
+      try {
+        dvMetadata.safeClose()
+      } catch {
+        case t: Throwable => closeException = t
+      }
+      try {
+        closeBase
+      } catch {
+        case t: Throwable if closeException != null => closeException.addSuppressed(t)
+        case t: Throwable => closeException = t
+      }
+      if (closeException != null) {
+        throw closeException
+      }
+    }
+
     /**
      * Deletion vector metadata for a single host memory buffer containing a part of data.
      */
@@ -843,7 +875,9 @@ case class GpuDeltaParquetFileFormatNativeDV(
         numRows: Long,
         dvMetadata: Array[DeletionVectorMetadata],
         override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
-      extends HostMemoryEmptyMetaData {}
+      extends HostMemoryEmptyMetaData {
+      override def close(): Unit = closeWithDVMetadata(dvMetadata, super.close())
+    }
 
     private case class DeltaParquetHostMemoryBuffersWithMetaData(
         override val partitionedFile: PartitionedFile,
@@ -872,6 +906,8 @@ case class GpuDeltaParquetFileFormatNativeDV(
         }
         this.copy(memBuffersAndSizes = remainingBuffers, dvMetadata = newDvMetadata)
       }
+
+      override def close(): Unit = closeWithDVMetadata(dvMetadata, super.close())
     }
 
     override protected def newHMEmptyMetadataForChunks(

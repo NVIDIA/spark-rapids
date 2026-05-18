@@ -48,7 +48,8 @@ import org.apache.spark.sql.types.{MetadataBuilder, StructType}
  * DB-17.3 uses a fundamentally different DV mechanism than DB-14.3:
  * - No broadcastDvMap / broadcastHadoopConf
  * - Per-file DV via PartitionedFile.otherConstantMetadataColumnValues or TahoeFileIndex metadata
- * - Constructor takes (protocol, metadata, ...) instead of (relation, columnMappingMode, ...)
+ * - The CPU constructor starts with (protocol, metadata, ...); this GPU wrapper also carries the
+ *   relation so it can inspect DBR file-index metadata.
  */
 case class GpuDeltaParquetFileFormat(
     @transient relation: HadoopFsRelation,

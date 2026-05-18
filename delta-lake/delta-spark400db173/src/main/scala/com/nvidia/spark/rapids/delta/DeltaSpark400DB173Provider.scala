@@ -85,6 +85,9 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
     val dvConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
     val useMetadataRowIndex = conf.getStr(dvConf.key)
       .getOrElse(dvConf.defaultValueString).toBoolean
+    // Delta deletion-vector filtering is row-position based in both DBR modes. The native GPU
+    // pushdown below only handles the DBR metadata-row-index plan shape, where Spark provides the
+    // temporary row-index metadata column that we can prune after moving DV filtering into cuDF.
     useMetadataRowIndex && conf.isDeltaDeletionVectorPredicatePushdownEnabled
   }
 
