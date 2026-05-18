@@ -56,8 +56,8 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType, fa
   // This is to conform with Spark's behavior in the Average aggregate function.
   override lazy val evaluateExpression: Expression = {
     GpuCast(
-      GpuDecimalDivide(sum, GpuCast(count, DecimalType.LongDecimal), dataType,
-        failOnError = failOnError, failOnDivideByZero = false), dataType, ansiMode = failOnError)
+      GpuDecimalDivide(sum, GpuCast(count, DecimalType.LongDecimal)(), dataType,
+        failOnError = failOnError, failOnDivideByZero = false), dataType, ansiMode = failOnError)()
   }
 
   // Window
@@ -68,7 +68,7 @@ abstract class GpuDecimalAverage(child: Expression, sumDataType: DecimalType, fa
     val sum = GpuWindowExpression(GpuSum(child, sumDataType,
       failOnErrorOverride = failOnError), spec)
     GpuCast(
-      GpuDecimalDivide(sum, GpuCast(count, DecimalType.LongDecimal), dataType,
-        failOnError = failOnError, failOnDivideByZero = false), dataType, ansiMode = failOnError)
+      GpuDecimalDivide(sum, GpuCast(count, DecimalType.LongDecimal)(), dataType,
+        failOnError = failOnError, failOnDivideByZero = false), dataType, ansiMode = failOnError)()
   }
 }

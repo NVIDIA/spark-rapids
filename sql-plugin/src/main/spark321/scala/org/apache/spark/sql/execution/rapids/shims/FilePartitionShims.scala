@@ -108,4 +108,11 @@ object FilePartitionShims {
     }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
   }
 
+  def getFilePartitions(
+      relation: HadoopFsRelation,
+      splitFiles: Seq[PartitionedFile],
+      maxSplitBytes: Long): Seq[FilePartition] = {
+    FilePartition.getFilePartitions(relation.sparkSession, splitFiles, maxSplitBytes)
+  }
+
 }

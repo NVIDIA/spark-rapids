@@ -20,6 +20,7 @@ import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.io.FileIO;
 
 import java.util.Map;
 
@@ -51,4 +52,17 @@ public interface IcebergShimUtils {
      *         type-to-Spark type conversion, which differs across Iceberg versions.
      */
     Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema, Table table);
+
+    /**
+     * Returns the per-prefix credential overlays from a {@link FileIO} that implements
+     * Iceberg's {@code SupportsStorageCredentials} interface (1.7+). Each entry is a
+     * storage prefix (e.g. {@code "s3://bucket/path/"}) → property overlay map (the
+     * vended credentials Iceberg's REST catalog merges into the base FileIO properties
+     * for clients targeting that prefix).
+     *
+     * <p>1.6.x predates {@code SupportsStorageCredentials} entirely and returns an empty
+     * map. Keeping this resolution behind the shim lets {@code iceberg/common} compile
+     * against 1.6.x without hard-referencing the missing interface.
+     */
+    Map<String, Map<String, String>> storageCredentialOverlays(FileIO fileIO);
 }
