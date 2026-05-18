@@ -19,11 +19,16 @@ package com.nvidia.spark.rapids.iceberg.iceberg19x;
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
 import org.apache.iceberg.*;
 import org.apache.iceberg.data.IdentityPartitionConverters;
+import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.io.StorageCredential;
+import org.apache.iceberg.io.SupportsStorageCredentials;
 import org.apache.iceberg.spark.source.GpuStructInternalRow;
 import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PartitionUtil;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /** Iceberg 1.9.x shim: uses {@code IdentityPartitionConverters::convertConstant}. */
@@ -54,5 +59,17 @@ public class ShimUtilsImpl implements IcebergShimUtils {
             return PartitionUtil.constantsMap(task,
                     ShimUtilsImpl::convertConstant);
         }
+    }
+
+    @Override
+    public Map<String, Map<String, String>> storageCredentialOverlays(FileIO fileIO) {
+        if (!(fileIO instanceof SupportsStorageCredentials)) {
+            return Collections.emptyMap();
+        }
+        Map<String, Map<String, String>> result = new HashMap<>();
+        for (StorageCredential sc : ((SupportsStorageCredentials) fileIO).credentials()) {
+            result.put(sc.prefix(), sc.config());
+        }
+        return result;
     }
 }

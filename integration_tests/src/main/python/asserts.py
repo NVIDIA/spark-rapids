@@ -721,7 +721,9 @@ def assert_gpu_and_cpu_row_counts_equal(func, conf={}, is_cpu_first=True):
     """
     _assert_gpu_and_cpu_are_equal(func, 'COUNT', conf=conf, is_cpu_first=is_cpu_first)
 
-def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=False, is_cpu_first=True, validate_execs_in_gpu_plan=[]):
+def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=False,
+        is_cpu_first=True, validate_execs_in_gpu_plan=[],
+        result_canonicalize_func_before_compare=None):
     """
     Assert that the specified SQL query produces equal results on CPU and GPU.
     :param df_fun: a function that will create the dataframe
@@ -731,6 +733,8 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
     :param debug: Boolean to indicate if the SQL output should be printed
     :param is_cpu_first: Boolean to indicate if the CPU should be run first or not
     :param validate_execs_in_gpu_plan: String list of expressions to be validated in the GPU plan.
+    :param result_canonicalize_func_before_compare: Function to canonicalize the CPU and GPU
+        results before comparison.
     :return: Assertion failure, if results from CPU and GPU do not match.
     """
     if conf is None:
@@ -745,7 +749,8 @@ def assert_gpu_and_cpu_are_equal_sql(df_fun, table_name, sql, conf=None, debug=F
             return data_gen.debug_df(spark.sql(sql))
         else:
             return spark.sql(sql)
-    assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first)
+    assert_gpu_and_cpu_are_equal_collect(do_it_all, conf, is_cpu_first=is_cpu_first,
+        result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
 
 
 def check_exception(actual_error, error_message):

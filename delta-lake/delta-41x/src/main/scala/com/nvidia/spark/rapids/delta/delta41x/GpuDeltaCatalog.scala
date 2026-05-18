@@ -35,26 +35,6 @@ class GpuDeltaCatalog(
     rapidsConf: RapidsConf)
   extends GpuDeltaCatalog4x(cpuCatalog, rapidsConf) {
 
-  override protected lazy val isUnityCatalog: Boolean = {
-    @scala.annotation.tailrec
-    def findRequiredField(clazz: Class[_]): java.lang.reflect.Field = {
-      if (clazz == null) {
-        throw new IllegalStateException(
-          s"Unable to locate Delta catalog field isUnityCatalog on " +
-            s"${cpuCatalog.getClass.getName}; add a version-specific shim if this changed.")
-      }
-      try {
-        clazz.getDeclaredField("isUnityCatalog")
-      } catch {
-        case _: NoSuchFieldException => findRequiredField(clazz.getSuperclass)
-      }
-    }
-
-    val field = findRequiredField(cpuCatalog.getClass)
-    field.setAccessible(true)
-    field.getBoolean(cpuCatalog)
-  }
-
   override protected def buildGpuCreateDeltaTableCommand(
       withDb: CatalogTable,
       existingTableOpt: Option[CatalogTable],

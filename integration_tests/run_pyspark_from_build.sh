@@ -505,6 +505,16 @@ else
             SERVER_JARS="${ALL_JARS//:/,}"
         fi
 
+        SPARK_SHELL_ARGS_ARR=(
+            --master local-cluster[1,2,1024]
+            --conf spark.plugins=com.nvidia.spark.SQLPlugin
+            --packages "$CONNECT_PACKAGES"
+            ${SERVER_JARS:+--jars "$SERVER_JARS"}
+        )
+        if [[ -n "$PYSP_TEST_spark_jars_ivySettings" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--conf "spark.jars.ivySettings=${PYSP_TEST_spark_jars_ivySettings}")
+        fi
+
         # Helper: check if port is listening
         check_port() {
             local port=$1
@@ -537,6 +547,16 @@ else
         CONNECT_SERVER_URL="sc://${CONNECT_HOST}:${CONNECT_PORT}"
 
         cleanup_connect_server() {
+            # dump connect server logs for troubleshooting
+            local connect_server_logs=("$SPARK_HOME"/logs/*SparkConnectServer*.out)
+            if [[ -f "${connect_server_logs[0]}" ]]; then
+                for f in "${connect_server_logs[@]}"; do
+                    echo "=== $f ==="
+                    cat "$f" || true
+                done
+            else
+                echo "No Spark Connect server .out log found in $SPARK_HOME/logs"
+            fi
             if [[ -f "${SPARK_HOME}/sbin/stop-connect-server.sh" ]]; then
                 timeout 20 "${SPARK_HOME}/sbin/stop-connect-server.sh" || true
             fi
@@ -546,10 +566,7 @@ else
         trap cleanup_connect_server EXIT
 
         if ! start_output=$("${SPARK_HOME}/sbin/start-connect-server.sh" \
-            --master local-cluster[1,2,1024] \
-            --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-            --packages "$CONNECT_PACKAGES" \
-            ${SERVER_JARS:+--jars "$SERVER_JARS"} 2>&1); then
+            "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1); then
           echo "ERROR: Spark Connect server failed to launch"
           printf "%s\n" "$start_output" | tail -n 200
           exit 1
@@ -562,7 +579,7 @@ else
                 service_ready=1
                 break
             fi
-            sleep 1
+            sleep 10
         done
         if (( service_ready != 1 )); then
             echo "ERROR: Connect server failed to start on ${CONNECT_HOST}:${CONNECT_PORT}"

@@ -1784,6 +1784,39 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ICEBERG_S3_ASYNC_MAX_CONCURRENCY =
+    conf("spark.rapids.iceberg.s3.async.max-concurrency")
+      .doc("Max concurrent connections for the AwsCrtAsyncHttpClient used by the " +
+        "spark-rapids Iceberg S3 byte-range reader. Used only when the Iceberg " +
+        "FileIO property `s3.crt.max-concurrency` is not set.")
+      .startupOnly()
+      .integerConf
+      .createWithDefault(200)
+
+  val ICEBERG_S3_ASYNC_CONNECTION_MAX_IDLE_MS =
+    conf("spark.rapids.iceberg.s3.async.connection-max-idle-time-ms")
+      .doc("Connection-max-idle-time (ms) for the AwsCrtAsyncHttpClient used by the " +
+        "spark-rapids Iceberg S3 byte-range reader. No equivalent Iceberg property.")
+      .startupOnly()
+      .longConf
+      .createWithDefault(5L * 60 * 1000)
+
+  val ICEBERG_S3_ASYNC_TCP_KEEPALIVE_INTERVAL_MS =
+    conf("spark.rapids.iceberg.s3.async.tcp-keepalive-interval-ms")
+      .doc("TCP keep-alive probe interval (ms) for the AwsCrtAsyncHttpClient used by " +
+        "the spark-rapids Iceberg S3 byte-range reader. No equivalent Iceberg property.")
+      .startupOnly()
+      .longConf
+      .createWithDefault(60L * 1000)
+
+  val ICEBERG_S3_ASYNC_TCP_KEEPALIVE_TIMEOUT_MS =
+    conf("spark.rapids.iceberg.s3.async.tcp-keepalive-timeout-ms")
+      .doc("TCP keep-alive probe timeout (ms) for the AwsCrtAsyncHttpClient used by " +
+        "the spark-rapids Iceberg S3 byte-range reader. No equivalent Iceberg property.")
+      .startupOnly()
+      .longConf
+      .createWithDefault(30L * 1000)
+
   val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.enabled")
       .doc("When set to false disables Hive text table acceleration. " +
@@ -2736,6 +2769,16 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .internal()
       .longConf
       .createOptional
+
+  val PROJECT_SPLIT_RETRY_ENABLED = conf("spark.rapids.sql.projectExec.splitRetry.enabled")
+      .doc("When true, GpuProjectExec uses split-and-retry on GPU OOM for retryable " +
+          "projections: the input batch is halved by rows and the projection is re-run on " +
+          "each half. Projections that include non-retryable expressions fall back to the " +
+          "existing withRetryNoSplit path because those expressions cannot be safely " +
+          "re-evaluated on row-split inputs. Disable this to revert to the prior behavior.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
 
   val TEST_IO_ENCRYPTION = conf("spark.rapids.test.io.encryption")
     .doc("Only for tests: verify for IO encryption")
@@ -3933,6 +3976,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
 
   lazy val chunkedPackBounceBufferSize: Long = get(CHUNKED_PACK_BOUNCE_BUFFER_SIZE)
+
+  lazy val isProjectSplitRetryEnabled: Boolean = get(PROJECT_SPLIT_RETRY_ENABLED)
 
   lazy val chunkedPackBounceBufferCount: Int = get(CHUNKED_PACK_BOUNCE_BUFFER_COUNT)
 

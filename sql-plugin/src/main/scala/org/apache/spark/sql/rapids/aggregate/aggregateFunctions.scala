@@ -250,11 +250,18 @@ class CudfMergeM2 extends CudfAggregate {
                   if (n > 0) {
                     val mean = partialMean.getDouble(i)
                     val m2 = partialM2.getDouble(i)
-                    val delta = mean - mergeMean
-                    val newN = n + mergeN
-                    mergeM2 += m2 + delta * delta * n * mergeN / newN
-                    mergeMean = (mergeMean * mergeN + mean * n) / newN
-                    mergeN = newN
+                    if (mergeN == 0.0) {
+                      mergeN = n
+                      mergeMean = mean
+                      mergeM2 = m2
+                    } else {
+                      val delta = mean - mergeMean
+                      val newN = mergeN + n
+                      val deltaN = delta / newN
+                      mergeM2 += m2 + delta * deltaN * mergeN * n
+                      mergeMean += deltaN * n
+                      mergeN = newN
+                    }
                   }
                 }
 
@@ -946,7 +953,7 @@ abstract class GpuSum(
   override lazy val initialValues: Seq[GpuLiteral] = Seq(GpuLiteral(null, resultType))
 
   def inputProjectionImpl: Seq[Expression] = if (child.dataType != resultType) {
-    Seq(GpuCast(child, resultType, ansiMode = failOnErrorOverride))
+    Seq(GpuCast(child, resultType, ansiMode = failOnErrorOverride)())
   } else {
     Seq(child)
   }
@@ -959,7 +966,7 @@ abstract class GpuSum(
   override lazy val updateAggregates: Seq[CudfAggregate] = updateAggregatesImpl
 
   def postUpdateImpl: Seq[Expression] =
-    Seq(GpuCast(updateAggregates.head.attr, resultType, ansiMode = failOnErrorOverride))
+    Seq(GpuCast(updateAggregates.head.attr, resultType, ansiMode = failOnErrorOverride)())
   override lazy val postUpdate: Seq[Expression] = postUpdateImpl
 
   // output of GpuSum
@@ -987,7 +994,7 @@ abstract class GpuSum(
 
   override lazy val windowInputProjection: Seq[Expression] = {
     if (child.dataType != internalSumForWindowDataType) {
-      Seq(GpuCast(child, internalSumForWindowDataType, ansiMode = failOnErrorOverride))
+      Seq(GpuCast(child, internalSumForWindowDataType, ansiMode = failOnErrorOverride)())
     } else {
       Seq(child)
     }
@@ -1059,7 +1066,7 @@ case class GpuBasicSum(
 
   override lazy val inputProjection: Seq[Expression] = if (needsLongOverflowCheck) {
     (0 until 2).map {
-      GpuExtractChunk32(GpuCast(child, LongType), _, replaceNullsWithZero = false)
+      GpuExtractChunk32(GpuCast(child, LongType)(), _, replaceNullsWithZero = false)
     }
   } else {
     inputProjectionImpl
@@ -1119,7 +1126,7 @@ abstract class GpuDecimalSum(
   override lazy val inputProjection: Seq[Expression] = {
     // Spark tracks null columns through a second column isEmpty for decimal. So null values
     // are replaced with 0, and a separate boolean column for isNull is added
-    Seq(GpuIf(GpuIsNull(child), zeroDec, GpuCast(child, dt)), GpuIsNull(child))
+    Seq(GpuIf(GpuIsNull(child), zeroDec, GpuCast(child, dt)()), GpuIsNull(child))
   }
 
   protected lazy val updateIsEmpty: CudfAggregate = new CudfMin(BooleanType)
@@ -1245,7 +1252,7 @@ case class GpuDecimal128Sum(
 
   override lazy val inputProjection: Seq[Expression] = {
     val chunks = (0 until 4).map {
-      GpuExtractChunk32(GpuCast(child, dt), _, replaceNullsWithZero = true)
+      GpuExtractChunk32(GpuCast(child, dt)(), _, replaceNullsWithZero = true)
     }
     // Spark tracks null columns through a second column isEmpty for decimal. So null values
     // are replaced with 0, and a separate boolean column for isNull is added
@@ -1307,7 +1314,7 @@ case class GpuDecimal128Sum(
       spec)
     val highOrderDigitsSum = GpuWindowExpression(
       GpuSum(
-        GpuDecimalSumHighDigits(GpuCast(child, dt), child.dataType.asInstanceOf[DecimalType]),
+        GpuDecimalSumHighDigits(GpuCast(child, dt)(), child.dataType.asInstanceOf[DecimalType]),
         higherDigitsCheckType,
         failOnErrorOverride = failOnErrorOverride),
       spec)
@@ -1422,7 +1429,7 @@ case class GpuCount(children: Seq[Expression],
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(cudfCountUpdate)
 
   // Integer->Long before we are done with the update aggregate
-  override lazy val postUpdate: Seq[Expression] = Seq(GpuCast(cudfCountUpdate.attr, dataType))
+  override lazy val postUpdate: Seq[Expression] = Seq(GpuCast(cudfCountUpdate.attr, dataType)())
 
   override lazy val mergeAggregates: Seq[CudfAggregate] = Seq(new CudfSum(dataType))
 
@@ -1516,9 +1523,9 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
     // decimal aggregations.  The null gets inserted back in with evaluateExpression where
     // a divide by 0 gets replaced with a null.
     val castedForSum = GpuCoalesce(Seq(
-      GpuCast(child, sumDataType),
+      GpuCast(child, sumDataType)(),
       GpuLiteral.default(sumDataType)))
-    val forCount = GpuCast(GpuIsNotNull(child), LongType)
+    val forCount = GpuCast(GpuIsNotNull(child), LongType)()
     Seq(castedForSum, forCount)
   }
 
@@ -1553,7 +1560,7 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
   // divide-by-zero exceptions, even when ansi mode is enabled in Spark.
   // This is to conform with Spark's behavior in the Average aggregate function.
   override lazy val evaluateExpression: Expression =
-      GpuDivide(sum, GpuCast(count, DoubleType), failOnError = false)()
+      GpuDivide(sum, GpuCast(count, DoubleType)(), failOnError = false)()
 
   // Window
   // Replace average with SUM/COUNT. This lets us run average in running window mode without
@@ -1561,8 +1568,8 @@ abstract class GpuAverage(child: Expression, sumDataType: DataType,
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
     val count = GpuWindowExpression(GpuCount(Seq(child)), spec)
     val sum = GpuWindowExpression(
-      GpuSum(GpuCast(child, dataType), dataType, failOnErrorOverride = failOnError), spec)
-    GpuDivide(sum, GpuCast(count, dataType), failOnError = false)()
+      GpuSum(GpuCast(child, dataType)(), dataType, failOnErrorOverride = failOnError), spec)
+    GpuDivide(sum, GpuCast(count, dataType)(), failOnError = false)()
   }
 
   // Copied from Average
@@ -1631,9 +1638,9 @@ case class GpuDecimal128Average(child: Expression, dt: DecimalType, failOnError:
 
   override lazy val inputProjection: Seq[Expression] = {
     val chunks = (0 until 4).map {
-      GpuExtractChunk32(GpuCast(child, dt), _, replaceNullsWithZero = true)
+      GpuExtractChunk32(GpuCast(child, dt)(), _, replaceNullsWithZero = true)
     }
-    val forCount = GpuCast(GpuIsNotNull(child), LongType)
+    val forCount = GpuCast(GpuIsNotNull(child), LongType)()
     chunks :+ forCount
   }
 
@@ -2048,7 +2055,7 @@ abstract class GpuM2(child: Expression, nullOnDivideByZero: Boolean)
   override lazy val postUpdate: Seq[Expression] = {
     val bufferAvgNoNulls = GpuCoalesce(Seq(cudfMean.attr, GpuLiteral(0.0, DoubleType)))
     val bufferM2NoNulls = GpuCoalesce(Seq(cudfM2.attr, GpuLiteral(0.0, DoubleType)))
-    GpuCast(cudfCountN.attr, DoubleType) :: bufferAvgNoNulls :: bufferM2NoNulls :: Nil
+    GpuCast(cudfCountN.attr, DoubleType)() :: bufferAvgNoNulls :: bufferM2NoNulls :: Nil
   }
 
   protected lazy val bufferN: AttributeReference =
@@ -2134,7 +2141,7 @@ case class GpuStddevSamp(child: Expression, nullOnDivideByZero: Boolean)
 
   override def windowReplacement(spec: GpuWindowSpecDefinition): Expression = {
     // calculate n
-    val count = GpuCast(GpuWindowExpression(GpuCount(Seq(child)), spec), DoubleType)
+    val count = GpuCast(GpuWindowExpression(GpuCount(Seq(child)), spec), DoubleType)()
     val stddev = GpuWindowExpression(WindowStddevSamp(child, nullOnDivideByZero), spec)
     // if (n == 0.0)
     GpuIf(GpuEqualTo(count, GpuLiteral(0.0)),
