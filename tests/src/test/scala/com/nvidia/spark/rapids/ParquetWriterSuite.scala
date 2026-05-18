@@ -21,11 +21,12 @@ import java.nio.charset.StandardCharsets
 
 import ai.rapids.cudf.CompressionType
 import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.mapreduce.{Job, JobContext, TaskAttemptContext, TaskAttemptID, TaskType}
 import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
-import org.apache.parquet.hadoop.ParquetFileReader
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetOutputFormat, ParquetWriter}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.io.FileCommitProtocol
@@ -179,6 +180,37 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         }
       }
     }, conf)
+  }
+
+  test("parquet block size warning") {
+    val unsetConf = new Configuration(false)
+    assert(GpuParquetFileFormat.parquetBlockSizeWarning(unsetConf, Map.empty).isEmpty)
+
+    val defaultConf = new Configuration(false)
+    defaultConf.setLong(ParquetOutputFormat.BLOCK_SIZE, ParquetWriter.DEFAULT_BLOCK_SIZE)
+    assert(GpuParquetFileFormat.parquetBlockSizeWarning(defaultConf, Map.empty).isEmpty)
+
+    val defaultOptions = Map(ParquetOutputFormat.BLOCK_SIZE ->
+      ParquetWriter.DEFAULT_BLOCK_SIZE.toString)
+    assert(GpuParquetFileFormat.parquetBlockSizeWarning(unsetConf, defaultOptions).isEmpty)
+
+    val nonDefaultConf = new Configuration(false)
+    nonDefaultConf.setLong(ParquetOutputFormat.BLOCK_SIZE,
+      ParquetWriter.DEFAULT_BLOCK_SIZE.toLong * 2)
+    val warning = GpuParquetFileFormat.parquetBlockSizeWarning(nonDefaultConf, Map.empty)
+    assert(warning.exists(_.contains(ParquetOutputFormat.BLOCK_SIZE)))
+    assert(warning.exists(_.contains(RapidsConf.ENABLE_PARQUET_WRITE.key)))
+    assert(warning.exists(_.contains(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.key)))
+    assert(warning.exists(_.contains(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key)))
+    assert(warning.exists(_.contains("not equivalent")))
+
+    // Options override the Hadoop conf: a non-default option warns even when the
+    // conf is set to the default.
+    val mixedConf = new Configuration(false)
+    mixedConf.setLong(ParquetOutputFormat.BLOCK_SIZE, ParquetWriter.DEFAULT_BLOCK_SIZE)
+    val nonDefaultOptions = Map(ParquetOutputFormat.BLOCK_SIZE ->
+      (ParquetWriter.DEFAULT_BLOCK_SIZE.toLong * 2).toString)
+    assert(GpuParquetFileFormat.parquetBlockSizeWarning(mixedConf, nonDefaultOptions).nonEmpty)
   }
 
   private def listAllFiles(f: File): Array[File] = {

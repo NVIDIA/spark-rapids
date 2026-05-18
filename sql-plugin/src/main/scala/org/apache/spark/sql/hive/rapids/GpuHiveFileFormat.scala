@@ -200,13 +200,16 @@ object GpuHiveFileFormat extends Logging {
 }
 
 class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFormat
-    with Serializable {
+    with Logging with Serializable {
 
   override def prepareWrite(sparkSession: SparkSession, job: Job,
       options: Map[String, String], dataSchema: StructType): ColumnarOutputWriterFactory = {
 
     // Avoid referencing the outer object.
     val compressionType = compType
+    GpuParquetFileFormat.parquetBlockSizeWarning(job.getConfiguration, options).foreach {
+      warning => logWarning(warning)
+    }
     val parquetWriterRowGroupSizeRows =
       RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.get(sparkSession.sessionState.conf)
     val parquetWriterRowGroupSizeBytes =
