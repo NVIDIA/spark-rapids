@@ -28,6 +28,7 @@ import com.databricks.sql.transaction.tahoe.commands.{DeletionVectorUtils, Delta
 import com.databricks.sql.transaction.tahoe.files.{TahoeBatchFileIndex, TahoeFileIndex}
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.delta.GpuDeltaMetricUpdateUDF
+import com.nvidia.spark.rapids.delta.shims.UpdateCommandShims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkContext
@@ -266,7 +267,7 @@ abstract class GpuUpdateCommandBase(
       spark, txn, "update", rootPath, inputLeafFiles, nameToAddFileMap)
     val newTarget = DeltaTableUtils.replaceFileIndex(target, baseRelation.location)
     val (targetDf, finalOutput, finalUpdateExpressions) =
-      UpdateCommand.preserveRowTrackingColumns(
+      UpdateCommandShims.preserveRowTrackingColumns(
         createDataFrame(spark, newTarget), txn.snapshot, target.output, updateExpressions)
 
     // Number of total rows that we have seen, i.e. are either copying or updating (sum of both).
