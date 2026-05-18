@@ -80,8 +80,18 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   // used for memoization of deserialization to GPU on Executor
   @transient private var batchInternal: SpillableColumnarBatch = null
+  // executor-local cache for build-side state
+  @transient private var cachedBuildSideCache:
+      mutable.HashMap[BroadcastCachedBuildSideKey, CachedBuildSide] = null
 
   private def maybeGpuBatch: Option[SpillableColumnarBatch] = Option(batchInternal)
+
+  private def cachedBuildSides: mutable.HashMap[BroadcastCachedBuildSideKey, CachedBuildSide] = {
+    if (cachedBuildSideCache == null) {
+      cachedBuildSideCache = mutable.HashMap.empty
+    }
+    cachedBuildSideCache
+  }
 
   def batch: SpillableColumnarBatch = this.synchronized {
     maybeGpuBatch.getOrElse {
@@ -145,6 +155,43 @@ class SerializeConcatHostBuffersDeserializeBatch(
           new ColumnarBatch(hostColumns.toArray, rowCount)
         }
       }
+    }
+  }
+
+  /**
+   * Get or create executor-local reusable build-side state for this broadcast/key projection.
+   *
+   * Broadcast hash joins can reuse a cuDF hash table because each task on an executor uses the
+   * same deserialized broadcast payload and probes it with different stream-side batches.
+   * We cache the derived hash table on the shared broadcast payload, keyed by the projected
+   * build keys and null-handling semantics, so concurrent tasks build at most one hash table per
+   * key and then acquire shared leases for probing.
+   *
+   * The scope is limited to broadcast hash joins. Shuffled hash joins build from per-partition
+   * data instead of a shared payload, so they do not use this cache.
+   */
+  def getOrCreateCachedBuildSide(
+      boundBuiltKeys: Seq[GpuExpression],
+      compareNullsEqual: Boolean,
+      filterOutNulls: Boolean,
+      cacheBuilds: GpuMetric = NoopMetric,
+      cacheHits: GpuMetric = NoopMetric): CachedBuildSide = this.synchronized {
+    val cacheKey = BroadcastCachedBuildSide.key(
+      boundBuiltKeys,
+      compareNullsEqual,
+      filterOutNulls)
+    cachedBuildSides.get(cacheKey).map { cached =>
+      cacheHits += 1
+      cached
+    }.getOrElse {
+      cacheBuilds += 1
+      val cached = BroadcastCachedBuildSide.create(
+        batch,
+        boundBuiltKeys,
+        compareNullsEqual,
+        filterOutNulls)
+      cachedBuildSides.put(cacheKey, cached)
+      cached
     }
   }
 
@@ -246,8 +293,10 @@ class SerializeConcatHostBuffersDeserializeBatch(
    */
   def closeInternal(): Unit = this.synchronized {
     Seq(data, batchInternal).safeClose()
+    Option(cachedBuildSideCache).foreach(cache => cache.values.toSeq.safeClose())
     data = null
     batchInternal = null
+    cachedBuildSideCache = null
   }
 
   @scala.annotation.nowarn("msg=method finalize in class Object is deprecated")
