@@ -547,6 +547,16 @@ else
         CONNECT_SERVER_URL="sc://${CONNECT_HOST}:${CONNECT_PORT}"
 
         cleanup_connect_server() {
+            # dump connect server logs for troubleshooting
+            local connect_server_logs=("$SPARK_HOME"/logs/*SparkConnectServer*.out)
+            if [[ -f "${connect_server_logs[0]}" ]]; then
+                for f in "${connect_server_logs[@]}"; do
+                    echo "=== $f ==="
+                    cat "$f" || true
+                done
+            else
+                echo "No Spark Connect server .out log found in $SPARK_HOME/logs"
+            fi
             if [[ -f "${SPARK_HOME}/sbin/stop-connect-server.sh" ]]; then
                 timeout 20 "${SPARK_HOME}/sbin/stop-connect-server.sh" || true
             fi
@@ -569,7 +579,7 @@ else
                 service_ready=1
                 break
             fi
-            sleep 1
+            sleep 10
         done
         if (( service_ready != 1 )); then
             echo "ERROR: Connect server failed to start on ${CONNECT_HOST}:${CONNECT_PORT}"
