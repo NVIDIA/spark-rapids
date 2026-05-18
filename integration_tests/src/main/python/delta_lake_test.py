@@ -680,8 +680,12 @@ def test_delta_filter_out_metadata_col(spark_tmp_path, dv_predicate_pushdown):
 
     def read_table(spark):
         df = spark.sql(f"SELECT * FROM delta.`{data_path}`")
-        # The `is_row_deleted` column is removed from the plan when the pushdown is enabled.
-        assert not dv_predicate_pushdown == "__delta_internal_is_row_deleted" in df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "extended")
+        is_gpu = spark.conf.get("spark.rapids.sql.enabled").lower() == "true"
+        if is_gpu:
+            # The `is_row_deleted` column is removed from the plan when the pushdown is enabled.
+            explain_str = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "extended")
+            is_row_deleted_in_plan = "__delta_internal_is_row_deleted" in explain_str
+            assert not dv_predicate_pushdown == is_row_deleted_in_plan
         return df
 
     with_cpu_session(create_delta)

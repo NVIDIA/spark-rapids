@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.shims.InvalidateCacheShims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, EqualTo, Literal}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, Expression, Literal}
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
