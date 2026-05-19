@@ -30,7 +30,7 @@ import scala.collection.mutable
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.DeltaOperations.MergePredicate
 import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction}
-import com.databricks.sql.transaction.tahoe.commands.DeltaCommand
+import com.databricks.sql.transaction.tahoe.commands.{DeltaCommand, MergeIntoCommandBase}
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.schema.ImplicitMetadataOperation
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
@@ -235,6 +235,7 @@ case class GpuMergeIntoCommand(
     snapshotAtAnalysis: Option[Snapshot] = None)(
     @transient val rapidsConf: RapidsConf)
     extends LeafRunnableCommand
+    with MergeIntoCommandBase
     with DeltaCommand with PredicateHelper with AnalysisHelper with ImplicitMetadataOperation {
 
   import GpuMergeIntoCommand._

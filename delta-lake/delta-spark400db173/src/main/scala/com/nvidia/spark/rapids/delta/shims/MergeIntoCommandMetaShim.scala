@@ -87,8 +87,7 @@ object MergeIntoCommandMetaShim {
       mergeCmd.notMatchedBySourceClauses,
       mergeCmd.migratedSchema,
       mergeCmd.trackHighWaterMarks,
-      mergeCmd.schemaEvolutionEnabled,
-      mergeCmd.snapshotAtAnalysis)(conf)
+      mergeCmd.schemaEvolutionEnabled)(conf)
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommandEdge, conf: RapidsConf): RunnableCommand = {
