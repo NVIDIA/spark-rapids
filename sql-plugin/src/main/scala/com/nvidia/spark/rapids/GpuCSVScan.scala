@@ -18,12 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.io.IOException
 import java.nio.charset.{Charset, StandardCharsets}
+import java.util.Locale
 
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -263,6 +265,10 @@ object GpuCSVScan extends Logging {
         s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DECIMALS} to true.")
     }
 
+    if (parsedOptions.locale != Locale.US && types.exists(_.isInstanceOf[DecimalType])) {
+      meta.willNotWorkOnGpu("GpuCSVScan only supports Locale.US decimal parsing")
+    }
+
     if (ColumnDefaultValuesShims.hasExistenceDefaultValues(readSchema)) {
       meta.willNotWorkOnGpu("GpuCSVScan does not support default values in schema")
     }
@@ -407,6 +413,20 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
       withResource(Scalar.fromNull(DType.BOOL8)) {
         isValidBool.ifElse(isTrue, _)
       }
+    }
+  }
+
+  override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+    if (parsedOptions.locale == Locale.US) {
+      withResource(Scalar.fromString(",")) { groupingSeparator =>
+        withResource(Scalar.fromString("")) { emptyString =>
+          withResource(input.stringReplace(groupingSeparator, emptyString)) { withoutGrouping =>
+            CastStrings.toDecimal(withoutGrouping, false, dt.precision, -dt.scale)
+          }
+        }
+      }
+    } else {
+      super.castStringToDecimal(input, dt)
     }
   }
 
