@@ -72,4 +72,8 @@ public class ShimUtilsImpl implements IcebergShimUtils {
         }
         return result;
     }
+
+    // openParquetReader: inherits the no-cache default from IcebergShimUtils. The shaded
+    // ParquetFileReader in 1.9.x has no public API to inject pre-parsed footer metadata,
+    // so file-cache routing is not possible here.
 }
