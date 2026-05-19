@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.apache.spark.rapids.tests;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -26,13 +27,17 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.spark.SparkContext;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.scheduler.SparkListener;
 import org.apache.spark.scheduler.SparkListenerApplicationEnd;
 import org.apache.spark.scheduler.SparkListenerJobEnd;
 import org.apache.spark.scheduler.SparkListenerJobStart;
+import org.apache.spark.status.api.v1.ThreadStackTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.Option;
+import scala.collection.JavaConverters;
 
 /**
  * This code helps accelerate root cause investigations for pipeline hangs
@@ -108,6 +113,7 @@ public class TimeoutSparkListener extends SparkListener {
       if (taskShouldDumpThreads) {
         LOG.error(message + " Driver thread dump follows");
         dumpThreads();
+        dumpExecutorThreads();
       }
       cancelJob(jobId, message);
     }, taskTimeout, TimeUnit.SECONDS);
@@ -141,6 +147,53 @@ public class TimeoutSparkListener extends SparkListener {
     final ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
     for (ThreadInfo threadInfo : threadMXBean.dumpAllThreads(true, true)) {
       LOG.warn(threadInfo.toString());
+    }
+  }
+
+  /**
+   * Best-effort dump of every live executor's JVM threads via Spark's
+   * built-in {@link SparkContext#getExecutorThreadDump} RPC. A driver-only
+   * thread dump is rarely enough to diagnose a hung Spark job because the
+   * stuck thread is almost always on an executor; this fills the gap on
+   * runtimes where the Spark UI / REST API is unreachable (e.g. Dataproc
+   * Serverless without component gateway).
+   *
+   * Failures here must not block the surrounding {@code cancelJob} /
+   * {@code System.exit} path, so every RPC is wrapped individually.
+   */
+  private static void dumpExecutorThreads() {
+    final JavaSparkContext jsc;
+    synchronized (TimeoutSparkListener.class) {
+      jsc = sparkContext;
+    }
+    if (jsc == null) {
+      LOG.warn("SparkContext not initialized; skipping executor thread dump");
+      return;
+    }
+    final SparkContext sc = jsc.sc();
+    final List<String> execIds;
+    try {
+      execIds = JavaConverters.seqAsJavaList(sc.getExecutorIds());
+    } catch (Throwable t) {
+      LOG.warn("Failed to enumerate executors for thread dump", t);
+      return;
+    }
+    LOG.error("Executor thread dump follows ({} executor(s))", execIds.size());
+    for (String execId : execIds) {
+      try {
+        final Option<ThreadStackTrace[]> dumpOpt = sc.getExecutorThreadDump(execId);
+        if (dumpOpt.isEmpty()) {
+          LOG.warn("No thread dump returned for executor {}", execId);
+          continue;
+        }
+        final ThreadStackTrace[] stacks = dumpOpt.get();
+        LOG.error("Executor {} thread dump ({} threads):", execId, stacks.length);
+        for (ThreadStackTrace stack : stacks) {
+          LOG.warn("Executor {}: {}", execId, stack);
+        }
+      } catch (Throwable t) {
+        LOG.warn("Failed to fetch thread dump for executor " + execId, t);
+      }
     }
   }
 }
