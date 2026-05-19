@@ -23,14 +23,15 @@ package com.databricks.sql.transaction.tahoe.rapids
 
 import java.util.concurrent.TimeUnit
 
+import scala.annotation.nowarn
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.annotation.nowarn
 
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.DeltaOperations.MergePredicate
 import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction}
 import com.databricks.sql.transaction.tahoe.commands.DeltaCommand
+import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.schema.ImplicitMetadataOperation
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.databricks.sql.transaction.tahoe.util.{AnalysisHelper, SetAccumulator}
@@ -40,9 +41,9 @@ import com.nvidia.spark.rapids.delta._
 
 import org.apache.spark.SparkContext
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.encoders.{ExpressionEncoder, RowEncoder}
 import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, BasePredicate, Expression, IsNull, Literal, NamedExpression, PredicateHelper, UnsafeProjection}
 import org.apache.spark.sql.catalyst.expressions.codegen.GeneratePredicate
@@ -56,7 +57,6 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.nvidia.DFUDFShims
 import org.apache.spark.sql.types.{DataTypes, LongType, StringType, StructType}
-import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 
 case class GpuMergeDataSizes(
     @JsonDeserialize(contentAs = classOf[java.lang.Long])
@@ -429,7 +429,8 @@ case class GpuMergeIntoCommand(
     val targetDF = Dataset.ofRows(spark, buildTargetPlanWithFiles(deltaTxn, dataSkippedFiles))
         .withColumn(ROW_ID_COL, monotonically_increasing_id())
         .withColumn(FILE_NAME_COL, input_file_name())
-    val joinToFindTouchedFiles = sourceDF.join(targetDF, DFUDFShims.exprToColumn(condition), "inner")
+    val joinToFindTouchedFiles =
+      sourceDF.join(targetDF, DFUDFShims.exprToColumn(condition), "inner")
 
     // Process the matches from the inner join to record touched files and find multiple matches
     val collectTouchedFiles = joinToFindTouchedFiles
@@ -533,7 +534,8 @@ case class GpuMergeIntoCommand(
     // source DataFrame
     val sourceDF = Dataset.ofRows(spark, source)
         .filter(incrSourceRowCountCol)
-        .filter(DFUDFShims.exprToColumn(notMatchedClauses.head.condition.getOrElse(Literal.TrueLiteral)))
+        .filter(DFUDFShims.exprToColumn(
+          notMatchedClauses.head.condition.getOrElse(Literal.TrueLiteral)))
 
     // Skip data based on the merge condition
     val conjunctivePredicates = splitConjunctivePredicates(condition)
