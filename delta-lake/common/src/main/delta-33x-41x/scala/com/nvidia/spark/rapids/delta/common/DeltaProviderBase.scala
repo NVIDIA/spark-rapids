@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.shims.InvalidateCacheShims
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, Expression, Literal}
 import org.apache.spark.sql.delta.{DeltaLog, DeltaParquetFileFormat}
 import org.apache.spark.sql.delta.DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
@@ -225,14 +225,20 @@ object DVPredicatePushdown extends ShimPredicateHelper {
    */
   def pushToScan(plan: SparkPlan): SparkPlan = {
 
+    def isRowDeletedEqualToZero(left: Expression, right: Expression): Boolean = {
+      isRowDeletedColumnRef(left) && isLiteralZero(right) ||
+        isRowDeletedColumnRef(right) && isLiteralZero(left)
+    }
+
     /**
      * Is the condition a form of "IS_ROW_DELETED_COLUMN_NAME == 0"?
      */
     def isDVCondition(condition: Expression): Boolean = {
       condition match {
         case GpuEqualTo(left, right) =>
-          isRowDeletedColumnRef(left) && isLiteralZero(right) ||
-            isRowDeletedColumnRef(right) && isLiteralZero(left)
+          isRowDeletedEqualToZero(left, right)
+        case EqualTo(left, right) =>
+          isRowDeletedEqualToZero(left, right)
         case _ => false
       }
     }
@@ -247,6 +253,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
     def isLiteralZero(expr: Expression): Boolean = {
       expr match {
         case GpuLiteral(value: Number, _) if value.longValue() == 0L => true
+        case Literal(value: Number, _) if value.longValue() == 0L => true
         case _ => false
       }
     }
@@ -261,7 +268,12 @@ object DVPredicatePushdown extends ShimPredicateHelper {
             _.name == IS_ROW_DELETED_COLUMN_NAME),
             requiredSchema = StructType(
               fsse.requiredSchema.filterNot(_.name == IS_ROW_DELETED_COLUMN_NAME)
-            ))(fsse.rapidsConf)
+            ),
+            // AQE expects expressions in dataFilters to exist in the output of the scan.
+            // It will not reuse the stage of the scan otherwise. Since we are removing
+            // the IS_ROW_DELETED_COLUMN_NAME column from scan's output, we should
+            // remove the DV condition as well from the dataFilters.
+            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(fsse.rapidsConf)
       }
     }
 
