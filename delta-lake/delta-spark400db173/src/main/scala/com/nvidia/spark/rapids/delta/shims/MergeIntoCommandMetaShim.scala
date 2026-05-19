@@ -17,27 +17,57 @@
 package com.nvidia.spark.rapids.delta.shims
 
 import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
+import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuMergeIntoCommand}
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
 
 import org.apache.spark.sql.execution.command.RunnableCommand
 
-// Keep MERGE on CPU for DB-17.3 until issue #14598 ports both command shapes.
-// The convertToGpu methods throw so a missed tag fails during planning.
 object MergeIntoCommandMetaShim {
-  def tagForGpu(meta: MergeIntoCommandMeta, mergeCmd: MergeIntoCommand): Unit =
-    meta.willNotWorkOnGpu("Delta Lake MERGE INTO is not yet supported on GPU for DB-17.3")
+  def tagForGpu(meta: MergeIntoCommandMeta, mergeCmd: MergeIntoCommand): Unit = {
+    // see https://github.com/NVIDIA/spark-rapids/issues/8415 for more information
+    if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
+      meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
+    }
+  }
 
-  def tagForGpu(meta: MergeIntoCommandEdgeMeta, mergeCmd: MergeIntoCommandEdge): Unit =
-    meta.willNotWorkOnGpu("Delta Lake MERGE INTO is not yet supported on GPU for DB-17.3")
+  def tagForGpu(meta: MergeIntoCommandEdgeMeta, mergeCmd: MergeIntoCommandEdge): Unit = {
+    // see https://github.com/NVIDIA/spark-rapids/issues/8415 for more information
+    if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
+      meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
+    }
+  }
 
-  def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand =
-    throw new UnsupportedOperationException(
-      "Delta Lake MERGE INTO is not yet supported on GPU for DB-17.3 " +
-        "(tracked in GitHub issue #14598)")
+  def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {
+    GpuMergeIntoCommand(
+      mergeCmd.source,
+      mergeCmd.target,
+      mergeCmd.catalogTable,
+      mergeCmd.targetFileIndex,
+      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+      mergeCmd.condition,
+      mergeCmd.matchedClauses,
+      mergeCmd.notMatchedClauses,
+      mergeCmd.notMatchedBySourceClauses,
+      mergeCmd.migratedSchema,
+      mergeCmd.trackHighWaterMarks,
+      mergeCmd.schemaEvolutionEnabled)(conf)
+  }
 
-  def convertToGpu(mergeCmd: MergeIntoCommandEdge, conf: RapidsConf): RunnableCommand =
-    throw new UnsupportedOperationException(
-      "Delta Lake MERGE INTO is not yet supported on GPU for DB-17.3 " +
-        "(tracked in GitHub issue #14598)")
+  def convertToGpu(mergeCmd: MergeIntoCommandEdge, conf: RapidsConf): RunnableCommand = {
+    GpuMergeIntoCommand(
+      mergeCmd.source,
+      mergeCmd.target,
+      mergeCmd.catalogTable,
+      mergeCmd.targetFileIndex,
+      new GpuDeltaLog(mergeCmd.targetFileIndex.deltaLog, conf),
+      mergeCmd.condition,
+      mergeCmd.matchedClauses,
+      mergeCmd.notMatchedClauses,
+      mergeCmd.notMatchedBySourceClauses,
+      mergeCmd.migratedSchema,
+      mergeCmd.trackHighWaterMarks,
+      mergeCmd.schemaEvolutionEnabled,
+      mergeCmd.snapshotAtAnalysis)(conf)
+  }
 }

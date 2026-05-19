@@ -18,7 +18,7 @@ import pytest
 from delta_lake_merge_common import *
 from marks import *
 from pyspark.sql.types import *
-from spark_session import is_before_spark_320, is_databricks_runtime, spark_version, supports_delta_lake_deletion_vectors, is_before_spark_353, is_spark_400_or_later
+from spark_session import is_before_spark_320, is_databricks_runtime, spark_version, supports_delta_lake_deletion_vectors, is_before_spark_353, is_spark_400_or_later, is_databricks173_or_later
 
 delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                            {"spark.rapids.sql.command.MergeIntoCommand": "true",
@@ -225,6 +225,101 @@ def test_delta_merge_match_delete_only(spark_tmp_path, spark_tmp_table_factory, 
 def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, use_cdf, num_slices, enable_deletion_vector):
     do_test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, use_cdf, enable_deletion_vector,
                                         num_slices, num_slices == 1, delta_merge_enabled_conf)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Issue-specific MERGE smoke coverage for Databricks 17.3+")
+def test_delta_merge_standard_upsert_db173_smoke(spark_tmp_path, spark_tmp_table_factory):
+    # Keep the issue-specific DBR 17.3 coverage small and deterministic so a single cloud run can
+    # quickly validate that the MERGE GPU path is wired up before the broader matrix is exercised.
+    do_test_delta_merge_standard_upsert(
+        spark_tmp_path,
+        spark_tmp_table_factory,
+        use_cdf=False,
+        enable_deletion_vectors=False,
+        num_slices=10,
+        compare_logs=False,
+        conf=delta_merge_enabled_conf)
+
+
+@allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,BroadcastExchangeExec,DataWritingCommandExec", delta_write_fallback_allow, *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Issue-specific fallback coverage for Databricks 17.3+")
+def test_delta_merge_not_matched_by_source_db173_fallback(spark_tmp_path, spark_tmp_table_factory):
+    def checker(data_path, do_merge):
+        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec",
+                                  conf=delta_merge_enabled_conf)
+
+    merge_sql = "MERGE INTO {dest_table} " \
+                "USING {src_table} " \
+                "ON {src_table}.a == {dest_table}.a " \
+                "WHEN MATCHED THEN " \
+                "  UPDATE SET {dest_table}.b = {src_table}.b " \
+                "WHEN NOT MATCHED THEN " \
+                "  INSERT (a, b) VALUES ({src_table}.a, {src_table}.b) " \
+                "WHEN NOT MATCHED BY SOURCE AND {dest_table}.b > 0 THEN " \
+                "  UPDATE SET {dest_table}.b = 0"
+    delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
+                         use_cdf=False, enable_deletion_vectors=False,
+                         src_table_func=lambda spark: binary_op_df(
+                             spark, SetValuesGen(IntegerType(), range(10))),
+                         dest_table_func=lambda spark: binary_op_df(
+                             spark, SetValuesGen(IntegerType(), range(20, 30))),
+                         merge_sql=merge_sql,
+                         check_func=checker)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Issue-specific schema evolution coverage for Databricks 17.3+")
+def test_delta_merge_schema_evolution_db173_smoke(spark_tmp_path, spark_tmp_table_factory):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    src_table = spark_tmp_table_factory.get()
+
+    def src_table_func(spark):
+        return spark.createDataFrame([
+            (1, "updated", "new-col"),
+            (3, "inserted", "brand-new")
+        ], ["a", "b", "c"])
+
+    def dest_table_func(spark):
+        return spark.createDataFrame([
+            (1, "old"),
+            (2, "keep")
+        ], ["a", "b"])
+
+    def setup_tables(spark):
+        setup_delta_dest_tables(
+            spark,
+            data_path,
+            dest_table_func,
+            use_cdf=False,
+            enable_deletion_vectors=False)
+        src_table_func(spark).createOrReplaceTempView(src_table)
+
+    def do_merge(spark, path):
+        src_table_func(spark).createOrReplaceTempView(src_table)
+        return spark.sql(
+            "MERGE WITH SCHEMA EVOLUTION INTO delta.`{path}` AS dest USING {src_table} AS src "
+            "ON dest.a == src.a "
+            "WHEN MATCHED THEN UPDATE SET * "
+            "WHEN NOT MATCHED THEN INSERT *".format(
+                path=path,
+                src_table=src_table)).collect()
+
+    def read_func(spark, path):
+        return read_delta_path(spark, path).select("a", "b", "c").sort("a")
+
+    with_cpu_session(setup_tables)
+    assert_gpu_and_cpu_writes_are_equal_collect(do_merge, read_func, data_path,
+                                                conf=delta_merge_enabled_conf)
 
 
 @allow_non_gpu(*delta_meta_allow)

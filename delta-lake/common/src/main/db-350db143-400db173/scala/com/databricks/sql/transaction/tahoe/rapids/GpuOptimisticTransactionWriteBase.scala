@@ -40,6 +40,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.SparkException
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
@@ -67,9 +68,10 @@ import org.apache.spark.util.{Clock, SerializableConfiguration}
  */
 abstract class GpuOptimisticTransactionWriteBase(
     deltaLog: DeltaLog,
+    catalogTable: Option[CatalogTable],
     snapshot: Snapshot,
     rapidsConf: RapidsConf)(implicit clock: Clock)
-    extends GpuOptimisticTransactionBase(deltaLog, snapshot, rapidsConf)(clock) {
+    extends GpuOptimisticTransactionBase(deltaLog, catalogTable, snapshot, rapidsConf)(clock) {
 
   /** Creates a new OptimisticTransaction.
    *
@@ -77,7 +79,7 @@ abstract class GpuOptimisticTransactionWriteBase(
    * @param rapidsConf RAPIDS Accelerator config settings
    */
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
-    this(deltaLog, deltaLog.update(), rapidsConf)
+    this(deltaLog, Option.empty[CatalogTable], deltaLog.update(), rapidsConf)
   }
 
   protected def getGpuWriteCommitter(
