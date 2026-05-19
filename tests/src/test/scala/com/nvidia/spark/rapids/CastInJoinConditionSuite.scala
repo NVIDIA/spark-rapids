@@ -27,7 +27,8 @@ import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec,
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 
 /**
- * Test suite for issue #14283: join condition with "cast to bigint" should be pushed into
+ * Test suite for equi-join conditions with non-AST child expressions. These expressions
+ * should be extracted into pre-join projections so the residual condition can stay inside
  * the join operator rather than being placed in a post-join GpuFilter.
  *
  * The root cause is that GpuCast is not AST-compatible, so equi-join Meta classes
@@ -51,9 +52,22 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
   private val DefaultSelectColumns =
     "a.category, a.range_start, a.range_end, b.b_start, b.b_end"
 
+  private val LeftOnlySelectColumns =
+    "a.category, a.range_start, a.range_end"
+
   private val CastRangePredicate =
     """a.range_start < CAST(b.b_end AS BIGINT)
       |  AND a.range_end > CAST(b.b_start AS BIGINT)""".stripMargin
+
+  /**
+   * A right-side non-AST expression that is not a numeric cast. This keeps extraction coverage
+   * stable if simple numeric upcasts later become AST-compatible. The full subtree references
+   * only table `b`, so it should be projected on the right child and the join condition should
+   * be rewritten to read the projected attribute.
+   */
+  private val StableNonAstPredicate =
+    """a.range_start < LENGTH(TRIM(b.b_label))
+      |  AND a.range_end > LENGTH(TRIM(b.b_label))""".stripMargin
 
   private val AstRangePredicate =
     """a.range_start < b.b_end
@@ -115,9 +129,37 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
     ).toDF("b_category", "b_start", "b_end")
   }
 
-  private def withDefaultTables[T](spark: SparkSession)(body: => T): T = {
+  private def registerDefaultTables(spark: SparkSession): Unit = {
     tableADf(spark).createOrReplaceTempView("table_a")
     tableBDf(spark).createOrReplaceTempView("table_b")
+  }
+
+  private def stableNonAstTableADf(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq(
+      ("cat1", 2, 20),
+      ("cat1", 6, 20),
+      ("cat2", 3, 10),
+      ("cat3", 1, 2)
+    ).toDF("category", "range_start", "range_end")
+  }
+
+  private def stableNonAstTableBDf(spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    Seq(
+      ("cat1", "  abcde  "),
+      ("cat2", "  q  "),
+      ("cat3", "  xyz  ")
+    ).toDF("b_category", "b_label")
+  }
+
+  private def registerStableNonAstTables(spark: SparkSession): Unit = {
+    stableNonAstTableADf(spark).createOrReplaceTempView("stable_non_ast_a")
+    stableNonAstTableBDf(spark).createOrReplaceTempView("stable_non_ast_b")
+  }
+
+  private def withDefaultTables[T](spark: SparkSession)(body: => T): T = {
+    registerDefaultTables(spark)
     body
   }
 
@@ -126,52 +168,70 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
     df.queryExecution.executedPlan
   }
 
-  private def withDefaultGpuQuery(
+  private def withGpuQuery(
       conf: SparkConf,
-      sqlText: String)(body: DataFrame => Unit): Unit = {
+      sqlText: String,
+      registerTables: SparkSession => Unit = registerDefaultTables)(
+      body: DataFrame => Unit): Unit = {
     withGpuSparkSession(spark => {
-      withDefaultTables(spark) {
-        body(spark.sql(sqlText))
-      }
+      registerTables(spark)
+      body(spark.sql(sqlText))
     }, conf)
   }
 
-  private def withDefaultGpuPlan(
+  private def withGpuPlan(
       conf: SparkConf,
-      sqlText: String)(body: SparkPlan => Unit): Unit = {
-    withDefaultGpuQuery(conf, sqlText) { df =>
+      sqlText: String,
+      registerTables: SparkSession => Unit = registerDefaultTables)(
+      body: SparkPlan => Unit): Unit = {
+    withGpuQuery(conf, sqlText, registerTables) { df =>
       body(executedPlan(df))
     }
   }
 
-  private def collectDefaultGpuResult(conf: SparkConf, sqlText: String) = {
+  private def collectResult(spark: SparkSession, sqlText: String) = {
+    spark.sql(sqlText).collect().groupBy(identity).map {
+      case (row, matchingRows) => row -> matchingRows.length
+    }
+  }
+
+  private def collectGpuResult(
+      conf: SparkConf,
+      sqlText: String,
+      registerTables: SparkSession => Unit) = {
     withGpuSparkSession(spark => {
-      withDefaultTables(spark) {
-        spark.sql(sqlText).collect().groupBy(identity).map {
-          case (row, matchingRows) => row -> matchingRows.length
-        }
-      }
+      registerTables(spark)
+      collectResult(spark, sqlText)
     }, conf)
   }
 
-  private def collectDefaultCpuResult(sqlText: String) = {
+  private def collectCpuResult(
+      sqlText: String,
+      registerTables: SparkSession => Unit) = {
     withCpuSparkSession(spark => {
-      withDefaultTables(spark) {
-        spark.sql(sqlText).collect().groupBy(identity).map {
-          case (row, matchingRows) => row -> matchingRows.length
-        }
-      }
+      registerTables(spark)
+      collectResult(spark, sqlText)
     })
   }
 
-  private def assertDefaultGpuCpuResultsMatch(
+  private def assertGpuCpuResultsMatch(
       conf: SparkConf,
       sqlText: String,
-      message: String): Unit = {
-    val gpuResult = collectDefaultGpuResult(conf, sqlText)
-    val cpuResult = collectDefaultCpuResult(sqlText)
+      message: String,
+      registerTables: SparkSession => Unit = registerDefaultTables): Unit = {
+    val gpuResult = collectGpuResult(conf, sqlText, registerTables)
+    val cpuResult = collectCpuResult(sqlText, registerTables)
 
     assert(gpuResult == cpuResult, s"$message\nGPU: $gpuResult\nCPU: $cpuResult")
+  }
+
+  private def stableNonAstSql: String = {
+    rangeJoinSql(
+      hint = "/*+ BROADCAST(stable_non_ast_b) */",
+      predicate = StableNonAstPredicate,
+      leftTable = "stable_non_ast_a",
+      rightTable = "stable_non_ast_b",
+      selectColumns = "a.category, a.range_start, a.range_end, b.b_label")
   }
 
   private def assertSparkPlanHasJoin[T <: SparkPlan : ClassTag](
@@ -223,6 +283,31 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  private def assertBroadcastHashJoinKeepsCondition(
+      plan: SparkPlan,
+      conditionDescription: String): GpuBroadcastHashJoinExec = {
+    val bhj = broadcastHashJoin(plan)
+    assert(bhj.condition.isDefined,
+      s"BroadcastHashJoin should keep $conditionDescription in the join")
+    assert(!hasPostJoinFilter(plan),
+      s"BroadcastHashJoin should not use a post-filter for $conditionDescription")
+    bhj
+  }
+
+  private def assertBroadcastHashJoinTypeWithCast(
+      joinType: String,
+      joinName: String,
+      selectColumns: String = DefaultSelectColumns): Unit = {
+    val query = rangeJoinSql(joinType = joinType, selectColumns = selectColumns)
+    withGpuPlan(rangeJoinConf, query) { plan =>
+      assertBroadcastHashJoinKeepsCondition(plan, "extractable CAST condition")
+    }
+    assertGpuCpuResultsMatch(
+      rangeJoinConf,
+      query,
+      s"$joinName GPU and CPU results should match with extracted CAST condition.")
+  }
+
   // ============================================================================
   // SECTION 1: Prove BNLJ handles CAST in join conditions correctly
   // These tests should PASS — BNLJ already implements the extraction pattern
@@ -230,7 +315,7 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
 
   test("BNLJ handles cast-to-bigint in join condition without post-filter") {
     val query = rangeJoinSql(includeEquality = false)
-    withDefaultGpuPlan(rangeJoinConf, query) { plan =>
+    withGpuPlan(rangeJoinConf, query) { plan =>
       // Verify the BNLJ has its condition inside (not in a separate filter)
       val bnlj = broadcastNestedLoopJoin(plan)
       assert(bnlj.condition.isDefined,
@@ -239,7 +324,7 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
   }
 
   test("BNLJ with cast produces correct results") {
-    assertDefaultGpuCpuResultsMatch(
+    assertGpuCpuResultsMatch(
       rangeJoinConf,
       rangeJoinSql(includeEquality = false),
       "GPU and CPU results should match.")
@@ -250,14 +335,14 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
   // ============================================================================
 
   test("BHJ with cast-to-bigint produces correct results") {
-    assertDefaultGpuCpuResultsMatch(
+    assertGpuCpuResultsMatch(
       rangeJoinConf,
       rangeJoinSql(),
       "GPU and CPU results should match.")
   }
 
   test("BHJ with cast should keep condition in join (not post-filter)") {
-    withDefaultGpuPlan(rangeJoinConf, rangeJoinSql()) { plan =>
+    withGpuPlan(rangeJoinConf, rangeJoinSql()) { plan =>
       assert(!hasPostJoinFilter(plan),
         "BroadcastHashJoin should NOT use a post-filter for CAST in join condition. " +
           "The extraction pattern should pre-compute CAST via GpuProjectExec on the child.")
@@ -265,7 +350,7 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
   }
 
   test("BHJ with cast should have condition defined in join operator") {
-    withDefaultGpuPlan(rangeJoinConf, rangeJoinSql()) { plan =>
+    withGpuPlan(rangeJoinConf, rangeJoinSql()) { plan =>
       val bhj = broadcastHashJoin(plan)
       assert(bhj.condition.isDefined,
         "BroadcastHashJoin should have the join condition defined " +
@@ -274,7 +359,7 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
   }
 
   test("BHJ with cast should use extraction pattern (GpuProjectExec on child)") {
-    withDefaultGpuPlan(rangeJoinConf, rangeJoinSql()) { plan =>
+    withGpuPlan(rangeJoinConf, rangeJoinSql()) { plan =>
       assert(hasPreJoinProject(plan),
         "BroadcastHashJoin should have GpuProjectExec wrapping a child " +
           "to pre-compute CAST (extraction pattern from BNLJ)")
@@ -344,7 +429,7 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
           |    THEN a.range_start
           |    ELSE CAST(b.b_end AS BIGINT)
           |  END > 100""".stripMargin)
-    withDefaultGpuPlan(rangeJoinConf, query) { plan =>
+    withGpuPlan(rangeJoinConf, query) { plan =>
       // Non-extractable conditions (referencing both sides in non-AST expr) should
       // still gracefully fall back to post-filter
       assert(hasPostJoinFilter(plan),
@@ -389,25 +474,41 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
   }
 
   test("BHJ with cast-to-bigint matches CPU results after extraction") {
-    assertDefaultGpuCpuResultsMatch(
+    assertGpuCpuResultsMatch(
       rangeJoinConf,
       rangeJoinSql(),
       "GPU and CPU results should match after fix.")
   }
 
   test("Left outer BHJ with extractable cast condition plans on GPU") {
-    val query = rangeJoinSql(joinType = "LEFT OUTER JOIN")
-    withDefaultGpuPlan(rangeJoinConf, query) { plan =>
-      val bhj = broadcastHashJoin(plan)
-      assert(bhj.condition.isDefined,
-        "Left outer BroadcastHashJoin should keep extractable CAST condition in the join")
-      assert(!hasPostJoinFilter(plan),
-        "Left outer BroadcastHashJoin cannot use a post-filter for the join condition")
+    assertBroadcastHashJoinTypeWithCast("LEFT OUTER JOIN", "Left outer")
+  }
+
+  test("Left semi BHJ with extractable cast condition plans on GPU") {
+    assertBroadcastHashJoinTypeWithCast("LEFT SEMI JOIN", "Left semi", LeftOnlySelectColumns)
+  }
+
+  test("Left anti BHJ with extractable cast condition plans on GPU") {
+    assertBroadcastHashJoinTypeWithCast("LEFT ANTI JOIN", "Left anti", LeftOnlySelectColumns)
+  }
+
+  /**
+   * Verifies the extraction path with a deliberately non-cast expression. The cast-based tests
+   * reproduce the original bug, while this test protects the generic extraction behavior from
+   * becoming tied to the current AST support status of numeric upcasts.
+   */
+  test("BHJ with stable right-side non-AST expression uses extraction pattern") {
+    val query = stableNonAstSql
+    withGpuPlan(rangeJoinConf, query, registerStableNonAstTables) { plan =>
+      assertBroadcastHashJoinKeepsCondition(plan, "stable non-AST expression condition")
+      assert(hasPreJoinProject(plan),
+        "BroadcastHashJoin should pre-compute stable non-AST expression with GpuProjectExec")
     }
-    assertDefaultGpuCpuResultsMatch(
+    assertGpuCpuResultsMatch(
       rangeJoinConf,
       query,
-      "Left outer GPU and CPU results should match with extracted CAST condition.")
+      "GPU and CPU results should match with extracted stable non-AST expression.",
+      registerStableNonAstTables)
   }
 
   // ============================================================================
@@ -421,7 +522,7 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
     .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
 
   test("SHJ with cast should keep condition in join (not post-filter)") {
-    withDefaultGpuQuery(shuffledJoinConf, rangeJoinSql(hint = ShuffleHashHint)) { df =>
+    withGpuQuery(shuffledJoinConf, rangeJoinSql(hint = ShuffleHashHint)) { df =>
       assertSparkPlanHasJoin[ShuffledHashJoinExec](df, "ShuffledHashJoinExec")
       val plan = executedPlan(df)
       assert(!hasPostJoinFilter(plan),
@@ -430,7 +531,7 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
   }
 
   test("SHJ with cast-to-bigint produces correct results") {
-    assertDefaultGpuCpuResultsMatch(
+    assertGpuCpuResultsMatch(
       shuffledJoinConf,
       rangeJoinSql(hint = ShuffleHashHint),
       "ShuffledHashJoin GPU and CPU results should match.")
@@ -507,7 +608,7 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
     .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "false")
 
   test("SMJ with cast should keep condition in join (not post-filter)") {
-    withDefaultGpuQuery(sortMergeJoinConf, rangeJoinSql(hint = "")) { df =>
+    withGpuQuery(sortMergeJoinConf, rangeJoinSql(hint = "")) { df =>
       assertSparkPlanHasJoin[SortMergeJoinExec](df, "SortMergeJoinExec")
       val plan = executedPlan(df)
       assert(!hasPostJoinFilter(plan),
@@ -516,7 +617,7 @@ class CastInJoinConditionSuite extends SparkQueryCompareTestSuite {
   }
 
   test("SMJ with cast-to-bigint produces correct results") {
-    assertDefaultGpuCpuResultsMatch(
+    assertGpuCpuResultsMatch(
       sortMergeJoinConf,
       rangeJoinSql(hint = ""),
       "SortMergeJoin GPU and CPU results should match.")

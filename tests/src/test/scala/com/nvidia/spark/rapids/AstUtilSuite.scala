@@ -305,12 +305,12 @@ class AstUtilSuite extends GpuUnitTests {
   }
 
   // ============================================================================
-  // Tests for equi-join integration path (issue #14283)
-  // These simulate the exact pattern: a.range_start < CAST(b.b_end AS BIGINT)
-  // AND a.range_end > CAST(b.b_start AS BIGINT)
+  // Tests for extracting non-AST expressions from equi-join residual conditions.
+  // These simulate range predicates where the comparison is AST-able, but a child
+  // expression on one join side must be precomputed before the join.
   // ============================================================================
 
-  private[this] def issue14283ExpressionWithReferences(
+  private[this] def expressionWithReferences(
       dataType: DataType,
       refs: AttributeReference*): Expression = {
     val expr = mock(classOf[Expression])
@@ -319,7 +319,7 @@ class AstUtilSuite extends GpuUnitTests {
     expr
   }
 
-  private[this] def issue14283ExpressionMeta(
+  private[this] def expressionMeta(
       wrapped: Expression,
       canSelfBeAst: Boolean,
       convertToGpu: Option[Expression] = None,
@@ -332,79 +332,106 @@ class AstUtilSuite extends GpuUnitTests {
     exprMeta
   }
 
-  private[this] def issue14283AttrMeta(attr: AttributeReference): BaseExprMeta[Expression] = {
-    issue14283ExpressionMeta(
-      issue14283ExpressionWithReferences(attr.dataType, attr),
+  private[this] def attrMeta(attr: AttributeReference): BaseExprMeta[Expression] = {
+    expressionMeta(
+      expressionWithReferences(attr.dataType, attr),
       canSelfBeAst = true,
       convertToGpu = Some(attr))
   }
 
-  private[this] def issue14283CastMeta(
+  private[this] def nonAstExpressionMeta(
       dataType: DataType,
       refs: AttributeReference*): BaseExprMeta[Expression] = {
-    issue14283ExpressionMeta(
-      issue14283ExpressionWithReferences(dataType, refs: _*),
+    expressionMeta(
+      expressionWithReferences(dataType, refs: _*),
       canSelfBeAst = false)
   }
 
   /**
-   * Build a tree representing: left_attr < cast(right_attr as bigint)
-   * This simulates the equi-join non-equality condition from issue #14283.
-   * The comparison (LessThan) is AST-able, but the Cast child is not.
+   * Build a tree representing: left_attr < non_ast_expr(right_attr)
+   * The comparison is AST-able, but the right-side child expression is not.
    */
-  private[this] def buildComparisonWithCast(
+  private[this] def buildComparisonWithRightNonAstExpr(
       leftAttr: AttributeReference,
       rightAttr: AttributeReference,
       comparison: (Expression, Expression) => Expression = GpuLessThan
   ): BaseExprMeta[Expression] = {
-    val castMeta = issue14283CastMeta(LongType, rightAttr)
-    val comparisonExpr = comparison(leftAttr, castMeta.convertToGpu)
-    issue14283ExpressionMeta(
+    val rightNonAstMeta = nonAstExpressionMeta(LongType, rightAttr)
+    val comparisonExpr = comparison(leftAttr, rightNonAstMeta.convertToGpu)
+    expressionMeta(
       comparisonExpr,
       canSelfBeAst = true,
-      childExprs = Seq(issue14283AttrMeta(leftAttr), castMeta))
+      childExprs = Seq(attrMeta(leftAttr), rightNonAstMeta))
   }
 
   /**
-   * Build a compound condition: (left1 < cast(right1)) AND (left2 > cast(right2))
-   * This simulates the full join condition from issue #14283.
+   * Build a compound condition:
+   *   (left1 < non_ast_expr(right1)) AND (left2 > non_ast_expr(right2))
    */
-  private[this] def buildFullRangeJoinCondition(
+  private[this] def buildCompoundJoinConditionWithRightNonAstExprs(
       leftStart: AttributeReference,
       leftEnd: AttributeReference,
       rightStart: AttributeReference,
       rightEnd: AttributeReference): BaseExprMeta[Expression] = {
-    val ltMeta = buildComparisonWithCast(leftStart, rightEnd)
-    val gtMeta = buildComparisonWithCast(leftEnd, rightStart, GpuGreaterThan)
-    issue14283ExpressionMeta(
+    val ltMeta = buildComparisonWithRightNonAstExpr(leftStart, rightEnd)
+    val gtMeta = buildComparisonWithRightNonAstExpr(leftEnd, rightStart, GpuGreaterThan)
+    expressionMeta(
       GpuAnd(ltMeta.convertToGpu, gtMeta.convertToGpu),
       canSelfBeAst = true,
       childExprs = Seq(ltMeta, gtMeta))
   }
 
-  test("Equi-join pattern: canExtractNonAstConditionIfNeed with cast on single side") {
-    // Simulates: a.range_start < CAST(b.b_end AS BIGINT)
-    // Cast references only the right side → extractable
-    val lStart = AttributeReference("range_start", LongType)()
-    val rEnd = AttributeReference("b_end", IntegerType)()
+  private[this] case class JoinConditionTestInput(
+      conditionMeta: BaseExprMeta[Expression],
+      leftAttrs: Seq[AttributeReference],
+      rightAttrs: Seq[AttributeReference]) {
+    def canExtract: Boolean = {
+      AstUtil.canExtractNonAstConditionIfNeed(
+        conditionMeta, leftAttrs.map(_.exprId), rightAttrs.map(_.exprId))
+    }
 
-    val condMeta = buildComparisonWithCast(lStart, rEnd)
-    val canExtract = AstUtil.canExtractNonAstConditionIfNeed(
-      condMeta, Seq(lStart).map(_.exprId), Seq(rEnd).map(_.exprId))
-
-    assertResult(true)(canExtract)
+    def extract = {
+      AstUtil.extractNonAstFromJoinCond(Some(conditionMeta), leftAttrs, rightAttrs)
+    }
   }
 
-  test("Equi-join pattern: extractNonAstFromJoinCond extracts cast to right side") {
-    // Simulates: a.range_start < CAST(b.b_end AS BIGINT)
+  private[this] def singleRightNonAstInput(): JoinConditionTestInput = {
     val lStart = AttributeReference("range_start", LongType)()
     val rEnd = AttributeReference("b_end", IntegerType)()
+    JoinConditionTestInput(
+      buildComparisonWithRightNonAstExpr(lStart, rEnd),
+      Seq(lStart),
+      Seq(rEnd))
+  }
 
-    val condMeta = buildComparisonWithCast(lStart, rEnd)
-    val (expr, leftExprs, rightExprs) =
-      AstUtil.extractNonAstFromJoinCond(Some(condMeta), Seq(lStart), Seq(rEnd))
+  private[this] def compoundRightNonAstInput(): JoinConditionTestInput = {
+    val lStart = AttributeReference("range_start", LongType)()
+    val lEnd = AttributeReference("range_end", LongType)()
+    val rStart = AttributeReference("b_start", IntegerType)()
+    val rEnd = AttributeReference("b_end", IntegerType)()
+    JoinConditionTestInput(
+      buildCompoundJoinConditionWithRightNonAstExprs(lStart, lEnd, rStart, rEnd),
+      Seq(lStart, lEnd),
+      Seq(rStart, rEnd))
+  }
 
-    // Cast on right attr should be extracted to right side
+  private[this] def bothSidesNonAstInput(): JoinConditionTestInput = {
+    val l1 = AttributeReference("l1", IntegerType)()
+    val r1 = AttributeReference("r1", IntegerType)()
+    JoinConditionTestInput(nonAstExpressionMeta(LongType, l1, r1), Seq(l1), Seq(r1))
+  }
+
+  test("Equi-join pattern: canExtractNonAstConditionIfNeed with non-AST single side") {
+    // Simulates: a.range_start < non_ast_expr(b.b_end)
+    // The non-AST expression references only the right side, so it is extractable.
+    assertResult(true)(singleRightNonAstInput().canExtract)
+  }
+
+  test("Equi-join pattern: extractNonAstFromJoinCond extracts right-side expression") {
+    // Simulates: a.range_start < non_ast_expr(b.b_end)
+    val (expr, leftExprs, rightExprs) = singleRightNonAstInput().extract
+
+    // The non-AST child should be extracted to the right side.
     assertResult(0)(leftExprs.size)
     assertResult(1)(rightExprs.size)
     assertResult(true)(expr.isDefined)
@@ -412,36 +439,18 @@ class AstUtilSuite extends GpuUnitTests {
     assertResult(true)(expr.get.isInstanceOf[GpuLessThan])
   }
 
-  test("Equi-join pattern: full range condition with casts on right side") {
-    // Simulates: a.range_start < CAST(b.b_end AS BIGINT)
-    //        AND a.range_end > CAST(b.b_start AS BIGINT)
-    val lStart = AttributeReference("range_start", LongType)()
-    val lEnd = AttributeReference("range_end", LongType)()
-    val rStart = AttributeReference("b_start", IntegerType)()
-    val rEnd = AttributeReference("b_end", IntegerType)()
-
-    val condMeta = buildFullRangeJoinCondition(lStart, lEnd, rStart, rEnd)
-    val canExtract = AstUtil.canExtractNonAstConditionIfNeed(
-      condMeta,
-      Seq(lStart, lEnd).map(_.exprId),
-      Seq(rStart, rEnd).map(_.exprId))
-
-    // Both casts reference only right side → extractable
-    assertResult(true)(canExtract)
+  test("Equi-join pattern: compound range condition with right-side non-AST expressions") {
+    // Simulates:
+    //   a.range_start < non_ast_expr(b.b_end)
+    //     AND a.range_end > non_ast_expr(b.b_start)
+    // Both non-AST expressions reference only the right side.
+    assertResult(true)(compoundRightNonAstInput().canExtract)
   }
 
   test("Equi-join pattern: full range condition extraction produces right-side projections") {
-    val lStart = AttributeReference("range_start", LongType)()
-    val lEnd = AttributeReference("range_end", LongType)()
-    val rStart = AttributeReference("b_start", IntegerType)()
-    val rEnd = AttributeReference("b_end", IntegerType)()
+    val (expr, leftExprs, rightExprs) = compoundRightNonAstInput().extract
 
-    val condMeta = buildFullRangeJoinCondition(lStart, lEnd, rStart, rEnd)
-    val (expr, leftExprs, rightExprs) =
-      AstUtil.extractNonAstFromJoinCond(
-        Some(condMeta), Seq(lStart, lEnd), Seq(rStart, rEnd))
-
-    // Both CASTs are on right-side attributes → should be extracted to right
+    // Both non-AST expressions are on right-side attributes.
     assertResult(0)(leftExprs.size)
     assertResult(2)(rightExprs.size)
     assertResult(true)(expr.isDefined)
@@ -449,16 +458,10 @@ class AstUtilSuite extends GpuUnitTests {
     assertResult(true)(expr.get.isInstanceOf[GpuAnd])
   }
 
-  test("Equi-join pattern: cast referencing both sides is NOT extractable") {
-    // Simulates: CAST(a.col + b.col AS BIGINT) — references both sides
-    val l1 = AttributeReference("l1", IntegerType)()
-    val r1 = AttributeReference("r1", IntegerType)()
-
-    val canExtract = AstUtil.canExtractNonAstConditionIfNeed(
-      issue14283CastMeta(LongType, l1, r1), Seq(l1).map(_.exprId), Seq(r1).map(_.exprId))
-
-    // Cannot extract — references both sides
-    assertResult(false)(canExtract)
+  test("Equi-join pattern: non-AST expression referencing both sides is NOT extractable") {
+    // Simulates: non_ast_expr(a.col, b.col)
+    // Cannot extract because the non-AST expression references both sides.
+    assertResult(false)(bothSidesNonAstInput().canExtract)
   }
 
   test("Equi-join pattern: fully AST-able condition needs no extraction") {
@@ -467,8 +470,8 @@ class AstUtilSuite extends GpuUnitTests {
     val l1 = AttributeReference("l1", StringType)()
     val r1 = AttributeReference("r1", StringType)()
 
-    val (e, l, r) =
-      AstUtil.extractNonAstFromJoinCond(Some(buildTree3(l1, r1, true)), Seq(l1), Seq(r1))
+    val input = JoinConditionTestInput(buildTree3(l1, r1, true), Seq(l1), Seq(r1))
+    val (e, l, r) = input.extract
     // No extraction needed — all AST-able
     assertResult(0)(l.size)
     assertResult(0)(r.size)

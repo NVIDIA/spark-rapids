@@ -601,6 +601,15 @@ object JoinImpl {
 }
 
 object GpuHashJoin {
+  /**
+   * Captures the normalized join condition and child plans after extracting any non-AST
+   * expressions that can be safely computed on one side of the join.
+   *
+   * `joinCondition` is evaluated inside the hash join. `filterCondition` is the original
+   * condition when it cannot be rewritten for in-join AST evaluation. `left` and `right`
+   * may include projection wrappers that compute extracted expressions before the join.
+   * `finalProjectList` removes those temporary projected columns from the join output.
+   */
   case class ExtractedJoinCondition(
       joinCondition: Option[Expression],
       filterCondition: Option[Expression],
@@ -612,6 +621,13 @@ object GpuHashJoin {
     }
   }
 
+  /**
+   * Computes the visible output attributes for a hash join, including the nullability changes
+   * required by outer joins and the additional marker column produced by existence joins.
+   *
+   * This is shared by join exec nodes and by the final projection used after condition
+   * extraction so that temporary projection columns do not leak into the user-visible schema.
+   */
   def output(joinType: JoinType, left: Seq[Attribute], right: Seq[Attribute]): Seq[Attribute] = {
     joinType match {
       case _: InnerLike =>
