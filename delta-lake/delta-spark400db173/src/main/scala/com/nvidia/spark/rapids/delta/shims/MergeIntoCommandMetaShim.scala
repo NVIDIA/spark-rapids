@@ -21,14 +21,19 @@ import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuMergeIntoCom
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
 
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 object MergeIntoCommandMetaShim {
+  private val MERGE_MATERIALIZE_SOURCE_CONF = "spark.databricks.delta.merge.materializeSource"
+
   def tagForGpu(meta: MergeIntoCommandMeta, mergeCmd: MergeIntoCommand): Unit = {
     // see https://github.com/NVIDIA/spark-rapids/issues/8415 for more information
     if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
       meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
     }
+    tagMaterializedSourceFallback(meta, mergeCmd.source)
   }
 
   def tagForGpu(meta: MergeIntoCommandEdgeMeta, mergeCmd: MergeIntoCommandEdge): Unit = {
@@ -36,6 +41,37 @@ object MergeIntoCommandMetaShim {
     if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
       meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
     }
+    tagMaterializedSourceFallback(meta, mergeCmd.source)
+  }
+
+  private def tagMaterializedSourceFallback(
+      meta: MergeIntoCommandMeta,
+      source: LogicalPlan): Unit = {
+    if (isMaterializeSourceForced) {
+      meta.willNotWorkOnGpu("MERGE source materialization is not supported on GPU")
+    } else if (hasNondeterministicSource(source)) {
+      meta.willNotWorkOnGpu(
+        "nondeterministic MERGE source materialization is not supported on GPU")
+    }
+  }
+
+  private def tagMaterializedSourceFallback(
+      meta: MergeIntoCommandEdgeMeta,
+      source: LogicalPlan): Unit = {
+    if (isMaterializeSourceForced) {
+      meta.willNotWorkOnGpu("MERGE source materialization is not supported on GPU")
+    } else if (hasNondeterministicSource(source)) {
+      meta.willNotWorkOnGpu(
+        "nondeterministic MERGE source materialization is not supported on GPU")
+    }
+  }
+
+  private def isMaterializeSourceForced: Boolean = {
+    SparkSession.active.conf.get(MERGE_MATERIALIZE_SOURCE_CONF, "auto").equalsIgnoreCase("all")
+  }
+
+  private def hasNondeterministicSource(source: LogicalPlan): Boolean = {
+    source.exists(_.expressions.exists(expr => !expr.deterministic))
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {

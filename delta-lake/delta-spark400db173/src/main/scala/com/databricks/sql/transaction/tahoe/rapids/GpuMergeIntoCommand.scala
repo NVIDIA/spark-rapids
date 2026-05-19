@@ -316,6 +316,12 @@ case class GpuMergeIntoCommand(
     recordDeltaOperation(targetDeltaLog, "delta.dml.merge") {
       val startTime = System.nanoTime()
       gpuDeltaLog.withNewTransaction(catalogTable, snapshotAtAnalysis) { deltaTxn =>
+        if (hasBeenExecuted(deltaTxn, spark)) {
+          val executionId = spark.sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
+          SQLMetrics.postDriverMetricUpdates(spark.sparkContext, executionId, metrics.values.toSeq)
+          return Seq.empty
+        }
+
         if (target.schema.size != deltaTxn.metadata.schema.size) {
           throw DeltaErrors.schemaChangedSinceAnalysis(
             atAnalysis = target.schema, latestSchema = deltaTxn.metadata.schema)
@@ -334,6 +340,7 @@ case class GpuMergeIntoCommand(
             isOverwriteMode = false, rearrangeOnly = false)
         }
 
+        checkIdentityColumnHighWaterMarks(deltaTxn)
         deltaTxn.setTrackHighWaterMarks(trackHighWaterMarks)
 
         val deltaActions = {
