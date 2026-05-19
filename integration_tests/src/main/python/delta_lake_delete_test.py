@@ -357,6 +357,8 @@ def test_delta_delete_entire_table_reports_row_count_db173(spark_tmp_path):
     conf = copy_and_update(delta_delete_enabled_conf,
                            {"spark.databricks.delta.dmlMetricsFromMetadata.enabled": "true"})
     delete_sql = "DELETE FROM delta.`{path}`"
+    # Whole-table deletes can remove files via Delta metadata only, so there may be
+    # no RapidsDeltaWrite plan to capture; validate row count and final contents.
     assert_delta_sql_delete_collect(
         spark_tmp_path, use_cdf=False, dest_table_func=generate_dest_data, delete_sql=delete_sql,
         enable_deletion_vectors=False, conf=conf, expect_write=False,
@@ -376,6 +378,8 @@ def test_delta_delete_metadata_only_reports_row_count_db173(spark_tmp_path):
     conf = copy_and_update(delta_delete_enabled_conf,
                            {"spark.databricks.delta.dmlMetricsFromMetadata.enabled": "true"})
     delete_sql = "DELETE FROM delta.`{path}` WHERE a = 3"
+    # Partition predicate deletes can also be metadata-only, so do not require a
+    # captured RapidsDeltaWrite plan for this row-count regression check.
     assert_delta_sql_delete_collect(
         spark_tmp_path, use_cdf=False, dest_table_func=generate_dest_data, delete_sql=delete_sql,
         enable_deletion_vectors=False, partition_columns=["a"], conf=conf, expect_write=False,
