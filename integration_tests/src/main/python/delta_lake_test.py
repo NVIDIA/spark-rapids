@@ -685,7 +685,7 @@ def test_delta_filter_out_metadata_col(spark_tmp_path, dv_predicate_pushdown):
             # The `is_row_deleted` column is removed from the plan when the pushdown is enabled.
             explain_str = df._sc._jvm.PythonSQLUtils.explainString(df._jdf.queryExecution(), "extended")
             is_row_deleted_in_plan = "__delta_internal_is_row_deleted" in explain_str
-            assert not dv_predicate_pushdown == is_row_deleted_in_plan
+            assert dv_predicate_pushdown != is_row_deleted_in_plan
         return df
 
     with_cpu_session(create_delta)

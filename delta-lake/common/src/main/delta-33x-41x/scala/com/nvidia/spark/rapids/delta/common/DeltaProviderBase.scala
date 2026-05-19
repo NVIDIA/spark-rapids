@@ -225,17 +225,20 @@ object DVPredicatePushdown extends ShimPredicateHelper {
    */
   def pushToScan(plan: SparkPlan): SparkPlan = {
 
+    def isRowDeletedEqualToZero(left: Expression, right: Expression): Boolean = {
+      isRowDeletedColumnRef(left) && isLiteralZero(right) ||
+        isRowDeletedColumnRef(right) && isLiteralZero(left)
+    }
+
     /**
      * Is the condition a form of "IS_ROW_DELETED_COLUMN_NAME == 0"?
      */
     def isDVCondition(condition: Expression): Boolean = {
       condition match {
         case GpuEqualTo(left, right) =>
-          isRowDeletedColumnRef(left) && isLiteralZero(right) ||
-            isRowDeletedColumnRef(right) && isLiteralZero(left)
+          isRowDeletedEqualToZero(left, right)
         case EqualTo(left, right) =>
-          isRowDeletedColumnRef(left) && isLiteralZero(right) ||
-            isRowDeletedColumnRef(right) && isLiteralZero(left)
+          isRowDeletedEqualToZero(left, right)
         case _ => false
       }
     }
