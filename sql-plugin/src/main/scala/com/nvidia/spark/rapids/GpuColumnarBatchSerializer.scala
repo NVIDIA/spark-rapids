@@ -126,14 +126,10 @@ class SerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
       if (header.getNumColumns > 0) {
         // This buffer will later be concatenated into another host buffer before being
         // sent to the GPU, so no need to use pinned memory for these buffers.
-        // Skip the pageable pool here: many shuffle reader threads contend on the pool's
-        // synchronized monitor, which dominates per-event time. Raw malloc uses per-thread
-        // glibc arenas (lock-free) and ends up faster for this hot, parallel path.
         closeOnExcept(
-          HostAlloc.alloc(header.getDataLen, preferPinned = false, usePool = false)) {
-          hostBuffer =>
-            JCudfSerialization.readTableIntoBuffer(dIn, header, hostBuffer)
-            SerializedTableColumn.from(header, hostBuffer)
+          HostMemoryBuffer.allocate(header.getDataLen, false)) { hostBuffer =>
+          JCudfSerialization.readTableIntoBuffer(dIn, header, hostBuffer)
+          SerializedTableColumn.from(header, hostBuffer)
         }
       } else {
         SerializedTableColumn.from(header)
@@ -768,8 +764,7 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
     withRetryNoSplit[HostMemoryBuffer] {
       // This buffer will later be concatenated into another host buffer before being
       // sent to the GPU, so no need to use pinned memory for these buffers.
-      // Skip the pageable pool — see comment in the other readNextBatch above.
-      HostAlloc.alloc(size.toLong, preferPinned = false, usePool = false)
+      HostMemoryBuffer.allocate(size, false)
     }
   }
 

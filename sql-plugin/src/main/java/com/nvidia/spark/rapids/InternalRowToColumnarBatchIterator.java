@@ -226,7 +226,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     long offsetBytes = calcOffsetLengthEstimate((int) numRowsWrapper.targetSize());
     HostMemoryBuffer hBuf = null;
     try {
-      hBuf = HostAlloc$.MODULE$.alloc((dataBytes + offsetBytes), true, true);
+      hBuf = HostAlloc$.MODULE$.alloc((dataBytes + offsetBytes),true);
       SpillableHostBuffer sBuf = SpillableHostBuffer$.MODULE$.apply(hBuf, hBuf.getLength(),
           SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY());
       hBuf = null;  // taken over by spillable host buffer
