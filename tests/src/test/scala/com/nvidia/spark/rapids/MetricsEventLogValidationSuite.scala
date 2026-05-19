@@ -16,6 +16,7 @@
 package com.nvidia.spark.rapids
 
 import java.io.{BufferedReader, File, InputStreamReader}
+import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable
 import scala.io.Source
@@ -433,8 +434,13 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       spark.conf.set("spark.rapids.sql.exec.opTimeTrackingRDD.enabled", "true")
 
       // Configure slow filesystem for testing and disable cache to prevent pollution
+      val slowFsWriteDelayMs = 100L
+      val numWritePartitions = 50
+      // Keep AQE from coalescing the write shuffle partitions used by the slowfs lower bound.
+      spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "false")
       spark.conf.set("fs.slowfs.impl.disable.cache", "true")
       spark.conf.set("fs.slowfs.impl", "com.nvidia.spark.rapids.SlowFileSystem")
+      spark.conf.set("slowfs.write.delay.ms", slowFsWriteDelayMs.toString)
 
       val numRows = 5000000L
       val numTasks = 8
@@ -456,10 +462,9 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
         )
         .filter($"total_count" > 5)
 
-      // Write to slow filesystem Parquet format with repartitioning
-      // and take significant time due to filesystem delays
+      // Use many small output tasks so SlowFileSystem delays are visible in write-stage op time.
       testDataDF
-        .repartition(50) // Repartition to 50 partitions to amplify write time
+        .repartition(numWritePartitions)
         .write
         .mode("overwrite")
         .option("compression", "snappy")
@@ -523,7 +528,6 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
           f"(${totalTaskExecutionTime / 1000000.0}%.2f ms), " +
           f"but was ${operatorTimeRatio * 100.0}%.1f%%")
 
-      // Assert stage 5 (parquet write stage) operator time accounts for > 10% of total
       val stage5Metrics = operatorTimeMetrics.filter(_.stage.contains(5))
       val stage5OperatorTime = stage5Metrics.map(_.value).sum
       val stage5Ratio = if (totalOperatorTime > 0) {
@@ -531,20 +535,25 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       } else {
         0.0
       }
+      // Expect at least one slowfs-delayed write per configured output partition.
+      val minExpectedStage5OperatorTime =
+        TimeUnit.MILLISECONDS.toNanos(numWritePartitions * slowFsWriteDelayMs)
 
       println(f"Parquet write job: Stage 5 operator time: " +
         f"${stage5OperatorTime / 1000000.0}%.2f ms")
       println(f"Parquet write job: Stage 5 ratio: ${stage5Ratio * 100.0}%.1f%% " +
         "of total operator time")
+      println(f"Parquet write job: Stage 5 expected minimum operator time: " +
+        f"${minExpectedStage5OperatorTime / 1000000.0}%.2f ms")
 
       assert(stage5Metrics.nonEmpty,
         "Should find operator time metrics for stage 5 (parquet write stage)")
 
-      assert(stage5Ratio > 0.1,
-        f"Stage 5 (parquet write stage) operator time should account for more than 10%% " +
-          f"of total operator time, but was only ${stage5Ratio * 100.0}%.1f%% " +
-          f"(${stage5OperatorTime / 1000000.0}%.2f ms out of " +
-          f"${totalOperatorTime / 1000000.0}%.2f ms)")
+      assert(stage5OperatorTime >= minExpectedStage5OperatorTime,
+        f"Stage 5 (parquet write stage) operator time should be at least " +
+          f"${minExpectedStage5OperatorTime / 1000000.0}%.2f ms based on " +
+          f"$numWritePartitions write partitions and $slowFsWriteDelayMs ms slowfs delay, " +
+          f"but was ${stage5OperatorTime / 1000000.0}%.2f ms")
 
       operatorTimeMetrics.foreach { m =>
         println(f"  ${m.name}: ${m.value / 1000000.0}%.2f ms " +

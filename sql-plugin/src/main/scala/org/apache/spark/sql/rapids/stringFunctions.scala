@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{Arithmetic, RoundMode}
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.CharsetDecode
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.NumberConverter
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
@@ -863,7 +864,7 @@ case class GpuStringReplace(
     srcExpr: Expression,
     searchExpr: Expression,
     replaceExpr: Expression)
-  extends GpuTernaryExpressionArgsAnyScalarScalar
+  extends GpuTernaryExpression
       with ImplicitCastInputTypes
       with HasGpuStringReplace {
 
@@ -893,6 +894,64 @@ case class GpuStringReplace(
       replaceExpr: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(strExpr, numRows)) { strExprCol =>
       doColumnar(strExprCol, searchExpr, replaceExpr)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    strExpr.getBase.stringReplacePerRow(searchExpr.getBase, replaceExpr.getBase)
+  }
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(strExpr, searchExpr.getRowCount.toInt)) { expandedStr =>
+      doColumnar(expandedStr, searchExpr, replaceExpr)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(searchExpr, strExpr.getRowCount.toInt)) { expandedSearch =>
+      doColumnar(strExpr, expandedSearch, replaceExpr)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(replaceExpr, strExpr.getRowCount.toInt)) { expandedRepl =>
+      doColumnar(strExpr, searchExpr, expandedRepl)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(strExpr, replaceExpr.getRowCount.toInt)) { expandedStr =>
+      withResource(GpuColumnVector.from(searchExpr, replaceExpr.getRowCount.toInt)) {
+        expandedSearch =>
+          doColumnar(expandedStr, expandedSearch, replaceExpr)
+      }
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(strExpr, searchExpr.getRowCount.toInt)) { expandedStr =>
+      withResource(GpuColumnVector.from(replaceExpr, searchExpr.getRowCount.toInt)) {
+        expandedRepl =>
+          doColumnar(expandedStr, searchExpr, expandedRepl)
+      }
     }
   }
 }
@@ -2545,5 +2604,46 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     withResource(GpuColumnVector.from(lhs, numRows)) { col =>
       doColumnar(col, rhs)
     }
+  }
+}
+
+case class GpuStringDecode(
+    bin: Expression,
+    charsetName: String,
+    reportMalformed: Boolean = false)
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
+
+  override def child: Expression = bin
+
+  override def dataType: DataType = StringType
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val charsetId = charsetName match {
+      case "GBK" => CharsetDecode.GBK
+      case other =>
+        throw new UnsupportedOperationException(s"Unsupported charset on GPU: $other")
+    }
+    val errorAction =
+      if (reportMalformed) CharsetDecode.REPORT else CharsetDecode.REPLACE
+    try {
+      CharsetDecode.decode(input.getBase, charsetId, errorAction)
+    } catch {
+      case _: CharsetDecode.MalformedInputException =>
+        // MALFORMED_CHARACTER_CODING was introduced in Spark 4.0 alongside the
+        // legacyCodingErrorAction flag, which is the only code path that can set
+        // reportMalformed=true. Invoke QueryExecutionErrors.malformedCharacterCoding via
+        // reflection so this file still compiles against Spark 3.x shims.
+        throw GpuStringDecode.raiseMalformedCharacterCoding(charsetName)
+    }
+  }
+}
+
+object GpuStringDecode {
+  private def raiseMalformedCharacterCoding(charset: String): RuntimeException = {
+    val cls    = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors")
+    val method = cls.getMethod("malformedCharacterCoding", classOf[String], classOf[String])
+    method.invoke(null, "decode", charset).asInstanceOf[RuntimeException]
   }
 }

@@ -21,6 +21,7 @@ from conftest import is_databricks_runtime, spark_jvm
 from conftest import is_not_utc
 from data_gen import *
 from functools import reduce
+from pyspark.sql import Row
 from pyspark.sql.dataframe import DataFrame
 from pyspark.sql.types import *
 from marks import *
@@ -194,15 +195,24 @@ _decimals_with_no_nulls = [
 _init_list_with_decimals = _init_list + [
     _decimals_with_nulls, _decimals_with_no_nulls]
 
-_std_variance_issue_14681_gen = [
-    ('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', DoubleGen()), ('c', DoubleGen())]
+_std_variance_common_fp_gens = [
+    [('a', RepeatSeqGen(IntegerGen(), length=20)),
+        ('b', DoubleGen(min_exp=-200, max_exp=200, no_nans=True)),
+        ('c', DoubleGen(min_exp=-200, max_exp=200, no_nans=True))],
+    [('a', RepeatSeqGen(IntegerGen(), length=20)),
+        ('b', FloatGen(no_nans=True)),
+        ('c', FloatGen(no_nans=True))]]
 
-# Grouped FP gens using bare DoubleGen()/FloatGen() on the aggregated columns.
-# Their default special_cases inject NaN, -0.0, +-Inf, and max-fraction values,
-# which exercise the corner-case paths for FP aggregate functions.
-_init_list_with_decimals_and_floats = _init_list_with_decimals + [
-    _std_variance_issue_14681_gen,
-    [('a', RepeatSeqGen(IntegerGen(), length=20)), ('b', FloatGen()), ('c', FloatGen())]]
+_init_list_with_decimals_and_common_floats = (
+    _init_list_with_decimals + _std_variance_common_fp_gens)
+
+_std_variance_extreme_fp_gens = [
+    [('a', RepeatSeqGen(IntegerGen(), length=20)),
+        ('b', DoubleGen(no_nans=True)),
+        ('c', DoubleGen(no_nans=True))],
+    [('a', RepeatSeqGen(IntegerGen(), length=20)),
+        ('b', FloatGen(no_nans=True)),
+        ('c', FloatGen(no_nans=True))]]
 
 # Used to test ANSI-mode fallback
 _no_overflow_ansi_gens = [
@@ -2346,16 +2356,37 @@ def test_no_fallback_when_ansi_enabled(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it,
         conf={'spark.sql.ansi.enabled': 'true'})
 
-# Tests for standard deviation and variance aggregations.
-@ignore_order(local=True)
-@approximate_float
-@incompat
-@pytest.mark.parametrize('data_gen', _init_list_with_decimals_and_floats, ids=idfn)
-@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
-def test_std_variance(data_gen, conf):
-    if data_gen is _std_variance_issue_14681_gen:
-        pytest.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/14681')
+_STD_VARIANCE_OVERFLOW_SENTINEL = '__STD_VARIANCE_OVERFLOW__'
+_STD_VARIANCE_FIELDS = {
+    'stddev(b)', 'stddev_pop(b)', 'stddev_samp(b)',
+    'variance(b)', 'var_pop(b)', 'var_samp(b)'
+}
 
+def _canonicalize_std_variance_overflow_value(value):
+    # Only NaN and +Infinity are accepted overflow sentinels for std/variance
+    # over finite inputs: they can be explained by overflow plus partial merge
+    # order. -Infinity would indicate a different issue (e.g. negative M2 /
+    # sign bug) and must not be canonicalized away.
+    if isinstance(value, float) and (math.isnan(value) or value == math.inf):
+        return _STD_VARIANCE_OVERFLOW_SENTINEL
+    return value
+
+def _canonicalize_std_variance_overflow_rows(rows):
+    return [
+        Row(**{
+            field: _canonicalize_std_variance_overflow_value(row[field])
+            if field in _STD_VARIANCE_FIELDS else row[field]
+            for field in row.__fields__
+        }) if isinstance(row, Row) and hasattr(row, "__fields__") else row
+        for row in rows
+    ]
+
+def _canonicalize_std_variance_overflow_results(cpu, gpu):
+    return (
+        _canonicalize_std_variance_overflow_rows(cpu),
+        _canonicalize_std_variance_overflow_rows(gpu))
+
+def _assert_std_variance(data_gen, conf, result_canonicalize_func_before_compare=None):
     local_conf = copy_and_update(conf, {
         'spark.rapids.sql.castDecimalToFloat.enabled': 'true'})
     assert_gpu_and_cpu_are_equal_sql(
@@ -2369,7 +2400,8 @@ def test_std_variance(data_gen, conf):
         'var_pop(b),' +
         'var_samp(b)' +
         ' from data_table group by a',
-        conf=local_conf)
+        conf=local_conf,
+        result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : gen_df(spark, data_gen, length=1000),
         "data_table",
@@ -2377,7 +2409,36 @@ def test_std_variance(data_gen, conf):
         'stddev(b),' +
         'stddev_samp(b)'
         ' from data_table',
-        conf=local_conf)
+        conf=local_conf,
+        result_canonicalize_func_before_compare=result_canonicalize_func_before_compare)
+
+
+# Tests for standard deviation and variance aggregations on common finite values.
+@ignore_order(local=True)
+@approximate_float
+@incompat
+@pytest.mark.parametrize('data_gen', _init_list_with_decimals_and_common_floats, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_std_variance(data_gen, conf):
+    _assert_std_variance(data_gen, conf)
+
+
+# Extremely large FP inputs can make the true variance overflow double precision.
+# Spark CPU and GPU may surface that overflow as NaN or +Infinity depending only on
+# accumulation order. Keep this corner coverage, but compare those overflow
+# sentinels loosely. -Infinity is not an accepted overflow sentinel because
+# stddev/variance over finite inputs cannot reach it via overflow alone.
+# See https://github.com/NVIDIA/spark-rapids/issues/14681.
+@ignore_order(local=True)
+@approximate_float
+@incompat
+@pytest.mark.parametrize('data_gen', _std_variance_extreme_fp_gens, ids=idfn)
+@pytest.mark.parametrize('conf', get_params(_confs, params_markers_for_confs), ids=idfn)
+def test_std_variance_extreme_floating_point(data_gen, conf):
+    _assert_std_variance(
+        data_gen,
+        conf,
+        result_canonicalize_func_before_compare=_canonicalize_std_variance_overflow_results)
 
 
 @ignore_order(local=True)

@@ -16,11 +16,21 @@
 
 package com.nvidia.spark.rapids.iceberg;
 
+import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.NoopMetric$;
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
+import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.ContentFile;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.parquet.GpuParquetIO;
+import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
+import scala.Option;
 
+import java.io.IOException;
 import java.util.Map;
 
 /**
@@ -51,4 +61,41 @@ public interface IcebergShimUtils {
      *         type-to-Spark type conversion, which differs across Iceberg versions.
      */
     Map<Integer, ?> constantsMap(FileScanTask task, Schema readSchema, Table table);
+
+    /**
+     * Returns the per-prefix credential overlays from a {@link FileIO} that implements
+     * Iceberg's {@code SupportsStorageCredentials} interface (1.7+). Each entry is a
+     * storage prefix (e.g. {@code "s3://bucket/path/"}) → property overlay map (the
+     * vended credentials Iceberg's REST catalog merges into the base FileIO properties
+     * for clients targeting that prefix).
+     *
+     * <p>1.6.x predates {@code SupportsStorageCredentials} entirely and returns an empty
+     * map. Keeping this resolution behind the shim lets {@code iceberg/common} compile
+     * against 1.6.x without hard-referencing the missing interface.
+     */
+    Map<String, Map<String, String>> storageCredentialOverlays(FileIO fileIO);
+
+    /**
+     * Open a shaded {@link ParquetFileReader} for an iceberg {@link IcebergInputFile}.
+     *
+     * <p>The default impl opens via
+     * {@code ParquetFileReader.open(InputFile, ParquetReadOptions)} without footer caching
+     * and bumps the footer-miss counter on every call so dashboards see non-zero activity
+     * instead of silently interpreting "all zeros" as "everything was cached". This default
+     * is used by 1.6.x / 1.9.x whose shaded {@code ParquetFileReader} has no public API to
+     * inject pre-parsed footer metadata. 1.10.x overrides this to route through
+     * {@code FileCache} via the 4-arg
+     * {@code (InputFile, ParquetMetadata, ParquetReadOptions, SeekableInputStream)}
+     * constructor.
+     */
+    default ParquetFileReader openParquetReader(
+            IcebergInputFile inputFile,
+            Path filePath,
+            ParquetReadOptions options,
+            scala.collection.immutable.Map<String, GpuMetric> metrics) throws IOException {
+        Option<GpuMetric> opt = metrics.get(GpuMetric.FILECACHE_FOOTER_MISSES());
+        GpuMetric missCounter = opt.isDefined() ? opt.get() : NoopMetric$.MODULE$;
+        missCounter.$plus$eq(1L);
+        return ParquetFileReader.open(GpuParquetIO.file(inputFile.getDelegate()), options);
+    }
 }

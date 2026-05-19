@@ -29,6 +29,22 @@ delta_delete_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.DeleteCommand": "true",
                                              "spark.rapids.sql.command.DeleteCommandEdge": "true"})
 
+
+def _assert_db173_gpu_delta_scan_if_enabled(spark, df):
+    if is_databricks173_or_later() and \
+            str(spark.conf.get("spark.rapids.sql.enabled", "false")).lower() == "true":
+        plan = df._jdf.queryExecution().executedPlan()
+        callback = spark._sc._jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+        has_gpu_scan = any(
+            callback.contains(plan, scan)
+            for scan in ["GpuFileSourceScanExec", "GpuFileGpuScan"])
+        assert has_gpu_scan, str(plan)
+    return df
+
+
+def _delta_sql_with_gpu_scan_assert(spark, sql):
+    return _assert_db173_gpu_delta_scan_if_enabled(spark, spark.sql(sql))
+
 def delta_sql_delete_test(spark_tmp_path, use_cdf, dest_table_func, delete_sql,
                           check_func, enable_deletion_vectors, partition_columns=None):
     data_path = spark_tmp_path + "/DELTA_DATA"
@@ -142,7 +158,8 @@ def test_delta_deletion_vector(spark_tmp_path):
         return delete_func
 
     def read_parquet_sql(data_path):
-        return lambda spark : spark.sql('select * from delta.`{}`'.format(data_path))
+        return lambda spark : _delta_sql_with_gpu_scan_assert(
+            spark, 'select * from delta.`{}`'.format(data_path))
 
     with_cpu_session(setup_tables)
     with_cpu_session(write_func(data_path))
@@ -190,7 +207,8 @@ def test_delta_deletion_vector_read_drop_row_group(spark_tmp_path, reader_type):
 
     def read_parquet_sql(data_path, last_rg_value):
         # selecting a number from the last row group to make sure the first row groups are dropped
-        return lambda spark : spark.sql(f"select * from delta.`{data_path}` where a = {last_rg_value}")
+        return lambda spark : _delta_sql_with_gpu_scan_assert(
+            spark, f"select * from delta.`{data_path}` where a = {last_rg_value}")
 
     enable_conf = copy_and_update(delta_delete_enabled_conf,
                                   {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
@@ -211,7 +229,11 @@ def test_delta_deletion_vector_read_drop_row_group(spark_tmp_path, reader_type):
 
     with_cpu_session(write_func(data_path), conf=enable_conf)
 
-    assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path, lrg_min_value), conf={"spark.rapids.sql.format.parquet.reader.type": reader_type})
+    assert_gpu_and_cpu_are_equal_collect(
+        read_parquet_sql(data_path, lrg_min_value),
+        conf={"spark.rapids.sql.format.parquet.reader.type": reader_type,
+              # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+              "spark.sql.adaptive.enabled": "false"})
 
 @allow_non_gpu("SerializeFromObjectExec", "DeserializeToObjectExec",
                "FilterExec", "MapElementsExec", "ProjectExec")
@@ -240,7 +262,8 @@ def test_delta_deletion_vector_read(spark_tmp_path, reader_type, condition):
         return delete_func
 
     def read_parquet_sql(data_path):
-        return lambda spark : spark.sql(f"select * from delta.`{data_path}`")
+        return lambda spark : _delta_sql_with_gpu_scan_assert(
+            spark, f"select * from delta.`{data_path}`")
 
     enable_conf = copy_and_update(delta_delete_enabled_conf,
                                   {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
