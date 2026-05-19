@@ -24,7 +24,9 @@ import scala.collection.mutable
 import com.databricks.sql.managedcatalog.UnityCatalogV2Proxy
 import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaParquetFileFormat}
 import com.databricks.sql.transaction.tahoe.catalog.{DeltaCatalog, DeltaTableV2}
-import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge, MergeIntoCommand, MergeIntoCommandEdge, UpdateCommand, UpdateCommandEdge}
+import com.databricks.sql.transaction.tahoe.commands.{DeleteCommand, DeleteCommandEdge,
+  MergeIntoCommand, MergeIntoCommandEdge, OptimizeTableCommand, OptimizeTableCommandEdge,
+  UpdateCommand, UpdateCommandEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaSupportsWrite, GpuDeltaV1Write}
 import com.databricks.sql.transaction.tahoe.sources.{DeltaDataSource, DeltaSourceUtils}
 import com.nvidia.spark.rapids._
@@ -77,6 +79,14 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
         "Merge of a source query/table into a Delta table",
         (a, conf, p, r) => new MergeIntoCommandEdgeMeta(a, conf, p, r))
           .disabledByDefault("Delta Lake merge support is experimental"),
+      GpuOverrides.runnableCmd[OptimizeTableCommand](
+        "Optimize a Delta Lake table",
+        (a, conf, p, r) => new OptimizeTableCommandMeta(a, conf, p, r))
+          .disabledByDefault("Delta Lake optimize support is experimental"),
+      GpuOverrides.runnableCmd[OptimizeTableCommandEdge](
+        "Optimize a Delta Lake table",
+        (a, conf, p, r) => new OptimizeTableCommandEdgeMeta(a, conf, p, r))
+          .disabledByDefault("Delta Lake optimize support is experimental"),
       GpuOverrides.runnableCmd[UpdateCommand](
         "Update rows in a Delta Lake table",
         (a, conf, p, r) => new UpdateCommandMeta(a, conf, p, r))
