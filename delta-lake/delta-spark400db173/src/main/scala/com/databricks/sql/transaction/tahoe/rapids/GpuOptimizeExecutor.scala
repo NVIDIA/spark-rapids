@@ -51,7 +51,8 @@ class GpuOptimizeExecutor(
     snapshot: Snapshot,
     catalogTable: Option[CatalogTable],
     partitionPredicate: Seq[Expression],
-    optimizeContext: DeltaOptimizeContext)
+    optimizeContext: DeltaOptimizeContext,
+    isAutoCompact: Boolean = false)
   extends DeltaCommand with SQLMetricsReporting with Serializable {
 
   /** Timestamp to use in [[FileAction]] */
@@ -89,7 +90,7 @@ class GpuOptimizeExecutor(
       val addedFiles = updates.collect { case a: AddFile => a }
       val removedFiles = updates.collect { case r: RemoveFile => r }
       if (addedFiles.nonEmpty) {
-        val operation = DeltaOperations.Optimize(partitionPredicate, Nil)
+        val operation = DeltaOperations.Optimize(partitionPredicate, Nil, auto = isAutoCompact)
         val metrics = createMetrics(sparkSession.sparkContext, addedFiles, removedFiles)
         commitAndRetry(txn, operation, updates, metrics) { newTxn =>
           val newPartitionSchema = newTxn.metadata.partitionSchema
