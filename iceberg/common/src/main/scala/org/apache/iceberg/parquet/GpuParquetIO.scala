@@ -31,10 +31,10 @@ object GpuParquetIO {
   }
 
   /**
-   * Open a shaded `ParquetFileReader`. Footer caching is version-dependent and handled by the
-   * per-iceberg-version `ShimUtilsImpl.openParquetReader`: 1.10.x caches via `FileCache`, while
-   * 1.6.x / 1.9.x open without caching (their shaded parquet has no way to inject a pre-parsed
-   * footer).
+   * Open a shaded `ParquetFileReader`. Footer caching is version-dependent and resolved via
+   * `IcebergShimUtils.openParquetReader`: 1.10.x overrides it to cache via `FileCache`, while
+   * 1.6.x / 1.9.x inherit the no-cache default (their shaded parquet has no way to inject a
+   * pre-parsed footer).
    */
   def openReader(
       inputFile: IcebergInputFile,
