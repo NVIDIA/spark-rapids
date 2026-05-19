@@ -36,6 +36,16 @@
         <rapids.compressed.artifact>false</rapids.compressed.artifact>
         <rapids.shim.jar.phase>package</rapids.shim.jar.phase>
         <maven.scaladoc.skip>true</maven.scaladoc.skip>
+        <!--
+        Spark 4.0 catalyst class files (Table, WriteBuilder, etc.) carry
+        @Deprecated(since = "...") annotations. Reading them under a Java 8
+        target makes javac emit "Cannot find annotation method 'since()' in
+        type 'Deprecated'" against those class files, which the project's
+        -Werror promotes to an error. Exclude classfile warnings (and -options
+        for parity with release411) so this module's Java sources compile
+        under Spark 4.0 builds.
+        -->
+        <scala.javac.args>-Xlint:all,-serial,-path,-try,-processing,-options,-classfile|-Werror</scala.javac.args>
     </properties>
 
     <dependencies>
