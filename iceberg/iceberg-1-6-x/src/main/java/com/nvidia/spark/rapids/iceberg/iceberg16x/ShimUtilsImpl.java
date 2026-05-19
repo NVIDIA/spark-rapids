@@ -50,4 +50,8 @@ public class ShimUtilsImpl implements IcebergShimUtils {
     public Map<String, Map<String, String>> storageCredentialOverlays(FileIO fileIO) {
         return Collections.emptyMap();
     }
+
+    // openParquetReader: inherits the no-cache default from IcebergShimUtils. The shaded
+    // ParquetFileReader in 1.6.x has no public API to inject pre-parsed footer metadata,
+    // so file-cache routing is not possible here.
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,13 +76,9 @@ class GpuSortMergeJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
-      (condition, None)
-    } else {
-      (None, condition)
-    }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+    val extractedCondition = GpuHashJoin.extractJoinConditionIfNeeded(
+      conditionMeta, join.joinType, left, right)
     val useSizedJoin = GpuShuffledSizedHashJoinExec.useSizedJoin(conf, join.joinType,
       join.leftKeys, join.rightKeys)
     val readOpt = CoalesceReadOption(conf)
@@ -92,9 +88,9 @@ class GpuSortMergeJoinMeta(
           join.joinType,
           leftKeys.map(_.convertToGpu()),
           rightKeys.map(_.convertToGpu()),
-          joinCondition,
-          left,
-          right,
+          extractedCondition.joinCondition,
+          extractedCondition.left,
+          extractedCondition.right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
@@ -108,9 +104,9 @@ class GpuSortMergeJoinMeta(
           join.joinType,
           leftKeys.map(_.convertToGpu()),
           rightKeys.map(_.convertToGpu()),
-          joinCondition,
-          left,
-          right,
+          extractedCondition.joinCondition,
+          extractedCondition.left,
+          extractedCondition.right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
@@ -124,9 +120,9 @@ class GpuSortMergeJoinMeta(
           rightKeys.map(_.convertToGpu()),
           join.joinType,
           buildSide,
-          joinCondition,
-          left,
-          right,
+          extractedCondition.joinCondition,
+          extractedCondition.left,
+          extractedCondition.right,
           readOpt,
           join.isSkewJoin)(
           join.leftKeys,
@@ -135,7 +131,8 @@ class GpuSortMergeJoinMeta(
 
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c,
+    val filteredJoinExec = extractedCondition.filterCondition.map(c => GpuFilterExec(c,
       joinExec)()).getOrElse(joinExec)
+    extractedCondition.projectIfNeeded(filteredJoinExec)
   }
 }

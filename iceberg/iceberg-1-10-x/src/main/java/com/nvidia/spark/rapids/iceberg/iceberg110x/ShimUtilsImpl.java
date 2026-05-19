@@ -16,20 +16,26 @@
 
 package com.nvidia.spark.rapids.iceberg.iceberg110x;
 
+import com.nvidia.spark.rapids.GpuMetric;
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
+import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.*;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.StorageCredential;
 import org.apache.iceberg.io.SupportsStorageCredentials;
+import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.iceberg.spark.SparkUtil;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PartitionUtil;
 
+import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Iceberg 1.10.x shim: uses {@code SparkUtil::internalToSpark}. */
+/** Iceberg 1.10.x shim: uses {@code SparkUtil::internalToSpark} and a cache-aware footer path. */
 public class ShimUtilsImpl implements IcebergShimUtils {
     @Override
     public String locationOf(ContentFile<?> f) {
@@ -58,5 +64,14 @@ public class ShimUtilsImpl implements IcebergShimUtils {
             result.put(sc.prefix(), sc.config());
         }
         return result;
+    }
+
+    @Override
+    public ParquetFileReader openParquetReader(
+            IcebergInputFile inputFile,
+            Path filePath,
+            ParquetReadOptions options,
+            scala.collection.immutable.Map<String, GpuMetric> metrics) throws IOException {
+        return GpuParquetIOShim.openReader(inputFile, filePath, options, metrics);
     }
 }

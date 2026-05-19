@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.apache.iceberg.parquet
+package com.nvidia.spark.rapids.iceberg.iceberg110x
 
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric
@@ -22,13 +22,16 @@ import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.converter.ToIcebergShaded
 import com.nvidia.spark.rapids.parquet.{HMBInputFile, ParquetFooterUtils}
 import org.apache.hadoop.fs.Path
+import org.apache.iceberg.parquet.GpuParquetIO
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
 
 /**
  * Iceberg 1.10.x shim: reads the footer via `FileCache` and injects it into `ParquetFileReader`
  * through the 4-arg `(InputFile, ParquetMetadata, ParquetReadOptions, SeekableInputStream)`
- * constructor that is available from iceberg 1.10.x.
+ * constructor that is available from iceberg 1.10.x. Lives in the versioned
+ * `iceberg110x` package so a future per-version GpuParquetIOShim in 1.6.x / 1.9.x can't
+ * cause the same shade-plugin class-name collision that this PR fixes.
  */
 object GpuParquetIOShim {
   def openReader(
