@@ -30,7 +30,7 @@ import scala.collection.mutable
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.DeltaOperations.MergePredicate
 import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction}
-import com.databricks.sql.transaction.tahoe.commands.{DeltaCommand, MergeIntoCommand}
+import com.databricks.sql.transaction.tahoe.commands.DeltaCommand
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.schema.ImplicitMetadataOperation
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
@@ -279,23 +279,29 @@ case class GpuMergeIntoCommand(
   // this is the amount of the overcount, so we can subtract it to get a correct final metric.
   private var multipleMatchDeleteOnlyOvercount: Option[Long] = None
 
-  // DBR implements this check as a MergeIntoCommandBase method that depends on the command
-  // instance as its receiver. This GPU port intentionally does not mix in MergeIntoCommandBase
-  // because that trait also requires the full CPU MERGE runMerge contract, so construct the CPU
-  // command only as a receiver for the validation helper; it is not executed.
   private def checkIdentityColumnHighWaterMarks(deltaTxn: OptimisticTransaction): Unit = {
-    new MergeIntoCommand(
-      source,
-      target,
-      catalogTable,
-      targetFileIndex,
-      condition,
-      matchedClauses,
-      notMatchedClauses,
-      notMatchedBySourceClauses,
-      migratedSchema,
-      trackHighWaterMarks,
-      schemaEvolutionEnabled).checkIdentityColumnHighWaterMarks(deltaTxn)
+    // DBR implements this in MergeIntoCommandBase, but that method is protected and the trait
+    // also requires the full CPU MERGE runMerge contract. Keep this local copy aligned with the
+    // DBR helper so identity-column MERGE semantics stay consistent without mixing in the trait.
+    notMatchedClauses.foreach { clause =>
+      val schema = deltaTxn.metadata.schema
+      if (schema.length != clause.resolvedActions.length) {
+        throw new IllegalStateException()
+      }
+      schema.zip(clause.resolvedActions.map(_.expr)).foreach {
+        case (field, expr: GenerateIdentityValues) =>
+          val highWaterMark = IdentityColumn.getIdentityInfo(field).highWaterMark
+          if (highWaterMark != expr.generator.highWaterMarkOpt) {
+            IdentityColumn.logTransactionAbort(deltaTxn.deltaLog)
+            throw DeltaErrors.metadataChangedException(None)
+          }
+        case (field, _) =>
+          if (ColumnWithDefaultExprUtils.isIdentityColumn(field) &&
+              !IdentityColumn.allowExplicitInsert(field)) {
+            throw new IllegalStateException()
+          }
+      }
+    }
   }
 
   override lazy val metrics = Map[String, SQLMetric](
