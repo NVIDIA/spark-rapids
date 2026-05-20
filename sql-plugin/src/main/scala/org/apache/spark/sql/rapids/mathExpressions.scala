@@ -515,15 +515,6 @@ object GpuHypot {
     }
   }
 
-  def eitherNull(x: ColumnVector,
-                 y: ColumnVector): ColumnVector = {
-    withResource(x.isNull) { xIsNull =>
-      withResource(y.isNull) { yIsNull =>
-        xIsNull.or(yIsNull)
-      }
-    }
-  }
-
   def computeHypot(x: ColumnVector, y: ColumnVector): ColumnVector = {
     val yOverXSquared = withResource(y.div(x)) { yOverX =>
       yOverX.mul(yOverX)
@@ -590,11 +581,7 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
       }
 
       withResource(infOrRest) { _ =>
-        withResource(Scalar.fromNull(x.getType)) { nullS =>
-          withResource(GpuHypot.eitherNull(x, y)) { eitherNull =>
-            eitherNull.ifElse(nullS, infOrRest)
-          }
-        }
+        infOrRest.mergeAndSetValidity(BinaryOp.BITWISE_AND, x, y)
       }
     }
   }
