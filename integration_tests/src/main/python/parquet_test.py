@@ -925,8 +925,6 @@ def test_small_file_memory(spark_tmp_path, v1_enabled_list):
 @ignore_order(local=True)
 @pytest.mark.skipif(is_before_spark_350(),
                     reason="spark.sql.files.maxPartitionNum requires Spark 3.5.0+")
-@pytest.mark.skipif(is_databricks_runtime(),
-                    reason="Databricks planner may differ for this layout")
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"],
                          ids=idfn)
 def test_parquet_interleaved_file_splits_partition_value_alignment(

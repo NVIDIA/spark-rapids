@@ -589,10 +589,8 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
 @ignore_order(local=True)
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"],
                          ids=idfn)
-@pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(),
+@pytest.mark.skipif(is_before_spark_353(),
                     reason="Delta Lake deletion vector support requires Spark 3.5.3+")
-@pytest.mark.skipif(is_databricks_runtime(),
-                    reason="Databricks plan not GPU-convertible for this query")
 def test_delta_deletion_vector_interleaved_file_splits(
         spark_tmp_path, parquet_reader_type):
     """
