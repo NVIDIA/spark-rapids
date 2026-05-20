@@ -42,7 +42,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-38148: Do not add dynamic partition pruning if there exists static partition pruning", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14833"))
   enableSuite[RapidsDynamicPartitionPruningV1SuiteAEOn]
     .exclude("Make sure dynamic pruning works on uncorrelated queries", ADJUST_UT("Replaced by testRapids version that checks GpuSubqueryBroadcastExec"))
-    .exclude("SPARK-32659: Fix the data issue when pruning DPP on non-atomic type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14833"))
+    .exclude("SPARK-32659: Fix the data issue when pruning DPP on non-atomic type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14836"))
   enableSuite[RapidsDataFrameSelfJoinSuite]
   enableSuite[RapidsDataFrameWindowFramesSuite]
   enableSuite[RapidsDataFrameTimeWindowingSuite]
