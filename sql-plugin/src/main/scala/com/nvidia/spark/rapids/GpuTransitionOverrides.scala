@@ -38,7 +38,7 @@ import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, 
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuShuffleEnv, GpuTaskMetrics}
-import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase, GpuSubqueryBroadcastExec}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -759,6 +759,64 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     }
   }
 
+  /**
+   * In non-AQE mode with DPP, GpuSubqueryBroadcastExec builds its underlying
+   * GpuBroadcastExchangeExec directly in GpuOverrides without going through this rule.
+   * The DPP-side broadcast therefore has a structurally different child (e.g. missing
+   * GpuCoalesceBatches that this rule inserts on the main plan) than the join-side
+   * broadcast for the same logical CPU exchange, and its cpuCanonical is also computed
+   * after GPU rewriting so it does not match the join-side cpuCanonical. Spark's
+   * ReuseExchangeAndSubquery rule does not merge them, so the dim side is materialized
+   * twice and DPP loses its intended performance benefit.
+   *
+   * This pass walks subquery expressions in the final plan, identifies the DPP-side
+   * GpuBroadcastExchangeExec inside a GpuSubqueryBroadcastExec, and matches it against
+   * the main-plan GpuBroadcastExchangeExec instances by (mode, child canonical form with
+   * GpuCoalesceBatches stripped). When a match is found, the DPP-side broadcast is
+   * rewritten to ReusedExchangeExec referencing the join-side instance.
+   */
+  private def fixupNonAdaptiveBroadcastReuse(p: SparkPlan): SparkPlan = {
+    // Strip GpuCoalesceBatches and similar transition wraps that the main-plan broadcast
+    // gets from insertCoalesce/optimizeCoalesce but the DPP-side broadcast does not.
+    def stripTransitions(plan: SparkPlan): SparkPlan = plan match {
+      case g: GpuCoalesceBatches => stripTransitions(g.child)
+      case other => other.withNewChildren(other.children.map(stripTransitions))
+    }
+
+    def signature(g: GpuBroadcastExchangeExec): (Any, SparkPlan) =
+      (g.mode.canonicalized, stripTransitions(g.child).canonicalized)
+
+    // Collect all main-plan GpuBroadcastExchangeExec instances. Skip any that already
+    // live inside subqueries — those are the DPP-side instances we want to rewrite.
+    val mainPlanBroadcasts = scala.collection.mutable.ArrayBuffer.empty[GpuBroadcastExchangeExec]
+    p.foreach {
+      case g: GpuBroadcastExchangeExec => mainPlanBroadcasts += g
+      case _ =>
+    }
+    if (mainPlanBroadcasts.isEmpty) return p
+
+    val bySig = mainPlanBroadcasts.groupBy(signature).map {
+      case (sig, instances) => sig -> instances.head
+    }
+
+    p.transformAllExpressions {
+      case sub: ExecSubqueryExpression if sub.plan.isInstanceOf[GpuSubqueryBroadcastExec] =>
+        val gsb = sub.plan.asInstanceOf[GpuSubqueryBroadcastExec]
+        gsb.child match {
+          case dpp: GpuBroadcastExchangeExec =>
+            bySig.get(signature(dpp)) match {
+              case Some(matched) if !(matched eq dpp) =>
+                val reused = ReusedExchangeExec(dpp.output, matched)
+                val newGsb = gsb.withNewChildren(Seq(reused))
+                  .asInstanceOf[GpuSubqueryBroadcastExec]
+                sub.withNewPlan(newGsb)
+              case _ => sub
+            }
+          case _ => sub
+        }
+    }
+  }
+
   private def insertStageLevelMetrics(plan: SparkPlan): Unit = {
     val sc = SparkSession.active.sparkContext
     val gen = new AtomicInteger(0)
@@ -849,6 +907,10 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
         if (rapidsConf.isAqeExchangeReuseFixupEnabled &&
             plan.conf.adaptiveExecutionEnabled && plan.conf.exchangeReuseEnabled) {
           updatedPlan = fixupAdaptiveExchangeReuse(updatedPlan)
+        }
+        if (rapidsConf.isNonAqeBroadcastReuseFixupEnabled &&
+            !plan.conf.adaptiveExecutionEnabled && plan.conf.exchangeReuseEnabled) {
+          updatedPlan = fixupNonAdaptiveBroadcastReuse(updatedPlan)
         }
 
         if (rapidsConf.isTagLoreIdEnabled) {
