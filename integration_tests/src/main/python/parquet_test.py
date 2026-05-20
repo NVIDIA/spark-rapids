@@ -927,11 +927,13 @@ def test_small_file_memory(spark_tmp_path, v1_enabled_list):
                     reason="spark.sql.files.maxPartitionNum requires Spark 3.5.0+")
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Databricks planner may differ for this layout")
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"],
+                         ids=idfn)
 def test_parquet_coalescing_interleaved_file_splits_partition_value_alignment(
-        spark_tmp_path):
+        spark_tmp_path, parquet_reader_type):
     """
-    Verifies partition values remain aligned when coalescing split Parquet files
-    from different partition directories.
+    Verifies partition values remain aligned when reading split Parquet files from different
+    partition directories.
 
     The setup creates file A under p=1 and file B under p=2 such that Spark's
     length-desc split sort produces [A..., B, A-tail] in a single FilePartition.
@@ -951,7 +953,7 @@ def test_parquet_coalescing_interleaved_file_splits_partition_value_alignment(
         "spark.sql.parquet.compression.codec": "uncompressed",
     }
     read_conf = {
-        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.rapids.sql.format.parquet.reader.type": parquet_reader_type,
         "spark.sql.files.maxPartitionBytes": str(max_split),
         "spark.sql.files.openCostInBytes": "1",
         # Pin actual maxSplitBytes == maxPartitionBytes. Without this,

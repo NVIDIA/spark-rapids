@@ -587,14 +587,17 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"],
+                         ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(),
                     reason="Delta Lake deletion vector support requires Spark 3.5.3+")
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Databricks plan not GPU-convertible for this query")
-def test_delta_deletion_vector_coalescing_interleaved_file_splits(spark_tmp_path):
+def test_delta_deletion_vector_coalescing_interleaved_file_splits(
+        spark_tmp_path, parquet_reader_type):
     """
-    Tests the coalescing reader's handling of deletion vectors when files are interleaved
-    in a way that causes their blocks to be split non-consecutively.
+    Tests deletion vector handling when files are interleaved in a way that causes their
+    blocks to be split non-consecutively.
     
     For this test, we set up two files A (large) and B (small) such that:
       - A is split into N PartitionedFiles: [max, ..., max, tail].
@@ -624,7 +627,7 @@ def test_delta_deletion_vector_coalescing_interleaved_file_splits(spark_tmp_path
     read_conf = {
         "spark.databricks.delta.delete.deletionVectors.persistent": "true",
         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
-        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.rapids.sql.format.parquet.reader.type": parquet_reader_type,
         "spark.sql.files.maxPartitionBytes": str(max_split),
         "spark.sql.files.openCostInBytes": "1",
         # Pin actual maxSplitBytes == maxPartitionBytes. Without this,
