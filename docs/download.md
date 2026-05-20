@@ -113,7 +113,8 @@ The output of signature verify:
 
 ### Release Notes
 * Databricks 17.3 ML LTS (Spark 4.0) support (Delta Lake fallback to CPU); Databricks 12.2 ML LTS no longer supported ([#14518](https://github.com/NVIDIA/spark-rapids/pull/14518))
-* Iceberg 1.10.1 support with Spark 4.0.2 ([#14459](https://github.com/NVIDIA/spark-rapids/pull/14459))
+* Deletion vector read support for open source Delta Lake 3.3+ and 4.0+. 
+* Iceberg 1.9.2 and 1.10.1 support for Spark 3.5.4–3.5.8 ([#14401](https://github.com/NVIDIA/spark-rapids/pull/14401)); Iceberg 1.10.1 support with Spark 4.0.2 ([#14459](https://github.com/NVIDIA/spark-rapids/pull/14459))
 * Bloom filter v2 support on Databricks ([#14406](https://github.com/NVIDIA/spark-rapids/pull/14406))
 * Parquet GPU reader: defer resource collection until close ([#14490](https://github.com/NVIDIA/spark-rapids/pull/14490)); row-to-column per-batch retry for OOM recovery ([#14428](https://github.com/NVIDIA/spark-rapids/pull/14428))
 * Shuffle and spilling: shuffle fanout OOM fix ([#14525](https://github.com/NVIDIA/spark-rapids/pull/14525)), thread-safe shuffle unregister ([#14513](https://github.com/NVIDIA/spark-rapids/pull/14513)), bounded retry logging for shuffle coalesce ([#14537](https://github.com/NVIDIA/spark-rapids/pull/14537))
