@@ -244,8 +244,8 @@ private object GpuAutoCompact extends PostCommitHook with DeltaLogging with Seri
                 AutoCompactPartitionReserve.releasePartitions(tableId, request.allowedPartitions)
               }
               TestBarrier.waitIfEnabled("autoCompact.inline.end")
+              OptimizeExecutionObserver.getObserver.endInlineAutoCompact()
             }
-            OptimizeExecutionObserver.getObserver.endInlineAutoCompact()
           } else {
             TestBarrier.waitIfEnabled("autoCompact.inline.shouldNotCompact")
           }
@@ -272,9 +272,12 @@ private object GpuAutoCompact extends PostCommitHook with DeltaLogging with Seri
       request: AutoCompactRequest): Seq[OptimizeMetrics] = {
     recordDeltaOperation(txn.deltaLog, AutoCompact.OP_TYPE) {
       recordDeltaOperation(txn.deltaLog, s"${AutoCompact.OP_TYPE}.execute") {
+        val maxFileSize = spark.conf.get(DeltaSQLConf.DELTA_AUTO_COMPACT_MAX_FILE_SIZE)
+        val minFileSize = spark.conf.get(DeltaSQLConf.DELTA_AUTO_COMPACT_MIN_FILE_SIZE)
+          .orElse(maxFileSize.map(_ / 2))
         val optimizeContext = DeltaOptimizeContext(
-          minFileSize = spark.conf.get(DeltaSQLConf.DELTA_AUTO_COMPACT_MIN_FILE_SIZE),
-          maxFileSize = spark.conf.get(DeltaSQLConf.DELTA_AUTO_COMPACT_MAX_FILE_SIZE),
+          minFileSize = minFileSize,
+          maxFileSize = maxFileSize,
           maxDeletedRowsRatio = AutoCompact.maxDeletedRowsRatio)
         val rows = new GpuOptimizeExecutor(
           spark,

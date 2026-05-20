@@ -28,9 +28,11 @@ import scala.annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
 
 import com.databricks.sql.transaction.tahoe._
+import com.databricks.sql.transaction.tahoe.DeltaCommitTag.PreservedRowTrackingTag
 import com.databricks.sql.transaction.tahoe.DeltaOperations.Operation
 import com.databricks.sql.transaction.tahoe.actions.{Action, AddFile, FileAction, RemoveFile}
-import com.databricks.sql.transaction.tahoe.commands.{DeltaCommand, DeltaOptimizeContext}
+import com.databricks.sql.transaction.tahoe.commands.{DeletionVectorUtils, DeltaCommand,
+  DeltaOptimizeContext}
 import com.databricks.sql.transaction.tahoe.commands.optimize.FileSizeStatsWithHistogram
 import com.databricks.sql.transaction.tahoe.commands.optimize.OptimizeStats
 import com.databricks.sql.transaction.tahoe.files.SQLMetricsReporting
@@ -60,6 +62,15 @@ class GpuOptimizeExecutor(
   private val deltaLog = snapshot.deltaLog
   private val rapidsConf = new RapidsConf(sparkSession.sessionState.conf)
   private implicit val clock: Clock = deltaLog.clock
+
+  private def ensureDeletionVectorDisabled(): Unit = {
+    if (DeletionVectorUtils.deletionVectorsWritable(snapshot)) {
+      throw new IllegalStateException(
+        "Deletion vector writes are not supported on GPU")
+    }
+  }
+
+  ensureDeletionVectorDisabled()
 
   def optimize(): Seq[Row] = {
     recordDeltaOperation(deltaLog, "delta.optimize") {
@@ -238,8 +249,7 @@ class GpuOptimizeExecutor(
       metrics: Map[String, SQLMetric])(f: OptimisticTransaction => Boolean): Unit = {
     try {
       txn.registerSQLMetrics(sparkSession, metrics)
-      txn.commit(actions, optimizeOperation,
-        RowTracking.addPreservedRowTrackingTagIfNotSet(txn.snapshot, Map.empty))
+      txn.commit(actions, optimizeOperation, getCommitTags(txn))
     } catch {
       case e: ConcurrentModificationException =>
         val newTxn = txn.deltaLog.startTransaction(catalogTable)
@@ -250,6 +260,16 @@ class GpuOptimizeExecutor(
           logWarning("Semantic conflicts detected. Aborting operation.")
           throw e
         }
+    }
+  }
+
+  private def getCommitTags(txn: OptimisticTransaction): Map[String, String] = {
+    val tags = RowTracking.addPreservedRowTrackingTagIfNotSet(txn.snapshot, Map.empty)
+    val notPreservedTag = PreservedRowTrackingTag.withValue(false).stringPair
+    if (tags.contains(notPreservedTag._1)) {
+      tags
+    } else {
+      tags + notPreservedTag
     }
   }
 
