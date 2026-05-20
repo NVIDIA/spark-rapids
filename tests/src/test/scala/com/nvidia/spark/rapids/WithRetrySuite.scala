@@ -289,6 +289,32 @@ class WithRetrySuite
     }
   }
 
+  test("splitTargetSizeInHalfGpu uses per-child dataSize on second-level split") {
+    // After an uneven first split, the smaller child carries its own dataSize (e.g. 2 bytes)
+    // while its targetSize is the halved parent target (e.g. 100). Without per-child dataSize
+    // the child would see dataSize=200 (the parent total), compute newTarget=50 (targetSize/2),
+    // and fail to split [1-byte, 1-byte] tables. With the correct dataSize=2 the child uses
+    // dataSize/2=1, which is a valid split point.
+    val targetSize = 100L   // newTarget from the first split (parent dataSize/2)
+    val minSize = 1L
+    val childDataSize = 2L  // actual bytes in the smaller child; less than targetSize/2=50
+    var doThrow = true
+    var splitTargetUsed = 0L
+    val myTarget = AutoCloseableTargetSize(targetSize, minSize, childDataSize)
+    try {
+      withRetry(myTarget, splitTargetSizeInHalfGpu) { attempt =>
+        splitTargetUsed = attempt.targetSize
+        if (doThrow) {
+          doThrow = false
+          throw new GpuSplitAndRetryOOM("second-level OOM")
+        }
+      }.toSeq
+    } finally {
+      // Should use childDataSize/2=1, not targetSize/2=50
+      assert(splitTargetUsed == childDataSize / 2)
+    }
+  }
+
   test("splitTargetSizeInHalfGpu on AutoCloseableTargetSize throws if limit reached") {
     val initialValue = 20L
     val minValue = 5L

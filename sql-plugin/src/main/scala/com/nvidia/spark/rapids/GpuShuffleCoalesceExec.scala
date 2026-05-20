@@ -173,10 +173,12 @@ object GpuShuffleCoalesceUtils {
 
       var currentSize = 0L
       var splitIndex = 0
+      var firstHalfSize = 0L
       for (i <- tables.indices) {
         val tableSize = tableOperator.getDataLen(tables(i))
         if (currentSize + tableSize > targetByteSize && i > 0) {
           splitIndex = i
+          firstHalfSize = currentSize
           currentSize = Long.MaxValue  // stop iterating
         } else {
           currentSize += tableSize
@@ -185,10 +187,13 @@ object GpuShuffleCoalesceUtils {
 
       val firstHalfTables = tables.take(splitIndex)
       val secondHalfTables = tables.drop(splitIndex)
+      val secondHalfSize = newTargetSize.dataSize - firstHalfSize
 
       Seq(
-        CloseableTableSeqWithTargetSize(firstHalfTables, newTargetSize),
-        CloseableTableSeqWithTargetSize(secondHalfTables, newTargetSize)
+        CloseableTableSeqWithTargetSize(firstHalfTables,
+          AutoCloseableTargetSize(targetByteSize, newTargetSize.minSize, firstHalfSize)),
+        CloseableTableSeqWithTargetSize(secondHalfTables,
+          AutoCloseableTargetSize(targetByteSize, newTargetSize.minSize, secondHalfSize))
       )
     }
   }

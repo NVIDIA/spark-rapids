@@ -268,4 +268,5 @@ class GpuShuffleCoalesceSuite extends AnyFunSuite with BeforeAndAfterEach {
       minSplitSize = Some(1L),
       forceSplitRetry = true)
   }
+
 }
