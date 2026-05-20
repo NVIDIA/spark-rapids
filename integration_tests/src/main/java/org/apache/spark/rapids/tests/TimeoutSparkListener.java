@@ -19,15 +19,18 @@ package org.apache.spark.rapids.tests;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletionService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.spark.SparkContext;
@@ -161,6 +164,21 @@ public class TimeoutSparkListener extends SparkListener {
   // executors to reply while bounding the worst case.
   private static final long EXECUTOR_DUMP_BUDGET_SECONDS = 30;
 
+  private static final class ExecutorDumpResult {
+    private final String execId;
+    private final Option<ThreadStackTrace[]> dumpOpt;
+    private final Throwable error;
+
+    private ExecutorDumpResult(
+        String execId,
+        Option<ThreadStackTrace[]> dumpOpt,
+        Throwable error) {
+      this.execId = execId;
+      this.dumpOpt = dumpOpt;
+      this.error = error;
+    }
+  }
+
   /**
    * Best-effort dump of every live executor's JVM threads via Spark's
    * built-in {@link SparkContext#getExecutorThreadDump} RPC. A driver-only
@@ -209,42 +227,68 @@ public class TimeoutSparkListener extends SparkListener {
         return t;
       });
     try {
-      final Map<String, Future<Option<ThreadStackTrace[]>>> futures = new LinkedHashMap<>();
+      final CompletionService<ExecutorDumpResult> completionService =
+        new ExecutorCompletionService<>(rpcPool);
+      final List<Future<ExecutorDumpResult>> futures = new ArrayList<>(numExecs);
       // Iterate the Scala Seq directly via its Iterator to avoid the
       // scala.collection.JavaConverters deprecation in Scala 2.13.
       final Iterator<String> it = execIdsSeq.iterator();
       while (it.hasNext()) {
         final String execId = it.next();
-        futures.put(execId, rpcPool.submit(() -> sc.getExecutorThreadDump(execId)));
+        futures.add(completionService.submit(() -> {
+          try {
+            return new ExecutorDumpResult(execId, sc.getExecutorThreadDump(execId), null);
+          } catch (Throwable t) {
+            return new ExecutorDumpResult(execId, null, t);
+          }
+        }));
       }
 
       final long deadlineNanos = System.nanoTime()
         + TimeUnit.SECONDS.toNanos(EXECUTOR_DUMP_BUDGET_SECONDS);
-      for (Map.Entry<String, Future<Option<ThreadStackTrace[]>>> e : futures.entrySet()) {
-        final String execId = e.getKey();
+      int remaining = numExecs;
+      while (remaining > 0) {
         final long remainingNanos = deadlineNanos - System.nanoTime();
         if (remainingNanos <= 0) {
-          LOG.warn("Executor dump budget exhausted before reaching executor {}", execId);
-          e.getValue().cancel(true);
-          continue;
+          LOG.warn("Executor dump budget exhausted before receiving {} executor dump(s)",
+            remaining);
+          break;
         }
         try {
-          final Option<ThreadStackTrace[]> dumpOpt =
-            e.getValue().get(remainingNanos, TimeUnit.NANOSECONDS);
-          if (dumpOpt.isEmpty()) {
-            LOG.warn("No thread dump returned for executor {}", execId);
+          final Future<ExecutorDumpResult> future =
+            completionService.poll(remainingNanos, TimeUnit.NANOSECONDS);
+          if (future == null) {
+            LOG.warn("Timed out fetching thread dumps from {} executor(s)", remaining);
+            break;
+          }
+          remaining--;
+          final ExecutorDumpResult result = future.get();
+          if (result.error != null) {
+            LOG.warn("Failed to fetch thread dump for executor " + result.execId, result.error);
             continue;
           }
-          final ThreadStackTrace[] stacks = dumpOpt.get();
-          LOG.error("Executor {} thread dump ({} threads):", execId, stacks.length);
-          for (ThreadStackTrace stack : stacks) {
-            LOG.warn("Executor {}: {}", execId, stack);
+          if (result.dumpOpt.isEmpty()) {
+            LOG.warn("No thread dump returned for executor {}", result.execId);
+            continue;
           }
-        } catch (TimeoutException te) {
-          LOG.warn("Timed out fetching thread dump for executor {}", execId);
-          e.getValue().cancel(true);
+          final ThreadStackTrace[] stacks = result.dumpOpt.get();
+          LOG.error("Executor {} thread dump ({} threads):", result.execId, stacks.length);
+          for (ThreadStackTrace stack : stacks) {
+            LOG.warn("Executor {}: {}", result.execId, stack);
+          }
+        } catch (InterruptedException ie) {
+          Thread.currentThread().interrupt();
+          LOG.warn("Interrupted fetching executor thread dumps", ie);
+          break;
+        } catch (ExecutionException ee) {
+          LOG.warn("Failed to fetch an executor thread dump", ee.getCause());
         } catch (Throwable t) {
-          LOG.warn("Failed to fetch thread dump for executor " + execId, t);
+          LOG.warn("Failed to fetch an executor thread dump", t);
+        }
+      }
+      for (Future<ExecutorDumpResult> future : futures) {
+        if (!future.isDone()) {
+          future.cancel(true);
         }
       }
     } finally {
@@ -254,4 +298,3 @@ public class TimeoutSparkListener extends SparkListener {
     }
   }
 }
-
