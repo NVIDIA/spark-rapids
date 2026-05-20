@@ -593,7 +593,7 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
                     reason="Delta Lake deletion vector support requires Spark 3.5.3+")
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Databricks plan not GPU-convertible for this query")
-def test_delta_deletion_vector_coalescing_interleaved_file_splits(
+def test_delta_deletion_vector_interleaved_file_splits(
         spark_tmp_path, parquet_reader_type):
     """
     Tests deletion vector handling when files are interleaved in a way that causes their

@@ -929,7 +929,7 @@ def test_small_file_memory(spark_tmp_path, v1_enabled_list):
                     reason="Databricks planner may differ for this layout")
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "MULTITHREADED", "COALESCING"],
                          ids=idfn)
-def test_parquet_coalescing_interleaved_file_splits_partition_value_alignment(
+def test_parquet_interleaved_file_splits_partition_value_alignment(
         spark_tmp_path, parquet_reader_type):
     """
     Verifies partition values remain aligned when reading split Parquet files from different
