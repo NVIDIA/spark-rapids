@@ -46,17 +46,30 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
+import scala.util.control.NonFatal
+
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.jni.BloomFilter
 
+import org.apache.spark.internal.Logging
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.BloomFilterAggregate
+import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression, SparkPlan}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter,
   CpuToGpuBloomFilterBufferConverter, GpuBloomFilterAggregate,
   GpuToCpuAggregateBufferConverter, GpuToCpuBloomFilterBufferConverter}
 
-object BloomFilterShims {
-  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
+object BloomFilterShims extends Logging {
+
+  // Probe-side leaf node emitted by the optional planner module. The execution layer discovers it
+  // by FQCN to extract the `bfId` for accumulator wiring. If the planner module is absent, the
+  // lookup silently returns None and the probe path runs without instrumentation.
+  private val TryReadBFRegistryExecClassName =
+    "com.nvidia.spark.rapids.optimizer.cubloomfilter.TryReadBFRegistryExec"
+
+  lazy val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     Seq(
       GpuOverrides.expr[BloomFilterMightContain](
         "Bloom filter query",
@@ -66,8 +79,10 @@ object BloomFilterShims {
           ("lhs", TypeSig.BINARY + TypeSig.NULL, TypeSig.BINARY + TypeSig.NULL),
           ("rhs", TypeSig.LONG + TypeSig.NULL, TypeSig.LONG + TypeSig.NULL)),
         (a, conf, p, r) => new BinaryExprMeta[BloomFilterMightContain](a, conf, p, r) {
-          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
-            GpuBloomFilterMightContain(lhs, rhs)
+          override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression = {
+            val (bfId, probeUpdater) = resolveProbeWiring(a.bloomFilterExpression)
+            GpuBloomFilterMightContain(lhs, rhs, bfId, probeUpdater)
+          }
         }),
       GpuOverrides.expr[BloomFilterAggregate](
         "Bloom filter build",
@@ -116,5 +131,82 @@ object BloomFilterShims {
           override val supportBufferConversion: Boolean = true
         })
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
+  }
+
+  private def resolveProbeWiring(
+      bloomFilterExpression: Expression
+  ): (Option[String], Option[BloomFilterPredicateUpdater]) = {
+    if (!CuBFFeedbackFlags.isEnabled(SQLConf.get)) {
+      (None, None)
+    } else {
+      val bfIdOpt = extractBfId(bloomFilterExpression)
+      val updaterOpt = for {
+        bfId <- bfIdOpt
+        spark <- SparkSession.getActiveSession
+      } yield BloomFilterProbeAccumulator.driverGetOrCreate(spark.sparkContext, bfId)
+      (bfIdOpt, updaterOpt)
+    }
+  }
+
+  private def extractBfId(expr: Expression): Option[String] = {
+    var found: Option[String] = None
+    expr.foreach {
+      case e: ExecSubqueryExpression if found.isEmpty =>
+        found = findBfIdInPlan(e.plan)
+      case _ =>
+    }
+    found
+  }
+
+  private[shims] def findBfIdInPlan(plan: SparkPlan): Option[String] = {
+    var found: Option[String] = None
+    def visit(p: SparkPlan): Unit = {
+      if (found.isEmpty && p != null) {
+        if (p.getClass.getName == TryReadBFRegistryExecClassName) {
+          found = readBfId(p)
+        }
+        if (found.isEmpty) {
+          p match {
+            case s: BaseSubqueryExec => visit(s.child)
+            case _ =>
+          }
+        }
+        if (found.isEmpty) {
+          tryAqePlanFields(p).foreach(visit)
+        }
+        if (found.isEmpty) {
+          p.children.foreach(visit)
+        }
+      }
+    }
+    visit(plan)
+    found
+  }
+
+  private def readBfId(plan: SparkPlan): Option[String] = {
+    try {
+      Option(plan.getClass.getMethod("bfId").invoke(plan).asInstanceOf[String])
+        .filter(_.nonEmpty)
+    } catch {
+      case NonFatal(_) => None
+    }
+  }
+
+  private val AqePlanFields: Seq[String] =
+    Seq("executedPlan", "currentPhysicalPlan", "initialPlan", "inputPlan")
+
+  private[shims] def tryAqePlanFields(p: SparkPlan): Seq[SparkPlan] = {
+    if (!p.getClass.getName.contains("AdaptiveSparkPlanExec")) {
+      Seq.empty
+    } else {
+      AqePlanFields.flatMap { name =>
+        try {
+          val m = p.getClass.getMethod(name)
+          Option(m.invoke(p).asInstanceOf[SparkPlan])
+        } catch {
+          case NonFatal(_) => None
+        }
+      }
+    }
   }
 }

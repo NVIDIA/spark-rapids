@@ -95,9 +95,16 @@ trait Spark330PlusShims extends Spark321PlusShims with Spark320PlusNonDBShims {
     super.getExprs ++ map ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
   }
 
+  // Pre-GpuOverrides hook: replaces optional planner-emitted CPU stubs
+  // with GPU operators before GpuOverrides processes the plan. No-op
+  // when the planner module is absent (`isNeeded` returns false).
+  override def applyPreGpuOverridesRules(plan: SparkPlan): SparkPlan =
+    InlineBFBuildReplacement.applyIfNeeded(plan)
+
   // GPU support ANSI interval types from 330
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    super.getExecs ++ PythonMapInArrowExecShims.execs
+    super.getExecs ++ PythonMapInArrowExecShims.execs ++
+      InlineBFBuildGpuOverride.execRules
 
 }
 

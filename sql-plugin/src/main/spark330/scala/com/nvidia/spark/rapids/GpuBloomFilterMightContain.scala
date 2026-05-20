@@ -46,7 +46,8 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
-import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
+import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimBinaryExpression
@@ -60,7 +61,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class GpuBloomFilterMightContain(
     bloomFilterExpression: Expression,
-    valueExpression: Expression)
+    valueExpression: Expression,
+    bfId: Option[String] = None,
+    probeUpdater: Option[BloomFilterPredicateUpdater] = None)
   extends ShimBinaryExpression with GpuExpression with AutoCloseable {
 
   @transient private lazy val bloomFilter: GpuBloomFilter = {
@@ -109,6 +112,15 @@ case class GpuBloomFilterMightContain(
     }
   }
 
+  // Drop bfId and probeUpdater on canonicalization so equivalent
+  // expressions with different or absent observability wiring produce
+  // equal canonical forms.
+  override lazy val canonicalized: Expression = {
+    GpuBloomFilterMightContain(
+      bloomFilterExpression.canonicalized,
+      valueExpression.canonicalized)
+  }
+
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     if (bloomFilter == null) {
       GpuColumnVector.fromNull(batch.numRows(), dataType)
@@ -117,10 +129,29 @@ case class GpuBloomFilterMightContain(
         if (value == null || value.dataType == NullType) {
           GpuColumnVector.fromNull(batch.numRows(), dataType)
         } else {
-          GpuColumnVector.from(bloomFilter.mightContainLong(value.getBase), BooleanType)
+          val resultBase = bloomFilter.mightContainLong(value.getBase)
+          closeOnExcept(resultBase) { _ =>
+            // Once per columnar batch, never per row.
+            probeUpdater.foreach { _ =>
+              val rowsPassed = withResource(resultBase.sum(DType.INT64)) { scalar =>
+                if (scalar.isValid) scalar.getLong else 0L
+              }
+              recordBatchUpdate(batch.numRows().toLong, rowsPassed)
+            }
+            GpuColumnVector.from(resultBase, BooleanType)
+          }
         }
       }
     }
+  }
+
+  /**
+   * Per-batch update sink for `probeUpdater`. Visible for test:
+   * the GPU-free unit test calls this directly with synthetic counts
+   * to assert the once-per-batch invariant structurally.
+   */
+  private[rapids] def recordBatchUpdate(rowsIn: Long, rowsPassed: Long): Unit = {
+    probeUpdater.foreach(_.update(rowsIn, rowsPassed))
   }
 
   // This is disabled until https://github.com/NVIDIA/spark-rapids/issues/8945 can be fixed
