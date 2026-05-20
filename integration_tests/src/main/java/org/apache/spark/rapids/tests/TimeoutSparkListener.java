@@ -19,11 +19,15 @@ package org.apache.spark.rapids.tests;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.spark.SparkContext;
@@ -150,6 +154,13 @@ public class TimeoutSparkListener extends SparkListener {
     }
   }
 
+  // Total wall-clock budget for collecting all executor thread dumps. A stuck
+  // executor's RPC blocks for spark.rpc.askTimeout (default 120s); without a
+  // shared deadline, N stuck executors would extend the driver's lifetime by
+  // 120s * N past the original job timeout. 30s is enough for healthy
+  // executors to reply while bounding the worst case.
+  private static final long EXECUTOR_DUMP_BUDGET_SECONDS = 30;
+
   /**
    * Best-effort dump of every live executor's JVM threads via Spark's
    * built-in {@link SparkContext#getExecutorThreadDump} RPC. A driver-only
@@ -158,8 +169,10 @@ public class TimeoutSparkListener extends SparkListener {
    * runtimes where the Spark UI / REST API is unreachable (e.g. Dataproc
    * Serverless without component gateway).
    *
-   * Failures here must not block the surrounding {@code cancelJob} /
-   * {@code System.exit} path, so every RPC is wrapped individually.
+   * RPCs are issued concurrently and share a single overall deadline
+   * ({@link #EXECUTOR_DUMP_BUDGET_SECONDS}) so an unresponsive executor
+   * cannot block the surrounding {@code cancelJob} / {@code System.exit}
+   * path for more than that budget regardless of executor count.
    */
   private static void dumpExecutorThreads() {
     final JavaSparkContext jsc;
@@ -171,33 +184,73 @@ public class TimeoutSparkListener extends SparkListener {
       return;
     }
     final SparkContext sc = jsc.sc();
-    final Seq<String> execIds;
+    final Seq<String> execIdsSeq;
     try {
-      execIds = sc.getExecutorIds();
+      execIdsSeq = sc.getExecutorIds();
     } catch (Throwable t) {
       LOG.warn("Failed to enumerate executors for thread dump", t);
       return;
     }
-    LOG.error("Executor thread dump follows ({} executor(s))", execIds.size());
-    // Iterate the Scala Seq directly via its Iterator to avoid the
-    // scala.collection.JavaConverters deprecation in Scala 2.13.
-    final Iterator<String> it = execIds.iterator();
-    while (it.hasNext()) {
-      final String execId = it.next();
-      try {
-        final Option<ThreadStackTrace[]> dumpOpt = sc.getExecutorThreadDump(execId);
-        if (dumpOpt.isEmpty()) {
-          LOG.warn("No thread dump returned for executor {}", execId);
+    final int numExecs = execIdsSeq.size();
+    LOG.error("Executor thread dump follows ({} executor(s), {}s shared budget)",
+      numExecs, EXECUTOR_DUMP_BUDGET_SECONDS);
+    if (numExecs == 0) {
+      return;
+    }
+
+    // Submit all RPCs in parallel. A dedicated daemon pool is used so that
+    // an in-flight RPC blocked on a stuck executor cannot delay shutdown.
+    final ExecutorService rpcPool = Executors.newFixedThreadPool(
+      Math.min(numExecs, 16),
+      runnable -> {
+        final Thread t = new Thread(runnable);
+        t.setDaemon(true);
+        t.setName("timeout-listener-executor-dump-" + t.hashCode());
+        return t;
+      });
+    try {
+      final Map<String, Future<Option<ThreadStackTrace[]>>> futures = new LinkedHashMap<>();
+      // Iterate the Scala Seq directly via its Iterator to avoid the
+      // scala.collection.JavaConverters deprecation in Scala 2.13.
+      final Iterator<String> it = execIdsSeq.iterator();
+      while (it.hasNext()) {
+        final String execId = it.next();
+        futures.put(execId, rpcPool.submit(() -> sc.getExecutorThreadDump(execId)));
+      }
+
+      final long deadlineNanos = System.nanoTime()
+        + TimeUnit.SECONDS.toNanos(EXECUTOR_DUMP_BUDGET_SECONDS);
+      for (Map.Entry<String, Future<Option<ThreadStackTrace[]>>> e : futures.entrySet()) {
+        final String execId = e.getKey();
+        final long remainingNanos = deadlineNanos - System.nanoTime();
+        if (remainingNanos <= 0) {
+          LOG.warn("Executor dump budget exhausted before reaching executor {}", execId);
+          e.getValue().cancel(true);
           continue;
         }
-        final ThreadStackTrace[] stacks = dumpOpt.get();
-        LOG.error("Executor {} thread dump ({} threads):", execId, stacks.length);
-        for (ThreadStackTrace stack : stacks) {
-          LOG.warn("Executor {}: {}", execId, stack);
+        try {
+          final Option<ThreadStackTrace[]> dumpOpt =
+            e.getValue().get(remainingNanos, TimeUnit.NANOSECONDS);
+          if (dumpOpt.isEmpty()) {
+            LOG.warn("No thread dump returned for executor {}", execId);
+            continue;
+          }
+          final ThreadStackTrace[] stacks = dumpOpt.get();
+          LOG.error("Executor {} thread dump ({} threads):", execId, stacks.length);
+          for (ThreadStackTrace stack : stacks) {
+            LOG.warn("Executor {}: {}", execId, stack);
+          }
+        } catch (TimeoutException te) {
+          LOG.warn("Timed out fetching thread dump for executor {}", execId);
+          e.getValue().cancel(true);
+        } catch (Throwable t) {
+          LOG.warn("Failed to fetch thread dump for executor " + execId, t);
         }
-      } catch (Throwable t) {
-        LOG.warn("Failed to fetch thread dump for executor " + execId, t);
       }
+    } finally {
+      // shutdownNow interrupts the RPC threads so any still-blocking dumps
+      // are abandoned rather than holding the driver JVM alive.
+      rpcPool.shutdownNow();
     }
   }
 }
