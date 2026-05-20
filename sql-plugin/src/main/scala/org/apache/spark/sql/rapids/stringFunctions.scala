@@ -1729,11 +1729,7 @@ case class GpuRegExpExtractAll(
                 val maxSizeInt = maxSize.getInt
                 val stringCols = Range(0, maxSizeInt, 1).safeMap {
                   i =>
-                    withResource(Scalar.fromInt(i)) { scalarIndex =>
-                      withResource(ColumnVector.fromScalar(scalarIndex, rowCount.toInt)) {
-                        index => allExtracted.extractListElement(index)
-                      }
-                    }
+                    allExtracted.extractListElement(i)
                 }
                 withResource(stringCols) { _ =>
                   ColumnVector.makeList(rowCount, DType.STRING, stringCols: _*)
