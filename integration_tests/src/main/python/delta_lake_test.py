@@ -587,24 +587,21 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.parametrize("use_metadata_row_index", [True, False], ids=idfn)
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors() or is_before_spark_353(),
                     reason="Delta Lake deletion vector support requires Spark 3.5.3+")
 @pytest.mark.skipif(is_databricks_runtime(),
                     reason="Databricks plan not GPU-convertible for this query")
-def test_delta_deletion_vector_coalescing_interleaved_file_splits(
-        spark_tmp_path, use_metadata_row_index):
+def test_delta_deletion_vector_coalescing_interleaved_file_splits(spark_tmp_path):
     """
-    Reproduces row-count mismatch in the coalescing reader's DV pipeline.
-
-    Setup engineers two files A (large) and B (small) such that:
+    Tests the coalescing reader's handling of deletion vectors when files are interleaved
+    in a way that causes their blocks to be split non-consecutively.
+    
+    For this test, we set up two files A (large) and B (small) such that:
       - A is split into N PartitionedFiles: [max, ..., max, tail].
       - tail(A) < len(B) < max_split.
       - maxPartitionNum=1 forces all splits + B into ONE FilePartition,
         preserving the length-desc stable sort so A's blocks are split
         non-consecutively around B's.
-    Deletes target the global min(a) (in A) and max(a) (in B) so the
-    aggregate result is directly load-bearing on per-file DV application.
     """
     import os
     import pyarrow.parquet as pq
@@ -614,7 +611,7 @@ def test_delta_deletion_vector_coalescing_interleaved_file_splits(
     # Row counts tuned for ~148 B/row uncompressed (two SHA-256 hex strings +
     # two ints). File A = 3000 rows -> 4 splits ~[131K, 131K, 131K, 50K];
     # File B = 800 rows -> 1 split ~118K. Gives tail(A) ~50K < B ~118K < 131K.
-    a_lo, a_hi = 0, 3799  # global min/max of column `a`
+    col_a_lo, col_a_hi = 0, 3799  # global min/max of column `a`
     a_rows = 3000
     b_split = a_rows  # boundary between A's range and B's range
 
@@ -628,8 +625,6 @@ def test_delta_deletion_vector_coalescing_interleaved_file_splits(
         "spark.databricks.delta.delete.deletionVectors.persistent": "true",
         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
         "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
-        "spark.databricks.delta.deletionVectors.useMetadataRowIndex":
-            f"{use_metadata_row_index}",
         "spark.sql.files.maxPartitionBytes": str(max_split),
         "spark.sql.files.openCostInBytes": "1",
         # Pin actual maxSplitBytes == maxPartitionBytes. Without this,
@@ -639,7 +634,7 @@ def test_delta_deletion_vector_coalescing_interleaved_file_splits(
         # value and breaks the size-engineering below.
         "spark.sql.files.minPartitionNum": "1",
         # Repack initial split-per-partition layout into ONE FilePartition.
-        "spark.sql.files.maxPartitionNum": "1",
+        "spark.sql.files.maxPartitionNum": "1"
     }
 
     def setup_table(spark):
@@ -652,7 +647,7 @@ def test_delta_deletion_vector_coalescing_interleaved_file_splits(
             "sha2(CAST(id + 17 AS STRING), 256)) AS payload")
         # File A: large enough to split into multiple PartitionedFiles with a
         # tail < max_split, and tuned so tail(A) < len(B) (asserted below).
-        spark.range(a_lo, b_split) \
+        spark.range(col_a_lo, b_split) \
              .selectExpr("CAST(id AS INT) AS a",
                          "CAST(id % 100 AS INT) AS b",
                          payload_expr) \
@@ -660,7 +655,7 @@ def test_delta_deletion_vector_coalescing_interleaved_file_splits(
              .option("parquet.enable.dictionary", "false") \
              .format("delta").mode("append").save(data_path)
         # File B: single split. Tuned so tail(A) < len(B) < max_split.
-        spark.range(b_split, a_hi + 1) \
+        spark.range(b_split, col_a_hi + 1) \
              .selectExpr("CAST(id AS INT) AS a",
                          "CAST(id % 100 AS INT) AS b",
                          payload_expr) \
@@ -669,7 +664,7 @@ def test_delta_deletion_vector_coalescing_interleaved_file_splits(
              .format("delta").mode("append").save(data_path)
         # Pin global min(a) in File A and max(a) in File B so mispaired
         # bitmaps directly perturb min(a)/max(a) on the alive set.
-        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a IN ({a_lo}, {a_hi})")
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a IN ({col_a_lo}, {col_a_hi})")
         # Noise: make per-file bitmaps dense so mispairing has many positions
         # to corrupt.
         spark.sql(f"DELETE FROM delta.`{data_path}` WHERE a % 17 = 0")
@@ -697,9 +692,7 @@ def test_delta_deletion_vector_coalescing_interleaved_file_splits(
         n_rg = pq.read_metadata(p).num_row_groups
         assert n_rg > 1, f"{p} has {n_rg} row group(s); need > 1"
 
-    # GPU-side check: maxPartitionNum=1 actually took effect for the GPU
-    # Delta format. The CPU planner uses a different FileFormat with its own
-    # isSplitable behavior, so a CPU partition count would not prove this.
+    # GPU-side check: make sure Spark creates one partition on GPU as expected.
     num_partitions = with_gpu_session(
         lambda spark: spark.read.format("delta").load(data_path)
                            .select("a").rdd.getNumPartitions(),

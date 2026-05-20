@@ -952,12 +952,16 @@ def test_parquet_coalescing_interleaved_file_splits_partition_value_alignment(
     }
     read_conf = {
         "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
-        "spark.rapids.sql.format.parquet.reader.footer.type": "JAVA",
-        "spark.sql.sources.useV1SourceList": "parquet",
         "spark.sql.files.maxPartitionBytes": str(max_split),
         "spark.sql.files.openCostInBytes": "1",
+        # Pin actual maxSplitBytes == maxPartitionBytes. Without this,
+        # FilePartition.maxSplitBytes computes
+        # min(maxPartitionBytes, max(openCost, totalBytes / minPartitionNum)),
+        # which on high-parallelism CI runners collapses to a much smaller
+        # value and breaks the size-engineering below.
         "spark.sql.files.minPartitionNum": "1",
-        "spark.sql.files.maxPartitionNum": "1",
+        # Repack initial split-per-partition layout into ONE FilePartition.
+        "spark.sql.files.maxPartitionNum": "1"
     }
 
     def setup_table(spark):
