@@ -30,7 +30,7 @@ import scala.collection.mutable
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.DeltaOperations.MergePredicate
 import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction}
-import com.databricks.sql.transaction.tahoe.commands.{DeltaCommand, MergeIntoCommandBase}
+import com.databricks.sql.transaction.tahoe.commands.{DeltaCommand, MergeIntoCommand}
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.schema.ImplicitMetadataOperation
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
@@ -235,7 +235,6 @@ case class GpuMergeIntoCommand(
     snapshotAtAnalysis: Option[Snapshot] = None)(
     @transient val rapidsConf: RapidsConf)
     extends LeafRunnableCommand
-    with MergeIntoCommandBase
     with DeltaCommand with PredicateHelper with AnalysisHelper with ImplicitMetadataOperation {
 
   import GpuMergeIntoCommand._
@@ -279,6 +278,25 @@ case class GpuMergeIntoCommand(
   // We over-count numTargetRowsDeleted when there are multiple matches;
   // this is the amount of the overcount, so we can subtract it to get a correct final metric.
   private var multipleMatchDeleteOnlyOvercount: Option[Long] = None
+
+  // DBR implements this check as a MergeIntoCommandBase method that depends on the command
+  // instance as its receiver. This GPU port intentionally does not mix in MergeIntoCommandBase
+  // because that trait also requires the full CPU MERGE runMerge contract, so construct the CPU
+  // command only as a receiver for the validation helper; it is not executed.
+  private def checkIdentityColumnHighWaterMarks(deltaTxn: OptimisticTransaction): Unit = {
+    new MergeIntoCommand(
+      source,
+      target,
+      catalogTable,
+      targetFileIndex,
+      condition,
+      matchedClauses,
+      notMatchedClauses,
+      notMatchedBySourceClauses,
+      migratedSchema,
+      trackHighWaterMarks,
+      schemaEvolutionEnabled).checkIdentityColumnHighWaterMarks(deltaTxn)
+  }
 
   override lazy val metrics = Map[String, SQLMetric](
     "numSourceRows" -> createMetric(sc, "number of source rows"),

@@ -16,8 +16,10 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
-import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandEdge}
+import com.databricks.sql.transaction.tahoe.commands.{DeletionVectorUtils, MergeIntoCommand,
+  MergeIntoCommandEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuMergeIntoCommand}
+import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
 
@@ -33,6 +35,7 @@ object MergeIntoCommandMetaShim {
     if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
       meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
     }
+    tagPersistentDeletionVectorFallback(meta, mergeCmd)
     tagMaterializedSourceFallback(meta, mergeCmd.source)
   }
 
@@ -41,7 +44,24 @@ object MergeIntoCommandMetaShim {
     if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
       meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
     }
+    tagPersistentDeletionVectorFallback(meta, mergeCmd)
     tagMaterializedSourceFallback(meta, mergeCmd.source)
+  }
+
+  private def tagPersistentDeletionVectorFallback(
+      meta: MergeIntoCommandMeta,
+      mergeCmd: MergeIntoCommand): Unit = {
+    if (shouldWritePersistentDeletionVectors(mergeCmd)) {
+      meta.willNotWorkOnGpu("Deletion vectors are not supported on GPU")
+    }
+  }
+
+  private def tagPersistentDeletionVectorFallback(
+      meta: MergeIntoCommandEdgeMeta,
+      mergeCmd: MergeIntoCommandEdge): Unit = {
+    if (shouldWritePersistentDeletionVectors(mergeCmd)) {
+      meta.willNotWorkOnGpu("Deletion vectors are not supported on GPU")
+    }
   }
 
   private def tagMaterializedSourceFallback(
@@ -74,6 +94,18 @@ object MergeIntoCommandMetaShim {
     source.exists(_.expressions.exists(expr => !expr.deterministic))
   }
 
+  private def shouldWritePersistentDeletionVectors(mergeCmd: MergeIntoCommand): Boolean = {
+    val deltaLog = mergeCmd.targetFileIndex.deltaLog
+    DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot) &&
+      mergeCmd.conf.getConf(DeltaSQLConf.MERGE_USE_PERSISTENT_DELETION_VECTORS)
+  }
+
+  private def shouldWritePersistentDeletionVectors(mergeCmd: MergeIntoCommandEdge): Boolean = {
+    val deltaLog = mergeCmd.targetFileIndex.deltaLog
+    DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot) &&
+      mergeCmd.conf.getConf(DeltaSQLConf.MERGE_USE_PERSISTENT_DELETION_VECTORS)
+  }
+
   def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {
     GpuMergeIntoCommand(
       mergeCmd.source,
@@ -104,6 +136,9 @@ object MergeIntoCommandMetaShim {
       mergeCmd.migratedSchema,
       mergeCmd.trackHighWaterMarks,
       mergeCmd.schemaEvolutionEnabled,
+      // This is safe to forward as-is because DBR analysis has already encoded snapshot reuse
+      // eligibility in this Option: Some(snapshot) means the Edge command may reuse the analyzed
+      // snapshot, while None makes GpuDeltaLog open the transaction on the latest snapshot.
       mergeCmd.snapshotAtAnalysis)(conf)
   }
 }

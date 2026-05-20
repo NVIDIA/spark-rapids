@@ -279,6 +279,36 @@ def test_delta_merge_not_matched_by_source_db173_fallback(spark_tmp_path, spark_
                          check_func=checker)
 
 
+@allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Issue-specific deletion vector fallback coverage for Databricks 17.3+")
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+def test_delta_merge_deletion_vector_db173_fallback(spark_tmp_path, spark_tmp_table_factory):
+    conf = copy_and_update(
+        delta_merge_enabled_conf,
+        {"spark.databricks.delta.merge.deletionVectors.persistent": "true"})
+
+    def checker(data_path, do_merge):
+        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec",
+                                  conf=conf)
+
+    merge_sql = "MERGE INTO {dest_table} " \
+                "USING {src_table} " \
+                "ON {src_table}.a == {dest_table}.a " \
+                "WHEN MATCHED THEN DELETE"
+    delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
+                         use_cdf=False, enable_deletion_vectors=True,
+                         src_table_func=lambda spark: unary_op_df(
+                             spark, SetValuesGen(IntegerType(), range(10))),
+                         dest_table_func=lambda spark: unary_op_df(
+                             spark, SetValuesGen(IntegerType(), range(20))),
+                         merge_sql=merge_sql,
+                         check_func=checker)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
