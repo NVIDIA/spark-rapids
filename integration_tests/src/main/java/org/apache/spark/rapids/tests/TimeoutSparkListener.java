@@ -19,7 +19,6 @@ package org.apache.spark.rapids.tests;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -37,7 +36,8 @@ import org.apache.spark.status.api.v1.ThreadStackTrace;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Option;
-import scala.collection.JavaConverters;
+import scala.collection.Iterator;
+import scala.collection.Seq;
 
 /**
  * This code helps accelerate root cause investigations for pipeline hangs
@@ -171,15 +171,19 @@ public class TimeoutSparkListener extends SparkListener {
       return;
     }
     final SparkContext sc = jsc.sc();
-    final List<String> execIds;
+    final Seq<String> execIds;
     try {
-      execIds = JavaConverters.seqAsJavaList(sc.getExecutorIds());
+      execIds = sc.getExecutorIds();
     } catch (Throwable t) {
       LOG.warn("Failed to enumerate executors for thread dump", t);
       return;
     }
     LOG.error("Executor thread dump follows ({} executor(s))", execIds.size());
-    for (String execId : execIds) {
+    // Iterate the Scala Seq directly via its Iterator to avoid the
+    // scala.collection.JavaConverters deprecation in Scala 2.13.
+    final Iterator<String> it = execIds.iterator();
+    while (it.hasNext()) {
+      final String execId = it.next();
       try {
         final Option<ThreadStackTrace[]> dumpOpt = sc.getExecutorThreadDump(execId);
         if (dumpOpt.isEmpty()) {
