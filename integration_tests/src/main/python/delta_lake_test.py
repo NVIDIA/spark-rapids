@@ -703,13 +703,22 @@ def test_delta_deletion_vector_ignore_corrupt_files(spark_tmp_path, reader_type)
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_databricks_runtime(),
-                    reason="Deletion vector scan is not supported on Databricks")
+@pytest.mark.skipif(is_databricks_runtime() and not is_databricks173_or_later(),
+                    reason="Deletion vector scan is not supported on Databricks before 17.3")
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 def test_delta_filter_out_metadata_col(spark_tmp_path, dv_predicate_pushdown):
     data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled":
+            f"{dv_predicate_pushdown}"
+    }
+    if is_databricks173_or_later():
+        conf.update({
+            "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true"
+        })
 
     col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[])
     col_b_gen = IntegerGen(min_val=0, max_val=1, nullable=False, special_cases=[0, 1])
@@ -723,17 +732,29 @@ def test_delta_filter_out_metadata_col(spark_tmp_path, dv_predicate_pushdown):
         assert count > 100, "Expected enough rows to be deleted to create deletion vectors"
 
     def read_table(spark):
-        df = spark.sql(f"SELECT * FROM delta.`{data_path}`")
-        is_gpu = spark.conf.get("spark.rapids.sql.enabled").lower() == "true"
+        sql = f"SELECT * FROM delta.`{data_path}`"
+        if is_databricks173_or_later() and dv_predicate_pushdown:
+            df = _delta_sql_with_gpu_scan_assert(spark, sql)
+        else:
+            df = spark.sql(sql)
+        is_gpu = str(spark.conf.get("spark.rapids.sql.enabled", "false")).lower() == "true"
         if is_gpu:
-            # The `is_row_deleted` column is removed from the plan when the pushdown is enabled.
             explain_str = str(df._jdf.queryExecution().executedPlan())
-            is_row_deleted_in_plan = "__delta_internal_is_row_deleted" in explain_str
-            assert dv_predicate_pushdown != is_row_deleted_in_plan
+            if is_databricks173_or_later():
+                if dv_predicate_pushdown:
+                    assert "__delta_internal_is_row_deleted" not in explain_str
+                    assert "_databricks_internal_edge_computed_column_skip_row" not in explain_str
+            else:
+                # The `is_row_deleted` column is removed from the plan when the pushdown is enabled.
+                is_row_deleted_in_plan = "__delta_internal_is_row_deleted" in explain_str
+                assert dv_predicate_pushdown != is_row_deleted_in_plan
         return df
 
-    with_cpu_session(create_delta)
-    assert_gpu_and_cpu_are_equal_collect(read_table, conf={'spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled': dv_predicate_pushdown})
+    with_cpu_session(create_delta, conf=conf)
+    if is_databricks173_or_later() and not dv_predicate_pushdown:
+        assert_gpu_fallback_collect(read_table, "FileSourceScanExec", conf=conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(read_table, conf=conf)
 
 
 @allow_non_gpu(*delta_meta_allow)
