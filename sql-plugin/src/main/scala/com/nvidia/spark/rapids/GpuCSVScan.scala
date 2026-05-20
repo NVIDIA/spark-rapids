@@ -198,8 +198,9 @@ object GpuCSVScan extends Logging {
         meta.willNotWorkOnGpu(s"the positive infinity value '${parsedOptions.positiveInf}'" +
             s" is not supported'")
     }
-    // parsedOptions.maxCharsPerColumn does not impact the final output it is a performance
-    // improvement if you know the maximum size
+    if (parsedOptions.maxCharsPerColumn != -1) {
+      meta.willNotWorkOnGpu("GpuCSVScan does not support maxCharsPerColumn")
+    }
 
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
