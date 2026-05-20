@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -919,6 +919,122 @@ def test_small_file_memory(spark_tmp_path, v1_enabled_list):
             conf={'spark.rapids.sql.format.parquet.reader.type': 'COALESCING',
                   'spark.sql.sources.useV1SourceList': v1_enabled_list,
                   'spark.sql.files.maxPartitionBytes': "1g"})
+
+
+@allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec")
+@ignore_order(local=True)
+@pytest.mark.skipif(is_before_spark_350(),
+                    reason="spark.sql.files.maxPartitionNum requires Spark 3.5.0+")
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="Databricks planner may differ for this layout")
+def test_parquet_coalescing_interleaved_file_splits_partition_value_alignment(
+        spark_tmp_path):
+    """
+    Verifies partition values remain aligned when coalescing split Parquet files
+    from different partition directories.
+
+    The setup creates file A under p=1 and file B under p=2 such that Spark's
+    length-desc split sort produces [A..., B, A-tail] in a single FilePartition.
+    The row-group midpoint precondition below proves A-tail contributes at least
+    one Parquet block to the coalescing reader; otherwise the split interleaving
+    would not reach populateCurrentBlockChunk.
+    """
+    data_path = spark_tmp_path + "/PARQUET_DATA"
+    max_split = 128 * 1024
+    a_rows = 3000
+    b_rows = 800
+    b_split = a_rows
+
+    write_conf = {
+        "spark.sql.files.maxRecordsPerFile": "0",
+        "parquet.block.size": "16384",
+        "spark.sql.parquet.compression.codec": "uncompressed",
+    }
+    read_conf = {
+        "spark.rapids.sql.format.parquet.reader.type": "COALESCING",
+        "spark.rapids.sql.format.parquet.reader.footer.type": "JAVA",
+        "spark.sql.sources.useV1SourceList": "parquet",
+        "spark.sql.files.maxPartitionBytes": str(max_split),
+        "spark.sql.files.openCostInBytes": "1",
+        "spark.sql.files.minPartitionNum": "1",
+        "spark.sql.files.maxPartitionNum": "1",
+    }
+
+    def setup_table(spark):
+        payload_expr = (
+            "concat(sha2(CAST(id AS STRING), 256), "
+            "sha2(CAST(id + 17 AS STRING), 256)) AS payload")
+        spark.range(0, a_rows) \
+             .selectExpr("CAST(id AS INT) AS a", payload_expr) \
+             .repartition(1).write \
+             .option("parquet.enable.dictionary", "false") \
+             .parquet(f"{data_path}/p=1")
+        spark.range(b_split, b_split + b_rows) \
+             .selectExpr("CAST(id AS INT) AS a", payload_expr) \
+             .repartition(1).write \
+             .option("parquet.enable.dictionary", "false") \
+             .parquet(f"{data_path}/p=2")
+
+    def row_group_midpoints(path):
+        meta = pa_pq.read_metadata(path)
+        midpoints = []
+        for rg_index in range(meta.num_row_groups):
+            row_group = meta.row_group(rg_index)
+            first_col = row_group.column(0)
+            start = first_col.data_page_offset
+            dict_offset = first_col.dictionary_page_offset
+            if dict_offset is not None and dict_offset > 0:
+                start = min(start, dict_offset)
+            total_size = 0
+            for col_index in range(row_group.num_columns):
+                total_size += row_group.column(col_index).total_compressed_size
+            midpoints.append(start + total_size // 2)
+        return midpoints
+
+    with_cpu_session(setup_table, conf=write_conf)
+
+    parquet_files_by_part = {}
+    for root, _, files in os.walk(data_path):
+        parquet_files = [os.path.join(root, f) for f in files if f.endswith(".parquet")]
+        if parquet_files:
+            parquet_files_by_part[os.path.basename(root)] = parquet_files
+
+    assert sorted(parquet_files_by_part.keys()) == ["p=1", "p=2"], \
+        f"Expected parquet files under p=1 and p=2, got {parquet_files_by_part}"
+    assert len(parquet_files_by_part["p=1"]) == 1, parquet_files_by_part["p=1"]
+    assert len(parquet_files_by_part["p=2"]) == 1, parquet_files_by_part["p=2"]
+
+    a_path = parquet_files_by_part["p=1"][0]
+    b_path = parquet_files_by_part["p=2"][0]
+    a_size = os.path.getsize(a_path)
+    b_size = os.path.getsize(b_path)
+    a_tail = a_size % max_split
+    assert a_size > max_split, \
+        f"File A ({a_size}) must exceed max_split ({max_split}) to split"
+    assert 0 < a_tail < b_size < max_split, (
+        f"Sort order will not interleave: a_tail={a_tail}, "
+        f"b={b_size}, max_split={max_split}")
+
+    a_tail_start = a_size - a_tail
+    a_midpoints = row_group_midpoints(a_path)
+    b_midpoints = row_group_midpoints(b_path)
+    assert any(a_tail_start <= midpoint < a_size for midpoint in a_midpoints), (
+        f"A tail split [{a_tail_start}, {a_size}) has no row-group midpoint; "
+        f"midpoints={a_midpoints}")
+    assert b_midpoints, f"File B has no row groups: {b_path}"
+
+    num_partitions = with_gpu_session(
+        lambda spark: spark.read.parquet(data_path).select("a").rdd.getNumPartitions(),
+        conf=read_conf)
+    assert num_partitions == 1, \
+        f"Expected 1 FilePartition after rescale, got {num_partitions}"
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path).selectExpr(
+            f"SUM(CASE WHEN a < {b_split} AND p != 1 THEN 1 "
+            f"WHEN a >= {b_split} AND p != 2 THEN 1 "
+            "ELSE 0 END) AS bad_partition_rows"),
+        conf=read_conf)
 
 
 _nested_pruning_schemas = [
