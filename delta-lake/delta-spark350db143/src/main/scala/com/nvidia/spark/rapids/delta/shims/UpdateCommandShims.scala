@@ -14,22 +14,19 @@
  * limitations under the License.
  */
 
-package com.databricks.sql.transaction.tahoe.rapids
+package com.nvidia.spark.rapids.delta.shims
 
-import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
+import com.databricks.sql.transaction.tahoe.Snapshot
 
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 
-case class GpuUpdateCommand(
-    gpuDeltaLog: GpuDeltaLog,
-    tahoeFileIndex: TahoeFileIndex,
-    target: LogicalPlan,
-    updateExpressions: Seq[Expression],
-    condition: Option[Expression])
-    extends GpuUpdateCommandBase(
-      gpuDeltaLog,
-      tahoeFileIndex,
-      target,
-      updateExpressions,
-      condition)
+object UpdateCommandShims {
+  def preserveRowTrackingColumns(
+      targetDfWithoutRowTrackingColumns: DataFrame,
+      snapshot: Snapshot,
+      targetOutput: Seq[Attribute],
+      updateExpressions: Seq[Expression]): (DataFrame, Seq[Attribute], Seq[Expression]) = {
+    (targetDfWithoutRowTrackingColumns, targetOutput, updateExpressions)
+  }
+}

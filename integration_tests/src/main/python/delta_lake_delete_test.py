@@ -59,7 +59,8 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
                                     enable_deletion_vectors,
                                     partition_columns=None,
                                     conf=delta_delete_enabled_conf,
-                                    skip_sql_result_check=False, expect_write=True):
+                                    skip_sql_result_check=False, expect_write=True,
+                                    expected_num_affected_rows=None):
     def read_data(spark, path):
         read_func = read_delta_path_with_cdf if use_cdf else read_delta_path
         df = read_func(spark, path)
@@ -76,6 +77,8 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
             else:
                 gpu_result = with_gpu_session(lambda spark: do_delete(spark, gpu_path).collect(), conf=conf)
             assert_equal(cpu_result, gpu_result)
+            if expected_num_affected_rows is not None:
+                assert gpu_result[0][0] == expected_num_affected_rows
         # compare table data results, read both via CPU to make sure GPU write can be read by CPU
         cpu_result = with_cpu_session(lambda spark: read_data(spark, cpu_path).collect(), conf=conf)
         gpu_result = with_cpu_session(lambda spark: read_data(spark, gpu_path).collect(), conf=conf)
@@ -339,6 +342,58 @@ def test_delta_delete_rows(spark_tmp_path, use_cdf, partition_columns, enable_de
     delete_sql = "DELETE FROM delta.`{path}` WHERE b < 'd'"
     assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, generate_dest_data,
                                     delete_sql, enable_deletion_vectors, partition_columns)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="DBR 17.3 whole-table DELETE metrics regression coverage")
+def test_delta_delete_entire_table_reports_row_count_db173(spark_tmp_path):
+    def generate_dest_data(spark):
+        return spark.createDataFrame(
+            [(1, "a"), (1, "b"), (2, "c"), (3, "d"), (3, "e")],
+            "a INT, b STRING")
+
+    conf = copy_and_update(delta_delete_enabled_conf,
+                           {"spark.databricks.delta.dmlMetricsFromMetadata.enabled": "true"})
+    delete_sql = "DELETE FROM delta.`{path}`"
+    # Whole-table deletes can remove files via Delta metadata only, so there may be
+    # no RapidsDeltaWrite plan to capture; validate row count and final contents.
+    assert_delta_sql_delete_collect(
+        spark_tmp_path, use_cdf=False, dest_table_func=generate_dest_data, delete_sql=delete_sql,
+        enable_deletion_vectors=False, conf=conf, expect_write=False,
+        expected_num_affected_rows=5)
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="DBR 17.3 metadata-only DELETE metrics regression coverage")
+def test_delta_delete_metadata_only_reports_row_count_db173(spark_tmp_path):
+    def generate_dest_data(spark):
+        return spark.createDataFrame(
+            [(1, "a"), (1, "b"), (2, "c"), (3, "d"), (3, "e")],
+            "a INT, b STRING")
+
+    conf = copy_and_update(delta_delete_enabled_conf,
+                           {"spark.databricks.delta.dmlMetricsFromMetadata.enabled": "true"})
+    delete_sql = "DELETE FROM delta.`{path}` WHERE a = 3"
+    # Partition predicate deletes can also be metadata-only, so do not require a
+    # captured RapidsDeltaWrite plan for this row-count regression check.
+    assert_delta_sql_delete_collect(
+        spark_tmp_path, use_cdf=False, dest_table_func=generate_dest_data, delete_sql=delete_sql,
+        enable_deletion_vectors=False, partition_columns=["a"], conf=conf, expect_write=False,
+        expected_num_affected_rows=2)
+
+@allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="DBR 17.3 row tracking regression coverage")
+def test_delta_delete_preserves_row_tracking_db173(spark_tmp_path):
+    conf = copy_and_update(delta_delete_enabled_conf, delta_row_tracking_dml_conf)
+    assert_delta_row_tracking_dml(
+        spark_tmp_path, "DELETE FROM delta.`{path}` WHERE a IN (2, 3)", conf)
 
 @allow_non_gpu("ExecutedCommandExec", *delta_meta_allow)
 @delta_lake
