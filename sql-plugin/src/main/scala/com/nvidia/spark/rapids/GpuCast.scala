@@ -855,19 +855,15 @@ object GpuCast {
           _.replaceNulls(nullRep)
         }
       } else {
-        // add a space string to each non-null element
-        val (strChild, childNotNull, numElements) =
-          withResource(input.getChildColumnView(0)) { childCol =>
-            closeOnExcept(childCol.replaceNulls(nullRep)) {
-              (_, childCol.isNotNull(), childCol.getRowCount.toInt)
-            }
+        // Prepend a space to each non-null element, letting the concat propagate nulls
+        // from the child column, then fill those nulls with nullRep.
+        withResource(input.getChildColumnView(0)) { childCol =>
+          val numElements = childCol.getRowCount.toInt
+          val withSpaces = withResource(ColumnVector.fromScalar(space, numElements)) { spaceCol =>
+            ColumnVector.stringConcatenate(Array(spaceCol, childCol))
           }
-        withResource(Seq(strChild, childNotNull)) { _ =>
-          val hasSpaces = withResource(ColumnVector.fromScalar(space, numElements)) { spaceCol =>
-            ColumnVector.stringConcatenate(Array(spaceCol, strChild))
-          }
-          withResource(hasSpaces) {
-            childNotNull.ifElse(_, strChild)
+          withResource(withSpaces) { _ =>
+            withSpaces.replaceNulls(nullRep)
           }
         }
       }
