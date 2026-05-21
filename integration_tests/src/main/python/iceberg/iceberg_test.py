@@ -696,6 +696,33 @@ def test_iceberg_read_pos_with_split_file(spark_tmp_table_factory, reader_type):
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_read_mor_with_pos_deletes_split_file(spark_tmp_table_factory, reader_type):
+    # Same split-file conditions as test_iceberg_read_pos_with_split_file, but on
+    # a v2 Merge-on-Read table with positional delete files. The query does not
+    # project _pos; the Iceberg reader still adds it internally to match against
+    # the positional delete list. The test deletes a scattered subset by id and
+    # asserts CPU and GPU return the same surviving rows.
+    table = get_full_table_name(spark_tmp_table_factory)
+    def setup_iceberg_table(spark):
+        spark.sql(
+            f"CREATE TABLE {table} (id BIGINT) USING ICEBERG TBLPROPERTIES ("
+            "'format-version'                     = '2', "
+            "'write.delete.mode'                  = 'merge-on-read', "
+            "'write.spark.fanout.enabled'         = 'false', "
+            "'write.parquet.row-group-size-bytes' = '4096', "
+            "'read.split.target-size'             = '4096', "
+            "'read.split.open-file-cost'          = '0')")
+        spark.range(0, 1500).coalesce(1).writeTo(table).append()
+        spark.sql(f"DELETE FROM {table} WHERE id % 7 = 3")
+    with_cpu_session(setup_iceberg_table)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT id FROM {table}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_small_file_combine_with_schema_evolution(spark_tmp_table_factory, reader_type):
     table = get_full_table_name(spark_tmp_table_factory)
     schema_evolution_gens_v1 = [('a', long_gen), ('b', int_gen)]
