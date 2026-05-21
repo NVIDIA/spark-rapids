@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
+import com.databricks.sql.io.skipping.liquid.ClusteredTableUtils
 import com.databricks.sql.transaction.tahoe.DeltaLog
 import com.databricks.sql.transaction.tahoe.actions.Protocol
 import com.databricks.sql.transaction.tahoe.commands.{DeletionVectorUtils, MergeIntoCommand,
@@ -27,7 +28,6 @@ import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommand
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 object MergeIntoCommandMetaShim {
