@@ -1,4 +1,4 @@
-# Copyright (c) 2025, NVIDIA CORPORATION.
+# Copyright (c) 2025-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -108,7 +108,7 @@ def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns
 
 
 def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=None, clustering_columns=None,
-                            conf=_optimize_conf, compare_delta_logs=True):
+                            conf=_optimize_conf):
     data_path = spark_tmp_path + "/DELTA_OPTIMIZE"
     cpu_path = data_path + "/CPU"
     gpu_path = data_path + "/GPU"
@@ -136,8 +136,7 @@ def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_c
     assert_equal(cpu_optimize_count, 1)
     assert_equal(gpu_optimize_count, 1)
 
-    if compare_delta_logs:
-        with_cpu_session(lambda s: assert_gpu_and_cpu_latest_delta_log_equivalent(s, data_path))
+    with_cpu_session(lambda s: assert_gpu_and_cpu_latest_delta_log_equivalent(s, data_path))
 
 
 def _assert_optimize_fallback(enable_deletion_vectors, spark_tmp_path, partition_columns=None,
@@ -189,8 +188,7 @@ def test_delta_optimize_unpartitioned_table(spark_tmp_path, enable_deletion_vect
                     reason="OPTIMIZE table command is supported for Databricks 17.3+")
 @pytest.mark.parametrize("enable_deletion_vectors", _optimize_deletion_vector_values, ids=idfn)
 def test_delta_optimize_partitioned_table(spark_tmp_path, enable_deletion_vectors):
-    _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=["a"],
-                            compare_delta_logs=False)
+    _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=["a"])
 
 
 @delta_lake
