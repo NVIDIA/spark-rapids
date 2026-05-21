@@ -18,7 +18,14 @@ package com.nvidia.spark.rapids
 import org.apache.spark.sql.types.DataTypes
 
 object RegexComplexityEstimator {
+  private def requireNonNegative(name: String, value: Long): Unit = {
+    require(value >= 0L, s"$name must be non-negative, got: $value")
+  }
+
+  // Saturating arithmetic for non-negative state and memory estimates.
   private def saturatedAdd(left: Long, right: Long): Long = {
+    requireNonNegative("left", left)
+    requireNonNegative("right", right)
     if (Long.MaxValue - left < right) {
       Long.MaxValue
     } else {
@@ -27,6 +34,8 @@ object RegexComplexityEstimator {
   }
 
   private def saturatedMultiply(left: Long, right: Long): Long = {
+    requireNonNegative("left", left)
+    requireNonNegative("right", right)
     if (left == 0L || right == 0L) {
       0L
     } else if (left > Long.MaxValue / right) {

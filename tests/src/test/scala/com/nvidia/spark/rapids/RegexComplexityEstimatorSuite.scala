@@ -25,7 +25,7 @@ class RegexComplexityEstimatorSuite extends AnyFunSuite {
     RegexComplexityEstimator.isValid(conf, ast)
   }
 
-  test("reject regex patterns whose state memory estimate overflows Int arithmetic") {
+  test("reject regex patterns whose state memory estimate requires saturating arithmetic") {
     Seq(
       "a{65536}{65536}",
       "a{1073741824}",
