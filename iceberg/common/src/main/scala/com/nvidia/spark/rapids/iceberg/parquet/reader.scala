@@ -222,8 +222,12 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       }
       val (typeWithIds, fileReadSchema) = projectSchema(fileSchema, requiredSchema)
       val filteredBlocks = filterRowGroups(reader, requiredSchema, typeWithIds, file.filter)
-      val blockFirstRowIndices = filteredBlocks.map(b =>
-        firstRowIndexByStartingPos(b._1.getStartingPos))
+      val blockFirstRowIndices = filteredBlocks.map { case (block, _) =>
+        firstRowIndexByStartingPos.getOrElse(block.getStartingPos,
+          throw new IllegalStateException(
+            s"Row group at offset ${block.getStartingPos} in ${file.path} was not found " +
+              s"in the full Parquet footer; the footer or reader state may be inconsistent."))
+      }
       val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks.map(_._1))
 
       val sqlConf = SQLConf.get
