@@ -166,10 +166,10 @@ private[iceberg] case object FetchRowPosition extends ColumnAction {
     val rowPoses = new Array[Long](numRows)
     val processor = ctx.processor
 
-    // The withRetryNoSplit block in GpuParquetReaderPostProcessor.process below may rerun
-    // this execute() after an OOM during column allocation. Advance state in locals and
-    // commit back to the processor only after fromLongs() succeeds, so a retry restarts
-    // from the same processor state instead of continuing from a partially-advanced one.
+    // Advance state in locals and commit back to the processor only after fromLongs()
+    // succeeds, so an OOM during column allocation does not leave the processor in a
+    // partially-advanced state. The matching snapshot/restore of these three counters
+    // around the withRetryNoSplit block in process() below covers the full retry scope.
     var localBlockIndex = processor.curBlockIndex
     var localProcessedRowCount = processor.processedRowCount
     var localProcessedBlockRowCounts = processor.processedBlockRowCounts
@@ -738,7 +738,18 @@ class GpuParquetReaderPostProcessor(
     }
 
     postProcessTimeMetric.ns {
+      // Snapshot the _pos counters before withRetryNoSplit. FetchRowPosition.execute commits
+      // its advance to the processor after fromLongs() succeeds, but a later field action in
+      // the same safeMap iteration (UpCast, FillNull, GpuColumnVector.from, ...) can still
+      // OOM and cause withRetryNoSplit to rerun this whole block. Without a restore, the
+      // retry would see already-advanced counters and produce wrong _pos values.
+      val snapBlockIndex = curBlockIndex
+      val snapProcessedRowCount = processedRowCount
+      val snapProcessedBlockRowCounts = processedBlockRowCounts
       withRetryNoSplit(SpillableColumnarBatch(originalBatch, ACTIVE_ON_DECK_PRIORITY)) { scb =>
+        curBlockIndex = snapBlockIndex
+        processedRowCount = snapProcessedRowCount
+        processedBlockRowCounts = snapProcessedBlockRowCounts
         // getColumnarBatch() returns a batch with refcounts incremented.
         // We MUST close it to balance the refcounts, even if an exception occurs.
         withResource(scb.getColumnarBatch()) { batch =>
