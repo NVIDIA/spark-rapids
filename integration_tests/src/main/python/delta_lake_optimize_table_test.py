@@ -98,6 +98,16 @@ def _optimize_sql(path):
     return f"OPTIMIZE delta.`{path}`"
 
 
+def _assert_gpu_optimize_executed(plan_callback, captured_plans):
+    assert len(captured_plans) > 0, "Did not capture a GPU OPTIMIZE plan"
+    if any(plan_callback.contains(plan, "GpuExecutedCommandExec") for plan in captured_plans):
+        return
+    plan_descriptions = "\n".join(str(plan) for plan in captured_plans)
+    assert False, (
+        "GpuExecutedCommandExec is not found in any captured GPU OPTIMIZE plan:\n{}"
+        .format(plan_descriptions))
+
+
 def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns, conf):
     def setup_cpu(spark):
         _write_many_small_files(spark, enable_deletion_vectors, cpu_path, partition_columns, clustering_columns)
@@ -117,7 +127,14 @@ def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_c
 
     # Run OPTIMIZE on each table and verify the returned path matches the target
     cpu_result = with_cpu_session(lambda s: s.sql(_optimize_sql(cpu_path)).collect(), conf=conf)
-    gpu_result = with_gpu_session(lambda s: s.sql(_optimize_sql(gpu_path)).collect(), conf=conf)
+    plan_callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    plan_callback.startCapture()
+    try:
+        gpu_result = with_gpu_session(lambda s: s.sql(_optimize_sql(gpu_path)).collect(), conf=conf)
+        captured_plans = plan_callback.getResultsWithTimeout(10000)
+        _assert_gpu_optimize_executed(plan_callback, captured_plans)
+    finally:
+        plan_callback.endCapture()
     # Validate the returned path for each run; metrics object is not stable across JVMs
     # Compare only the suffix to avoid scheme differences like file: vs absolute path
     assert str(cpu_result[0][0]).rstrip('/').endswith('/CPU')
