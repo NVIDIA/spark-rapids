@@ -1128,7 +1128,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
   // │ BATCH ASSEMBLY PHASE  (serial)                                                    │
   // │                                                                                   │
   // │  augmentChunkMeta()                                                               │
-  // │    groups consecutive same-file blocks into Seq[PerFileDVEntry]                   │
+  // │    builds Seq[PerFileDVEntry] from file-major block groups                        │
   // │    returns meta.copy(extraInfo = DeltaBatchExtraInfo(perFileEntries))              │
   // └──────────────────────────────────┬────────────────────────────────────────────────┘
   //                                    │ CurrentChunkMeta with DeltaBatchExtraInfo
