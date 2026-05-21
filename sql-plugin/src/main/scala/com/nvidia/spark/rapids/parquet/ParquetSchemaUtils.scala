@@ -366,13 +366,17 @@ object ParquetSchemaUtils {
       caseSensitive: Boolean,
       useFieldId: Boolean): DataType = {
     val elementType = sparkType.elementType
-    // A REPEATED group with no LIST/MAP annotation is the legacy 1-level list: the element type
-    // is the group/primitive itself. A REPEATED group that IS LIST-annotated (Thrift / Avro 1.7
-    // nested-list style) must go through the LIST-wrapper branch below, otherwise the wrapper
-    // gets passed to clipSparkType as if it were the primitive element and asPrimitiveType()
-    // throws ClassCastException (issues #11589, #11592).
-    val newSparkType = if (parquetList.getOriginalType == null &&
-        parquetList.isRepetition(Repetition.REPEATED)) {
+    // A REPEATED field that is neither LIST- nor MAP-annotated is the legacy 1-level list:
+    // the element type is the field itself (which may be primitive — e.g. `repeated binary x
+    // (UTF8)` for array<string> — or a group). A REPEATED group that IS LIST-annotated (Thrift
+    // / Avro 1.7 nested-list style) must go through the LIST-wrapper branch below, otherwise
+    // the wrapper gets passed to clipSparkType as if it were the primitive element and
+    // asPrimitiveType() throws ClassCastException (issues #11589, #11592). Predicate matches
+    // the Parquet spec's "backward-compatibility rules": treat REPEATED as legacy unless
+    // explicitly annotated LIST or MAP.
+    val newSparkType = if (parquetList.isRepetition(Repetition.REPEATED) &&
+        parquetList.getOriginalType != OriginalType.LIST &&
+        parquetList.getOriginalType != OriginalType.MAP) {
       clipSparkType(elementType, parquetList, caseSensitive, useFieldId)
     } else {
       val parquetListGroup = parquetList.asGroupType()
