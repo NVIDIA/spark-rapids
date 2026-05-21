@@ -591,6 +591,8 @@ def test_delta_deletion_vector_coalescing_partitioned_table(
                          ids=idfn)
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Delta Lake deletion vector support requires Spark 3.5.3+")
+@pytest.mark.skipif(is_databricks_runtime() and not is_databricks173_or_later(),
+                    reason="Deletion vector scan is not supported on Databricks before 17.3")
 def test_delta_deletion_vector_interleaved_file_splits(
         spark_tmp_path, parquet_reader_type):
     """
