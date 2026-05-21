@@ -1337,6 +1337,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ACCELERATED_COLUMNAR_TO_ROW_ENABLED =
+    conf("spark.rapids.sql.acceleratedColumnarToRow.enabled")
+      .doc("When set to true (default) the GPU columnar-to-row transition uses the GPU " +
+        "transpose kernel (AcceleratedColumnarToRowIterator) for wide fixed-width / STRING " +
+        "schemas. Setting it to false forces the slower per-row CPU iterator " +
+        "(ColumnarToRowIterator). Mainly useful for troubleshooting and performance " +
+        "comparisons; production workloads should leave this on.")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_PARQUET_INT96_WRITE = conf("spark.rapids.sql.format.parquet.writer.int96.enabled")
     .doc("When set to false, disables accelerated parquet write if the " +
       "spark.sql.parquet.outputTimestampType is set to INT96")
@@ -3254,6 +3264,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val asyncProfilerStageEpochInterval: Int = get(ASYNC_PROFILER_STAGE_EPOCH_INTERVAL)
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
+
+  lazy val isAcceleratedColumnarToRowEnabled: Boolean = get(ACCELERATED_COLUMNAR_TO_ROW_ENABLED)
 
   lazy val isSqlExecuteOnGPU: Boolean = get(SQL_MODE).equals("executeongpu")
 
