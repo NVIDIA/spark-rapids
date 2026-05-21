@@ -2743,8 +2743,9 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .doc("Option to turn on the fixup of broadcast exchange reuse for DPP " +
           "subqueries when AQE is disabled. The DPP-side GpuBroadcastExchange is built " +
           "during GpuOverrides and bypasses GpuTransitionOverrides, so it does not match " +
-          "the join-side broadcast canonically. This fixup rewrites the DPP-side broadcast " +
-          "to ReusedExchangeExec when a matching join-side instance is in the exchange cache.")
+          "the join-side broadcast canonically. This fixup builds a per-query signature map " +
+          "of join-side GpuBroadcastExchangeExec nodes in the main plan and rewrites a " +
+          "matching DPP-side broadcast to ReusedExchangeExec.")
       .internal()
       .booleanConf
       .createWithDefault(true)

@@ -786,8 +786,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     def signature(g: GpuBroadcastExchangeExec): (Any, SparkPlan) =
       (g.mode.canonicalized, stripTransitions(g.child).canonicalized)
 
-    // Collect all main-plan GpuBroadcastExchangeExec instances. Skip any that already
-    // live inside subqueries — those are the DPP-side instances we want to rewrite.
+    // Collect all main-plan GpuBroadcastExchangeExec instances. SparkPlan.foreach only walks
+    // the plan-tree children and does NOT descend into ExecSubqueryExpression plans, so
+    // DPP-side broadcasts (which live inside GpuSubqueryBroadcastExec under a subquery
+    // expression) are naturally excluded from this collection — exactly what we want, because
+    // those are the instances the transformAllExpressions pass below will rewrite.
     val mainPlanBroadcasts = scala.collection.mutable.ArrayBuffer.empty[GpuBroadcastExchangeExec]
     p.foreach {
       case g: GpuBroadcastExchangeExec => mainPlanBroadcasts += g
