@@ -152,7 +152,7 @@ def test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_facto
                                               table_ranges, use_cdf, enable_deletion_vector, partition_columns,
                                               num_slices, num_slices == 1, delta_merge_enabled_conf)
 
-@allow_non_gpu(*delta_meta_allow)
+@allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_before_spark_353(), reason="The conf merge.materializeSource isn't available before Delta 3.3.x")
@@ -185,7 +185,7 @@ def test_delta_materialize_merge(spark_tmp_path, spark_tmp_table_factory):
         # compare merged table data results, read both via CPU to make sure GPU write can be read by CPU
         cpu_result = with_cpu_session(lambda spark: read_data(spark, cpu_path).rdd.isCheckpointed(), conf=materialize_conf)
         gpu_result = with_cpu_session(lambda spark: read_data(spark, gpu_path).rdd.isCheckpointed(), conf=materialize_conf)
-        assert(cpu_result, True)
+        assert_equal(cpu_result, True)
         assert_equal(cpu_result, gpu_result)
 
     delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,

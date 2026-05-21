@@ -16,67 +16,66 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
+import com.databricks.sql.transaction.tahoe.DeltaLog
+import com.databricks.sql.transaction.tahoe.actions.Protocol
 import com.databricks.sql.transaction.tahoe.commands.{DeletionVectorUtils, MergeIntoCommand,
-  MergeIntoCommandEdge}
+  MergeIntoCommandBase, MergeIntoCommandEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuMergeIntoCommand}
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
-import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.{RapidsConf, RapidsMeta}
 import com.nvidia.spark.rapids.delta.{MergeIntoCommandEdgeMeta, MergeIntoCommandMeta}
 
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
+import org.apache.spark.sql.delta.skipping.clustering.ClusteredTableUtils
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 object MergeIntoCommandMetaShim {
   private val MERGE_MATERIALIZE_SOURCE_CONF = "spark.databricks.delta.merge.materializeSource"
 
   def tagForGpu(meta: MergeIntoCommandMeta, mergeCmd: MergeIntoCommand): Unit = {
-    // see https://github.com/NVIDIA/spark-rapids/issues/8415 for more information
-    if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
-      meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
-    }
-    tagPersistentDeletionVectorFallback(meta, mergeCmd)
-    tagMaterializedSourceFallback(meta, mergeCmd.source)
+    tagForGpuCommon(meta, mergeCmd)
   }
 
   def tagForGpu(meta: MergeIntoCommandEdgeMeta, mergeCmd: MergeIntoCommandEdge): Unit = {
+    tagForGpuCommon(meta, mergeCmd)
+  }
+
+  private def tagForGpuCommon(
+      meta: RapidsMeta[_, _, _],
+      mergeCmd: MergeIntoCommandBase): Unit = {
     // see https://github.com/NVIDIA/spark-rapids/issues/8415 for more information
     if (mergeCmd.notMatchedBySourceClauses.nonEmpty) {
       meta.willNotWorkOnGpu("notMatchedBySourceClauses not supported on GPU")
     }
-    tagPersistentDeletionVectorFallback(meta, mergeCmd)
+    tagLiquidClusteringFallback(meta, mergeCmd.targetFileIndex.protocol)
+    tagPersistentDeletionVectorFallback(
+      meta,
+      mergeCmd.targetFileIndex.deltaLog,
+      mergeCmd.conf.getConf(DeltaSQLConf.MERGE_USE_PERSISTENT_DELETION_VECTORS))
     tagMaterializedSourceFallback(meta, mergeCmd.source)
   }
 
-  private def tagPersistentDeletionVectorFallback(
-      meta: MergeIntoCommandMeta,
-      mergeCmd: MergeIntoCommand): Unit = {
-    if (shouldWritePersistentDeletionVectors(mergeCmd)) {
-      meta.willNotWorkOnGpu("Deletion vectors are not supported on GPU")
+  private def tagLiquidClusteringFallback(
+      meta: RapidsMeta[_, _, _],
+      protocol: Protocol): Unit = {
+    if (ClusteredTableUtils.isSupported(protocol)) {
+      meta.willNotWorkOnGpu("Delta MERGE with liquid clustering is not supported on GPU")
     }
   }
 
   private def tagPersistentDeletionVectorFallback(
-      meta: MergeIntoCommandEdgeMeta,
-      mergeCmd: MergeIntoCommandEdge): Unit = {
-    if (shouldWritePersistentDeletionVectors(mergeCmd)) {
+      meta: RapidsMeta[_, _, _],
+      deltaLog: DeltaLog,
+      usePersistentDeletionVectors: Boolean): Unit = {
+    if (DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot) &&
+        usePersistentDeletionVectors) {
       meta.willNotWorkOnGpu("Deletion vectors are not supported on GPU")
     }
   }
 
   private def tagMaterializedSourceFallback(
-      meta: MergeIntoCommandMeta,
-      source: LogicalPlan): Unit = {
-    if (isMaterializeSourceForced) {
-      meta.willNotWorkOnGpu("MERGE source materialization is not supported on GPU")
-    } else if (hasNondeterministicSource(source)) {
-      meta.willNotWorkOnGpu(
-        "nondeterministic MERGE source materialization is not supported on GPU")
-    }
-  }
-
-  private def tagMaterializedSourceFallback(
-      meta: MergeIntoCommandEdgeMeta,
+      meta: RapidsMeta[_, _, _],
       source: LogicalPlan): Unit = {
     if (isMaterializeSourceForced) {
       meta.willNotWorkOnGpu("MERGE source materialization is not supported on GPU")
@@ -92,18 +91,6 @@ object MergeIntoCommandMetaShim {
 
   private def hasNondeterministicSource(source: LogicalPlan): Boolean = {
     source.exists(_.expressions.exists(expr => !expr.deterministic))
-  }
-
-  private def shouldWritePersistentDeletionVectors(mergeCmd: MergeIntoCommand): Boolean = {
-    val deltaLog = mergeCmd.targetFileIndex.deltaLog
-    DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot) &&
-      mergeCmd.conf.getConf(DeltaSQLConf.MERGE_USE_PERSISTENT_DELETION_VECTORS)
-  }
-
-  private def shouldWritePersistentDeletionVectors(mergeCmd: MergeIntoCommandEdge): Boolean = {
-    val deltaLog = mergeCmd.targetFileIndex.deltaLog
-    DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot) &&
-      mergeCmd.conf.getConf(DeltaSQLConf.MERGE_USE_PERSISTENT_DELETION_VECTORS)
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {

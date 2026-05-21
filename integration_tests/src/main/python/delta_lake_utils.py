@@ -96,6 +96,25 @@ def _fixup_operation_parameters(opp):
             subbed = TMP_TABLE_PATTERN.sub("tmp_table", pred)
             subbed = TMP_TABLE_PATH_PATTERN.sub("tmp_table", subbed)
             opp[key] = REF_ID_PATTERN.sub("#refid", subbed)
+    properties = opp.get("properties")
+    if properties:
+        try:
+            properties_json = json.loads(properties)
+        except ValueError:
+            return
+
+        # DBR 17.3 can materialize row tracking column names with random UUIDs.
+        # Preserve the presence of these properties while normalizing their values.
+        row_tracking_keys = (
+            "delta.rowTracking.materializedRowCommitVersionColumnName",
+            "delta.rowTracking.materializedRowIdColumnName")
+        changed = False
+        for key in row_tracking_keys:
+            if key in properties_json:
+                properties_json[key] = key
+                changed = True
+        if changed:
+            opp["properties"] = json.dumps(properties_json, sort_keys=True)
 
 def assert_delta_history_equal(conf, cpu_table, gpu_table):
     # Project all columns except for the `timestamp` column, which won't match between CPU and GPU.
