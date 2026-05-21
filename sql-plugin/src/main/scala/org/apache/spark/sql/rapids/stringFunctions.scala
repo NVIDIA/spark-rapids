@@ -701,12 +701,8 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
       lenS: GpuScalar): ColumnVector = {
     val strs = strCol.getBase
     val poses = posCol.getBase
-    val numRows =  strCol.getRowCount.toInt
     withResource(computeStarts(strs, poses)) { starts =>
-      val ends = withResource(ColumnVector.fromScalar(lenS.getBase, numRows)) { lens =>
-        computeEnds(starts, lens)
-      }
-      withResource(ends) { _ =>
+      withResource(computeEnds(starts, lenS.getBase)) { ends =>
         substringColumn(strs, starts, ends)
       }
     }
@@ -1729,11 +1725,7 @@ case class GpuRegExpExtractAll(
                 val maxSizeInt = maxSize.getInt
                 val stringCols = Range(0, maxSizeInt, 1).safeMap {
                   i =>
-                    withResource(Scalar.fromInt(i)) { scalarIndex =>
-                      withResource(ColumnVector.fromScalar(scalarIndex, rowCount.toInt)) {
-                        index => allExtracted.extractListElement(index)
-                      }
-                    }
+                    allExtracted.extractListElement(i)
                 }
                 withResource(stringCols) { _ =>
                   ColumnVector.makeList(rowCount, DType.STRING, stringCols: _*)
