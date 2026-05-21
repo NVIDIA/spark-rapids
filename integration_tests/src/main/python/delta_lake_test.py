@@ -20,6 +20,7 @@ from data_gen import *
 from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, deletion_vector_values_with_350DB143_xfail_reasons
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
+from parquet_test_utils import parquet_row_group_midpoints
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
     is_spark_320_or_later, is_spark_340_or_later, supports_delta_lake_deletion_vectors, is_spark_401_or_later, \
     is_before_spark_353, is_databricks173_or_later
@@ -607,7 +608,6 @@ def test_delta_deletion_vector_interleaved_file_splits(
         non-consecutively around B's.
     """
     import os
-    import pyarrow.parquet as pq
 
     data_path = spark_tmp_path + "/DELTA_DATA"
     max_split = 128 * 1024
@@ -682,8 +682,9 @@ def test_delta_deletion_vector_interleaved_file_splits(
     assert len(parquet_files) == 2, \
         f"Expected exactly 2 data files, got {parquet_files}"
 
-    sizes = sorted((os.path.getsize(p) for p in parquet_files), reverse=True)
-    a_size, b_size = sizes[0], sizes[1]
+    files_by_size = sorted(
+        ((os.path.getsize(p), p) for p in parquet_files), reverse=True)
+    (a_size, a_path), (b_size, b_path) = files_by_size
     a_tail = a_size % max_split
     assert a_size > max_split, \
         f"File A ({a_size}) must exceed max_split ({max_split}) to split"
@@ -691,9 +692,13 @@ def test_delta_deletion_vector_interleaved_file_splits(
         f"Sort order won't interleave: a_tail={a_tail}, "
         f"b={b_size}, max_split={max_split}")
 
-    for p in parquet_files:
-        n_rg = pq.read_metadata(p).num_row_groups
-        assert n_rg > 1, f"{p} has {n_rg} row group(s); need > 1"
+    a_tail_start = a_size - a_tail
+    a_midpoints = parquet_row_group_midpoints(a_path)
+    b_midpoints = parquet_row_group_midpoints(b_path)
+    assert any(a_tail_start <= midpoint < a_size for midpoint in a_midpoints), (
+        f"A tail split [{a_tail_start}, {a_size}) has no row-group midpoint; "
+        f"midpoints={a_midpoints}")
+    assert b_midpoints, f"File B has no row groups: {b_path}"
 
     # GPU-side check: make sure Spark creates one partition on GPU as expected.
     num_partitions = with_gpu_session(

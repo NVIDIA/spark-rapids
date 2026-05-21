@@ -22,7 +22,7 @@ from data_gen import *
 from parquet_write_test import parquet_datetime_gen_simple, parquet_nested_datetime_gen, parquet_ts_write_options
 from marks import *
 import pyarrow as pa
-import pyarrow.parquet as pa_pq
+from parquet_test_utils import parquet_row_group_midpoints
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
 from spark_init_internal import spark_version
@@ -979,22 +979,6 @@ def test_parquet_interleaved_file_splits_partition_value_alignment(
              .option("parquet.enable.dictionary", "false") \
              .parquet(f"{data_path}/p=2")
 
-    def row_group_midpoints(path):
-        meta = pa_pq.read_metadata(path)
-        midpoints = []
-        for rg_index in range(meta.num_row_groups):
-            row_group = meta.row_group(rg_index)
-            first_col = row_group.column(0)
-            start = first_col.data_page_offset
-            dict_offset = first_col.dictionary_page_offset
-            if dict_offset is not None and dict_offset > 0:
-                start = min(start, dict_offset)
-            total_size = 0
-            for col_index in range(row_group.num_columns):
-                total_size += row_group.column(col_index).total_compressed_size
-            midpoints.append(start + total_size // 2)
-        return midpoints
-
     with_cpu_session(setup_table, conf=write_conf)
 
     parquet_files_by_part = {}
@@ -1020,8 +1004,8 @@ def test_parquet_interleaved_file_splits_partition_value_alignment(
         f"b={b_size}, max_split={max_split}")
 
     a_tail_start = a_size - a_tail
-    a_midpoints = row_group_midpoints(a_path)
-    b_midpoints = row_group_midpoints(b_path)
+    a_midpoints = parquet_row_group_midpoints(a_path)
+    b_midpoints = parquet_row_group_midpoints(b_path)
     assert any(a_tail_start <= midpoint < a_size for midpoint in a_midpoints), (
         f"A tail split [{a_tail_start}, {a_size}) has no row-group midpoint; "
         f"midpoints={a_midpoints}")
