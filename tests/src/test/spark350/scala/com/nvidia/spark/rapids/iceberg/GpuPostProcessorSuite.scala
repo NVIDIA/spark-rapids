@@ -99,6 +99,34 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   /**
+   * Build a `ParquetFileInfoWithBlockMeta` that simulates a split scan task whose blocks
+   * begin somewhere in the middle of the file (i.e. `blocksFirstRowIndices` does not start
+   * at 0). `firstFileGlobalRowIndex` is the file-global first-row index of the first block
+   * in `blockRowCounts`; subsequent blocks are placed contiguously after it.
+   */
+  private def createMultiBlockParquetInfo(
+      shadedSchema: ShadedMessageType,
+      blockRowCounts: Seq[Long],
+      firstFileGlobalRowIndex: Long): (ParquetFileInfoWithBlockMeta, ShadedMessageType) = {
+    val blocks = blockRowCounts.map(createBlockMetaData)
+    val firstRowIndices = blockRowCounts
+      .scanLeft(firstFileGlobalRowIndex)(_ + _)
+      .dropRight(1)
+    val info = ParquetFileInfoWithBlockMeta(
+      filePath = new Path("/test/file.parquet"),
+      blocks = blocks,
+      partValues = InternalRow.empty,
+      schema = unshade(shadedSchema),
+      readSchema = StructType(Seq.empty),
+      dateRebaseMode = null,
+      timestampRebaseMode = null,
+      hasInt96Timestamps = false,
+      blocksFirstRowIndices = firstRowIndices
+    )
+    (info, shadedSchema)
+  }
+
+  /**
    * Test 1: When file schema exactly matches expected schema, the entire batch passes through.
    * Tests primitive types, arrays, maps, and structs with exact type matching.
    */
@@ -899,6 +927,66 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
 
     assert(processor.displayActionPlan().contains(
       s"FetchConstant(fieldId=$structFieldId, struct<"))
+  }
+
+  test("FetchRowPosition emits file-global _pos across multiple blocks") {
+    import com.nvidia.spark.rapids.Arm.withResource
+    import com.nvidia.spark.rapids.GpuColumnVector
+    import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkColumnVector}
+
+    val rowPosId = MetadataColumns.ROW_POSITION.fieldId()
+
+    // Empty parquet schema: _pos is a generated metadata column, no input column is read
+    // from parquet for it.
+    val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
+
+    val expectedSchema = new Schema(
+      Types.NestedField.optional(rowPosId, "_pos", Types.LongType.get())
+    )
+
+    // Simulate a split task whose first block starts at file-global row 500 (this is the
+    // scenario the reader.scala fix exists for; before that fix the task-local first-row
+    // index would be 0). Two blocks of 500 + 400 rows: file-global rows [500, 999] and
+    // [1000, 1399].
+    val (parquetInfo, shadedSchema) =
+      createMultiBlockParquetInfo(parquetSchema, Seq(500L, 400L), firstFileGlobalRowIndex = 500L)
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo,
+      new JHashMap[Integer, Any](),
+      expectedSchema,
+      shadedSchema,
+      Map.empty)
+
+    def emptyBatch(rows: Int): ColumnarBatch =
+      new ColumnarBatch(Array.empty[SparkColumnVector], rows)
+
+    def assertPosRange(batch: ColumnarBatch, expectedStart: Long, expectedEnd: Long): Unit = {
+      assert(batch.numRows() == (expectedEnd - expectedStart + 1).toInt)
+      assert(batch.numCols() == 1)
+      withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
+        val base = hostCol.getBase
+        assert(base.getLong(0) == expectedStart,
+          s"expected first _pos=$expectedStart, got ${base.getLong(0)}")
+        assert(base.getLong(batch.numRows() - 1) == expectedEnd,
+          s"expected last _pos=$expectedEnd, got ${base.getLong(batch.numRows() - 1)}")
+      }
+    }
+
+    // Batch 1: 300 rows entirely inside block 0 → file-global _pos = 500..799.
+    withResource(processor.process(emptyBatch(300))) { batch =>
+      assertPosRange(batch, 500L, 799L)
+    }
+
+    // Batch 2: 200 rows consume the rest of block 0 → file-global _pos = 800..999.
+    withResource(processor.process(emptyBatch(200))) { batch =>
+      assertPosRange(batch, 800L, 999L)
+    }
+
+    // Batch 3: 300 rows cross into block 1; FetchRowPosition must advance localBlockIndex
+    // and pick blocksFirstRowIndices(1) = 1000, NOT restart at task-local 0.
+    withResource(processor.process(emptyBatch(300))) { batch =>
+      assertPosRange(batch, 1000L, 1299L)
+    }
   }
 
   test("Constant struct with required children does not throw") {
