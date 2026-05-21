@@ -61,8 +61,10 @@ import org.apache.spark.util.SerializableConfiguration
  * GPU version of Iceberg's SparkPositionDeltaWrite.
  * This class handles merge-on-read DELETE operations that write position delete files.
  */
-class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
+class GpuSparkPositionDeltaWrite(cpu: DeltaWrite)
   extends GpuDeltaWrite with RequiresDistributionAndOrdering {
+  private val writeRequirements = cpu.asInstanceOf[RequiresDistributionAndOrdering]
+
   private[source] val table = FieldUtils.readField(cpu, "table", true)
     .asInstanceOf[Table]
 
@@ -82,11 +84,12 @@ class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
     MethodUtils.invokeMethod(cpu, true, "abort", messages.asInstanceOf[Array[Object]])
   }
 
-  override def requiredDistribution(): Distribution = cpu.requiredDistribution()
+  override def requiredDistribution(): Distribution = writeRequirements.requiredDistribution()
 
-  override def requiredOrdering(): Array[SortOrder] = cpu.requiredOrdering()
+  override def requiredOrdering(): Array[SortOrder] = writeRequirements.requiredOrdering()
 
-  override def advisoryPartitionSizeInBytes(): Long = cpu.advisoryPartitionSizeInBytes()
+  override def advisoryPartitionSizeInBytes(): Long =
+    writeRequirements.advisoryPartitionSizeInBytes()
 
   private[source] def createDeltaWriterFactory: DeltaWriterFactory = {
     val sparkContext: JavaSparkContext = FieldUtils.readField(cpu, "sparkContext", true)
@@ -167,7 +170,8 @@ object GpuSparkPositionDeltaWrite {
 
   def tagForGpu(deltaWrite: DeltaWrite, meta: SparkPlanMeta[_]): Unit = {
     if (!supports(deltaWrite.getClass)) {
-      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports ${classOf[SparkWrite].getName}, " +
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports " +
+        s"${GpuSparkWriteAccess.sparkWriteClassName()}, " +
         s"but got: ${deltaWrite.getClass.getName}")
       return
     }
@@ -189,7 +193,7 @@ object GpuSparkPositionDeltaWrite {
   }
 
   def convert(deltaWrite: DeltaWrite): GpuSparkPositionDeltaWrite = {
-    new GpuSparkPositionDeltaWrite(deltaWrite.asInstanceOf[SparkPositionDeltaWrite])
+    new GpuSparkPositionDeltaWrite(deltaWrite)
   }
 }
 
@@ -507,7 +511,7 @@ trait GpuDeleteAndDataDeltaWriter extends GpuDeltaWriter {
   override def commit(): WriterCommitMessage = {
     close()
     val result = delegate.result()
-    new SparkPositionDeltaWrite.DeltaTaskCommit(result)
+    GpuSparkWriteAccess.deltaTaskCommit(result)
   }
 
   override def abort(): Unit = {
@@ -631,7 +635,7 @@ class GpuDeleteOnlyDeltaWriter(
   override def commit(): WriterCommitMessage = {
     close()
     val result = delegate.result()
-    new SparkPositionDeltaWrite.DeltaTaskCommit(result)
+    GpuSparkWriteAccess.deltaTaskCommit(result)
   }
 
   override def abort(): Unit = {
