@@ -266,7 +266,8 @@ object GpuCSVScan extends Logging {
     }
 
     if (parsedOptions.locale != Locale.US && types.exists(_.isInstanceOf[DecimalType])) {
-      meta.willNotWorkOnGpu("GpuCSVScan only supports Locale.US decimal parsing")
+      meta.willNotWorkOnGpu(
+        s"GpuCSVScan only supports Locale.US decimal parsing, got ${parsedOptions.locale}")
     }
 
     if (ColumnDefaultValuesShims.hasExistenceDefaultValues(readSchema)) {
