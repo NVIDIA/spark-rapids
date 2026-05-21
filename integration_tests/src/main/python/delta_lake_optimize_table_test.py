@@ -23,7 +23,8 @@ from pyspark.sql.types import IntegerType, StringType
 
 _optimize_conf = copy_and_update(delta_writes_enabled_conf, {
     "spark.rapids.sql.command.OptimizeTableCommand": "true",
-    "spark.rapids.sql.command.OptimizeTableCommandEdge": "true"
+    "spark.rapids.sql.command.OptimizeTableCommandEdge": "true",
+    "spark.databricks.delta.autoCompact.enabled": "false"
 })
 
 _optimize_deletion_vector_values = [False] if is_databricks173_or_later() else \
