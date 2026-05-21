@@ -100,7 +100,7 @@ class GpuOptimizeExecutor(
 
       val addedFiles = updates.collect { case a: AddFile => a }
       val removedFiles = updates.collect { case r: RemoveFile => r }
-      if (addedFiles.nonEmpty) {
+      val committedTxn = if (addedFiles.nonEmpty) {
         val operation = DeltaOperations.Optimize(partitionPredicate, Nil, auto = isAutoCompact)
         val metrics = createMetrics(sparkSession.sparkContext, addedFiles, removedFiles)
         commitAndRetry(txn, operation, updates, metrics) { newTxn =>
@@ -119,6 +119,8 @@ class GpuOptimizeExecutor(
             false
           }
         }
+      } else {
+        txn
       }
 
       val optimizeStats = OptimizeStats()
@@ -131,10 +133,11 @@ class GpuOptimizeExecutor(
       optimizeStats.totalFilesSkipped = optimizeStats.totalConsideredFiles - removedFiles.size
       optimizeStats.totalClusterParallelism = sparkSession.sparkContext.defaultParallelism
       optimizeStats.totalScheduledTasks = jobs.size
-      val numTableColumns = txn.metadata.schema.size.toLong
+      val committedMetadata = committedTxn.metadata
+      val numTableColumns = committedMetadata.schema.size.toLong
       optimizeStats.numTableColumns = numTableColumns
       optimizeStats.numTableColumnsWithStats = Math.min(
-        DeltaConfigs.DATA_SKIPPING_NUM_INDEXED_COLS.fromMetaData(txn.metadata).toLong,
+        DeltaConfigs.DATA_SKIPPING_NUM_INDEXED_COLS.fromMetaData(committedMetadata).toLong,
         numTableColumns)
 
       Seq(Row(deltaLog.dataPath.toString, optimizeStats.toOptimizeMetrics))
@@ -246,10 +249,12 @@ class GpuOptimizeExecutor(
       txn: OptimisticTransaction,
       optimizeOperation: Operation,
       actions: Seq[Action],
-      metrics: Map[String, SQLMetric])(f: OptimisticTransaction => Boolean): Unit = {
+      metrics: Map[String, SQLMetric])(f: OptimisticTransaction => Boolean)
+      : OptimisticTransaction = {
     try {
       txn.registerSQLMetrics(sparkSession, metrics)
       txn.commit(actions, optimizeOperation, getCommitTags(txn))
+      txn
     } catch {
       case e: ConcurrentModificationException =>
         val newTxn = txn.deltaLog.startTransaction(catalogTable)
@@ -298,7 +303,10 @@ class GpuOptimizeExecutor(
       totalSize
     }
 
-    val sizeStats = FileSizeStatsWithHistogram.create(addedFiles.map(_.size).sorted).get
+    val sizeStats = FileSizeStatsWithHistogram.create(addedFiles.map(_.size).sorted).getOrElse {
+      throw new IllegalStateException(
+        s"FileSizeStatsWithHistogram.create returned None for ${addedFiles.size} files")
+    }
     Map[String, SQLMetric](
       "minFileSize" -> setAndReturnMetric("minimum file size", sizeStats.min),
       "p25FileSize" -> setAndReturnMetric("25th percentile file size", sizeStats.p25),

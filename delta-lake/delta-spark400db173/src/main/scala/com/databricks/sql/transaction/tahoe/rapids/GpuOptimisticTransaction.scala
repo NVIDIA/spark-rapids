@@ -24,9 +24,9 @@ package com.databricks.sql.transaction.tahoe.rapids
 import com.databricks.sql.io.skipping.liquid.ClusteredTableUtils
 import com.databricks.sql.transaction.tahoe.{CommittedTransaction, DeltaLog, DeltaOptions, OptimizeExecutionObserver, Snapshot}
 import com.databricks.sql.transaction.tahoe.actions.FileAction
-import com.databricks.sql.transaction.tahoe.constraints.Constraint
 import com.databricks.sql.transaction.tahoe.commands.{DeletionVectorUtils, DeltaOptimizeContext}
 import com.databricks.sql.transaction.tahoe.commands.optimize.OptimizeMetrics
+import com.databricks.sql.transaction.tahoe.constraints.Constraint
 import com.databricks.sql.transaction.tahoe.files.TransactionalWriteOptions
 import com.databricks.sql.transaction.tahoe.hooks.{AutoCompact, AutoCompactPartitionReserve}
 import com.databricks.sql.transaction.tahoe.hooks.{AutoCompactRequest, AutoCompactType, AutoCompactUtils, PostCommitHook}

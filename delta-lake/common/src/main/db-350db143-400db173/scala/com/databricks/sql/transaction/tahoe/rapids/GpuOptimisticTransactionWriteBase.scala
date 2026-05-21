@@ -79,7 +79,10 @@ abstract class GpuOptimisticTransactionWriteBase(
    * @param deltaLog   The Delta Log for the table this transaction is modifying.
    * @param rapidsConf RAPIDS Accelerator config settings
    */
-  def this(deltaLog: DeltaLog, snapshot: Snapshot, rapidsConf: RapidsConf)(implicit clock: Clock) = {
+  def this(
+      deltaLog: DeltaLog,
+      snapshot: Snapshot,
+      rapidsConf: RapidsConf)(implicit clock: Clock) = {
     this(deltaLog, Option.empty[CatalogTable], snapshot, rapidsConf)
   }
 
