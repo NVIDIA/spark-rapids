@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,54 +18,74 @@ package com.nvidia.spark.rapids
 import org.apache.spark.sql.types.DataTypes
 
 object RegexComplexityEstimator {
-  private def countStates(regex: RegexAST): Int = {
+  private def saturatedAdd(left: Long, right: Long): Long = {
+    if (Long.MaxValue - left < right) {
+      Long.MaxValue
+    } else {
+      left + right
+    }
+  }
+
+  private def saturatedMultiply(left: Long, right: Long): Long = {
+    if (left == 0L || right == 0L) {
+      0L
+    } else if (left > Long.MaxValue / right) {
+      Long.MaxValue
+    } else {
+      left * right
+    }
+  }
+
+  private def countStates(regex: RegexAST): Long = {
     regex match {
       case RegexSequence(parts) =>
-        parts.map(countStates).sum
+        parts.foldLeft(0L) { (total, part) =>
+          saturatedAdd(total, countStates(part))
+        }
       case RegexGroup(true, term, _) =>
-        1 + countStates(term)
+        saturatedAdd(1L, countStates(term))
       case RegexGroup(false, term, _) =>
         countStates(term)
       case RegexCharacterClass(_, _) =>
-        1
+        1L
       case RegexChoice(left, right) =>
-        countStates(left) + countStates(right)
+        saturatedAdd(countStates(left), countStates(right))
       case RegexRepetition(term, QuantifierFixedLength(length)) =>
-        length * countStates(term)
+        saturatedMultiply(length.toLong, countStates(term))
       case RegexRepetition(term, SimpleQuantifier(ch)) =>
         ch match {
           case '*' =>
             countStates(term)
           case '+' =>
-            1 + countStates(term)
+            saturatedAdd(1L, countStates(term))
           case '?' =>
-            1 + countStates(term)
+            saturatedAdd(1L, countStates(term))
         }
       case RegexRepetition(term, QuantifierVariableLength(minLength, maxLengthOption)) =>
         maxLengthOption match {
           case Some(maxLength) =>
-            maxLength * countStates(term)
+            saturatedMultiply(maxLength.toLong, countStates(term))
           case None =>
-            minLength.max(1) * countStates(term)
+            saturatedMultiply(minLength.max(1).toLong, countStates(term))
         }
       case RegexChar(_) | RegexEscaped(_) | RegexHexDigit(_) | RegexOctalChar(_) =>
-        1
+        1L
       case _ =>
-        0
+        0L
     }
   }
 
-  private def estimateGpuMemory(numStates: Int, desiredBatchSizeBytes: Long): Long = {
+  private def estimateGpuMemory(numStates: Long, desiredBatchSizeBytes: Long): Long = {
     val numRows = GpuBatchUtils.estimateRowCount(
       desiredBatchSizeBytes, DataTypes.StringType.defaultSize, 1)
-    
+
     // cuDF requests num_instructions * num_threads * 2 when allocating the memory on the device
     // (ignoring memory alignment). We are trying to reproduce that calculation here:
-    numStates * numRows * 2
+    saturatedMultiply(saturatedMultiply(numStates, numRows.toLong), 2L)
   }
 
   def isValid(conf: RapidsConf, regex: RegexAST): Boolean = {
-    val numStates = countStates(regex) 
+    val numStates = countStates(regex)
     estimateGpuMemory(numStates, conf.gpuTargetBatchSizeBytes) <= conf.maxRegExpStateMemory
   }
 }
