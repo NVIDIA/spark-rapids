@@ -206,19 +206,32 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
     withResource(file.newReader(conf.metrics)) { reader =>
       val fileSchema = reader.getFileMetaData.getSchema
 
-      // Map each row group's absolute byte offset to its file-global first-row index, built
-      // from the unfiltered footer so the indices remain absolute regardless of which subset
-      // of row groups the split filter keeps. getStartingPos is stable across filtering.
+      // Map each row group's absolute byte offset to its file-global first-row index. When
+      // file.split is set the reader is opened with ParquetReadOptions.withRange, which
+      // makes readFooter return only the row groups that intersect the range — so the
+      // ranged reader's own footer is not usable for file-global accounting. Open a second
+      // reader without the range to enumerate every row group in the file.
+      // getStartingPos is the row group's absolute byte offset and is stable across
+      // filtering, so it remains a valid key when the ranged reader's filtered blocks are
+      // looked up below.
       val firstRowIndexByStartingPos =
         scala.collection.mutable.HashMap.empty[Long, Long]
-      var accumulatedRowCount = 0L
-      val allBlocks = reader.getFooter.getBlocks
-      var i = 0
-      while (i < allBlocks.size()) {
-        val b = allBlocks.get(i)
-        firstRowIndexByStartingPos(b.getStartingPos) = accumulatedRowCount
-        accumulatedRowCount += b.getRowCount
-        i += 1
+      def populateFromAllBlocks(allBlocks: java.util.List[ShadedBlockMetaData]): Unit = {
+        var accumulatedRowCount = 0L
+        var i = 0
+        while (i < allBlocks.size()) {
+          val b = allBlocks.get(i)
+          firstRowIndexByStartingPos(b.getStartingPos) = accumulatedRowCount
+          accumulatedRowCount += b.getRowCount
+          i += 1
+        }
+      }
+      if (file.split.isDefined) {
+        withResource(file.copy(split = None).newReader(conf.metrics)) { fullReader =>
+          populateFromAllBlocks(fullReader.getFooter.getBlocks)
+        }
+      } else {
+        populateFromAllBlocks(reader.getFooter.getBlocks)
       }
       val (typeWithIds, fileReadSchema) = projectSchema(fileSchema, requiredSchema)
       val filteredBlocks = filterRowGroups(reader, requiredSchema, typeWithIds, file.filter)
