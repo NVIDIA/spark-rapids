@@ -47,7 +47,8 @@ from spark_session import is_databricks133_or_later, is_spark_353_or_later, is_s
 
 
 @allow_non_gpu(*delta_meta_allow)
-@allow_non_gpu_conditional(is_databricks173_or_later(), "AtomicCreateTableAsSelectExec")
+@allow_non_gpu_conditional(is_databricks173_or_later(),
+                           "AtomicCreateTableAsSelectExec,AppendDataExecV1")
 @allow_non_gpu_delta_write_if(
     is_databricks173_or_later(),
     reason="DBR 17.3 plans Delta liquid CTAS through V2 AtomicCreateTableAsSelectExec")
@@ -246,7 +247,8 @@ def test_delta_insert_overwrite_dynamic_sql_liquid_clustering(spark_tmp_path,
 
 
 @allow_non_gpu(*delta_meta_allow, "CreateTableExec")
-@allow_non_gpu_conditional(is_databricks173_or_later(), "EmptyRelationExec")
+@allow_non_gpu_conditional(is_databricks173_or_later(),
+                           f"{delta_write_fallback_allow},EmptyRelationExec")
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
@@ -495,7 +497,8 @@ def test_delta_insert_overwrite_df_liquid_clustering(spark_tmp_path,
 
 
 @allow_non_gpu(*delta_meta_allow, "CreateTableExec")
-@allow_non_gpu_conditional(is_databricks173_or_later(), "EmptyRelationExec")
+@allow_non_gpu_conditional(is_databricks173_or_later(),
+                           f"{delta_write_fallback_allow},EmptyRelationExec")
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks133_or_later(),
