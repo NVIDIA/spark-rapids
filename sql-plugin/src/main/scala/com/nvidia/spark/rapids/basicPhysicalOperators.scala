@@ -868,7 +868,14 @@ case class GpuProjectExec(
     val localEnablePreSplit = enablePreSplit
 
     val rdd = child.executeColumnar()
-    rdd.mapPartitions { iter =>
+    // Use mapPartitionsWithIndex (not mapPartitions) so that when a downstream
+    // coalesce/union wraps this RDD, our lambda fires once per parent partition
+    // with that parent's index. GpuNondeterministic expressions
+    // (spark_partition_id / monotonically_increasing_id / rand) are reseeded
+    // per parent partition so their values stay stable across coalesce/union
+    // (SPARK-14393, #14156).
+    rdd.mapPartitionsWithIndex { (partIndex, iter) =>
+      GpuNondeterministic.initializeAll(boundProjectList.exprTiers.flatten, partIndex)
       val maybeSplitIter = if (localEnablePreSplit) {
         new PreProjectSplitIterator(iter, boundProjectList, opTime, numPreSplit)
       } else {
@@ -1372,9 +1379,18 @@ case class GpuFilterExec(
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
       conf, allMetrics)
-    rdd.flatMap { batch =>
-      GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
-        numOutputBatches, opTime)
+    // Mirrors GpuProjectExec: mapPartitionsWithIndex (not flatMap) so that
+    // when a downstream coalesce/union wraps this RDD, our lambda fires once
+    // per parent partition with that parent's index. GpuNondeterministic
+    // expressions inside the filter condition (e.g. rand(seed)) are reseeded
+    // per parent partition so their values stay stable across coalesce/union
+    // (SPARK-14393, #14156).
+    rdd.mapPartitionsWithIndex { (partIndex, iter) =>
+      GpuNondeterministic.initializeAll(boundCondition.exprTiers.flatten, partIndex)
+      iter.flatMap { batch =>
+        GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
+          numOutputBatches, opTime)
+      }
     }
   }
 }

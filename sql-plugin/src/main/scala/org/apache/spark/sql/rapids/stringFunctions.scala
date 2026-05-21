@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{Arithmetic, RoundMode}
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.CharsetDecode
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.NumberConverter
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
@@ -700,12 +701,8 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
       lenS: GpuScalar): ColumnVector = {
     val strs = strCol.getBase
     val poses = posCol.getBase
-    val numRows =  strCol.getRowCount.toInt
     withResource(computeStarts(strs, poses)) { starts =>
-      val ends = withResource(ColumnVector.fromScalar(lenS.getBase, numRows)) { lens =>
-        computeEnds(starts, lens)
-      }
-      withResource(ends) { _ =>
+      withResource(computeEnds(starts, lenS.getBase)) { ends =>
         substringColumn(strs, starts, ends)
       }
     }
@@ -1728,11 +1725,7 @@ case class GpuRegExpExtractAll(
                 val maxSizeInt = maxSize.getInt
                 val stringCols = Range(0, maxSizeInt, 1).safeMap {
                   i =>
-                    withResource(Scalar.fromInt(i)) { scalarIndex =>
-                      withResource(ColumnVector.fromScalar(scalarIndex, rowCount.toInt)) {
-                        index => allExtracted.extractListElement(index)
-                      }
-                    }
+                    allExtracted.extractListElement(i)
                 }
                 withResource(stringCols) { _ =>
                   ColumnVector.makeList(rowCount, DType.STRING, stringCols: _*)
@@ -2603,5 +2596,46 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     withResource(GpuColumnVector.from(lhs, numRows)) { col =>
       doColumnar(col, rhs)
     }
+  }
+}
+
+case class GpuStringDecode(
+    bin: Expression,
+    charsetName: String,
+    reportMalformed: Boolean = false)
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
+
+  override def child: Expression = bin
+
+  override def dataType: DataType = StringType
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val charsetId = charsetName match {
+      case "GBK" => CharsetDecode.GBK
+      case other =>
+        throw new UnsupportedOperationException(s"Unsupported charset on GPU: $other")
+    }
+    val errorAction =
+      if (reportMalformed) CharsetDecode.REPORT else CharsetDecode.REPLACE
+    try {
+      CharsetDecode.decode(input.getBase, charsetId, errorAction)
+    } catch {
+      case _: CharsetDecode.MalformedInputException =>
+        // MALFORMED_CHARACTER_CODING was introduced in Spark 4.0 alongside the
+        // legacyCodingErrorAction flag, which is the only code path that can set
+        // reportMalformed=true. Invoke QueryExecutionErrors.malformedCharacterCoding via
+        // reflection so this file still compiles against Spark 3.x shims.
+        throw GpuStringDecode.raiseMalformedCharacterCoding(charsetName)
+    }
+  }
+}
+
+object GpuStringDecode {
+  private def raiseMalformedCharacterCoding(charset: String): RuntimeException = {
+    val cls    = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors")
+    val method = cls.getMethod("malformedCharacterCoding", classOf[String], classOf[String])
+    method.invoke(null, "decode", charset).asInstanceOf[RuntimeException]
   }
 }

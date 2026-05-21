@@ -250,11 +250,18 @@ class CudfMergeM2 extends CudfAggregate {
                   if (n > 0) {
                     val mean = partialMean.getDouble(i)
                     val m2 = partialM2.getDouble(i)
-                    val delta = mean - mergeMean
-                    val newN = n + mergeN
-                    mergeM2 += m2 + delta * delta * n * mergeN / newN
-                    mergeMean = (mergeMean * mergeN + mean * n) / newN
-                    mergeN = newN
+                    if (mergeN == 0.0) {
+                      mergeN = n
+                      mergeMean = mean
+                      mergeM2 = m2
+                    } else {
+                      val delta = mean - mergeMean
+                      val newN = mergeN + n
+                      val deltaN = delta / newN
+                      mergeM2 += m2 + delta * deltaN * mergeN * n
+                      mergeMean += deltaN * n
+                      mergeN = newN
+                    }
                   }
                 }
 
