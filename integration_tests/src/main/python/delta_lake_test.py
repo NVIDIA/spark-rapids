@@ -39,7 +39,7 @@ def _assert_db173_gpu_delta_scan_if_enabled(spark, df):
     return df
 
 
-def _delta_sql_with_gpu_scan_assert(spark, sql):
+def _db_delta_sql_with_gpu_scan_assert(spark, sql):
     return _assert_db173_gpu_delta_scan_if_enabled(spark, spark.sql(sql))
 
 
@@ -62,7 +62,7 @@ def _assert_delta_dv_read_sql(test_sql, conf):
             conf=conf)
     else:
         assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: _delta_sql_with_gpu_scan_assert(spark, test_sql),
+            lambda spark: _db_delta_sql_with_gpu_scan_assert(spark, test_sql),
             conf=conf)
 
 
@@ -364,7 +364,7 @@ def do_test_scan_split(spark_tmp_path, enable_deletion_vectors, expected_num_par
             conf=read_conf)
     else:
         def get_num_partitions(spark):
-            df = _delta_sql_with_gpu_scan_assert(spark, read_sql)
+            df = _db_delta_sql_with_gpu_scan_assert(spark, read_sql)
             return df.rdd.getNumPartitions()
         num_partitions = with_gpu_session(get_num_partitions, conf=read_conf)
         assert num_partitions == expected_num_partitions, f"Expected {expected_num_partitions} partitions for split read"
@@ -712,13 +712,10 @@ def test_delta_filter_out_metadata_col(spark_tmp_path, dv_predicate_pushdown):
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {
         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled":
-            f"{dv_predicate_pushdown}"
+            f"{dv_predicate_pushdown}",
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true"
     }
-    if is_databricks173_or_later():
-        conf.update({
-            "spark.databricks.delta.delete.deletionVectors.persistent": "true",
-            "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true"
-        })
 
     col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[])
     col_b_gen = IntegerGen(min_val=0, max_val=1, nullable=False, special_cases=[0, 1])
@@ -734,7 +731,7 @@ def test_delta_filter_out_metadata_col(spark_tmp_path, dv_predicate_pushdown):
     def read_table(spark):
         sql = f"SELECT * FROM delta.`{data_path}`"
         if is_databricks173_or_later() and dv_predicate_pushdown:
-            df = _delta_sql_with_gpu_scan_assert(spark, sql)
+            df = _db_delta_sql_with_gpu_scan_assert(spark, sql)
         else:
             df = spark.sql(sql)
         is_gpu = str(spark.conf.get("spark.rapids.sql.enabled", "false")).lower() == "true"
@@ -815,7 +812,7 @@ def test_delta_deletion_vector_native_footer_multi_row_group(spark_tmp_path, par
     with_cpu_session(setup_tables, conf=write_conf)
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: _delta_sql_with_gpu_scan_assert(spark, query.format(path=data_path)),
+        lambda spark: _db_delta_sql_with_gpu_scan_assert(spark, query.format(path=data_path)),
         conf=read_conf)
 
 
