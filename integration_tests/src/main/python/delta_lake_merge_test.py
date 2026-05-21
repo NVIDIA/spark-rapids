@@ -183,10 +183,11 @@ def test_delta_materialize_merge(spark_tmp_path, spark_tmp_table_factory):
         # compare resulting dataframe from the merge operation (some older Spark versions return empty here)
         assert_collect(do_merge, data_path, materialize_conf)
         # compare merged table data results, read both via CPU to make sure GPU write can be read by CPU
-        cpu_result = with_cpu_session(lambda spark: read_data(spark, cpu_path).rdd.isCheckpointed(), conf=materialize_conf)
-        gpu_result = with_cpu_session(lambda spark: read_data(spark, gpu_path).rdd.isCheckpointed(), conf=materialize_conf)
-        assert_equal(cpu_result, True)
-        assert_equal(cpu_result, gpu_result)
+        cpu_is_checkpointed = with_cpu_session(
+            lambda spark: read_data(spark, cpu_path).rdd.isCheckpointed(), conf=materialize_conf)
+        gpu_is_checkpointed = with_cpu_session(
+            lambda spark: read_data(spark, gpu_path).rdd.isCheckpointed(), conf=materialize_conf)
+        assert_equal(cpu_is_checkpointed, gpu_is_checkpointed)
 
     delta_sql_merge_test(spark_tmp_path, spark_tmp_table_factory,
                             use_cdf=False,
