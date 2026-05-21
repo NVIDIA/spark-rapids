@@ -166,9 +166,10 @@ private[iceberg] case object FetchRowPosition extends ColumnAction {
     val rowPoses = new Array[Long](numRows)
     val processor = ctx.processor
 
-    // The wrapping withRetryNoSplit may rerun this lambda after an OOM. Keep all advancing
-    // state in locals here and commit back to the processor only after fromLongs() succeeds,
-    // so a retry restarts from the same processor state.
+    // The withRetryNoSplit block in GpuParquetReaderPostProcessor.process below may rerun
+    // this execute() after an OOM during column allocation. Advance state in locals and
+    // commit back to the processor only after fromLongs() succeeds, so a retry restarts
+    // from the same processor state instead of continuing from a partially-advanced one.
     var localBlockIndex = processor.curBlockIndex
     var localProcessedRowCount = processor.processedRowCount
     var localProcessedBlockRowCounts = processor.processedBlockRowCounts

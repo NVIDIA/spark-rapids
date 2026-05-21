@@ -206,14 +206,9 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
     withResource(file.newReader(conf.metrics)) { reader =>
       val fileSchema = reader.getFileMetaData.getSchema
 
-      // Build file-global first-row index per row group from the FULL footer.
-      // reader.getRowGroups() is filtered by the split's byte range (set via
-      // ParquetReadOptions.withRange), so accumulating over it would produce
-      // task-local offsets starting at 0. That feeds wrong _pos values into
-      // FetchRowPosition and, more critically, into positional-delete matching
-      // on MoR reads, causing silent data corruption. The footer's getBlocks()
-      // is the unfiltered list, so the offsets here are absolute within the
-      // file. Key by getStartingPos so we can look up each filtered block.
+      // Map each row group's absolute byte offset to its file-global first-row index, built
+      // from the unfiltered footer so the indices remain absolute regardless of which subset
+      // of row groups the split filter keeps. getStartingPos is stable across filtering.
       val firstRowIndexByStartingPos =
         scala.collection.mutable.HashMap.empty[Long, Long]
       var accumulatedRowCount = 0L

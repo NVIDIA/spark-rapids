@@ -673,12 +673,11 @@ def test_iceberg_read_metadata_columns_with_partition_evolution(spark_tmp_table_
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 def test_iceberg_read_pos_with_split_file(spark_tmp_table_factory, reader_type):
-    # Regression for nvbug 6174911: when Iceberg splits a single data file
-    # across multiple read tasks on row-group byte boundaries, _pos must remain
-    # the file-global row position, not task-local. Three table properties
-    # together force the split on a tiny dataset: small row-group size so the
-    # file has many row groups, a tiny split target, and zero per-file open
-    # cost so the planner is willing to split a small file.
+    # Writes a single Parquet data file containing many row groups, then forces
+    # Iceberg's planner to split that file across multiple scan tasks at row-group
+    # byte boundaries via a tiny row-group size, a tiny split target, and a zero
+    # per-file open cost. The query projects Iceberg's _pos metadata column; the
+    # GPU result must match CPU regardless of how the planner splits the file.
     table = get_full_table_name(spark_tmp_table_factory)
     def setup_iceberg_table(spark):
         spark.sql(f"CREATE TABLE {table} (id BIGINT) USING ICEBERG {_NO_FANOUT}")
