@@ -274,6 +274,42 @@ def test_insert_into_table_unsupported_file_format_fallback(
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize("partition_col_sql", [
+    pytest.param("bucket(4, contact.email)", id="bucket_nested_struct_field"),
+    pytest.param("truncate(3, contact.email)", id="truncate_nested_struct_field"),
+    pytest.param("contact.email", id="identity_nested_struct_field"),
+], )
+def test_insert_into_table_nested_partition_source_fallback(
+        spark_tmp_table_factory, partition_col_sql):
+    table_name = get_full_table_name(spark_tmp_table_factory)
+    table_prop = _build_tblprops({"format-version": "2"})
+    props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in table_prop.items())
+
+    def create_table(spark):
+        spark.sql(
+            f"CREATE TABLE {table_name} "
+            f"(id BIGINT, contact STRUCT<email: STRING, phone: STRING>) "
+            f"USING ICEBERG "
+            f"PARTITIONED BY ({partition_col_sql}) "
+            f"TBLPROPERTIES ({props_sql})")
+
+    with_cpu_session(create_table)
+
+    def insert_data(spark):
+        return spark.sql(
+            f"INSERT INTO {table_name} VALUES "
+            f"(1, named_struct('email', 'a@x.test', 'phone', '111')), "
+            f"(2, named_struct('email', 'b@y.test', 'phone', '222'))")
+
+    assert_gpu_fallback_collect(lambda spark: insert_data(spark),
+                                "AppendDataExec",
+                                conf=iceberg_write_enabled_conf)
+
+
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
