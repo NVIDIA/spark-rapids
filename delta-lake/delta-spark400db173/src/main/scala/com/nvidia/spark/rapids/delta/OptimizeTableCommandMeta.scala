@@ -38,6 +38,25 @@ object OptimizeTableCommandMeta {
   def getDeltaLogForOptimize(cmd: OptimizeTableCommandEdge): DeltaLog = {
     DeltaCmdProxy.getDeltaTable(cmd.child, "OPTIMIZE").deltaLog
   }
+
+  def tagOptimizeForGpu(
+      meta: RapidsMeta[_, _, _],
+      conf: RapidsConf,
+      deltaLog: DeltaLog,
+      tagCommandForGpu: DeltaLog => Unit): Unit = {
+    if (!conf.isDeltaWriteEnabled) {
+      meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
+        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+    }
+
+    tagCommandForGpu(deltaLog)
+    RapidsDeltaUtils.tagForDeltaWrite(
+      meta,
+      deltaLog.unsafeVolatileSnapshot.schema,
+      Some(deltaLog),
+      Map.empty,
+      SparkSession.active)
+  }
 }
 
 class OptimizeTableCommandMeta(
@@ -48,19 +67,12 @@ class OptimizeTableCommandMeta(
   extends RunnableCommandMeta[OptimizeTableCommand](optimizeCmd, conf, parent, rule) {
 
   override def tagSelfForGpu(): Unit = {
-    if (!conf.isDeltaWriteEnabled) {
-      willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
-    }
-
     val deltaLog = OptimizeTableCommandMeta.getDeltaLogForOptimize(optimizeCmd)
-    OptimizeTableCommandMetaShim.tagForGpu(this, deltaLog)
-    RapidsDeltaUtils.tagForDeltaWrite(
+    OptimizeTableCommandMeta.tagOptimizeForGpu(
       this,
-      deltaLog.unsafeVolatileSnapshot.schema,
-      Some(deltaLog),
-      Map.empty,
-      SparkSession.active)
+      conf,
+      deltaLog,
+      log => OptimizeTableCommandMetaShim.tagForGpu(this, log))
   }
 
   override def convertToGpu(): RunnableCommand = {
@@ -79,19 +91,12 @@ class OptimizeTableCommandEdgeMeta(
   extends RunnableCommandMeta[OptimizeTableCommandEdge](optimizeCmd, conf, parent, rule) {
 
   override def tagSelfForGpu(): Unit = {
-    if (!conf.isDeltaWriteEnabled) {
-      willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
-        s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
-    }
-
     val deltaLog = OptimizeTableCommandMeta.getDeltaLogForOptimize(optimizeCmd)
-    OptimizeTableCommandMetaShim.tagForGpu(this, deltaLog)
-    RapidsDeltaUtils.tagForDeltaWrite(
+    OptimizeTableCommandMeta.tagOptimizeForGpu(
       this,
-      deltaLog.unsafeVolatileSnapshot.schema,
-      Some(deltaLog),
-      Map.empty,
-      SparkSession.active)
+      conf,
+      deltaLog,
+      log => OptimizeTableCommandMetaShim.tagForGpu(this, log))
   }
 
   override def convertToGpu(): RunnableCommand = {

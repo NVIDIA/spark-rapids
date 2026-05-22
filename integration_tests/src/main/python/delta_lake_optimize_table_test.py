@@ -216,4 +216,7 @@ def test_delta_optimize_partitioned_table(spark_tmp_path, enable_deletion_vector
                     reason="OPTIMIZE table command is supported for Databricks 17.3+")
 @pytest.mark.parametrize("enable_deletion_vectors", _optimize_clustered_deletion_vector_values, ids=idfn)
 def test_delta_optimize_clustered_table(spark_tmp_path, enable_deletion_vectors):
-    _assert_optimize_fallback(enable_deletion_vectors, spark_tmp_path, clustering_columns=["a"])
+    if is_databricks173_or_later():
+        _assert_optimize_fallback(enable_deletion_vectors, spark_tmp_path, clustering_columns=["a"])
+    else:
+        _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, clustering_columns=["a"])
