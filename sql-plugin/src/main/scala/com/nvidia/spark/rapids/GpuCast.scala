@@ -1121,15 +1121,10 @@ object GpuCast {
                   attrColumns += attrValue.incRefCount()
             }
             // now concatenate
-            val jsonAttr = withResource(Scalar.fromString("")) { emptyString =>
-              ColumnVector.stringConcatenate(emptyString, emptyString, attrColumns.toArray)
-            }
             // add an empty string or the attribute
-            withResource(jsonAttr) { _ =>
-              withResource(cv.isNull) { isNull =>
-                withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
-                  isNull.ifElse(nullScalar, jsonAttr)
-                }
+            withResource(Scalar.fromString("")) { emptyString =>
+              withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+                ColumnVector.stringConcatenate(emptyString, nullScalar, attrColumns.toArray)
               }
             }
           } else {
