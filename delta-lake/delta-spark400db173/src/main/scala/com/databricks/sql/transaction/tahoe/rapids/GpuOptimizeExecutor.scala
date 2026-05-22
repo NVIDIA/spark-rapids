@@ -22,31 +22,21 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
-import java.util.ConcurrentModificationException
-
-import scala.annotation.tailrec
-import scala.collection.mutable.ArrayBuffer
-
 import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.DeltaCommitTag.PreservedRowTrackingTag
 import com.databricks.sql.transaction.tahoe.DeltaOperations.Operation
 import com.databricks.sql.transaction.tahoe.actions.{Action, AddFile, FileAction, RemoveFile}
-import com.databricks.sql.transaction.tahoe.commands.{DeletionVectorUtils, DeltaCommand,
-  DeltaOptimizeContext}
-import com.databricks.sql.transaction.tahoe.commands.optimize.FileSizeStatsWithHistogram
+import com.databricks.sql.transaction.tahoe.commands.{DeletionVectorUtils, DeltaOptimizeContext}
 import com.databricks.sql.transaction.tahoe.commands.optimize.OptimizeStats
-import com.databricks.sql.transaction.tahoe.files.SQLMetricsReporting
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.RapidsConf
 
 import org.apache.spark.SparkContext
-import org.apache.spark.SparkContext.SPARK_JOB_GROUP_ID
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.metric.SQLMetric
-import org.apache.spark.sql.execution.metric.SQLMetrics.createMetric
-import org.apache.spark.util.{Clock, ThreadUtils}
+import org.apache.spark.util.Clock
 
 class GpuOptimizeExecutor(
     sparkSession: SparkSession,
@@ -55,11 +45,9 @@ class GpuOptimizeExecutor(
     partitionPredicate: Seq[Expression],
     optimizeContext: DeltaOptimizeContext,
     isAutoCompact: Boolean = false)
-  extends DeltaCommand with SQLMetricsReporting with Serializable {
+  extends GpuOptimizeExecutorBase(sparkSession, partitionPredicate) {
 
-  /** Timestamp to use in [[FileAction]] */
-  private val operationTimestamp = System.currentTimeMillis
-  private val deltaLog = snapshot.deltaLog
+  override protected val deltaLog: DeltaLog = snapshot.deltaLog
   private val rapidsConf = new RapidsConf(sparkSession.sessionState.conf)
   private implicit val clock: Clock = deltaLog.clock
 
@@ -72,200 +60,75 @@ class GpuOptimizeExecutor(
 
   ensureDeletionVectorDisabled()
 
-  def optimize(): Seq[Row] = {
-    recordDeltaOperation(deltaLog, "delta.optimize") {
-      val txn = new GpuOptimisticTransaction(deltaLog, catalogTable, snapshot, rapidsConf)
-      DeltaLog.assertRemovable(txn.snapshot)
+  override protected def createTransaction(): OptimisticTransaction =
+    new GpuOptimisticTransaction(deltaLog, catalogTable, snapshot, rapidsConf)
 
-      val maxFileSize = getMaxFileSize
-      require(maxFileSize > 0, "maxFileSize must be > 0")
-      val minFileSize = getMinFileSize
-      require(minFileSize > 0, "minFileSize must be > 0")
+  override protected def beforeOptimize(txn: OptimisticTransaction): Unit =
+    DeltaLog.assertRemovable(txn.snapshot)
 
-      val candidateFiles = txn.filterFiles(partitionPredicate, true)
-      val filesToProcess = candidateFiles.filter(_.size < minFileSize)
-      val partitionSchema = txn.metadata.partitionSchema
-
-      val partitionsToCompact = filesToProcess
-        .groupBy(_.partitionValues)
-        .filter { case (_, filesInPartition) => filesInPartition.size >= 2 }
-        .toSeq
-
-      val jobs = groupFilesIntoBins(partitionsToCompact, maxFileSize)
-      val maxThreads = sparkSession.sessionState.conf.getConf(
-        DeltaSQLConf.DELTA_OPTIMIZE_MAX_THREADS)
-      val updates = ThreadUtils.parmap(jobs, "GpuOptimizeJob", maxThreads) {
-        case (partition, bin) => runOptimizeBinJob(txn, partition, bin)
-      }.flatten
-
-      val addedFiles = updates.collect { case a: AddFile => a }
-      val removedFiles = updates.collect { case r: RemoveFile => r }
-      val committedTxn = if (addedFiles.nonEmpty) {
-        val operation = DeltaOperations.Optimize(partitionPredicate, Nil, auto = isAutoCompact)
-        val metrics = createMetrics(sparkSession.sparkContext, addedFiles, removedFiles)
-        commitAndRetry(txn, operation, updates, metrics) { newTxn =>
-          val newPartitionSchema = newTxn.metadata.partitionSchema
-          val candidateSetOld = candidateFiles.map(_.path).toSet
-          val candidateSetNew = newTxn.filterFiles(partitionPredicate).map(_.path).toSet
-
-          // It is safe to retry when the files compacted by this attempt are still present
-          // and the table partitioning has not changed.
-          if (candidateSetOld.subsetOf(candidateSetNew) && partitionSchema == newPartitionSchema) {
-            true
-          } else {
-            val deleted = candidateSetOld -- candidateSetNew
-            logWarning(s"The following compacted files were deleted " +
-              s"during checkpoint ${deleted.mkString(",")}. Aborting the compaction.")
-            false
-          }
-        }
-      } else {
-        txn
-      }
-
-      val optimizeStats = OptimizeStats()
-      optimizeStats.addedFilesSizeStats.merge(addedFiles)
-      optimizeStats.removedFilesSizeStats.merge(removedFiles)
-      optimizeStats.numPartitionsOptimized = jobs.map(_._1).distinct.size
-      optimizeStats.numBins = jobs.size
-      optimizeStats.numBatches = jobs.size
-      optimizeStats.totalConsideredFiles = candidateFiles.size
-      optimizeStats.totalFilesSkipped = optimizeStats.totalConsideredFiles - removedFiles.size
-      optimizeStats.totalClusterParallelism = sparkSession.sparkContext.defaultParallelism
-      optimizeStats.totalScheduledTasks = jobs.size
-      val committedMetadata = committedTxn.metadata
-      val numTableColumns = committedMetadata.schema.size.toLong
-      optimizeStats.numTableColumns = numTableColumns
-      optimizeStats.numTableColumnsWithStats = Math.min(
-        DeltaConfigs.DATA_SKIPPING_NUM_INDEXED_COLS.fromMetaData(committedMetadata).toLong,
-        numTableColumns)
-
-      Seq(Row(deltaLog.dataPath.toString, optimizeStats.toOptimizeMetrics))
-    }
-  }
-
-  private def getMinFileSize: Long = {
+  override protected def getMinFileSize: Long = {
     optimizeContext.minFileSize.getOrElse(
       sparkSession.sessionState.conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_MIN_FILE_SIZE))
   }
 
-  private def getMaxFileSize: Long = {
+  override protected def getMaxFileSize: Long = {
     optimizeContext.maxFileSize.getOrElse(
       sparkSession.sessionState.conf.getConf(DeltaSQLConf.DELTA_OPTIMIZE_MAX_FILE_SIZE))
   }
 
-  /**
-   * Utility methods to group files into bins for optimize.
-   *
-   * @param partitionsToCompact List of files to compact group by partition.
-   *                            Partition is defined by the partition values (partCol -> partValue)
-   * @param maxTargetFileSize Max size (in bytes) of the compaction output file.
-   * @return Sequence of bins. Each bin contains one or more files from the same
-   *         partition and targeted for one output file.
-   */
-  private def groupFilesIntoBins(
-      partitionsToCompact: Seq[(Map[String, String], Seq[AddFile])],
-      maxTargetFileSize: Long): Seq[(Map[String, String], Seq[AddFile])] = {
-    partitionsToCompact.flatMap {
-      case (partition, files) =>
-        val bins = new ArrayBuffer[Seq[AddFile]]()
+  override protected def optimizeOperation: Operation =
+    DeltaOperations.Optimize(partitionPredicate, Nil, auto = isAutoCompact)
 
-        val currentBin = new ArrayBuffer[AddFile]()
-        var currentBinSize = 0L
+  override protected def getCandidateFiles(txn: OptimisticTransaction): Seq[AddFile] =
+    txn.filterFiles(partitionPredicate, true)
 
-        files.sortBy(_.size).foreach { file =>
-          if (file.size + currentBinSize > maxTargetFileSize) {
-            bins += currentBin.toVector
-            currentBin.clear()
-            currentBin += file
-            currentBinSize = file.size
-          } else {
-            currentBin += file
-            currentBinSize += file.size
-          }
-        }
-
-        if (currentBin.nonEmpty) {
-          bins += currentBin.toVector
-        }
-
-        bins.map(b => (partition, b)).filter(_._2.size > 1)
-    }
-  }
-
-  /**
-   * Utility method to run a Spark job to compact the files in given bin.
-   *
-   * @param txn [[OptimisticTransaction]] instance in use to commit the changes to DeltaLog.
-   * @param partition Partition values of the partition that files in [[bin]] belongs to.
-   * @param bin List of files to compact into one large file.
-   */
-  private def runOptimizeBinJob(
+  override protected def prepareInput(
       txn: OptimisticTransaction,
-      partition: Map[String, String],
-      bin: Seq[AddFile]): Seq[FileAction] = {
-    val baseTablePath = txn.deltaLog.dataPath
-
-    val input = RowTracking.preserveRowTrackingColumns(
+      bin: Seq[AddFile]): DataFrame = {
+    RowTracking.preserveRowTrackingColumns(
       txn.deltaLog.createDataFrame(txn.snapshot, bin, actionTypeOpt = Some("Optimize")),
       txn.snapshot)
-    val useRepartition = sparkSession.sessionState.conf.getConf(
-      DeltaSQLConf.DELTA_OPTIMIZE_REPARTITION_ENABLED)
-    val repartitionDF = if (useRepartition) {
-      input.repartition(numPartitions = 1)
-    } else {
-      input.coalesce(numPartitions = 1)
-    }
-
-    val partitionDesc = partition.toSeq.map(entry => entry._1 + "=" + entry._2).mkString(",")
-    val partitionName = if (partition.isEmpty) "" else s" in partition ($partitionDesc)"
-    val description = s"$baseTablePath<br/>Optimizing ${bin.size} files" + partitionName
-    sparkSession.sparkContext.setJobGroup(
-      sparkSession.sparkContext.getLocalProperty(SPARK_JOB_GROUP_ID),
-      description)
-
-    val addFiles = txn.writeFiles(repartitionDF, None, isOptimize = true, Nil).collect {
-      case a: AddFile =>
-        a.copy(dataChange = false)
-      case other =>
-        throw new IllegalStateException(
-          s"Unexpected action $other with type ${other.getClass}. File compaction job output " +
-            "should only have AddFiles")
-    }
-    val removeFiles = bin.map(_.removeWithTimestamp(operationTimestamp, dataChange = false))
-    addFiles ++ removeFiles
   }
 
-  /**
-   * Attempts to commit the given actions to the log. In the case of a concurrent update,
-   * the given function will be invoked with a new transaction to allow custom conflict
-   * detection logic to indicate it is safe to try again, by returning `true`.
-   *
-   * This function will continue to try to commit to the log as long as `f` returns `true`,
-   * otherwise throws a subclass of [[ConcurrentModificationException]].
-   */
-  @tailrec
-  private def commitAndRetry(
+  override protected def writeOptimizeOutput(
+      txn: OptimisticTransaction,
+      repartitionDF: DataFrame): Seq[FileAction] = {
+    txn.writeFiles(repartitionDF, None, isOptimize = true, Nil)
+  }
+
+  override protected def commitTransaction(
       txn: OptimisticTransaction,
       optimizeOperation: Operation,
-      actions: Seq[Action],
-      metrics: Map[String, SQLMetric])(f: OptimisticTransaction => Boolean)
-      : OptimisticTransaction = {
-    try {
-      txn.registerSQLMetrics(sparkSession, metrics)
-      txn.commit(actions, optimizeOperation, getCommitTags(txn))
-      txn
-    } catch {
-      case e: ConcurrentModificationException =>
-        val newTxn = txn.deltaLog.startTransaction(catalogTable)
-        if (f(newTxn)) {
-          logInfo("Retrying commit after checking for semantic conflicts with concurrent updates.")
-          commitAndRetry(newTxn, optimizeOperation, actions, metrics)(f)
-        } else {
-          logWarning("Semantic conflicts detected. Aborting operation.")
-          throw e
-        }
-    }
+      actions: Seq[Action]): Unit = {
+    txn.commit(actions, optimizeOperation, getCommitTags(txn))
+  }
+
+  override protected def startRetryTransaction(txn: OptimisticTransaction): OptimisticTransaction =
+    txn.deltaLog.startTransaction(catalogTable)
+
+  override protected def extraMetrics(
+      sparkContext: SparkContext,
+      setAndReturnMetric: (String, Long) => SQLMetric): Map[String, SQLMetric] = {
+    Map(
+      "numDeletionVectorsRemoved" -> setAndReturnMetric(
+        "number of deletion vectors removed", 0L))
+  }
+
+  override protected def updateOptimizeStats(
+      optimizeStats: OptimizeStats,
+      jobs: Seq[PartitionedBin],
+      candidateFiles: Seq[AddFile],
+      addedFiles: Seq[AddFile],
+      removedFiles: Seq[RemoveFile],
+      committedTxn: OptimisticTransaction): Unit = {
+    optimizeStats.numBins = jobs.size
+    optimizeStats.totalScheduledTasks = jobs.size
+    val committedMetadata = committedTxn.metadata
+    val numTableColumns = committedMetadata.schema.size.toLong
+    optimizeStats.numTableColumns = numTableColumns
+    optimizeStats.numTableColumnsWithStats = Math.min(
+      DeltaConfigs.DATA_SKIPPING_NUM_INDEXED_COLS.fromMetaData(committedMetadata).toLong,
+      numTableColumns)
   }
 
   private def getCommitTags(txn: OptimisticTransaction): Map[String, String] = {
@@ -276,50 +139,5 @@ class GpuOptimizeExecutor(
     } else {
       tags + notPreservedTag
     }
-  }
-
-  /** Create a map of SQL metrics for adding to the commit history. */
-  private def createMetrics(
-      sparkContext: SparkContext,
-      addedFiles: Seq[AddFile],
-      removedFiles: Seq[RemoveFile]): Map[String, SQLMetric] = {
-    def setAndReturnMetric(description: String, value: Long) = {
-      val metric = createMetric(sparkContext, description)
-      metric.set(value)
-      metric
-    }
-
-    def totalSize(actions: Seq[FileAction]): Long = {
-      var totalSize = 0L
-      actions.foreach { file =>
-        val fileSize = file match {
-          case addFile: AddFile => addFile.size
-          case removeFile: RemoveFile => removeFile.size.getOrElse(0L)
-          case default =>
-            throw new IllegalArgumentException(s"Unknown FileAction type: ${default.getClass}")
-        }
-        totalSize += fileSize
-      }
-      totalSize
-    }
-
-    val sizeStats = FileSizeStatsWithHistogram.create(addedFiles.map(_.size).sorted).getOrElse {
-      throw new IllegalStateException(
-        s"FileSizeStatsWithHistogram.create returned None for ${addedFiles.size} files")
-    }
-    Map[String, SQLMetric](
-      "minFileSize" -> setAndReturnMetric("minimum file size", sizeStats.min),
-      "p25FileSize" -> setAndReturnMetric("25th percentile file size", sizeStats.p25),
-      "p50FileSize" -> setAndReturnMetric("50th percentile file size", sizeStats.p50),
-      "p75FileSize" -> setAndReturnMetric("75th percentile file size", sizeStats.p75),
-      "maxFileSize" -> setAndReturnMetric("maximum file size", sizeStats.max),
-      "numAddedFiles" -> setAndReturnMetric("total number of files added", addedFiles.size),
-      "numRemovedFiles" -> setAndReturnMetric(
-        "total number of files removed", removedFiles.size),
-      "numAddedBytes" -> setAndReturnMetric("total number of bytes added", totalSize(addedFiles)),
-      "numRemovedBytes" -> setAndReturnMetric(
-        "total number of bytes removed", totalSize(removedFiles)),
-      "numDeletionVectorsRemoved" -> setAndReturnMetric(
-        "number of deletion vectors removed", 0L))
   }
 }
