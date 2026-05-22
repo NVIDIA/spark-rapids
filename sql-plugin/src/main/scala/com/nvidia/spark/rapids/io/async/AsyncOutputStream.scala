@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.io.async
 
 import java.io.{IOException, OutputStream}
-import java.util.concurrent.{Callable, TimeUnit}
+import java.util.concurrent.{Callable, ExecutionException, TimeUnit}
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -99,6 +99,15 @@ class AsyncOutputStream(openFn: Callable[OutputStream], executor: ThrottlingExec
   }
 
   @throws[IOException]
+  private def throwExecutionExceptionAsIOException(e: ExecutionException): Nothing = {
+    e.getCause match {
+      case t: IOException => throw t
+      case t if t != null => throw new IOException(t)
+      case _ => throw new IOException(e)
+    }
+  }
+
+  @throws[IOException]
   private def ensureOpen(): Unit = {
     if (closed) {
       throw new IOException("Stream closed")
@@ -176,7 +185,11 @@ class AsyncOutputStream(openFn: Callable[OutputStream], executor: ThrottlingExec
       delegate.flush()
     }, 0)
 
-    f.get()
+    try {
+      f.get()
+    } catch {
+      case e: ExecutionException => throwExecutionExceptionAsIOException(e)
+    }
   }
 
   /**
@@ -198,18 +211,22 @@ class AsyncOutputStream(openFn: Callable[OutputStream], executor: ThrottlingExec
           // Close on the async executor after all pending writes, before shutting the executor
           // down. Some cloud streams use a pipe tied to the writing thread and can report a
           // broken pipe if that thread exits before the stream is closed.
-          executor.submit(() => {
-            try {
-              throwIfError()
-              ensureOpen()
-              delegate.flush()
-            } catch {
-              case t: Throwable =>
-                delegate.safeClose(t)
-                throw t
-            }
-            delegate.close()
-          }, 0).get()
+          try {
+            executor.submit(() => {
+              try {
+                throwIfError()
+                ensureOpen()
+                delegate.flush()
+              } catch {
+                case t: Throwable =>
+                  delegate.safeClose(t)
+                  throw t
+              }
+              delegate.close()
+            }, 0).get()
+          } catch {
+            case e: ExecutionException => throwExecutionExceptionAsIOException(e)
+          }
         },
         () => executor.shutdownNow(10, TimeUnit.SECONDS),
         () => closed = true).safeClose()

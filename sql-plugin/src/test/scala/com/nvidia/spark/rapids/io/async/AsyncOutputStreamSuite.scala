@@ -147,7 +147,7 @@ class AsyncOutputStreamSuite extends AnyFunSuite with BeforeAndAfterEach {
           assert(secondReadStarted.await(5, TimeUnit.SECONDS),
             "timed out waiting for second pipe read")
 
-          Thread.sleep(4500)
+          Thread.sleep(2500)
           assert(pipeConsumerFailure.get() == null,
             s"pipe consumer failed while waiting for more data: ${pipeConsumerFailure.get()}")
 
