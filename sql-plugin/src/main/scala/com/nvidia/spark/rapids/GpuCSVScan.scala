@@ -104,6 +104,9 @@ object GpuCSVScan extends Logging {
 
   def isUTF8Charset(charset: Charset): Boolean = utf8Charsets.contains(charset)
 
+  def unsupportedLocaleForDecimalMessage(locale: Locale): String =
+    s"GpuCSVScan only supports Locale.US decimal parsing, got $locale"
+
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped
     tagSupport(
@@ -266,8 +269,7 @@ object GpuCSVScan extends Logging {
     }
 
     if (parsedOptions.locale != Locale.US && types.exists(_.isInstanceOf[DecimalType])) {
-      meta.willNotWorkOnGpu(
-        s"GpuCSVScan only supports Locale.US decimal parsing, got ${parsedOptions.locale}")
+      meta.willNotWorkOnGpu(GpuCSVScan.unsupportedLocaleForDecimalMessage(parsedOptions.locale))
     }
 
     if (ColumnDefaultValuesShims.hasExistenceDefaultValues(readSchema)) {
@@ -427,7 +429,8 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
         }
       }
     } else {
-      super.castStringToDecimal(input, dt)
+      throw new IllegalStateException(
+        GpuCSVScan.unsupportedLocaleForDecimalMessage(parsedOptions.locale))
     }
   }
 
