@@ -630,6 +630,13 @@ def test_regexp_hexadecimal_digits():
                 'regexp_replace(a, "\\\\xff", "@")',
                 'regexp_replace(a, "[\\\\xa0-\\\\xb0]", "@")',
                 'regexp_replace(a, "\\\\x{10ffff}", "@")',
+                # Issue #14739: non-braced \xNN followed by another hex digit
+                # used to be greedily consumed and rejected. The cap fix below
+                # makes these patterns run on GPU instead of falling back.
+                'regexp_replace(a, "\\\\x61a", "X")',
+                'regexp_replace(a, "\\\\x41f", "X")',
+                'rlike(a, "\\\\x61a")',
+                'rlike(a, "[\\\\x41b]")',
             ),
         conf=_regexp_conf)
 
