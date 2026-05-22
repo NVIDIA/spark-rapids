@@ -775,7 +775,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * GpuCoalesceBatches stripped). When a match is found, the DPP-side broadcast is
    * rewritten to ReusedExchangeExec referencing the join-side instance.
    */
-  private def fixupNonAdaptiveBroadcastReuse(p: SparkPlan): SparkPlan = {
+  private[rapids] def fixupNonAdaptiveBroadcastReuse(p: SparkPlan): SparkPlan = {
     // Strip GpuCoalesceBatches and similar transition wraps that the main-plan broadcast
     // gets from insertCoalesce/optimizeCoalesce but the DPP-side broadcast does not.
     def stripTransitions(plan: SparkPlan): SparkPlan = plan match {
