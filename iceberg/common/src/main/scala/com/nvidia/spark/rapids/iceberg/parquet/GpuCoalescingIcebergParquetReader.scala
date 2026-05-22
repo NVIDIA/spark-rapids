@@ -99,6 +99,16 @@ class GpuCoalescingIcebergParquetReader(
       {
       override def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
           nextBlockInfo: SingleDataBlockInfo): Boolean = {
+        val curExtra = currentBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
+        val nextExtra = nextBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
+        // Each Iceberg split owns its own GpuParquetReaderPostProcessor with private block
+        // metadata and _pos counters. Two splits of the same physical Parquet file share a
+        // file path but get distinct post-processors, so coalescing their blocks into one
+        // chunk would let the first split's post-processor finalize rows that belong to the
+        // second split — producing wrong _pos values and indexing past its block array.
+        if (curExtra.postProcessor ne nextExtra.postProcessor) {
+          return true
+        }
         if (currentBlockInfo.filePath == nextBlockInfo.filePath) {
           return false
         }
@@ -116,8 +126,6 @@ class GpuCoalescingIcebergParquetReader(
           nextBlockInfo.filePath.toString)) {
           return true
         }
-        val curExtra = currentBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
-        val nextExtra = nextBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
         !curExtra.postProcessor.compatibleForCombining(nextExtra.postProcessor)
       }
 
