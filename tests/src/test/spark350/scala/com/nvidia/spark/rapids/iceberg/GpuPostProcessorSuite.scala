@@ -943,29 +943,24 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
   // could emit FillNull.
   test("Missing nested optional map with required key does not throw") {
     val infoStructId = 1
-    val nameFieldId = 2
-    val scoreFieldId = 3
-    val propsMapId = 4  // newly-added MAP, missing from file
-    val propsKeyId = 5
-    val propsValueId = 6
+    val scoreFieldId = 2
+    val propsMapId = 3  // newly-added MAP, missing from file
+    val propsKeyId = 4
+    val propsValueId = 5
 
-    // Parquet file: info STRUCT<name: STRING, score: BIGINT> — no props
-    val nameType =
-      ShadedTypes.primitive(ShadedPrimitiveTypeName.BINARY, ShadedRepetition.OPTIONAL)
-      .id(nameFieldId).named("name")
+    // Parquet file: info STRUCT<score: BIGINT> — no props
     val scoreType =
       ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
       .id(scoreFieldId).named("score")
-    val infoStruct = ShadedTypes.optionalGroup().addField(nameType).addField(scoreType)
+    val infoStruct = ShadedTypes.optionalGroup().addField(scoreType)
       .id(infoStructId).named("info")
     val parquetSchema = new ShadedMessageType("test",
       Seq[ShadedType](infoStruct).asJava)
 
-    // Expected: info STRUCT<name, score, props: MAP<STRING, BIGINT>>
+    // Expected: info STRUCT<score, props: MAP<STRING, BIGINT>>
     val expectedSchema = new Schema(
       Types.NestedField.optional(infoStructId, "info",
         Types.StructType.of(
-          Types.NestedField.optional(nameFieldId, "name", Types.StringType.get()),
           Types.NestedField.optional(scoreFieldId, "score", Types.LongType.get()),
           Types.NestedField.optional(propsMapId, "props",
             Types.MapType.ofOptional(propsKeyId, propsValueId,
@@ -973,7 +968,8 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
         ))
     )
 
-    val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val rowCount = 3
+    val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema, rowCount.toLong)
     val processor = new GpuParquetReaderPostProcessor(
       parquetInfo,
       new JHashMap[Integer, Any](),
@@ -986,6 +982,36 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     // for an optional missing field). Children are discarded by the parent.
     assert(plan.contains("FillNull(map<"),
       s"expected FillNull for missing map in plan:\n$plan")
+
+    // Exercise process() too: action-tree construction succeeding is not the
+    // same guarantee as execute() succeeding for FillNull(map<...>).
+    import com.nvidia.spark.rapids.{FuzzerUtils, GpuColumnVector, SpillableColumnarBatch}
+    import com.nvidia.spark.rapids.SpillPriorities
+    import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+    import org.apache.spark.sql.types.{LongType, StructField, StructType => SparkStructType}
+
+    val inputSparkSchema = SparkStructType(Array(StructField(
+      "info",
+      SparkStructType(Seq(StructField("score", LongType, true))),
+      true)))
+    val inputBatch = FuzzerUtils.createColumnarBatch(inputSparkSchema, rowCount, seed = 42)
+    val spillable = closeOnExcept(inputBatch) { batch =>
+      SpillableColumnarBatch(batch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+    }
+    withResource(spillable) { _ =>
+      withResource(processor.process(spillable.getColumnarBatch())) { outputBatch =>
+        assert(outputBatch.numRows() == rowCount)
+        assert(outputBatch.numCols() == 1)
+        val infoCol = outputBatch.column(0).asInstanceOf[GpuColumnVector].getBase
+        // info struct gains props as a second child.
+        assert(infoCol.getNumChildren == 2,
+          s"expected info struct to have 2 children, got ${infoCol.getNumChildren}")
+        withResource(infoCol.getChildColumnView(1)) { propsCol =>
+          assert(propsCol.getNullCount == rowCount,
+            s"props should be all-null; nullCount=${propsCol.getNullCount} rowCount=$rowCount")
+        }
+      }
+    }
   }
 
   // Same defect, with LIST<required element> as the missing container.
