@@ -695,6 +695,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
   private val escapeChars = Map('n' -> '\n', 'r' -> '\r', 't' -> '\t', 'f' -> '\f', 'a' -> '\u0007',
       'b' -> '\b', 'e' -> '\u001b')
 
+  // Number of capture groups already emitted into the cuDF AST during the current call to
+  // getTranspiledAST. Used to compute the cuDF index of the synthesized (\r\n)? group
+  // inserted at the position of `$` so the appended backref points at the right group even
+  // when source capture groups appear AFTER `$` (issues #14855 and #14735).
+  private var emittedCaptureGroups: Int = 0
+
   private def countCaptureGroups(regex: RegexAST): Int = {
     regex match {
       case RegexSequence(parts) => parts.foldLeft(0)((c, re) => c + countCaptureGroups(re))
@@ -704,6 +710,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
         } else {
           countCaptureGroups(base)
         }
+      case RegexChoice(a, b) => countCaptureGroups(a) + countCaptureGroups(b)
+      case RegexRepetition(base, _) => countCaptureGroups(base)
       case _ => 0
     }
   }
@@ -729,6 +737,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
       regex: RegexAST,
       extractIndex: Option[Int],
       repl: Option[String]): (RegexAST, Option[RegexReplacement]) = {
+
+    // Reset the per-call emitted-capture-group counter so a transpiler instance reused
+    // across multiple transpile() calls (e.g. the "transpile character class unescaped
+    // range symbol" test in RegularExpressionTranspilerSuite.scala) starts fresh.
+    emittedCaptureGroups = 0
 
     // if we have a replacement, parse the replacement string using the regex parser to account
     // for backrefs
@@ -1097,8 +1110,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
             case _ =>
               // otherwise by default we can match any or none the full set of line terminators
               if (mode == RegexReplaceMode) {
+                // The synthesized (\r\n)? group opens at this position in the cuDF AST, so
+                // its cuDF index is (capture groups emitted so far) + 1. Using the total
+                // source capture count was off-by-one when source groups appeared AFTER `$`.
+                emittedCaptureGroups += 1
                 replacement match {
-                  case Some(rr) => rr.appendBackref(rr.numCaptureGroups + 1)
+                  case Some(rr) => rr.appendBackref(emittedCaptureGroups)
                   case _ =>
                 }
               }
@@ -1250,6 +1267,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
             RegexChar('\u000A'), RegexChar('\u000B'), RegexChar('\u000C'), RegexChar('\u000D'),
             RegexChar('\u0085'), RegexChar('\u2028'), RegexChar('\u2029')
           ))
+          // \R is rewritten as a capture group in cuDF; bump the counter so subsequent
+          // $-anchor synthesis uses the correct backref index.
+          emittedCaptureGroups += 1
           RegexGroup(true, RegexChoice(l, r), None)
         case _ if escapeChars.contains(ch) =>
           RegexChar(escapeChars(ch))
@@ -1421,6 +1441,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // (\A)+ can be transpiled to (\A) (dropping the repetition)
               // we use rewrite(...) here to handle logic regarding modes
               // (\A is not supported in RegexSplitMode)
+              if (capture) emittedCaptureGroups += 1
               RegexGroup(capture, rewrite(term, replacement, previous, flags), None)
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
@@ -1439,6 +1460,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // (\A){1,} can be transpiled to (\A) (dropping the repetition)
               // we use rewrite(...) here to handle logic regarding modes
               // (\A is not supported in RegexSplitMode)
+              if (capture) emittedCaptureGroups += 1
               RegexGroup(capture, rewrite(term, replacement, previous, flags), None)
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
@@ -1457,6 +1479,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
               // (\A){1,} can be transpiled to (\A) (dropping the repetition)
               // we use rewrite(...) here to handle logic regarding modes
               // (\A is not supported in RegexSplitMode)
+              if (capture) emittedCaptureGroups += 1
               RegexGroup(capture, rewrite(term, replacement, previous, flags), None)
             // NOTE: (\A)* can be transpiled to (\A)?
             // however, (\A)? is not supported in libcudf yet
@@ -1568,6 +1591,12 @@ class CudfRegexTranspiler(mode: RegexMode) {
         throw new RegexUnsupportedException(msg, g.position)
 
       case RegexGroup(capture, term, _) =>
+        // Capture groups in source map 1:1 to capture groups in cuDF (in pre-order). Bump the
+        // counter for the OPEN paren before recursing so any synthesized $-anchor backref
+        // inside `term` reflects that this group has already opened.
+        if (capture) {
+          emittedCaptureGroups += 1
+        }
         term match {
           case RegexSequence(parts) =>
             parts.foreach { part =>

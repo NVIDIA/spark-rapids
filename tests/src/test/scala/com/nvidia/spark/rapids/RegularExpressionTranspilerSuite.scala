@@ -108,6 +108,90 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     assertCpuGpuMatchesRegexpReplace(patterns, Seq("aaa", "bb", "a\tb", "aaaabbbb", "a\tb\ta\tb"))
   }
 
+  test("issue-14735: countCaptureGroups recurses into RegexChoice and RegexRepetition") {
+    // countCaptureGroups previously fell through to `case _ => 0` for capture
+    // groups under `|` (RegexChoice) or under quantifiers (RegexRepetition).
+    // That made `$N` backref replacements misindex and produced extra trailing
+    // literal text in the GPU output. We compare against Java's regex engine
+    // for several patterns exercising both AST shapes.
+    val cases = Seq(
+      // (javaPattern, javaReplacement, inputs)
+      ("(foo)|(bar)$", "[$1][$2]", Seq("foo", "bar")),
+      ("(a)|(b)",      "[$1|$2]",  Seq("a", "b", "ab", "ba", "c")),
+      ("(a)+",         "<$1>",     Seq("a", "aaa", "b")),
+      ("(ab)+|(cd)",   "{$1}{$2}", Seq("ab", "abab", "cd", "abcd"))
+    )
+    for ((javaPattern, javaReplacement, inputs) <- cases) {
+      val (cudfPattern, transpiledRepl) =
+        new CudfRegexTranspiler(RegexReplaceMode).transpile(
+          javaPattern, None, Some(javaReplacement))
+      val gpu = gpuReplace(cudfPattern, transpiledRepl.get, inputs)
+      val p = Pattern.compile(javaPattern)
+      val cpu = inputs.map(s => p.matcher(s).replaceAll(javaReplacement)).toArray
+      for (i <- inputs.indices) {
+        assert(cpu(i) == gpu(i),
+          s"javaPattern=${toReadableString(javaPattern)}, " +
+            s"javaReplacement=${toReadableString(javaReplacement)}, " +
+            s"input='${toReadableString(inputs(i))}', " +
+            s"cpu=${toReadableString(cpu(i))}, " +
+            s"gpu=${toReadableString(gpu(i))}")
+      }
+    }
+  }
+
+  test("issue-14855: line-anchor $ rewrite emits correct backref index when capture groups " +
+    "follow $") {
+    // The synthesized (\r\n)? group inserted at the position of `$` is the
+    // (capture-groups-emitted-so-far + 1)-th cuDF capture group, NOT the
+    // (total-source-cap + 1)-th. Patterns with a source capture group AFTER `$`
+    // previously emitted an off-by-one backref index, so the synthesized group's
+    // value substitution actually pulled from the user's capture group instead
+    // — producing visible garbage in the GPU output even when the user's
+    // replacement string contained no backrefs.
+    //
+    // We assert directly on the transpiled replacement: the appended synthesized
+    // backref (always the LAST token of the replacement) must equal the cuDF
+    // position of the (\r\n)? group, which is the count of cuDF capture groups
+    // OPEN at the position of `$` plus one.
+    //
+    // Patterns whose AST shape mirrors what the AST fuzz test generated and that
+    // caused the regression — i.e. `$` followed by a capture group hidden in a
+    // RegexChoice branch, where `checkUnsupported` does not detect the
+    // newline-after-`$` adjacency because it does not cross Choice boundaries.
+    val cases = Seq(
+      // (sourcePattern, expectedSynthesizedBackrefIndex)
+      // ONE source cap group AFTER $. Synthesized goes at cuDF #1, source (a) = cuDF #2.
+      ("$(a)", 1),
+      // ONE source cap group BEFORE $. Synthesized goes at cuDF #2.
+      ("(a)$", 2),
+      // ONE source cap group on each side of $: cap before = #1, synthesized = #2,
+      // cap after = #3.
+      ("(a)$(b)", 2),
+      // TWO source cap groups before $. Synthesized goes at cuDF #3.
+      ("(a)(b)$", 3),
+      // TWO source cap groups after $. Synthesized goes at cuDF #1.
+      ("$(a)(b)", 1),
+      // Real-world shape with non-capturing wrapper (mirrors fuzz #3712 without the
+      // \D that would trip checkUnsupported when surfaced through direct sequence).
+      ("(?:[A-Z]|(a)$(b))", 2)
+    )
+    for ((pattern, expectedIdx) <- cases) {
+      val (cudfPattern, replOpt) =
+        new CudfRegexTranspiler(RegexReplaceMode).transpile(pattern, None, Some("X"))
+      val repl = replOpt.getOrElse(
+        fail(s"transpile returned no replacement for $pattern (cudf: $cudfPattern)"))
+      val expectedSuffix = "$" + expectedIdx
+      // Extract the trailing $<digits> as a complete token so endsWith("$1") doesn't
+      // falsely match "$11" if a future change pushes the synthesized index past 9.
+      val trailingBackref = """\$\d+$""".r.findFirstIn(repl)
+      assert(trailingBackref.contains(expectedSuffix),
+        s"pattern=${toReadableString(pattern)}, expected synthesized backref " +
+          s"$expectedSuffix at end of replacement, got trailing=$trailingBackref, " +
+          s"full=${toReadableString(repl)}; " +
+          s"cudfPattern=${toReadableString(cudfPattern)}")
+    }
+  }
+
   test("zero-length repetition near line anchor  - regexp_find") {
     val patterns = Seq("\\00*[D$3]$", "\\00*[D$3]\\Z", "^([a-z]*)([0-9]*)([a-z]*)$")
     val inputs = Seq("abcd", "abc012abc", "999abb", "\\00D", "D", "D\n", "\\00D\n\r")
