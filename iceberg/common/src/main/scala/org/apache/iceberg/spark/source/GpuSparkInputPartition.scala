@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{HasPartitionKey, InputPartition}
 import org.apache.spark.util.SerializableConfiguration
 
-class GpuSparkInputPartition(val cpuPartition: SparkInputPartition,
+class GpuSparkInputPartition(val cpuPartition: InputPartition,
     rapidsConf: RapidsConf,
     val hadoopConf: Broadcast[SerializableConfiguration],
     val expectedSchemaStr: String) extends
@@ -52,7 +52,8 @@ class GpuSparkInputPartition(val cpuPartition: SparkInputPartition,
 
 
   override def preferredLocations(): Array[String] = cpuPartition.preferredLocations()
-  override def partitionKey(): InternalRow = cpuPartition.partitionKey()
+  override def partitionKey(): InternalRow =
+    cpuPartition.asInstanceOf[HasPartitionKey].partitionKey()
 
   @transient lazy val expectedSchema: Schema = {
     SchemaParser.fromJson(expectedSchemaStr)

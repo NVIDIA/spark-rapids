@@ -117,6 +117,7 @@ function copy_unshimmed_from_spark_shared() {
     while read -r pattern; do
       [[ -n "$pattern" ]] || continue
       [[ "$pattern" =~ ^[[:space:]]*# ]] && continue
+      # shellcheck disable=SC2053
       if [[ "$rel_path" == $pattern ]]; then
         echo "$rel_path" >> "$UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST"
         break

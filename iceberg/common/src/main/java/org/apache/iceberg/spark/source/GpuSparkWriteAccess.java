@@ -16,12 +16,25 @@
 
 package org.apache.iceberg.spark.source;
 
-import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Map;
 
+import org.apache.iceberg.DataFile;
+import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.Schema;
+import org.apache.iceberg.SnapshotUpdate;
+import org.apache.iceberg.Table;
+import org.apache.iceberg.deletes.DeleteGranularity;
+import org.apache.iceberg.io.DeleteWriteResult;
+import org.apache.iceberg.io.WriteResult;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.sql.connector.write.DeltaWrite;
+import org.apache.spark.sql.connector.write.RowLevelOperation.Command;
 import org.apache.spark.sql.connector.write.Write;
 import org.apache.spark.sql.connector.write.WriterCommitMessage;
+import org.apache.spark.sql.types.StructType;
 
 /**
  * Package-local access to Iceberg Spark write classes.
@@ -31,99 +44,226 @@ import org.apache.spark.sql.connector.write.WriterCommitMessage;
  * class loader as Iceberg itself.
  */
 public final class GpuSparkWriteAccess {
-  private static final String SPARK_WRITE_CLASS =
-      "org.apache.iceberg.spark.source.SparkWrite";
-  private static final String SPARK_POSITION_DELTA_WRITE_CLASS =
-      "org.apache.iceberg.spark.source.SparkPositionDeltaWrite";
-  private static final String TASK_COMMIT_CLASS =
-      "org.apache.iceberg.spark.source.SparkWrite$TaskCommit";
-  private static final String DELTA_TASK_COMMIT_CLASS =
-      "org.apache.iceberg.spark.source.SparkPositionDeltaWrite$DeltaTaskCommit";
-
   private GpuSparkWriteAccess() {
   }
 
   public static boolean supports(Class<? extends Write> cpuClass) {
-    ClassLoader loader = cpuClass.getClassLoader();
-    return isAssignableFrom(SPARK_WRITE_CLASS, cpuClass, loader)
-        || isAssignableFrom(SPARK_POSITION_DELTA_WRITE_CLASS, cpuClass, loader);
+    return SparkWrite.class.isAssignableFrom(cpuClass)
+        || SparkPositionDeltaWrite.class.isAssignableFrom(cpuClass);
   }
 
   public static String sparkWriteClassName() {
-    return SPARK_WRITE_CLASS;
+    return SparkWrite.class.getName();
   }
 
-  public static WriterCommitMessage taskCommit(Object files) {
-    Object commit = newInstance(TASK_COMMIT_CLASS, bridgeClassLoader(), files);
-    invoke(commit, "reportOutputMetrics");
-    return (WriterCommitMessage) commit;
+  public static Table table(Write write) {
+    return readField(sparkWrite(write), "table", Table.class);
   }
 
-  public static Object[] taskCommitFiles(WriterCommitMessage message) {
-    return (Object[]) invoke(message, "files");
+  public static FileFormat format(Write write) {
+    return readField(sparkWrite(write), "format", FileFormat.class);
   }
 
-  public static WriterCommitMessage deltaTaskCommit(Object result) {
-    return (WriterCommitMessage) newInstance(DELTA_TASK_COMMIT_CLASS, bridgeClassLoader(), result);
+  public static JavaSparkContext sparkContext(Write write) {
+    return readField(sparkWrite(write), "sparkContext", JavaSparkContext.class);
   }
 
-  private static ClassLoader bridgeClassLoader() {
-    return GpuSparkWriteAccess.class.getClassLoader();
+  public static String queryId(Write write) {
+    return readField(sparkWrite(write), "queryId", String.class);
   }
 
-  private static boolean isAssignableFrom(
-      String className,
-      Class<? extends Write> cpuClass,
-      ClassLoader loader) {
-    Class<?> baseClass = loadClass(className, loader);
-    return baseClass != null && baseClass.isAssignableFrom(cpuClass);
+  public static int outputSpecId(Write write) {
+    return readField(sparkWrite(write), "outputSpecId", Integer.class);
   }
 
-  private static Class<?> loadClass(String className, ClassLoader loader) {
+  public static long targetFileSize(Write write) {
+    return readField(sparkWrite(write), "targetFileSize", Long.class);
+  }
+
+  public static Schema writeSchema(Write write) {
+    return readField(sparkWrite(write), "writeSchema", Schema.class);
+  }
+
+  public static StructType dsSchema(Write write) {
+    return readField(sparkWrite(write), "dsSchema", StructType.class);
+  }
+
+  public static boolean useFanoutWriter(Write write) {
+    return readField(sparkWrite(write), "useFanoutWriter", Boolean.class);
+  }
+
+  @SuppressWarnings("unchecked")
+  public static Map<String, String> writeProperties(Write write) {
+    return readField(sparkWrite(write), "writeProperties", Map.class);
+  }
+
+  public static void abort(Write write, WriterCommitMessage[] messages) {
+    invokeMethod(
+        sparkWrite(write),
+        "abort",
+        new Class<?>[] {WriterCommitMessage[].class},
+        new Object[] {messages});
+  }
+
+  public static void commitOperation(
+      Write write, SnapshotUpdate<?> operation, String description) {
+    invokeMethod(
+        sparkWrite(write),
+        "commitOperation",
+        new Class<?>[] {SnapshotUpdate.class, String.class},
+        new Object[] {operation, description});
+  }
+
+  public static Table table(DeltaWrite write) {
+    return readField(positionDeltaWrite(write), "table", Table.class);
+  }
+
+  public static JavaSparkContext sparkContext(DeltaWrite write) {
+    return readField(positionDeltaWrite(write), "sparkContext", JavaSparkContext.class);
+  }
+
+  public static Command command(DeltaWrite write) {
+    return readField(positionDeltaWrite(write), "command", Command.class);
+  }
+
+  @SuppressWarnings("unchecked")
+  public static Map<String, String> writeProperties(DeltaWrite write) {
+    return readField(positionDeltaWrite(write), "writeProperties", Map.class);
+  }
+
+  public static Object context(DeltaWrite write) {
+    return readField(positionDeltaWrite(write), "context", Object.class);
+  }
+
+  public static Schema contextDataSchema(Object context) {
+    return readField(context, "dataSchema", Schema.class);
+  }
+
+  public static StructType contextDataSparkType(Object context) {
+    return readField(context, "dataSparkType", StructType.class);
+  }
+
+  public static FileFormat contextDataFileFormat(Object context) {
+    return readField(context, "dataFileFormat", FileFormat.class);
+  }
+
+  public static long contextTargetDataFileSize(Object context) {
+    return readField(context, "targetDataFileSize", Long.class);
+  }
+
+  public static StructType contextDeleteSparkType(Object context) {
+    return readField(context, "deleteSparkType", StructType.class);
+  }
+
+  public static StructType contextMetadataSparkType(Object context) {
+    return readField(context, "metadataSparkType", StructType.class);
+  }
+
+  public static FileFormat contextDeleteFileFormat(Object context) {
+    return readField(context, "deleteFileFormat", FileFormat.class);
+  }
+
+  public static long contextTargetDeleteFileSize(Object context) {
+    return readField(context, "targetDeleteFileSize", Long.class);
+  }
+
+  public static DeleteGranularity contextDeleteGranularity(Object context) {
+    return readField(context, "deleteGranularity", DeleteGranularity.class);
+  }
+
+  public static String contextQueryId(Object context) {
+    return readField(context, "queryId", String.class);
+  }
+
+  public static boolean contextUseFanoutWriter(Object context) {
+    return readField(context, "useFanoutWriter", Boolean.class);
+  }
+
+  public static boolean contextInputOrdered(Object context) {
+    return readField(context, "inputOrdered", Boolean.class);
+  }
+
+  public static WriterCommitMessage taskCommit(DataFile[] files) {
+    SparkWrite.TaskCommit commit = new SparkWrite.TaskCommit(files);
+    commit.reportOutputMetrics();
+    return commit;
+  }
+
+  public static DataFile[] taskCommitFiles(WriterCommitMessage message) {
+    return ((SparkWrite.TaskCommit) message).files();
+  }
+
+  public static WriterCommitMessage deltaTaskCommit(WriteResult result) {
+    return new SparkPositionDeltaWrite.DeltaTaskCommit(result);
+  }
+
+  public static WriterCommitMessage deltaTaskCommit(DeleteWriteResult result) {
+    return new SparkPositionDeltaWrite.DeltaTaskCommit(result);
+  }
+
+  private static SparkWrite sparkWrite(Write write) {
+    return (SparkWrite) write;
+  }
+
+  private static SparkPositionDeltaWrite positionDeltaWrite(DeltaWrite write) {
+    return (SparkPositionDeltaWrite) write;
+  }
+
+  private static <T> T readField(Object target, String fieldName, Class<T> fieldType) {
     try {
-      return Class.forName(className, false, loader);
-    } catch (ClassNotFoundException e) {
-      return null;
+      Field field = findField(target.getClass(), fieldName);
+      field.setAccessible(true);
+      return fieldType.cast(field.get(target));
+    } catch (IllegalAccessException e) {
+      throw new IllegalStateException(
+          "Unable to read " + fieldName + " from " + target.getClass().getName(), e);
     }
   }
 
-  private static Object newInstance(String className, ClassLoader loader, Object arg) {
-    Class<?> targetClass = requireClass(className, loader);
-    Constructor<?> constructor = findConstructor(targetClass, arg.getClass());
-    try {
-      constructor.setAccessible(true);
-      return constructor.newInstance(arg);
-    } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
-      throw new IllegalStateException("Unable to instantiate " + className, e);
-    }
-  }
-
-  private static Constructor<?> findConstructor(Class<?> targetClass, Class<?> argClass) {
-    for (Constructor<?> constructor : targetClass.getDeclaredConstructors()) {
-      Class<?>[] parameterTypes = constructor.getParameterTypes();
-      if (parameterTypes.length == 1 && parameterTypes[0].isAssignableFrom(argClass)) {
-        return constructor;
+  private static Field findField(Class<?> targetClass, String fieldName) {
+    Class<?> current = targetClass;
+    while (current != null) {
+      try {
+        return current.getDeclaredField(fieldName);
+      } catch (NoSuchFieldException e) {
+        current = current.getSuperclass();
       }
     }
-    throw new IllegalStateException("No matching constructor for " + targetClass.getName());
+    throw new IllegalStateException("No field " + fieldName + " in " + targetClass.getName());
   }
 
-  private static Object invoke(Object target, String methodName) {
+  private static void invokeMethod(
+      Object target, String methodName, Class<?>[] parameterTypes, Object[] args) {
     try {
-      Method method = target.getClass().getDeclaredMethod(methodName);
+      Method method = findMethod(target.getClass(), methodName, parameterTypes);
       method.setAccessible(true);
-      return method.invoke(target);
-    } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+      method.invoke(target, args);
+    } catch (IllegalAccessException e) {
       throw new IllegalStateException(
           "Unable to invoke " + methodName + " on " + target.getClass().getName(), e);
+    } catch (InvocationTargetException e) {
+      Throwable cause = e.getCause();
+      if (cause instanceof RuntimeException) {
+        throw (RuntimeException) cause;
+      }
+      if (cause instanceof Error) {
+        throw (Error) cause;
+      }
+      throw new IllegalStateException(
+          "Unable to invoke " + methodName + " on " + target.getClass().getName(), cause);
     }
   }
 
-  private static Class<?> requireClass(String className, ClassLoader loader) {
-    Class<?> targetClass = loadClass(className, loader);
-    if (targetClass == null) {
-      throw new IllegalStateException("Unable to load " + className);
+  private static Method findMethod(
+      Class<?> targetClass, String methodName, Class<?>[] parameterTypes) {
+    Class<?> current = targetClass;
+    while (current != null) {
+      try {
+        return current.getDeclaredMethod(methodName, parameterTypes);
+      } catch (NoSuchMethodException e) {
+        current = current.getSuperclass();
+      }
     }
-    return targetClass;
+    throw new IllegalStateException("No method " + methodName + " in " + targetClass.getName());
   }
 }
