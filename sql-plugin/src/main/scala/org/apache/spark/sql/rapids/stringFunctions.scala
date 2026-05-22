@@ -1079,11 +1079,20 @@ object GpuRegExpUtils {
    * This method transforms above two patterns into cuDF pattern \${group_index}, except they are
    * preceded by escape character.
    *
+   * Java's `Matcher.appendReplacement` reads the digits after `$` or `\` one at a time and
+   * stops as soon as adding the next digit would make the running group index exceed the
+   * actual capture-group count; any further digits are treated as literal characters
+   * (greedy-with-backoff). When `numCaptureGroups` is negative the caller is opting out of the
+   * Java-spec check (used by tests and legacy callers), in which case we keep the original
+   * eagerly-greedy behavior so cuDF still raises on out-of-range indices.
+   *
    * @param rep replacement string
+   * @param numCaptureGroups number of capturing groups in the corresponding pattern; pass a
+   *                         negative value to disable greedy-with-backoff
    * @return A pair consists of a boolean indicating whether containing any backref and the
    *         converted replacement.
    */
-  def backrefConversion(rep: String): (Boolean, String) = {
+  def backrefConversion(rep: String, numCaptureGroups: Int): (Boolean, String) = {
     val b = new StringBuilder
     var i = 0
     while (i < rep.length) {
@@ -1091,14 +1100,41 @@ object GpuRegExpUtils {
       if (Seq('$', '\\').contains(rep.charAt(i))
         && i + 1 < rep.length && rep.charAt(i + 1).isDigit) {
 
-        b.append("${")
+        // Consume digits one at a time. If the running group index would exceed the actual
+        // capture-group count, stop and leave the remaining digits as literals. When no digit
+        // can be consumed without exceeding the count (e.g. `$5` against a 4-group pattern),
+        // fall through to the legacy eagerly-greedy path so cuDF surfaces the out-of-range
+        // error.
         var j = i + 1
-        do {
-          b.append(rep.charAt(j))
-          j += 1
-        } while (j < rep.length && rep.charAt(j).isDigit)
-        b.append("}")
-        i = j
+        var n = 0
+        val consumed = new StringBuilder
+        var stopped = false
+        while (j < rep.length && rep.charAt(j).isDigit && !stopped) {
+          val nextN = n * 10 + (rep.charAt(j) - '0')
+          if (numCaptureGroups >= 0 && nextN > numCaptureGroups) {
+            stopped = true
+          } else {
+            n = nextN
+            consumed.append(rep.charAt(j))
+            j += 1
+          }
+        }
+        if (consumed.nonEmpty) {
+          b.append("${").append(consumed).append("}")
+          i = j
+        } else {
+          // Legacy path: greedily swallow every digit so cuDF errors on the out-of-range
+          // index (preserves existing behavior covered by
+          // `test_re_replace_backrefs_idx_out_of_bounds`).
+          b.append("${")
+          var k = i + 1
+          do {
+            b.append(rep.charAt(k))
+            k += 1
+          } while (k < rep.length && rep.charAt(k).isDigit)
+          b.append("}")
+          i = k
+        }
       } else if (rep.charAt(i) == '\\' && i + 1 < rep.length) {
         // skip potential \$group_index or \\group_index
         b.append('\\').append(rep.charAt(i + 1))

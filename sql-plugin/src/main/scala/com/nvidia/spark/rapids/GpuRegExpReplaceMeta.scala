@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,16 @@ class GpuRegExpReplaceMeta(
           val (pat, repl) =
               new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
                   replacement)
-          repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {
+          // Compute the actual capture-group count of the Java pattern so that
+          // `backrefConversion` can follow Java's greedy-with-backoff rule:
+          // `$N` where N's running value would exceed the group count is interpreted as
+          // `$<longest valid prefix>` followed by the remaining digits as literals
+          // (see issue #14743).
+          val numCaptureGroups =
+            java.util.regex.Pattern.compile(s.toString).matcher("").groupCount()
+          repl.map { r =>
+            GpuRegExpUtils.backrefConversion(r.toRegexString, numCaptureGroups)
+          }.foreach {
               case (hasBackref, convertedRep) =>
                 containsBackref = hasBackref
                 replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))

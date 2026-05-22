@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -339,7 +339,13 @@ def test_re_replace_backrefs():
             'REGEXP_REPLACE(a, "(T)[a-z]+(T)", "[$2][$1][$0]")',
             'REGEXP_REPLACE(a, "([0-9]+)(T)[a-z]+(T)", "[$3][$2][$1]")',
             'REGEXP_REPLACE(a, "(.)([0-9]+TEST)", "$0 $1 $2")',
-            'REGEXP_REPLACE(a, "(TESTT)", "\\0 \\1")'  # no match
+            'REGEXP_REPLACE(a, "(TESTT)", "\\0 \\1")',  # no match
+            # issue-14743: greedy-with-backoff per Java's `Matcher.appendReplacement`.
+            # "$12" on a 2-group pattern must be parsed as "$1" + literal "2", not as
+            # group 12 (which would error in cuDF).
+            'REGEXP_REPLACE(a, "(T)(E)", "$12")',
+            'REGEXP_REPLACE(a, "(T)(E)", "x$12y")',
+            'REGEXP_REPLACE(a, "(T)(E)", "$123$2")'
         ),
         conf=_regexp_conf)
 
