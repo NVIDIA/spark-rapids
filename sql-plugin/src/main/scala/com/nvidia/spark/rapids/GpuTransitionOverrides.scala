@@ -791,7 +791,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
     // DPP-side broadcasts (which live inside GpuSubqueryBroadcastExec under a subquery
     // expression) are naturally excluded from this collection — exactly what we want, because
     // those are the instances the transformAllExpressions pass below will rewrite.
-    val mainPlanBroadcasts = scala.collection.mutable.ArrayBuffer.empty[GpuBroadcastExchangeExec]
+    val mainPlanBroadcasts = mutable.ArrayBuffer.empty[GpuBroadcastExchangeExec]
     p.foreach {
       case g: GpuBroadcastExchangeExec => mainPlanBroadcasts += g
       case _ =>
