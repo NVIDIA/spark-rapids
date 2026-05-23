@@ -30,6 +30,13 @@ class GpuSparkInputPartition(val cpuPartition: InputPartition,
     val expectedSchemaStr: String) extends
   InputPartition with HasPartitionKey with Serializable {
 
+  private val cpuPartitionWithKey: HasPartitionKey = cpuPartition match {
+    case withKey: HasPartitionKey => withKey
+    case other =>
+      throw new IllegalArgumentException(
+        s"Iceberg input partition ${other.getClass.getName} does not provide a partition key")
+  }
+
   val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
   val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
   val gpuTargetBatchSizeBytes: Long = rapidsConf.gpuTargetBatchSizeBytes
@@ -52,8 +59,7 @@ class GpuSparkInputPartition(val cpuPartition: InputPartition,
 
 
   override def preferredLocations(): Array[String] = cpuPartition.preferredLocations()
-  override def partitionKey(): InternalRow =
-    cpuPartition.asInstanceOf[HasPartitionKey].partitionKey()
+  override def partitionKey(): InternalRow = cpuPartitionWithKey.partitionKey()
 
   @transient lazy val expectedSchema: Schema = {
     SchemaParser.fromJson(expectedSchemaStr)
