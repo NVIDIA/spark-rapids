@@ -69,7 +69,7 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
     val cpuBatchClassName = cpuBatch.getClass.getSimpleName
 
     cpuBatchClassName match {
-      case "BatchAppend" => new GpuBatchAppend(this)
+      case "BatchAppend" => new GpuBatchAppend(this, cpuBatch)
       case "DynamicOverwrite" => new GpuDynamicOverwrite(this, cpuBatch)
       case "OverwriteByFilter" => new GpuOverwriteByFilter(this, cpuBatch)
       case "CopyOnWriteOperation" => new GpuCopyOnWriteOperation(this, cpuBatch)
@@ -83,10 +83,6 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
     "GpuSparkWrite does not support streaming write")
 
   override def toString: String = s"GpuIcebergWrite(table=$table, format=$format)"
-
-  private[source] def abort(messages: Array[WriterCommitMessage]): Unit = {
-    GpuSparkWriteAccess.abort(cpu, messages)
-  }
 
   override def distributionStrictlyRequired(): Boolean =
     writeRequirements.distributionStrictlyRequired()
@@ -155,16 +151,6 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
       outputWriterFactory,
       statsTracker,
       serializedHadoopConf)
-  }
-
-  private[source] def files(messages: Array[WriterCommitMessage]): Seq[DataFile] = {
-    messages.filter(_ != null)
-      .flatMap(GpuSparkWriteAccess.taskCommitFiles)
-      .toSeq
-  }
-
-  private[source] def commitOperation(operation: SnapshotUpdate[_], desc: String) = {
-    GpuSparkWriteAccess.commitOperation(cpu, operation, desc)
   }
 }
 

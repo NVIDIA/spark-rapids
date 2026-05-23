@@ -807,8 +807,7 @@ object GpuWriteContext {
   }
 
   /**
-   * Creates a GpuWriteContext from a CPU Context object using reflection.
-   * This reads all fields from the CPU SparkPositionDeltaWrite.Context.
+   * Creates a GpuWriteContext from a CPU Context object through the root-layout helper.
    */
   private[iceberg] def apply(cpu: AnyRef): GpuWriteContext = {
     val dataSchema = GpuSparkWriteAccess.contextDataSchema(cpu)
