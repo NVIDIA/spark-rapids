@@ -3278,7 +3278,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     unknownRapidsConfs(Map(conf.getAll: _*)).foreach { key =>
       logWarning(s"Unknown RAPIDS Accelerator configuration '$key'. This may be a typo, " +
         "or the configuration may have been removed or moved. The setting will be ignored by " +
-        "this plugin version unless it is handled by another RAPIDS plugin component.")
+        "this plugin version.")
     }
   }
 }
