@@ -1245,8 +1245,37 @@ class CudfRegexTranspiler(mode: RegexMode) {
           regex
       }
 
-      case RegexCharacterRange(_, _) =>
-        regex
+      case RegexCharacterRange(start, end) =>
+        // Recurse into both endpoints so that hex/octal/meta-character
+        // normalisation applies to range endpoints the same way it applies
+        // to standalone literals. Without this recursion
+        // the arm is a no-op and the range AST is emitted unrewritten —
+        // a latent bug that surfaces for any future path that constructs
+        // a `RegexCharacterRange` with a non-`RegexChar` endpoint
+        // requiring normalisation. See NVIDIA/spark-rapids#14745.
+        //
+        // Mirrors the `^$.` bypass that `RegexCharacterClass` (a few lines
+        // below) applies: inside a character class — and hence inside a
+        // range — those three characters are literal, never anchors or
+        // dot, so they must NOT be re-routed through the top-level
+        // RegexChar arm. Without this guard the recursive call rewrites
+        // `RegexChar('$')` to `\Z`, producing `[\Z-\Z]` which then breaks
+        // cuDF compilation (regression seen in the `string split fuzz`
+        // tests).
+        def rewriteEndpoint(comp: RegexCharacterClassComponent,
+            label: String): RegexCharacterClassComponent = comp match {
+          case r @ RegexChar(ch) if "^$.".contains(ch) => r
+          case other => rewrite(other, replacement, None, flags) match {
+            case c: RegexCharacterClassComponent => c
+            case _ =>
+              throw new RegexUnsupportedException(
+                s"Character range $label did not transpile to a character " +
+                "class component", other.position)
+          }
+        }
+        RegexCharacterRange(
+          rewriteEndpoint(start, "start"),
+          rewriteEndpoint(end, "end"))
 
       case RegexCharacterClass(negated, characters) =>
         characters.foreach {

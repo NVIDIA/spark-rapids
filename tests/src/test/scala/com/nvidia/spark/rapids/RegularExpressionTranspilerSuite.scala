@@ -270,6 +270,47 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
       Seq("", "a", "x￿y", "xÿy", "￿", "ÿ"))
   }
 
+  test("CudfRegexTranspiler.rewrite recurses into RegexCharacterRange") {
+    // Exercise the AST overload directly: the string parser normally converts
+    // these endpoints before the range reaches the transpiler.
+    val directRange = RegexCharacterRange(RegexHexDigit("80"), RegexHexDigit("ff"))
+    val (rewrittenRange, replacement) = new CudfRegexTranspiler(RegexFindMode)
+      .getTranspiledAST(directRange, None, None)
+    assert(replacement.isEmpty)
+    assert(rewrittenRange === RegexCharacterRange(RegexChar('\u0080'), RegexChar('\u00ff')))
+
+    // These characters are literals in a range. Without the endpoint bypass,
+    // the ordinary top-level rewrite would treat them as anchors or wildcard.
+    "^$.".foreach { ch =>
+      val literalRange = RegexCharacterRange(RegexChar(ch), RegexChar(ch))
+      val (rewrittenLiteralRange, _) = new CudfRegexTranspiler(RegexFindMode)
+        .getTranspiledAST(literalRange, None, None)
+      assert(rewrittenLiteralRange === literalRange)
+    }
+
+    // A range endpoint must remain a character-class component after recursion.
+    val invalidRange = RegexCharacterRange(RegexEscaped('s'), RegexChar('z'))
+    val error = intercept[RegexUnsupportedException] {
+      new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(invalidRange, None, None)
+    }
+    assert(error.getMessage.contains(
+      "Character range start did not transpile to a character class component"))
+
+    // Parsed BMP ranges round-trip through GPU == CPU parity. This also protects
+    // the `^$.` literal bypass used while recursively rewriting range endpoints.
+    val bmpRangePatterns = Seq(
+      raw"[\x41-\x5a]",            // ASCII A-Z via 2-digit hex on both sides
+      raw"[\x{41}-\x{5a}]",        // ASCII A-Z via braced hex on both sides
+      raw"[\x00-\x7f]",            // null to DEL
+      raw"[\x{0000}-\x{007F}]",    // null to DEL via braced hex
+      raw"[a-\xff]",               // mixed literal / hex endpoints
+      raw"[\x20-z]"                // hex start / literal end (existing case)
+    )
+    val bmpRangeInputs = Seq("", "A", "Z", "a", "\u007f", "\u0000",
+      "ABCxyz", "x￿y", "abc!", "\u0080")
+    assertCpuGpuMatchesRegexpFind(bmpRangePatterns, bmpRangeInputs)
+  }
+
   test("hex digit character classes") {
     val patterns = Seq(raw"[\x02]", raw"[\x2c]", raw"[\x7f]", raw"[\x80]", raw"[\x01-\xff]",
       raw"[a-\xff]", raw"[\x20-z]")
