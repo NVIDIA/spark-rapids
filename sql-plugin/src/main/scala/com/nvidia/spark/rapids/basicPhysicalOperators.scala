@@ -234,9 +234,8 @@ object GpuProjectExec {
   /**
    * Run a retryable projection with row-split retry. On GPU OOM the retry
    * framework calls splitSpillableInHalfByRows to halve the input batch and
-   * re-runs the projection on each half; sub-batches are concatenated back into
-   * a single output batch to preserve the single-batch contract of
-   * projectAndCloseWithRetrySingleBatch.
+   * re-runs the projection on each half. Returns a lazy iterator of projected
+   * sub-batches; if no split occurs the iterator yields exactly one piece.
    *
    * Caller must ensure the projection driven by `runProject` is retryable.
    * Non-deterministic expressions are safe here only when they implement
@@ -245,15 +244,20 @@ object GpuProjectExec {
    * `runProject` receives a (non-spillable) ColumnarBatch and returns the
    * projected ColumnarBatch. It must not close its input (the framework will).
    *
-   * Takes ownership of `sb`: it is closed by the retry iterator when drained.
-   * If the caller does not want to surrender ownership, it must increment the
-   * ref count before calling.
+   * Takes ownership of `sb`: it is closed by the retry iterator as soon as
+   * the caller pulls the first piece (sb migrates from the wrapping input
+   * iterator to the attempt stack on the first next()). The retry framework's
+   * onTaskCompletion hook closes whatever is on the attempt stack at task
+   * exit, so partial drains are safe under a Spark task. WARNING: if the
+   * returned iterator is never iterated (zero next() calls) the input still
+   * sits in the wrapping single-item iterator, which closeInternal does not
+   * touch — drain the iterator before discarding it.
    */
-  private[rapids] def runWithSplitRetry(
+  private[rapids] def runStreamingWithSplitRetry(
       sb: SpillableColumnarBatch,
       retryables: Seq[Retryable],
-      runProject: ColumnarBatch => ColumnarBatch): ColumnarBatch = {
-    val resultIter = withRetry(sb, splitSpillableInHalfByRows) { spillable =>
+      runProject: ColumnarBatch => ColumnarBatch): Iterator[ColumnarBatch] = {
+    withRetry(sb, splitSpillableInHalfByRows) { spillable =>
       retryables.foreach(_.checkpoint())
       withResource(spillable.getColumnarBatch()) { cb =>
         withRestoreOnRetry(retryables) {
@@ -261,6 +265,19 @@ object GpuProjectExec {
         }
       }
     }
+  }
+
+  /**
+   * Single-batch variant of runStreamingWithSplitRetry: drains the streaming
+   * iterator and concatenates sub-batches back into one output batch. Used by
+   * callers that still need the single-batch contract of
+   * projectAndCloseWithRetrySingleBatch.
+   */
+  private[rapids] def runWithSplitRetry(
+      sb: SpillableColumnarBatch,
+      retryables: Seq[Retryable],
+      runProject: ColumnarBatch => ColumnarBatch): ColumnarBatch = {
+    val resultIter = runStreamingWithSplitRetry(sb, retryables, runProject)
     val pieces = ArrayBuffer[ColumnarBatch]()
     closeOnExcept(pieces) { _ =>
       while (resultIter.hasNext) {
@@ -881,17 +898,31 @@ case class GpuProjectExec(
       } else {
         iter
       }
-      maybeSplitIter.map { split =>
-        val ret = NvtxIdWithMetrics(NvtxRegistry.PROJECT_EXEC, opTime) {
+      // Use the streaming variant so split-retry pieces flow downstream as
+      // separate batches instead of being concatenated. For non-split-retry
+      // paths the iterator yields exactly one piece per input. The outer
+      // NvtxIdWithMetrics covers spillable construction and either (a) the
+      // eager projection on the fallback Iterator.single path or (b) retry-
+      // framework setup on the streaming path; the inner NvtxIdWithMetrics
+      // covers each lazy piece projection on the streaming path.
+      maybeSplitIter.flatMap { split =>
+        val pieces = NvtxIdWithMetrics(NvtxRegistry.PROJECT_EXEC, opTime) {
           val sb = SpillableColumnarBatch(split, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-          // Note if this ever changes to include splitting the output we need to
-          // have an option to not do this for window to work properly.
-          // [Update 2024/12/24: "localEnablePreSplit" is introduced for this goal]
-          boundProjectList.projectAndCloseWithRetrySingleBatch(sb)
+          closeOnExcept(sb) { _ =>
+            boundProjectList.projectAndCloseStreamingWithSplitRetry(sb)
+          }
         }
-        numOutputBatches += 1
-        numOutputRows += ret.numRows()
-        ret
+        new Iterator[ColumnarBatch] {
+          override def hasNext: Boolean = pieces.hasNext
+          override def next(): ColumnarBatch = {
+            val ret = NvtxIdWithMetrics(NvtxRegistry.PROJECT_EXEC, opTime) {
+              pieces.next()
+            }
+            numOutputBatches += 1
+            numOutputRows += ret.numRows()
+            ret
+          }
+        }
       }
     }
   }
@@ -1144,6 +1175,39 @@ case class GpuProjectAstExec(
    */
   def projectWithRetrySingleBatch(sb: SpillableColumnarBatch): ColumnarBatch =
     projectWithRetrySingleBatchInternal(sb, closeInputBatch = false)
+
+  /**
+   * Streaming variant of projectAndCloseWithRetrySingleBatch. When all
+   * expressions are retryable and split-retry is enabled, returns the raw
+   * per-piece iterator from runStreamingWithSplitRetry without concatenating.
+   * Otherwise falls back to the single-batch path and yields exactly one
+   * piece, so callers can uniformly flatMap over the result.
+   *
+   * Takes ownership of `sb` in both paths.
+   *
+   * WARNING: only safe for callers that can consume multiple output batches
+   * per input batch. Operators that align downstream state with one output
+   * per input (e.g. GpuExpandIterator's projection-index alignment, embedded
+   * projects inside joins/aggregates/python eval) must keep using
+   * projectAndCloseWithRetrySingleBatch — migrating them here will silently
+   * mis-align state when split-retry fires.
+   *
+   * The returned Iterator is NOT AutoCloseable. The fallback branch
+   * (Iterator.single) is eager and consumes `sb` synchronously; the
+   * streaming branch is lazy and consumes `sb` on the first next() call.
+   * Drain before discarding, or rely on the retry framework's
+   * onTaskCompletion hook to clean up — but see the caveat on
+   * GpuProjectExec.runStreamingWithSplitRetry about iterators that are
+   * never iterated.
+   */
+  def projectAndCloseStreamingWithSplitRetry(
+      sb: SpillableColumnarBatch): Iterator[ColumnarBatch] = {
+    if (areAllRetryable && RapidsConf.PROJECT_SPLIT_RETRY_ENABLED.get(SQLConf.get)) {
+      GpuProjectExec.runStreamingWithSplitRetry(sb, retryables, project(_))
+    } else {
+      Iterator.single(projectAndCloseWithRetrySingleBatch(sb))
+    }
+  }
 
   def project(batch: ColumnarBatch): ColumnarBatch = {
     @tailrec

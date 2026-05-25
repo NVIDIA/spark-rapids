@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
 import com.nvidia.spark.rapids.jni.{GpuSplitAndRetryOOM, RmmSpark}
 
@@ -262,5 +262,72 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
     }
     assertResult(0)(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1))
     assert(RmmSpark.getAndResetNumRetryThrow(/*taskId*/ 1) > 0)
+  }
+
+  // Drain a streaming-projection iterator into an ArrayBuffer under
+  // closeOnExcept so a mid-drain failure (e.g., a real OOM after one piece
+  // has been produced) closes the already-produced pieces instead of
+  // leaking them through the test's leak detector.
+  private def drainPieces(
+      it: Iterator[ColumnarBatch]): scala.collection.mutable.ArrayBuffer[ColumnarBatch] = {
+    val buf = scala.collection.mutable.ArrayBuffer[ColumnarBatch]()
+    closeOnExcept(buf) { _ =>
+      while (it.hasNext) {
+        buf += it.next()
+      }
+    }
+    buf
+  }
+
+  // Streaming entry: under split-retry the iterator should emit two or more
+  // pieces (no concat) and their row-wise concatenation must equal the
+  // single-batch reference.
+  test("streaming split-retry emits multiple pieces and matches reference") {
+    val tier = GpuBindReferences.bindGpuReferencesTiered(
+      addOneExprs(), batchAttrs, new SQLConf(), Map.empty)
+    assert(tier.areAllRetryable)
+    val sb = newSpillable()
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+    val pieces = drainPieces(tier.projectAndCloseStreamingWithSplitRetry(sb))
+    withResource(pieces) { _ =>
+      assert(pieces.size >= 2,
+        s"expected >= 2 pieces from streaming split-retry, got ${pieces.size}")
+      val total = pieces.map(_.numRows()).sum
+      assertResult(NUM_ROWS)(total)
+      val got = pieces.flatMap(collectInts(_, 0)).toArray
+      (0 until NUM_ROWS).foreach { i =>
+        assertResult(i + 1)(got(i))
+      }
+    }
+    assert(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1) > 0)
+  }
+
+  // Non-split paths should still flow through the streaming entry as a
+  // single piece, so callers can uniformly flatMap over it.
+  test("streaming entry yields one piece when no split occurs") {
+    val tier = GpuBindReferences.bindGpuReferencesTiered(
+      addOneExprs(), batchAttrs, new SQLConf(), Map.empty)
+    val sb = newSpillable()
+    val pieces = drainPieces(tier.projectAndCloseStreamingWithSplitRetry(sb))
+    withResource(pieces) { _ =>
+      assertResult(1)(pieces.size)
+      assertResult(NUM_ROWS)(pieces.head.numRows())
+    }
+    assertResult(0)(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1))
+  }
+
+  // Multi-tier (mixed retryable + non-retryable) falls back to the single-
+  // batch path; the streaming entry should still yield exactly one piece.
+  test("streaming entry falls back to single piece for multi-tier projection") {
+    val tier = GpuBindReferences.bindGpuReferencesTiered(
+      mixedNonRetryableExprs(), batchAttrs, new SQLConf(), Map.empty)
+    assert(!tier.areAllRetryable)
+    val sb = newSpillable()
+    val pieces = drainPieces(tier.projectAndCloseStreamingWithSplitRetry(sb))
+    withResource(pieces) { _ =>
+      assertResult(1)(pieces.size)
+      assertResult(NUM_ROWS)(pieces.head.numRows())
+    }
   }
 }
