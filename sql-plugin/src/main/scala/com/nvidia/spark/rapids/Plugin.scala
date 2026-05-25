@@ -488,6 +488,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
     sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
     val sparkConf = pluginContext.conf
     RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
+    RapidsConf.logUnknownRapidsConfs(sparkConf)
     val conf = new RapidsConf(sparkConf)
     RapidsPluginUtils.detectMultipleJars(conf)
     RapidsPluginUtils.logPluginMode(conf)

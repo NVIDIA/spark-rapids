@@ -3195,6 +3195,92 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     val sizeEstimateThreshold = JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
     JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
   }
+
+  private val rapidsConfPrefix = "spark.rapids."
+
+  // Keep config namespaces separate from suffix rules so a future namespace can be added
+  // without duplicating every dynamic config pattern.
+  private val supportedRapidsConfPrefixes = Seq(rapidsConfPrefix)
+
+  // Dynamic configs use a runtime class simple name after the suffix prefix. Only allow a
+  // single suffix segment so misspelled static sub-configs still get reported.
+  private val dynamicConfSuffixPrefixes = Seq(
+    ENABLE_COMBINED_EXPR_PREFIX.stripPrefix(rapidsConfPrefix),
+    "sql.expression.",
+    "sql.exec.",
+    "sql.input.",
+    "sql.partitioning.",
+    "sql.output.",
+    "sql.command.",
+    "sql.optimizer.cpu.exec.",
+    "sql.optimizer.cpu.expr.",
+    "sql.optimizer.gpu.exec.",
+    "sql.optimizer.gpu.expr.")
+
+  private def stripSupportedRapidsConfPrefix(key: String): Option[String] = {
+    supportedRapidsConfPrefixes.find(key.startsWith).map { prefix =>
+      key.stripPrefix(prefix)
+    }
+  }
+
+  private def expandSupportedRapidsConfPrefixes(key: String): Seq[String] = {
+    stripSupportedRapidsConfPrefix(key) match {
+      case Some(suffix) => supportedRapidsConfPrefixes.map(_ + suffix)
+      case None => Seq(key)
+    }
+  }
+
+  private def knownConfKeys: Set[String] = {
+    com.nvidia.spark.rapids.python.PythonConfEntries.init()
+    (registeredConfs.map(_.key) ++ RapidsPrivateUtil.getPrivateConfigs().map(_.key))
+      .flatMap(expandSupportedRapidsConfPrefixes)
+      .toSet
+  }
+
+  private def isDynamicConf(key: String): Boolean = {
+    stripSupportedRapidsConfPrefix(key).exists { keySuffix =>
+      dynamicConfSuffixPrefixes.exists { prefix =>
+        if (keySuffix.startsWith(prefix)) {
+          val dynamicPart = keySuffix.stripPrefix(prefix)
+          dynamicPart.nonEmpty && !dynamicPart.contains(".")
+        } else {
+          false
+        }
+      }
+    }
+  }
+
+  private def isShimGateConf(key: String): Boolean = {
+    stripSupportedRapidsConfPrefix(key).exists { keySuffix =>
+      val shimPrefix = "shims."
+      val enabledSuffix = ".enabled"
+      if (keySuffix.startsWith(shimPrefix) && keySuffix.endsWith(enabledSuffix)) {
+        val shimId = keySuffix.stripPrefix(shimPrefix).stripSuffix(enabledSuffix)
+        shimId.nonEmpty && !shimId.contains(".")
+      } else {
+        false
+      }
+    }
+  }
+
+  private[rapids] def unknownRapidsConfs(conf: Map[String, String]): Seq[String] = {
+    val knownConfs = knownConfKeys
+    conf.keys
+      .filter(stripSupportedRapidsConfPrefix(_).isDefined)
+      .filterNot(knownConfs.contains)
+      .filterNot(isDynamicConf)
+      .filterNot(isShimGateConf)
+      .toSeq
+      .sorted
+  }
+
+  def logUnknownRapidsConfs(conf: SparkConf): Unit = {
+    unknownRapidsConfs(Map(conf.getAll: _*)).foreach { key =>
+      logWarning(s"Unknown RAPIDS Accelerator configuration '$key'. This may be a typo, " +
+        "or the configuration may have been removed or moved. The setting will be ignored by " +
+        "this plugin version unless it is handled by another RAPIDS plugin component.")
+    }
+  }
 }
 
 class RapidsConf(conf: Map[String, String]) extends Logging {
