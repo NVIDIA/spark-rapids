@@ -25,7 +25,6 @@ class RapidsConfSuite extends AnyFunSuite {
       RapidsConf.SQL_ENABLED.key -> "true",
       RapidsConf.EXPLAIN.key -> "ALL",
       PythonConfEntries.CONCURRENT_PYTHON_WORKERS.key -> "2",
-      "spark.rapids.filecache.enabled" -> "true",
       "spark.rapids.sql.expression.Add" -> "false",
       "spark.rapids.sql.exec.SortExec" -> "false",
       "spark.rapids.sql.expression.combined.GpuContains" -> "false",

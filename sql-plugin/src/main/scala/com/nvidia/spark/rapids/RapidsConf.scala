@@ -20,6 +20,7 @@ import java.util
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
+import scala.util.control.NonFatal
 
 import ai.rapids.cudf.Cuda
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
@@ -3232,7 +3233,14 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
 
   private def knownConfKeys: Set[String] = {
     com.nvidia.spark.rapids.python.PythonConfEntries.init()
-    (registeredConfs.map(_.key) ++ RapidsPrivateUtil.getPrivateConfigs().map(_.key))
+    val privateConfKeys = try {
+      RapidsPrivateUtil.getPrivateConfigs().map(_.key)
+    } catch {
+      case NonFatal(e) =>
+        logDebug("Unable to load private RAPIDS configs for unknown config validation", e)
+        Seq.empty
+    }
+    (registeredConfs.map(_.key) ++ privateConfKeys)
       .flatMap(expandSupportedRapidsConfPrefixes)
       .toSet
   }
