@@ -173,11 +173,6 @@ def test_delta_materialize_merge(spark_tmp_path, spark_tmp_table_factory):
         return df.sort(df.columns)
 
     def checker(data_path, do_merge):
-        if is_databricks173_or_later():
-            assert_gpu_fallback_write(do_merge, read_delta_path, data_path,
-                                      delta_write_fallback_check, conf=materialize_conf)
-            return
-
         cpu_path = data_path + "/CPU"
         gpu_path = data_path + "/GPU"
         # compare resulting dataframe from the merge operation (some older Spark versions return empty here)

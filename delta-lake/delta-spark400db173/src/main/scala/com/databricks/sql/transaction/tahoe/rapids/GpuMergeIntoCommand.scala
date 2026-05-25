@@ -31,6 +31,7 @@ import com.databricks.sql.transaction.tahoe._
 import com.databricks.sql.transaction.tahoe.DeltaOperations.MergePredicate
 import com.databricks.sql.transaction.tahoe.actions.{AddCDCFile, AddFile, FileAction}
 import com.databricks.sql.transaction.tahoe.commands.DeltaCommand
+import com.databricks.sql.transaction.tahoe.commands.merge.MergeIntoMaterializeSource
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.schema.ImplicitMetadataOperation
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
@@ -235,7 +236,11 @@ case class GpuMergeIntoCommand(
     snapshotAtAnalysis: Option[Snapshot] = None)(
     @transient val rapidsConf: RapidsConf)
     extends LeafRunnableCommand
-    with DeltaCommand with PredicateHelper with AnalysisHelper with ImplicitMetadataOperation {
+    with DeltaCommand
+    with PredicateHelper
+    with AnalysisHelper
+    with ImplicitMetadataOperation
+    with MergeIntoMaterializeSource {
 
   import GpuMergeIntoCommand._
 
@@ -337,7 +342,7 @@ case class GpuMergeIntoCommand(
     "rewriteTimeMs" ->
         createMetric(sc, "time taken to rewrite the matched files"))
 
-  override def run(spark: SparkSession): Seq[Row] = {
+  private def runMerge(spark: SparkSession): Seq[Row] = {
     recordDeltaOperation(targetDeltaLog, "delta.dml.merge") {
       val startTime = System.nanoTime()
       gpuDeltaLog.withNewTransaction(catalogTable, snapshotAtAnalysis) { deltaTxn =>
@@ -367,6 +372,14 @@ case class GpuMergeIntoCommand(
 
         checkIdentityColumnHighWaterMarks(deltaTxn)
         deltaTxn.setTrackHighWaterMarks(trackHighWaterMarks)
+
+        prepareMergeSource(
+          spark,
+          source,
+          condition,
+          matchedClauses,
+          notMatchedClauses,
+          isSingleInsertOnly)
 
         val deltaActions = {
           if (isSingleInsertOnly && spark.conf.get(DeltaSQLConf.MERGE_INSERT_ONLY_ENABLED)) {
@@ -425,6 +438,15 @@ case class GpuMergeIntoCommand(
             metrics("numTargetRowsDeleted").value, metrics("numTargetRowsInserted").value))
   }
 
+  override def run(spark: SparkSession): Seq[Row] = {
+    val (materializeSource, _) = shouldMaterializeSource(spark, source, isSingleInsertOnly)
+    if (materializeSource) {
+      runWithMaterializedSourceLostRetries(spark, targetDeltaLog, metrics, runMerge)
+    } else {
+      runMerge(spark)
+    }
+  }
+
   /**
    * Find the target table files that contain the rows that satisfy the merge condition. This is
    * implemented as an inner-join between the source query/table and the target table using
@@ -450,7 +472,7 @@ case class GpuMergeIntoCommand(
 
     // UDF to increment metrics
     val incrSourceRowCountCol = makeMetricUpdateUDF("numSourceRows")
-    val sourceDF = Dataset.ofRows(spark, source)
+    val sourceDF = getMergeSource.df
         .filter(incrSourceRowCountCol)
 
     // Apply inner join to between source and target using the merge condition to find matches
@@ -564,7 +586,7 @@ case class GpuMergeIntoCommand(
     }
 
     // source DataFrame
-    val sourceDF = Dataset.ofRows(spark, source)
+    val sourceDF = getMergeSource.df
         .filter(incrSourceRowCountCol)
         .filter(DFUDFShims.exprToColumn(
           notMatchedClauses.head.condition.getOrElse(Literal.TrueLiteral)))
@@ -683,7 +705,7 @@ case class GpuMergeIntoCommand(
     // We add row IDs to the targetDF if we have a delete-when-matched clause with duplicate
     // matches and CDC is enabled, and additionally add row IDs to the source if we also have an
     // insert clause. See above at isDeleteWithDuplicateMatchesAndCdc definition for more details.
-    var sourceDF = Dataset.ofRows(spark, source)
+    var sourceDF = getMergeSource.df
         .withColumn(SOURCE_ROW_PRESENT_COL, makeMetricUpdateUDF("numSourceRowsInSecondScan"))
     var targetDF = Dataset.ofRows(spark, newTarget)
         .withColumn(TARGET_ROW_PRESENT_COL, lit(true))
