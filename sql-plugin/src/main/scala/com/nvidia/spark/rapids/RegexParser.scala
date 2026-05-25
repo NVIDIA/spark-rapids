@@ -208,12 +208,24 @@ class RegexParser(pattern: String) {
           val hexChar = parseHexDigit
           hexChar.codePoint match {
             case 0 => hexChar
+            case codePoint if codePoint > 0xFFFF =>
+              // cuDF's regex JNI surface cannot represent supplementary
+              // codepoints (cp > U+FFFF); previously these were silently
+              // truncated to their low 16 bits via `.toChar`, producing
+              // wrong matches. See NVIDIA/spark-rapids#14744.
+              throw new RegexUnsupportedException(
+                "cuDF does not support supplementary codepoints (cp > U+FFFF) " +
+                "in hex escapes; falling back to CPU", hexChar.position)
             case codePoint => RegexChar(codePoint.toChar)
           }
         case Some('0') =>
           val octalChar = parseOctalDigit
           octalChar.codePoint match {
             case 0 => RegexHexDigit("00")
+            case codePoint if codePoint > 0xFFFF =>
+              throw new RegexUnsupportedException(
+                "cuDF does not support supplementary codepoints (cp > U+FFFF) " +
+                "in octal escapes; falling back to CPU", octalChar.position)
             case codePoint => RegexChar(codePoint.toChar)
           }
         case Some(ch) =>
@@ -1129,6 +1141,14 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
         if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
           RegexEscaped(r.codePoint.toChar)
+        } else if (r.codePoint > 0xFFFF) {
+          // cuDF's regex JNI cannot represent supplementary codepoints
+          // (cp > U+FFFF); previously these were silently truncated via
+          // `.toChar`, producing wrong matches.
+          // See NVIDIA/spark-rapids#14744.
+          throw new RegexUnsupportedException(
+            "cuDF does not support supplementary codepoints (cp > U+FFFF) " +
+            "in octal escapes; falling back to CPU", r.position)
         } else if(r.codePoint >= 128) {
           RegexChar(r.codePoint.toChar)
         } else {
@@ -1138,6 +1158,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case r @ RegexHexDigit(_) =>
         if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
           RegexEscaped(r.codePoint.toChar)
+        } else if (r.codePoint > 0xFFFF) {
+          // See NVIDIA/spark-rapids#14744 — supplementary codepoints
+          // cannot round-trip through cuDF's regex JNI, so we fall back
+          // to CPU rather than emit a truncated `.toChar` match.
+          throw new RegexUnsupportedException(
+            "cuDF does not support supplementary codepoints (cp > U+FFFF) " +
+            "in hex escapes; falling back to CPU", r.position)
         } else if (r.codePoint >= 128) {
           // cuDF only supports 0x00 to 0x7f hexidecimal chars
           RegexChar(r.codePoint.toChar)
