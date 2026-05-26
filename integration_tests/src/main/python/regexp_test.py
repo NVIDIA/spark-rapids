@@ -330,7 +330,8 @@ def test_re_replace_escaped_chars():
 
 
 def test_re_replace_backrefs():
-    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}TEST')
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}TEST') \
+        .with_special_case("TESTTESTTEST")
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: unary_op_df(spark, gen).selectExpr(
             'REGEXP_REPLACE(a, "(TEST)", "$1")',
@@ -345,7 +346,10 @@ def test_re_replace_backrefs():
             # group 12 (which would error in cuDF).
             'REGEXP_REPLACE(a, "(T)(E)", "$12")',
             'REGEXP_REPLACE(a, "(T)(E)", "x$12y")',
-            'REGEXP_REPLACE(a, "(T)(E)", "$123$2")'
+            'REGEXP_REPLACE(a, "(T)(E)", "$123$2")',
+            # Uses 12 original capture groups plus the extra capture group inserted by
+            # line-anchor rewriting; the generated $13 must not be parsed as $1 + "3".
+            'REGEXP_REPLACE(a, "(T)(E)(S)(T)(T)(E)(S)(T)(T)(E)(S)(T)$", "$123$2")'
         ),
         conf=_regexp_conf)
 

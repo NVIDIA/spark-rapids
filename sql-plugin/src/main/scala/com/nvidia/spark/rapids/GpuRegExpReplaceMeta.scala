@@ -55,15 +55,10 @@ class GpuRegExpReplaceMeta(
           val (pat, repl) =
               new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
                   replacement)
-          // Compute the actual capture-group count of the Java pattern so that
-          // `backrefConversion` can follow Java's greedy-with-backoff rule:
-          // `$N` where N's running value would exceed the group count is interpreted as
-          // `$<longest valid prefix>` followed by the remaining digits as literals
-          // (see issue #14743).
-          val numCaptureGroups =
-            java.util.regex.Pattern.compile(s.toString).matcher("").groupCount()
           repl.map { r =>
-            GpuRegExpUtils.backrefConversion(r.toRegexString, numCaptureGroups)
+            // Use the rewritten replacement's group count because replace-mode rewrites can add
+            // capture groups and corresponding backrefs, such as line-anchor handling.
+            GpuRegExpUtils.backrefConversion(r.toRegexString, r.numCaptureGroups)
           }.foreach {
               case (hasBackref, convertedRep) =>
                 containsBackref = hasBackref

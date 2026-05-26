@@ -263,6 +263,22 @@ class RegExpUtilsSuite extends AnyFunSuite {
         s"converted mismatch for ($numGroups, $rep): got '$converted', want '$expectedConv'")
     }
   }
+
+  test("issue-14743: backrefConversion uses rewritten capture group count") {
+    val open = "$" + "{"
+    val pattern = "(T)(E)(S)(T)(T)(E)(S)(T)(T)(E)(S)(T)$"
+    val (_, replacement) = new CudfRegexTranspiler(RegexReplaceMode)
+      .getTranspiledAST(pattern, None, Some("$123$2"))
+    val rewrittenReplacement = replacement.get
+
+    assert(rewrittenReplacement.numCaptureGroups == 13)
+    val (hasBackref, converted) =
+      GpuRegExpUtils.backrefConversion(rewrittenReplacement.toRegexString,
+        rewrittenReplacement.numCaptureGroups)
+
+    assert(hasBackref)
+    assert(converted == open + "12}3" + open + "2}" + open + "13}")
+  }
 }
 
 /*
