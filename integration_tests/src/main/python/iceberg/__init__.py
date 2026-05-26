@@ -59,6 +59,7 @@ iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
                     MapGen(RepeatSeqGen(IntegerGen(nullable=False), 10), long_gen, max_length=10),
                     MapGen(StringGen(pattern='key_[0-9]', nullable=False), simple_string_to_string_map_gen)]
 
+# Broad Iceberg end-to-end coverage including nested types
 iceberg_full_gens_list = ([byte_gen, short_gen, IntegerGen(nullable=False), LongGen(nullable=False),
                           float_gen, double_gen, string_gen, boolean_gen, date_gen,
                           timestamp_gen, binary_gen, ArrayGen(binary_gen), ArrayGen(byte_gen),
@@ -71,6 +72,14 @@ iceberg_full_gens_list = ([byte_gen, short_gen, IntegerGen(nullable=False), Long
                                               ['child2', int_gen]]))] +
                           iceberg_map_gens + decimal_gens)
 
+# Nested-type coverage for the focused positive GPU Iceberg DML tests reuses
+# `iceberg_full_gens_list`. The merge/update/delete `_nested_types` tests use `_c0` for arithmetic
+# (`_c0 = _c0 + 100`, `_c0 % 3 = 0`) and joins (`ON t._c0 = s._c0`), so we override that single
+# slot with a non-null `IntegerGen` instead of the nullable `byte_gen` `iceberg_full_gens_list`
+# puts there.
+iceberg_nested_write_gens_list = (
+    [IntegerGen(nullable=False)] + iceberg_full_gens_list[1:])
+
 iceberg_write_enabled_conf = {
     "spark.sql.parquet.datetimeRebaseModeInWrite": "CORRECTED",
     "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED",
@@ -80,7 +89,6 @@ iceberg_write_enabled_conf = {
     # for merge-on-read (MOR) DML operations (UPDATE/DELETE/MERGE with write.*.mode='merge-on-read')
     "spark.rapids.sql.exec.WriteDeltaExec": "true",
 }
-
 
 def can_be_eq_delete_col(data_gen: DataGen) -> bool:
     return (not isinstance(data_gen.data_type, FloatType) and

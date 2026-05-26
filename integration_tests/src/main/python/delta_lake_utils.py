@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2025, NVIDIA CORPORATION.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import pytest
 import re
 
 from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, is_databricks143_or_later, \
-    with_cpu_session, with_gpu_session
+    is_databricks173_or_later, with_cpu_session, with_gpu_session
 from asserts import assert_equal
 from conftest import spark_jvm
 
@@ -37,17 +37,17 @@ delta_meta_allow = [
 
 delta_write = ["RapidsDeltaWrite"]
 
-# Disable Deletion Vectors except for Databricks 14.3
+# Parameterize Deletion Vectors only on runtimes that expose the feature in these tests.
 def deletion_vector_values_with_350DB143_xfail_reasons(enabled_xfail_reason=None, disabled_xfail_reason=None):
-    # We will always set the deletion vectors to False
-    # in case of DB 14.3, if there is no reason provided it's False otherwise False with xfail reason
+    # Always include the DV-disabled case. On DB 14.3+ the disabled case can be marked xfail
+    # when the caller needs to document a runtime-specific expectation.
     if not is_databricks143_or_later() or disabled_xfail_reason is None:
         enable_deletion_vector = [False]
-    elif disabled_xfail_reason is not None: 
+    elif disabled_xfail_reason is not None:
         enable_deletion_vector = [pytest.param(False, marks=pytest.mark.xfail(reason=disabled_xfail_reason))]
 
-    # We only set the deletion vectors to true for DB 14.3
-    # If there is an xfail reason provided then that is included as part of the parameter.
+    # Add the DV-enabled case for DB 14.3+. This parameterizes the feature; it does not imply
+    # every later runtime has GPU DV scan coverage.
     if is_databricks143_or_later():
         if enabled_xfail_reason is None:
             enable_deletion_vector.append(True)
@@ -59,6 +59,17 @@ def deletion_vector_values_with_350DB143_xfail_reasons(enabled_xfail_reason=None
 deletion_vector_values = deletion_vector_values_with_350DB143_xfail_reasons()
 
 delta_writes_enabled_conf = {"spark.rapids.sql.format.delta.write.enabled": "true"}
+
+delta_row_tracking_dml_conf = {
+    "spark.databricks.delta.optimizeWrite.enabled": "false",
+    "spark.databricks.delta.autoCompact.enabled": "false"
+}
+
+# DB-17.3 serializes generated wide-schema rows into RDDScanExec task closures for these
+# Delta write tests. The default 2048 rows can produce ~33 MB task bodies and OOM in
+# TaskSetManager.prepareLaunchingTask. Keep this DB-17.3-only reduction visible until
+# https://github.com/NVIDIA/spark-rapids/issues/14775 restores the normal 2048-row coverage.
+delta_db173_wide_schema_gen_length = 128 if is_databricks173_or_later() else 2048
 
 delta_write_fallback_allow = "ExecutedCommandExec,DataWritingCommandExec,WriteFilesExec,DeltaInvariantCheckerExec" if is_databricks122_or_later() else "ExecutedCommandExec"
 delta_write_fallback_check = "DataWritingCommandExec" if is_databricks122_or_later() else "ExecutedCommandExec"
@@ -183,6 +194,22 @@ def assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path):
         for cpu_json, gpu_json in zip(cpu_jsons, gpu_jsons):
             assert_delta_log_json_equivalent(file, cpu_json, gpu_json)
 
+def assert_gpu_and_cpu_latest_delta_log_equivalent(spark, data_path):
+    cpu_logs = read_delta_logs(spark, data_path + "/CPU/_delta_log/*.json")
+    gpu_logs = read_delta_logs(spark, data_path + "/GPU/_delta_log/*.json")
+    assert len(cpu_logs) == len(gpu_logs), "Different number of Delta log JSON files:\nCPU: {}\nGPU: {}".format(
+        sorted(cpu_logs.keys()), sorted(gpu_logs.keys()))
+    latest_file = sorted(cpu_logs.keys())[-1]
+    gpu_latest_file = sorted(gpu_logs.keys())[-1]
+    assert latest_file == gpu_latest_file, \
+        "Latest Delta log differs:\nCPU: {}\nGPU: {}".format(latest_file, gpu_latest_file)
+    cpu_jsons = cpu_logs[latest_file]
+    gpu_jsons = gpu_logs[latest_file]
+    assert len(cpu_jsons) == len(gpu_jsons), "Different line counts in {}:\nCPU: {}\nGPU: {}".format(
+        latest_file, cpu_jsons, gpu_jsons)
+    for cpu_json, gpu_json in zip(cpu_jsons, gpu_jsons):
+        assert_delta_log_json_equivalent(latest_file, cpu_json, gpu_json)
+
 def read_delta_path(spark, path):
     return spark.read.format("delta").load(path)
 
@@ -225,6 +252,47 @@ def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_d
     for name in ["CPU", "GPU"]:
         path = "{}/{}".format(data_path, name)
         setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
+
+def setup_delta_row_tracking_dest_table(spark, path, dest_table_func):
+    dest_df = dest_table_func(spark)
+    ddl = schema_to_ddl(spark, dest_df.schema)
+    spark.sql("CREATE TABLE delta.`{}` ({}) USING DELTA "
+              "TBLPROPERTIES (delta.enableRowTracking = true, "
+              "delta.enableDeletionVectors = false)".format(path, ddl))
+    dest_df.write.format("delta").mode("append").save(path)
+
+def setup_delta_row_tracking_dest_tables(spark, data_path, dest_table_func):
+    for name in ["CPU", "GPU"]:
+        path = "{}/{}".format(data_path, name)
+        setup_delta_row_tracking_dest_table(spark, path, dest_table_func)
+
+def row_tracking_dml_test_df(spark):
+    return spark.createDataFrame(
+        [(1, "a", "x"), (2, "b", "x"), (3, "c", "x"), (4, "d", "x")],
+        "a INT, b STRING, c STRING").coalesce(1)
+
+def assert_delta_row_tracking_dml(spark_tmp_path, dml_sql, conf,
+                                  dest_table_func=row_tracking_dml_test_df):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    with_cpu_session(lambda spark: setup_delta_row_tracking_dest_tables(
+        spark, data_path, dest_table_func), conf=conf)
+
+    cpu_path = data_path + "/CPU"
+    gpu_path = data_path + "/GPU"
+    cpu_result = with_cpu_session(lambda spark: spark.sql(dml_sql.format(path=cpu_path)).collect(),
+                                  conf=conf)
+    gpu_result = assert_rapids_delta_write(
+        lambda spark: spark.sql(dml_sql.format(path=gpu_path)).collect(), conf=conf)
+    assert_equal(cpu_result, gpu_result)
+
+    def read_sorted_delta_path(spark, path):
+        df = read_delta_path(spark, path)
+        return df.sort(df.columns).collect()
+    cpu_data = with_cpu_session(lambda spark: read_sorted_delta_path(spark, cpu_path), conf=conf)
+    gpu_data = with_cpu_session(lambda spark: read_sorted_delta_path(spark, gpu_path), conf=conf)
+    assert_equal(cpu_data, gpu_data)
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_latest_delta_log_equivalent(spark, data_path),
+                     conf=conf)
 
 def assert_rapids_delta_write(do_test, conf):
     """

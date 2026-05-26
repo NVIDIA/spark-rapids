@@ -40,6 +40,7 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.shims
 
+import org.apache.spark.sql.catalyst.trees.SQLQueryContext
 import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.unsafe.types.UTF8String
@@ -49,7 +50,7 @@ object GpuCastToNumberErrorShim {
   def invalidInputInCastToNumberError(
       to: DataType,
       s: UTF8String,
-      errorContext: String = ""): NumberFormatException = {
-    QueryExecutionErrors.invalidInputInCastToNumberError(to, s, null)
+      errorContext: SQLQueryContext = null): NumberFormatException = {
+    QueryExecutionErrors.invalidInputInCastToNumberError(to, s, errorContext)
   }
 }

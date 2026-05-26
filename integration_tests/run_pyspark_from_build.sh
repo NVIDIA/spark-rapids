@@ -447,10 +447,31 @@ else
         # an EOF on stdin and injects a ":quit" command. Without a grep check
         # the exit code would be success 0 regardless of the exceptions.
         #
-        <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
-            "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>/dev/null \
-            | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'
-        echo "SUCCESS spark-shell smoke test"
+        # Capture combined stdout/stderr to a log so we can dump diagnostics
+        # on failure. Previously stderr was discarded, which made CI failures
+        # in this step opaque (the only signal was a non-zero grep exit).
+        smoke_log=$(mktemp -t spark-shell-smoke.XXXXXX.log)
+        if <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+                "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1 \
+                | tee "$smoke_log" \
+                | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'; then
+            rm -f "$smoke_log"
+            echo "SUCCESS spark-shell smoke test"
+        else
+            shell_status=${PIPESTATUS[0]}
+            grep_status=${PIPESTATUS[2]}
+            echo "FAILED spark-shell smoke test (spark-shell exit=${shell_status}, grep exit=${grep_status})"
+            echo "----- spark-shell combined stdout/stderr (tail -n 300 of $smoke_log) -----"
+            tail -n 300 "$smoke_log" || true
+            echo "----- spark-shell executor stderr (tail -n 200 each) -----"
+            for f in "${SPARK_HOME}"/work/*/*/stderr; do
+                [[ -f "$f" ]] || continue
+                echo "=== $f ==="
+                tail -n 200 "$f" || true
+            done
+            rm -f "$smoke_log"
+            exit 1
+        fi
     elif [[ "${EXPLAIN_ONLY_CPU_SMOKE_TEST}" != "0" ]]; then
         echo "Running explainOnly mode on CPU smoke test..."
         SPARK_SHELL_ARGS_ARR=(
@@ -482,6 +503,16 @@ else
             SERVER_JARS="$PYSP_TEST_spark_jars"
         elif [[ -n "$ALL_JARS" ]]; then
             SERVER_JARS="${ALL_JARS//:/,}"
+        fi
+
+        SPARK_SHELL_ARGS_ARR=(
+            --master local-cluster[1,2,1024]
+            --conf spark.plugins=com.nvidia.spark.SQLPlugin
+            --packages "$CONNECT_PACKAGES"
+            ${SERVER_JARS:+--jars "$SERVER_JARS"}
+        )
+        if [[ -n "$PYSP_TEST_spark_jars_ivySettings" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--conf "spark.jars.ivySettings=${PYSP_TEST_spark_jars_ivySettings}")
         fi
 
         # Helper: check if port is listening
@@ -516,6 +547,16 @@ else
         CONNECT_SERVER_URL="sc://${CONNECT_HOST}:${CONNECT_PORT}"
 
         cleanup_connect_server() {
+            # dump connect server logs for troubleshooting
+            local connect_server_logs=("$SPARK_HOME"/logs/*SparkConnectServer*.out)
+            if [[ -f "${connect_server_logs[0]}" ]]; then
+                for f in "${connect_server_logs[@]}"; do
+                    echo "=== $f ==="
+                    cat "$f" || true
+                done
+            else
+                echo "No Spark Connect server .out log found in $SPARK_HOME/logs"
+            fi
             if [[ -f "${SPARK_HOME}/sbin/stop-connect-server.sh" ]]; then
                 timeout 20 "${SPARK_HOME}/sbin/stop-connect-server.sh" || true
             fi
@@ -525,10 +566,7 @@ else
         trap cleanup_connect_server EXIT
 
         if ! start_output=$("${SPARK_HOME}/sbin/start-connect-server.sh" \
-            --master local-cluster[1,2,1024] \
-            --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-            --packages "$CONNECT_PACKAGES" \
-            ${SERVER_JARS:+--jars "$SERVER_JARS"} 2>&1); then
+            "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1); then
           echo "ERROR: Spark Connect server failed to launch"
           printf "%s\n" "$start_output" | tail -n 200
           exit 1
@@ -541,7 +579,7 @@ else
                 service_ready=1
                 break
             fi
-            sleep 1
+            sleep 10
         done
         if (( service_ready != 1 )); then
             echo "ERROR: Connect server failed to start on ${CONNECT_HOST}:${CONNECT_PORT}"

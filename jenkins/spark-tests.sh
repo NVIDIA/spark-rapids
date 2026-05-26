@@ -30,6 +30,7 @@ WORKSPACE=${WORKSPACE:-`pwd`}
 
 ARTF_ROOT="$WORKSPACE/jars"
 WGET_CMD="wget -q -P $ARTF_ROOT -t 3"
+PROJECT_REPO_HOST=$(sed -E 's#^(.*://)?([^/@]*@)?([^/:]+).*#\3#' <<< "$PROJECT_REPO")
 
 rm -rf $ARTF_ROOT && mkdir -p $ARTF_ROOT
 $WGET_CMD $PROJECT_TEST_REPO/com/nvidia/rapids-4-spark-integration-tests_$SCALA_BINARY_VER/$PROJECT_TEST_VER/rapids-4-spark-integration-tests_$SCALA_BINARY_VER-$PROJECT_TEST_VER-${SHUFFLE_SPARK_SHIM}.jar
@@ -96,16 +97,19 @@ tar xzf "$RAPIDS_INT_TESTS_TGZ" -C $ARTF_ROOT && rm -f "$RAPIDS_INT_TESTS_TGZ"
 . jenkins/hadoop-def.sh $SPARK_VER ${SCALA_BINARY_VER}
 $WGET_CMD $SPARK_REPO/org/apache/spark/$SPARK_VER/spark-$SPARK_VER-$BIN_HADOOP_VER.tgz
 
-# Download parquet-hadoop jar for parquet-read encryption tests
-PARQUET_HADOOP_VER=`mvn help:evaluate -q -N -Dexpression=parquet.hadoop.version -DforceStdout -Dbuildver=${SHUFFLE_SPARK_SHIM/spark/}`
-if [[ "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]]; then
-  $WGET_CMD $SPARK_REPO/org/apache/parquet/parquet-hadoop/$PARQUET_HADOOP_VER/parquet-hadoop-$PARQUET_HADOOP_VER-tests.jar
-fi
-
 export SPARK_HOME="$ARTF_ROOT/spark-$SPARK_VER-$BIN_HADOOP_VER"
 export PATH="$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH"
 tar zxf $SPARK_HOME.tgz -C $ARTF_ROOT && \
     rm -f $SPARK_HOME.tgz
+
+# Download parquet-hadoop jar for parquet-read encryption tests
+PARQUET_HADOOP_JAR=$(find "$SPARK_HOME/jars" -maxdepth 1 -type f -name 'parquet-hadoop-[0-9]*.jar' | head -n1)
+PARQUET_HADOOP_VER=${PARQUET_HADOOP_JAR##*/parquet-hadoop-}
+PARQUET_HADOOP_VER=${PARQUET_HADOOP_VER%.jar}
+if [[ -n "$PARQUET_HADOOP_VER" && "$(printf '%s\n' "1.12.0" "$PARQUET_HADOOP_VER" | sort -V | head -n1)" = "1.12.0" ]]; then
+  $WGET_CMD $SPARK_REPO/org/apache/parquet/parquet-hadoop/$PARQUET_HADOOP_VER/parquet-hadoop-$PARQUET_HADOOP_VER-tests.jar
+fi
+
 # copy python path libs to container /tmp instead of workspace to avoid ephemeral PVC issue
 TMP_PYTHON=/tmp/$(date +"%Y%m%d")
 rm -rf $TMP_PYTHON && mkdir -p $TMP_PYTHON && cp -r $SPARK_HOME/python $TMP_PYTHON
@@ -240,7 +244,9 @@ run_delta_lake_tests() {
       else 
         DELTA_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
       fi 
-      PYSP_TEST_spark_jars_packages=${DELTA_JAR} \
+      HOST_NAME=$PROJECT_REPO_HOST \
+        PYSP_TEST_spark_jars_packages=${DELTA_JAR} \
+        PYSP_TEST_spark_jars_ivySettings="${WORKSPACE}/jenkins/ivysettings.xml" \
         PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
         ./run_pyspark_from_build.sh -m delta_lake --delta_lake
@@ -303,10 +309,12 @@ run_iceberg_tests() {
     if [[ "$test_type" == "default" ]]; then
       echo "!!! Running iceberg tests"
       env \
+        HOST_NAME=$PROJECT_REPO_HOST \
         EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
         PYSP_TEST_spark_driver_memory=1G \
         PYSP_TEST_spark_executor_memory=2G \
         PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
+        PYSP_TEST_spark_jars_ivySettings="${WORKSPACE}/jenkins/ivysettings.xml" \
         PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
         PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
@@ -320,6 +328,7 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
           # PYSP_TEST_ env var rather than as a session-level Spark config, because
           # FileCacheManager is initialized at executor startup time.
           env \
+            HOST_NAME=$PROJECT_REPO_HOST \
             EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
             ICEBERG_TEST_CATALOG_TYPE="rest" \
             ICEBERG_TEST_REMOTE_CATALOG=1 \
@@ -327,7 +336,7 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
             PYSP_TEST_spark_executor_memory=2G \
             PYSP_TEST_spark_rapids_filecache_enabled=true \
             PYSP_TEST_spark_jars_packages="${ICEBERG_REST_JARS}" \
-            PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
+            PYSP_TEST_spark_jars_ivySettings="${WORKSPACE}/jenkins/ivysettings.xml" \
             PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
             PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
             "PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl=org.apache.iceberg.rest.RESTCatalog" \
@@ -368,13 +377,14 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
       # PYSP_TEST_ env var rather than as a session-level Spark config, because
       # FileCacheManager is initialized at executor startup time.
       env \
+        HOST_NAME=$PROJECT_REPO_HOST \
         EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
         ICEBERG_TEST_REMOTE_CATALOG=1 \
         PYSP_TEST_spark_driver_memory=1G \
         PYSP_TEST_spark_executor_memory=2G \
         PYSP_TEST_spark_rapids_filecache_enabled=true \
         PYSP_TEST_spark_jars_packages="${ICEBERG_S3TABLES_JARS}" \
-        PYSP_TEST_spark_jars_repositories="${PROJECT_REPO}" \
+        PYSP_TEST_spark_jars_ivySettings="${WORKSPACE}/jenkins/ivysettings.xml" \
         PYSP_TEST_spark_sql_extensions="org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions" \
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
         "PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl=software.amazon.s3tables.iceberg.S3TablesCatalog" \
@@ -391,8 +401,10 @@ run_avro_tests() {
   # version of Apache Spark which requires accessing the snapshot repository to
   # fetch the spark-avro jar.
   rm -vf $LOCAL_JAR_PATH/spark-avro*.jar
-  PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_${SCALA_BINARY_VER}:${SPARK_VER}" \
+  HOST_NAME=$PROJECT_REPO_HOST \
+    PYSP_TEST_spark_jars_packages="org.apache.spark:spark-avro_${SCALA_BINARY_VER}:${SPARK_VER}" \
     PYSP_TEST_spark_jars_repositories="https://repository.apache.org/snapshots" \
+    PYSP_TEST_spark_jars_ivySettings="${WORKSPACE}/jenkins/ivysettings.xml" \
     ./run_pyspark_from_build.sh -k avro
 }
 
@@ -452,6 +464,8 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
   # Spark Connect smoke test (available in Spark 3.5.6+)
   if printf '%s\n' "3.5.6" "$SPARK_VER" | sort -V | head -1 | grep -q "3.5.6"; then
     SPARK_CONNECT_SMOKE_TEST=1 \
+      HOST_NAME=$PROJECT_REPO_HOST \
+      PYSP_TEST_spark_jars_ivySettings=${WORKSPACE}/jenkins/ivysettings.xml \
       ./run_pyspark_from_build.sh
   fi
 
@@ -463,9 +477,8 @@ if [[ $TEST_MODE == "DEFAULT" ]]; then
   SKIP_PACKAGES_TESTS=${SKIP_PACKAGES_TESTS:-"false"}
   if { [[ "$CLASSIFIER" == "" || "$CLASSIFIER" == "cuda12" ]]; } && [[ "$SKIP_PACKAGES_TESTS" == "false" ]]; then
     # Add the ivysettings.xml file to support --packages downloads from Artifactory using credentials
-    # Get the HOST_NAME variable for ivysettings.xml (e.g., from https://usr:psw@HOST_NAME/path/to/repo)
-    HOST_NAME=$(sed -E 's#^(.*://)?([^/@]*@)?([^/:]+).*#\3#' <<< "$PROJECT_REPO")
-    SPARK_SHELL_SMOKE_TEST=1 HOST_NAME=$HOST_NAME \
+    # Set the HOST_NAME variable for ivysettings.xml (e.g., from https://usr:psw@HOST_NAME/path/to/repo)
+    SPARK_SHELL_SMOKE_TEST=1 HOST_NAME=$PROJECT_REPO_HOST \
     PYSP_TEST_spark_jars_packages=com.nvidia:rapids-4-spark_${SCALA_BINARY_VER}:${PROJECT_VER} \
     PYSP_TEST_spark_jars_repositories=${PROJECT_REPO} \
     PYSP_TEST_spark_jars_ivySettings=${WORKSPACE}/jenkins/ivysettings.xml \
@@ -525,7 +538,7 @@ if [[ "$TEST_MODE" == "CUDF_UDF_ONLY" ]]; then
   CUDA_VER_FOR_CUDF=${CUDA_VER_FOR_CUDF:-'12.9'}
 
   conda create -y -n ${CUDF_UDF_ENV} -c rapidsai-nightly -c nvidia -c conda-forge -c defaults \
-    python=${CUDF_UDF_PYTHON_VER} cudf=${CUDF_VER} cuda-version=${CUDA_VER_FOR_CUDF}
+    python=${CUDF_UDF_PYTHON_VER} pip cudf=${CUDF_VER} cuda-version=${CUDA_VER_FOR_CUDF}
 
   # Activate the cudf_udf env and reset PYTHONPATH to use the new env's site-packages
   source activate ${CUDF_UDF_ENV}
