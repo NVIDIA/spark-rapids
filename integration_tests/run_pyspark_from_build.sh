@@ -46,6 +46,9 @@
 #   To run all tests, including Avro tests:
 #     INCLUDE_SPARK_AVRO_JAR=true ./run_pyspark_from_build.sh
 #
+#   To run tests WITHOUT Protobuf tests (protobuf is included by default):
+#     INCLUDE_SPARK_PROTOBUF_JAR=false ./run_pyspark_from_build.sh
+#
 #   To run a specific test:
 #     TEST=my_test ./run_pyspark_from_build.sh
 #
@@ -100,6 +103,7 @@ else
     # support alternate local jars NOT building from the source code
     if [ -d "$LOCAL_JAR_PATH" ]; then
         AVRO_JARS=$(echo "$LOCAL_JAR_PATH"/spark-avro*.jar)
+        PROTOBUF_JARS=$(echo "$LOCAL_JAR_PATH"/spark-protobuf*.jar "$LOCAL_JAR_PATH"/protobuf-java-*.jar)
         PLUGIN_JAR=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
         if [ -f $(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar) ]; then
             export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
@@ -116,6 +120,7 @@ else
     else
         [[ "$SCALA_VERSION" != "2.12"  ]] && TARGET_DIR=${TARGET_DIR/integration_tests/scala$SCALA_VERSION\/integration_tests}
         AVRO_JARS=$(echo "$TARGET_DIR"/dependency/spark-avro*.jar)
+        PROTOBUF_JARS=$(echo "$TARGET_DIR"/dependency/spark-protobuf*.jar "$TARGET_DIR"/dependency/protobuf-java-*.jar)
         PARQUET_HADOOP_TESTS=$(echo "$TARGET_DIR"/dependency/parquet-hadoop*.jar)
         # remove the log4j.properties file so it doesn't conflict with ours, ignore errors
         # if it isn't present or already removed
@@ -141,9 +146,22 @@ else
         AVRO_JARS=""
     fi
 
-    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar if they exist
+    # Set INCLUDE_SPARK_PROTOBUF_JAR=false to skip protobuf_test.py. Both `spark-protobuf` and
+    # the unshaded `protobuf-java` come from maven-dependency-plugin and must both be present
+    # -- spark-protobuf shades `com.google.protobuf.*` internally and Spark does not bundle
+    # the unshaded jar.
+    if [[ $( echo ${INCLUDE_SPARK_PROTOBUF_JAR} | tr '[:upper:]' '[:lower:]' ) != "false" \
+          && $(readlink -e $PROTOBUF_JARS 2>/dev/null | wc -l) -eq 2 ]];
+    then
+        export INCLUDE_SPARK_PROTOBUF_JAR=true
+    else
+        export INCLUDE_SPARK_PROTOBUF_JAR=false
+        PROTOBUF_JARS=""
+    fi
+
+    # ALL_JARS includes dist.jar integration-test.jar avro.jar parquet.jar protobuf.jar if they exist
     # Remove non-existing paths and canonicalize the paths including get rid of links and `..`
-    ALL_JARS=$(readlink -e $PLUGIN_JAR $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS || true)
+    ALL_JARS=$(readlink -e $PLUGIN_JAR $TEST_JARS $AVRO_JARS $PARQUET_HADOOP_TESTS $PROTOBUF_JARS || true)
     # `:` separated jars
     ALL_JARS="${ALL_JARS//$'\n'/:}"
 

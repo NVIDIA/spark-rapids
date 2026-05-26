@@ -132,6 +132,8 @@
                                     <includes>
                                         <include>parquet-hadoop*.jar</include>
                                         <include>spark-avro*.jar</include>
+                                        <include>spark-protobuf*.jar</include>
+                                        <include>protobuf-java-*.jar</include>
                                     </includes>
                                 </filesets>
                             </filesets>
@@ -162,6 +164,36 @@
                                     <artifactId>parquet-hadoop</artifactId>
                                     <version>${parquet.hadoop.version}</version>
                                     <classifier>tests</classifier>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                    <!--
+                        spark-protobuf is a Spark 3.4.0+ module, and spark-protobuf shades its
+                        own `com.google.protobuf` into `org.sparkproject.spark_protobuf.protobuf`
+                        so we ship an unshaded protobuf-java alongside it for the integration
+                        tests. release33x profiles set `spark.protobuf.skipCopy=true` because
+                        spark-protobuf does not exist for Spark 3.3.x.
+                    -->
+                    <execution>
+                        <id>copy-spark-protobuf</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${spark.protobuf.skipCopy}</skip>
+                            <useBaseVersion>true</useBaseVersion>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.apache.spark</groupId>
+                                    <artifactId>spark-protobuf_${scala.binary.version}</artifactId>
+                                    <version>${spark.version}</version>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>com.google.protobuf</groupId>
+                                    <artifactId>protobuf-java</artifactId>
+                                    <version>3.25.5</version>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>
