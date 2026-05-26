@@ -24,4 +24,8 @@ public final class IcebergProviderAccess {
   public static String detectedVersion() {
     return IcebergProvider$.MODULE$.detectedVersion();
   }
+
+  public static String shimPackage() {
+    return IcebergProvider$.MODULE$.shimPackage();
+  }
 }

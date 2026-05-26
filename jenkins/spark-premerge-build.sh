@@ -167,11 +167,11 @@ run_iceberg_version_detect_tests() {
         return 0
     fi
 
-    # Supported Iceberg versions per Spark version — must stay in sync with
-    # run_iceberg_tests() in spark-tests.sh. Note: the Spark 4.1 -> 1.11.0 row is
-    # listed here, but ci_scala213() currently uses SPARK_VER=4.0.1 so the 4.1 branch
-    # is not exercised in pre-merge CI. The full 4.1 integration suite is added in the
-    # stacked follow-up PR; until then, the 1.11.0 commit-ID mapping is nightly-only.
+    # Supported Iceberg versions per Spark version. The 3.5.x / 4.0.x rows mirror
+    # run_iceberg_tests() in spark-tests.sh. The Spark 4.1 -> 1.11.0 row is exercised
+    # in pre-merge by the dedicated Spark 4.1 version-detection smoke in ci_scala213()
+    # (which boots Spark 4.1); the full Spark 4.1 Iceberg integration suite runs in
+    # nightly via run_iceberg_tests().
     local iceberg_versions
     if [[ "$iceberg_spark_ver" == "4.1" ]]; then
         iceberg_versions="1.11.0"
@@ -269,6 +269,16 @@ ci_scala213() {
     # Moved out of spark-tests.sh DEFAULT mode where JDK 8 causes
     # UnsupportedClassVersionError for Iceberg 1.9+ runtime JARs.
     run_iceberg_version_detect_tests $SPARK_VER 2.13
+
+    # Spark 4.1 / Iceberg 1.11 shim-selection smoke. The main integration suite above
+    # runs on Spark 4.0.1, so without this the iceberg111x module and the 1.11.0 ->
+    # iceberg111x mapping added for Spark 4.1 would have no pre-merge coverage. Boot
+    # Spark 4.1 and assert both the detected version and the selected shim package.
+    local SPARK_VER_411=4.1.1
+    local buildver_411="${SPARK_VER_411//./}"
+    prepare_spark $SPARK_VER_411 2.13
+    $MVN -f scala2.13/ -U -B $MVN_URM_MIRROR -Dbuildver=$buildver_411 clean package $MVN_BUILD_ARGS -DskipTests=true
+    run_iceberg_version_detect_tests $SPARK_VER_411 2.13
 }
 
 prepare_spark() {
