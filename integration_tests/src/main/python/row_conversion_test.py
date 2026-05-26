@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -68,12 +68,7 @@ def test_row_conversions_fixed_width_wide():
         return df
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
-# Round-trip coverage for the AcceleratedColumnarToRow fast path on the column types it
-# now accepts (DECIMAL128 and STRING) after the spark-rapids-jni row_conversion fixes.
-# The schema is wide enough (> 4 cols) to clear the fast-path gate, and each row carries
-# a mix of types so packMap, the JCUDF variable-width slot, and the DECIMAL128 16-byte
-# branch are all exercised. Parametrize the accelerated-C2R conf to run both the fast
-# and the slow path against the same query — both should match CPU results.
+# Wide fixed-width + STRING + DECIMAL128 round trip; toggles the accelerated path.
 @pytest.mark.parametrize('use_fast_path', ['true', 'false'], ids=['fast', 'slow'])
 def test_accelerated_c2r_wide_with_string_and_dec128(use_fast_path):
     gens = [["l{}".format(i), LongGen(nullable=True)]    for i in range(10)] + \
@@ -87,10 +82,7 @@ def test_accelerated_c2r_wide_with_string_and_dec128(use_fast_path):
         conf={'spark.rapids.sql.acceleratedColumnarToRow.enabled': use_fast_path})
 
 
-# DECIMAL128 alone (no STRING) at boundary precisions. The 16-byte path in
-# CudfUnsafeRow.getDecimal and the row_conversion default branch only kick in for
-# precision > MAX_LONG_DIGITS (= 18). Exercise both sides of that boundary plus a wide
-# fan-out to keep the schema above the fast-path 4-column gate.
+# DECIMAL precision boundaries around DECIMAL64 -> DECIMAL128 (= 18 -> 19).
 @pytest.mark.parametrize('use_fast_path', ['true', 'false'], ids=['fast', 'slow'])
 @pytest.mark.parametrize('precision,scale', [(18, 4), (19, 4), (30, 8), (38, 10)])
 def test_accelerated_c2r_decimal128(use_fast_path, precision, scale):
@@ -102,9 +94,6 @@ def test_accelerated_c2r_decimal128(use_fast_path, precision, scale):
         conf={'spark.rapids.sql.acceleratedColumnarToRow.enabled': use_fast_path})
 
 
-# STRING alone with values that span multiple length classes (empty, short inline, multi-
-# byte UTF-8, long enough to overflow an 8-byte inline). Exercises the JCUDF variable-
-# width slot and CudfUnsafeRow.getUTF8String for the offset/length decoding.
 @pytest.mark.parametrize('use_fast_path', ['true', 'false'], ids=['fast', 'slow'])
 def test_accelerated_c2r_strings(use_fast_path):
     gens = [["s{}".format(i), StringGen(nullable=True)] for i in range(6)] + \
@@ -114,9 +103,7 @@ def test_accelerated_c2r_strings(use_fast_path):
         conf={'spark.rapids.sql.acceleratedColumnarToRow.enabled': use_fast_path})
 
 
-# Wide pure-INT32 schema: the column count is chosen so determine_tiles produces more
-# than one tile, which in pre-fix code could race at non-8-aligned tile boundaries (jni
-# issue #4590). With the fix, multiple repeated runs should always equal CPU results.
+# Multi-tile regression for jni #4590 (tile-boundary write race).
 @pytest.mark.parametrize('use_fast_path', ['true', 'false'], ids=['fast', 'slow'])
 def test_accelerated_c2r_wide_int32(use_fast_path):
     gens = [["c{}".format(i), IntegerGen(nullable=False)] for i in range(500)]
@@ -125,23 +112,8 @@ def test_accelerated_c2r_wide_int32(use_fast_path):
         conf={'spark.rapids.sql.acceleratedColumnarToRow.enabled': use_fast_path})
 
 
-# Hand-picked schemas that exercise alignment / tile-boundary edge cases the random
-# data_gen-driven tests are unlikely to hit:
-#   - byte_then_99_int:  leading 1-byte column forces the rest of the row off the 4-byte
-#                        natural alignment; tests that compute_column_information's
-#                        per-column round_up_unsafe does not produce a non-8-aligned tile
-#                        boundary that the C2R kernel writes past.
-#   - byte_then_int_alt: 50 INT8 / 50 INT32 packs the row with mixed alignments so the
-#                        tile close point can land at a non-8-aligned cumulative byte.
-#   - 200_short:         pure 2-byte columns; cumulative byte width is a multiple of 2 but
-#                        not always of 8, so tile_row_size's round_up_8 padding can spill.
-#   - dec128_then_int:   16-byte DECIMAL128 followed by 4-byte INT32 mixes the largest
-#                        alignment with the smaller one; tile boundaries between them
-#                        used to be the riskiest in the legacy kernel.
-#   - 383_int:           383 INT32 columns. The tile close logic's `row_size_with_end_pad`
-#                        rounding makes (k+1) parity influence whether the boundary is
-#                        8-aligned; 383 is on the wrong side of that parity for some
-#                        shmem budgets.
+# Hand-picked schemas that exercise alignment / tile-boundary edge cases random data_gen
+# is unlikely to hit.
 @pytest.mark.parametrize('schema', [
     pytest.param([['c0', ByteGen()]] + [['c{}'.format(i), IntegerGen()] for i in range(1, 100)],
                  id='byte_then_99_int'),
@@ -161,25 +133,7 @@ def test_accelerated_c2r_dangerous_schemas(schema):
         lambda spark: gen_df(spark, schema, length=256).selectExpr("*"))
 
 
-# TEMPORARY stress sweep: 56 column counts x 3 repeats = ~170 cases. The goal is to push
-# the GPU through every shmem-tile boundary parity the determine_tiles logic can produce,
-# repeating each schema 3 times so non-deterministic races (jni #4590 family) have more
-# chances to surface. Each case still passes if and only if the GPU output equals the CPU,
-# so a single mismatch on any iteration fails the run.
-#
-# DELETE THIS AFTER MANUAL REGRESSION SIGN-OFF. The targeted dangerous-schema test above
-# stays; this one is overkill for routine CI.
-@pytest.mark.parametrize('num_cols', list(range(50, 601, 10)))
-@pytest.mark.parametrize('iteration', list(range(3)))
-def test_temp_accelerated_c2r_tile_boundary_sweep(num_cols, iteration):
-    gens = [['c{}'.format(i), IntegerGen(nullable=False)] for i in range(num_cols)]
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: gen_df(spark, gens, length=256).selectExpr("*"))
-
-
-# Sanity that nested types still fall back through the slow path without crashing, even
-# with the fast-path conf left on. (areAllC2RSupported should report false, dropping the
-# whole table off the AcceleratedColumnarToRow gate.)
+# Nested types should fall back through the slow path even with the fast-path conf on.
 def test_accelerated_c2r_falls_back_for_nested():
     gens = [["s", StringGen(nullable=True)],
             ["a", ArrayGen(int_gen)],
