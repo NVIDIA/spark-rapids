@@ -161,7 +161,8 @@ run_iceberg_version_detect_tests() {
     local spark_patch_ver
     spark_patch_ver=$(echo "$spark_ver" | cut -d. -f3)
 
-    if [[ "$iceberg_spark_ver" != "3.5" && "$iceberg_spark_ver" != "4.0" ]]; then
+    if [[ "$iceberg_spark_ver" != "3.5" && "$iceberg_spark_ver" != "4.0" \
+          && "$iceberg_spark_ver" != "4.1" ]]; then
         echo "!!!! Skipping Iceberg version detection. Not supported on Spark $iceberg_spark_ver"
         return 0
     fi
@@ -169,7 +170,9 @@ run_iceberg_version_detect_tests() {
     # Supported Iceberg versions per Spark version — must stay in sync with
     # run_iceberg_tests() in spark-tests.sh.
     local iceberg_versions
-    if [[ "$iceberg_spark_ver" == "4.0" ]]; then
+    if [[ "$iceberg_spark_ver" == "4.1" ]]; then
+        iceberg_versions="1.11.0"
+    elif [[ "$iceberg_spark_ver" == "4.0" ]]; then
         iceberg_versions="1.10.1"
     elif [[ "$spark_patch_ver" -le 3 ]]; then
         iceberg_versions="1.6.1"

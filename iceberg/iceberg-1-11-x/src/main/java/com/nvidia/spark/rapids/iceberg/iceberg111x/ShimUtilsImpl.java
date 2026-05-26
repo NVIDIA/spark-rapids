@@ -14,27 +14,36 @@
  * limitations under the License.
  */
 
-package com.nvidia.spark.rapids.iceberg.iceberg16x;
+package com.nvidia.spark.rapids.iceberg.iceberg111x;
 
+import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.RapidsConf;
+import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
 import com.nvidia.spark.rapids.iceberg.IcebergShimUtils;
+import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.*;
 import org.apache.iceberg.io.FileIO;
-import org.apache.iceberg.spark.source.GpuBaseReader;
-import org.apache.iceberg.spark.source.GpuSparkCopyOnWriteV1Scan;
+import org.apache.iceberg.io.StorageCredential;
+import org.apache.iceberg.io.SupportsStorageCredentials;
+import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
+import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.iceberg.spark.SparkUtil;
+import org.apache.iceberg.spark.source.GpuSparkCopyOnWriteScan;
 import org.apache.iceberg.spark.source.GpuSparkScan;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.PartitionUtil;
 import org.apache.spark.sql.connector.read.Scan;
 
+import java.io.IOException;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
-/** Iceberg 1.6.x shim: uses {@code ContentFile.path()} and {@code GpuBaseReader::convertConstant}. */
+/** Iceberg 1.11.x shim: uses {@code SparkUtil::internalToSpark} and a cache-aware footer path. */
 public class ShimUtilsImpl implements IcebergShimUtils {
     @Override
     public String locationOf(ContentFile<?> f) {
-        return f.path().toString();
+        return f.location();
     }
 
     @Override
@@ -43,27 +52,38 @@ public class ShimUtilsImpl implements IcebergShimUtils {
             Types.StructType partitionType = Partitioning.partitionType(table);
             return PartitionUtil.constantsMap(task,
                     partitionType,
-                    GpuBaseReader::convertConstant);
+                    SparkUtil::internalToSpark);
         } else {
-            return PartitionUtil.constantsMap(task, GpuBaseReader::convertConstant);
+            return PartitionUtil.constantsMap(task, SparkUtil::internalToSpark);
         }
     }
 
-    /** Iceberg 1.6.x predates {@code SupportsStorageCredentials} — no per-prefix overlays. */
     @Override
     public Map<String, Map<String, String>> storageCredentialOverlays(FileIO fileIO) {
-        return Collections.emptyMap();
+        if (!(fileIO instanceof SupportsStorageCredentials)) {
+            return Collections.emptyMap();
+        }
+        Map<String, Map<String, String>> result = new HashMap<>();
+        for (StorageCredential sc : ((SupportsStorageCredentials) fileIO).credentials()) {
+            result.put(sc.prefix(), sc.config());
+        }
+        return result;
     }
 
-    // openParquetReader: inherits the no-cache default from IcebergShimUtils. The shaded
-    // ParquetFileReader in 1.6.x has no public API to inject pre-parsed footer metadata,
-    // so file-cache routing is not possible here.
+    @Override
+    public ParquetFileReader openParquetReader(
+            IcebergInputFile inputFile,
+            Path filePath,
+            ParquetReadOptions options,
+            scala.collection.immutable.Map<String, GpuMetric> metrics) throws IOException {
+        return GpuParquetIOShim.openReader(inputFile, filePath, options, metrics);
+    }
 
     @Override
     public GpuSparkScan newCopyOnWriteScan(
             Scan cpuScan,
             RapidsConf rapidsConf,
             boolean queryUsesInputFile) {
-        return GpuSparkCopyOnWriteV1Scan.create(cpuScan, rapidsConf, queryUsesInputFile);
+        return GpuSparkCopyOnWriteScan.create(cpuScan, rapidsConf, queryUsesInputFile);
     }
 }
