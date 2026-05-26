@@ -190,7 +190,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsProductAggSuite]
   enableSuite[RapidsComplexTypesSuite]
   enableSuite[RapidsCSVSuite]
-    .exclude("DDL test parsing decimal type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13890"))
     .exclude("nullable fields with user defined null value of \"null\"", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13893"))
     .exclude("empty fields with user defined empty values", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13894"))
     .exclude("save csv with empty fields with user defined empty values", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13895"))
