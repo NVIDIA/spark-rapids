@@ -89,13 +89,9 @@ class GpuShuffledHashJoinMeta(
   }
 
   override def convertToGpu(): GpuExec = {
-    val condition = conditionMeta.map(_.convertToGpu())
-    val (joinCondition, filterCondition) = if (conditionMeta.forall(_.canThisBeAst)) {
-      (condition, None)
-    } else {
-      (None, condition)
-    }
     val Seq(left, right) = childPlans.map(_.convertIfNeeded())
+    val extractedCondition = GpuHashJoin.extractJoinConditionIfNeeded(
+      conditionMeta, join.joinType, left, right)
     val useSizedJoin = GpuShuffledSizedHashJoinExec.useSizedJoin(conf, join.joinType,
       join.leftKeys, join.rightKeys)
     val readOpt = CoalesceReadOption(conf)
@@ -105,9 +101,9 @@ class GpuShuffledHashJoinMeta(
           join.joinType,
           leftKeys.map(_.convertToGpu()),
           rightKeys.map(_.convertToGpu()),
-          joinCondition,
-          left,
-          right,
+          extractedCondition.joinCondition,
+          extractedCondition.left,
+          extractedCondition.right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
@@ -121,9 +117,9 @@ class GpuShuffledHashJoinMeta(
           join.joinType,
           leftKeys.map(_.convertToGpu()),
           rightKeys.map(_.convertToGpu()),
-          joinCondition,
-          left,
-          right,
+          extractedCondition.joinCondition,
+          extractedCondition.left,
+          extractedCondition.right,
           conf.isGPUShuffle,
           conf.gpuTargetBatchSizeBytes,
           conf.sizedJoinPartitionAmplification,
@@ -137,9 +133,9 @@ class GpuShuffledHashJoinMeta(
           rightKeys.map(_.convertToGpu()),
           join.joinType,
           buildSide,
-          joinCondition,
-          left,
-          right,
+          extractedCondition.joinCondition,
+          extractedCondition.left,
+          extractedCondition.right,
           readOpt,
           isSkewJoin = false)(
           join.leftKeys,
@@ -147,8 +143,9 @@ class GpuShuffledHashJoinMeta(
     }
     // For inner joins we can apply a post-join condition for any conditions that cannot be
     // evaluated directly in a mixed join that leverages a cudf AST expression
-    filterCondition.map(c => GpuFilterExec(c,
+    val filteredJoinExec = extractedCondition.filterCondition.map(c => GpuFilterExec(c,
       joinExec)()).getOrElse(joinExec)
+    extractedCondition.projectIfNeeded(filteredJoinExec)
   }
 }
 
@@ -542,4 +539,3 @@ object GpuShuffledHashJoinExec extends Logging {
     retIter
   }
 }
-
