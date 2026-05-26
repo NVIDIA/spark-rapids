@@ -772,19 +772,24 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
    * This pass walks subquery expressions in the final plan, identifies the DPP-side
    * GpuBroadcastExchangeExec inside a GpuSubqueryBroadcastExec, and matches it against
    * the main-plan GpuBroadcastExchangeExec instances by (mode, child canonical form with
-   * GpuCoalesceBatches stripped). When a match is found, the DPP-side broadcast is
-   * rewritten to ReusedExchangeExec referencing the join-side instance.
+   * GpuCoalesceBatches stripped — see stripGpuCoalesceBatches below). When a match is found,
+   * the DPP-side broadcast is rewritten to ReusedExchangeExec referencing the join-side
+   * instance.
    */
   private[rapids] def fixupNonAdaptiveBroadcastReuse(p: SparkPlan): SparkPlan = {
-    // Strip GpuCoalesceBatches and similar transition wraps that the main-plan broadcast
-    // gets from insertCoalesce/optimizeCoalesce but the DPP-side broadcast does not.
-    def stripTransitions(plan: SparkPlan): SparkPlan = plan match {
-      case g: GpuCoalesceBatches => stripTransitions(g.child)
-      case other => other.withNewChildren(other.children.map(stripTransitions))
+    // Normalize a plan for signature matching by removing GpuCoalesceBatches wraps. The main-plan
+    // broadcast picks these up from insertCoalesce / optimizeCoalesce but the DPP-side broadcast
+    // (built earlier in GpuOverrides without going through GpuTransitionOverrides) does not, so
+    // we have to strip them on both sides before comparing canonical forms. This is the only
+    // structural difference observed in practice; other transitions (host->device, etc.) live
+    // outside the broadcast subtree and never reach this helper.
+    def stripGpuCoalesceBatches(plan: SparkPlan): SparkPlan = plan match {
+      case g: GpuCoalesceBatches => stripGpuCoalesceBatches(g.child)
+      case other => other.withNewChildren(other.children.map(stripGpuCoalesceBatches))
     }
 
     def signature(g: GpuBroadcastExchangeExec): (Any, SparkPlan) =
-      (g.mode.canonicalized, stripTransitions(g.child).canonicalized)
+      (g.mode.canonicalized, stripGpuCoalesceBatches(g.child).canonicalized)
 
     // Collect all main-plan GpuBroadcastExchangeExec instances. SparkPlan.foreach only walks
     // the plan-tree children and does NOT descend into ExecSubqueryExpression plans, so
@@ -809,6 +814,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
           case dpp: GpuBroadcastExchangeExec =>
             bySig.get(signature(dpp)) match {
               case Some(matched) if !(matched eq dpp) =>
+                // Use dpp.output (not matched.output) so the reused exchange exposes the
+                // DPP-side attributes that downstream subquery expressions reference, while
+                // reading from the matched main-plan exchange. The AQE fixup
+                // fixupAdaptiveExchangeReuse uses the same shape (its g.output is the
+                // DPP-side attributes from the in-pass collected map).
                 val reused = ReusedExchangeExec(dpp.output, matched)
                 val newGsb = gsb.withNewChildren(Seq(reused))
                   .asInstanceOf[GpuSubqueryBroadcastExec]
