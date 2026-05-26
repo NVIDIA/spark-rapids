@@ -25,6 +25,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexFlag, RegexProgram, Scalar, Table}
+import ai.rapids.cudf.ColumnView.FindOptions
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -2200,6 +2201,51 @@ case class GpuStringInstr(str: Expression, substr: Expression)
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(lhs, numRows)) { expandedLhs =>
       doColumnar(expandedLhs, rhs)
+    }
+  }
+}
+
+case class GpuFindInSet(left: Expression, right: Expression)
+  extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
+  override def dataType: DataType = IntegerType
+  override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
+  override def prettyName: String = "find_in_set"
+
+  private def findInSplitSet(set: GpuColumnVector, word: Scalar): ColumnVector = {
+    withResource(set.getBase.stringSplitRecord(",", -1)) { splitSet =>
+      withResource(splitSet.listIndexOf(word, FindOptions.FIND_FIRST)) { zeroBasedPos =>
+        withResource(Scalar.fromInt(1)) { one =>
+          zeroBasedPos.add(one)
+        }
+      }
+    }
+  }
+
+  private def findInSplitSet(set: GpuColumnVector, word: ColumnView): ColumnVector = {
+    withResource(set.getBase.stringSplitRecord(",", -1)) { splitSet =>
+      withResource(splitSet.listIndexOf(word, FindOptions.FIND_FIRST)) { zeroBasedPos =>
+        withResource(Scalar.fromInt(1)) { one =>
+          zeroBasedPos.add(one)
+        }
+      }
+    }
+  }
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
+    findInSplitSet(rhs, lhs.getBase)
+
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
+    findInSplitSet(rhs, lhs.getBase)
+
+  override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt)) { expandedRhs =>
+      findInSplitSet(expandedRhs, lhs.getBase)
+    }
+  }
+
+  override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(rhs, numRows)) { expandedRhs =>
+      findInSplitSet(expandedRhs, lhs.getBase)
     }
   }
 }
