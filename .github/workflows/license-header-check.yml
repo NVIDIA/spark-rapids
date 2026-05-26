@@ -19,6 +19,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+
 jobs:
   license-header-check:
     runs-on: ubuntu-latest
