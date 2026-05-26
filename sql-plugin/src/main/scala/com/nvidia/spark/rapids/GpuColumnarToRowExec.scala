@@ -31,7 +31,7 @@ import com.nvidia.spark.rapids.shims.{CudfUnsafeRow, ShimUnaryExecNode}
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection, UnsafeRow}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
@@ -51,8 +51,10 @@ class AcceleratedColumnarToRowIterator(
   @transient private var pendingCvs: Queue[HostColumnVector] = Queue.empty
   // GPU batches read in must be closed by the receiver (us)
   @transient private var currentCv: Option[HostColumnVector] = None
-  // This only works on fixedWidth types for now...
-  assertInTests(schema.forall(attr => UnsafeRow.isFixedLength(attr.dataType)))
+  // The accelerated path now also accepts STRING (8-byte offset/length slot in the JCUDF row)
+  // and DECIMAL128 (16-byte rep). Use the canonical C2R gate so this assertion stays in sync
+  // with whatever CudfUnsafeRow can decode.
+  assertInTests(schema.forall(attr => CudfRowTransitions.isC2RSupportedType(attr.dataType)))
   // We want to remap the rows to improve packing.  This means that they should be sorted by
   // the largest alignment to the smallest.
 
@@ -130,11 +132,16 @@ class AcceleratedColumnarToRowIterator(
             withResource(rearrangeRows(attemptCb)) { table =>
               // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which
               // means at most 184 double/long values. Spark by default limits codegen to 100
-              // fields "spark.sql.codegen.maxFields". So, we are going to be cautious and
-              // start with that until we have tested it more. We branching over the size of
-              // the output to know which kernel to call. If schema.length < 100 we call the
-              // fixed-width optimized version, otherwise the generic one
-              if (schema.length < 100) {
+              // fields "spark.sql.codegen.maxFields". So we use the optimized kernel for
+              // narrower schemas (< 100 cols) only when every column is fixed-width — it
+              // does not support STRING/BINARY and will throw "Only fixed width types are
+              // currently supported". Variable-width schemas always go through the generic
+              // convertToRows path, which handles them since the row_conversion fixes.
+              // DType.getSizeInBytes == 0 for variable-width types (STRING, BINARY, LIST...).
+              val allFixedWidth = schema.forall { a =>
+                GpuColumnVector.getNonNestedRapidsType(a.dataType).getSizeInBytes > 0
+              }
+              if (schema.length < 100 && allFixedWidth) {
                 RowConversion.convertToRowsFixedWidthOptimized(table)
               } else {
                 RowConversion.convertToRows(table)
