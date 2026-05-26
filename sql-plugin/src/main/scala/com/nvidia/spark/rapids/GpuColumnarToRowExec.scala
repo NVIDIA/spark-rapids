@@ -34,6 +34,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, SortOrder, UnsafeProjection}
 import org.apache.spark.sql.catalyst.plans.physical.Partitioning
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.GpuColumnToRowMapPartitionsRDD
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -86,6 +87,21 @@ class AcceleratedColumnarToRowIterator(
   private var at: Int = 0
   private var total: Int = 0
 
+  // Pre-computed kernel-selection inputs. The fixed-width-optimized kernel only accepts
+  // fixed-width columns (DType.getSizeInBytes > 0 — i.e. not STRING/BINARY/LIST) and only
+  // tolerates per-row sizes up to ~1536 bytes; past that it throws "Row size is too large
+  // to fit in shared memory". 96 DECIMAL128 columns (96 * 16 = 1536, plus validity) already
+  // exceeds that limit, so the column-count check alone is not enough. Hoist both checks
+  // out of the per-batch hot path.
+  private val schemaAllFixedWidth: Boolean = schema.forall { a =>
+    GpuColumnVector.getNonNestedRapidsType(a.dataType).getSizeInBytes > 0
+  }
+  private val schemaEstimatedRowBytes: Int =
+    CudfUnsafeRow.getRowSizeEstimate(packMap.map(schema(_)))
+  // Matches max_shared_size / 32 (smallest possible block_size that still divides by 32) in
+  // calc_fixed_width_kernel_dims; see row_conversion.cu :: calc_fixed_width_kernel_dims.
+  private val fixedWidthOptimizedRowLimitBytes = 1536
+
   // Don't install the callback if in a unit test
   Option(TaskContext.get()).foreach { tc =>
     onTaskCompletion(tc) {
@@ -130,18 +146,16 @@ class AcceleratedColumnarToRowIterator(
         val it = RmmRapidsRetryIterator.withRetry(scb, splitSpillableInHalfByRows) { attempt =>
           withResource(attempt.getColumnarBatch()) { attemptCb =>
             withResource(rearrangeRows(attemptCb)) { table =>
-              // The fixed-width optimized cudf kernel only supports up to 1.5 KB per row which
-              // means at most 184 double/long values. Spark by default limits codegen to 100
-              // fields "spark.sql.codegen.maxFields". So we use the optimized kernel for
-              // narrower schemas (< 100 cols) only when every column is fixed-width — it
-              // does not support STRING/BINARY and will throw "Only fixed width types are
-              // currently supported". Variable-width schemas always go through the generic
-              // convertToRows path, which handles them since the row_conversion fixes.
-              // DType.getSizeInBytes == 0 for variable-width types (STRING, BINARY, LIST...).
-              val allFixedWidth = schema.forall { a =>
-                GpuColumnVector.getNonNestedRapidsType(a.dataType).getSizeInBytes > 0
-              }
-              if (schema.length < 100 && allFixedWidth) {
+              // The fixed-width-optimized kernel beats the generic transpose for narrow
+              // (< 100 cols) all-fixed-width schemas, but rejects STRING/BINARY and any row
+              // wider than the per-block shmem budget (~1536 bytes; see the matching limit
+              // in row_conversion.cu :: calc_fixed_width_kernel_dims). Fall back to the
+              // generic convertToRows when either constraint is violated.
+              val useOptimized =
+                schema.length < 100 &&
+                  schemaAllFixedWidth &&
+                  schemaEstimatedRowBytes <= fixedWidthOptimizedRowLimitBytes
+              if (useOptimized) {
                 RowConversion.convertToRowsFixedWidthOptimized(table)
               } else {
                 RowConversion.convertToRows(table)
@@ -401,9 +415,8 @@ case class GpuColumnarToRowExec(
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
     val streamTime = gpuLongMetric(STREAM_TIME)
 
-    val acceleratedC2REnabled = new RapidsConf(conf).isAcceleratedColumnarToRowEnabled
     val f = GpuColumnarToRowExec.makeIteratorFunc(child.output, numOutputRows, numInputBatches,
-      opTime, streamTime, acceleratedTransposeEnabled = acceleratedC2REnabled)
+      opTime, streamTime)
 
     val cdata = child.executeColumnar()
     val rdd = if (exportColumnarRdd) {
@@ -443,9 +456,13 @@ object GpuColumnarToRowExec {
       numOutputRows: GpuMetric,
       numInputBatches: GpuMetric,
       opTime: GpuMetric,
-      streamTime: GpuMetric,
-      acceleratedTransposeEnabled: Boolean = true)
+      streamTime: GpuMetric)
       : Iterator[ColumnarBatch] => Iterator[InternalRow] = {
+    // Read the kill switch on the driver where this function is invoked (doExecute,
+    // GpuRangePartitioner sampling, ...) so every caller honors it without having to
+    // thread the conf through their own signatures.
+    val acceleratedTransposeEnabled =
+      new RapidsConf(SQLConf.get).isAcceleratedColumnarToRowEnabled
     if (CudfRowTransitions.areAllC2RSupported(output) &&
         // For a small number of columns it is still best to do it the original way
         output.length > 4 &&
