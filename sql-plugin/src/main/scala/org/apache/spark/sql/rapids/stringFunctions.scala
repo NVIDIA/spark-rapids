@@ -2254,8 +2254,9 @@ case class GpuFindInSet(left: Expression, right: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
   override def prettyName: String = "find_in_set"
 
-  // Avoid copying large high-cardinality set columns to the host. The native path can handle more
-  // distinct set strings because it keeps the dictionary and gather work on the GPU.
+  // Prefer the direct native scalar-word path because it scans each RHS row once and avoids
+  // dictionary/distinct/gather setup for short set strings. The repeated-set path remains as a
+  // fallback for JNI builds that do not yet expose the direct native path.
   private val maxHostDistinctSetsForScalarWord = 4096
   private val maxNativeDistinctSetsForScalarWord = 65536
 
@@ -2451,13 +2452,13 @@ case class GpuFindInSet(left: Expression, right: Expression)
       if (word.indexOf(',') >= 0) {
         zeroOrNullFromSetNulls(rhs)
       } else {
-        GpuFindInSet.nativeFindInSetRepeated(
-          word, rhs.getBase, maxNativeDistinctSetsForScalarWord).orElse {
-          // Fall back until Spark RAPIDS depends on a JNI build with the repeated-set path.
-          // This preserves compatibility with older 26.08.0-SNAPSHOT jars.
-          if (GpuFindInSet.hasNativeFindInSetRepeated) None else findInRepeatedSets(word, rhs)
-        }.getOrElse {
-          GpuFindInSet.nativeFindInSet(word, rhs.getBase).getOrElse {
+        GpuFindInSet.nativeFindInSet(word, rhs.getBase).getOrElse {
+          GpuFindInSet.nativeFindInSetRepeated(
+            word, rhs.getBase, maxNativeDistinctSetsForScalarWord).orElse {
+            // Preserve compatibility with older 26.08.0-SNAPSHOT JNI jars that do not expose
+            // either native scalar-word path.
+            if (GpuFindInSet.hasNativeFindInSetRepeated) None else findInRepeatedSets(word, rhs)
+          }.getOrElse {
             findInSplitSet(rhs, lhs.getBase)
           }
         }
