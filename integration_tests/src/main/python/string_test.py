@@ -354,6 +354,10 @@ def test_find_in_set():
             'find_in_set("ab", set)',
             'find_in_set(word, set)',
             'find_in_set(word, "abc,b,ab,c,def")',
+            'find_in_set(word, ",abc,,def,")',
+            'find_in_set("a", "b,a,a")',
+            'find_in_set("", "")',
+            'find_in_set("a,b", "a,b")',
             'find_in_set(CAST(NULL AS STRING), set)',
             'find_in_set(word, CAST(NULL AS STRING))'))
 

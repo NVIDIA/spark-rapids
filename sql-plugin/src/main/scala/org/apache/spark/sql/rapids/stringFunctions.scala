@@ -24,7 +24,7 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, PadSide, RegexFlag, RegexProgram, Scalar, Table}
+import ai.rapids.cudf.{ast, BinaryOp, BinaryOperable, CaptureGroups, ColumnVector, ColumnView, DType, OutOfBoundsPolicy, PadSide, RegexFlag, RegexProgram, Scalar, Table}
 import ai.rapids.cudf.ColumnView.FindOptions
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm._
@@ -2211,6 +2211,99 @@ case class GpuFindInSet(left: Expression, right: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
   override def prettyName: String = "find_in_set"
 
+  private def stringFromScalar(s: GpuScalar): String = s.getValue match {
+    case utf8: UTF8String => utf8.toString
+    case str: String => str
+    case other =>
+      throw new IllegalArgumentException(s"Unexpected string scalar value: $other")
+  }
+
+  private def nullIntColumn(numRows: Int): ColumnVector = {
+    withResource(Scalar.fromNull(DType.INT32)) { nullScalar =>
+      ColumnVector.fromScalar(nullScalar, numRows)
+    }
+  }
+
+  private def findInSetOnHost(word: String, set: String): Int = {
+    if (word.indexOf(',') >= 0) {
+      0
+    } else {
+      val tokens = set.split(",", -1)
+      var i = 0
+      while (i < tokens.length) {
+        if (tokens(i) == word) {
+          return i + 1
+        }
+        i += 1
+      }
+      0
+    }
+  }
+
+  private def buildDictionaryColumns(set: String): (ColumnVector, ColumnVector) = {
+    val firstPositions = mutable.LinkedHashMap.empty[String, Int]
+    val tokens = set.split(",", -1)
+    var i = 0
+    while (i < tokens.length) {
+      firstPositions.getOrElseUpdate(tokens(i), i + 1)
+      i += 1
+    }
+
+    closeOnExcept(ColumnVector.fromStrings(firstPositions.keys.toArray: _*)) { tokenCv =>
+      closeOnExcept(ColumnVector.fromInts(firstPositions.values.toArray: _*)) { positionCv =>
+        (tokenCv, positionCv)
+      }
+    }
+  }
+
+  private def zeroOrNullFromSetNulls(set: GpuColumnVector): ColumnVector = {
+    withResource(set.getBase.isNull) { setIsNull =>
+      withResource(Scalar.fromNull(DType.INT32)) { nullInt =>
+        withResource(Scalar.fromInt(0)) { zero =>
+          setIsNull.ifElse(nullInt, zero)
+        }
+      }
+    }
+  }
+
+  private def findInLiteralSet(word: GpuColumnVector, set: String): ColumnVector = {
+    val numRows = word.getRowCount.toInt
+    if (numRows == 0) {
+      nullIntColumn(numRows)
+    } else {
+      val (tokenCv, positionCv) = buildDictionaryColumns(set)
+      withResource(tokenCv) { tokenCv =>
+        withResource(positionCv) { positionCv =>
+          withResource(new Table(word.getBase)) { wordTable =>
+            withResource(new Table(tokenCv)) { tokenTable =>
+              withResource(wordTable.leftDistinctJoinGatherMap(tokenTable, false)) { positionMap =>
+                withResource(positionMap.toColumnView(0, numRows)) { positionMapView =>
+                  val nullablePositions = withResource(new Table(positionCv)) { positionTable =>
+                    withResource(positionTable.gather(positionMapView, OutOfBoundsPolicy.NULLIFY)) {
+                      gatheredTable =>
+                        gatheredTable.getColumn(0).incRefCount()
+                    }
+                  }
+                  withResource(nullablePositions) { nullablePositions =>
+                    withResource(Scalar.fromInt(0)) { zero =>
+                      withResource(nullablePositions.replaceNulls(zero)) { zerosForMissing =>
+                        withResource(word.getBase.isNull) { wordIsNull =>
+                          withResource(Scalar.fromNull(DType.INT32)) { nullInt =>
+                            wordIsNull.ifElse(nullInt, zerosForMissing)
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   private def findInSplitSet(set: GpuColumnVector, word: Scalar): ColumnVector = {
     withResource(set.getBase.stringSplitRecord(",", -1)) { splitSet =>
       withResource(splitSet.listIndexOf(word, FindOptions.FIND_FIRST)) { zeroBasedPos =>
@@ -2234,18 +2327,35 @@ case class GpuFindInSet(left: Expression, right: Expression)
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector =
     findInSplitSet(rhs, lhs.getBase)
 
-  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector =
-    findInSplitSet(rhs, lhs.getBase)
+  override def doColumnar(lhs: GpuScalar, rhs: GpuColumnVector): ColumnVector = {
+    if (!lhs.isValid) {
+      nullIntColumn(rhs.getRowCount.toInt)
+    } else {
+      val word = stringFromScalar(lhs)
+      if (word.indexOf(',') >= 0) {
+        zeroOrNullFromSetNulls(rhs)
+      } else {
+        findInSplitSet(rhs, lhs.getBase)
+      }
+    }
+  }
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, lhs.getRowCount.toInt)) { expandedRhs =>
-      findInSplitSet(expandedRhs, lhs.getBase)
+    if (!rhs.isValid) {
+      nullIntColumn(lhs.getRowCount.toInt)
+    } else {
+      findInLiteralSet(lhs, stringFromScalar(rhs))
     }
   }
 
   override def doColumnar(numRows: Int, lhs: GpuScalar, rhs: GpuScalar): ColumnVector = {
-    withResource(GpuColumnVector.from(rhs, numRows)) { expandedRhs =>
-      findInSplitSet(expandedRhs, lhs.getBase)
+    if (!lhs.isValid || !rhs.isValid) {
+      nullIntColumn(numRows)
+    } else {
+      val result = findInSetOnHost(stringFromScalar(lhs), stringFromScalar(rhs))
+      withResource(Scalar.fromInt(result)) { resultScalar =>
+        ColumnVector.fromScalar(resultScalar, numRows)
+      }
     }
   }
 }
