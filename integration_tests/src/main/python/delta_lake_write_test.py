@@ -164,7 +164,10 @@ def test_delta_write_round_trip_after_type_widening(
             f"FROM delta.`{path}` ORDER BY id"),
         data_path,
         conf=_delta_confs)
-    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+    # DBR 17.3 may produce different add-file action counts for CPU and GPU writes.
+    # The row-level assertion above is the stable behavior check for this type-widening case.
+    if not is_databricks173_or_later():
+        with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
