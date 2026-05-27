@@ -122,6 +122,8 @@ def _fixup_operation_parameters(opp):
             properties_json = json.loads(properties)
         except ValueError:
             return
+        if _normalize_row_tracking_column_names(properties_json):
+            opp["properties"] = json.dumps(properties_json, sort_keys=True)
 
 def assert_delta_history_equal(conf, cpu_table, gpu_table):
     # Project all columns except for the `timestamp` column, which won't match between CPU and GPU.
