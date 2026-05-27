@@ -150,11 +150,15 @@ else
     # the unshaded `protobuf-java` come from maven-dependency-plugin and must both be present
     # -- spark-protobuf shades `com.google.protobuf.*` internally and Spark does not bundle
     # the unshaded jar.
-    if [[ $( echo ${INCLUDE_SPARK_PROTOBUF_JAR} | tr '[:upper:]' '[:lower:]' ) != "false" \
+    INCLUDE_SPARK_PROTOBUF_JAR_REQUESTED=$(echo "${INCLUDE_SPARK_PROTOBUF_JAR}" | tr '[:upper:]' '[:lower:]')
+    if [[ "$INCLUDE_SPARK_PROTOBUF_JAR_REQUESTED" != "false" \
           && $(readlink -e $PROTOBUF_JARS 2>/dev/null | wc -l) -eq 2 ]];
     then
         export INCLUDE_SPARK_PROTOBUF_JAR=true
     else
+        if [[ "$INCLUDE_SPARK_PROTOBUF_JAR_REQUESTED" == "true" ]]; then
+            >&2 echo "WARNING: INCLUDE_SPARK_PROTOBUF_JAR=true was requested but spark-protobuf/protobuf-java jars were not found under $TARGET_DIR/dependency; disabling protobuf tests."
+        fi
         export INCLUDE_SPARK_PROTOBUF_JAR=false
         PROTOBUF_JARS=""
     fi
