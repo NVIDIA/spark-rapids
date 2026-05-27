@@ -2214,10 +2214,33 @@ object GpuFindInSet {
     case _: ClassNotFoundException | _: NoSuchMethodException => None
   }
 
+  private lazy val nativeFindInSetRepeatedMethod = try {
+    Some(Class.forName("com.nvidia.spark.rapids.jni.StringUtils").getMethod(
+      "findInSetRepeated", classOf[ColumnView], classOf[String], java.lang.Integer.TYPE))
+  } catch {
+    case _: ClassNotFoundException | _: NoSuchMethodException => None
+  }
+
   private def nativeFindInSet(word: String, set: ColumnView): Option[ColumnVector] = {
     nativeFindInSetMethod.map { method =>
       try {
         method.invoke(null, set, word).asInstanceOf[ColumnVector]
+      } catch {
+        case e: InvocationTargetException => throw e.getCause
+      }
+    }
+  }
+
+  def hasNativeFindInSetRepeated: Boolean = nativeFindInSetRepeatedMethod.isDefined
+
+  private def nativeFindInSetRepeated(
+      word: String,
+      set: ColumnView,
+      maxDistinctSets: Int): Option[ColumnVector] = {
+    nativeFindInSetRepeatedMethod.flatMap { method =>
+      try {
+        Option(method.invoke(null, set, word, Integer.valueOf(maxDistinctSets))
+          .asInstanceOf[ColumnVector])
       } catch {
         case e: InvocationTargetException => throw e.getCause
       }
@@ -2231,9 +2254,10 @@ case class GpuFindInSet(left: Expression, right: Expression)
   override def inputTypes: Seq[AbstractDataType] = Seq(StringType, StringType)
   override def prettyName: String = "find_in_set"
 
-  // Avoid copying large high-cardinality set columns to the host. The split/list fallback is
-  // safer once the number of distinct RHS set strings in a batch is no longer small.
-  private val maxDistinctSetsForScalarWord = 4096
+  // Avoid copying large high-cardinality set columns to the host. The native path can handle more
+  // distinct set strings because it keeps the dictionary and gather work on the GPU.
+  private val maxHostDistinctSetsForScalarWord = 4096
+  private val maxNativeDistinctSetsForScalarWord = 65536
 
   private def stringFromScalar(s: GpuScalar): String = s.getValue match {
     case utf8: UTF8String => utf8.toString
@@ -2366,7 +2390,7 @@ case class GpuFindInSet(left: Expression, right: Expression)
       Some(nullIntColumn(numRows))
     } else {
       val distinctSetCount = set.getBase.distinctCount(NullPolicy.INCLUDE)
-      if (distinctSetCount > maxDistinctSetsForScalarWord) {
+      if (distinctSetCount > maxHostDistinctSetsForScalarWord) {
         None
       } else {
         Some(withResource(new Table(set.getBase)) { setTable =>
@@ -2427,10 +2451,13 @@ case class GpuFindInSet(left: Expression, right: Expression)
       if (word.indexOf(',') >= 0) {
         zeroOrNullFromSetNulls(rhs)
       } else {
-        GpuFindInSet.nativeFindInSet(word, rhs.getBase).getOrElse {
-          // Fall back until Spark RAPIDS depends on a JNI build with native find_in_set.
+        GpuFindInSet.nativeFindInSetRepeated(
+          word, rhs.getBase, maxNativeDistinctSetsForScalarWord).orElse {
+          // Fall back until Spark RAPIDS depends on a JNI build with the repeated-set path.
           // This preserves compatibility with older 26.08.0-SNAPSHOT jars.
-          findInRepeatedSets(word, rhs).getOrElse {
+          if (GpuFindInSet.hasNativeFindInSetRepeated) None else findInRepeatedSets(word, rhs)
+        }.getOrElse {
+          GpuFindInSet.nativeFindInSet(word, rhs.getBase).getOrElse {
             findInSplitSet(rhs, lhs.getBase)
           }
         }
