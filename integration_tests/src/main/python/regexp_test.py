@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,7 +27,14 @@ if not is_jvm_charset_utf8():
 else:
     pytestmark = pytest.mark.regexp
 
-_regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
+# Raised above the Integer.MAX_VALUE default so line-anchor + alternation
+# patterns (e.g. `(abc1a$|^ab2ab|a3abc)`) clear the post-#14849 estimator
+# (see #14867). 3 GiB matches the conf's documented "no more than 3x
+# batchSizeBytes" guidance.
+_regexp_conf = {
+    'spark.rapids.sql.regexp.enabled': True,
+    'spark.rapids.sql.regexp.maxStateMemoryBytes': str(3 * 1024 * 1024 * 1024),
+}
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
