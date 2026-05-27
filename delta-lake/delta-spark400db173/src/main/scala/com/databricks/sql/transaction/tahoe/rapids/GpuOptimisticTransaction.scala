@@ -44,6 +44,7 @@ import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, RuntimeReplaceable}
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.ColumnarWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.util.Clock
@@ -81,6 +82,14 @@ class GpuOptimisticTransaction(
     if (!isOptimize && autoCompactEnabled && fileActions.nonEmpty) {
       registerPostCommitHook(GpuAutoCompact)
     }
+  }
+
+  override def registerSQLMetrics(spark: SparkSession, metrics: Map[String, SQLMetric]): Unit = {
+    val extended = metrics.get("numSourceRows").fold(metrics) { sourceRows =>
+      // Alias for 4.0 commit-time transformMetrics expectations.
+      metrics + ("operationNumSourceRows" -> sourceRows)
+    }
+    super.registerSQLMetrics(spark, extended)
   }
 
   override protected def getGpuWriteCommitter(

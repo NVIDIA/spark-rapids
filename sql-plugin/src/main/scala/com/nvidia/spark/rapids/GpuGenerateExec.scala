@@ -334,10 +334,7 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       if (outer) {
         // for outer, empty arrays and null arrays will produce a row
         withResource(GpuScalar.from(1, IntegerType)) { one =>
-          val noNulls = withResource(arrayLengths.isNotNull) { isLhsNotNull =>
-            isLhsNotNull.ifElse(arrayLengths, one)
-          }
-          withResource(noNulls) { _ =>
+          withResource(arrayLengths.replaceNulls(one)) { noNulls =>
             withResource(noNulls.greaterOrEqualTo(one)) { isGeOne =>
               isGeOne.ifElse(noNulls, one)
             }
@@ -403,7 +400,13 @@ abstract class GpuExplodeBase extends GpuUnevaluableUnaryExpression with GpuGene
       val numSplitsForTargetSize =
         math.min(inputRows,
           math.ceil(estimatedOutputSizeBytes / targetSizeBytes).toInt)
-      GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
+      if (numSplitsForTargetSize == 0) {
+        // estimatedOutputSizeBytes is 0 when every exploding row is empty/null,
+        // so no further splitting is needed. Matches the else-branch guard below.
+        Array.empty[Int]
+      } else {
+        GpuBatchUtils.generateSplitIndices(inputRows, numSplitsForTargetSize).distinct
+      }
     } else {
       NvtxRegistry.GENERATE_ESTIMATE_REPETITION {
         // get the # of repetitions per row of the input for this explode
