@@ -340,6 +340,8 @@ def test_find_in_set():
         ('missing', 'abc,b,ab,c,def'),
         ('a,b', 'abc,b,ab,c,def'),
         ('', ',abc,,def,'),
+        ('a', 'b,a,a'),
+        ('a', 'x'),
         (None, 'abc,b,ab,c,def'),
         ('ab', None),
         (None, None),
@@ -352,6 +354,8 @@ def test_find_in_set():
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame(data, schema).selectExpr(
             'find_in_set("ab", set)',
+            'find_in_set("a", set)',
+            'find_in_set("a,b", set)',
             'find_in_set(word, set)',
             'find_in_set(word, "abc,b,ab,c,def")',
             'find_in_set(word, ",abc,,def,")',
