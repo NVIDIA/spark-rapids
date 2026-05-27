@@ -396,12 +396,23 @@ private class ActionBuildingVisitor(
     idToConstant: JMap[Integer, _]
 ) extends SchemaWithPartnerVisitor[Type, ColumnAction] {
 
-  // Track the current field and whether we are inside a constant struct.
-  private val fieldStack = Stack.empty[(Types.NestedField, Boolean)]
+  // Track the current field, its partner type in the file schema (null when the
+  // field is missing from the file), and whether we are inside a constant struct.
+  // The partner is stored so that strict-ancestor "inside a missing container"
+  // can be detected by descendants — see isInsideMissingContainer below.
+  private val fieldStack = Stack.empty[(Types.NestedField, Type, Boolean)]
   private def currentField: Types.NestedField =
     fieldStack.headOption.map(_._1).orNull
   private def isInsideConstantStruct: Boolean =
-    fieldStack.headOption.exists(_._2)
+    fieldStack.headOption.exists(_._3)
+  // True iff a STRICT ancestor of the current field is missing from the file
+  // schema (partner == null at an ancestor level). The current field's own
+  // missing-ness is reflected by the visitor method's `partner` parameter and
+  // is intentionally excluded here, so the missing container's own handler
+  // still runs the normal partner==null logic (constant lookup, fill-null for
+  // optional, or throw for required).
+  private def isInsideMissingContainer: Boolean =
+    fieldStack.size > 1 && fieldStack.tail.exists(_._2 == null)
 
   override def schema(
       schema: Schema,
@@ -424,7 +435,11 @@ private class ActionBuildingVisitor(
     }
 
     if (partner == null) {
-      if (isInsideConstantStruct) {
+      // Inside a missing ancestor: the parent's own handler will emit
+      // FillNull for the whole container and discard this result, so any
+      // safe placeholder works — FillNull mirrors the isInsideConstantStruct
+      // path and never requires an input column at execute time.
+      if (isInsideConstantStruct || isInsideMissingContainer) {
         return FillNull(sparkType)
       }
       return MissingFieldActionBuilder.buildAction(
@@ -463,7 +478,7 @@ private class ActionBuildingVisitor(
   }
 
   override def beforeField(field: Types.NestedField, partner: Type): Unit = {
-    fieldStack.push((field,
+    fieldStack.push((field, partner,
       isInsideConstantStruct ||
         (field.`type`().isStructType &&
           idToConstant.containsKey(field.fieldId()))))
@@ -484,7 +499,7 @@ private class ActionBuildingVisitor(
       elementResult: ColumnAction): ColumnAction = {
     if (partner == null) {
       val sparkType = SparkSchemaUtil.convert(list)
-      if (isInsideConstantStruct) {
+      if (isInsideConstantStruct || isInsideMissingContainer) {
         return FillNull(sparkType)
       }
       return MissingFieldActionBuilder.buildAction(
@@ -493,7 +508,7 @@ private class ActionBuildingVisitor(
         currentField.isOptional,
         idToConstant)
     }
-    
+
     if (elementResult == PassThrough) {
       PassThrough
     } else {
@@ -508,7 +523,7 @@ private class ActionBuildingVisitor(
       valueResult: ColumnAction): ColumnAction = {
     if (partner == null) {
       val sparkType = SparkSchemaUtil.convert(map)
-      if (isInsideConstantStruct) {
+      if (isInsideConstantStruct || isInsideMissingContainer) {
         return FillNull(sparkType)
       }
       return MissingFieldActionBuilder.buildAction(
@@ -517,7 +532,7 @@ private class ActionBuildingVisitor(
         currentField.isOptional,
         idToConstant)
     }
-    
+
     if (keyResult == PassThrough && valueResult == PassThrough) {
       PassThrough
     } else {
@@ -538,7 +553,8 @@ private class ActionBuildingVisitor(
       } else {
         UpCast(fileType, expectedType)
       }
-    } else if (isInsideConstantStruct) {
+    } else if (isInsideConstantStruct || isInsideMissingContainer) {
+      // Children of a missing container — see struct() for rationale.
       FillNull(expectedType)
     } else {
       MissingFieldActionBuilder.buildAction(
