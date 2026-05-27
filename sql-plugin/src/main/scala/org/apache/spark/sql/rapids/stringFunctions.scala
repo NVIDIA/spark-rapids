@@ -16,6 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
+import java.lang.reflect.InvocationTargetException
 import java.nio.charset.Charset
 import java.text.DecimalFormatSymbols
 import java.util.{EnumSet, Locale, Optional}
@@ -2205,6 +2206,25 @@ case class GpuStringInstr(str: Expression, substr: Expression)
   }
 }
 
+object GpuFindInSet {
+  private lazy val nativeFindInSetMethod = try {
+    Some(Class.forName("com.nvidia.spark.rapids.jni.StringUtils").getMethod(
+      "findInSet", classOf[ColumnView], classOf[String]))
+  } catch {
+    case _: ClassNotFoundException | _: NoSuchMethodException => None
+  }
+
+  private def nativeFindInSet(word: String, set: ColumnView): Option[ColumnVector] = {
+    nativeFindInSetMethod.map { method =>
+      try {
+        method.invoke(null, set, word).asInstanceOf[ColumnVector]
+      } catch {
+        case e: InvocationTargetException => throw e.getCause
+      }
+    }
+  }
+}
+
 case class GpuFindInSet(left: Expression, right: Expression)
   extends GpuBinaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
   override def dataType: DataType = IntegerType
@@ -2407,8 +2427,12 @@ case class GpuFindInSet(left: Expression, right: Expression)
       if (word.indexOf(',') >= 0) {
         zeroOrNullFromSetNulls(rhs)
       } else {
-        findInRepeatedSets(word, rhs).getOrElse {
-          findInSplitSet(rhs, lhs.getBase)
+        GpuFindInSet.nativeFindInSet(word, rhs.getBase).getOrElse {
+          // Fall back until Spark RAPIDS depends on a JNI build with native find_in_set.
+          // This preserves compatibility with older 26.08.0-SNAPSHOT jars.
+          findInRepeatedSets(word, rhs).getOrElse {
+            findInSplitSet(rhs, lhs.getBase)
+          }
         }
       }
     }
