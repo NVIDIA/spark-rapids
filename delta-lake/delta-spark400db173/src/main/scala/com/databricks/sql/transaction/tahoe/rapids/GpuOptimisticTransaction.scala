@@ -32,21 +32,32 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.io.FileCommitProtocol
 import org.apache.spark.sql.{Dataset, SparkSession}
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, RuntimeReplaceable}
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter
+import org.apache.spark.sql.execution.metric.SQLMetric
 import org.apache.spark.sql.rapids.ColumnarWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.util.Clock
 
 class GpuOptimisticTransaction(
     deltaLog: DeltaLog,
+    catalogTable: Option[CatalogTable],
     snapshot: Snapshot,
     rapidsConf: RapidsConf)(implicit clock: Clock)
-    extends GpuOptimisticTransactionWriteBase(deltaLog, snapshot, rapidsConf)(clock) {
+    extends GpuOptimisticTransactionWriteBase(deltaLog, catalogTable, snapshot, rapidsConf)(clock) {
+
+  def this(
+      deltaLog: DeltaLog,
+      catalogTable: Option[CatalogTable],
+      snapshotOpt: Option[Snapshot],
+      rapidsConf: RapidsConf)(implicit clock: Clock) = {
+    this(deltaLog, catalogTable, snapshotOpt.getOrElse(deltaLog.update()), rapidsConf)
+  }
 
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
-    this(deltaLog, deltaLog.update(), rapidsConf)
+    this(deltaLog, Option.empty[CatalogTable], deltaLog.update(), rapidsConf)
   }
 
   override protected def normalizeGpuStatsColExpr(expr: Expression): Expression = {
@@ -64,6 +75,14 @@ class GpuOptimisticTransaction(
     if (!isOptimize && autoCompactEnabled && fileActions.nonEmpty) {
       registerPostCommitHook(GpuAutoCompactCpuFallback)
     }
+  }
+
+  override def registerSQLMetrics(spark: SparkSession, metrics: Map[String, SQLMetric]): Unit = {
+    val extended = metrics.get("numSourceRows").fold(metrics) { sourceRows =>
+      // Alias for 4.0 commit-time transformMetrics expectations.
+      metrics + ("operationNumSourceRows" -> sourceRows)
+    }
+    super.registerSQLMetrics(spark, extended)
   }
 
   override protected def getGpuWriteCommitter(
