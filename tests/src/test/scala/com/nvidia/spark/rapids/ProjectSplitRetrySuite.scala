@@ -264,10 +264,7 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
     assert(RmmSpark.getAndResetNumRetryThrow(/*taskId*/ 1) > 0)
   }
 
-  // Drain a streaming-projection iterator into an ArrayBuffer under
-  // closeOnExcept so a mid-drain failure (e.g., a real OOM after one piece
-  // has been produced) closes the already-produced pieces instead of
-  // leaking them through the test's leak detector.
+  // Owns drained batches and closes partial output on failure.
   private def drainPieces(
       it: Iterator[ColumnarBatch]): scala.collection.mutable.ArrayBuffer[ColumnarBatch] = {
     val buf = scala.collection.mutable.ArrayBuffer[ColumnarBatch]()
@@ -279,9 +276,6 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
     buf
   }
 
-  // Streaming entry: under split-retry the iterator should emit two or more
-  // pieces (no concat) and their row-wise concatenation must equal the
-  // single-batch reference.
   test("streaming split-retry emits multiple pieces and matches reference") {
     val tier = GpuBindReferences.bindGpuReferencesTiered(
       addOneExprs(), batchAttrs, new SQLConf(), Map.empty)
@@ -303,8 +297,6 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
     assert(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1) > 0)
   }
 
-  // Non-split paths should still flow through the streaming entry as a
-  // single piece, so callers can uniformly flatMap over it.
   test("streaming entry yields one piece when no split occurs") {
     val tier = GpuBindReferences.bindGpuReferencesTiered(
       addOneExprs(), batchAttrs, new SQLConf(), Map.empty)
@@ -317,8 +309,6 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
     assertResult(0)(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1))
   }
 
-  // Multi-tier (mixed retryable + non-retryable) falls back to the single-
-  // batch path; the streaming entry should still yield exactly one piece.
   test("streaming entry falls back to single piece for multi-tier projection") {
     val tier = GpuBindReferences.bindGpuReferencesTiered(
       mixedNonRetryableExprs(), batchAttrs, new SQLConf(), Map.empty)
