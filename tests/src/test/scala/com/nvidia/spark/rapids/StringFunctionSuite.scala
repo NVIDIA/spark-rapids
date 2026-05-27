@@ -264,20 +264,37 @@ class RegExpUtilsSuite extends AnyFunSuite {
     }
   }
 
-  test("issue-14743: backrefConversion uses rewritten capture group count") {
+  test("issue-14743: line-anchor rewrite preserves user-vs-generated backref boundary") {
+    // A 12-group user pattern ending in line-anchor `$` causes the transpiler to append an
+    // internally-generated 13th capture group (for the captured line terminator) plus a
+    // matching backref in the replacement. The user-authored replacement tokens must be
+    // parsed against the user's 12-group count (Java spec), while the generated `$13`
+    // must round-trip to cuDF as `${13}`. The transpiler emits the generated backref in
+    // braced form so `backrefConversion` can tell the two apart from a single string.
     val open = "$" + "{"
-    val pattern = "(T)(E)(S)(T)(T)(E)(S)(T)(T)(E)(S)(T)$"
-    val (_, replacement) = new CudfRegexTranspiler(RegexReplaceMode)
-      .getTranspiledAST(pattern, None, Some("$123$2"))
-    val rewrittenReplacement = replacement.get
+    val userPattern = "(T)(E)(S)(T)(T)(E)(S)(T)(T)(E)(S)(T)$"
+    val userNumCaptureGroups =
+      java.util.regex.Pattern.compile(userPattern).matcher("").groupCount()
+    assert(userNumCaptureGroups == 12)
 
-    assert(rewrittenReplacement.numCaptureGroups == 13)
-    val (hasBackref, converted) =
-      GpuRegExpUtils.backrefConversion(rewrittenReplacement.toRegexString,
-        rewrittenReplacement.numCaptureGroups)
+    // Case 1: user replacement `$123$2` -> `$12` + literal `3` + `$2`, plus generated `${13}`.
+    val (_, repl1) = new CudfRegexTranspiler(RegexReplaceMode)
+      .getTranspiledAST(userPattern, None, Some("$123$2"))
+    val (has1, conv1) =
+      GpuRegExpUtils.backrefConversion(repl1.get.toRegexString, userNumCaptureGroups)
+    assert(has1)
+    assert(conv1 == open + "12}3" + open + "2}" + open + "13}")
 
-    assert(hasBackref)
-    assert(converted == open + "12}3" + open + "2}" + open + "13}")
+    // Case 2: user replacement `$13` with only 12 user groups MUST parse as `$1` + literal
+    // `3`, NOT as a reference to the internally-generated 13th group. The generated
+    // `${13}` still rides along after the user portion.
+    val (_, repl2) = new CudfRegexTranspiler(RegexReplaceMode)
+      .getTranspiledAST(userPattern, None, Some("$13"))
+    val (has2, conv2) =
+      GpuRegExpUtils.backrefConversion(repl2.get.toRegexString, userNumCaptureGroups)
+    assert(has2)
+    assert(conv2 == open + "1}3" + open + "13}",
+      s"expected user `$$13` to back off to `$${1}3`, got `$conv2`")
   }
 }
 

@@ -1095,9 +1095,26 @@ object GpuRegExpUtils {
   def backrefConversion(rep: String, numCaptureGroups: Int): (Boolean, String) = {
     val b = new StringBuilder
     var i = 0
+    var hasBracedBackref = false
     while (i < rep.length) {
-      // match $group_index or \group_index
-      if (Seq('$', '\\').contains(rep.charAt(i))
+      // Pass through already-braced `${N}` tokens unchanged. These are emitted by the
+      // transpiler for internally-generated backrefs (e.g. the line-anchor rewrite's
+      // captured line terminator) and must not be re-parsed against the user pattern's
+      // group count, which would mis-resolve them when the user count is less than the
+      // generated index.
+      if (rep.charAt(i) == '$' && i + 2 < rep.length && rep.charAt(i + 1) == '{') {
+        val close = rep.indexOf('}', i + 2)
+        val allDigits = close > i + 2 &&
+          (i + 2 until close).forall(k => rep.charAt(k).isDigit)
+        if (allDigits) {
+          b.append(rep.substring(i, close + 1))
+          hasBracedBackref = true
+          i = close + 1
+        } else {
+          b.append(rep.charAt(i))
+          i += 1
+        }
+      } else if (Seq('$', '\\').contains(rep.charAt(i))
         && i + 1 < rep.length && rep.charAt(i + 1).isDigit) {
 
         // Consume digits one at a time. If the running group index would exceed the actual
@@ -1136,7 +1153,8 @@ object GpuRegExpUtils {
           i = k
         }
       } else if (rep.charAt(i) == '\\' && i + 1 < rep.length) {
-        // skip potential \$group_index or \\group_index
+        // skip potential escape sequences like `\$` or `\\`; `\digit` is handled by the
+        // greedy-with-backoff branch above.
         b.append('\\').append(rep.charAt(i + 1))
         i += 2
       } else {
@@ -1146,7 +1164,9 @@ object GpuRegExpUtils {
     }
 
     val converted = b.toString
-    !rep.equals(converted) -> converted
+    // A pass-through `${N}` token does not modify the string, so equality alone would miss
+    // it; treat it as a backref so the caller routes through `stringReplaceWithBackrefs`.
+    (hasBracedBackref || !rep.equals(converted)) -> converted
   }
 
   /**
