@@ -27,14 +27,7 @@ if not is_jvm_charset_utf8():
 else:
     pytestmark = pytest.mark.regexp
 
-# Raised above the Integer.MAX_VALUE default so line-anchor + alternation
-# patterns (e.g. `(abc1a$|^ab2ab|a3abc)`) clear the post-#14849 estimator
-# (see #14867). 3 GiB matches the conf's documented "no more than 3x
-# batchSizeBytes" guidance.
-_regexp_conf = {
-    'spark.rapids.sql.regexp.enabled': True,
-    'spark.rapids.sql.regexp.maxStateMemoryBytes': str(3 * 1024 * 1024 * 1024),
-}
+_regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
@@ -605,6 +598,13 @@ def test_character_classes():
 
 @datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10641")
 def test_regexp_choice():
+    # Pattern `(abc1a$|^ab2ab|a3abc)` below transpiles to 21 states; with the
+    # default `gpuTargetBatchSizeBytes = 1 GiB` and default
+    # `maxRegExpStateMemory = Integer.MAX_VALUE`, the post-#14849 estimator
+    # (correctly) computes ~2.25 GiB and falls back to CPU, which drags the
+    # whole Project to CPU and trips assertIsOnTheGpu under IT mode.
+    # 3 GiB matches the conf's documented "no more than 3x batchSizeBytes"
+    # guidance. Tracked by #14867; long-term plugin-level fix is #14887.
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
@@ -621,7 +621,8 @@ def test_regexp_choice():
                 'regexp_replace(a, "[ab]$|[cd]$", "@")',
                 'regexp_replace(a, "[ab]+|^cd1", "@")'
             ),
-        conf=_regexp_conf)
+        conf={**_regexp_conf,
+              'spark.rapids.sql.regexp.maxStateMemoryBytes': str(3 * 1024 * 1024 * 1024)})
 
 def test_regexp_hexadecimal_digits():
     gen = mk_str_gen(
