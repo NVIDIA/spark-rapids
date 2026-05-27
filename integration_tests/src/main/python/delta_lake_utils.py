@@ -92,6 +92,21 @@ def _fixup_operation_metrics(opm):
 TMP_TABLE_PATTERN=re.compile(r"tmp_table_\w+")
 TMP_TABLE_PATH_PATTERN=re.compile(r"delta.`[^`]*`")
 REF_ID_PATTERN=re.compile(r"#[0-9]+")
+ROW_TRACKING_COLUMN_NAME_KEYS = (
+    "delta.rowTracking.materializedRowCommitVersionColumnName",
+    "delta.rowTracking.materializedRowIdColumnName")
+
+
+def _normalize_row_tracking_column_names(properties):
+    # DBR 17.3 can materialize row tracking column names with random UUIDs.
+    # Preserve the presence of these properties while normalizing their values.
+    changed = False
+    for key in ROW_TRACKING_COLUMN_NAME_KEYS:
+        if key in properties:
+            properties[key] = key
+            changed = True
+    return changed
+
 
 def _fixup_operation_parameters(opp):
     """Update the specified operationParameters node to facilitate log comparisons"""
@@ -101,6 +116,15 @@ def _fixup_operation_parameters(opp):
             subbed = TMP_TABLE_PATTERN.sub("tmp_table", pred)
             subbed = TMP_TABLE_PATH_PATTERN.sub("tmp_table", subbed)
             opp[key] = REF_ID_PATTERN.sub("#refid", subbed)
+    properties = opp.get("properties")
+    if properties:
+        try:
+            properties_json = json.loads(properties)
+        except ValueError:
+            return
+
+        if _normalize_row_tracking_column_names(properties_json):
+            opp["properties"] = json.dumps(properties_json, sort_keys=True)
 
 def assert_delta_history_equal(conf, cpu_table, gpu_table):
     # Project all columns except for the `timestamp` column, which won't match between CPU and GPU.
@@ -132,6 +156,8 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
         if key == "metaData":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'metaData' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("createdTime", "id"), c_val, g_val)
+            _normalize_row_tracking_column_names(c_val.get("configuration", {}))
+            _normalize_row_tracking_column_names(g_val.get("configuration", {}))
         elif key == "add":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'add' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("modificationTime", "size"), c_val, g_val)
