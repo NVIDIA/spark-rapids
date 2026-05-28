@@ -656,9 +656,6 @@ def test_rlike_supplementary_codepoint_fallback_issue_14744(pattern):
     # character. The transpiler now throws `RegexUnsupportedException`
     # for these patterns, causing spark-rapids to fall back to the CPU
     # regex engine -- which Java's `Pattern` handles correctly.
-    # The data gen below seeds inputs that contain the actual
-    # supplementary codepoints we test for, so CPU matches are real
-    # rather than always-False.
     gen = mk_str_gen('[abcd]\\\\x{1F600}\\\\x{10000}\\\\x{10FFFF}[abcd]')
     assert_gpu_fallback_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
