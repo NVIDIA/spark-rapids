@@ -389,6 +389,23 @@ def test_re_replace_backrefs_idx_out_of_bounds():
         conf=_regexp_conf,
         error_message='')
 
+# `${N}` (digits inside braces) is a *named-group* reference per Java's Matcher
+# spec, which requires the name to start with a letter. Java throws on this
+# syntax, so the GPU path must fall back to CPU rather than silently normalize
+# to a numeric backref. (Spark's SQL parser substitutes `${...}` itself, so we
+# disable variable substitution to make the replacement string reach the
+# expression evaluator unchanged.)
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_re_replace_backrefs_braced_numeric_unsupported():
+    gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
+    # Single-digit and multi-digit numeric names both exercise the consumeInt
+    # read loop and the same `Some(_)` branch in parseBackrefOrLiteralDollar.
+    assert_gpu_and_cpu_error(lambda spark: unary_op_df(spark, gen).selectExpr(
+        'REGEXP_REPLACE(a, "(T)(E)(S)(T)", "[${2}]")',
+        'REGEXP_REPLACE(a, "(T)(E)(S)(T)", "[${12}]")').collect(),
+        conf={**_regexp_conf, 'spark.sql.variable.substitute': 'false'},
+        error_message='')
+
 def test_re_replace_backrefs_escaped():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     assert_gpu_and_cpu_are_equal_collect(

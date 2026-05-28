@@ -390,8 +390,19 @@ class RegexParser(pattern: String) {
         if (peek().contains('}')) {
           consumeExpected('}')
           num match {
-            case Some(n) =>
-              RegexBackref(n)
+            case Some(_) =>
+              // Java's Matcher.appendReplacement treats `${...}` as a *named*-group
+              // reference. Its parser accepts ASCII letters and digits in the name
+              // body but rejects names whose first character is a digit
+              // (`if (ASCII.isDigit(gname.charAt(0))) throw IllegalArgumentException`).
+              // All-digit names like `${12}` therefore throw on CPU. We must not
+              // silently normalize the user-authored `${N}` to `$N`, which would let
+              // cuDF resolve it as a numeric backref and diverge from CPU. Fall back
+              // to CPU so Java's spec applies unchanged.
+              throw new RegexUnsupportedException(
+                "Numeric `${N}` backref in replacement string is not supported on GPU " +
+                  "(Java's Matcher.appendReplacement rejects this syntax)",
+                Some(start))
             case _ =>
               treatAsLiteralDollar()
           }

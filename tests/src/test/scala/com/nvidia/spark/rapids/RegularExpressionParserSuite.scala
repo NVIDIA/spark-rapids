@@ -283,6 +283,22 @@ class RegularExpressionParserSuite extends AnyFunSuite {
     RegexChar('$'))))
   }
   
+  test("replacement: numeric braced backref rejected (Java spec)") {
+    // Java's Matcher.appendReplacement rejects `${name}` when name starts with a
+    // digit (`if (ASCII.isDigit(gname.charAt(0))) throw IllegalArgumentException`),
+    // so we must not silently parse a user-authored braced numeric backref.
+    val brace = "$" + "{"
+    val cases = Seq(s"[${brace}2}]", s"${brace}1}", s"${brace}12}",
+        s"a${brace}3}b", s"${brace}0}")
+    for (rep <- cases) {
+      val e = intercept[RegexUnsupportedException] {
+        new RegexParser(rep).parseReplacement(4)
+      }
+      assert(e.getMessage.contains("backref in replacement string is not supported"),
+        s"unexpected message for replacement '$rep': ${e.getMessage}")
+    }
+  }
+
   private def parse(pattern: String): RegexAST = {
     new RegexParser(pattern).parse()
   }
