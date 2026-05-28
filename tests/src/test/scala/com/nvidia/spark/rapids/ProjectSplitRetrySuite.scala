@@ -25,6 +25,8 @@ import org.apache.spark.sql.catalyst.expressions.{AttributeReference, ExprId, Na
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuAdd
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuRand
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -51,6 +53,18 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
 
   private def newSpillable(): SpillableColumnarBatch =
     SpillableColumnarBatch(buildBatch(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+
+  private def assertClosed(sb: SpillableColumnarBatch): Unit = {
+    val wasClosed = try {
+      sb.incRefCount()
+      sb.close()
+      sb.close()
+      false
+    } catch {
+      case _: IllegalStateException => true
+    }
+    assert(wasClosed)
+  }
 
   // GpuAdd(int, 1) — pure, deterministic, retryable.
   private def addOneExprs(): Seq[GpuExpression] = Seq(
@@ -307,6 +321,42 @@ class ProjectSplitRetrySuite extends RmmSparkRetrySuiteBase {
       assertResult(NUM_ROWS)(pieces.head.numRows())
     }
     assertResult(0)(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1))
+  }
+
+  test("streaming entry preserves one output batch when requested") {
+    val tier = GpuBindReferences.bindGpuReferencesTiered(
+      addOneExprs(), batchAttrs, new SQLConf(), Map.empty)
+    val sb = newSpillable()
+    RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+      RmmSpark.OomInjectionType.GPU.ordinal, 0)
+    val pieces = drainPieces(tier.projectAndCloseStreamingWithSplitRetry(
+      sb, allowMultipleOutputBatches = false))
+    withResource(pieces) { _ =>
+      assertResult(1)(pieces.size)
+      assertResult(NUM_ROWS)(pieces.head.numRows())
+      val got = collectInts(pieces.head, 0)
+      (0 until NUM_ROWS).foreach { i =>
+        assertResult(i + 1)(got(i))
+      }
+    }
+    assert(RmmSpark.getAndResetNumSplitRetryThrow(/*taskId*/ 1) > 0)
+  }
+
+  test("streaming entry closes input when abandoned before next") {
+    val context = new MockTaskContext(taskAttemptId = 1, partitionId = 0)
+    TrampolineUtil.setTaskContext(context)
+    try {
+      val tier = GpuBindReferences.bindGpuReferencesTiered(
+        addOneExprs(), batchAttrs, new SQLConf(), Map.empty)
+      val sb = newSpillable()
+      val pieces = tier.projectAndCloseStreamingWithSplitRetry(sb)
+      assert(pieces.hasNext)
+      context.markTaskComplete()
+      assertClosed(sb)
+    } finally {
+      TrampolineUtil.unsetTaskContext()
+      ScalableTaskCompletion.reset()
+    }
   }
 
   test("streaming entry falls back to single piece for multi-tier projection") {

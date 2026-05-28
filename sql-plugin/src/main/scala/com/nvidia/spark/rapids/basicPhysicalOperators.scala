@@ -240,19 +240,39 @@ object GpuProjectExec {
    * must restore their state for each split attempt. `runProject` must not
    * close its input.
    *
-   * Takes ownership of `sb`. Callers must drain the returned iterator; if it is
-   * discarded before the first next(), `sb` is not task-completion guarded.
+   * Takes ownership of `sb`. If the iterator is abandoned before the first
+   * next(), task completion closes `sb`.
    */
   private[rapids] def runStreamingWithSplitRetry(
       sb: SpillableColumnarBatch,
       retryables: Seq[Retryable],
       runProject: ColumnarBatch => ColumnarBatch): Iterator[ColumnarBatch] = {
-    withRetry(sb, splitSpillableInHalfByRows) { spillable =>
+    val retryIter = withRetry(sb, splitSpillableInHalfByRows) { spillable =>
       retryables.foreach(_.checkpoint())
       withResource(spillable.getColumnarBatch()) { cb =>
         withRestoreOnRetry(retryables) {
           runProject(cb)
         }
+      }
+    }
+    new Iterator[ColumnarBatch] {
+      @volatile private var started = false
+      private val onClose = Option(TaskContext.get()).map { tc =>
+        onTaskCompletion(tc) {
+          if (!started) {
+            sb.close()
+          }
+        }
+      }
+
+      override def hasNext: Boolean = !started || retryIter.hasNext
+
+      override def next(): ColumnarBatch = {
+        if (!started) {
+          started = true
+          onClose.foreach(_.removeCallback())
+        }
+        retryIter.next()
       }
     }
   }
@@ -883,11 +903,13 @@ case class GpuProjectExec(
       } else {
         iter
       }
-      // The streaming entry owns `sb` and may emit multiple pieces per input.
+      // The streaming entry owns `sb` and may emit multiple pieces per input
+      // only when this project is allowed to change batch boundaries.
       // Wrap next() so lazy projection work is counted in the project metric.
       maybeSplitIter.flatMap { split =>
         val sb = SpillableColumnarBatch(split, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-        val pieces = boundProjectList.projectAndCloseStreamingWithSplitRetry(sb)
+        val pieces = boundProjectList.projectAndCloseStreamingWithSplitRetry(
+          sb, allowMultipleOutputBatches = localEnablePreSplit)
         new Iterator[ColumnarBatch] {
           override def hasNext: Boolean = pieces.hasNext
           override def next(): ColumnarBatch = {
@@ -1157,17 +1179,23 @@ case class GpuProjectAstExec(
    * flow downstream without concatenation. Non-streaming paths are wrapped in a
    * lazy one-shot iterator so callers can measure projection work around next().
    *
-   * Only callers that can consume multiple output batches per input may use
-   * this method. Operators with one-output-per-input state must keep using
-   * projectAndCloseWithRetrySingleBatch.
+   * Set `allowMultipleOutputBatches` only for callers that can consume multiple
+   * output batches per input. Operators with one-output-per-input state must
+   * preserve the single-batch path.
    */
+  def projectAndCloseStreamingWithSplitRetry(sb: SpillableColumnarBatch): Iterator[ColumnarBatch] =
+    projectAndCloseStreamingWithSplitRetry(sb, allowMultipleOutputBatches = true)
+
   def projectAndCloseStreamingWithSplitRetry(
-      sb: SpillableColumnarBatch): Iterator[ColumnarBatch] = {
-    if (areAllRetryable && RapidsConf.PROJECT_SPLIT_RETRY_ENABLED.get(SQLConf.get)) {
+      sb: SpillableColumnarBatch,
+      allowMultipleOutputBatches: Boolean): Iterator[ColumnarBatch] = {
+    if (allowMultipleOutputBatches &&
+        areAllRetryable &&
+        RapidsConf.PROJECT_SPLIT_RETRY_ENABLED.get(SQLConf.get)) {
       GpuProjectExec.runStreamingWithSplitRetry(sb, retryables, project(_))
     } else {
       new Iterator[ColumnarBatch] {
-        private var consumed = false
+        @volatile private var consumed = false
         // Until first next(), `sb` is not inside projectAndCloseWithRetrySingleBatch.
         private val onClose = Option(TaskContext.get()).map { tc =>
           onTaskCompletion(tc) {
