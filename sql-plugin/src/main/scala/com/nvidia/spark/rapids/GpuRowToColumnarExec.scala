@@ -983,7 +983,7 @@ case class GpuRowToColumnarExec(child: SparkPlan, goal: CoalesceSizeGoal)
     // increase this number. Spark by default limits codegen to 100 fields
     // "spark.sql.codegen.maxFields".
     if ((1 until 100000000).contains(output.length) &&
-        CudfRowTransitions.areAllSupported(output)) {
+        CudfRowTransitions.areAllR2CSupported(output)) {
       val localOutput = output
       rowBased.mapPartitions(rowIter => GeneratedInternalRowToCudfRowIterator(
         rowIter, localOutput.toArray, localGoal, streamTime, opTime,
