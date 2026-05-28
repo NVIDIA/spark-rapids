@@ -417,12 +417,23 @@ sealed abstract class GpuMetric extends Serializable {
   var companionGpuMetric: Option[GpuMetric] = None
   private var semWaitTimeWhenActivated = 0L
   private var excludeMetricsWhenActivated: Seq[Long] = Seq.empty
+  // Snapshot of each excludeMetric's companion value at activation. Needed so
+  // the companion `.add` at deactivation can subtract descendants' COMPANION
+  // deltas (their `op time (excl. SemWait)`) rather than their RAW deltas
+  // (their `op time`, which still embed their own SemWait). Without this,
+  // any SemWait that fired inside a descendant's wrap would be subtracted
+  // twice from this wrap's companion -- once via this wrap's `semWaitDelta`
+  // and again embedded in the descendant's raw delta -- making the companion
+  // go negative on nested wraps.
+  private var excludeCompanionMetricsWhenActivated: Seq[Long] = Seq.empty
 
   def tryActivateTimer(excludeMetrics: Seq[GpuMetric]): Boolean = {
     if (!isTimerActive) {
       isTimerActive = true
       semWaitTimeWhenActivated = GpuTaskMetrics.get.getSemWaitTime()
       excludeMetricsWhenActivated = excludeMetrics.map(_.value)
+      excludeCompanionMetricsWhenActivated =
+        excludeMetrics.map(_.companionGpuMetric.map(_.value).getOrElse(0L))
       true
     } else {
       false
@@ -443,13 +454,23 @@ sealed abstract class GpuMetric extends Serializable {
             s"excludeMetricsWhenActivated size ${excludeMetricsWhenActivated.length}")
       }
 
+      // Sum of descendants' companion deltas. Used for the companion update so
+      // that SemWait fired inside a descendant's wrap is subtracted once (via
+      // the descendant's companion delta) rather than twice.
+      val totalCompanionExcludeTime = excludeMetrics
+        .zip(excludeCompanionMetricsWhenActivated)
+        .map { case (metric, startValue) =>
+          metric.companionGpuMetric.map(_.value - startValue).getOrElse(0L)
+        }.sum
+
       companionGpuMetric.foreach(c =>
         c.add(duration
           - (GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated)
-          - totalExcludeTime
+          - totalCompanionExcludeTime
         ))
       semWaitTimeWhenActivated = 0L
       excludeMetricsWhenActivated = Seq.empty
+      excludeCompanionMetricsWhenActivated = Seq.empty
 
       add(duration - totalExcludeTime)
     }
