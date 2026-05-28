@@ -90,7 +90,6 @@ def _build_simple_descriptor_bytes(spark):
 
 @pytest.fixture
 def simple_desc(spark_tmp_path):
-    # spark-protobuf reads descFilePath via `new File(...)`, not Hadoop FileSystem.
     desc_path = spark_tmp_path + "/simple.desc"
     desc_bytes = with_cpu_session(_build_simple_descriptor_bytes)
     with open(desc_path, "wb") as fp:
