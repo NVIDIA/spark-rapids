@@ -88,23 +88,16 @@ def _build_simple_descriptor_bytes(spark):
     return bytes(fds.toByteArray())
 
 
-def _write_bytes_to_hadoop_path(spark, path_str, data_bytes):
-    sc = spark.sparkContext
-    config = sc._jsc.hadoopConfiguration()
-    jpath = sc._jvm.org.apache.hadoop.fs.Path(path_str)
-    fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(config)
-    out = fs.create(jpath, True)
-    try:
-        out.write(bytearray(data_bytes))
-    finally:
-        out.close()
-
-
-def _setup_simple_desc(spark_tmp_path):
+@pytest.fixture
+def simple_desc(spark_tmp_path):
+    # spark-protobuf reads descFilePath with `new File(...)` + FileUtils
+    # (driver-local), not via Hadoop FileSystem -- write the descriptor with
+    # plain Python `open` like the other integration tests that share this
+    # assumption about `spark_tmp_path` (e.g. json_fuzz_test, delta_lake_test).
     desc_path = spark_tmp_path + "/simple.desc"
     desc_bytes = with_cpu_session(_build_simple_descriptor_bytes)
-    with_cpu_session(
-        lambda spark: _write_bytes_to_hadoop_path(spark, desc_path, desc_bytes))
+    with open(desc_path, "wb") as fp:
+        fp.write(desc_bytes)
     return desc_path, desc_bytes
 
 
@@ -117,8 +110,8 @@ def _make_smoke_df(spark):
 
 
 @allow_non_gpu("ProjectExec", "ProtobufDataToCatalyst")
-def test_from_protobuf_smoke_path_api(spark_tmp_path, from_protobuf_fn):
-    desc_path, _ = _setup_simple_desc(spark_tmp_path)
+def test_from_protobuf_smoke_path_api(simple_desc, from_protobuf_fn):
+    desc_path, _ = simple_desc
 
     def run(spark):
         return _make_smoke_df(spark).select(
@@ -128,10 +121,10 @@ def test_from_protobuf_smoke_path_api(spark_tmp_path, from_protobuf_fn):
 
 
 @allow_non_gpu("ProjectExec", "ProtobufDataToCatalyst")
-def test_from_protobuf_smoke_binary_descriptor_api(spark_tmp_path, from_protobuf_fn):
+def test_from_protobuf_smoke_binary_descriptor_api(simple_desc, from_protobuf_fn):
     if "binaryDescriptorSet" not in inspect.signature(from_protobuf_fn).parameters:
         pytest.skip("binaryDescriptorSet kwarg is Spark 3.5+ only")
-    _, desc_bytes = _setup_simple_desc(spark_tmp_path)
+    _, desc_bytes = simple_desc
 
     def run(spark):
         return _make_smoke_df(spark).select(
