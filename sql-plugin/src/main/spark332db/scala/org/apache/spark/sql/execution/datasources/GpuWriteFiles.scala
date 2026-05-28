@@ -42,7 +42,7 @@ package org.apache.spark.sql.execution.datasources
 
 import java.util.Date
 
-import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, RapidsConf, RapidsMeta, SparkPlanMeta}
+import com.nvidia.spark.rapids.{DataFromReplacementRule, GpuExec, GpuMetric, RapidsConf, RapidsMeta, SparkPlanMeta}
 import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.{TaskAttemptContext, TaskAttemptID, TaskID, TaskType}
@@ -148,6 +148,14 @@ case class GpuWriteFilesExec(
     val committer = writeFilesSpec.committer
     val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
     val localBaseOutputDebugPath = baseOutputDebugPath
+    // op_time metrics from this node and all descendants. They are passed to
+    // GpuFileFormatWriter.executeTask so that the parent Insert command's
+    // `dataWriter.operatorTimeMetric.ns(excludeMetrics)` wrap subtracts child
+    // op times. Mirrors the pre-WriteFilesExec path in GpuFileFormatWriter.write
+    // (see the `excludeMetrics = plan match { case gpuExec: GpuExec => ... }`
+    // block in the spark321 / spark332db `write` overloads).
+    val excludeMetrics: Seq[GpuMetric] =
+      getOpTimeNewMetric.toSeq ++ getDescendantOpTimeMetrics
 
     rddWithNonEmptyPartitions.mapPartitionsInternal { iterator =>
       val sparkStageId = TaskContext.get().stageId()
@@ -162,7 +170,8 @@ case class GpuWriteFilesExec(
         committer,
         iterator,
         concurrentOutputWriterSpec,
-        localBaseOutputDebugPath)
+        localBaseOutputDebugPath,
+        excludeMetrics)
 
       Iterator(ret)
     }
