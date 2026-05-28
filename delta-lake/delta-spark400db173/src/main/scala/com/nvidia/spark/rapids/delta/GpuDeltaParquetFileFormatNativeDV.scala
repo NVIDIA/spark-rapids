@@ -26,6 +26,7 @@ import com.databricks.sql.io.{RowIndexFilterProvider, RowIndexFilterType}
 import com.databricks.sql.transaction.tahoe.{
   DeltaColumnMapping,
   DeltaColumnMappingMode,
+  DeltaParquetFileFormat,
   IdMapping,
   NameMapping,
   NoMapping
@@ -1436,14 +1437,74 @@ case class DeltaParquetTableReader(
   override protected lazy val resources: Seq[AutoCloseable] =
     Seq(reader) ++ buffers ++ dvInfos.map(_.serializedBitmap)
 
+  private lazy val deletionVectorSkipRowIndexes =
+    MakeParquetTableWithDVProducer.deletionVectorSkipRowIndexes(readDataSchema)
+
   override protected def postProcessChunk(chunk: Table): Table = {
     // The cuDF reader prepends an extra index column in the output table.
     // We need to drop it before returning as we don't use it.
     RapidsDeletionVectors.dropFirstColumn(chunk)
   }
+
+  override def next: Table = {
+    MakeParquetTableWithDVProducer.materializeDeletionVectorSkipRowColumnsAsFalseIfNeeded(
+      super.next, deletionVectorSkipRowIndexes)
+  }
 }
 
 object MakeParquetTableWithDVProducer extends Logging {
+  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
+    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
+      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
+
+  private[delta] def deletionVectorSkipRowIndexes(readDataSchema: StructType): Array[Int] =
+    readDataSchema.fields.zipWithIndex.collect {
+      case (field, index) if isDeletionVectorSkipRowColumn(field.name) => index
+    }
+
+  // Returns the input table unchanged when the planner has pruned skip-row columns.
+  // If replacement is needed, this closes the input table and returns a new one.
+  private[delta] def materializeDeletionVectorSkipRowColumnsAsFalseIfNeeded(
+      table: Table,
+      skipRowIndexes: Array[Int]): Table = {
+    if (skipRowIndexes.nonEmpty) {
+      withResource(table) { tableToClose =>
+        materializeDeletionVectorSkipRowColumnsAsFalse(tableToClose, skipRowIndexes)
+      }
+    } else {
+      table
+    }
+  }
+
+  private[delta] def materializeDeletionVectorSkipRowColumnsAsFalse(
+      table: Table,
+      skipRowIndexes: Array[Int]): Table = {
+    require(skipRowIndexes.forall(_ < table.getNumberOfColumns),
+      s"Expected skip-row indexes ${skipRowIndexes.mkString(",")} within " +
+        s"${table.getNumberOfColumns} output columns")
+    val numRows = Math.toIntExact(table.getRowCount)
+    withResource(Scalar.fromBool(false)) { falseScalar =>
+      val columns = new Array[ColumnVector](table.getNumberOfColumns)
+      val replacementColumns = new ArrayBuffer[ColumnVector](skipRowIndexes.length)
+      try {
+        var i = 0
+        while (i < table.getNumberOfColumns) {
+          columns(i) = if (skipRowIndexes.contains(i)) {
+            val replacement = ColumnVector.fromScalar(falseScalar, numRows)
+            replacementColumns += replacement
+            replacement
+          } else {
+            table.getColumn(i)
+          }
+          i += 1
+        }
+        new Table(columns: _*)
+      } finally {
+        replacementColumns.safeClose()
+      }
+    }
+  }
+
   def apply(
       useChunkedReader: Boolean,
       maxChunkedReaderMemoryUsageSizeBytes: Long,
@@ -1479,6 +1540,7 @@ object MakeParquetTableWithDVProducer extends Logging {
         isSchemaCaseSensitive, useFieldId, readDataSchema, clippedParquetSchema,
         splits, debugDumpPrefix, debugDumpAlways, deletionVectorInfos)
     } else {
+      val skipRowIndexes = deletionVectorSkipRowIndexes(readDataSchema)
       val table = withResource(buffers) { _ =>
         withResource(deletionVectorInfos.map(_.serializedBitmap)) { _ =>
           try {
@@ -1517,7 +1579,8 @@ object MakeParquetTableWithDVProducer extends Logging {
         clippedParquetSchema, readDataSchema, isSchemaCaseSensitive, useFieldId)
       val outputTable = GpuParquetScan.rebaseDateTime(evolvedSchemaTable, dateRebaseMode,
         timestampRebaseMode)
-      new SingleGpuDataProducer(outputTable)
+      new SingleGpuDataProducer(
+        materializeDeletionVectorSkipRowColumnsAsFalseIfNeeded(outputTable, skipRowIndexes))
     }
   }
 }
