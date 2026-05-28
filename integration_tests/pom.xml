@@ -168,13 +168,8 @@
                             </artifactItems>
                         </configuration>
                     </execution>
-                    <!--
-                        spark-protobuf is a Spark 3.4.0+ module, and spark-protobuf shades its
-                        own `com.google.protobuf` into `org.sparkproject.spark_protobuf.protobuf`
-                        so we ship an unshaded protobuf-java alongside it for the integration
-                        tests. release33x profiles set `spark.protobuf.skipCopy=true` because
-                        spark-protobuf does not exist for Spark 3.3.x.
-                    -->
+                    <!-- spark-protobuf shades `com.google.protobuf` internally, so the
+                         unshaded jar is shipped separately for the tests to use. -->
                     <execution>
                         <id>copy-spark-protobuf</id>
                         <phase>package</phase>

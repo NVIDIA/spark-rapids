@@ -146,10 +146,8 @@ else
         AVRO_JARS=""
     fi
 
-    # Set INCLUDE_SPARK_PROTOBUF_JAR=false to skip protobuf_test.py. Both `spark-protobuf` and
-    # the unshaded `protobuf-java` come from maven-dependency-plugin and must both be present
-    # -- spark-protobuf shades `com.google.protobuf.*` internally and Spark does not bundle
-    # the unshaded jar.
+    # spark-protobuf shades `com.google.protobuf.*` internally and Spark does not bundle the
+    # unshaded jar, so we must ship both jars to the test classpath.
     INCLUDE_SPARK_PROTOBUF_JAR_REQUESTED=$(echo "${INCLUDE_SPARK_PROTOBUF_JAR}" | tr '[:upper:]' '[:lower:]')
     if [[ "$INCLUDE_SPARK_PROTOBUF_JAR_REQUESTED" != "false" \
           && $(readlink -e $PROTOBUF_JARS 2>/dev/null | wc -l) -eq 2 ]];
