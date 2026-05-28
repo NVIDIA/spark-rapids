@@ -148,12 +148,13 @@ case class GpuWriteFilesExec(
     val committer = writeFilesSpec.committer
     val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
     val localBaseOutputDebugPath = baseOutputDebugPath
-    // op_time metrics from this node and all descendants. They are passed to
-    // GpuFileFormatWriter.executeTask so that the parent Insert command's
-    // `dataWriter.operatorTimeMetric.ns(excludeMetrics)` wrap subtracts child
-    // op times. Mirrors the pre-WriteFilesExec path in GpuFileFormatWriter.write
-    // (see the `excludeMetrics = plan match { case gpuExec: GpuExec => ... }`
-    // block in the spark321 / spark332db `write` overloads).
+    // The op_time metrics of this node and every descendant. They are forwarded
+    // to GpuFileFormatWriter.executeTask so that the parent Insert command's
+    // `.ns(excludeMetrics)` wrap subtracts child op_time deltas. The
+    // pre-WriteFilesExec path in GpuFileFormatWriter.write computes the same
+    // list via a `plan match { case gpuExec: GpuExec => ... }` block; without
+    // this argument, the wrap defaults to Seq.empty and Insert's op_time
+    // double-counts the entire upstream pipeline.
     val excludeMetrics: Seq[GpuMetric] =
       getOpTimeNewMetric.toSeq ++ getDescendantOpTimeMetrics
 

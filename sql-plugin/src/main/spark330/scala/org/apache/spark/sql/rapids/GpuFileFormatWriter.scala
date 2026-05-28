@@ -321,26 +321,35 @@ object GpuFileFormatWriter extends Logging {
 
     committer.setupTask(taskAttemptContext)
 
-    val dataWriter =
-      if (sparkPartitionId != 0 && !iterator.hasNext) {
-        // In case of empty job, leave first partition to save meta for file format like parquet.
-        new GpuEmptyDirectoryDataWriter(description, taskAttemptContext, committer)
-      } else if (description.partitionColumns.isEmpty && description.bucketSpec.isEmpty) {
-        new GpuSingleDirectoryDataWriter(description, taskAttemptContext, committer,
-          baseDebugOutputPath)
-      } else {
-        concurrentOutputWriterSpec match {
-          case Some(spec) =>
-            new GpuDynamicPartitionDataConcurrentWriter(description, taskAttemptContext,
-              committer, spec, baseDebugOutputPath)
-          case _ =>
-            new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer,
-              baseDebugOutputPath)
-        }
-      }
+    // Resolve the Insert op_time metric up front so the `.ns(excludeMetrics)`
+    // wrap can activate before the empty-partition `iterator.hasNext` check
+    // below. Without this, that hasNext cascades through every descendant
+    // operator's `.ns` wrap *outside* the Insert wrap, so the descendant
+    // op_time those wraps accumulate is never subtracted from Insert's
+    // op_time.
+    val opTimeMetric: GpuMetric = description.statsTrackers
+      .collectFirst { case t: GpuWriteJobStatsTracker => t.opTimeNewMetric }
+      .getOrElse(NoopMetric)
 
-    // Use GpuMetric.ns to automatically collect execution time
-    dataWriter.operatorTimeMetric.ns(excludeMetrics) {
+    opTimeMetric.ns(excludeMetrics) {
+      val dataWriter =
+        if (sparkPartitionId != 0 && !iterator.hasNext) {
+          // In case of empty job, leave first partition to save meta for file format like parquet.
+          new GpuEmptyDirectoryDataWriter(description, taskAttemptContext, committer)
+        } else if (description.partitionColumns.isEmpty && description.bucketSpec.isEmpty) {
+          new GpuSingleDirectoryDataWriter(description, taskAttemptContext, committer,
+            baseDebugOutputPath)
+        } else {
+          concurrentOutputWriterSpec match {
+            case Some(spec) =>
+              new GpuDynamicPartitionDataConcurrentWriter(description, taskAttemptContext,
+                committer, spec, baseDebugOutputPath)
+            case _ =>
+              new GpuDynamicPartitionDataSingleWriter(description, taskAttemptContext, committer,
+                baseDebugOutputPath)
+          }
+        }
+
       try {
         Utils.tryWithSafeFinallyAndFailureCallbacks(block = {
           // Execute the task to write rows out and commit the task.
