@@ -265,7 +265,7 @@ object GpuProjectExec {
         }
       }
 
-      override def hasNext: Boolean = !started || retryIter.hasNext
+      override def hasNext: Boolean = retryIter.hasNext
 
       override def next(): ColumnarBatch = {
         if (!started) {
