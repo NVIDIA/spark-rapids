@@ -1238,6 +1238,13 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_PROJECT_AST_ANSI_ARITHMETIC = conf("spark.rapids.sql.projectAstAnsiArithmeticEnabled")
+      .doc("Enable project AST support for ANSI integral arithmetic. This requires " +
+        "LIBCUDF_JIT_ENABLED=1 for executor processes.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
       .doc("Enable tiered projections.")
       .internal()
@@ -3584,6 +3591,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
+
+  lazy val isProjectAstAnsiArithmeticEnabled: Boolean = get(ENABLE_PROJECT_AST_ANSI_ARITHMETIC)
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
 

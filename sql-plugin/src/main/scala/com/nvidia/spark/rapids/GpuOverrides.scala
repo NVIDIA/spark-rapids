@@ -1181,7 +1181,9 @@ object GpuOverrides extends Logging {
         val ansiEnabled = SQLConf.get.ansiEnabled
 
         override def tagSelfForAst(): Unit = {
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType) &&
+              (!conf.isProjectAstAnsiArithmeticEnabled ||
+                  !GpuAnsi.supportsAnsiArithmeticAst(a.dataType))) {
             willNotWorkInAst("AST unary minus does not support ANSI mode.")
           }
         }
@@ -1944,7 +1946,9 @@ object GpuOverrides extends Logging {
         }
 
         override def tagSelfForAst(): Unit = {
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType) &&
+              (!conf.isProjectAstAnsiArithmeticEnabled ||
+                  !GpuAnsi.supportsAnsiArithmeticAst(a.dataType))) {
             willNotWorkInAst("AST Addition does not support ANSI mode.")
           }
         }
@@ -1973,7 +1977,9 @@ object GpuOverrides extends Logging {
         }
 
         override def tagSelfForAst(): Unit = {
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType) &&
+              (!conf.isProjectAstAnsiArithmeticEnabled ||
+                  !GpuAnsi.supportsAnsiArithmeticAst(a.dataType))) {
             willNotWorkInAst("AST Subtraction does not support ANSI mode.")
           }
         }

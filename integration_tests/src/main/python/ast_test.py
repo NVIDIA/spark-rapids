@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
@@ -62,6 +64,12 @@ ast_boolean_descr = [(boolean_gen, True)]
 ast_double_descr = [(double_gen, True)]
 
 _project_ast_enabled_conf = {"spark.rapids.sql.projectAstEnabled": "true"}
+_ansi_jit_ast_enabled_conf = copy_and_update(ansi_enabled_conf, {
+    "spark.rapids.sql.projectAstAnsiArithmeticEnabled": "true",
+    "spark.executorEnv.LIBCUDF_JIT_ENABLED": "1"})
+_requires_libcudf_jit = pytest.mark.skipif(
+    os.environ.get("LIBCUDF_JIT_ENABLED") != "1",
+    reason="ANSI JIT AST requires LIBCUDF_JIT_ENABLED=1 before libcudf initialization")
 
 def assert_gpu_ast(is_supported, func, conf={}):
     exist = "GpuProjectAstExec"
@@ -381,6 +389,29 @@ def test_multiplication_for_integer_ansi_on(data_desc):
     assert_binary_ast(data_desc,
                       lambda df: df.select(f.col('a') * f.col('b')),
                       conf=ansi_enabled_conf)
+
+_ast_integral_desc_list_for_ansi_jit_on = [
+    (ByteGen(min_val=-11, max_val=11, special_cases=[]), False),
+    (ShortGen(min_val=-181, max_val=181, special_cases=[]), False),
+    (IntegerGen(min_val=-46340, max_val=46340, special_cases=[]), True),
+    (LongGen(min_val=-3037000499, max_val=3037000499, special_cases=[]), True)]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_desc', _ast_integral_desc_list_for_ansi_jit_on, ids=idfn)
+def test_ansi_jit_arithmetic_for_integer_ansi_on(data_desc):
+    assert_binary_ast(data_desc,
+                      lambda df: df.select(
+                          f.col('a') + f.col('b'),
+                          f.col('a') - f.col('b'),
+                          f.col('a') * f.col('b')),
+                      conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_desc', _ast_integral_desc_list_for_ansi_jit_on, ids=idfn)
+def test_ansi_jit_unary_arithmetic_for_integer_ansi_on(data_desc):
+    assert_unary_ast(data_desc,
+                     lambda df: df.select(-f.col('a'), f.abs(f.col('a'))),
+                     conf=_ansi_jit_ast_enabled_conf)
 
 @approximate_float
 def test_scalar_pow():

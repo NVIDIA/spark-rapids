@@ -165,8 +165,10 @@ trait Spark320PlusShims extends SparkShims with RebaseShims
         val ansiEnabled = SQLConf.get.ansiEnabled
 
         override def tagSelfForAst(): Unit = {
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
-            willNotWorkInAst("AST unary minus does not support ANSI mode.")
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType) &&
+              (!conf.isProjectAstAnsiArithmeticEnabled ||
+                  !GpuAnsi.supportsAnsiArithmeticAst(a.dataType))) {
+            willNotWorkInAst("AST abs does not support ANSI mode.")
           }
         }
 

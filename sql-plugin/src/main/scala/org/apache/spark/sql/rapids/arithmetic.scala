@@ -158,6 +158,14 @@ object GpuAnsi {
   def needBasicOpOverflowCheck(dt: DataType): Boolean =
     dt.isInstanceOf[IntegralType]
 
+  def supportsAnsiArithmeticAst(dt: DataType): Boolean = dt match {
+    case IntegerType | LongType => true
+    case _ => false
+  }
+
+  def shouldUseAnsiArithmeticAst(failOnError: Boolean, dt: DataType): Boolean =
+    failOnError && supportsAnsiArithmeticAst(dt)
+
   def minValueScalar(dt: DataType): Scalar = dt match {
     case ByteType => Scalar.fromByte(Byte.MinValue)
     case ShortType => Scalar.fromShort(Short.MinValue)
@@ -243,14 +251,18 @@ case class GpuUnaryMinus(child: Expression, failOnError: Boolean) extends GpuUna
   }
 
   override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
-    val literalZero = dataType match {
-      case LongType => ast.Literal.ofLong(0)
-      case FloatType => ast.Literal.ofFloat(0)
-      case DoubleType => ast.Literal.ofDouble(0)
-      case IntegerType => ast.Literal.ofInt(0)
+    val childAst = child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)
+    if (GpuAnsi.shouldUseAnsiArithmeticAst(failOnError, dataType)) {
+      new ast.JitOperation(ast.JitOperator.ANSI_NEG, childAst)
+    } else {
+      val literalZero = dataType match {
+        case LongType => ast.Literal.ofLong(0)
+        case FloatType => ast.Literal.ofFloat(0)
+        case DoubleType => ast.Literal.ofDouble(0)
+        case IntegerType => ast.Literal.ofInt(0)
+      }
+      new ast.BinaryOperation(ast.BinaryOperator.SUB, literalZero, childAst)
     }
-    new ast.BinaryOperation(ast.BinaryOperator.SUB, literalZero,
-      child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
   }
 }
 
@@ -304,6 +316,15 @@ case class GpuAbs(child: Expression, failOnError: Boolean) extends CudfUnaryExpr
 
     super.doColumnar(input)
   }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    val childAst = child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)
+    if (GpuAnsi.shouldUseAnsiArithmeticAst(failOnError, dataType)) {
+      new ast.JitOperation(ast.JitOperator.ANSI_ABS, childAst)
+    } else {
+      super.convertToAst(numFirstTableColumns)
+    }
+  }
 }
 
 abstract class GpuAddBase extends CudfBinaryArithmetic with Serializable {
@@ -334,6 +355,16 @@ abstract class GpuAddBase extends CudfBinaryArithmetic with Serializable {
       } else {
         ret.incRefCount()
       }
+    }
+  }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    if (GpuAnsi.shouldUseAnsiArithmeticAst(failOnError, dataType)) {
+      new ast.JitOperation(ast.JitOperator.ANSI_ADD,
+        left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+        right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+    } else {
+      super.convertToAst(numFirstTableColumns)
     }
   }
 }
@@ -404,6 +435,16 @@ abstract class GpuSubtractBase extends CudfBinaryArithmetic with Serializable {
       } else {
         ret.incRefCount()
       }
+    }
+  }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    if (GpuAnsi.shouldUseAnsiArithmeticAst(failOnError, dataType)) {
+      new ast.JitOperation(ast.JitOperator.ANSI_SUB,
+        left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+        right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+    } else {
+      super.convertToAst(numFirstTableColumns)
     }
   }
 }
@@ -767,6 +808,16 @@ case class GpuMultiply(
 
   override def binaryOp: BinaryOp = BinaryOp.MUL
   override def astOperator: Option[BinaryOperator] = Some(ast.BinaryOperator.MUL)
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    if (GpuAnsi.shouldUseAnsiArithmeticAst(failOnError, dataType)) {
+      new ast.JitOperation(ast.JitOperator.ANSI_MUL,
+        left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+        right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+    } else {
+      super.convertToAst(numFirstTableColumns)
+    }
+  }
 
   private def multiplyOverflowError(msg: String): ArithmeticException = {
     RapidsErrorUtils.arithmeticOverflowError(msg, origin)
