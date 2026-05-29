@@ -54,6 +54,23 @@ def test_delta_optimize_fallback_with_deletion_vectors(spark_tmp_path):
     _assert_optimize_fallback(True, spark_tmp_path)
 
 
+@delta_lake
+@allow_non_gpu('ExecutedCommandExec', *delta_meta_allow)
+@pytest.mark.skipif(is_before_spark_353(), reason="OPTIMIZE table command is supported in Spark 3.5.3+")
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Existing-DV OPTIMIZE fallback guard is for Databricks 17.3+")
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), reason="Deletion vectors aren't supported")
+def test_delta_optimize_fallback_with_existing_deletion_vectors(spark_tmp_path):
+    conf = copy_and_update(_optimize_conf, {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true"
+    })
+    _assert_optimize_fallback(
+        True,
+        spark_tmp_path,
+        conf=conf,
+        post_setup_func=_delete_rows_and_disable_deletion_vectors)
+
+
 def _write_many_small_files(spark, enable_deletion_vectors, path, partition_columns=None, clustering_columns=None):
     if partition_columns and clustering_columns:
         raise ValueError("Only one of partition_columns or clustering_columns can be specified")
@@ -90,6 +107,21 @@ def _write_many_small_files(spark, enable_deletion_vectors, path, partition_colu
         assert len(num_files) > 63, f"Expected more than 63 files, but got {num_files}"
 
 
+def _delete_rows_and_disable_deletion_vectors(spark, path):
+    spark.range(10000).selectExpr(
+        "CAST(id AS INT) AS a",
+        "CAST(id * 2 AS STRING) AS b",
+        "CAST(id * 3 AS STRING) AS c"
+    ).repartition(16).write.format("delta").mode("overwrite") \
+        .option("delta.enableDeletionVectors", "true") \
+        .save(path)
+    num_deleted = spark.sql(
+        f"DELETE FROM delta.`{path}` WHERE a >= 5000 AND a < 5100").collect()[0][0]
+    assert num_deleted > 0, "Expected DELETE to create deletion vectors"
+    spark.sql(f"ALTER TABLE delta.`{path}` SET TBLPROPERTIES " +
+              "('delta.enableDeletionVectors' = 'false')")
+
+
 def _read_sorted(spark, path):
     df = spark.read.format("delta").load(path)
     return df.sort(df.columns)
@@ -117,11 +149,16 @@ def _assert_gpu_optimize_executed(plan_callback, captured_plans):
             plan_callback, captured_plans, class_name, "OPTIMIZE write")
 
 
-def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns, conf):
+def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns,
+                  conf, post_setup_func=None):
     def setup_cpu(spark):
         _write_many_small_files(spark, enable_deletion_vectors, cpu_path, partition_columns, clustering_columns)
+        if post_setup_func:
+            post_setup_func(spark, cpu_path)
     def setup_gpu(spark):
         _write_many_small_files(spark, enable_deletion_vectors, gpu_path, partition_columns, clustering_columns)
+        if post_setup_func:
+            post_setup_func(spark, gpu_path)
     with_cpu_session(setup_cpu, conf)
     with_cpu_session(setup_gpu, conf)
 
@@ -166,12 +203,13 @@ def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_c
 
 
 def _assert_optimize_fallback(enable_deletion_vectors, spark_tmp_path, partition_columns=None,
-                              clustering_columns=None, conf=_optimize_conf):
+                              clustering_columns=None, conf=_optimize_conf, post_setup_func=None):
     data_path = spark_tmp_path + "/DELTA_OPTIMIZE_FALLBACK"
     cpu_path = data_path + "/CPU"
     gpu_path = data_path + "/GPU"
 
-    _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns, conf)
+    _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns,
+                  conf, post_setup_func)
 
     cpu_result = with_cpu_session(lambda s: s.sql(_optimize_sql(cpu_path)).collect(), conf=conf)
 

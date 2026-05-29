@@ -153,6 +153,12 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
             for config_key in ("metadataId", "revisionId"):
                 configuration.pop(config_key, None)
             d["configuration"] = json.dumps(configuration, sort_keys=True)
+    def fixup_deletion_vector(c_val, g_val):
+        # DV storage IDs are table-specific; keep comparing stable descriptor fields.
+        c_dv = c_val.get("deletionVector")
+        g_dv = g_val.get("deletionVector")
+        if c_dv and g_dv:
+            del_keys(("pathOrInlineDv",), c_dv, g_dv)
 
     for key, c_val in c_json.items():
         g_val = g_json[key]
@@ -189,6 +195,7 @@ def assert_delta_log_json_equivalent(filename, c_json, g_json):
         elif key == "remove":
             assert c_val.keys() == g_val.keys(), "Delta log {} 'remove' keys mismatch:\nCPU: {}\nGPU: {}".format(filename, c_val, g_val)
             del_keys(("deletionTimestamp", "size"), c_val, g_val)
+            fixup_deletion_vector(c_val, g_val)
             fixup_path(c_val)
             fixup_path(g_val)
         assert c_val == g_val, "Delta log {} is different at key '{}':\nCPU: {}\nGPU: {}".format(filename, key, c_val, g_val)
