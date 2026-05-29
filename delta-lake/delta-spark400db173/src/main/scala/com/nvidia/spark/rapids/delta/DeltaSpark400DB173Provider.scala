@@ -40,7 +40,7 @@ import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 import com.nvidia.spark.rapids.shims.ShimPredicateHelper
 
 import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
-import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression}
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, EqualTo, Expression, If, IsNotNull, Literal, Not}
 import org.apache.spark.sql.catalyst.plans.logical.TableSpec
 import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.execution.{FileSourceScanExec, FilterExec, ProjectExec, SparkPlan}
@@ -271,16 +271,30 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
 private object DB173DVPredicatePushdown extends ShimPredicateHelper {
 
   def pushToScan(plan: SparkPlan): SparkPlan = {
+    def isDeletionVectorSkipRowColumnEqualToFalse(left: Expression, right: Expression): Boolean = {
+      isDeletionVectorSkipRowColumnRef(left) && isZeroOrFalseLiteral(right) ||
+        isDeletionVectorSkipRowColumnRef(right) && isZeroOrFalseLiteral(left)
+    }
+
     def isDVCondition(condition: Expression): Boolean = {
       condition match {
         case GpuEqualTo(left, right) =>
-          isDeletionVectorSkipRowColumnRef(left) && isFalseLiteral(right) ||
-            isDeletionVectorSkipRowColumnRef(right) && isFalseLiteral(left)
+          isDeletionVectorSkipRowColumnEqualToFalse(left, right)
+        case EqualTo(left, right) =>
+          isDeletionVectorSkipRowColumnEqualToFalse(left, right)
         case GpuNot(child) =>
+          isDeletionVectorSkipRowColumnRef(child)
+        case Not(child) =>
           isDeletionVectorSkipRowColumnRef(child)
         case GpuIsNotNull(child) =>
           isDeletionVectorSkipRowColumnRef(child)
+        case IsNotNull(child) =>
+          isDeletionVectorSkipRowColumnRef(child)
         case GpuIf(predicateExpr, trueExpr, falseExpr) =>
+          isDVCondition(predicateExpr) &&
+            isDVCondition(trueExpr) &&
+            !falseExpr.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name))
+        case If(predicateExpr, trueExpr, falseExpr) =>
           isDVCondition(predicateExpr) &&
             isDVCondition(trueExpr) &&
             !falseExpr.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name))
@@ -295,10 +309,12 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
       }
     }
 
-    def isFalseLiteral(expr: Expression): Boolean = {
+    def isZeroOrFalseLiteral(expr: Expression): Boolean = {
       expr match {
         case GpuLiteral(value: Number, _) if value.longValue() == 0L => true
         case GpuLiteral(value: Boolean, _) if !value => true
+        case Literal(value: Number, _) if value.longValue() == 0L => true
+        case Literal(value: Boolean, _) if !value => true
         case _ => false
       }
     }
@@ -312,7 +328,12 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
             originalOutput = fsse.originalOutput.filterNot(attr =>
               isDeletionVectorSkipRowColumn(attr.name)),
             requiredSchema = StructType(fsse.requiredSchema.filterNot(field =>
-              isDeletionVectorSkipRowColumn(field.name))))(fsse.rapidsConf)
+              isDeletionVectorSkipRowColumn(field.name))),
+            // AQE expects expressions in dataFilters to exist in the output of the scan.
+            // It will not reuse the stage of the scan otherwise. Since we are removing
+            // the deletion-vector skip-row column from scan's output, remove the
+            // corresponding filter from dataFilters as well.
+            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(fsse.rapidsConf)
       }
     }
 

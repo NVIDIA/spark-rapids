@@ -1337,6 +1337,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ACCELERATED_COLUMNAR_TO_ROW_ENABLED =
+    conf("spark.rapids.sql.acceleratedColumnarToRow.enabled")
+      .doc("When set to true (default) the GPU columnar-to-row transition uses the GPU " +
+        "transpose kernel (AcceleratedColumnarToRowIterator) for wide fixed-width / STRING " +
+        "schemas. Setting it to false forces the slower per-row CPU iterator " +
+        "(ColumnarToRowIterator). Mainly useful for troubleshooting and performance " +
+        "comparisons; production workloads should leave this on.")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_PARQUET_INT96_WRITE = conf("spark.rapids.sql.format.parquet.writer.int96.enabled")
     .doc("When set to false, disables accelerated parquet write if the " +
       "spark.sql.parquet.outputTimestampType is set to INT96")
@@ -2738,6 +2748,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_NON_AQE_BROADCAST_REUSE_FIXUP =
+    conf("spark.rapids.sql.nonAqeBroadcastReuseFixup.enable")
+      .doc("Option to turn on the fixup of broadcast exchange reuse for DPP " +
+          "subqueries when AQE is disabled. The DPP-side GpuBroadcastExchange is built " +
+          "during GpuOverrides and bypasses GpuTransitionOverrides, so it does not match " +
+          "the join-side broadcast canonically. This fixup builds a per-query signature map " +
+          "of join-side GpuBroadcastExchangeExec nodes in the main plan and rewrites a " +
+          "matching DPP-side broadcast to ReusedExchangeExec.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val CHUNKED_PACK_POOL_SIZE = conf("spark.rapids.sql.chunkedPack.poolSize")
       .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
            "scratch space, needed during spill from GPU to host memory. As a rule of thumb, each " +
@@ -3112,7 +3134,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.06.0-SNAPSHOT-cuda12.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.08.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -3318,6 +3340,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val asyncProfilerStageEpochInterval: Int = get(ASYNC_PROFILER_STAGE_EPOCH_INTERVAL)
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
+
+  lazy val isAcceleratedColumnarToRowEnabled: Boolean = get(ACCELERATED_COLUMNAR_TO_ROW_ENABLED)
 
   lazy val isSqlExecuteOnGPU: Boolean = get(SQL_MODE).equals("executeongpu")
 
@@ -3999,6 +4023,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentWriterPartitionFlushSize: Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 
   lazy val isAqeExchangeReuseFixupEnabled: Boolean = get(ENABLE_AQE_EXCHANGE_REUSE_FIXUP)
+
+  lazy val isNonAqeBroadcastReuseFixupEnabled: Boolean =
+    get(ENABLE_NON_AQE_BROADCAST_REUSE_FIXUP)
 
   lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
 
