@@ -60,17 +60,24 @@ class GpuCoalescingIcebergParquetReader(
             shadedFileReadSchema,
             conf.metrics)
 
-          // The parent coalescer (GpuMultiFileReader.populateCurrentBlockChunk) only invokes
-          // checkIfNeedToSplitDataBlock when block filePaths differ. Two Iceberg splits of the
-          // same physical Parquet file share a real path, so without a tag here the parent
-          // would slip past the gate and merge their blocks under one extraInfo (= the first
-          // split's post-processor), corrupting _pos. Tagging the path with the split range
-          // makes distinct splits present as different "files" to the parent, which then
-          // invokes our override, where the postProcessor identity check forces a chunk split
-          // and the new chunk picks up its own extraInfo. The synthetic path is only used by
-          // the parent for equality checks (currentFile in populateCurrentBlockChunk); the
-          // real path stays on the post-processor (used to materialize _file) so output is
-          // unaffected.
+          // MultiFileCoalescingPartitionReaderBase.populateCurrentBlockChunk only invokes
+          // checkIfNeedToSplitDataBlock when adjacent blocks have different filePaths. Two
+          // Iceberg splits of the same physical Parquet file share their real path, so
+          // without a tag here the parent would merge their blocks under the first split's
+          // extraInfo (= post-processor) and corrupt _pos. Tagging the path with the split
+          // range (a URI fragment) makes distinct splits present as different "files" to the
+          // parent; the override then runs and the postProcessor identity check forces a
+          // chunk split.
+          //
+          // The tagged path is NOT confined to equality checks: it is stored as
+          // ParquetSingleDataBlockMeta.filePath, used as a key in the parent's per-file
+          // block map, logged, and passed to fileIO.newInputFile when blocks are read. The
+          // physical file still opens correctly because Hadoop FileSystem implementations
+          // strip the URI fragment when resolving the underlying file — that is an implicit
+          // invariant this code relies on. Side effect: FileCache entries are keyed per
+          // split, so two splits of the same file no longer share cache contents. The real
+          // path stays on the post-processor and is the value materialized for the _file
+          // metadata column, so user-visible output is unaffected.
           val coalescerPath = file.split match {
             case Some((start, length)) =>
               new Path(s"${info.filePath}#iceberg-split=$start-$length")

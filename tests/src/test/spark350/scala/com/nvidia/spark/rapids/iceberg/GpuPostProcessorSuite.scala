@@ -960,15 +960,21 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     def emptyBatch(rows: Int): ColumnarBatch =
       new ColumnarBatch(Array.empty[SparkColumnVector], rows)
 
+    // Check every row, not just first/last — a middle-row off-by-one would otherwise slip
+    // past, and the cross-block batch below relies on knowing the exact transition row.
     def assertPosRange(batch: ColumnarBatch, expectedStart: Long, expectedEnd: Long): Unit = {
       assert(batch.numRows() == (expectedEnd - expectedStart + 1).toInt)
       assert(batch.numCols() == 1)
       withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { hostCol =>
         val base = hostCol.getBase
-        assert(base.getLong(0) == expectedStart,
-          s"expected first _pos=$expectedStart, got ${base.getLong(0)}")
-        assert(base.getLong(batch.numRows() - 1) == expectedEnd,
-          s"expected last _pos=$expectedEnd, got ${base.getLong(batch.numRows() - 1)}")
+        var i = 0
+        while (i < batch.numRows()) {
+          val actual = base.getLong(i)
+          val expected = expectedStart + i
+          assert(actual == expected,
+            s"_pos[$i] expected $expected, got $actual")
+          i += 1
+        }
       }
     }
 
@@ -977,15 +983,23 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
       assertPosRange(batch, 500L, 799L)
     }
 
-    // Batch 2: 200 rows consume the rest of block 0 → file-global _pos = 800..999.
-    withResource(processor.process(emptyBatch(200))) { batch =>
-      assertPosRange(batch, 800L, 999L)
+    // Batch 2: 100 rows still inside block 0 (100 rows of block 0 remain after this batch).
+    // → file-global _pos = 800..899.
+    withResource(processor.process(emptyBatch(100))) { batch =>
+      assertPosRange(batch, 800L, 899L)
     }
 
-    // Batch 3: 300 rows cross into block 1; FetchRowPosition must advance localBlockIndex
-    // and pick blocksFirstRowIndices(1) = 1000, NOT restart at task-local 0.
-    withResource(processor.process(emptyBatch(300))) { batch =>
-      assertPosRange(batch, 1000L, 1299L)
+    // Batch 3: 350 rows straddle the block 0 → block 1 boundary (100 from block 0 + 250 from
+    // block 1). This exercises the `if (curRowPos >= curBlockRowEnd)` branch inside the
+    // per-row loop in FetchRowPosition.execute — a single process() call that crosses
+    // blocks. → file-global _pos = 900..1249.
+    withResource(processor.process(emptyBatch(350))) { batch =>
+      assertPosRange(batch, 900L, 1249L)
+    }
+
+    // Batch 4: 150 rows entirely inside block 1 → file-global _pos = 1250..1399.
+    withResource(processor.process(emptyBatch(150))) { batch =>
+      assertPosRange(batch, 1250L, 1399L)
     }
   }
 
