@@ -107,6 +107,30 @@ def _write_many_small_files(spark, enable_deletion_vectors, path, partition_colu
         assert len(num_files) > 63, f"Expected more than 63 files, but got {num_files}"
 
 
+def _write_many_small_row_tracking_files(
+        spark, enable_deletion_vectors, path, partition_columns=None, clustering_columns=None):
+    if enable_deletion_vectors:
+        raise ValueError("Row-tracking OPTIMIZE coverage must keep deletion vectors disabled")
+    if partition_columns or clustering_columns:
+        raise ValueError("Row-tracking OPTIMIZE coverage currently uses an unpartitioned table")
+
+    df = three_col_df(
+        spark,
+        SetValuesGen(IntegerType(), range(1000)),
+        SetValuesGen(StringType(), list("abcdefghij")),
+        string_gen,
+        num_slices=64)
+    ddl = schema_to_ddl(spark, df.schema)
+    spark.sql(f"""
+        CREATE TABLE delta.`{path}` ({ddl})
+        USING DELTA
+        TBLPROPERTIES (delta.enableRowTracking = true, delta.enableDeletionVectors = false)
+    """)
+    df.write.format("delta").mode("append").save(path)
+    num_files = spark.read.format("delta").load(path).inputFiles()
+    assert len(num_files) > 63, f"Expected more than 63 files, but got {num_files}"
+
+
 def _delete_rows_and_disable_deletion_vectors(spark, path):
     spark.range(10000).selectExpr(
         "CAST(id AS INT) AS a",
@@ -150,13 +174,13 @@ def _assert_gpu_optimize_executed(plan_callback, captured_plans):
 
 
 def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns,
-                  conf, post_setup_func=None):
+                  conf, post_setup_func=None, write_func=_write_many_small_files):
     def setup_cpu(spark):
-        _write_many_small_files(spark, enable_deletion_vectors, cpu_path, partition_columns, clustering_columns)
+        write_func(spark, enable_deletion_vectors, cpu_path, partition_columns, clustering_columns)
         if post_setup_func:
             post_setup_func(spark, cpu_path)
     def setup_gpu(spark):
-        _write_many_small_files(spark, enable_deletion_vectors, gpu_path, partition_columns, clustering_columns)
+        write_func(spark, enable_deletion_vectors, gpu_path, partition_columns, clustering_columns)
         if post_setup_func:
             post_setup_func(spark, gpu_path)
     with_cpu_session(setup_cpu, conf)
@@ -164,12 +188,13 @@ def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns
 
 
 def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=None, clustering_columns=None,
-                            conf=_optimize_conf):
+                            conf=_optimize_conf, write_func=_write_many_small_files):
     data_path = spark_tmp_path + "/DELTA_OPTIMIZE"
     cpu_path = data_path + "/CPU"
     gpu_path = data_path + "/GPU"
 
-    _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns, conf)
+    _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns,
+                  conf, write_func=write_func)
 
     # Run OPTIMIZE on each table and verify the returned path matches the target
     cpu_result = with_cpu_session(lambda s: s.sql(_optimize_sql(cpu_path)).collect(), conf=conf)
@@ -253,6 +278,18 @@ def test_delta_optimize_unpartitioned_table(spark_tmp_path, enable_deletion_vect
 @pytest.mark.parametrize("enable_deletion_vectors", _optimize_deletion_vector_values, ids=idfn)
 def test_delta_optimize_partitioned_table(spark_tmp_path, enable_deletion_vectors):
     _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=["a"])
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Row-tracking OPTIMIZE coverage is for Databricks 17.3+")
+def test_delta_optimize_row_tracking_table(spark_tmp_path):
+    _assert_optimize_parity(
+        False,
+        spark_tmp_path,
+        write_func=_write_many_small_row_tracking_files)
 
 
 @delta_lake

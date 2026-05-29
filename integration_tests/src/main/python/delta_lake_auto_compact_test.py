@@ -64,6 +64,53 @@ def assert_optimized(spark, table_path):
         "Expected at least one OPTIMIZE operation in the table history."
 
 
+def assert_inline_auto_compaction_used_gpu(captured_plans):
+    """
+    The triggering append is expected to produce one RapidsDeltaWrite plan. Inline
+    auto compaction should produce a second one; otherwise the hook likely fell back.
+    """
+    plan_callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    for class_name in delta_write:
+        num_delta_write_plans = len([
+            plan for plan in captured_plans if plan_callback.contains(plan, class_name)])
+        if num_delta_write_plans >= 2:
+            continue
+        plan_descriptions = "\n".join(str(plan) for plan in captured_plans)
+        assert False, (
+            f"Expected at least two {class_name} plans, one for the triggering append "
+            f"and one for inline auto compaction, but captured {num_delta_write_plans}:\n"
+            f"{plan_descriptions}")
+
+
+@delta_lake
+@allow_non_gpu(*delta_meta_allow)
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="DBR 17.3 has the GPU inline auto-compaction hook under test")
+def test_auto_compact_dbr173_inline_uses_gpu(spark_tmp_path):
+    data_path = spark_tmp_path + "/AUTO_COMPACT_DBR173_GPU_INLINE"
+    conf_enable_auto_compact = copy_and_update(
+        _conf, {'spark.databricks.delta.autoCompact.enabled': 'true'})
+
+    # Write below the threshold first so the captured write below has exactly one
+    # user append and, if inline auto compaction runs on GPU, one compaction write.
+    writer = write_to_delta(False, num_writes=2)
+    with_gpu_session(func=lambda spark: writer(spark, data_path),
+                     conf=conf_enable_auto_compact)
+
+    plan_callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    plan_callback.startCapture()
+    try:
+        with_gpu_session(
+            func=lambda spark: write_to_delta(False, num_writes=1)(spark, data_path),
+            conf=conf_enable_auto_compact)
+        captured_plans = plan_callback.getResultsWithTimeout(10000)
+        assert_inline_auto_compaction_used_gpu(captured_plans)
+    finally:
+        plan_callback.endCapture()
+
+    with_cpu_session(lambda spark: assert_optimized(spark, data_path), {})
+
+
 @delta_lake
 @allow_non_gpu(*delta_meta_allow)
 @pytest.mark.skipif(not is_databricks_runtime() and not is_spark_353_or_later(),
