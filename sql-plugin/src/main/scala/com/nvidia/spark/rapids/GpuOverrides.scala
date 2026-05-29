@@ -4967,6 +4967,10 @@ object GpuOverrideUtil extends Logging {
 /** Tag the initial plan when AQE is enabled */
 case class GpuQueryStagePrepOverrides() extends Rule[SparkPlan] with Logging {
   override def apply(sparkPlan: SparkPlan): SparkPlan = GpuOverrideUtil.tryOverride { plan =>
+    // Exposing a bare exchange at the root is only valid while AQE is preparing a
+    // query stage. Tag the exchanges seen in this rule so transition cleanup can
+    // distinguish that path from final adaptive plan execution.
+    GpuTransitionOverrides.tagAqeQueryStageExchanges(plan)
     // Note that we disregard the GPU plan returned here and instead rely on side effects of
     // tagging the underlying SparkPlan.
     GpuOverrides().applyWithContext(plan, Some("AQE Query Stage Prep"))
