@@ -99,14 +99,22 @@ def _optimize_sql(path):
     return f"OPTIMIZE delta.`{path}`"
 
 
-def _assert_gpu_optimize_executed(plan_callback, captured_plans):
-    assert len(captured_plans) > 0, "Did not capture a GPU OPTIMIZE plan"
-    if any(plan_callback.contains(plan, "GpuExecutedCommandExec") for plan in captured_plans):
+def _assert_captured_plan_contains(plan_callback, captured_plans, class_name, description):
+    assert len(captured_plans) > 0, f"Did not capture a GPU {description} plan"
+    if any(plan_callback.contains(plan, class_name) for plan in captured_plans):
         return
     plan_descriptions = "\n".join(str(plan) for plan in captured_plans)
     assert False, (
-        "GpuExecutedCommandExec is not found in any captured GPU OPTIMIZE plan:\n{}"
-        .format(plan_descriptions))
+        f"{class_name} is not found in any captured GPU {description} plan:\n"
+        f"{plan_descriptions}")
+
+
+def _assert_gpu_optimize_executed(plan_callback, captured_plans):
+    _assert_captured_plan_contains(
+        plan_callback, captured_plans, "GpuExecutedCommandExec", "OPTIMIZE")
+    for class_name in delta_write:
+        _assert_captured_plan_contains(
+            plan_callback, captured_plans, class_name, "OPTIMIZE write")
 
 
 def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns, clustering_columns, conf):

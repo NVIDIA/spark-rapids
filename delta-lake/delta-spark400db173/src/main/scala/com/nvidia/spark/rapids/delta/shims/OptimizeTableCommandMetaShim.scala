@@ -73,8 +73,10 @@ object OptimizeTableCommandMetaShim {
       optimizeDeletedRows: Boolean,
       isFull: Boolean): Unit = {
     val snapshot = deltaLog.unsafeVolatileSnapshot
-    if (DeletionVectorUtils.deletionVectorsWritable(snapshot)) {
-      meta.willNotWorkOnGpu("Deletion vector writes are not supported on GPU")
+    if (DeletionVectorUtils.deletionVectorsWritable(snapshot) ||
+        !DeletionVectorUtils.isTableDVFree(snapshot)) {
+      meta.willNotWorkOnGpu(
+        "Delta OPTIMIZE on tables with deletion vectors is not supported on GPU")
     }
     if (hasZOrderBy) meta.willNotWorkOnGpu("Z-Order optimize is not supported on GPU")
     if (reorg) meta.willNotWorkOnGpu("Delta OPTIMIZE REORG is not supported on GPU")

@@ -141,6 +141,23 @@ class GpuOptimisticTransaction(
 
   override def writeFiles(
       inputData: Dataset[_],
+      writeOptions: Option[DeltaOptions],
+      isOptimize: Boolean,
+      additionalConstraints: Seq[Constraint]): Seq[FileAction] = {
+    val (fileActions, _) =
+      gpuWriteFiles(
+        inputData,
+        writeOptions,
+        additionalConstraints,
+        Some(isOptimize),
+        keepPartitionIdTag = false,
+        forcePreserveInputOrder = false,
+        context = None)
+    fileActions
+  }
+
+  override def writeFiles(
+      inputData: Dataset[_],
       writeOptions: TransactionalWriteOptions,
       isOptimize: Boolean,
       isLiquidClustering: Boolean,
@@ -234,7 +251,8 @@ private object GpuAutoCompact extends PostCommitHook with DeltaLogging with Seri
     autoCompactTypeOpt.foreach { autoCompactType =>
       if (!shouldSkipAutoCompact(spark, txn, autoCompactType)) {
         if (autoCompactType.shouldRunInBackground ||
-            DeletionVectorUtils.deletionVectorsWritable(txn.postCommitSnapshot)) {
+            DeletionVectorUtils.deletionVectorsWritable(txn.postCommitSnapshot) ||
+            !DeletionVectorUtils.isTableDVFree(txn.postCommitSnapshot)) {
           GpuAutoCompactCpuFallback.run(spark, txn)
         } else {
           val request = AutoCompactUtils.prepareAutoCompactRequest(

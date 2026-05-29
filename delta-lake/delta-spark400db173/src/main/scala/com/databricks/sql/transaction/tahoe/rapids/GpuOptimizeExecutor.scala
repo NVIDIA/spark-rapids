@@ -51,14 +51,15 @@ class GpuOptimizeExecutor(
   private val rapidsConf = new RapidsConf(sparkSession.sessionState.conf)
   private implicit val clock: Clock = deltaLog.clock
 
-  private def ensureDeletionVectorDisabled(): Unit = {
-    if (DeletionVectorUtils.deletionVectorsWritable(snapshot)) {
+  private def ensureDeletionVectorsUnsupported(): Unit = {
+    if (DeletionVectorUtils.deletionVectorsWritable(snapshot) ||
+        !DeletionVectorUtils.isTableDVFree(snapshot)) {
       throw new IllegalStateException(
-        "Deletion vector writes are not supported on GPU")
+        "Delta OPTIMIZE on tables with deletion vectors is not supported on GPU")
     }
   }
 
-  ensureDeletionVectorDisabled()
+  ensureDeletionVectorsUnsupported()
 
   override protected def createTransaction(): OptimisticTransaction =
     new GpuOptimisticTransaction(deltaLog, catalogTable, snapshot, rapidsConf)

@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.delta
 
 import com.databricks.sql.transaction.tahoe.DeltaLog
+import com.databricks.sql.transaction.tahoe.catalog.DeltaTableV2
 import com.databricks.sql.transaction.tahoe.commands.{DeltaCommand, OptimizeTableCommand,
   OptimizeTableCommandEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuOptimizeTableCommand,
@@ -26,29 +27,50 @@ import com.nvidia.spark.rapids.{DataFromReplacementRule, RapidsConf, RapidsMeta,
 import com.nvidia.spark.rapids.delta.shims.OptimizeTableCommandMetaShim
 
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.execution.command.RunnableCommand
 
 object OptimizeTableCommandMeta {
   private object DeltaCmdProxy extends DeltaCommand
 
-  def getDeltaLogForOptimize(cmd: OptimizeTableCommand): DeltaLog = {
-    DeltaCmdProxy.getDeltaTable(cmd.child, "OPTIMIZE").deltaLog
+  def getDeltaTableForOptimize(cmd: OptimizeTableCommand): DeltaTableV2 = {
+    DeltaCmdProxy.getDeltaTable(cmd.child, "OPTIMIZE")
   }
 
+  def getDeltaTableForOptimize(cmd: OptimizeTableCommandEdge): DeltaTableV2 = {
+    DeltaCmdProxy.getDeltaTable(cmd.child, "OPTIMIZE")
+  }
+
+  def getDeltaLogForOptimize(cmd: OptimizeTableCommand): DeltaLog =
+    getDeltaTableForOptimize(cmd).deltaLog
+
   def getDeltaLogForOptimize(cmd: OptimizeTableCommandEdge): DeltaLog = {
-    DeltaCmdProxy.getDeltaTable(cmd.child, "OPTIMIZE").deltaLog
+    getDeltaTableForOptimize(cmd).deltaLog
+  }
+
+  private def tagCatalogTableForGpu(
+      meta: RapidsMeta[_, _, _],
+      catalogTable: Option[CatalogTable]): Unit = {
+    if (catalogTable.exists(_.isMaterializedView)) {
+      meta.willNotWorkOnGpu("Delta OPTIMIZE on materialized views is not supported on GPU")
+    }
+    if (catalogTable.exists(_.isStreamingTable)) {
+      meta.willNotWorkOnGpu("Delta OPTIMIZE on streaming tables is not supported on GPU")
+    }
   }
 
   def tagOptimizeForGpu(
       meta: RapidsMeta[_, _, _],
       conf: RapidsConf,
       deltaLog: DeltaLog,
+      catalogTable: Option[CatalogTable],
       tagCommandForGpu: DeltaLog => Unit): Unit = {
     if (!conf.isDeltaWriteEnabled) {
       meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
         s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
     }
 
+    tagCatalogTableForGpu(meta, catalogTable)
     tagCommandForGpu(deltaLog)
     RapidsDeltaUtils.tagForDeltaWrite(
       meta,
@@ -67,11 +89,12 @@ class OptimizeTableCommandMeta(
   extends RunnableCommandMeta[OptimizeTableCommand](optimizeCmd, conf, parent, rule) {
 
   override def tagSelfForGpu(): Unit = {
-    val deltaLog = OptimizeTableCommandMeta.getDeltaLogForOptimize(optimizeCmd)
+    val deltaTable = OptimizeTableCommandMeta.getDeltaTableForOptimize(optimizeCmd)
     OptimizeTableCommandMeta.tagOptimizeForGpu(
       this,
       conf,
-      deltaLog,
+      deltaTable.deltaLog,
+      deltaTable.catalogTable,
       log => OptimizeTableCommandMetaShim.tagForGpu(this, log))
   }
 
@@ -91,11 +114,12 @@ class OptimizeTableCommandEdgeMeta(
   extends RunnableCommandMeta[OptimizeTableCommandEdge](optimizeCmd, conf, parent, rule) {
 
   override def tagSelfForGpu(): Unit = {
-    val deltaLog = OptimizeTableCommandMeta.getDeltaLogForOptimize(optimizeCmd)
+    val deltaTable = OptimizeTableCommandMeta.getDeltaTableForOptimize(optimizeCmd)
     OptimizeTableCommandMeta.tagOptimizeForGpu(
       this,
       conf,
-      deltaLog,
+      deltaTable.deltaLog,
+      deltaTable.catalogTable,
       log => OptimizeTableCommandMetaShim.tagForGpu(this, log))
   }
 
