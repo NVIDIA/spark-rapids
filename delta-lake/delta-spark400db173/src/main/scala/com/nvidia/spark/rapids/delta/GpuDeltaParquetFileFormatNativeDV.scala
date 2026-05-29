@@ -1128,7 +1128,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
   // │ BATCH ASSEMBLY PHASE  (serial)                                                    │
   // │                                                                                   │
   // │  augmentChunkMeta()                                                               │
-  // │    groups consecutive same-file blocks into Seq[PerFileDVEntry]                   │
+  // │    builds Seq[PerFileDVEntry] from file-major block groups                        │
   // │    returns meta.copy(extraInfo = DeltaBatchExtraInfo(perFileEntries))              │
   // └──────────────────────────────────┬────────────────────────────────────────────────┘
   //                                    │ CurrentChunkMeta with DeltaBatchExtraInfo
@@ -1201,53 +1201,38 @@ case class GpuDeltaParquetFileFormatNativeDV(
       maxGpuColumnSizeBytes, compressCfg, execMetrics, partitionSchema, poolConf,
       ignoreMissingFiles, ignoreCorruptFiles) {
 
-    /**
-     * Groups consecutive same-file blocks from the assembled chunk into per-file DV entries,
-     * preserving file order (which matches the combined buffer layout). Also records which
-     * partition index each file belongs to for use in [[getRowsPerPartition]].
-     */
     override protected def augmentChunkMeta(meta: CurrentChunkMeta): CurrentChunkMeta = {
       if (meta.currentChunk.isEmpty) return meta
 
-      val fileEntries = ArrayBuffer[PerFileDVEntry]()
-      var fileOffsets = ArrayBuffer[Long]()
-      var fileNumRows = ArrayBuffer[Int]()
-      var fileDesc: Option[String] = None
-      var fileProvider: Option[RowIndexFilterProvider] = None
-      var prevPath: org.apache.hadoop.fs.Path = null
-      var prevPartValues: org.apache.spark.sql.catalyst.InternalRow = null
-      var partIdx = 0
+      val fileEntries = meta.currentChunk.groupsByFile.values.zipWithIndex.map {
+        case (groupWithPartition, partitionIndex) =>
+          val group = groupWithPartition.fileBlockGroup
+          require(group.blocks.nonEmpty, s"File group must contain blocks: ${group.filePath}")
+          val firstExtra = group.blocks.head.extraInfo.asInstanceOf[DeltaParquetExtraInfo]
+          val fileDesc = firstExtra.dvDescriptor
+          val fileProvider = firstExtra.rowIndexFilterProvider
+          val fileOffsets = ArrayBuffer[Long]()
+          val fileNumRows = ArrayBuffer[Int]()
 
-      meta.currentChunk.foreach { block =>
-        val extra = block.extraInfo.asInstanceOf[DeltaParquetExtraInfo]
-        if (prevPath != null && block.filePath != prevPath) {
-          fileEntries += PerFileDVEntry(
-            fileDesc, fileProvider, fileOffsets.toArray, fileNumRows.toArray, partIdx)
-          fileOffsets = ArrayBuffer[Long]()
-          fileNumRows = ArrayBuffer[Int]()
-          if (block.partitionValues != prevPartValues) partIdx += 1
-        }
-        if (prevPath == block.filePath) {
-          require(fileDesc == extra.dvDescriptor,
-            s"Row groups within the same file must share the same DV descriptor: $prevPath")
-          require(fileProvider == extra.rowIndexFilterProvider,
-            s"Row groups within the same file must share the same DV filter provider: $prevPath")
-        }
-        prevPath = block.filePath
-        prevPartValues = block.partitionValues
-        fileDesc = extra.dvDescriptor
-        fileProvider = extra.rowIndexFilterProvider
-        fileOffsets += extra.rowGroupOffset
-        fileNumRows += extra.rowGroupNumRows
-      }
-      if (prevPath != null) {
-        fileEntries += PerFileDVEntry(
-          fileDesc, fileProvider, fileOffsets.toArray, fileNumRows.toArray, partIdx)
-      }
+          group.blocks.foreach { block =>
+            val extra = block.extraInfo.asInstanceOf[DeltaParquetExtraInfo]
+            require(fileDesc == extra.dvDescriptor,
+              s"Row groups within the same file must share the same DV descriptor: " +
+                s"${group.filePath}")
+            require(fileProvider == extra.rowIndexFilterProvider,
+              s"Row groups within the same file must share the same DV filter provider: " +
+                s"${group.filePath}")
+            fileOffsets += extra.rowGroupOffset
+            fileNumRows += extra.rowGroupNumRows
+          }
+
+          PerFileDVEntry(
+            fileDesc, fileProvider, fileOffsets.toArray, fileNumRows.toArray, partitionIndex)
+      }.toSeq
 
       val batchExtra = new DeltaBatchExtraInfo(
         meta.extraInfo.dateRebaseMode, meta.extraInfo.timestampRebaseMode,
-        meta.extraInfo.hasInt96Timestamps, fileEntries.toSeq)
+        meta.extraInfo.hasInt96Timestamps, fileEntries)
       meta.copy(extraInfo = batchExtra)
     }
 

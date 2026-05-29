@@ -1014,7 +1014,7 @@ class GpuDeltaParquetFileFormatBase2(
   // │ BATCH ASSEMBLY PHASE  (serial)                                                    │
   // │                                                                                   │
   // │  augmentChunkMeta()                                                               │
-  // │    groups consecutive same-file blocks into Seq[PerFileDVEntry]                   │
+  // │    builds Seq[PerFileDVEntry] from file-major block groups                        │
   // │    returns meta.copy(extraInfo = DeltaBatchExtraInfo(perFileEntries))              │
   // └──────────────────────────────────┬────────────────────────────────────────────────┘
   //                                    │ CurrentChunkMeta with DeltaBatchExtraInfo
@@ -1088,46 +1088,37 @@ class GpuDeltaParquetFileFormatBase2(
       ignoreMissingFiles, ignoreCorruptFiles) {
 
     /**
-     * Groups consecutive same-file blocks from the assembled chunk into per-file DV entries,
-     * preserving file order (which matches the combined buffer layout). Also records which
-     * partition index each file belongs to for use in [[getRowsPerPartition]].
+     * Builds per-file DV entries from the assembled file-major chunk, preserving the same file
+     * order used by the combined buffer layout. Also records which partition index each file
+     * belongs to for use in [[getRowsPerPartition]].
      */
     override protected def augmentChunkMeta(meta: CurrentChunkMeta): CurrentChunkMeta = {
       if (meta.currentChunk.isEmpty) return meta
 
-      val fileEntries = ArrayBuffer[PerFileDVEntry]()
-      var fileOffsets = ArrayBuffer[Long]()
-      var fileNumRows = ArrayBuffer[Int]()
-      var fileDesc: Option[String] = None
-      var prevPath: org.apache.hadoop.fs.Path = null
-      var prevPartValues: org.apache.spark.sql.catalyst.InternalRow = null
-      var partIdx = 0
+      val fileEntries = meta.currentChunk.groupsByFile.values.zipWithIndex.map {
+        case (groupWithPartition, partitionIndex) =>
+          val group = groupWithPartition.fileBlockGroup
+          require(group.blocks.nonEmpty, s"File group must contain blocks: ${group.filePath}")
+          val firstExtra = group.blocks.head.extraInfo.asInstanceOf[DeltaParquetExtraInfo]
+          val fileDesc = firstExtra.dvDescriptor
+          val fileOffsets = ArrayBuffer[Long]()
+          val fileNumRows = ArrayBuffer[Int]()
 
-      meta.currentChunk.foreach { block =>
-        val extra = block.extraInfo.asInstanceOf[DeltaParquetExtraInfo]
-        if (prevPath != null && block.filePath != prevPath) {
-          fileEntries += PerFileDVEntry(fileDesc, fileOffsets.toArray, fileNumRows.toArray, partIdx)
-          fileOffsets = ArrayBuffer[Long]()
-          fileNumRows = ArrayBuffer[Int]()
-          if (block.partitionValues != prevPartValues) partIdx += 1
-        }
-        if (prevPath == block.filePath) {
-          require(fileDesc == extra.dvDescriptor,
-            s"Row groups within the same file must share the same DV descriptor: $prevPath")
-        }
-        prevPath = block.filePath
-        prevPartValues = block.partitionValues
-        fileDesc = extra.dvDescriptor
-        fileOffsets += extra.rowGroupOffset
-        fileNumRows += extra.rowGroupNumRows
-      }
-      if (prevPath != null) {
-        fileEntries += PerFileDVEntry(fileDesc, fileOffsets.toArray, fileNumRows.toArray, partIdx)
-      }
+          group.blocks.foreach { block =>
+            val extra = block.extraInfo.asInstanceOf[DeltaParquetExtraInfo]
+            require(fileDesc == extra.dvDescriptor,
+              s"Row groups within the same file must share the same DV descriptor: " +
+                s"${group.filePath}")
+            fileOffsets += extra.rowGroupOffset
+            fileNumRows += extra.rowGroupNumRows
+          }
+
+          PerFileDVEntry(fileDesc, fileOffsets.toArray, fileNumRows.toArray, partitionIndex)
+      }.toSeq
 
       val batchExtra = new DeltaBatchExtraInfo(
         meta.extraInfo.dateRebaseMode, meta.extraInfo.timestampRebaseMode,
-        meta.extraInfo.hasInt96Timestamps, fileEntries.toSeq)
+        meta.extraInfo.hasInt96Timestamps, fileEntries)
       meta.copy(extraInfo = batchExtra)
     }
 
