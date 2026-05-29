@@ -21,6 +21,7 @@ import java.util.{Map => JMap}
 import com.nvidia.spark.rapids.{DateTimeRebaseMode, ExtraInfo, GpuColumnVector, SingleDataBlockInfo}
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.parquet._
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.types.StructType
@@ -59,9 +60,26 @@ class GpuCoalescingIcebergParquetReader(
             shadedFileReadSchema,
             conf.metrics)
 
+          // The parent coalescer (GpuMultiFileReader.populateCurrentBlockChunk) only invokes
+          // checkIfNeedToSplitDataBlock when block filePaths differ. Two Iceberg splits of the
+          // same physical Parquet file share a real path, so without a tag here the parent
+          // would slip past the gate and merge their blocks under one extraInfo (= the first
+          // split's post-processor), corrupting _pos. Tagging the path with the split range
+          // makes distinct splits present as different "files" to the parent, which then
+          // invokes our override, where the postProcessor identity check forces a chunk split
+          // and the new chunk picks up its own extraInfo. The synthetic path is only used by
+          // the parent for equality checks (currentFile in populateCurrentBlockChunk); the
+          // real path stays on the post-processor (used to materialize _file) so output is
+          // unaffected.
+          val coalescerPath = file.split match {
+            case Some((start, length)) =>
+              new Path(s"${info.filePath}#iceberg-split=$start-$length")
+            case None => info.filePath
+          }
+
           info.blocks.map { block =>
             ParquetSingleDataBlockMeta(
-              info.filePath,
+              coalescerPath,
               ParquetDataBlock(block, CpuCompressionConfig.disabled()),
               InternalRow.empty,
               ParquetSchemaWrapper(info.schema),
