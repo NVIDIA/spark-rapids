@@ -241,8 +241,19 @@ function build_single_shim() {
   [[ "$BUILD_ALL_DEBUG" == "1" ]] && set -x
   BUILD_VER=$1
   mkdir -p "$MVN_BASE_DIR/target"
-  (( BUILD_PARALLEL == 1 || NUM_SHIMS == 1 )) && LOG_FILE="/dev/tty" || \
+  if (( BUILD_PARALLEL == 1 || NUM_SHIMS == 1 )); then
+    # Single-shim/serial build: stream Maven output live rather than to a log
+    # file. Prefer the controlling terminal, but fall back to stdout when there
+    # is none (CI, containers, xargs workers) so the build does not fail on a
+    # missing /dev/tty.
+    if { : > /dev/tty; } 2>/dev/null; then
+      LOG_FILE="/dev/tty"
+    else
+      LOG_FILE="/dev/stdout"
+    fi
+  else
     LOG_FILE="$MVN_BASE_DIR/target/mvn-build-$BUILD_VER.log"
+  fi
 
   if [[ "$BUILD_VER" == "$BASE_VER" ]]; then
     SKIP_CHECKS="false"
@@ -268,7 +279,12 @@ function build_single_shim() {
       -Dmaven.scaladoc.skip \
       -Dmaven.scalastyle.skip="$SKIP_CHECKS" \
       -pl tools -am > "$LOG_FILE" 2>&1 || {
-        [[ "$LOG_FILE" != "/dev/tty" ]] && echo "$LOG_FILE:" && tail -500 "$LOG_FILE" || true
+        # Only tail when output went to a real log file; for a live stream
+        # (/dev/tty or /dev/stdout) the failure output is already on screen.
+        case "$LOG_FILE" in
+          /dev/tty|/dev/stdout) ;;
+          *) echo "$LOG_FILE:"; tail -500 "$LOG_FILE" ;;
+        esac
         exit 255
       }
 }
