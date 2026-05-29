@@ -33,7 +33,7 @@ import pytest
 from pyspark.sql.functions import broadcast
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal
-from marks import ignore_order, inject_oom, approximate_float
+from marks import ignore_order, approximate_float
 from spark_session import with_cpu_session
 
 
@@ -118,7 +118,6 @@ def test_decompose_stddev_pop():
 
 
 @pytest.mark.private_optimizer
-@inject_oom
 def test_optimize_skewed_bhj_join():
     """Trigger OptimizeSkewedBHJJoinRule via AQE-enabled BHJ over skewed key.
 
