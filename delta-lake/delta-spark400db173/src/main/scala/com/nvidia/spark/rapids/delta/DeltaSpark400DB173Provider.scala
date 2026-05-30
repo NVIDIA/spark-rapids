@@ -24,7 +24,8 @@ package com.nvidia.spark.rapids.delta
 import com.databricks.sql.execution.metric.IncrementMetric
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaOptions}
 import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat
-import com.databricks.sql.transaction.tahoe.commands.WriteIntoDeltaEdge
+import com.databricks.sql.transaction.tahoe.commands.{OptimizeTableCommand,
+  OptimizeTableCommandEdge, WriteIntoDeltaEdge}
 import com.databricks.sql.transaction.tahoe.coordinatedcommits.{
   CatalogOwnedTableUtils,
   CoordinatedCommitsUtils
@@ -53,6 +54,7 @@ import org.apache.spark.sql.catalyst.expressions.{
 import org.apache.spark.sql.catalyst.plans.logical.TableSpec
 import org.apache.spark.sql.connector.write.V1Write
 import org.apache.spark.sql.execution.{FileSourceScanExec, FilterExec, ProjectExec, SparkPlan}
+import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.{FileFormat, HadoopFsRelation, LogicalRelation}
 import org.apache.spark.sql.execution.datasources.v2.{
   AtomicCreateTableAsSelectExec,
@@ -64,6 +66,20 @@ import org.apache.spark.sql.sources.InsertableRelation
 import org.apache.spark.sql.types.StructType
 
 object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
+
+  override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
+      RunnableCommandRule[_ <: RunnableCommand]] = {
+    super.getRunnableCommandRules ++ Seq(
+      GpuOverrides.runnableCmd[OptimizeTableCommand](
+        "Optimize a Delta Lake table",
+        (a, conf, p, r) => new OptimizeTableCommandMeta(a, conf, p, r))
+          .disabledByDefault("Delta Lake optimize support is experimental"),
+      GpuOverrides.runnableCmd[OptimizeTableCommandEdge](
+        "Optimize a Delta Lake table",
+        (a, conf, p, r) => new OptimizeTableCommandEdgeMeta(a, conf, p, r))
+          .disabledByDefault("Delta Lake optimize support is experimental")
+    ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
+  }
 
   override def isSupportedFormat(format: Class[_ <: FileFormat]): Boolean =
     super.isSupportedFormat(format) ||
