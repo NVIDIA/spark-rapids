@@ -70,7 +70,9 @@ class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
     // idToConstant. ActionBuildingVisitor lowers this to FillNull, whose execute() allocates
     // a fresh GPU column. That second allocation is what we OOM, so FetchRowPosition is the
     // earlier action that has already committed counter state when the retry fires.
-    val fillFieldId = rowPosId + 1
+    // Use an ordinary non-metadata field id (1) — `rowPosId + 1` would collide with
+    // FILE_PATH.fieldId() (Integer.MAX_VALUE - 1) and route to FetchFilePath instead.
+    val fillFieldId = 1
 
     val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
 
