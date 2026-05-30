@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.joins.SortMergeJoinExec
 import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{ExecutionPlanCaptureCallback, GpuFileSourceScanExec}
-import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuJoinExec}
+import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuJoinExec, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
 
@@ -437,6 +437,35 @@ class AdaptiveQueryExecSuite
       // GpuColumnarToRowExec so we should see accurate metrics
       assert(transition.metrics("numOutputRows").value === 100)
 
+    }, conf)
+  }
+
+  test("Keep transition to row for final AQE repartition exchange") {
+    logError("Keep transition to row for final AQE repartition exchange")
+
+    val conf = new SparkConf()
+        .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        .set(SQLConf.ADAPTIVE_EXECUTION_FORCE_APPLY.key, "true")
+        .set(SQLConf.SORT_BEFORE_REPARTITION.key, "false")
+        .set(RapidsConf.TEST_ALLOWED_NONGPU.key, "ShuffleExchangeExec,RoundRobinPartitioning")
+
+    withGpuSparkSession(spark => {
+      import spark.implicits._
+
+      val df = Seq("a", "b", "c")
+          .toDF("s")
+          .selectExpr("s", "1 AS x")
+          .repartition(10)
+
+      val rows = df.collect()
+      assert(rows.map(_.getAs[String]("s")).toSet === Set("a", "b", "c"))
+
+      val finalPlan = df.queryExecution.executedPlan match {
+        case adaptive: AdaptiveSparkPlanExec => adaptive.executedPlan
+        case other => other
+      }
+      assert(!finalPlan.isInstanceOf[GpuShuffleExchangeExecBase],
+        s"Final plan should not execute a bare GPU exchange as rows: $finalPlan")
     }, conf)
   }
 
