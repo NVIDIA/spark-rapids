@@ -734,6 +734,52 @@ def test_formats_for_legacy_mode_other_formats_tz_rules():
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
+# Under LEGACY, Spark parses with SimpleDateFormat, which skips leading whitespace ([ \t]) before
+# every numeric field. So a multi-space date/time separator, a space/tab run after the separator,
+# and whitespace after ':' all parse to the same instant as a single space. The fixed inputs avoid
+# DST transitions so the result is unambiguous under any session timezone.
+@disable_ansi_mode  # ANSI mode is tested separately.
+@tz_sensitive_test
+@pytest.mark.parametrize("input_str", [
+    "1999-12-31 11:59:59",     # single space (baseline, parses everywhere)
+    "1999-12-31  11:59:59",    # double space between date and time
+    "1999-12-31   11:59:59",   # triple space
+    "1999-12-31 \t 11:59:59",  # mixed space/tab run after the separator
+    "1999-12-31 11: 59: 59",   # whitespace after ':' before minute/second
+], ids=idfn)
+def test_to_timestamp_legacy_multi_whitespace(input_str):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame([(input_str,)], "a string")
+            .select(f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
+# A literal space in the pattern matches exactly one ' ' under both LEGACY and CORRECTED, so a 'T'
+# separator does not parse and Spark yields NULL (unlike the format-less cast, which accepts 'T').
+@disable_ansi_mode  # ANSI mode is tested separately.
+@tz_sensitive_test
+@pytest.mark.parametrize("parser_policy", ['LEGACY', 'CORRECTED'], ids=idfn)
+def test_to_timestamp_rejects_t_separator(parser_policy):
+    conf = {'spark.sql.legacy.timeParserPolicy': parser_policy}
+    if parser_policy == 'LEGACY':
+        conf['spark.rapids.sql.incompatibleDateFormats.enabled'] = True
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(
+            [("1999-12-31 11:59:59",), ("1999-12-31T11:59:59",)], "a string")
+            .select(f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
+        conf)
+
+# Same 'T'-rejection contract for a packed-date legacy timestamp format.
+@disable_ansi_mode  # ANSI mode is tested separately.
+@tz_sensitive_test
+def test_to_timestamp_legacy_packed_rejects_t_separator():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(
+            [("20241231 23:59:58",), ("20241231T23:59:58",)], "a string")
+            .select(f.to_timestamp(f.col("a"), "yyyyMMdd HH:mm:ss")),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
 @tz_sensitive_test
 @pytest.mark.parametrize("ansi_enabled", [True, False], ids=['ANSI_ON', 'ANSI_OFF'])
 def test_to_date(ansi_enabled):
