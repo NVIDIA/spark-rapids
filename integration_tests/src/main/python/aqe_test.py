@@ -75,7 +75,7 @@ def test_aqe_join_parquet(spark_tmp_path, data_gen):
 # Test the computeStats(...) implementation in GpuBatchScanExec
 @ignore_order(local=True)
 @pytest.mark.xfail(condition=is_emr_runtime(),
-    reason='DSv2 relation stats can be requested before pushdown in this runtime')
+    reason='https://github.com/NVIDIA/spark-rapids/issues/14927')
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
     # force v2 source for parquet to use BatchScanExec

@@ -723,7 +723,7 @@ def test_csv_read_gbk_encoded_data(std_input_path):
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
 @pytest.mark.xfail(condition=is_emr_runtime(),
-    reason='CSV blank/control-only lines are filtered differently in this runtime')
+    reason='https://github.com/NVIDIA/spark-rapids/issues/14929')
 def test_csv_read_blank_lines_with_control_chars(std_input_path, v1_enabled_list):
     """Verify that lines consisting only of control characters (<= 0x20) are filtered out,
     matching Spark CPU behavior (CSVExprUtils.filterCommentAndEmpty uses String.trim)."""

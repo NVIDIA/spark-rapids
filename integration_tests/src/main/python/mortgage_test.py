@@ -24,7 +24,7 @@ from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limi
 @ignore_order
 @allow_non_gpu(any=True)
 @pytest.mark.xfail(condition=is_emr_runtime(),
-    reason='AQE PullUpUnion expects an exchange query stage in this runtime')
+    reason='https://github.com/NVIDIA/spark-rapids/issues/14928')
 def test_mortgage(mortgage):
   assert_gpu_and_cpu_are_equal_iterator(
           lambda spark : mortgage.do_test_query(spark))
