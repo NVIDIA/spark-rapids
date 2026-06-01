@@ -139,6 +139,28 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
+  test("issue-14926: reject user backref to a capture group after a line anchor ($)") {
+    // The synthetic (\r\n)? group inserted at `$` shifts the cuDF index of source capture
+    // groups emitted after `$`, but a user $N is still Java-numbered. Until the user-side
+    // remap lands these must fall back to CPU rather than return wrong output (verified
+    // end-to-end CPU!=GPU on `(a$|b)(c)` + [$1][$2] before this guard).
+    val msg = "Backref to a capture group positioned after a line anchor"
+    // a source capture group sits after `$` and is referenced by the replacement
+    assertUnsupportedReplace("(a$|b)(c)", "[$1][$2]", msg)
+    assertUnsupportedReplace("T$|(E)", "[$1]", msg)
+    assertUnsupportedReplace("(?:T$|(E))", "[$1]", msg)
+    assertUnsupportedReplace("$(a)", "[$1]", msg)
+
+    // NOT rejected: no capture group after `$` (all groups precede the anchor)
+    assert(new CudfRegexTranspiler(RegexReplaceMode)
+      .transpile("(foo)|(bar)$", None, Some("[$1][$2]"))._1.nonEmpty)
+    assert(new CudfRegexTranspiler(RegexReplaceMode)
+      .transpile("(a)(b)$", None, Some("[$1][$2]"))._1.nonEmpty)
+    // NOT rejected: a capture group is after `$`, but no user backref references it
+    assert(new CudfRegexTranspiler(RegexReplaceMode)
+      .transpile("$(a)", None, Some("X"))._1.nonEmpty)
+  }
+
   test("issue-14855: line-anchor $ rewrite emits correct backref index when capture groups " +
     "follow $") {
     // The synthesized (\r\n)? group inserted at the position of `$` is the
@@ -1203,6 +1225,18 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     if(!msg.contains("near index")) {
       fail(s"Pattern '${toReadableString(pattern)}': Error was [${e.getMessage}]"
         + " but does not specify index")
+    }
+  }
+
+  private def assertUnsupportedReplace(pattern: String, repl: String, message: String): Unit = {
+    val e = withClue(s"Pattern: '${toReadableString(pattern)}' repl: '$repl':") {
+      intercept[RegexUnsupportedException] {
+        new CudfRegexTranspiler(RegexReplaceMode).transpile(pattern, None, Some(repl))
+      }
+    }
+    if (!e.getMessage.startsWith(message)) {
+      fail(s"Pattern '${toReadableString(pattern)}' repl '$repl': Error was [${e.getMessage}]"
+        + s" but expected [$message]")
     }
   }
 

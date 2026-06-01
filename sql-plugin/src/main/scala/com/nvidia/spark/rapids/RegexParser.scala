@@ -747,10 +747,64 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // for backrefs
     val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
 
+    // Defensive fallback (#14926): the synthetic (\r\n)? group inserted at a `$` shifts the cuDF
+    // index of later source capture groups, but a user `$N` stays Java-numbered. Reject -> CPU
+    // rather than emit a wrong backref until the user-side remap lands.
+    replacement.foreach(rejectUserBackrefAfterEndAnchor(regex, _))
+
     // validate that the regex is supported by cuDF
     val cudfRegex = transpile(regex, extractIndex, replacement, None)
 
     (cudfRegex, replacement)
+  }
+
+  /**
+   * Reject (CPU fallback) a replacement whose user backref `$N` targets a source capture group
+   * positioned after a `$`/`\Z`/`\z` anchor, because the synthetic (\r\n)? group inserted there
+   * shifts that group's cuDF index while the user backref stays Java-numbered (#14926).
+   */
+  private def rejectUserBackrefAfterEndAnchor(
+      regex: RegexAST, replacement: RegexReplacement): Unit = {
+    val userRefs = scala.collection.mutable.Set.empty[Int]
+    def collectUserRefs(ast: RegexAST): Unit = ast match {
+      case RegexBackref(n, isNew) => if (!isNew) userRefs += n
+      case other => other.children().foreach(collectUserRefs)
+    }
+    replacement.parts.foreach(collectUserRefs)
+    if (userRefs.isEmpty) {
+      return
+    }
+
+    // Walk the source AST in capture-group order (pre-order, matching Java group numbering and
+    // the cuDF emit order) and record which source group indices appear after an end anchor.
+    var srcGroupIdx = 0
+    var seenEndAnchor = false
+    val shifted = scala.collection.mutable.Set.empty[Int]
+    def walk(ast: RegexAST): Unit = ast match {
+      // `$` and `(` inside a character class are literal, not an anchor or a group
+      case _: RegexCharacterClass =>
+      case RegexChar('$') | RegexEscaped('Z') | RegexEscaped('z') =>
+        seenEndAnchor = true
+      case RegexGroup(capture, term, _) =>
+        if (capture) {
+          srcGroupIdx += 1
+          if (seenEndAnchor) {
+            shifted += srcGroupIdx
+          }
+        }
+        walk(term)
+      case RegexSequence(parts) => parts.foreach(walk)
+      case RegexChoice(l, r) => walk(l); walk(r)
+      case RegexRepetition(base, _) => walk(base)
+      case other => other.children().foreach(walk)
+    }
+    walk(regex)
+
+    if (userRefs.exists(shifted.contains)) {
+      throw new RegexUnsupportedException(
+        "Backref to a capture group positioned after a line anchor ($) is not supported",
+        regex.position)
+    }
   }
 
   /**
