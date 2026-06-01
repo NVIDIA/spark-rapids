@@ -41,7 +41,6 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{TestArrayUDT, TestNestedStructUDT, TestPrimitiveUDT}
-import org.apache.spark.sql.rapids.TestingUDT._
 import org.apache.spark.sql.types._
 
 class ParquetUDTSuite extends SparkQueryCompareTestSuite {
