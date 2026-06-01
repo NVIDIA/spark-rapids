@@ -750,6 +750,26 @@ def test_to_timestamp_legacy_multi_whitespace(input_str):
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
+# LEGACY SimpleDateFormat skips only space and tab before fields, so a leading space/tab parses but
+# any other leading control byte (\r \f \v \b ...) is NULL on CPU. The GPU outer trim must match
+# and not strip arbitrary control characters.
+@disable_ansi_mode
+@tz_sensitive_test
+@pytest.mark.parametrize("input_str", [
+    " 2024-05-06",
+    "\t2024-05-06",
+    "\r2024-05-06",
+    "\f2024-05-06",
+    "\v2024-05-06",
+    "\b2024-05-06",
+], ids=idfn)
+def test_to_timestamp_legacy_leading_control_chars(input_str):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame([(input_str,)], "a string")
+            .select(f.to_timestamp(f.col("a"), "yyyy-MM-dd")),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
 @disable_ansi_mode
 @tz_sensitive_test
 @pytest.mark.parametrize("parser_policy", ['LEGACY', 'CORRECTED'], ids=idfn)
