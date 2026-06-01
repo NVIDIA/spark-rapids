@@ -452,7 +452,11 @@ def _read_parquet_codec(spark, path):
     hadoop_path = jvm.org.apache.hadoop.fs.Path(path)
     reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(hadoop_conf, hadoop_path)
     try:
-        return reader.getFooter().getBlocks().get(0).getColumns().get(0).getCodec().name()
+        blocks = reader.getFooter().getBlocks()
+        assert blocks.size() > 0, f"Parquet file {path} has no row groups"
+        cols = blocks.get(0).getColumns()
+        assert cols.size() > 0, f"Row group 0 in {path} has no column chunks"
+        return cols.get(0).getCodec().name()
     finally:
         reader.close()
 
