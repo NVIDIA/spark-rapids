@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,8 @@ import org.apache.spark.util.SerializableConfiguration
 class GpuSparkInputPartition(val cpuPartition: SparkInputPartition,
     rapidsConf: RapidsConf,
     val hadoopConf: Broadcast[SerializableConfiguration],
-    val expectedSchemaStr: String) extends
+    val expectedSchemaStr: String,
+    private val preferredLocationsOverride: Array[String]) extends
   InputPartition with HasPartitionKey with Serializable {
 
   val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
@@ -51,7 +52,7 @@ class GpuSparkInputPartition(val cpuPartition: SparkInputPartition,
   val maxNumParquetFilesParallel: Int = rapidsConf.maxNumParquetFilesParallel
 
 
-  override def preferredLocations(): Array[String] = cpuPartition.preferredLocations()
+  override def preferredLocations(): Array[String] = preferredLocationsOverride
   override def partitionKey(): InternalRow = cpuPartition.partitionKey()
 
   @transient lazy val expectedSchema: Schema = {
