@@ -19,7 +19,8 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_nested_write_gens_list,
-                     iceberg_unsupported_mark)
+                     iceberg_unsupported_mark, _build_tblprops)
+from iceberg.iceberg_append_test import _read_parquet_codec
 from marks import allow_non_gpu, allow_non_gpu_conditional, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_400_or_later, with_cpu_session, with_gpu_session
 
@@ -511,3 +512,57 @@ def test_iceberg_delete_partitioned_table_fanout_enabled(spark_tmp_table_factory
         partition_col_sql="bucket(2, _c9)",
         delete_mode='copy-on-write',
         table_properties={"write.spark.fanout.enabled": "true"})
+
+
+# Regression for the GpuSparkPositionDeltaWrite branch of issue #14905.
+# `test_insert_into_table_honors_iceberg_compression_codec` covers the append path
+# (`GpuSparkWrite.createDataWriterFactory`); this test covers MoR DELETE which
+# instead goes through `GpuSparkPositionDeltaWrite.createDeltaWriterFactory` and
+# writes position-delete files.
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize("table_codec,expected_codec", [
+    (None, "zstd"),
+    ("zstd", "zstd"),
+    ("uncompressed", "uncompressed")])
+def test_mor_delete_honors_iceberg_compression_codec(
+        spark_tmp_table_factory, table_codec, expected_codec):
+    table_name = get_full_table_name(spark_tmp_table_factory)
+    extra_props = {"format-version": "2", "write.delete.mode": "merge-on-read"}
+    if table_codec is not None:
+        extra_props["write.parquet.compression-codec"] = table_codec
+
+    def create_and_populate(spark):
+        props = _build_tblprops(extra_props)
+        props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in props.items())
+        spark.sql(f"CREATE TABLE {table_name} (id int, name string) USING ICEBERG "
+                  f"TBLPROPERTIES ({props_sql})")
+        # Enough rows that the position-delete files (one row per deleted record)
+        # cross cuDF's compression threshold — see rapidsai/cudf#14017.
+        spark.sql(f"INSERT INTO {table_name} SELECT id, CAST(id AS STRING) FROM range(40000)")
+
+    with_cpu_session(create_and_populate)
+
+    leaky_codec = "snappy" if expected_codec != "snappy" else "uncompressed"
+    conf = copy_and_update(iceberg_write_enabled_conf,
+                           {"spark.sql.parquet.compression.codec": leaky_codec})
+
+    # `id % 3 = 0` cannot be answered from per-file min/max metadata, so Iceberg must
+    # actually scan rows and emit position-deletes via GpuSparkPositionDeltaWrite (a
+    # range-bound predicate like `id < N` would be served by DeleteFromTableExec).
+    with_gpu_session(
+        lambda spark: spark.sql(f"DELETE FROM {table_name} WHERE id % 3 = 0").collect(),
+        conf=conf)
+
+    def check_codecs(spark):
+        delete_rows = spark.sql(
+            f"SELECT file_path FROM {table_name}.delete_files").collect()
+        assert len(delete_rows) > 0, "no position-delete files were written"
+        expected_footer = expected_codec.upper()
+        for row in delete_rows:
+            actual = _read_parquet_codec(spark, row.file_path)
+            assert actual == expected_footer, \
+                f"expected codec {expected_footer} but file {row.file_path} used {actual}"
+
+    with_cpu_session(check_codecs)
