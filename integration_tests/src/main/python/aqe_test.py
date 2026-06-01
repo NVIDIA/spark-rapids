@@ -16,7 +16,7 @@ import pytest
 from pyspark.sql.functions import when, col, current_date, current_timestamp
 from pyspark.sql.types import *
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are_equal_collect_with_capture
-from conftest import is_databricks_runtime, is_not_utc
+from conftest import is_databricks_runtime, is_emr_runtime, is_not_utc
 from data_gen import *
 from spark_session import is_spark_400_or_later
 from marks import ignore_order, allow_non_gpu
@@ -74,6 +74,8 @@ def test_aqe_join_parquet(spark_tmp_path, data_gen):
 
 # Test the computeStats(...) implementation in GpuBatchScanExec
 @ignore_order(local=True)
+@pytest.mark.xfail(condition=is_emr_runtime(),
+    reason='DSv2 relation stats can be requested before pushdown in this runtime')
 @pytest.mark.parametrize("data_gen", integral_gens, ids=idfn)
 def test_aqe_join_parquet_batch(spark_tmp_path, data_gen):
     # force v2 source for parquet to use BatchScanExec

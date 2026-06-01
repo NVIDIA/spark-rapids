@@ -15,7 +15,7 @@
 import pytest
 
 from asserts import *
-from conftest import get_non_gpu_allowed, is_not_utc, is_gbk_supported
+from conftest import get_non_gpu_allowed, is_emr_runtime, is_not_utc, is_gbk_supported
 from datetime import datetime, timezone
 from data_gen import *
 from marks import *
@@ -722,6 +722,8 @@ def test_csv_read_gbk_encoded_data(std_input_path):
         conf={"spark.sql.legacy.javaCharsets": legacy_charset})
 
 @pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+@pytest.mark.xfail(condition=is_emr_runtime(),
+    reason='CSV blank/control-only lines are filtered differently in this runtime')
 def test_csv_read_blank_lines_with_control_chars(std_input_path, v1_enabled_list):
     """Verify that lines consisting only of control characters (<= 0x20) are filtered out,
     matching Spark CPU behavior (CSVExprUtils.filterCommentAndEmpty uses String.trim)."""

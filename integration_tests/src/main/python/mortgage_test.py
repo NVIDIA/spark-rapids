@@ -15,6 +15,7 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_iterator
+from conftest import is_emr_runtime
 from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limit
 
 @incompat
@@ -22,6 +23,8 @@ from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limi
 @limit
 @ignore_order
 @allow_non_gpu(any=True)
+@pytest.mark.xfail(condition=is_emr_runtime(),
+    reason='AQE PullUpUnion expects an exchange query stage in this runtime')
 def test_mortgage(mortgage):
   assert_gpu_and_cpu_are_equal_iterator(
           lambda spark : mortgage.do_test_query(spark))
