@@ -644,4 +644,118 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
         s"got ${totalTaskExecutionTime} ms")
   }
 
+  /**
+   * Parse event logs into per-task (taskId -> summed "op time", executorRunTime),
+   * keyed by task so we can assert the per-task accounting invariant
+   * sum(op_time) <= executorRunTime that the write-path fixes (#14901) restore.
+   */
+  private def parseEventLogsPerTask(): Map[Long, (Long, Long)] = {
+    implicit val formats: DefaultFormats.type = DefaultFormats
+    val opTimeByTask = mutable.Map[Long, Long]().withDefaultValue(0L)
+    val runTimeByTask = mutable.Map[Long, Long]()
+
+    eventLogDir.listFiles()
+      .filter(f => f.getName.endsWith(".inprogress") || !f.getName.contains("_tmp_"))
+      .foreach { file =>
+        readEventLogLines(file).foreach { line =>
+          try {
+            val json = EventLogJsonShims.parseJson(line)
+            if ((json \ "Event").extractOpt[String].contains("SparkListenerTaskEnd")) {
+              val taskInfo = json \ "Task Info"
+              val taskMetrics = json \ "Task Metrics"
+              val taskId = EventLogJsonShims.extractLong(taskInfo \ "Task ID")
+              val runTime = EventLogJsonShims.extractLong(taskMetrics \ "Executor Run Time")
+              (taskId, runTime) match {
+                case (Some(tId), Some(rt)) =>
+                  runTimeByTask(tId) = rt
+                  (taskInfo \ "Accumulables").extract[List[JObject]].foreach { acc =>
+                    val name = (acc \ "Name").extractOpt[String]
+                    val value = (acc \ "Update").extractOpt[String]
+                    (name, value) match {
+                      // "op time" is the per-operator op_time metric; sum all of them
+                      // (Insert + descendants) for the task.
+                      case (Some(n), Some(v)) if n == "op time" =>
+                        opTimeByTask(tId) = opTimeByTask(tId) + v.toLong
+                      case _ =>
+                    }
+                  }
+                case _ =>
+              }
+            }
+          } catch {
+            case _: Exception => // skip malformed lines
+          }
+        }
+      }
+    runTimeByTask.map { case (tId, rt) => tId -> ((opTimeByTask(tId), rt)) }.toMap
+  }
+
+  test("write op_time stays within executorRunTime with empty partitions (#14901)") {
+    val sparkSession = spark
+    import sparkSession.implicits._
+
+    spark.conf.set("spark.rapids.sql.exec.opTimeTrackingRDD.enabled", "true")
+    // Keep the write partitions as-is so the empty ones survive to the write stage,
+    // exercising the empty-partition `iterator.hasNext` path in executeTask.
+    spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "false")
+
+    val numRows = 2000000L
+    val numWritePartitions = 64
+    val parquetOutputPath = new File(tempDir, "empty_part_write").getAbsolutePath
+
+    // The write stage itself must carry non-trivial descendant op_time for the
+    // bugs to show: hash-repartition on a 4-value key into 64 partitions FIRST
+    // (leaving ~60 partitions EMPTY at the write stage -> exercises the
+    // empty-partition hasNext branch, bug 2), THEN do heavy GPU compute
+    // (project + filter) AFTER the shuffle so those operators are descendants
+    // of the Insert inside the write stage. Pre-fix, GpuWriteFilesExec forwards
+    // no excludeMetrics (bug 1) so the Insert op_time double-counts that
+    // project/filter work, pushing per-task sum(op_time) past executorRunTime.
+    // Heavy transcendental expression so the post-shuffle project carries a
+    // large share of the write stage's op_time; that makes the pre-fix
+    // double-count (Insert absorbing this descendant op_time) a ~2.5-3x
+    // over-count, well clear of the 1.5x detection threshold, while the
+    // post-fix value stays ~1x.
+    val heavy = (0 until 24)
+      .map(i => s"sin(id + $i) * cos(id - $i) + sqrt(abs(id * 1.0 + $i)) + log(abs(id) + ${i + 1})")
+      .mkString(" + ")
+    val df = spark.range(0, numRows, 1, 8)
+      .selectExpr("id", "id % 4 as k")
+      .repartition(numWritePartitions, $"k")
+      .selectExpr("id", "k", s"($heavy) as h")
+      .filter($"h" < 1.0e18)
+
+    df.write.mode("overwrite").option("compression", "snappy").parquet(parquetOutputPath)
+    assert(new File(parquetOutputPath).exists())
+
+    flushEventLogsByStoppingSpark()
+
+    val perTask = parseEventLogsPerTask()
+    assert(perTask.nonEmpty, "should find per-task records in event logs")
+
+    // The accounting invariant the write-path fixes restore: a task's summed
+    // op_time can never exceed its executor run time. Pre-fix, the Insert
+    // double-counts descendants (bug 1) and the empty-partition hasNext work
+    // accrues outside the Insert wrap (bug 2), pushing sum(op_time) well past
+    // executorRunTime for partition_id != 0 tasks. Allow a small margin for
+    // pipelined op timers that can overlap within a task.
+    val marginFactor = 1.5
+    val violators = perTask.filter { case (_, (opNs, rtMs)) =>
+      opNs > (rtMs * 1000000L * marginFactor)
+    }
+
+    val tasksWithOpTime = perTask.count { case (_, (opNs, _)) => opNs > 0 }
+    assert(tasksWithOpTime > 0,
+      s"expected some tasks to record op_time; got ${perTask.size} tasks, none with op_time")
+
+    if (violators.nonEmpty) {
+      val sample = violators.take(5).map { case (tId, (opNs, rtMs)) =>
+        f"task $tId: op_time=${opNs / 1e6}%.1f ms > executorRunTime=$rtMs ms"
+      }.mkString("; ")
+      fail(s"${violators.size}/${perTask.size} tasks have sum(op_time) exceeding " +
+        f"$marginFactor%.1fx executorRunTime, indicating write-path op_time over-count " +
+        s"(#14901 bug 1/2 not fixed). Examples: $sample")
+    }
+  }
+
 }
