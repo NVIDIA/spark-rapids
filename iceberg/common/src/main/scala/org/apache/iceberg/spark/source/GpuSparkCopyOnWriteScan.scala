@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,19 +22,22 @@ import com.nvidia.spark.rapids.{GpuScan, RapidsConf}
 import org.apache.iceberg.FileScanTask
 
 import org.apache.spark.sql.connector.expressions.NamedReference
-import org.apache.spark.sql.connector.read.{Statistics, SupportsRuntimeFiltering}
+import org.apache.spark.sql.connector.read.{Scan, Statistics, SupportsRuntimeFiltering}
 import org.apache.spark.sql.sources.Filter
 
 class GpuSparkCopyOnWriteScan(
-    override val cpuScan: SparkCopyOnWriteScan,
+    override val cpuScan: Scan,
     override val rapidsConf: RapidsConf,
     override val queryUsesInputFile: Boolean) extends
   GpuSparkPartitioningAwareScan[FileScanTask](cpuScan, rapidsConf, queryUsesInputFile)
   with SupportsRuntimeFiltering {
 
-  override def filterAttributes(): Array[NamedReference] = cpuScan.filterAttributes()
+  private def runtimeFilterScan: SupportsRuntimeFiltering =
+    cpuScan.asInstanceOf[SupportsRuntimeFiltering]
 
-  override def estimateStatistics(): Statistics = cpuScan.estimateStatistics()
+  override def filterAttributes(): Array[NamedReference] = runtimeFilterScan.filterAttributes()
+
+  override def estimateStatistics(): Statistics = GpuSparkScanAccess.estimateStatistics(cpuScan)
 
   override def equals(obj: Any): Boolean = {
     obj match {
@@ -50,11 +53,11 @@ class GpuSparkCopyOnWriteScan(
   }
 
   override def toString: String = {
-    s"GpuSparkCopyOnWriteScan(table=${cpuScan.table()}, " +
-      s"branch=${cpuScan.branch()}, " +
-      s"type=${cpuScan.expectedSchema().asStruct()}, " +
-      s"filters=${cpuScan.filterExpressions()}, " +
-      s"caseSensitive=${cpuScan.caseSensitive()}, " +
+    s"GpuSparkCopyOnWriteScan(table=${GpuSparkScanAccess.table(cpuScan)}, " +
+      s"branch=${GpuSparkScanAccess.branch(cpuScan)}, " +
+      s"type=${GpuSparkScanAccess.expectedSchema(cpuScan).asStruct()}, " +
+      s"filters=${GpuSparkScanAccess.filterExpressions(cpuScan)}, " +
+      s"caseSensitive=${GpuSparkScanAccess.caseSensitive(cpuScan)}, " +
       s"queryUseInputFile=$queryUsesInputFile)"
   }
 
@@ -63,5 +66,5 @@ class GpuSparkCopyOnWriteScan(
     new GpuSparkCopyOnWriteScan(cpuScan, rapidsConf, true)
   }
 
-  override def filter(filters: Array[Filter]): Unit = cpuScan.filter(filters)
+  override def filter(filters: Array[Filter]): Unit = runtimeFilterScan.filter(filters)
 }

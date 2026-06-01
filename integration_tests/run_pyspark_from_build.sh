@@ -35,6 +35,8 @@
 #   - LOCAL_JAR_PATH: Path to local jars if not building from source.
 #   - PLUGIN_JAR: Path to a built spark-rapids plugin jar, the default points to the target directory
 #   - INTEGRATION_TEST_VERSION_OVERRIDE: Overrides the auto-detected shim version.
+#   - ICEBERG_EXTRA_CLASSPATH: Colon- or comma-separated local Iceberg jars to use with
+#     spark.driver.extraClassPath and spark.executor.extraClassPath instead of --jars/--packages.
 #
 # Script Flow:
 #   1. Setup and Checks: Validates environment and detects Spark/Scala versions.
@@ -288,11 +290,38 @@ else
 
     SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
 
-    if [[ "${PYSP_TEST_spark_shuffle_manager}" =~ "RapidsShuffleManager" ]]; then
-        # If specified shuffle manager, set `extraClassPath` due to issue https://github.com/NVIDIA/spark-rapids/issues/5796
-        # Remove this line if the issue is fixed
-        export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS}"
-        export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS}"
+    ICEBERG_EXTRA_CLASSPATH_COMMA="${ICEBERG_EXTRA_CLASSPATH//:/,}"
+    if [[ -n "${ICEBERG_EXTRA_CLASSPATH_COMMA}" ]]; then
+        if [[ -n "${PYSP_TEST_spark_jars_packages}" ]]; then
+            >&2 echo "ICEBERG_EXTRA_CLASSPATH cannot be used with PYSP_TEST_spark_jars_packages."
+            >&2 echo "Use local Iceberg jar paths in ICEBERG_EXTRA_CLASSPATH instead of Maven coordinates."
+            exit 1
+        fi
+        if [[ -n "${PYSP_TEST_spark_jars}" ]]; then
+            PYSP_TEST_spark_jars="${PYSP_TEST_spark_jars},${ICEBERG_EXTRA_CLASSPATH_COMMA}"
+        else
+            PYSP_TEST_spark_jars="${ICEBERG_EXTRA_CLASSPATH_COMMA}"
+        fi
+    fi
+
+    if [[ "${PYSP_TEST_spark_shuffle_manager}" =~ "RapidsShuffleManager" ||
+          -n "${ICEBERG_EXTRA_CLASSPATH_COMMA}" ]]; then
+        # The RAPIDS shuffle manager and Iceberg package-private access tests need the plugin
+        # and dependency jars on extraClassPath instead of spark.jars/spark.jars.packages.
+        EXTRA_CLASSPATH="${ALL_JARS}"
+        if [[ -n "${PYSP_TEST_spark_jars}" ]]; then
+            EXTRA_CLASSPATH="${EXTRA_CLASSPATH}:${PYSP_TEST_spark_jars//,/:}"
+        fi
+        if [[ -n "${PYSP_TEST_spark_driver_extraClassPath}" ]]; then
+            EXTRA_CLASSPATH="${PYSP_TEST_spark_driver_extraClassPath}:${EXTRA_CLASSPATH}"
+        fi
+        EXECUTOR_EXTRA_CLASSPATH="${EXTRA_CLASSPATH}"
+        if [[ -n "${PYSP_TEST_spark_executor_extraClassPath}" ]]; then
+            EXECUTOR_EXTRA_CLASSPATH="${PYSP_TEST_spark_executor_extraClassPath}:${EXECUTOR_EXTRA_CLASSPATH}"
+        fi
+        export PYSP_TEST_spark_driver_extraClassPath="${EXTRA_CLASSPATH}"
+        export PYSP_TEST_spark_executor_extraClassPath="${EXECUTOR_EXTRA_CLASSPATH}"
+        unset PYSP_TEST_spark_jars
     else
         export PYSP_TEST_spark_jars="${ALL_JARS//:/,}"
     fi
@@ -424,8 +453,12 @@ else
         if [[ "${PYSP_TEST_spark_shuffle_manager}" != "" ]]; then
             SPARK_SHELL_ARGS_ARR+=(
                 --conf spark.shuffle.manager="${PYSP_TEST_spark_shuffle_manager}"
+            )
+        fi
+        if [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(
                 --driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}"
-                --conf spark.executor.extraClassPath="${PYSP_TEST_spark_driver_extraClassPath}"
+                --conf spark.executor.extraClassPath="${PYSP_TEST_spark_executor_extraClassPath:-$PYSP_TEST_spark_driver_extraClassPath}"
             )
         elif [[ -n "$PYSP_TEST_spark_jars_packages" ]]; then
             SPARK_SHELL_ARGS_ARR+=(--packages "${PYSP_TEST_spark_jars_packages}")
@@ -476,11 +509,18 @@ else
         echo "Running explainOnly mode on CPU smoke test..."
         SPARK_SHELL_ARGS_ARR=(
             --master local[2]
-            --jars "${PYSP_TEST_spark_jars}"
             --conf spark.plugins=com.nvidia.spark.SQLPlugin
             --conf spark.deploy.maxExecutorRetries=0
             --conf spark.rapids.sql.mode=explainOnly
         )
+        if [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(
+                --driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}"
+                --conf spark.executor.extraClassPath="${PYSP_TEST_spark_executor_extraClassPath:-$PYSP_TEST_spark_driver_extraClassPath}"
+            )
+        else
+            SPARK_SHELL_ARGS_ARR+=(--jars "${PYSP_TEST_spark_jars}")
+        fi
         output=$(<<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
             CUDA_VISIBLE_DEVICES="" "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1)
         grep 'WARN RapidsPluginUtils: RAPIDS Accelerator is in explain only mode' <<< "$output"
