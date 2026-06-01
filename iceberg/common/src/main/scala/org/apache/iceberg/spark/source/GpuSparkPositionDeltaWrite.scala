@@ -123,7 +123,7 @@ class GpuSparkPositionDeltaWrite(cpu: SparkPositionDeltaWrite)
     val outputWriterFactory = new GpuParquetFileFormat().prepareWrite(
       SparkSession.active,
       job,
-      writeProps,
+      GpuSparkWrite.translateIcebergWriteProperties(writeProps),
       dataSparkTypeWithFieldIds
     )
 

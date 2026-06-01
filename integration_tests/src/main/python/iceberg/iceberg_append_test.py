@@ -16,7 +16,7 @@ from typing import Callable, Any
 import pytest
 
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
-from conftest import is_iceberg_remote_catalog
+from conftest import is_iceberg_remote_catalog, spark_jvm
 from data_gen import gen_df, copy_and_update
 from iceberg import create_iceberg_table, \
     iceberg_base_table_cols, iceberg_gens_list, get_full_table_name, \
@@ -442,3 +442,75 @@ def test_insert_into_partitioned_table_fanout_enabled(spark_tmp_table_factory):
     _do_test_insert_into_partitioned_table(
         spark_tmp_table_factory, "bucket(2, _c9)",
         table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})
+
+
+def _read_parquet_codec(spark, path):
+    # Opens the Parquet footer of `path` and returns the codec name of the first
+    # column of the first row group (uppercase, e.g. "ZSTD", "GZIP").
+    jvm = spark_jvm()
+    hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+    hadoop_path = jvm.org.apache.hadoop.fs.Path(path)
+    reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(hadoop_conf, hadoop_path)
+    try:
+        return reader.getFooter().getBlocks().get(0).getColumns().get(0).getCodec().name()
+    finally:
+        reader.close()
+
+
+# Regression for https://github.com/NVIDIA/spark-rapids/issues/14905 — the GPU writer
+# must honor Iceberg's resolved codec (`write.parquet.compression-codec`, default zstd)
+# and ignore `spark.sql.parquet.compression.codec`, matching CPU Iceberg behavior.
+# The default branch (table property unset) is the key regression case: pre-fix the
+# GPU would silently use Spark's session codec instead of Iceberg's zstd default.
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+# Restricted to codecs whose footer metadata is reliable on small inputs. cuDF skips
+# compression for tiny row groups (rapidsai/cudf#14017), so codecs like snappy can leave
+# `UNCOMPRESSED` in the footer of small per-task files and make the assertion flaky;
+# zstd is the codec the issue is really about (Iceberg's default), so cover that and
+# the uncompressed identity case.
+@pytest.mark.parametrize("table_codec,expected_codec", [
+    (None, "zstd"),     # No override: Iceberg's default (zstd) must win on GPU too.
+    ("zstd", "zstd"),
+    ("uncompressed", "uncompressed")])
+def test_insert_into_table_honors_iceberg_compression_codec(
+        spark_tmp_table_factory, table_codec, expected_codec):
+    table_name = get_full_table_name(spark_tmp_table_factory)
+
+    extra_props = {"format-version": "2"}
+    if table_codec is not None:
+        extra_props["write.parquet.compression-codec"] = table_codec
+
+    def create_table(spark):
+        props = _build_tblprops(extra_props)
+        props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in props.items())
+        spark.sql(f"CREATE TABLE {table_name} (id int, name string) USING ICEBERG "
+                  f"TBLPROPERTIES ({props_sql})")
+
+    with_cpu_session(create_table)
+
+    # Set the Spark-level codec to something different from what Iceberg should resolve to;
+    # the pre-fix bug was that Spark's value leaked through and overrode Iceberg's choice.
+    leaky_codec = "snappy" if expected_codec != "snappy" else "uncompressed"
+    conf = copy_and_update(iceberg_write_enabled_conf,
+                           {"spark.sql.parquet.compression.codec": leaky_codec})
+
+    # cuDF skips compression for tiny row groups (see rapidsai/cudf#14017), so use
+    # enough rows that the codec actually appears in the footer column metadata.
+    with_gpu_session(
+        lambda spark: spark.sql(
+            f"INSERT INTO {table_name} SELECT id, CAST(id AS STRING) FROM range(20000)").collect(),
+        conf=conf)
+
+    def check_codecs(spark):
+        file_rows = spark.sql(f"SELECT file_path FROM {table_name}.files").collect()
+        assert len(file_rows) > 0, "no data files were written"
+        # Parquet's footer reports UNCOMPRESSED for the "uncompressed" Iceberg codec.
+        expected_footer = expected_codec.upper()
+        for row in file_rows:
+            actual = _read_parquet_codec(spark, row.file_path)
+            assert actual == expected_footer, \
+                f"expected codec {expected_footer} but file {row.file_path} used {actual}"
+
+    with_cpu_session(check_codecs)

@@ -134,7 +134,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     val outputWriterFactory = new GpuParquetFileFormat().prepareWrite(
       SparkSession.active,
       job,
-      writeProps.asScala.toMap,
+      GpuSparkWrite.translateIcebergWriteProperties(writeProps.asScala.toMap),
       dsSchema
     )
 
@@ -173,6 +173,20 @@ object GpuSparkWrite {
   def supports(cpuClass: Class[_ <: Write]): Boolean = {
     classOf[SparkWrite].isAssignableFrom(cpuClass)  ||
       classOf[SparkPositionDeltaWrite].isAssignableFrom(cpuClass)
+  }
+
+  // Iceberg already resolved the Parquet codec via its own precedence chain (write option
+  // > spark.sql.iceberg.compression-codec > table property > zstd) and stored the result
+  // under `write.parquet.compression-codec`. Spark's ParquetOptions only recognizes
+  // `compression` / `parquet.compression`, so without translation it falls through to
+  // `spark.sql.parquet.compression.codec` and silently overrides Iceberg's choice.
+  private[source] def translateIcebergWriteProperties(
+      writeProps: Map[String, String]): Map[String, String] = {
+    writeProps.get(TableProperties.PARQUET_COMPRESSION) match {
+      case Some(codec) if !writeProps.contains("compression") =>
+        writeProps + ("compression" -> codec)
+      case _ => writeProps
+    }
   }
 
   /**
