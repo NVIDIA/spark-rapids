@@ -19,7 +19,6 @@ from private_optimizer_common import (
     private_optimizer_conf,
     require_private_optimizer,
 )
-from spark_session import with_cpu_session
 
 
 @pytest.mark.private_optimizer
@@ -36,9 +35,8 @@ def test_optimize_skewed_bhj_join(spark_tmp_path):
     drops support the rule becomes a no-op and the marker assertion below fails
     loudly rather than passing silently.
 
-    Validated with a small GLOBAL aggregate over the materialized skewed join
-    (a GROUP BY on the skew key currently hits a known wrong-results bug, so we
-    deliberately do not group here)."""
+    Validated with a small GLOBAL aggregate over the materialized skewed join;
+    a GROUP BY on the skew key is intentionally avoided here."""
     conf_extra = {
         "spark.sql.adaptive.enabled": "true",
         "spark.sql.adaptive.skewJoin.enabled": "true",

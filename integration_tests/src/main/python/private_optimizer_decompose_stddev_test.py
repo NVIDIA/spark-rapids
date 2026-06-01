@@ -30,7 +30,9 @@ def test_decompose_stddev_pop():
     count(x) aliased as _stddev_*. variableFloatAgg keeps the rewritten
     Sum<double> on the GPU. Marker: a '_stddev_' intermediate alias."""
     def fn(spark):
-        df = spark.range(10000).selectExpr("CAST(id % 100 AS DOUBLE) AS x", "id % 10 AS g")
+        df = spark.range(10000).selectExpr(
+            "CASE WHEN id % 5 = 0 THEN NULL ELSE CAST(id % 100 AS DOUBLE) END AS x",
+            "id % 10 AS g")
         return df.groupBy("g").agg({"x": "stddev_pop"})
 
     base = {"spark.rapids.sql.variableFloatAgg.enabled": "true"}

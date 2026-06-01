@@ -32,6 +32,8 @@ rule actually fired, so every test built on these helpers does two things:
 See ``private_optimizer_README.md`` for how to add a new rule module.
 """
 
+import math
+
 import pytest
 
 from asserts import assert_equal, _sort_locally
@@ -106,7 +108,10 @@ def assert_rule_fires(fn, on_conf, off_conf, marker, physical=False, float_compa
             assert len(cr) == len(gr)
             for c, g in zip(cr, gr):
                 if isinstance(c, float):
-                    assert float_check(c, g), "off-CPU %s vs on-GPU %s" % (c, g)
+                    if math.isnan(c):
+                        assert math.isnan(g), "off-CPU nan vs on-GPU %s" % (g,)
+                    else:
+                        assert float_check(c, g), "off-CPU %s vs on-GPU %s" % (c, g)
                 else:
                     assert c == g, "off-CPU %s vs on-GPU %s" % (c, g)
     else:

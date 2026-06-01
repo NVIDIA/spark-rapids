@@ -100,12 +100,11 @@ reader).
 The default is a full row-by-row `OFF-CPU == ON-GPU` comparison. A reduced check
 (e.g. a small GLOBAL aggregate such as `count/min/max/sum` over the rule's
 output, instead of returning the joined rows) is acceptable when returning the
-full result is impractical *or* hits a separate known bug — for example the skew
-rule is validated with a global aggregate because a `GROUP BY` on the skew key
-currently triggers a known wrong-results defect. Even then, keep the plan-marker
-assertion: the aggregate proves data parity on the path that does work, the
-marker proves the rule actually ran. Do **not** weaken the marker check to make
-a test pass.
+full result is impractical — for example the skew rule is validated with a
+global aggregate over the materialized skewed join, intentionally avoiding a
+`GROUP BY` on the skew key. Even then, keep the plan-marker assertion: the
+aggregate proves data parity on the path that does work, the marker proves the
+rule actually ran. Do **not** weaken the marker check to make a test pass.
 
 ### Compatibility across Spark versions and runtimes
 
