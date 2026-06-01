@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -734,18 +734,17 @@ def test_formats_for_legacy_mode_other_formats_tz_rules():
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
-# Under LEGACY, Spark parses with SimpleDateFormat, which skips leading whitespace ([ \t]) before
-# every numeric field. So a multi-space date/time separator, a space/tab run after the separator,
-# and whitespace after ':' all parse to the same instant as a single space. The fixed inputs avoid
-# DST transitions so the result is unambiguous under any session timezone.
+# LEGACY parses with SimpleDateFormat, which skips leading [ \t] before every numeric field, so a
+# multi-space separator and whitespace after ':' parse the same as a single space. Inputs avoid DST
+# transitions so the instant is unambiguous in any session timezone.
 @disable_ansi_mode  # ANSI mode is tested separately.
 @tz_sensitive_test
 @pytest.mark.parametrize("input_str", [
-    "1999-12-31 11:59:59",     # single space (baseline, parses everywhere)
-    "1999-12-31  11:59:59",    # double space between date and time
-    "1999-12-31   11:59:59",   # triple space
-    "1999-12-31 \t 11:59:59",  # mixed space/tab run after the separator
-    "1999-12-31 11: 59: 59",   # whitespace after ':' before minute/second
+    "1999-12-31 11:59:59",
+    "1999-12-31  11:59:59",
+    "1999-12-31   11:59:59",
+    "1999-12-31 \t 11:59:59",
+    "1999-12-31 11: 59: 59",
 ], ids=idfn)
 def test_to_timestamp_legacy_multi_whitespace(input_str):
     assert_gpu_and_cpu_are_equal_collect(
