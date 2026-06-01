@@ -457,17 +457,27 @@ sealed abstract class GpuMetric extends Serializable {
       // Sum of descendants' companion deltas. Used for the companion update so
       // that SemWait fired inside a descendant's wrap is subtracted once (via
       // the descendant's companion delta) rather than twice.
+      //
+      // Invariant: when THIS metric has a companion (the `foreach` below runs),
+      // every excludeMetric also has a companion. excludeMetrics are descendant
+      // OP_TIME_NEW metrics, created from the same `allMetrics` map as this one,
+      // so the companion ("excl. SemWait") variant exists for all of them or
+      // none of them at a given metrics level. The `getOrElse(0L)` is therefore
+      // a defensive fallback that does not fire in that branch; it only returns
+      // 0 when this metric itself has no companion, in which case the companion
+      // update below is skipped entirely.
       val totalCompanionExcludeTime = excludeMetrics
         .zip(excludeCompanionMetricsWhenActivated)
         .map { case (metric, startValue) =>
           metric.companionGpuMetric.map(_.value - startValue).getOrElse(0L)
         }.sum
 
+      // SemWait that fired anywhere inside this wrap, task-global delta over the
+      // wrap. Subtracted from the companion so it reflects "excl. SemWait".
+      val semWaitDelta = GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated
+
       companionGpuMetric.foreach(c =>
-        c.add(duration
-          - (GpuTaskMetrics.get.getSemWaitTime() - semWaitTimeWhenActivated)
-          - totalCompanionExcludeTime
-        ))
+        c.add(duration - semWaitDelta - totalCompanionExcludeTime))
       semWaitTimeWhenActivated = 0L
       excludeMetricsWhenActivated = Seq.empty
       excludeCompanionMetricsWhenActivated = Seq.empty

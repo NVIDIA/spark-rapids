@@ -107,4 +107,30 @@ class GpuMetricCompanionSuite extends AnyFunSuite with BeforeAndAfterEach {
       s"companion must exclude parent COMPANION delta (expected 50), got ${gpC.value}")
     assert(gpC.value >= 0L, s"companion must be non-negative, got ${gpC.value}")
   }
+
+  test("companion exclude falls back to 0 when an excluded metric has no companion (#14901)") {
+    // Documents the `getOrElse(0L)` fallback in deactivateTimer. In production
+    // this branch does not fire: excludeMetrics are descendant OP_TIME_NEW
+    // metrics built from the same allMetrics map as the parent, so whenever the
+    // parent has a companion the descendants do too. This test pins the
+    // defensive behavior for the (not-expected) case where a child has none:
+    // the child's time is NOT subtracted from the parent companion (fallback 0),
+    // rather than crashing or mis-subtracting a raw delta.
+    val parent = new LocalGpuMetric
+    val parentCompanion = new LocalGpuMetric
+    parent.companionGpuMetric = Some(parentCompanion)
+
+    val childNoCompanion = new LocalGpuMetric // companionGpuMetric stays None
+
+    assert(parent.tryActivateTimer(Seq(childNoCompanion)))
+    childNoCompanion.add(100L)
+    parent.deactivateTimer(110L, Seq(childNoCompanion))
+
+    // raw still excludes the child's raw delta.
+    assert(parent.value == 10L, s"raw op_time expected 10, got ${parent.value}")
+    // companion subtracts 0 for the companion-less child (getOrElse(0L)): 110 - 0 - 0.
+    assert(parentCompanion.value == 110L,
+      s"companion-less child is not excluded from the parent companion (expected 110), " +
+        s"got ${parentCompanion.value}")
+  }
 }
