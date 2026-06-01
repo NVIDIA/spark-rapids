@@ -645,14 +645,23 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
   }
 
   /**
-   * Parse event logs into per-task (taskId -> summed "op time", executorRunTime),
-   * keyed by task so we can assert the per-task accounting invariant
-   * sum(op_time) <= executorRunTime that the write-path fixes (#14901) restore.
+   * Parse event logs into per-stage aggregates
+   * (stageId -> (sum of "op time" in ns, sum of executorRunTime in ms)).
+   *
+   * Aggregating per stage rather than per task is deliberate: "op time" is
+   * recorded in NANOSECONDS while Spark's "Executor Run Time" is truncated to
+   * MILLISECONDS. On a sub-millisecond task that mismatch alone makes
+   * sum(op_time) > executorRunTime (0.1 ms of ns-precision op_time vs a run
+   * time that floors to 0 ms) -- a granularity artifact, not an over-count.
+   * Summing both quantities over all tasks of a stage drowns that per-task
+   * rounding noise (bounded by ~1 ms per empty task) under the stage's real
+   * work (seconds), so the surviving signal is the structural bug-1 over-count
+   * the write-path fixes (#14901) restore.
    */
-  private def parseEventLogsPerTask(): Map[Long, (Long, Long)] = {
+  private def parseEventLogsPerStage(): Map[Int, (Long, Long)] = {
     implicit val formats: DefaultFormats.type = DefaultFormats
-    val opTimeByTask = mutable.Map[Long, Long]().withDefaultValue(0L)
-    val runTimeByTask = mutable.Map[Long, Long]()
+    val opTimeByStage = mutable.Map[Int, Long]().withDefaultValue(0L)
+    val runTimeByStage = mutable.Map[Int, Long]().withDefaultValue(0L)
 
     eventLogDir.listFiles()
       .filter(f => f.getName.endsWith(".inprogress") || !f.getName.contains("_tmp_"))
@@ -663,19 +672,19 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
             if ((json \ "Event").extractOpt[String].contains("SparkListenerTaskEnd")) {
               val taskInfo = json \ "Task Info"
               val taskMetrics = json \ "Task Metrics"
-              val taskId = EventLogJsonShims.extractLong(taskInfo \ "Task ID")
+              val stageId = (json \ "Stage ID").extractOpt[Int]
               val runTime = EventLogJsonShims.extractLong(taskMetrics \ "Executor Run Time")
-              (taskId, runTime) match {
-                case (Some(tId), Some(rt)) =>
-                  runTimeByTask(tId) = rt
+              (stageId, runTime) match {
+                case (Some(sId), Some(rt)) =>
+                  runTimeByStage(sId) = runTimeByStage(sId) + rt
                   (taskInfo \ "Accumulables").extract[List[JObject]].foreach { acc =>
                     val name = (acc \ "Name").extractOpt[String]
                     val value = (acc \ "Update").extractOpt[String]
                     (name, value) match {
-                      // "op time" is the per-operator op_time metric; sum all of them
-                      // (Insert + descendants) for the task.
+                      // "op time" is the per-operator op_time metric; sum all of
+                      // them (Insert + descendants) across the stage's tasks.
                       case (Some(n), Some(v)) if n == "op time" =>
-                        opTimeByTask(tId) = opTimeByTask(tId) + v.toLong
+                        opTimeByStage(sId) = opTimeByStage(sId) + v.toLong
                       case _ =>
                     }
                   }
@@ -687,7 +696,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
           }
         }
       }
-    runTimeByTask.map { case (tId, rt) => tId -> ((opTimeByTask(tId), rt)) }.toMap
+    runTimeByStage.map { case (sId, rt) => sId -> ((opTimeByStage(sId), rt)) }.toMap
   }
 
   test("write op_time stays within executorRunTime with empty partitions (#14901)") {
@@ -698,8 +707,16 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     // Keep the write partitions as-is so the empty ones survive to the write stage,
     // exercising the empty-partition `iterator.hasNext` path in executeTask.
     spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "false")
+    // Override the suite-wide tiny 64KB batch size: at 64KB the heavy
+    // transcendental project below is shattered into thousands of GPU
+    // micro-batches, dominating wall time with kernel-launch overhead. A normal
+    // batch size lets each non-empty partition process in one batch, so the
+    // test runs in a few seconds. The over-count being asserted is a structural
+    // ~2x ratio (the Insert re-counting its descendants), independent of batch
+    // size.
+    spark.conf.set("spark.rapids.sql.batchSizeBytes", "536870912")
 
-    val numRows = 2000000L
+    val numRows = 1000000L
     val numWritePartitions = 64
     val parquetOutputPath = new File(tempDir, "empty_part_write").getAbsolutePath
 
@@ -710,12 +727,11 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     // (project + filter) AFTER the shuffle so those operators are descendants
     // of the Insert inside the write stage. Pre-fix, GpuWriteFilesExec forwards
     // no excludeMetrics (bug 1) so the Insert op_time double-counts that
-    // project/filter work, pushing per-task sum(op_time) past executorRunTime.
-    // Heavy transcendental expression so the post-shuffle project carries a
-    // large share of the write stage's op_time; that makes the pre-fix
-    // double-count (Insert absorbing this descendant op_time) a ~2.5-3x
-    // over-count, well clear of the 1.5x detection threshold, while the
-    // post-fix value stays ~1x.
+    // project/filter work, pushing the write stage's sum(op_time) past its
+    // sum(executorRunTime). The heavy transcendental expression makes the
+    // post-shuffle project carry the dominant share of the write stage's
+    // op_time, so the pre-fix double-count lands at ~1.85-2x (measured),
+    // clear of the 1.5x detection threshold, while the post-fix value is ~1x.
     val heavy = (0 until 24)
       .map(i => s"sin(id + $i) * cos(id - $i) + sqrt(abs(id * 1.0 + $i)) + log(abs(id) + ${i + 1})")
       .mkString(" + ")
@@ -730,31 +746,43 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
 
     flushEventLogsByStoppingSpark()
 
-    val perTask = parseEventLogsPerTask()
-    assert(perTask.nonEmpty, "should find per-task records in event logs")
+    val perStage = parseEventLogsPerStage()
+    assert(perStage.nonEmpty, "should find per-stage records in event logs")
 
-    // The accounting invariant the write-path fixes restore: a task's summed
-    // op_time can never exceed its executor run time. Pre-fix, the Insert
-    // double-counts descendants (bug 1) and the empty-partition hasNext work
-    // accrues outside the Insert wrap (bug 2), pushing sum(op_time) well past
-    // executorRunTime for partition_id != 0 tasks. Allow a small margin for
-    // pipelined op timers that can overlap within a task.
+    // The accounting invariant the write-path fixes restore: within a stage,
+    // the summed op_time of all operators cannot exceed the stage's summed
+    // executor run time (each operator's op_time is a slice of its task's wall
+    // time). Pre-fix, GpuWriteFilesExec forwards no excludeMetrics (bug 1), so
+    // the Insert op_time double-counts the heavy post-shuffle project/filter
+    // that are its descendants -- the write stage's sum(op_time) lands at ~2x
+    // its sum(executorRunTime). Post-fix the descendants are excluded and the
+    // ratio drops to ~1x.
+    //
+    // Only stages that did non-trivial work (summed run time over the floor)
+    // are checked, so we never divide by a stage whose run time is dominated by
+    // millisecond-rounding noise. We additionally assert at least one such
+    // stage exists, so the test fails loudly (rather than vacuously passing) if
+    // the workload ever degrades to all-trivial stages on faster hardware.
     val marginFactor = 1.5
-    val violators = perTask.filter { case (_, (opNs, rtMs)) =>
-      opNs > (rtMs * 1000000L * marginFactor)
+    val stageRunTimeFloorMs = 200L
+    val meaningful = perStage.filter { case (_, (_, rtMs)) => rtMs >= stageRunTimeFloorMs }
+    assert(meaningful.nonEmpty,
+      s"expected at least one stage with >= $stageRunTimeFloorMs ms summed executorRunTime " +
+        s"to make the ratio check meaningful; per-stage run times (ms) were " +
+        s"${perStage.map { case (s, (_, rt)) => s -> rt }.toSeq.sorted}")
+
+    val violators = meaningful.filter { case (_, (opNs, rtMs)) =>
+      opNs.toDouble > rtMs.toDouble * 1000000.0 * marginFactor
     }
 
-    val tasksWithOpTime = perTask.count { case (_, (opNs, _)) => opNs > 0 }
-    assert(tasksWithOpTime > 0,
-      s"expected some tasks to record op_time; got ${perTask.size} tasks, none with op_time")
-
     if (violators.nonEmpty) {
-      val sample = violators.take(5).map { case (tId, (opNs, rtMs)) =>
-        f"task $tId: op_time=${opNs / 1e6}%.1f ms > executorRunTime=$rtMs ms"
+      val sample = violators.toSeq.sortBy(_._1).map { case (sId, (opNs, rtMs)) =>
+        f"stage $sId: sum(op_time)=${opNs / 1e6}%.0f ms vs sum(executorRunTime)=$rtMs ms " +
+          f"(${opNs / 1e6 / math.max(rtMs, 1L)}%.2fx)"
       }.mkString("; ")
-      fail(s"${violators.size}/${perTask.size} tasks have sum(op_time) exceeding " +
-        f"$marginFactor%.1fx executorRunTime, indicating write-path op_time over-count " +
-        s"(#14901 bug 1/2 not fixed). Examples: $sample")
+      fail(s"${violators.size}/${meaningful.size} stages have summed op_time exceeding " +
+        f"$marginFactor%.1fx summed executorRunTime, indicating write-path op_time " +
+        s"over-count (#14901 bug 1 not fixed). $sample")
     }
   }
 
