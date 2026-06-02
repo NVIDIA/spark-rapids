@@ -27,7 +27,7 @@ import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{AttributeSeq, Expression}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, UnsafeProjection}
 import org.apache.spark.sql.rapids.BridgeUnsafeProjection
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -131,6 +131,24 @@ case class GpuCpuBridgeExpression(
   @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =
     createEvaluationFunction()
 
+  // Attributes describing the bridge's input columns (one per gpuInput), carrying the declared
+  // data type and nullability so the UnsafeProjection below preserves null semantics.
+  @transient private lazy val inputAttrs: Seq[Attribute] = gpuInputs.zipWithIndex.map {
+    case (e, i) => AttributeReference(s"_bridge_in_$i", e.dataType, e.nullable)()
+  }
+
+  // Materialize the input ColumnarBatchRows as real UnsafeRows before evaluating the (often
+  // interpreted) CPU expression. ColumnarToRowIterator yields ColumnarBatchRows whose
+  // getArray/getMap return Spark ColumnarArray/ColumnarMap, and ColumnarArray.get(ordinal, dt)
+  // uses handleNull=false: a null nested element is read as a type default instead of null,
+  // which both corrupts results and trips cudf's host-vector null assertion. UnsafeProjection
+  // (codegen with interpreted fallback) copies the inputs into an UnsafeRow under isNullAt
+  // guards, so nested arrays become UnsafeArrayData (handleNull=true) and nulls are preserved --
+  // the same materialization GpuColumnarToRowExec already does via .map(toUnsafe). A fresh
+  // instance per call keeps the parallel evaluation path thread-safe.
+  private def makeInputToUnsafe(): UnsafeProjection =
+    UnsafeProjection.create(inputAttrs, inputAttrs)
+
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     val numRows = batch.numRows()
     if (numRows == 0) {
@@ -179,7 +197,7 @@ case class GpuCpuBridgeExpression(
       )
 
       // Delegate to evaluation function - ColumnarToRowIterator manages the batch lifecycle
-      evaluationFunction(rowIterator, numRows)
+      evaluationFunction(rowIterator.map(makeInputToUnsafe()), numRows)
     }
   }
   
@@ -285,7 +303,7 @@ case class GpuCpuBridgeExpression(
           // Time the actual CPU processing on this thread
           val processingStartTime = System.nanoTime()
           val result = try {
-            evaluationFunction(rowIterator, subBatchSize)
+            evaluationFunction(rowIterator.map(makeInputToUnsafe()), subBatchSize)
           } finally {
             val processingTime = System.nanoTime() - processingStartTime
             cpuBridgeProcessingTime.foreach(_.add(processingTime))

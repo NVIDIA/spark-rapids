@@ -80,114 +80,75 @@ object BridgeUnsafeProjection
   }
 
   /**
-   * Creates an optimized append function for the specific data type and nullability.
-   * Similar to how TypeConverter generates specialized functions, this avoids the overhead
-   * of evaluating the data type on every append operation.
-   * 
-   * This is SHARED code used by both:
-   * - InterpretedBridgeUnsafeProjection (when codegen fails)
-   * - GpuCpuBridgeExpression (for the existing interpreted evaluation path)
+   * Describes how to append a single non-null scalar value to a RapidsHostColumnBuilder.
+   * Single source of truth for scalar type dispatch, shared by both the interpreted append
+   * closures (createOptimizedAppendFunction) and the generated code
+   * (BridgeGenerateUnsafeProjection.generateBuilderAppendCode) so the two cannot drift.
+   *
+   * @param interp      appends a known-non-null boxed value at runtime (interpreted path)
+   * @param codegen     given an already-typed value var and a builder ref, returns the Java
+   *                    statement appending the known-non-null value (codegen path)
+   * @param objectTyped true if the value is a reference type that may itself be null
+   *                    (String/Binary/Decimal), which codegen must also guard on `value == null`
    */
-  def createOptimizedAppendFunction(dataType: DataType, 
-    nullable: Boolean): (Any, RapidsHostColumnBuilder) => Unit = {
+  case class ScalarAppender(
+      interp: (Any, RapidsHostColumnBuilder) => Unit,
+      codegen: (String, String) => String,
+      objectTyped: Boolean)
+
+  /**
+   * Returns the scalar appender for `dataType`, or None for NullType and nested types, which
+   * each path handles on its own (codegen: recursive direct-to-builder; interpreted:
+   * GpuRowToColumnConverter).
+   */
+  def scalarAppender(dataType: DataType): Option[ScalarAppender] = dataType match {
+    case BooleanType => Some(ScalarAppender(
+      (v, b) => b.append(v.asInstanceOf[Boolean]), (vv, br) => s"$br.append($vv);", false))
+    case ByteType => Some(ScalarAppender(
+      (v, b) => b.append(v.asInstanceOf[Byte]), (vv, br) => s"$br.append($vv);", false))
+    case ShortType => Some(ScalarAppender(
+      (v, b) => b.append(v.asInstanceOf[Short]), (vv, br) => s"$br.append($vv);", false))
+    case IntegerType | DateType | _: YearMonthIntervalType => Some(ScalarAppender(
+      (v, b) => b.append(v.asInstanceOf[Int]), (vv, br) => s"$br.append($vv);", false))
+    case LongType | TimestampType | _: DayTimeIntervalType => Some(ScalarAppender(
+      (v, b) => b.append(v.asInstanceOf[Long]), (vv, br) => s"$br.append($vv);", false))
+    case FloatType => Some(ScalarAppender(
+      (v, b) => b.append(v.asInstanceOf[Float]), (vv, br) => s"$br.append($vv);", false))
+    case DoubleType => Some(ScalarAppender(
+      (v, b) => b.append(v.asInstanceOf[Double]), (vv, br) => s"$br.append($vv);", false))
+    case StringType => Some(ScalarAppender(
+      (v, b) => b.appendUTF8String(v.asInstanceOf[UTF8String].getBytes),
+      (vv, br) => s"$br.appendUTF8String($vv.getBytes());", true))
+    case BinaryType => Some(ScalarAppender(
+      (v, b) => b.appendByteList(v.asInstanceOf[Array[Byte]]),
+      (vv, br) => s"$br.appendByteList($vv);", true))
+    case _: DecimalType => Some(ScalarAppender(
+      (v, b) => b.append(v.asInstanceOf[Decimal].toJavaBigDecimal),
+      (vv, br) => s"$br.append($vv.toJavaBigDecimal());", true))
+    case _ => None
+  }
+
+  /**
+   * Creates an optimized append function for the specific data type and nullability.
+   * Shared by InterpretedBridgeUnsafeProjection and GpuCpuBridgeExpression's interpreted path.
+   */
+  def createOptimizedAppendFunction(dataType: DataType,
+      nullable: Boolean): (Any, RapidsHostColumnBuilder) => Unit = {
     import com.nvidia.spark.rapids.GpuRowToColumnConverter
     import org.apache.spark.sql.catalyst.expressions.SpecificInternalRow
-    
-    dataType match {
-      // Primitive types - generate specialized functions
-      case BooleanType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Boolean])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Boolean])
-      
-      case ByteType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Byte])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Byte])
-      
-      case ShortType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Short])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Short])
-      
-      case IntegerType | DateType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Int])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Int])
-      
-      case LongType | TimestampType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Long])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Long])
-      
-      case FloatType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Float])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Float])
-      
-      case DoubleType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Double])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Double])
-      
-      case StringType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else {
-            val utf8String = value.asInstanceOf[UTF8String]
-            builder.appendUTF8String(utf8String.getBytes)
-          }
-        else (value: Any, builder: RapidsHostColumnBuilder) => {
-          val utf8String = value.asInstanceOf[UTF8String]
-          builder.appendUTF8String(utf8String.getBytes)
+
+    scalarAppender(dataType) match {
+      case Some(sa) =>
+        if (nullable) {
+          (value: Any, builder: RapidsHostColumnBuilder) =>
+            if (value == null) builder.appendNull() else sa.interp(value, builder)
+        } else {
+          (value: Any, builder: RapidsHostColumnBuilder) => sa.interp(value, builder)
         }
-      
-      case BinaryType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) {
-            builder.appendNull() 
-          } else {
-            builder.appendByteList(value.asInstanceOf[Array[Byte]])
-          }
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.appendByteList(value.asInstanceOf[Array[Byte]])
-      
-      case _: DecimalType =>
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) {
-            builder.appendNull() 
-          } else {
-            builder.append(value.asInstanceOf[Decimal].toJavaBigDecimal)
-          }
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Decimal].toJavaBigDecimal)
-      
-      case _: YearMonthIntervalType =>
-        // YearMonthIntervalType is stored as Int (number of months)
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Int])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Int])
-      
-      case _: DayTimeIntervalType =>
-        // DayTimeIntervalType is stored as Long (number of microseconds)
-        if (nullable) (value: Any, builder: RapidsHostColumnBuilder) => 
-          if (value == null) builder.appendNull() else builder.append(value.asInstanceOf[Long])
-        else (value: Any, builder: RapidsHostColumnBuilder) => 
-          builder.append(value.asInstanceOf[Long])
-      
-      case _ =>
-        // For complex types or unsupported types, fall back to TypeConverter
-        // Only pay the SpecificInternalRow overhead when we actually need it
+      case None =>
+        // Complex / NullType / unsupported types: fall back to GpuRowToColumnConverter.
         val converter = GpuRowToColumnConverter.getConverterForType(dataType, nullable)
         val resultRow = new SpecificInternalRow(Array(dataType))
-        
         (value: Any, builder: RapidsHostColumnBuilder) => {
           resultRow.update(0, value)
           converter.append(resultRow, 0, builder)
@@ -284,84 +245,46 @@ object BridgeGenerateUnsafeProjection extends
       isNullVar: String,
       builderRef: String): String = {
     
-    dataType match {
-      case BooleanType | ByteType | ShortType | IntegerType | DateType | 
-           LongType | TimestampType | FloatType | DoubleType | 
-           _: YearMonthIntervalType | _: DayTimeIntervalType =>
+    BridgeUnsafeProjection.scalarAppender(dataType) match {
+      case Some(sa) =>
         if (nullable) {
+          val pred = if (sa.objectTyped) s"$isNullVar || $valueVar == null" else isNullVar
           s"""
-             |if ($isNullVar) {
+             |if ($pred) {
              |  $builderRef.appendNull();
              |} else {
-             |  $builderRef.append($valueVar);
+             |  ${sa.codegen(valueVar, builderRef)}
              |}
            """.stripMargin
         } else {
-          s"$builderRef.append($valueVar);"
+          sa.codegen(valueVar, builderRef)
         }
-        
-      case StringType =>
-        if (nullable) {
-          s"""
-             |if ($isNullVar || $valueVar == null) {
-             |  $builderRef.appendNull();
-             |} else {
-             |  $builderRef.appendUTF8String($valueVar.getBytes());
-             |}
-           """.stripMargin
-        } else {
-          s"$builderRef.appendUTF8String($valueVar.getBytes());"
+
+      case None =>
+        dataType match {
+          case NullType =>
+            s"$builderRef.appendNull();"
+
+          case ArrayType(elementType, containsNull) =>
+            generateArrayAppendCode(ctx, elementType, containsNull, nullable, valueVar,
+              isNullVar, builderRef)
+
+          case structType: StructType =>
+            generateStructAppendCode(ctx, structType, nullable, valueVar, isNullVar, builderRef)
+
+          case MapType(keyType, valueType, valueContainsNull) =>
+            generateMapAppendCode(ctx, keyType, valueType, valueContainsNull, nullable,
+              valueVar, isNullVar, builderRef)
+
+          case _ =>
+            // This should never be reached due to canSupportDirectCodegen check
+            throw new UnsupportedOperationException(
+              s"Cannot generate direct append code for unsupported type: $dataType. " +
+              s"`canSupportDirectCodegen` check should have prevented this.")
         }
-        
-      case BinaryType =>
-        if (nullable) {
-          s"""
-             |if ($isNullVar || $valueVar == null) {
-             |  $builderRef.appendNull();
-             |} else {
-             |  $builderRef.appendByteList($valueVar);
-             |}
-           """.stripMargin
-        } else {
-          s"$builderRef.appendByteList($valueVar);"
-        }
-        
-      case _: DecimalType =>
-        if (nullable) {
-          s"""
-             |if ($isNullVar || $valueVar == null) {
-             |  $builderRef.appendNull();
-             |} else {
-             |  $builderRef.append($valueVar.toJavaBigDecimal());
-             |}
-           """.stripMargin
-        } else {
-          s"$builderRef.append($valueVar.toJavaBigDecimal());"
-        }
-      
-      case NullType =>
-        s"$builderRef.appendNull();"
-      
-      case ArrayType(elementType, containsNull) =>
-        generateArrayAppendCode(ctx, elementType, containsNull, nullable, valueVar, 
-          isNullVar, builderRef)
-        
-      case structType: StructType =>
-        generateStructAppendCode(ctx, structType, nullable, valueVar, isNullVar, builderRef)
-        
-      case MapType(keyType, valueType, valueContainsNull) =>
-        generateMapAppendCode(ctx, keyType, valueType, valueContainsNull, nullable, 
-          valueVar, isNullVar, builderRef)
-      
-      case _ =>
-        // This should never be reached due to canSupportDirectCodegen check
-        // But if it is, throw an exception that will trigger interpreted fallback
-        throw new UnsupportedOperationException(
-          s"Cannot generate direct append code for unsupported type: $dataType. " +
-          s"`canSupportDirectCodegen` check should have prevented this.")
     }
   }
-  
+
   private def generateArrayAppendCode(
       ctx: CodegenContext,
       elementType: DataType,
