@@ -747,10 +747,11 @@ class CudfRegexTranspiler(mode: RegexMode) {
     // for backrefs
     val replacement = repl.map(s => new RegexParser(s).parseReplacement(countCaptureGroups(regex)))
 
-    // Defensive fallback (#14926): the synthetic (\r\n)? group inserted at a `$` shifts the cuDF
-    // index of later source capture groups, but a user `$N` stays Java-numbered. Reject -> CPU
-    // rather than emit a wrong backref until the user-side remap lands.
-    replacement.foreach(rejectUserBackrefAfterEndAnchor(regex, _))
+    // Defensive fallback (#14926): a `$`/`\Z`/`\z` anchor becomes a synthetic (\r\n)? cuDF group,
+    // which both shifts the cuDF index of later source groups AND over-captures into the group
+    // that contains the anchor. A user `$N` stays Java-numbered/scoped, so reject -> CPU rather
+    // than emit a wrong backref until the user-side remap lands.
+    replacement.foreach(rejectUserBackrefToAnchorAffectedGroup(regex, _))
 
     // validate that the regex is supported by cuDF
     val cudfRegex = transpile(regex, extractIndex, replacement, None)
@@ -760,10 +761,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   /**
    * Reject (CPU fallback) a replacement whose user backref `$N` targets a source capture group
-   * positioned after a `$`/`\Z`/`\z` anchor, because the synthetic (\r\n)? group inserted there
-   * shifts that group's cuDF index while the user backref stays Java-numbered (#14926).
+   * whose cuDF capture is altered by the synthetic (\r\n)? group inserted at a `$`/`\Z`/`\z`
+   * anchor: either the group is emitted AFTER the anchor (its cuDF index is shifted) or the
+   * group CONTAINS the anchor (it over-captures the synthetic group). Either way the user
+   * backref, which stays Java-numbered/scoped, resolves to the wrong group or text on GPU.
+   * Full user-side remap tracked in #14926.
    */
-  private def rejectUserBackrefAfterEndAnchor(
+  private def rejectUserBackrefToAnchorAffectedGroup(
       regex: RegexAST, replacement: RegexReplacement): Unit = {
     val userRefs = scala.collection.mutable.Set.empty[Int]
     def collectUserRefs(ast: RegexAST): Unit = ast match {
@@ -775,21 +779,28 @@ class CudfRegexTranspiler(mode: RegexMode) {
       return
     }
 
+    // `$` and `(` inside a character class are literal, so character classes are skipped.
+    def containsEndAnchor(ast: RegexAST): Boolean = ast match {
+      case _: RegexCharacterClass => false
+      case RegexChar('$') | RegexEscaped('Z') | RegexEscaped('z') => true
+      case other => other.children().exists(containsEndAnchor)
+    }
+
     // Walk the source AST in capture-group order (pre-order, matching Java group numbering and
-    // the cuDF emit order) and record which source group indices appear after an end anchor.
+    // the cuDF emit order). A group is anchor-affected if it is emitted after an end anchor
+    // (index shift) or its own body contains an end anchor (over-capture).
     var srcGroupIdx = 0
     var seenEndAnchor = false
-    val shifted = scala.collection.mutable.Set.empty[Int]
+    val affected = scala.collection.mutable.Set.empty[Int]
     def walk(ast: RegexAST): Unit = ast match {
-      // `$` and `(` inside a character class are literal, not an anchor or a group
       case _: RegexCharacterClass =>
       case RegexChar('$') | RegexEscaped('Z') | RegexEscaped('z') =>
         seenEndAnchor = true
       case RegexGroup(capture, term, _) =>
         if (capture) {
           srcGroupIdx += 1
-          if (seenEndAnchor) {
-            shifted += srcGroupIdx
+          if (seenEndAnchor || containsEndAnchor(term)) {
+            affected += srcGroupIdx
           }
         }
         walk(term)
@@ -800,9 +811,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
     }
     walk(regex)
 
-    if (userRefs.exists(shifted.contains)) {
+    if (userRefs.exists(affected.contains)) {
       throw new RegexUnsupportedException(
-        "Backref to a capture group positioned after a line anchor ($) is not supported",
+        "Backref to a capture group affected by a line anchor ($) is not supported",
         regex.position)
     }
   }

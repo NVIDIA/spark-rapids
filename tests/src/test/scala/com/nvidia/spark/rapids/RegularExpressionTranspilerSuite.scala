@@ -139,26 +139,32 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
-  test("issue-14926: reject user backref to a capture group after a line anchor ($)") {
-    // The synthetic (\r\n)? group inserted at `$` shifts the cuDF index of source capture
-    // groups emitted after `$`, but a user $N is still Java-numbered. Until the user-side
-    // remap lands these must fall back to CPU rather than return wrong output (verified
-    // end-to-end CPU!=GPU on `(a$|b)(c)` + [$1][$2] before this guard).
-    val msg = "Backref to a capture group positioned after a line anchor"
-    // a source capture group sits after `$` and is referenced by the replacement
+  test("issue-14926: reject user backref to a capture group affected by a line anchor ($)") {
+    // A `$`/`\Z`/`\z` anchor becomes a synthetic (\r\n)? cuDF group, which both shifts the cuDF
+    // index of source groups emitted after `$` AND over-captures into the group that contains
+    // `$`. A user $N stays Java-numbered/scoped, so until the user-side remap lands these must
+    // fall back to CPU rather than return wrong output (verified end-to-end CPU!=GPU on
+    // `(a$|b)(c)` + [$1][$2] and `(a$|b)` + [$1] before this guard).
+    val msg = "Backref to a capture group affected by a line anchor"
+    // (a) a referenced source group is positioned AFTER `$`
     assertUnsupportedReplace("(a$|b)(c)", "[$1][$2]", msg)
     assertUnsupportedReplace("T$|(E)", "[$1]", msg)
     assertUnsupportedReplace("(?:T$|(E))", "[$1]", msg)
     assertUnsupportedReplace("$(a)", "[$1]", msg)
+    // (b) the referenced source group CONTAINS `$` (it over-captures the synthetic group)
+    assertUnsupportedReplace("(a$|b)", "[$1]", msg)
+    assertUnsupportedReplace("(foo$)", "[$1]", msg)
 
-    // NOT rejected: no capture group after `$` (all groups precede the anchor)
+    // NOT rejected: no anchor-affected group is referenced by the replacement
     assert(new CudfRegexTranspiler(RegexReplaceMode)
       .transpile("(foo)|(bar)$", None, Some("[$1][$2]"))._1.nonEmpty)
     assert(new CudfRegexTranspiler(RegexReplaceMode)
       .transpile("(a)(b)$", None, Some("[$1][$2]"))._1.nonEmpty)
-    // NOT rejected: a capture group is after `$`, but no user backref references it
+    // NOT rejected: anchor-affected groups exist but the replacement has no user backref
     assert(new CudfRegexTranspiler(RegexReplaceMode)
       .transpile("$(a)", None, Some("X"))._1.nonEmpty)
+    assert(new CudfRegexTranspiler(RegexReplaceMode)
+      .transpile("(a$|b)", None, Some("X"))._1.nonEmpty)
   }
 
   test("issue-14855: line-anchor $ rewrite emits correct backref index when capture groups " +

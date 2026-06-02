@@ -348,6 +348,30 @@ def test_re_replace_backrefs():
         ),
         conf=_regexp_conf)
 
+# issue #14926: a `$` line anchor becomes a synthetic (\r\n)? capture group; a user $N that
+# targets a group positioned after the anchor (index shifted) or a group containing the anchor
+# (over-captured) falls back to CPU instead of returning wrong output, until the user-side remap.
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_re_replace_backref_after_line_anchor_fallback():
+    data = [('T',), ('E',), ('T\n',)]
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame(data, 'a string').selectExpr(
+            'REGEXP_REPLACE(a, "T$|(E)", "[$1]")',
+            'REGEXP_REPLACE(a, "(?:T$|(E))", "[$1]")'),
+        'RegExpReplace',
+        conf=_regexp_conf)
+
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_re_replace_backref_to_group_containing_line_anchor():
+    # `$` is inside the captured group, so the group over-captures the synthetic (\r\n)? on GPU;
+    # like T$|(E) above this falls back to CPU (verified == CPU) rather than returning wrong text.
+    data = [('a',), ('a\n',), ('a\r\n',), ('b',), ('ba\n',)]
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame(data, 'a string').selectExpr(
+            'REGEXP_REPLACE(a, "(a$|b)", "[$1]")'),
+        'RegExpReplace',
+        conf=_regexp_conf)
+
 def test_re_replace_anchors():
     gen = mk_str_gen('.{0,2}TEST[\ud720 A]{0,5}TEST[\r\n\u0085\u2028\u2029]?') \
         .with_special_case("TEST") \
