@@ -69,7 +69,7 @@ def main():
         print("rsync command: %s" % rsync_command)
         subprocess.check_call(rsync_command, shell=True)
         # Keep the existing Jenkins JUnit publishing flow, which expects XML files in this directory.
-        copy_xml_command = "cp integration_tests/target/run_dir*/TEST-pytest-*.xml ./"
+        copy_xml_command = "cp integration_tests/target/run_dir*/TEST-pytest-*.xml ./ || true"
         print("copy xml command: %s" % copy_xml_command)
         subprocess.check_call(copy_xml_command, shell=True)
 
