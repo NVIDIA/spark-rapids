@@ -22,9 +22,15 @@ import params
 
 
 def get_test_report_path_prefix():
-    """Return the remote repo root whose integration_tests/target contains run_dir outputs."""
+    """Return the remote repo root whose integration_tests/target contains run_dir outputs.
+
+    Spark 4+ Databricks builds run from scala2.13/pom.xml, so run_pyspark_from_build.sh
+    writes run_dir* under spark-rapids/scala2.13/integration_tests/target. Spark 3.x
+    builds still use the root pom and write under spark-rapids/integration_tests/target.
+    """
     source_path = (params.jar_path if params.jar_path else "/home/ubuntu/spark-rapids").rstrip("/")
-    if params.base_spark_pom_version.startswith("4.") and not source_path.endswith("/scala2.13"):
+    if int(params.base_spark_pom_version.split(".", 1)[0]) >= 4 and \
+            not source_path.endswith("/scala2.13"):
         return "%s/scala2.13" % source_path
     return source_path
 
