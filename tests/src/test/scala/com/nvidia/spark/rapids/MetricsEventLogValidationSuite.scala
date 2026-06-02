@@ -737,26 +737,34 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       spark.conf.set("spark.sql.optimizer.plannedWrite.enabled", "false")
     }
 
-    val numRows = 1000000L
+    val numRows = 4000000L
     val numWritePartitions = 64
     val parquetOutputPath = new File(tempDir, "empty_part_write").getAbsolutePath
 
-    // The write stage itself must carry non-trivial descendant op_time for the
-    // bug to show: hash-repartition on a 4-value key into 64 partitions FIRST
-    // (leaving ~60 partitions EMPTY at the write stage -> exercises the
-    // empty-partition hasNext branch, bug 2), THEN do heavy GPU compute
-    // (project + filter) AFTER the shuffle so those operators are descendants
-    // of the Insert inside the write stage. Pre-fix the Insert op_time fails to
-    // exclude that project/filter work -- via missing excludeMetrics forwarding
-    // on the WriteFilesExec path (bug 1), or the AdaptiveSparkPlanExec match
-    // gap on the direct write path -- pushing the write stage's sum(op_time)
-    // past its sum(executorRunTime). The heavy transcendental expression makes
-    // the post-shuffle project carry the dominant share of the write stage's
-    // op_time, so the pre-fix double-count lands at ~1.85-2x (measured), clear
-    // of the 1.5x detection threshold, while the post-fix value is ~1x.
-    val heavy = (0 until 24)
-      .map(i => s"sin(id + $i) * cos(id - $i) + sqrt(abs(id * 1.0 + $i)) + log(abs(id) + ${i + 1})")
-      .mkString(" + ")
+    // The write stage must carry non-trivial descendant op_time for the bug to
+    // show: hash-repartition on a 4-value key into 64 partitions FIRST (leaving
+    // ~60 partitions EMPTY at the write stage -> exercises the empty-partition
+    // hasNext branch), THEN do heavy GPU compute AFTER the shuffle so it is a
+    // descendant of the Insert inside the write stage. Pre-fix the Insert
+    // op_time fails to exclude that descendant -- via missing excludeMetrics
+    // forwarding on the WriteFilesExec path, or the AdaptiveSparkPlanExec match
+    // gap on the direct write path -- so it double-counts the descendant and
+    // the write stage's sum(op_time) exceeds the 1.5x-of-sum(executorRunTime)
+    // detection threshold; post-fix the descendant is excluded and the ratio
+    // returns to ~1x.
+    //
+    // The op_time comes from a deep chain of UNARY transcendental functions,
+    // deliberately avoiding nested binary arithmetic. On Spark 3.4.x,
+    // BinaryArithmetic.dataType is an uncached `def` that evaluates BOTH
+    // children (SPARK-45071, fixed by a `lazy val` in 3.5.0), so a deeply
+    // nested arithmetic tree (e.g. a many-term `mkString(" + ")`) makes the
+    // analyzer pathologically slow -- observed never-completing analysis on
+    // 3.4.0 before any GPU work ran. Unary functions resolve dataType from
+    // their single child (linear), so a long unary chain stays cheap to
+    // analyze while still issuing one GPU kernel per layer.
+    val d = "cast(id AS double)"
+    val heavy = s"sin(cos(sqrt(abs(tan(sin(cos(sqrt(abs($d * 1.0e-3))))))))) " +
+      s"+ log(abs(sin(cos(sqrt(abs($d * 2.0e-3))))) + 1.0e0)"
     val df = spark.range(0, numRows, 1, 8)
       .selectExpr("id", "id % 4 as k")
       .repartition(numWritePartitions, $"k")
