@@ -259,10 +259,12 @@ def test_cpu_bridge_inner_join_post_filter_works():
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
-@allow_non_gpu('BroadcastHashJoinExec', 'BroadcastExchangeExec')
+@allow_non_gpu('Add')
 @ignore_order(local=True)
-def test_cpu_bridge_outer_join_fallback():
-    """Outer join with bridge expressions in condition should cause join fallback"""
+def test_cpu_bridge_outer_join_condition_works():
+    """Left outer join with a non-AST-able (bridged) condition runs on GPU: the bridged
+    sub-expressions are extracted into pre-join projections and the remaining comparison is
+    evaluated as the AST join condition (AstUtil.extractNonAstFromJoinCond)."""
     def test_func(spark):
         # Use small range with overlap to ensure matches
         left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=10)), 
@@ -273,8 +275,9 @@ def test_cpu_bridge_outer_join_fallback():
         left.createOrReplaceTempView("left_table")
         right.createOrReplaceTempView("right_table")
         
-        # Left outer join with disabled Add expressions in condition
-        # Should fall back: Outer joins require AST conversion for conditions
+        # Left outer join with disabled (bridged) Add expressions in the condition. The
+        # bridged sub-expressions are pulled into pre-join projections so the join itself
+        # stays on the GPU.
         return spark.sql("""
             SELECT /*+ BROADCAST(right_table) */ 
                    left_table.id, left_table.a, right_table.id as right_id, right_table.b
@@ -284,8 +287,7 @@ def test_cpu_bridge_outer_join_fallback():
         """)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    # Should fall back: Outer joins require AST conversion for conditions
-    assert_gpu_fallback_collect(test_func, 'BroadcastHashJoinExec', conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 @allow_non_gpu('Add')
 @ignore_order(local=True)
@@ -424,10 +426,12 @@ def test_cpu_bridge_inner_join_with_bridge_expressions_works():
     # Should work on GPU: Inner joins don't require AST for conditions
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-@allow_non_gpu('SortMergeJoinExec')
+@allow_non_gpu('Add')
 @ignore_order(local=True)
-def test_cpu_bridge_hash_join_left_outer_fallback():
-    """Left outer join with bridge expressions should cause fallback (may be SortMergeJoin or ShuffledHashJoin)"""
+def test_cpu_bridge_hash_join_left_outer_works():
+    """Non-broadcast left outer join with a non-AST-able (bridged) condition runs on GPU: the
+    bridged sub-expressions are extracted into pre-join projections and the remaining comparison
+    is evaluated as the AST join condition."""
     def test_func(spark):
         # Use medium range - not small enough for broadcast
         left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=100)), 
@@ -451,9 +455,7 @@ def test_cpu_bridge_hash_join_left_outer_fallback():
         """)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    # Should fall back: Outer joins require AST conversion for conditions
-    # Spark may choose SortMergeJoin or ShuffledHashJoin depending on configuration
-    assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 @allow_non_gpu('Add')
 @ignore_order(local=True)
