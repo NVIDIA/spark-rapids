@@ -722,14 +722,12 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     // Keep the write partitions as-is so the empty ones survive to the write stage,
     // exercising the empty-partition `iterator.hasNext` path in executeTask.
     spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "false")
-    // Override the suite-wide tiny 64KB batch size: at 64KB the heavy
-    // transcendental project below is shattered into thousands of GPU
-    // micro-batches, dominating wall time with kernel-launch overhead. A normal
-    // batch size lets each non-empty partition process in one batch, so the
-    // test runs in a few seconds. The over-count being asserted is a structural
-    // ~2x ratio (the Insert re-counting its descendants), independent of batch
-    // size.
-    spark.conf.set("spark.rapids.sql.batchSizeBytes", "536870912")
+    // Rely on the suite-wide small batch size (64KB, set in beforeEach): it
+    // splits the post-shuffle data into many GPU micro-batches, so the
+    // descendant project's per-batch kernel-launch op_time accumulates and
+    // dominates the write stage -- which is what makes the pre-fix Insert
+    // double-count clear the 1.3x threshold. A modest row count keeps the batch
+    // count (and wall time) small.
     if (forceLegacyWritePath) {
       // Spark 3.4+ inserts WriteFilesExec by default; disabling planned-write
       // routes the command through GpuFileFormatWriter.write instead. The config
@@ -737,7 +735,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       spark.conf.set("spark.sql.optimizer.plannedWrite.enabled", "false")
     }
 
-    val numRows = 4000000L
+    val numRows = 200000L
     val numWritePartitions = 64
     val parquetOutputPath = new File(tempDir, "empty_part_write").getAbsolutePath
 
@@ -749,22 +747,22 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     // op_time fails to exclude that descendant -- via missing excludeMetrics
     // forwarding on the WriteFilesExec path, or the AdaptiveSparkPlanExec match
     // gap on the direct write path -- so it double-counts the descendant and
-    // the write stage's sum(op_time) exceeds the 1.5x-of-sum(executorRunTime)
+    // the write stage's sum(op_time) exceeds the 1.3x-of-sum(executorRunTime)
     // detection threshold; post-fix the descendant is excluded and the ratio
     // returns to ~1x.
     //
-    // The op_time comes from a deep chain of UNARY transcendental functions,
-    // deliberately avoiding nested binary arithmetic. On Spark 3.4.x,
-    // BinaryArithmetic.dataType is an uncached `def` that evaluates BOTH
-    // children (SPARK-45071, fixed by a `lazy val` in 3.5.0), so a deeply
-    // nested arithmetic tree (e.g. a many-term `mkString(" + ")`) makes the
-    // analyzer pathologically slow -- observed never-completing analysis on
-    // 3.4.0 before any GPU work ran. Unary functions resolve dataType from
-    // their single child (linear), so a long unary chain stays cheap to
-    // analyze while still issuing one GPU kernel per layer.
+    // The project is a chain of UNARY transcendental functions, not nested
+    // binary arithmetic: on Spark 3.4.x BinaryArithmetic.dataType is an uncached
+    // `def` that evaluates BOTH children (SPARK-45071, fixed by a `lazy val` in
+    // 3.5.0), so a deeply nested arithmetic tree (e.g. a many-term
+    // `mkString(" + ")`) makes the analyzer pathologically slow -- never-
+    // completing analysis was observed on 3.4.0 before any GPU work ran. A
+    // unary function resolves its dataType from a single child (linear), so the
+    // chain is cheap to analyze on every shim while still issuing one GPU kernel
+    // per layer. sin/cos keep the value bounded in [-1, 1] so it neither
+    // overflows nor constant-folds.
     val d = "cast(id AS double)"
-    val heavy = s"sin(cos(sqrt(abs(tan(sin(cos(sqrt(abs($d * 1.0e-3))))))))) " +
-      s"+ log(abs(sin(cos(sqrt(abs($d * 2.0e-3))))) + 1.0e0)"
+    val heavy = (0 until 24).foldLeft(s"abs($d) * 1.0e-9") { (e, _) => s"sin(cos($e))" }
     val df = spark.range(0, numRows, 1, 8)
       .selectExpr("id", "id % 4 as k")
       .repartition(numWritePartitions, $"k")
@@ -792,7 +790,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     // millisecond-rounding noise. We additionally assert at least one such
     // stage exists, so the test fails loudly (rather than vacuously passing) if
     // the workload ever degrades to all-trivial stages on faster hardware.
-    val marginFactor = 1.5
+    val marginFactor = 1.3
     val stageRunTimeFloorMs = 200L
     val meaningful = perStage.filter { case (_, (_, rtMs)) => rtMs >= stageRunTimeFloorMs }
     assert(meaningful.nonEmpty,
