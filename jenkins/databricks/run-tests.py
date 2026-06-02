@@ -21,6 +21,14 @@ from clusterutils import ClusterUtils
 import params
 
 
+def get_test_report_path_prefix():
+    """Return the remote repo root whose integration_tests/target contains run_dir outputs."""
+    source_path = (params.jar_path if params.jar_path else "/home/ubuntu/spark-rapids").rstrip("/")
+    if params.base_spark_pom_version.startswith("4.") and not source_path.endswith("/scala2.13"):
+        return "%s/scala2.13" % source_path
+    return source_path
+
+
 def main():
     """Define main function."""
     master_addr = ClusterUtils.cluster_get_master_addr(params.workspace, params.clusterid, params.token)
@@ -45,16 +53,17 @@ def main():
     try:
         subprocess.check_call(ssh_command, shell=True)
     finally:
-        print("Copying test report tarball back")
-        if params.base_spark_pom_version.startswith("4."):
-            default_jar_path = "/home/ubuntu/spark-rapids/scala2.13"
-        else:
-            default_jar_path = "/home/ubuntu/spark-rapids"
-        report_path_prefix = params.jar_path if params.jar_path else default_jar_path
-        rsync_command = "rsync -I -Pave \"ssh %s\" ubuntu@%s:%s/integration_tests/target/run_dir*/TEST-pytest-*.xml ./" % \
-            (ssh_args, master_addr, report_path_prefix)
+        print("Copying test reports back")
+        report_target_path = "%s/integration_tests/target" % get_test_report_path_prefix()
+        subprocess.check_call("mkdir -p integration_tests/target", shell=True)
+        rsync_command = "rsync -I -Pave \"ssh %s\" ubuntu@%s:%s/run_dir* integration_tests/target/" % \
+            (ssh_args, master_addr, report_target_path)
         print("rsync command: %s" % rsync_command)
-        subprocess.check_call(rsync_command, shell = True)
+        subprocess.check_call(rsync_command, shell=True)
+        rsync_command = "rsync -I -Pave \"ssh %s\" ubuntu@%s:%s/integration_tests/target/run_dir*/TEST-pytest-*.xml ./" % \
+            (ssh_args, master_addr, get_test_report_path_prefix())
+        print("rsync command: %s" % rsync_command)
+        subprocess.check_call(rsync_command, shell=True)
 
 
 if __name__ == '__main__':

@@ -884,12 +884,12 @@ _BUCKET_TEST_LEFT_ROWS = 100_000
 _BUCKET_TEST_RIGHT_ROWS = 1_000_000
 
 def createBucketedTableAndJoin(spark, tbl_1, tbl_2):
-    # Keep this large enough to exercise bucketed joins, but small enough that the CPU
-    # sort/shuffle path stays stable when all reader configs run concurrently in CI.
-    spark.range(_BUCKET_TEST_LEFT_ROWS).write.bucketBy(_BUCKET_TEST_NUM_BUCKETS, "id") \
-        .sortBy("id").mode('overwrite').saveAsTable(tbl_1)
-    spark.range(_BUCKET_TEST_RIGHT_ROWS).write.bucketBy(_BUCKET_TEST_NUM_BUCKETS, "id") \
-        .sortBy("id").mode('overwrite').saveAsTable(tbl_2)
+    # Keep this large enough to exercise bucketed joins, while reducing CPU-side sort
+    # pressure. Both sides use the same bucket count so the bucketed join still applies.
+    (spark.range(_BUCKET_TEST_LEFT_ROWS).write.bucketBy(_BUCKET_TEST_NUM_BUCKETS, "id")
+        .sortBy("id").mode('overwrite').saveAsTable(tbl_1))
+    (spark.range(_BUCKET_TEST_RIGHT_ROWS).write.bucketBy(_BUCKET_TEST_NUM_BUCKETS, "id")
+        .sortBy("id").mode('overwrite').saveAsTable(tbl_2))
     bucketed_left = spark.table(tbl_1)
     bucketed_right = spark.table(tbl_2)
     return bucketed_left.join(bucketed_right, "id")
