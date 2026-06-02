@@ -62,14 +62,16 @@ def main():
         print("Copying test reports back")
         report_target_path = "%s/integration_tests/target" % get_test_report_path_prefix()
         subprocess.check_call("mkdir -p integration_tests/target", shell=True)
+        # Copy the full run directories because they contain more diagnostics than the
+        # JUnit XML files, such as Spark event logs and worker logs.
         rsync_command = "rsync -I -Pave \"ssh %s\" ubuntu@%s:%s/run_dir* integration_tests/target/" % \
             (ssh_args, master_addr, report_target_path)
         print("rsync command: %s" % rsync_command)
         subprocess.check_call(rsync_command, shell=True)
-        rsync_command = "rsync -I -Pave \"ssh %s\" ubuntu@%s:%s/integration_tests/target/run_dir*/TEST-pytest-*.xml ./" % \
-            (ssh_args, master_addr, get_test_report_path_prefix())
-        print("rsync command: %s" % rsync_command)
-        subprocess.check_call(rsync_command, shell=True)
+        # Keep the existing Jenkins JUnit publishing flow, which expects XML files in this directory.
+        copy_xml_command = "cp integration_tests/target/run_dir*/TEST-pytest-*.xml ./"
+        print("copy xml command: %s" % copy_xml_command)
+        subprocess.check_call(copy_xml_command, shell=True)
 
 
 if __name__ == '__main__':
