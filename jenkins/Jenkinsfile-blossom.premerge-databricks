@@ -119,7 +119,6 @@ pipeline {
                                     try {
                                         unstash('source_tree')
                                         databricksBuild()
-                                        error('TEMPORARY: fail after regular test run to validate debug bundle upload')
                                     } catch (e) {
                                         common.uploadDebugBundle(this, 'spark-rapids', "databricks-${DB_RUNTIME}")
                                         throw e

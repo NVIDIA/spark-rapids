@@ -204,7 +204,6 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                               sourceInclusionPattern: '**/*.java,**/*.scala',
                                               sourcePattern         : sourcePattern
                                         ])
-                                        error('TEMPORARY: fail after regular test run to validate debug bundle upload')
                                     } catch(e) {
                                         common.printJVMCoreDumps(this)
                                         common.uploadDebugBundle(this, 'spark-rapids', 'mvn-verify')
@@ -241,7 +240,6 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                         common.restoreM2Cache(this)
                                         common.prepareArtNetrc(this)
                                         sh "$PREMERGE_SCRIPT ci_2"
-                                        error('TEMPORARY: fail after regular test run to validate debug bundle upload')
                                     } catch(e) {
                                         common.printJVMCoreDumps(this)
                                         common.uploadDebugBundle(this, 'spark-rapids', 'ci-2')
@@ -278,7 +276,6 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                         common.restoreM2Cache(this)
                                         common.prepareArtNetrc(this)
                                         sh "$PREMERGE_SCRIPT ci_scala213"
-                                        error('TEMPORARY: fail after regular test run to validate debug bundle upload')
                                     } catch(e) {
                                         common.printJVMCoreDumps(this)
                                         common.uploadDebugBundle(this, 'spark-rapids', 'scala-213')
