@@ -241,38 +241,18 @@ object GpuProjectExec {
    * close its input.
    *
    * Takes ownership of `sb`. If the iterator is abandoned before the first
-   * next(), task completion closes `sb`.
+   * next(), task completion closes `sb` via the retry framework.
    */
   private[rapids] def runStreamingWithSplitRetry(
       sb: SpillableColumnarBatch,
       retryables: Seq[Retryable],
       runProject: ColumnarBatch => ColumnarBatch): Iterator[ColumnarBatch] = {
-    val retryIter = withRetry(sb, splitSpillableInHalfByRows) { spillable =>
+    withRetry(sb, splitSpillableInHalfByRows) { spillable =>
       retryables.foreach(_.checkpoint())
       withResource(spillable.getColumnarBatch()) { cb =>
         withRestoreOnRetry(retryables) {
           runProject(cb)
         }
-      }
-    }
-    new Iterator[ColumnarBatch] {
-      @volatile private var started = false
-      private val onClose = Option(TaskContext.get()).map { tc =>
-        onTaskCompletion(tc) {
-          if (!started) {
-            sb.close()
-          }
-        }
-      }
-
-      override def hasNext: Boolean = retryIter.hasNext
-
-      override def next(): ColumnarBatch = {
-        if (!started) {
-          started = true
-          onClose.foreach(_.removeCallback())
-        }
-        retryIter.next()
       }
     }
   }
