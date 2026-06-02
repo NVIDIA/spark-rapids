@@ -1305,9 +1305,11 @@ abstract class BaseExprMeta[INPUT <: Expression](
    */
   lazy val canSelfBeAst = {
     tagForAst()
-    // An expression cannot be AST if it cannot be replaced (disabled) or if it has
-    // AST-specific issues
-    canThisBeReplaced && cannotBeAstReasons.isEmpty
+    // An expression cannot be AST if it cannot be replaced (disabled), uses the CPU bridge
+    // (a GpuCpuBridgeExpression has no AST form), or if it has AST-specific issues. This must
+    // stay consistent with canThisBeAst so AstUtil extracts bridged sub-trees out of join
+    // conditions instead of trying to AST them.
+    canThisBeReplaced && !willUseGpuCpuBridge && cannotBeAstReasons.isEmpty
   }
 
   final def requireAstForGpu(): Unit = {
