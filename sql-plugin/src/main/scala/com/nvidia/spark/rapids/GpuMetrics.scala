@@ -141,6 +141,8 @@ object GpuMetric extends Logging {
   val BIG_JOIN_COUNT = "sizedBigJoin"
   val SYNC_READ_TIME = "shuffleSyncReadTime"
   val ASYNC_READ_TIME = "shuffleAsyncReadTime"
+  val ICEBERG_BUILD_ACTION_TIME = "icebergBuildActionTime"
+  val ICEBERG_POST_PROCESS_TIME = "icebergPostProcessTime"
 
   // Metric Descriptions.
   val DESCRIPTION_BUFFER_TIME = "buffer time"
@@ -155,7 +157,7 @@ object GpuMetric extends Logging {
   val DESCRIPTION_NUM_PARTITIONS = "partitions"
   val DESCRIPTION_OP_TIME_LEGACY = "op time (legacy)"
   val DESCRIPTION_OP_TIME_NEW = "op time"
-  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE = "op time (shuffle write partition & serial)"
+  val DESCRIPTION_OP_TIME_NEW_SHUFFLE_WRITE = "op time (shuffle write partitioning)"
   val DESCRIPTION_OP_TIME_NEW_SHUFFLE_READ = "op time (shuffle read)"
   val DESCRIPTION_COLLECT_TIME = "collect batch time"
   val DESCRIPTION_CONCAT_TIME = "concat batch time"
@@ -197,6 +199,8 @@ object GpuMetric extends Logging {
   val DESCRIPTION_BIG_JOIN_COUNT = "big joins"
   val DESCRIPTION_SYNC_READ_TIME = "sync read time"
   val DESCRIPTION_ASYNC_READ_TIME = "async read time"
+  val DESCRIPTION_ICEBERG_BUILD_ACTION_TIME = "iceberg build action tree time"
+  val DESCRIPTION_ICEBERG_POST_PROCESS_TIME = "iceberg post process time"
 
   /**
    * Determine if a GpuMetric wraps a TimingMetric or NanoTimingMetric.

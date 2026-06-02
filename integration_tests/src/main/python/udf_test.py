@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ from pyspark import BarrierTaskContext, TaskContext
 from conftest import is_at_least_precommit_run, is_databricks_runtime
 from spark_session import (is_before_spark_330, is_before_spark_331, is_before_spark_350,
                            is_databricks133_or_later, is_databricks143_or_later,
-                           is_spark_400_or_later)
+                           is_spark_400_or_later, is_spark_411_or_later)
 
 from pyspark.sql.pandas.utils import require_minimum_pyarrow_version, require_minimum_pandas_version
 
@@ -49,8 +49,18 @@ from typing import Iterator, Tuple
 arrow_udf_conf = {
     'spark.sql.execution.arrow.pyspark.enabled': 'true',
     'spark.rapids.sql.exec.WindowInPandasExec': 'true',
-    'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true'
+    # ArrowWindowPythonExec is the new name for WindowInPandasExec in Spark 4.1+
+    'spark.rapids.sql.exec.ArrowWindowPythonExec': 'true',
+    'spark.rapids.sql.exec.FlatMapCoGroupsInPandasExec': 'true',
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    'spark.sql.adaptive.enabled': 'false'
 }
+
+# From Spark 41x, Spark uses stricter checker by default,
+# this is a workaround solution to pass some cases,
+# e.g.: Int64 + Int64 can cause overflow, and thus fail when use stricter checker on Spark 411
+arrow_udf_conf_unsafe = copy_and_update(arrow_udf_conf,
+                                        {'spark.sql.execution.pandas.convertToArrowArraySafely': 'false'})
 
 data_gens_nested_for_udf = arrow_array_gens + arrow_struct_gens
 
@@ -70,7 +80,9 @@ def test_pandas_math_udf(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4).select(
                 my_udf(f.col('a'), f.col('b'))),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            # int64 + int64 can overflow when return type is long type
+            conf=arrow_udf_conf_unsafe)
 
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
@@ -83,7 +95,9 @@ def test_iterator_math_udf(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4).select(
                 my_udf(f.col('a'), f.col('b'))),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            # int64 + int64 can overflow when return type is long type
+            conf=arrow_udf_conf_unsafe)
 
 
 @pytest.mark.parametrize('data_gen', data_gens_nested_for_udf, ids=idfn)
@@ -138,7 +152,7 @@ def test_group_aggregate_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen)\
                     .groupBy('a')\
                     .agg(pandas_sum(f.col('b'))),
-            conf=arrow_udf_conf)
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
@@ -201,7 +215,8 @@ def test_window_aggregate_udf(data_gen, window):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: binary_op_df(spark, data_gen).select(
             pandas_sum(f.col('b')).over(window)),
-        conf=arrow_udf_conf)
+        # use unsafe mode to avoid overflow
+        conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order
@@ -270,7 +285,8 @@ def test_group_apply_udf(data_gen):
             lambda spark : binary_op_df(spark, data_gen)\
                     .groupBy('a')\
                     .applyInPandas(pandas_add, schema="a long, b long"),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
@@ -297,7 +313,8 @@ def test_map_apply_udf(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : binary_op_df(spark, data_gen, num_slices=4)\
                     .mapInPandas(pandas_filter, schema="a long, b long"),
-            conf=arrow_udf_conf)
+            # use unsafe mode to avoid overflow
+            conf=arrow_udf_conf_unsafe)
 
 
 @ignore_order(local=True)
@@ -504,4 +521,24 @@ def test_pandas_math_udf_with_rand():
         # Ensure there is only one partition to make the output comparable.
         lambda spark: unary_op_df(spark, int_gen, length=10, num_slices=1).select(
             my_udf(f.rand(42))),
-        conf=arrow_udf_conf)
+        conf=arrow_udf_conf_unsafe)
+
+
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_spark_411_or_later(),
+                    reason='iterator.DataFrame in group-map is supported from 4.1.X')
+def test_apply_in_pandas_iterator_basic():
+    # group_map udf accepts an iterator and returns an iterator
+    def sum_udf(batches: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
+        total = 0
+        for batch in batches:
+            total += batch["v"].sum()
+        yield pd.DataFrame({"v": [total]})
+
+    def test_func(spark):
+        df = spark.createDataFrame(
+            [(1, 11), (1, 22), (2, 33), (2, 55), (2, 100)], ("id", "v")
+        )
+        return df.groupby("id").applyInPandas(sum_udf, schema="v long")
+
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=arrow_udf_conf_unsafe)

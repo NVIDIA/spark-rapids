@@ -683,12 +683,6 @@ object TypeSig {
       UDT).nested()
 
   /**
-   * commonCudfTypes plus decimal, null and nested types.
-   */
-  val commonCudfTypesWithNested: TypeSig = (commonCudfTypes + DECIMAL_128 + NULL +
-      ARRAY + STRUCT + MAP).nested()
-
-  /**
    * Different types of Pandas UDF support different sets of output type. Please refer to
    *   https://github.com/apache/spark/blob/master/python/pyspark/sql/udf.py#L98
    * for more details.

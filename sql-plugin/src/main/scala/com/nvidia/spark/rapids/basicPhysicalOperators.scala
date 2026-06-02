@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.AssertUtils.assertInTests
 import com.nvidia.spark.rapids.DataTypeUtils.hasOffset
 import com.nvidia.spark.rapids.GpuMetric._
-import com.nvidia.spark.rapids.PreProjectSplitIterator.KEY_NUM_PRE_SPLIT
+import com.nvidia.spark.rapids.PreProjectSplitIterator.{KEY_NUM_PRE_SPLIT, PreSplitOutSizeEstimator}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRestoreOnRetry, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
@@ -37,9 +37,10 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
-import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, RangePartitioning, SinglePartition, UnknownPartitioning}
+import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, PartitioningCollection, RangePartitioning, SinglePartition, UnknownPartitioning}
 import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SampleExec, SparkPlan}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuCreateArray, GpuCreateMap, GpuCreateNamedStruct, GpuPartitionwiseSampledRDD, GpuPoissonSampler}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
@@ -162,6 +163,23 @@ object GpuProjectExec {
   def projectWithRetrySingleBatch(sb: SpillableColumnarBatch,
       boundExprs: Seq[Expression]): ColumnarBatch = {
 
+    // For retryable expressions, use split-retry: on GPU OOM, halve the input
+    // batch by rows and re-run on each half. This recovers from cuDF-internal
+    // scratch allocations that the pre-split estimator cannot see (e.g. regex
+    // / string-replace working memory).
+    //
+    // Mixed retryable + non-retryable projections fall through to the
+    // withRetryNoSplit path: non-retryable expressions are computed once on the
+    // full input batch and stitched row-by-row to the retryable results.
+    if (RapidsConf.PROJECT_SPLIT_RETRY_ENABLED.get(SQLConf.get) &&
+        boundExprs.forall(_.asInstanceOf[GpuExpression].retryable)) {
+      val retryables = GpuExpressionsUtils.collectRetryables(boundExprs)
+      // runWithSplitRetry takes ownership of the SpillableColumnarBatch; bump
+      // the ref count so the caller (which is responsible for closing `sb`,
+      // per this method's contract) doesn't double-close it.
+      return runWithSplitRetry(sb.incRefCount(), retryables, project(_, boundExprs))
+    }
+
     // First off we want to find/run all of the expressions that are not retryable,
     // These cannot be retried.
     val (retryableExprs, notRetryableExprs) = boundExprs.partition(
@@ -178,9 +196,9 @@ object GpuProjectExec {
     }
 
     withResource(snd) { snd =>
-      retryables.foreach(_.checkpoint())
       RmmRapidsRetryIterator.withRetryNoSplit {
-        val deterministicResults = withResource(sb.getColumnarBatch()) { cb =>
+        retryables.foreach(_.checkpoint())
+        val retryableResults = withResource(sb.getColumnarBatch()) { cb =>
           withRestoreOnRetry(retryables) {
             // For now we are just going to run all of these and deal with losing work...
             project(cb, retryableExprs)
@@ -188,18 +206,18 @@ object GpuProjectExec {
         }
         if (snd.isEmpty) {
           // We are done and the order should be the same so we don't need to do anything...
-          deterministicResults
+          retryableResults
         } else {
-          // There was a mix of deterministic and non-deterministic...
-          withResource(deterministicResults) { _ =>
+          // There was a mix of retryable and non-retryable expressions.
+          withResource(retryableResults) { _ =>
             withResource(snd.get.getColumnarBatch()) { nd =>
               var ndAt = 0
-              var detAt = 0
+              var retryableAt = 0
               val outputColumns = ArrayBuffer[ColumnVector]()
               boundExprs.foreach { expr =>
-                if (expr.deterministic) {
-                  outputColumns += deterministicResults.column(detAt)
-                  detAt += 1
+                if (expr.asInstanceOf[GpuExpression].retryable) {
+                  outputColumns += retryableResults.column(retryableAt)
+                  retryableAt += 1
                 } else {
                   outputColumns += nd.column(ndAt)
                   ndAt += 1
@@ -212,6 +230,132 @@ object GpuProjectExec {
       }
     }
   }
+
+  /**
+   * Run a retryable projection with row-split retry. On GPU OOM the retry
+   * framework calls splitSpillableInHalfByRows to halve the input batch and
+   * re-runs the projection on each half; sub-batches are concatenated back into
+   * a single output batch to preserve the single-batch contract of
+   * projectAndCloseWithRetrySingleBatch.
+   *
+   * Caller must ensure the projection driven by `runProject` is retryable.
+   * Non-deterministic expressions are safe here only when they implement
+   * Retryable and can restore their state for each split attempt.
+   *
+   * `runProject` receives a (non-spillable) ColumnarBatch and returns the
+   * projected ColumnarBatch. It must not close its input (the framework will).
+   *
+   * Takes ownership of `sb`: it is closed by the retry iterator when drained.
+   * If the caller does not want to surrender ownership, it must increment the
+   * ref count before calling.
+   */
+  private[rapids] def runWithSplitRetry(
+      sb: SpillableColumnarBatch,
+      retryables: Seq[Retryable],
+      runProject: ColumnarBatch => ColumnarBatch): ColumnarBatch = {
+    val resultIter = withRetry(sb, splitSpillableInHalfByRows) { spillable =>
+      retryables.foreach(_.checkpoint())
+      withResource(spillable.getColumnarBatch()) { cb =>
+        withRestoreOnRetry(retryables) {
+          runProject(cb)
+        }
+      }
+    }
+    val pieces = ArrayBuffer[ColumnarBatch]()
+    closeOnExcept(pieces) { _ =>
+      while (resultIter.hasNext) {
+        pieces += resultIter.next()
+      }
+    }
+    val spillablePieces = ArrayBuffer[SpillableColumnarBatch]()
+    closeOnExcept(pieces) { _ =>
+      closeOnExcept(spillablePieces) { _ =>
+        while (pieces.nonEmpty) {
+          val piece = pieces.remove(0)
+          val spillablePiece = closeOnExcept(piece) { _ =>
+            SpillableColumnarBatch(piece, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+          }
+          closeOnExcept(spillablePiece) { _ =>
+            spillablePieces += spillablePiece
+          }
+        }
+      }
+    }
+    withRetryNoSplit(spillablePieces.toSeq) { attempt =>
+      val batches = attempt.safeMap(_.getColumnarBatch()).toArray
+      val outputTypes = closeOnExcept(batches) { _ =>
+        GpuColumnVector.extractTypes(batches.head)
+      }
+      // Hand batches over to buildNonEmptyBatchFromTypes; it closes them in
+      // its own finally block, so do not wrap the concat call in closeOnExcept.
+      ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(batches, outputTypes)
+    }
+  }
+}
+
+/**
+ * Mirrors Spark's PartitioningPreservingUnaryExecNode trait behavior, which is used by
+ * operators like Project, Filter, and HashAggregate that don't change partitioning.
+ *
+ * Subclasses can override buildAttributeMap() to customize how input attributes
+ * are mapped to output attributes.
+ */
+trait GpuPartitioningPreservingUnaryExecNode extends ShimUnaryExecNode {
+
+  /**
+   * Builds a mapping from child output attributes to this operator's output attributes.
+   */
+  protected def buildAttributeMap(): Map[Attribute, Attribute] = {
+    child.output.zip(output).toMap
+  }
+
+  /**
+   * Compute output partitioning, handling PartitioningCollection from joins.
+   *
+   * This matches Spark's PartitioningPreservingUnaryExecNode behavior:
+   * 1. Flatten any PartitioningCollection into individual partitionings
+   * 2. Filter to only keep partitionings whose attributes are in the output
+   * 3. Remap attributes through aliases
+   *
+   * This is critical for Spark 4.1+ where UnionExec uses outputPartitioning
+   * to decide between partitioner-aware union vs concatenation.
+   */
+  final override def outputPartitioning: Partitioning = {
+    val attributeMap = buildAttributeMap()
+    val outputSet = AttributeSet(output)
+
+    // Flatten a PartitioningCollection into individual partitionings
+    def flattenPartitioning(p: Partitioning): Seq[Partitioning] = p match {
+      case PartitioningCollection(childPartitionings) =>
+        childPartitionings.flatMap(flattenPartitioning)
+      case other => Seq(other)
+    }
+
+    def remapPartitioning(p: Partitioning): Partitioning = p match {
+      case e: Expression =>
+        e.transform {
+          case a: Attribute if attributeMap.contains(a) => attributeMap(a)
+        }.asInstanceOf[Partitioning]
+      case other => other
+    }
+
+    val partitionings = flattenPartitioning(child.outputPartitioning).flatMap {
+      case e: Expression =>
+        // Only keep partitionings whose attributes are all in the output
+        val remapped = remapPartitioning(e.asInstanceOf[Partitioning])
+        remapped match {
+          case re: Expression if re.references.subsetOf(outputSet) => Some(remapped)
+          case _ => None
+        }
+      case other => Some(other)
+    }
+
+    partitionings match {
+      case Seq() => UnknownPartitioning(child.outputPartitioning.numPartitions)
+      case Seq(single) => single
+      case multiple => PartitioningCollection(multiple)
+    }
+  }
 }
 
 object GpuProjectExecLike {
@@ -222,7 +366,7 @@ object GpuProjectExecLike {
   }
 }
 
-trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
+trait GpuProjectExecLike extends GpuPartitioningPreservingUnaryExecNode with GpuExec {
 
   def projectList: Seq[Expression]
 
@@ -230,8 +374,6 @@ trait GpuProjectExecLike extends ShimUnaryExecNode with GpuExec {
     OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY))
 
   override def outputOrdering: Seq[SortOrder] = child.outputOrdering
-
-  override def outputPartitioning: Partitioning = child.outputPartitioning
 
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
@@ -315,17 +457,36 @@ object PreProjectSplitIterator {
   def getSplitUntilSize: Long = GpuDeviceManager.getSplitUntilSize
 
   def calcMinOutputSize(cb: ColumnarBatch, boundExprs: GpuTieredProject): Long = {
-    new PreSplitOutSizeEstimator(cb, boundExprs).calcMinOutputSize
+    new PreSplitOutSizeEstimator(cb, boundExprs).calcMinOutputSize()
   }
 
   class PreSplitOutSizeEstimator(cb: ColumnarBatch, tieredProject: GpuTieredProject) {
     assert(cb != null, "The input batch should not be null.")
 
-    def calcMinOutputSize: Long = {
-      val rows = cb.numRows()
-      tieredProject.outputExprs.map(oe =>
-        estimateExprMinSize(oe, rows, oe.nullable, Some(1))
-      ).sum
+    private var maxOffsetColumnSize = 0L
+    private var outputSize: Option[Long] = None
+
+    def calcMinOutputSize(): Long = {
+      if (outputSize.isEmpty) {
+        val rows = cb.numRows()
+        outputSize = Some(tieredProject.outputExprs.map(oe =>
+          estimateExprMinSize(oe, rows, oe.nullable, Some(1))
+        ).sum)
+      }
+      outputSize.get
+    }
+
+    // Return the max size of columns that have an offset buffer.
+    // e.g. array or string columns.
+    def getMaxOffsetColumnSize: Long = {
+      calcMinOutputSize() // make sure the calculation is done
+      maxOffsetColumnSize
+    }
+
+    private def updateOffsetColumnSize(newSize: Long): Unit = {
+      if (newSize > maxOffsetColumnSize) {
+        maxOffsetColumnSize = newSize
+      }
     }
 
     /**
@@ -372,7 +533,12 @@ object PreProjectSplitIterator {
             estimateExprMinSize(elem, rowsNum, elemNullable, childAmount)
           }.sum
         case glit: GpuLiteral =>
-          calcSizeForLiteral(glit.value, glit.dataType, rowsNum, nullable, exprAmount)
+          val ret = calcSizeForLiteral(glit.value, glit.dataType, rowsNum, nullable, exprAmount)
+          glit.dataType match {
+            case _: ArrayType | StringType | _: BinaryType => updateOffsetColumnSize(ret)
+            case _ => // noop
+          }
+          ret
         case otherExpr => // other cases
           val exprType = otherExpr.dataType
           // Get the actual size if it is just a pass-through column
@@ -629,7 +795,17 @@ class PreProjectSplitIterator(
   // of a SQL query. This is the highest level we can cache at without getting it
   // passed in from the Exec that instantiates this split iterator.
   // NOTE: this is overwritten by tests to trigger various corner cases
-  private lazy val splitUntilSize: Double = PreProjectSplitIterator.getSplitUntilSize.toDouble
+  private lazy val splitUntilSize = PreProjectSplitIterator.getSplitUntilSize
+
+  // The Java "ceilDiv" is introduced in JDK-18, so we create one ourselves for earlier
+  // versions, e.g. JDK-8 and JDK-11.
+  private def ceilDiv(a: Long, b: Long): Long = {
+    if (a % b == 0) {
+      a / b
+    } else {
+      a / b + 1
+    }
+  }
 
   /**
    * calcNumSplit will return the number of splits that we need for the input, in the case
@@ -643,10 +819,14 @@ class PreProjectSplitIterator(
     if (cb.numCols() == 0) {
       0 // rows-only batches should not be split
     } else {
-      val minOutputSize = PreProjectSplitIterator.calcMinOutputSize(cb, boundExprs)
+      val sizeEstimator = new PreSplitOutSizeEstimator(cb, boundExprs)
       // If the minimum size is too large we will split before doing the project, to help avoid
       // extreme cases where the output size is so large that we cannot split it afterwards.
-      math.max(1, math.ceil(minOutputSize / splitUntilSize).toInt)
+      val splitsForOut = math.max(1, ceilDiv(sizeEstimator.calcMinOutputSize(), splitUntilSize))
+      // Need to consider individual column size limit. If a cudf column has an
+      // offset buffer, its size should be <= Int.MaxValue (~2G). See
+      // https://github.com/NVIDIA/spark-rapids/issues/14099
+      math.max(splitsForOut, ceilDiv(sizeEstimator.getMaxOffsetColumnSize, Int.MaxValue)).toInt
     }
   }
 }
@@ -692,7 +872,14 @@ case class GpuProjectExec(
     val localEnablePreSplit = enablePreSplit
 
     val rdd = child.executeColumnar()
-    rdd.mapPartitions { iter =>
+    // Use mapPartitionsWithIndex (not mapPartitions) so that when a downstream
+    // coalesce/union wraps this RDD, our lambda fires once per parent partition
+    // with that parent's index. GpuNondeterministic expressions
+    // (spark_partition_id / monotonically_increasing_id / rand) are reseeded
+    // per parent partition so their values stay stable across coalesce/union
+    // (SPARK-14393, #14156).
+    rdd.mapPartitionsWithIndex { (partIndex, iter) =>
+      GpuNondeterministic.initializeAll(boundProjectList.exprTiers.flatten, partIndex)
       val maybeSplitIter = if (localEnablePreSplit) {
         new PreProjectSplitIterator(iter, boundProjectList, opTime, numPreSplit)
       } else {
@@ -900,17 +1087,27 @@ case class GpuProjectAstExec(
       // If all of the expressions are retryable we can just run everything and retry it
       // at the top level. If some things are not retryable we need to split them up and
       // do the processing in a way that makes it so retries are more likely to succeed.
-      val sbToClose = if (closeInputBatch) {
-        Some(sb)
+      if (RapidsConf.PROJECT_SPLIT_RETRY_ENABLED.get(SQLConf.get)) {
+        // Split-retry path: on GPU OOM, halve the input batch by rows and
+        // re-run the projection on each half. runWithSplitRetry takes
+        // ownership of the SpillableColumnarBatch and closes it; if the
+        // caller asked us not to close `sb`, increment the ref count to
+        // compensate.
+        val sbForRetry = if (closeInputBatch) sb else sb.incRefCount()
+        GpuProjectExec.runWithSplitRetry(sbForRetry, retryables, project(_))
       } else {
-        None
-      }
-      withResource(sbToClose) { _ =>
-        retryables.foreach(_.checkpoint())
-        RmmRapidsRetryIterator.withRetryNoSplit {
-          withResource(sb.getColumnarBatch()) { cb =>
-            withRestoreOnRetry(retryables) {
-              project(cb)
+        val sbToClose = if (closeInputBatch) {
+          Some(sb)
+        } else {
+          None
+        }
+        withResource(sbToClose) { _ =>
+          retryables.foreach(_.checkpoint())
+          RmmRapidsRetryIterator.withRetryNoSplit {
+            withResource(sb.getColumnarBatch()) { cb =>
+              withRestoreOnRetry(retryables) {
+                project(cb)
+              }
             }
           }
         }
@@ -1190,9 +1387,18 @@ case class GpuFilterExec(
     val rdd = child.executeColumnar()
     val boundCondition = GpuBindReferences.bindGpuReferencesTiered(Seq(condition), child.output,
       conf, allMetrics)
-    rdd.flatMap { batch =>
-      GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
-        numOutputBatches, opTime)
+    // Mirrors GpuProjectExec: mapPartitionsWithIndex (not flatMap) so that
+    // when a downstream coalesce/union wraps this RDD, our lambda fires once
+    // per parent partition with that parent's index. GpuNondeterministic
+    // expressions inside the filter condition (e.g. rand(seed)) are reseeded
+    // per parent partition so their values stay stable across coalesce/union
+    // (SPARK-14393, #14156).
+    rdd.mapPartitionsWithIndex { (partIndex, iter) =>
+      GpuNondeterministic.initializeAll(boundCondition.exprTiers.flatten, partIndex)
+      iter.flatMap { batch =>
+        GpuFilter.filterAndClose(batch, boundCondition, numOutputRows,
+          numOutputBatches, opTime)
+      }
     }
   }
 }
@@ -1581,6 +1787,9 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     }
   }
 
+  override def outputPartitioning: Partitioning =
+    GpuUnionExecShim.getOutputPartitioning(children, output, conf)
+
   // The smallest of our children
   override def outputBatching: CoalesceGoal =
     children.map(GpuExec.outputBatching).reduce(CoalesceGoal.minProvided)
@@ -1592,11 +1801,12 @@ case class GpuUnionExec(children: Seq[SparkPlan]) extends ShimSparkPlan with Gpu
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
 
-    sparkContext.union(children.map(_.executeColumnar())).map { batch =>
-      numOutputBatches += 1
-      numOutputRows += batch.numRows
-      batch
-    }
+    GpuUnionExecShim.unionColumnarRdds(
+      sparkContext,
+      children.map(_.executeColumnar()),
+      outputPartitioning,
+      numOutputRows,
+      numOutputBatches)
   }
 }
 

@@ -25,6 +25,7 @@ import org.apache.hadoop.fs.Path;
 
 import java.io.IOException;
 import java.util.Objects;
+import java.util.OptionalLong;
 
 /**
  * Implementation of {@link RapidsInputFile} using the Hadoop file system.
@@ -51,8 +52,18 @@ public class HadoopInputFile implements RapidsInputFile {
     }
 
     @Override
+    public String path() {
+        return filePath.toString();
+    }
+
+    @Override
     public long getLength() throws IOException {
         return fs.getFileStatus(this.filePath).getLen();
+    }
+
+    @Override
+    public OptionalLong getLastModificationTime() throws IOException {
+        return OptionalLong.of(fs.getFileStatus(this.filePath).getModificationTime());
     }
 
     @Override

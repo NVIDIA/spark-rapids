@@ -37,8 +37,8 @@ in a source-code level comment instead of the shared directories.
 
 ```scala
 /*** spark-rapids-shim-json-lines
-{"spark": "320"}
-{"spark": "323"}
+{"spark": "330"}
+{"spark": "331"}
 spark-rapids-shim-json-lines ***/
 ```
 
@@ -210,15 +210,15 @@ work on resolving potential compilation failures manually.
 
 ## Deleting a Shim
 
-Every Spark build is de-supported eventually. To drop a build say 320 you can run
+Every Spark build is de-supported eventually. To drop a build say 330 you can run
 
 ```bash
 mvn generate-sources -Dshimplify=true -Dshimplify.move=true \
-    -Dshimplify.remove.shim=320
+    -Dshimplify.remove.shim=330
 ```
 
-This command will remove the comment line `{"spark": "320"}` from all source files contributing to
-the 320 shim. If a file belongs exclusively to 320 it will be removed.
+This command will remove the comment line `{"spark": "330"}` from all source files contributing to
+the 330 shim. If a file belongs exclusively to 330 it will be removed.
 
 After adding or deleting shims you should sanity-check the diff in the local git repo and
 run the integration tests above.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,8 +24,11 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "358"}
 {"spark": "400"}
 {"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
@@ -33,13 +36,14 @@ import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar => CudfScalar}
 import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuColumnVector, GpuDeltaWrite, GpuExec, GpuMetric, GpuWrite}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.shims.DeltaInsertFilter
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{GpuProjectingColumnarBatch, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, INSERT_OPERATION, UPDATE_OPERATION}
+import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, UPDATE_OPERATION}
 import org.apache.spark.sql.catalyst.util.WriteDeltaProjections
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, DeltaWriter, PhysicalWriteInfoImpl, Write, WriterCommitMessage}
 import org.apache.spark.sql.errors.QueryExecutionErrors
@@ -230,31 +234,6 @@ case class GpuOverwriteByExpressionExec(
 }
 
 /**
- * Physical plan node for replacing data in a v2 table.
- *
- * Used by copy-on-write operations like DELETE to replace rows in the table.
- * Rows are read, filtered, and rewritten.
- */
-case class GpuReplaceDataExec(
-                               inner: SparkPlan,
-                               refreshCache: () => Unit,
-                               write: GpuWrite) extends GpuV2ExistingTableWriteExec {
-
-  override def supportsColumnar: Boolean = false
-
-  override def query: SparkPlan = inner
-
-  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    throw new IllegalStateException(
-      "GpuReplaceDataExec does not support columnar execution")
-  }
-
-  override protected def withNewChildInternal(newChild: SparkPlan): GpuReplaceDataExec = {
-    copy(inner = newChild)
-  }
-}
-
-/**
  * Physical plan node for writing delta (position deletes) in a v2 table.
  *
  * Used by merge-on-read operations like DELETE to write position delete files.
@@ -418,7 +397,7 @@ case class GpuDeltaWritingSparkTask(
           }
         }
 
-        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        val insertFilter = DeltaInsertFilter.filterInsertRows(batch)
         withResource(insertFilter) { _ =>
           withResource(rowProjection.project(batch)) { rows =>
             val filteredRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
@@ -509,7 +488,7 @@ case class GpuDeltaWithMetadataWritingSparkTask(
       }
 
       if (rowProjection != null) {
-        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        val insertFilter = DeltaInsertFilter.filterInsertRows(batch)
         withResource(insertFilter) { _ =>
           withResource(rowProjection.project(batch)) { rows =>
             val filterRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)

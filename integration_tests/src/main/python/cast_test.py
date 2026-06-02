@@ -791,18 +791,24 @@ def test_cast_integral_to_day_time_interval_overflow(large_day, integral_type):
 
 @pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
 def test_cast_integral_to_day_time_side_effect():
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf = {'spark.sql.adaptive.enabled': 'false'}
     def getDf(spark):
         # INT_MAX > 106751991 (max value of interval day)
         return spark.createDataFrame([(True, INT_MAX, LONG_MAX), (False, 0, 0)], "c_b boolean, c_i int, c_l long").repartition(1)
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: getDf(spark).selectExpr("if(c_b, interval 0 day, cast(c_i as interval day))", "if(c_b, interval 0 second, cast(c_l as interval second))"))
+        lambda spark: getDf(spark).selectExpr("if(c_b, interval 0 day, cast(c_i as interval day))", "if(c_b, interval 0 second, cast(c_l as interval second))"),
+        conf=conf)
 
 @pytest.mark.skipif(is_before_spark_330(), reason='casting between interval and integral is not supported before Pyspark 3.3.0')
 def test_cast_day_time_to_integral_side_effect():
+    # Disable AQE temporarily until https://github.com/NVIDIA/spark-rapids/issues/14319 is resolved.
+    conf = {'spark.sql.adaptive.enabled': 'false'}
     def getDf(spark):
         # 106751991 > Byte.MaxValue
         return spark.createDataFrame([(True, MAX_DAY_TIME_INTERVAL), (False, (timedelta(microseconds=0)))], "c_b boolean, c_dt interval day to second").repartition(1)
-    assert_gpu_and_cpu_are_equal_collect(lambda spark: getDf(spark).selectExpr("if(c_b, 0, cast(c_dt as byte))", "if(c_b, 0, cast(c_dt as short))", "if(c_b, 0, cast(c_dt as int))"))
+    assert_gpu_and_cpu_are_equal_collect(lambda spark: getDf(spark).selectExpr("if(c_b, 0, cast(c_dt as byte))", "if(c_b, 0, cast(c_dt as short))", "if(c_b, 0, cast(c_dt as int))"),
+                                         conf=conf)
 
 def test_cast_binary_to_string():
     assert_gpu_and_cpu_are_equal_collect(lambda spark: unary_op_df(spark, binary_gen).selectExpr("a", "CAST(a AS STRING) as str"))
@@ -932,7 +938,7 @@ def test_cast_string_to_timestamp_valid():
             'str_col string')
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
-        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase()
         return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: _query(spark))
@@ -985,7 +991,7 @@ def test_cast_string_to_timestamp_just_time_ANSI_OFF():
 
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
-        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase()
         return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
 
     assert_gpu_and_cpu_are_equal_collect(lambda spark: _query(spark))
@@ -1020,7 +1026,7 @@ def test_cast_string_to_timestamp_valid_just_time_with_timezone():
 
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
-        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase()
         return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
 
     assert_gpu_and_cpu_are_equal_collect(
@@ -1149,7 +1155,7 @@ def test_cast_string_to_timestamp_invalid_ANSI_OFF():
             'str_col string')
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
-        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase()
         return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
 
     assert_gpu_and_cpu_are_equal_collect(
@@ -1164,7 +1170,7 @@ def test_cast_string_to_timestamp_invalid_ansi_enabled(invalid_item):
             'str_col string')
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
-        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase()
         return _gen_df(spark).selectExpr("cast(str_col as timestamp)")
 
     assert_gpu_and_cpu_error(
@@ -1207,7 +1213,7 @@ def test_cast_string_to_timestamp_const_format_ANSI_OFF(pattern):
     gen = [("str_col", StringGen(pattern))]
     def _query(spark):
         # depends on the timezone info in `GpuTimeZoneDB`, load first
-        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase(2200)
+        spark._jvm.com.nvidia.spark.rapids.jni.GpuTimeZoneDB.cacheDatabase()
         return gen_df(spark, gen).selectExpr("cast(str_col as timestamp)")
 
     assert_gpu_and_cpu_are_equal_collect(

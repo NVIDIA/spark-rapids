@@ -22,7 +22,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.jni.{Arithmetic, CastStrings, RoundMode}
+import com.nvidia.spark.rapids.jni.{Arithmetic, CastStrings, ExceptionWithRowIndex, RoundMode}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
@@ -77,6 +77,24 @@ case class GpuBin(child: Expression) extends GpuUnaryExpression
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {
     CastStrings.fromLongToBinary(input.getBase)
+  }
+}
+
+case class GpuHex(child: Expression) extends GpuUnaryExpression with Serializable {
+  // Preserve the input StringType (including collation) for string inputs,
+  // matching Spark's Hex.dataType behavior.
+  override def dataType: DataType = child.dataType match {
+    case st: StringType => st
+    case _ => StringType
+  }
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    child.dataType match {
+      case LongType =>
+        CastStrings.fromIntegersWithBase(input.getBase, 16)
+      case _: StringType | BinaryType =>
+        CastStrings.bytesToHex(input.getBase)
+    }
   }
 }
 
@@ -225,7 +243,7 @@ case class GpuCeil(child: Expression, outputType: DataType)
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
                 throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
-                  input.getBase, outOfBounds, dt, outputType
+                  input.getBase, outOfBounds, outputType
                 )
               }
             }
@@ -301,7 +319,7 @@ case class GpuFloor(child: Expression, outputType: DataType)
             withResource(outOfBounds.any()) { isAny =>
               if (isAny.isValid && isAny.getBoolean) {
                 throw RoundingErrorUtil.cannotChangeDecimalPrecisionError(
-                  input.getBase, outOfBounds, dt, outputType
+                  input.getBase, outOfBounds, outputType
                 )
               }
             }
@@ -497,15 +515,6 @@ object GpuHypot {
     }
   }
 
-  def eitherNull(x: ColumnVector,
-                 y: ColumnVector): ColumnVector = {
-    withResource(x.isNull) { xIsNull =>
-      withResource(y.isNull) { yIsNull =>
-        xIsNull.or(yIsNull)
-      }
-    }
-  }
-
   def computeHypot(x: ColumnVector, y: ColumnVector): ColumnVector = {
     val yOverXSquared = withResource(y.div(x)) { yOverX =>
       yOverX.mul(yOverX)
@@ -572,11 +581,7 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
       }
 
       withResource(infOrRest) { _ =>
-        withResource(Scalar.fromNull(x.getType)) { nullS =>
-          withResource(GpuHypot.eitherNull(x, y)) { eitherNull =>
-            eitherNull.ifElse(nullS, infOrRest)
-          }
-        }
+        infOrRest.mergeAndSetValidity(BinaryOp.BITWISE_AND, x, y)
       }
     }
   }
@@ -611,7 +616,11 @@ abstract class CudfBinaryMathExpression(name: String) extends CudfBinaryExpressi
 }
 
 // Due to SPARK-39226, the dataType of round-like functions differs by Spark versions.
-abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: DataType)
+abstract class GpuRoundBase(
+    child: Expression,
+    scale: Expression,
+    outputType: DataType,
+    val ansiEnabled: Boolean)
   extends GpuBinaryExpressionArgsAnyScalar with Serializable with ImplicitCastInputTypes {
 
   override def left: Expression = child
@@ -696,7 +705,17 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
         }
       }
     } else {
-      Arithmetic.round(lhs, scale, roundMode)
+      try {
+        Arithmetic.round(lhs, scale, roundMode, ansiEnabled)
+      } catch {
+        // ANSI mode throws ExceptionWithRowIndex if overflow would occur
+        case rowException: ExceptionWithRowIndex =>
+          val errorRowIndex = rowException.getRowIndex
+          val inputValue = ColumnViewUtils.getElementStringFromColumnView(lhs, errorRowIndex)
+          throw new ArithmeticException(
+            s"Rounding $inputValue to scale $scale with mode $roundMode caused " +
+              s"overflow in ANSI mode")
+      }
     }
   }
 
@@ -804,13 +823,21 @@ abstract class GpuRoundBase(child: Expression, scale: Expression, outputType: Da
   }
 }
 
-case class GpuBRound(child: Expression, scale: Expression, outputType: DataType) extends
-  GpuRoundBase(child, scale, outputType) {
+case class GpuBRound(
+    child: Expression,
+    scale: Expression,
+    outputType: DataType,
+    override val ansiEnabled: Boolean) extends
+  GpuRoundBase(child, scale, outputType, ansiEnabled) {
   override def roundMode: RoundMode = RoundMode.HALF_EVEN
 }
 
-case class GpuRound(child: Expression, scale: Expression, outputType: DataType) extends
-  GpuRoundBase(child, scale, outputType) {
+case class GpuRound(
+    child: Expression,
+    scale: Expression,
+    outputType: DataType,
+    override val ansiEnabled: Boolean) extends
+  GpuRoundBase(child, scale, outputType, ansiEnabled) {
   override def roundMode: RoundMode = RoundMode.HALF_UP
 }
 
@@ -830,28 +857,30 @@ object RoundingErrorUtil {
   /**
    * Wrapper of the `cannotChangeDecimalPrecisionError` of RapidsErrorUtils.
    *
+   * Uses `Decimal(BigDecimal)` so the value's natural precision is preserved; the
+   * `(value, p, s)` constructor caps precision at 38 and would itself throw
+   * "Decimal precision N exceeds max precision 38" exactly when the overflow value
+   * already exceeds 38 digits, swallowing the intended overflow message.
+   *
    * @param values A decimal column which contains values that try to cast.
    * @param outOfBounds A boolean column that indicates which value cannot be casted.
    * Users must make sure that there is at least one `true` in this column.
-   * @param fromType The current decimal type.
    * @param toType The type to cast.
    * @param context The error context, default value is "".
    */
   def cannotChangeDecimalPrecisionError(
       values: ColumnView,
       outOfBounds: ColumnView,
-      fromType: DecimalType,
       toType: DecimalType,
       context: String = ""): ArithmeticException = {
-    val row_id = withResource(outOfBounds.copyToHost()) {hcv =>
-      (0.toLong until outOfBounds.getRowCount)
+    val rowId = withResource(outOfBounds.copyToHost()) { hcv =>
+      (0L until outOfBounds.getRowCount)
         .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
         .get
     }
-    val value = withResource(values.copyToHost()){hcv =>
-      hcv.getBigDecimal(row_id)
+    val value = withResource(values.getScalarElement(rowId.toInt)) { s =>
+      s.getBigDecimal
     }
-    RapidsErrorUtils.cannotChangeDecimalPrecisionError(
-      Decimal(value, fromType.precision, fromType.scale), toType)
+    RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(value), toType)
   }
 }

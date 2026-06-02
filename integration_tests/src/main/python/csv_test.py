@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -720,3 +720,13 @@ def test_csv_read_gbk_encoded_data(std_input_path):
             .schema("name string, age int, city string, job string")
             .csv(std_input_path + "/test_gbk.csv"),
         conf={"spark.sql.legacy.javaCharsets": legacy_charset})
+
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_csv_read_blank_lines_with_control_chars(std_input_path, v1_enabled_list):
+    """Verify that lines consisting only of control characters (<= 0x20) are filtered out,
+    matching Spark CPU behavior (CSVExprUtils.filterCommentAndEmpty uses String.trim)."""
+    data_path = std_input_path + '/blank-control-chars.csv'
+    schema = StructType([StructField('col1', StringType())])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).option('header', 'true').csv(data_path),
+        conf={'spark.sql.sources.useV1SourceList': v1_enabled_list})

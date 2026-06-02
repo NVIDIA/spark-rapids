@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package org.apache.iceberg.spark.functions
 
 import scala.util.Try
 
-import com.nvidia.spark.rapids.iceberg.fieldIndex
+import com.nvidia.spark.rapids.iceberg.findFieldIndex
 import org.apache.iceberg.Schema
 import org.apache.iceberg.transforms.Transform
 
@@ -60,6 +60,10 @@ case class GpuTruncate(width: Int) extends GpuTransform {
     GpuTruncateExpression.isSupportedValueType(inputType)
 }
 
+case object GpuIdentity extends GpuTransform {
+  override def support(inputType: DataType, nullable: Boolean): Boolean = true
+}
+
 object GpuTransform {
   def apply(transform: String): GpuTransform = {
     if (transform.startsWith("bucket")) {
@@ -76,6 +80,8 @@ object GpuTransform {
     } else if (transform.startsWith("truncate")) {
       val width = transform.substring("truncate[".length, transform.length - 1).toInt
       GpuTruncate(width)
+    } else if (transform.startsWith("identity")) {
+      GpuIdentity
     } else {
       throw new IllegalArgumentException(s"Unsupported transform: $transform")
     }
@@ -94,9 +100,16 @@ object GpuTransform {
 
 case class GpuFieldTransform(sourceFieldId: Int, transform: GpuTransform) {
   def supports(inputType: StructType, inputSchema: Schema): Boolean = {
-    val fieldIdx = fieldIndex(inputSchema, sourceFieldId)
-    val sparkField = inputType.fields(fieldIdx)
-    transform.support(sparkField.dataType, sparkField.nullable)
+    // Iceberg allows partition source fields to reference nested-leaf field ids
+    // (e.g. `bucket(4, contact.email)`). Those ids do not appear in
+    // `schema.columns()` (top level only), so an Option-returning lookup lets
+    // us refuse GPU and fall back to CPU instead of throwing.
+    findFieldIndex(inputSchema, sourceFieldId) match {
+      case Some(idx) =>
+        val sparkField = inputType.fields(idx)
+        transform.support(sparkField.dataType, sparkField.nullable)
+      case None => false
+    }
   }
 }
 

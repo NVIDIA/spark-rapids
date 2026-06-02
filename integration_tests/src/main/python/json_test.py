@@ -1118,6 +1118,28 @@ _to_json_datagens=[byte_gen,
 # We need to explicitly specify the format for Spark 400
 _gpu_supported_timestamp_format_conf = {'timestampFormat': "yyyy-MM-dd'T'HH:mm:ss[.SSS][XXX]"}
 
+@pytest.mark.parametrize('data_gen', [int_gen, date_gen], ids=idfn)
+def test_structs_to_json_without_timestamp_non_utc_timezone(spark_tmp_path, data_gen):
+    struct_gen = StructGen([
+        ('a', data_gen),
+        ("b", ArrayGen(data_gen, nullable=True)),
+        ("c", MapGen(StringGen('[A-Z]{1,10}', nullable=False), data_gen, nullable=True)),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    options = { 'timeZone': 'PRC' }
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.select(f.to_json("my_struct", options).alias("ms"))
+
+    conf = copy_and_update(_enable_all_types_conf,
+        { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : struct_to_json(spark),
+        conf=conf)
+
 @pytest.mark.parametrize('data_gen', _to_json_datagens, ids=idfn)
 @pytest.mark.parametrize('ignore_null_fields', [True, False])
 @pytest.mark.parametrize('timezone', [
@@ -1253,6 +1275,58 @@ def test_structs_to_json_fallback_timezone(data_gen, timezone):
     def struct_to_json(spark):
         df = gen_df(spark, gen)
         return df.withColumn("my_json", f.to_json("my_struct", options)).drop("my_struct")
+
+    conf = copy_and_update(_enable_all_types_conf,
+                           { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_fallback_collect(
+        lambda spark : struct_to_json(spark),
+        'StructsToJson',
+        conf=conf)
+
+@allow_non_gpu('ProjectExec', 'StructsToJson')
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+@pytest.mark.parametrize('timezone', ['UTC+07:00'])
+def test_structs_to_json_fallback_explicit_timezone(data_gen, timezone):
+    struct_gen = StructGen([
+        ('a', data_gen),
+        ("b", StructGen([('child', data_gen)], nullable=True)),
+        ("c", ArrayGen(StructGen([('child', data_gen)], nullable=True))),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    options = { 'timeZone': timezone }
+    options.update(_gpu_supported_timestamp_format_conf)
+
+    def struct_to_json(spark):
+        df = gen_df(spark, gen)
+        return df.withColumn("my_json", f.to_json("my_struct", options)).drop("my_struct")
+
+    conf = copy_and_update(_enable_all_types_conf,
+                           { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_fallback_collect(
+        lambda spark : struct_to_json(spark),
+        'StructsToJson',
+        conf=conf)
+
+@allow_non_gpu('ProjectExec', 'StructsToJson')
+@pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
+def test_structs_to_json_fallback_analyzed_non_utc_timezone(data_gen):
+    struct_gen = StructGen([
+        ('a', data_gen),
+    ], nullable=False)
+    gen = StructGen([('my_struct', struct_gen)], nullable=False)
+
+    def struct_to_json(spark):
+        spark.conf.set('spark.sql.session.timeZone', 'PRC')
+        df = gen_df(spark, gen)
+        ret = df.withColumn(
+            "my_json", f.to_json("my_struct", _gpu_supported_timestamp_format_conf)
+        ).drop("my_struct")
+        ret._jdf.queryExecution().analyzed()
+        spark.conf.set('spark.sql.session.timeZone', 'UTC')
+        return ret
 
     conf = copy_and_update(_enable_all_types_conf,
                            { 'spark.rapids.sql.expression.StructsToJson': True })

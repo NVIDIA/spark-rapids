@@ -315,7 +315,7 @@ def pytest_runtest_setup(item):
     elif _non_gpu_allowed_databricks:
         _non_gpu_allowed = _non_gpu_allowed_databricks
     if _non_gpu_allowed_conditional:
-        _non_gpu_allowed = _non_gpu_allowed + tuple(_non_gpu_allowed_conditional.split(","))
+        _non_gpu_allowed = list(_non_gpu_allowed) + _non_gpu_allowed_conditional.split(",")
 
     global _validate_execs_in_gpu_plan
     validate_execs = item.get_closest_marker('validate_execs_in_gpu_plan')

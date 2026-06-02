@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids.execution
 
-import java.util.concurrent.{ScheduledExecutorService, ThreadPoolExecutor}
+import java.util.concurrent.{ExecutorService, ScheduledExecutorService, ThreadPoolExecutor}
 
 import org.apache.hadoop.conf.Configuration
 import org.json4s.JsonAST
@@ -240,6 +240,10 @@ object TrampolineUtil {
     ThreadUtils.newDaemonCachedThreadPool(prefix, maxThreadNumber, keepAliveSeconds)
   }
 
+  def newDaemonSingleThreadExecutor(threadName: String): ExecutorService = {
+    ThreadUtils.newDaemonSingleThreadExecutor(threadName)
+  }
+
   def newDaemonSingleThreadScheduledExecutor(threadName: String): ScheduledExecutorService = {
     ThreadUtils.newDaemonSingleThreadScheduledExecutor(threadName)
   }
@@ -253,6 +257,9 @@ object TrampolineUtil {
   def markTaskFailed(ctx: TaskContext, error: Throwable): Unit = {
     ctx.markTaskFailed(error)
   }
+
+  /** Get the key for spark.shuffle.service.enabled config (which is private[spark]) */
+  def shuffleServiceEnabledKey: String = config.SHUFFLE_SERVICE_ENABLED.key
 }
 
 /**

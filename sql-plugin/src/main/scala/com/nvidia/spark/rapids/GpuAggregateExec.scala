@@ -28,7 +28,7 @@ import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry, withRetryNoSplit}
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.shims.{AggregationTagging, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.AggregationTagging
 
 import org.apache.spark.TaskContext
 import org.apache.spark.internal.Logging
@@ -37,13 +37,13 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, SortOrder}
 import org.apache.spark.sql.catalyst.expressions.aggregate._
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, HashPartitioning, Partitioning, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{AllTuples, ClusteredDistribution, Distribution, UnspecifiedDistribution}
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
 import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.aggregate.{CpuToGpuAggregateBufferConverter, CudfAggregate, GpuAggregateExpression, GpuToCpuAggregateBufferConverter}
+import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression}
 import org.apache.spark.sql.rapids.execution.{GpuBatchSubPartitioner, GpuShuffleMeta, TrampolineUtil}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -1768,12 +1768,11 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
       partialAggMeta: GpuBaseAggregateMeta[_],
       fromCpuToGpu: Boolean): Seq[NamedExpression] = {
 
-    val converters = mutable.Queue[Either[
-      CpuToGpuAggregateBufferConverter, GpuToCpuAggregateBufferConverter]]()
-    mergeAggMeta.childExprs.foreach {
+    val converters = mergeAggMeta.childExprs.collect {
       case e if e.childExprs.length == 1 &&
-        e.childExprs.head.isInstanceOf[TypedImperativeAggExprMeta[_]] =>
-        e.wrapped.asInstanceOf[AggregateExpression].mode match {
+          e.childExprs.head.isInstanceOf[TypedImperativeAggExprMeta[_]] =>
+        val aggExpr = e.wrapped.asInstanceOf[AggregateExpression]
+        aggExpr.mode match {
           case Final | PartialMerge =>
             val typImpAggMeta = e.childExprs.head.asInstanceOf[TypedImperativeAggExprMeta[_]]
             val converter = if (fromCpuToGpu) {
@@ -1781,31 +1780,32 @@ object GpuTypedImperativeSupportedAggregateExecMeta {
             } else {
               Right(typImpAggMeta.createGpuToCpuBufferConverter())
             }
-            converters.enqueue(converter)
-          case _ =>
+            val aggFn = aggExpr.aggregateFunction.asInstanceOf[TypedImperativeAggregate[_]]
+            Some(aggFn.inputAggBufferAttributes.head.exprId -> converter)
+          case _ => None
         }
-      case _ =>
-    }
+      case _ => None
+    }.flatten.toMap
 
     val expressions = partialAggMeta.resultExpressions.map {
-      case retExpr if retExpr.typeMeta.typeConverted =>
-        val resultExpr = retExpr.wrapped.asInstanceOf[AttributeReference]
-        val ref = if (fromCpuToGpu) {
-          resultExpr
-        } else {
-          resultExpr.copy(dataType = retExpr.typeMeta.dataType.get)(
-            resultExpr.exprId, resultExpr.qualifier)
-        }
-        converters.dequeue() match {
-          case Left(converter) =>
-            Alias(converter.createExpression(ref),
-              ref.name + "_converted")(NamedExpression.newExprId)
-          case Right(converter) =>
-            Alias(converter.createExpression(ref),
-              ref.name + "_converted")(NamedExpression.newExprId)
-        }
       case retExpr =>
-        retExpr.wrapped.asInstanceOf[NamedExpression]
+        retExpr.wrapped match {
+          // Some typed imperative aggregates, like BloomFilterAggregate, keep BinaryType on both
+          // CPU and GPU but still need a bridge conversion because the buffer semantics differ.
+          case resultExpr: AttributeReference if converters.contains(resultExpr.exprId) =>
+            val ref = if (fromCpuToGpu || !retExpr.typeMeta.typeConverted) {
+              resultExpr
+            } else {
+              resultExpr.copy(dataType = retExpr.typeMeta.dataType.get)(
+                resultExpr.exprId, resultExpr.qualifier)
+            }
+            val convertedExpr = converters(resultExpr.exprId).fold(
+              _.createExpression(ref),
+              _.createExpression(ref))
+            Alias(convertedExpr, ref.name + "_converted")(NamedExpression.newExprId)
+          case _ =>
+            retExpr.wrapped.asInstanceOf[NamedExpression]
+        }
     }
 
     expressions
@@ -1952,7 +1952,7 @@ case class GpuHashAggregateExec(
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double
-) extends ShimUnaryExecNode with GpuExec {
+) extends GpuPartitioningPreservingUnaryExecNode with GpuExec with Logging {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
   def inputAttributes: Seq[Attribute] =
@@ -2061,15 +2061,14 @@ case class GpuHashAggregateExec(
     aggregateExpressions.flatMap(_.aggregateFunction.aggBufferAttributes)
   }
 
-  final override def outputPartitioning: Partitioning = {
-    if (hasAlias) {
-      child.outputPartitioning match {
-        case h: HashPartitioning => h.copy(expressions = replaceAliases(h.expressions))
-        case other => other
-      }
-    } else {
-      child.outputPartitioning
-    }
+  /**
+   * Override buildAttributeMap to handle aggregate output semantics.
+   */
+  override protected def buildAttributeMap(): Map[Attribute, Attribute] = {
+    resultExpressions.collect {
+      case a @ GpuAlias(child: Attribute, _) => child -> a.toAttribute
+      case a @ Alias(child: Attribute, _) => child -> a.toAttribute
+    }.toMap
   }
 
   protected def hasAlias: Boolean = outputExpressions.collectFirst { case _: Alias => }.isDefined

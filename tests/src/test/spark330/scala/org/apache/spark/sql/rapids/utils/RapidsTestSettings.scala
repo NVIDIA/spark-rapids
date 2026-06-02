@@ -27,6 +27,30 @@ import org.apache.spark.sql.rapids.suites._
 
 class RapidsTestSettings extends BackendTestSettings {
 
+  enableSuite[RapidsApproximatePercentileQuerySuite]
+    .exclude("percentile_approx(col, ...), input rows contains null, with group by", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14634"))
+    .exclude("SPARK-32908: maximum target error in percentile_approx", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14635"))
+  enableSuite[RapidsDataFrameJoinSuite]
+    .exclude("SPARK-24690 enables star schema detection even if CBO disabled", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14653"))
+  enableSuite[RapidsDataFrameSelfJoinSuite]
+  enableSuite[RapidsDataFrameWindowFramesSuite]
+  enableSuite[RapidsDataFrameTimeWindowingSuite]
+  enableSuite[RapidsDataFrameSessionWindowingSuite]
+  enableSuite[RapidsDataFrameStatSuite]
+  enableSuite[RapidsTypedImperativeAggregateSuite]
+  enableSuite[RapidsDatasetAggregatorSuite]
+  enableSuite[RapidsInjectRuntimeFilterSuite]
+  enableSuite[RapidsArithmeticExpressionSuite]
+  enableSuite[RapidsBitwiseExpressionsSuite]
+  enableSuite[RapidsBloomFilterAggregateQuerySuite]
+  enableSuite[RapidsComplexTypeSuite]
+  enableSuite[RapidsConditionalExpressionSuite]
+  enableSuite[RapidsHashExpressionsSuite]
+  enableSuite[RapidsIntervalExpressionsSuite]
+  enableSuite[RapidsNullExpressionsSuite]
+  enableSuite[RapidsPredicateSuite]
+  enableSuite[RapidsSubexpressionEliminationSuite]
+  enableSuite[RapidsTimeWindowSuite]
   enableSuite[RapidsCastSuite]
     .exclude("SPARK-35711: cast timestamp without time zone to timestamp with local time zone", WONT_FIX_ISSUE("https://issues.apache.org/jira/browse/SPARK-40851"))
     .exclude("SPARK-35719: cast timestamp with local time zone to timestamp without timezone", WONT_FIX_ISSUE("https://issues.apache.org/jira/browse/SPARK-40851"))
@@ -37,11 +61,47 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("cast string to timestamp", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/blob/main/docs/compatibility.md#string-to-timestamp"))
     .exclude("cast string to date", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10771"))
   enableSuite[RapidsCollectionExpressionsSuite]
-    .exclude("Flatten", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14127"))
-    .exclude("MapFromEntries", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14128"))
     .exclude("Array Intersect", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
-    .exclude("Array remove", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14129"))
     .exclude("Shuffle", ADJUST_UT("Replaced by testRapids version that adjusts the expected results to match the running by --master local[2]."))
+  enableSuite[RapidsColumnExpressionSuite]
+    .exclude("input_file_name, input_file_block_start, input_file_block_length - HadoopRDD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14153"))
+    .exclude("input_file_name, input_file_block_start, input_file_block_length - NewHadoopRDD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14153"))
+  enableSuite[RapidsDataFrameFunctionsSuite]
+    .exclude("array_intersect functions", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
+  enableSuite[RapidsJoinSuite]
+    .exclude("test SortMergeJoin (with spill)", WONT_FIX_ISSUE("The case is to test spill in SortMergeJoin, which is not applicable for GPU."))
+    .exclude("SPARK-32649: Optimize BHJ/SHJ inner/semi join with empty hashed relation", WONT_FIX_ISSUE("The case is to test the codegen behavior for BHJ/SHJ inner/semi join, which is not applicable for GPU."))
+    .exclude("SPARK-36794: Ignore duplicated key when building relation for semi/anti hash join", ADJUST_UT("Replaced by testRapids version that checks GPU or CPU join operators"))
+    .exclude("SPARK-28323: PythonUDF should be able to use in join condition", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28345: PythonUDF predicate should be able to pushdown to join", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+  enableSuite[RapidsSubquerySuite]
+    .exclude("SPARK-26893: Allow pushdown of partition pruning subquery filters to file source", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14172 - partition pruning with subquery not working on GPU"))
+    .exclude("SPARK-27279: Reuse Subquery", ADJUST_UT("Replaced by testRapids version for GPU execution"))
+    .exclude("SPARK-36280: Remove redundant aliases after RewritePredicateSubquery", ADJUST_UT("Replaced by testRapids version that checks GPU or CPU shuffle exchange"))
+    .exclude("SPARK-15832: Test embedded existential predicate sub-queries", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14221 - Causes deadlock with AQE when executing deeply nested subqueries (3+ levels)"))
+    .exclude("SPARK-28441: COUNT bug in WHERE clause (Filter) with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug in SELECT clause (Project) with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug in HAVING clause (Filter) with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug in Aggregate with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug negative examples with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug in nested subquery with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug with nasty predicate expr with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+    .exclude("SPARK-28441: COUNT bug with attribute ref in subquery input and output with PythonUDF", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14258"))
+  enableSuite[RapidsSQLViewSuite]
+  enableSuite[RapidsDataFrameSuite]
+    .exclude("reuse exchange", ADJUST_UT("Replaced by testRapids version that uses GPU class name"))
+    .exclude("SPARK-22520: support code generation for large CaseWhen", WONT_FIX_ISSUE("It's a codegen related test, not applicable for GPU"))
+    .exclude("Uuid expressions should produce same results at retries in the same DataFrame", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14149"))
+    .exclude("SPARK-27439: Explain result should match collected result after view change", ADJUST_UT("Replaced by testRapids version that uses GPU class name"))
+  enableSuite[RapidsDatasetSuite]
+    .exclude("groupBy single field class, count", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
+    .exclude("SPARK-34806: observation on datasets", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14152"))
+    .exclude("SPARK-37203: Fix NotSerializableException when observe with TypedImperativeAggregate", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14152"))
+    .exclude("dropDuplicates", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
+    .exclude("dropDuplicates: columns with same column name", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
+    .exclude("SPARK-24762: typed agg on Option[Product] type", ADJUST_UT("Replaced by testRapids version to sort the results for consistent ordering"))
+    .exclude("Check RelationalGroupedDataset toString: Single data", ADJUST_UT("Replaced by testRapids version because the RelationalGroupedDataset.toString method returns an empty string for the type on JDK 11+"))
+    .exclude("Check RelationalGroupedDataset toString: over length schema ", ADJUST_UT("Replaced by testRapids version because the RelationalGroupedDataset.toString method returns an empty string for the type on JDK 11+"))
   enableSuite[RapidsDataFrameAggregateSuite]
     .exclude("collect functions", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
     .exclude("collect functions structs", ADJUST_UT("order of elements in the array is non-deterministic in collect"))
@@ -59,29 +119,18 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-21258: complex object in combination with spilling", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
     .exclude("SPARK-38237: require all cluster keys for child required distribution for window query", ADJUST_UT("Replaced by testRapids version for GPU execution"))
   enableSuite[RapidsDateExpressionsSuite]
-    .exclude("unsupported fmt fields for trunc/date_trunc results null", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13757"))
-    .exclude("SPARK-31896: Handle am-pm timestamp parsing when hour is missing", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13758"))
-    .exclude("TIMESTAMP_MICROS", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13760"))
-    .exclude("SPARK-33498: GetTimestamp,UnixTimestamp,ToUnixTimestamp with parseError", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13759"))
     .exclude("SPARK-34761,SPARK-35889: add a day-time interval to a timestamp", ADJUST_UT("Replaced by modified version without intercept[Exception] part"))
   enableSuite[RapidsDateFunctionsSuite]
     .exclude("function to_date", WONT_FIX_ISSUE("CPU expects SparkException for invalid date format, but GPU with incompatibleDateFormats.enabled=true has different behavior. This is a known difference documented in compatibility.md"))
     .exclude("unix_timestamp", WONT_FIX_ISSUE("GPU with incompatibleDateFormats.enabled=true parses dates differently than CPU for invalid formats - returns values instead of null. This is documented behavior."))
     .exclude("to_unix_timestamp", WONT_FIX_ISSUE("GPU with incompatibleDateFormats.enabled=true parses dates differently than CPU for invalid formats - returns values instead of null. This is documented behavior."))
   enableSuite[RapidsDecimalExpressionSuite]
-    .exclude("MakeDecimal", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13816"))
   enableSuite[RapidsIntervalFunctionsSuite]
   enableSuite[RapidsJsonExpressionsSuite]
     .exclude("from_json - invalid data", ADJUST_UT("Replaced by testRapids version that expects a SparkException instead of TestFailedException"))
   enableSuite[RapidsJsonFunctionsSuite]
     .exclude("SPARK-33134: return partial results only for root JSON objects", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14088"))
   enableSuite[RapidsJsonSuite]
-    .exclude("SPARK-32810: JSON data source should be able to read files with escaped glob metacharacter in the paths", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("SPARK-18352: Parse normal multi-line JSON files (uncompressed)", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("SPARK-18352: Parse normal multi-line JSON files (compressed)", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("Applying schemas", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("Loading a JSON dataset from a text file with SQL", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("Loading a JSON dataset from a text file", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
   enableSuite[RapidsMathExpressionsSuite]
     .exclude("round/bround/floor/ceil", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13747"))
   enableSuite[RapidsMathFunctionsSuite]
@@ -96,15 +145,14 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetDeltaEncodingLong]
   enableSuite[RapidsParquetDeltaLengthByteArrayEncodingSuite]
   enableSuite[RapidsParquetEncodingSuite]
-    .exclude("Read row group containing both dictionary and plain encoded pages", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13739"))
-    .exclude("parquet v2 pages - delta encoding", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13745"))
-    .exclude("parquet v2 pages - rle encoding for boolean value columns", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13746"))
+    .exclude("Read row group containing both dictionary and plain encoded pages", ADJUST_UT("Test uses CPU VectorizedParquetRecordReader directly, not a GPU path. GPU-native mixed encoding test added in PR #13982. See https://github.com/NVIDIA/spark-rapids/issues/13739"))
+    .exclude("parquet v2 pages - delta encoding", ADJUST_UT("Replaced by testRapids version that drops encoding-format assertion. GPU's libcudf parquet writer chooses different but valid Parquet v2 encodings (PLAIN/PLAIN_DICTIONARY) than CPU's DELTA_BINARY_PACKED/DELTA_BYTE_ARRAY; encoding choice is internal optimization that doesn't affect data correctness. See https://github.com/NVIDIA/spark-rapids/issues/13745"))
+    .exclude("parquet v2 pages - rle encoding for boolean value columns", ADJUST_UT("Replaced by testRapids version that drops encoding-format assertion. GPU's libcudf parquet writer uses PLAIN encoding for booleans rather than CPU's RLE; encoding choice is internal optimization that doesn't affect data correctness. See https://github.com/NVIDIA/spark-rapids/issues/13746"))
   enableSuite[RapidsParquetFileFormatSuite]
     .excludeByPrefix("Propagate Hadoop configs from", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11602"))
   enableSuite[RapidsParquetFieldIdIOSuite]
   enableSuite[RapidsParquetFieldIdSchemaSuite]
   enableSuite[RapidsParquetInteroperabilitySuite]
-    .exclude("SPARK-36803: parquet files with legacy mode and schema evolution", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11454"))
     .exclude("parquet timestamp conversion", ADJUST_UT("replaced by testRapids version which copies the impala_timestamp file from the resources directory"))
   enableSuite[RapidsParquetPartitionDiscoverySuite]
     .exclude("Various partition value types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11583"))
@@ -120,10 +168,8 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11480"))
     .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", ADJUST_UT("original test case inherited from Spark cannot find the needed local resources"))
   enableSuite[RapidsParquetSchemaPruningSuite]
-    .excludeBySuffix("select explode of nested field of array of struct", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11653"))
   enableSuite[RapidsParquetSchemaSuite]
-    .exclude("schema mismatch failure error message for parquet reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11434"))
-    .exclude("schema mismatch failure error message for parquet vectorized reader", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11446"))
+    .exclude("schema mismatch failure error message for parquet reader", WONT_FIX_ISSUE("GPU uses a unified parquet reader path; the non-vectorized CPU error variant rooted in ParquetDecodingException is not reachable by design. See https://github.com/NVIDIA/spark-rapids/issues/11434"))
   enableSuite[RapidsParquetThriftCompatibilitySuite]
     .exclude("Read Parquet file generated by parquet-thrift", ADJUST_UT("https://github.com/NVIDIA/spark-rapids/pull/11591"))
     .exclude("SPARK-10136 list of primitive list", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11589"))
@@ -139,14 +185,11 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsProductAggSuite]
   enableSuite[RapidsComplexTypesSuite]
   enableSuite[RapidsCSVSuite]
-    .exclude("parse unescaped quotes with maxCharsPerColumn", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13889"))
-    .exclude("DDL test parsing decimal type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13890"))
     .exclude("nullable fields with user defined null value of \"null\"", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13893"))
     .exclude("empty fields with user defined empty values", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13894"))
     .exclude("save csv with empty fields with user defined empty values", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13895"))
     .exclude("SPARK-24329: skip lines with comments, and one or multiple whitespaces", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13896"))
     .exclude("SPARK-23786: warning should be printed if CSV header doesn't conform to schema", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13897"))
-    .exclude("SPARK-32810: CSV data source should be able to read files with escaped glob metacharacter in the paths", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13898"))
     .exclude("SPARK-33566: configure UnescapedQuoteHandling to parse unescaped quotes and unescaped delimiter data correctly", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13901"))
   enableSuite[RapidsCsvExpressionsSuite]
     .exclude("unsupported mode", ADJUST_UT("Replaced by a testRapids case which changed the expectation of SparkException instead of TestFailedException"))
@@ -162,24 +205,15 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsMergedParquetReadSchemaSuite]
   enableSuite[RapidsGeneratorFunctionSuite]
   enableSuite[RapidsSQLQuerySuite]
-    .exclude("SPARK-6743: no columns from cache", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14098"))
     .exclude("aggregation with codegen updates peak execution memory", WONT_FIX_ISSUE("Codegen and memory metrics not applicable for GPU"))
     .exclude("external sorting updates peak execution memory", WONT_FIX_ISSUE("Memory metrics implementation differs on GPU"))
     .exclude("run sql directly on files", ADJUST_UT("Replaced by testRapids version that expects \"Path does not exist\" instead of \"Hive built-in ORC data source must be used with Hive support\" because there's a spark-hive jar in the CLASSPATH in our UT running"))
-    .exclude("Common subexpression elimination", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14106"))
-    .exclude("SPARK-27619: When spark.sql.legacy.allowHashOnMapType is true, hash can be used on Maptype", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14108"))
-    .exclude("SPARK-17515: CollectLimit.execute() should perform per-partition limits", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14109"))
-    .exclude("SPARK-19650: An action on a Command should not trigger a Spark job", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14110"))
+    .exclude("Common subexpression elimination", WONT_FIX_ISSUE("CPU test asserts per-row Scala UDF invocation counts via a LongAccumulator to verify Catalyst's subexpression elimination. GPU's columnar batch execution does not have equivalent per-row UDF invocation semantics, so the accumulator counts diverge from CPU by design even though the output values match. See https://github.com/NVIDIA/spark-rapids/issues/14106"))
     .exclude("SPARK-31594: Do not display the seed of rand/randn with no argument in output schema", ADJUST_UT("Replaced by testRapids version with a correct regex expression to match the projectExplainOutput, randn isn't supported now. See https://github.com/NVIDIA/spark-rapids/issues/11613"))
-    .exclude("normalize special floating numbers in subquery", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14116"))
-    .exclude("SPARK-33677: LikeSimplification should be skipped if pattern contains any escapeChar", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14117"))
-    .exclude("SPARK-33593: Vector reader got incorrect data with binary partition value", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14118"))
+    .exclude("SPARK-33084: Add jar support Ivy URI in SQL", WONT_FIX_ISSUE("Spark ADD JAR Ivy dependency resolution/listJars infrastructure test, not a RAPIDS GPU execution path. Excluded to avoid transient external Maven/Ivy download failures. See https://github.com/NVIDIA/spark-rapids/issues/14777. Recovery trigger: make the dependency resolution hermetic or guarantee CI repository availability; P2."))
     .exclude("SPARK-33084: Add jar support Ivy URI in SQL -- jar contains udf class", ADJUST_UT("Replaced by testRapids version that uses testFile() to access Spark test resources instead of getContextClassLoader"))
-    .exclude("SPARK-33482: Fix FileScan canonicalization", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14122"))
+    .exclude("SPARK-33482: Fix FileScan canonicalization", ADJUST_UT("Replaced by testRapids version using V1 sources with AQE and broadcast disabled to assert ReusedExchangeExec directly"))
     .exclude("SPARK-36093: RemoveRedundantAliases should not change expression's name", ADJUST_UT("Replaced by testRapids version that checks the partition column name of the GpuInsertIntoHadoopFsRelationCommand"))
-    .exclude("SPARK-39166: Query context of binary arithmetic should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
-    .exclude("SPARK-39175: Query context of Cast should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
-    .exclude("SPARK-39177: Query context of getting map value should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
     .exclude("SPARK-39190,SPARK-39208,SPARK-39210: Query context of decimal overflow error should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
 }
 // scalastyle:on line.size.limit

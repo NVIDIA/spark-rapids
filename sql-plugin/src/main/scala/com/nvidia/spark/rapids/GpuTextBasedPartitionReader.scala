@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids
 
+import java.net.URI
 import java.nio.charset.{Charset, StandardCharsets}
 import java.time.DateTimeException
 import java.util
@@ -26,6 +27,7 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf.{CaptureGroups, ColumnVector, DType, HostColumnVector, HostColumnVectorCore, HostMemoryBuffer, RegexProgram, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.DateUtils.{toStrf, TimestampFormatConversionException}
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.GpuTypeShims
 import org.apache.hadoop.conf.Configuration
@@ -39,7 +41,7 @@ import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{ExceptionTimeParserPolicy, GpuToTimestamp, LegacyTimeParserPolicy}
-import org.apache.spark.sql.types.{DataTypes, DecimalType, StructField, StructType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
@@ -90,6 +92,20 @@ object FilterEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLineBu
   override def createBufferer(estimatedSize: Long,
       lineSeparatorInRead: Array[Byte]): HostLineBufferer =
     new HostLineBufferer(estimatedSize, lineSeparatorInRead, true)
+}
+
+/**
+ * Factory for CSV reading that filters empty lines using Java String.trim() compatible whitespace
+ * (all chars <= 0x20). This matches Spark CPU's CSVExprUtils.filterCommentAndEmpty behavior which
+ * uses line.trim.nonEmpty to filter blank lines.
+ */
+object FilterCsvEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
+  override def createBufferer(estimatedSize: Long,
+      lineSeparatorInRead: Array[Byte]): HostLineBufferer =
+    new HostLineBufferer(estimatedSize, lineSeparatorInRead, true) {
+      // Match Java's String.trim() which treats all chars <= '\u0020' as whitespace.
+      override def isWhiteSpace(b: Byte): Boolean = (b & 0xFF) <= 0x20
+    }
 }
 
 /**
@@ -369,7 +385,9 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   metrics = execMetrics
 
   private lazy val estimatedHostBufferSize: Long = {
-    val rawPath = new Path(partFile.filePath.toString())
+    // URI-decode the file path so paths containing escaped glob metacharacters (e.g.
+    // `%5Babc%5D` for `[abc]`) resolve to a real FileStatus instead of FileNotFound.
+    val rawPath = new Path(new URI(partFile.filePath.toString()))
     val fs = rawPath.getFileSystem(conf)
     val path = fs.makeQualified(rawPath)
     val fileSize = fs.getFileStatus(path).getLen
@@ -465,6 +483,17 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
     GpuColumnVector.from(dataSchemaWithStrings)
   }
 
+  // accessible to children for OOM unit tests
+  protected def castToOutputTypesWithRetryAndClose(table: Table,
+      readSchema: StructType): Table = {
+    val stbl = closeOnExcept(table) { _ =>
+      SpillableTable(table, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    }
+    withRetryNoSplit(stbl) { attempt =>
+      withResource(attempt.getTable())(castTableToDesiredTypes(_, readSchema))
+    }
+  }
+
   def castTableToDesiredTypes(table: Table, readSchema: StructType): Table = {
     val columns = new ListBuffer[ColumnVector]()
     // Table increases the ref counts on the columns so we have
@@ -531,9 +560,8 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
           isFirstChunk, metrics(GPU_DECODE_TIME))
 
         // parse boolean and numeric columns that were read as strings
-        val castTable = withResource(table) { _ =>
-          castTableToDesiredTypes(table, newReadDataSchema)
-        }
+        val castTable =
+          castToOutputTypesWithRetryAndClose(table, newReadDataSchema)
 
         handleResult(newReadDataSchema, castTable)
       }

@@ -31,7 +31,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
-import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetVariantShims, SparkShimImpl}
 import com.nvidia.spark.rapids.shims.parquet.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims}
 import org.apache.commons.io.output.ByteArrayOutputStream
 import org.apache.hadoop.conf.Configuration
@@ -466,19 +466,25 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
-    // optimize
-    val newSelectedAttributes = if (selectedAttributes.isEmpty) {
-      cacheAttributes
-    } else {
-      selectedAttributes
+    // When no columns are selected (e.g., count-only scan or
+    // cross-join side that needs only row count), return
+    // row-only batches without decoding parquet data.
+    if (selectedAttributes.isEmpty) {
+      return input.map {
+        case parquetCB: ParquetCachedBatch =>
+          new ColumnarBatch(Array.empty, parquetCB.numRows)
+        case other =>
+          throw new IllegalStateException(
+            s"Expected ParquetCachedBatch but got ${other.getClass}")
+      }
     }
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
-      getSupportedSchemaFromUnsupported(cacheAttributes, newSelectedAttributes)
+      getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
     convertCachedBatchToColumnarInternal(
       input,
       cachedSchemaWithNames,
       selectedSchemaWithNames,
-      newSelectedAttributes)
+      selectedAttributes)
   }
 
   private def convertCachedBatchToColumnarInternal(
@@ -563,19 +569,23 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cacheAttributes: Seq[Attribute],
       selectedAttributes: Seq[Attribute],
       conf: SQLConf): RDD[ColumnarBatch] = {
-    // optimize
-    val newSelectedAttributes = if (selectedAttributes.isEmpty) {
-      cacheAttributes
-    } else {
-      selectedAttributes
+    // When no columns are selected, return row-only batches
+    if (selectedAttributes.isEmpty) {
+      return input.map {
+        case parquetCB: ParquetCachedBatch =>
+          new ColumnarBatch(Array.empty, parquetCB.numRows)
+        case other =>
+          throw new IllegalStateException(
+            s"Expected ParquetCachedBatch but got ${other.getClass}")
+      }
     }
     val rapidsConf = new RapidsConf(conf)
     val (cachedSchemaWithNames, selectedSchemaWithNames) =
-      getSupportedSchemaFromUnsupported(cacheAttributes, newSelectedAttributes)
+      getSupportedSchemaFromUnsupported(cacheAttributes, selectedAttributes)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU &&
         isSchemaSupportedByCudf(cachedSchemaWithNames)) {
       val batches = convertCachedBatchToColumnarInternal(input, cachedSchemaWithNames,
-        selectedSchemaWithNames, newSelectedAttributes)
+        selectedSchemaWithNames, selectedAttributes)
       val cbRdd = batches.map(batch => {
         withResource(batch) { gpuBatch =>
           val cols = GpuColumnVector.extractColumns(gpuBatch)
@@ -585,7 +595,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
     } else {
       val origSelectedAttributesWithUnambiguousNames =
-        sanitizeColumnNames(newSelectedAttributes, selectedSchemaWithNames)
+        sanitizeColumnNames(selectedAttributes, selectedSchemaWithNames)
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
         cbIter => {
@@ -1304,6 +1314,9 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
     // From 3.3.2, Spark schema converter needs this conf
     ParquetLegacyNanoAsLongShims.setupLegacyParquetNanosAsLongForPCBS(hadoopConf)
 
+    // From 4.1.1, Spark will check this variant config
+    ParquetVariantShims.setupParquetVariantConfig(hadoopConf, sqlConf)
+
     hadoopConf
   }
 
@@ -1332,9 +1345,10 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       val structSchema = schemaWithUnambiguousNames.toStructType
       val converters = new GpuRowToColumnConverter(structSchema)
       val batchSizeBytes = rapidsConf.gpuTargetBatchSizeBytes
+      val enableR2cRetry = rapidsConf.isR2cRetryEnabled
       val columnarBatchRdd = input.mapPartitions(iter => {
         new RowToColumnarIterator(iter, structSchema, RequireSingleBatch, batchSizeBytes,
-        converters)
+        converters, enableR2cRetry)
       })
       columnarBatchRdd.flatMap(cb => {
         withResource(cb)(cb => compressColumnarBatchWithParquet(cb, structSchema,

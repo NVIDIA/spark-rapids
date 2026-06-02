@@ -47,6 +47,11 @@ object PathInstruction {
 }
 
 object JsonPathParser extends RegexParsers {
+  // Mirrors JSONUtils.MAX_PATH_DEPTH from spark-rapids-jni (get_json_object.hpp).
+  // Duplicated here to avoid triggering JNI native library loading during
+  // Driver-side plan conversion (see github.com/NVIDIA/spark-rapids/issues/14184).
+  val MAX_PATH_DEPTH: Int = 16
+
   import PathInstruction._
 
   def root: Parser[Char] = '$'
@@ -103,7 +108,7 @@ object JsonPathParser extends RegexParsers {
     }
 
   def fallbackCheck(instructions: List[PathInstruction]): Boolean =
-    instructions.length > JSONUtils.MAX_PATH_DEPTH
+    instructions.length > JsonPathParser.MAX_PATH_DEPTH
 
   def unzipInstruction(instruction: PathInstruction): (String, String, Long) = {
     instruction match {
@@ -165,7 +170,7 @@ class GpuGetJsonObjectMeta(
       val updated = instructions.map(JsonPathParser.filterInstructionsForJni)
       if (updated.exists(JsonPathParser.fallbackCheck)) {
         willNotWorkOnGpu(s"get_json_object on GPU does not support more " +
-          s"than ${JSONUtils.MAX_PATH_DEPTH} nested paths." +
+          s"than ${JsonPathParser.MAX_PATH_DEPTH} nested paths." +
           instructions.map(i => s" (Found ${i.length})").getOrElse(""))
       }
     }

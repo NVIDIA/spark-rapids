@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,14 @@ package com.nvidia.spark.rapids
 
 import java.io.IOException
 import java.nio.charset.{Charset, StandardCharsets}
+import java.util.Locale
 
 import scala.collection.JavaConverters._
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
@@ -101,6 +103,9 @@ object GpuCSVScan extends Logging {
   }
 
   def isUTF8Charset(charset: Charset): Boolean = utf8Charsets.contains(charset)
+
+  def unsupportedLocaleForDecimalMessage(locale: Locale): String =
+    s"GpuCSVScan only supports Locale.US decimal parsing, got $locale"
 
   def tagSupport(scanMeta: ScanMeta[CSVScan]) : Unit = {
     val scan = scanMeta.wrapped
@@ -198,8 +203,9 @@ object GpuCSVScan extends Logging {
         meta.willNotWorkOnGpu(s"the positive infinity value '${parsedOptions.positiveInf}'" +
             s" is not supported'")
     }
-    // parsedOptions.maxCharsPerColumn does not impact the final output it is a performance
-    // improvement if you know the maximum size
+    if (parsedOptions.maxCharsPerColumn != -1) {
+      meta.willNotWorkOnGpu("GpuCSVScan does not support maxCharsPerColumn")
+    }
 
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
@@ -260,6 +266,10 @@ object GpuCSVScan extends Logging {
     if (!meta.conf.isCsvDecimalReadEnabled && types.exists(_.isInstanceOf[DecimalType])) {
       meta.willNotWorkOnGpu("CSV reading is not 100% compatible when reading decimals. " +
         s"To enable it please set ${RapidsConf.ENABLE_READ_CSV_DECIMALS} to true.")
+    }
+
+    if (parsedOptions.locale != Locale.US && types.exists(_.isInstanceOf[DecimalType])) {
+      meta.willNotWorkOnGpu(GpuCSVScan.unsupportedLocaleForDecimalMessage(parsedOptions.locale))
     }
 
     if (ColumnDefaultValuesShims.hasExistenceDefaultValues(readSchema)) {
@@ -409,6 +419,21 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
     }
   }
 
+  override def castStringToDecimal(input: ColumnVector, dt: DecimalType): ColumnVector = {
+    if (parsedOptions.locale == Locale.US) {
+      withResource(Scalar.fromString(",")) { groupingSeparator =>
+        withResource(Scalar.fromString("")) { emptyString =>
+          withResource(input.stringReplace(groupingSeparator, emptyString)) { withoutGrouping =>
+            CastStrings.toDecimal(withoutGrouping, false, dt.precision, -dt.scale)
+          }
+        }
+      }
+    } else {
+      throw new IllegalStateException(
+        GpuCSVScan.unsupportedLocaleForDecimalMessage(parsedOptions.locale))
+    }
+  }
+
   override def dateFormat: Option[String] = Some(GpuCsvUtils.dateFormatInRead(parsedOptions))
   override def timestampFormat: String = GpuCsvUtils.timestampFormatInRead(parsedOptions)
 }
@@ -445,9 +470,14 @@ class CSVPartitionReader(
     maxRowsPerChunk: Integer,
     maxBytesPerChunk: Long,
     execMetrics: Map[String, GpuMetric]) extends
-  CSVPartitionReaderBase[HostLineBufferer, HostLineBuffererFactory.type](conf, partFile,
+  CSVPartitionReaderBase[HostLineBufferer,
+    LineBuffererFactory[HostLineBufferer]](conf, partFile,
     dataSchema, readDataSchema, parsedOptions, maxRowsPerChunk,
-    maxBytesPerChunk, execMetrics, HostLineBuffererFactory) {
+    maxBytesPerChunk, execMetrics,
+    // In multiLine mode, empty lines within quoted fields are
+    // legitimate data and must not be filtered out.
+    if (parsedOptions.multiLine) HostLineBuffererFactory
+    else FilterCsvEmptyHostLineBuffererFactory) {
 
   def buildCsvOptions(
       parsedOptions: CSVOptions,

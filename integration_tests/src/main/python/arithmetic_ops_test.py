@@ -68,6 +68,15 @@ _arith_decimal_gens_high_precision = _arith_decimal_gens_high_precision_no_neg_s
     _decimal_gen_36_neg5, _decimal_gen_38_neg10
 ]
 
+# Gens covering the full accepted input-type set for math-unary functions
+# (asinh/atanh/cbrt/...): Spark auto-casts FLOAT/DECIMAL to DOUBLE before
+# applying these, but the cast+op code path is worth exercising end-to-end.
+_math_unary_input_gens = [double_gen, FloatGen(), decimal_gen_64bit]
+
+# DECIMAL input requires GPU decimal->double cast (off by default for
+# precision-loss reasons).
+_math_unary_conf = {'spark.rapids.sql.castDecimalToFloat.enabled': 'true'}
+
 _arith_data_gens_diff_precision_scale_and_no_neg_scale = \
     _arith_data_gens_diff_precision_scale_and_no_neg_scale_no_38_0 + [_decimal_gen_38_0]
 
@@ -799,11 +808,66 @@ def test_non_decimal_round_overflow():
             'bround(double_c, -308)', 'bround(double_c, -309)',
             'bround(double_c, 308)', 'bround(double_c, 309)'))
 
+# ANSI mode tests for round/bround - no overflow cases
+@pytest.mark.parametrize('data_gen', [
+    ByteGen(min_val=-120, max_val=120, special_cases=[]),
+    ShortGen(min_val=-30000, max_val=30000, special_cases=[]),
+    IntegerGen(min_val=-2000000000, max_val=2000000000, special_cases=[]),
+    LongGen(min_val=-9000000000000000000, max_val=9000000000000000000, special_cases=[])
+], ids=idfn)
+def test_round_ansi_no_overflow_integral(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'round(a, -1)',
+            'round(a, -2)'),
+        conf=ansi_enabled_conf)
+
+@pytest.mark.parametrize('data_gen', [
+    ByteGen(min_val=-120, max_val=120, special_cases=[]),
+    ShortGen(min_val=-30000, max_val=30000, special_cases=[]),
+    IntegerGen(min_val=-2000000000, max_val=2000000000, special_cases=[]),
+    LongGen(min_val=-9000000000000000000, max_val=9000000000000000000, special_cases=[])
+], ids=idfn)
+def test_bround_ansi_no_overflow_integral(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(
+            'bround(a, -1)',
+            'bround(a, -2)'),
+        conf=ansi_enabled_conf)
+
+# ANSI mode tests - overflow cases
+@pytest.mark.skipif(is_before_spark_340(), reason='ANSI mode for round/bround is only supported in Spark 3.4.0+')
+@pytest.mark.parametrize('data_gen,scale', [
+    (ByteGen(min_val=125, max_val=127, special_cases=[]), -1),    # 125-127 overflow at scale -1 for HALF_UP
+    (ShortGen(min_val=32760, max_val=32767, special_cases=[]), -1),  # near Short.MAX_VALUE
+    (IntegerGen(min_val=2147483640, max_val=2147483647, special_cases=[]), -1),  # near Int.MAX_VALUE
+    (LongGen(min_val=9223372036854775800, max_val=9223372036854775807, special_cases=[]), -1),  # near Long.MAX_VALUE
+], ids=idfn)
+def test_round_ansi_overflow_integral(data_gen, scale):
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(f'round(a, {scale})').collect(),
+        conf=ansi_enabled_conf,
+        error_message="ArithmeticException")
+
+@pytest.mark.skipif(is_before_spark_340(), reason='ANSI mode for round/bround is only supported in Spark 3.4.0+')
+@pytest.mark.parametrize('data_gen,scale', [
+    (ByteGen(min_val=125, max_val=127, special_cases=[]), -1),    # 126-127 overflow at scale -1 for HALF_EVEN
+    (ShortGen(min_val=32765, max_val=32767, special_cases=[]), -1),  # near Short.MAX_VALUE
+    (IntegerGen(min_val=2147483645, max_val=2147483647, special_cases=[]), -1),  # near Int.MAX_VALUE
+    (LongGen(min_val=9223372036854775805, max_val=9223372036854775807, special_cases=[]), -1),  # near Long.MAX_VALUE
+], ids=idfn)
+def test_bround_ansi_overflow_integral(data_gen, scale):
+    assert_gpu_and_cpu_error(
+        lambda spark: unary_op_df(spark, data_gen).selectExpr(f'bround(a, {scale})').collect(),
+        conf=ansi_enabled_conf,
+        error_message="ArithmeticException")
+
 @approximate_float
-@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _math_unary_input_gens, ids=idfn)
 def test_cbrt(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('cbrt(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('cbrt(a)'),
+            conf=_math_unary_conf)
 
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_bit_and(data_gen):
@@ -874,6 +938,12 @@ def test_bin_long(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : unary_op_df(spark, data_gen).selectExpr('bin(a)'))
 
+@pytest.mark.parametrize('data_gen', [long_gen, StringGen(),
+    StringGen('[\x00-\xff]{0,10}'), BinaryGen()], ids=idfn)
+def test_hex(data_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('hex(a)'))
+
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
 def test_cos(data_gen):
@@ -928,10 +998,11 @@ def test_asin(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('asin(a)'))
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _math_unary_input_gens, ids=idfn)
 def test_asinh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('asinh(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('asinh(a)'),
+            conf=_math_unary_conf)
 
 # The default approximate is 1e-6 or 1 in a million
 # in some cases we need to adjust this because the algorithm is different
@@ -957,10 +1028,11 @@ def test_atan(data_gen):
             lambda spark : unary_op_df(spark, data_gen).selectExpr('atan(a)'))
 
 @approximate_float
-@pytest.mark.parametrize('data_gen', double_gens, ids=idfn)
+@pytest.mark.parametrize('data_gen', _math_unary_input_gens, ids=idfn)
 def test_atanh(data_gen):
     assert_gpu_and_cpu_are_equal_collect(
-            lambda spark : unary_op_df(spark, data_gen).selectExpr('atanh(a)'))
+            lambda spark : unary_op_df(spark, data_gen).selectExpr('atanh(a)'),
+            conf=_math_unary_conf)
 
 @approximate_float
 @pytest.mark.parametrize('data_gen', double_gens, ids=idfn)

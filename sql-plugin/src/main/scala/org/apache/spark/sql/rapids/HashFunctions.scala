@@ -232,6 +232,11 @@ case class GpuXxHash64(children: Seq[Expression], seed: Long) extends GpuHashExp
 }
 
 object XxHash64Utils {
+  // Mirrors Hash.MAX_STACK_DEPTH from spark-rapids-jni (hash.hpp).
+  // Duplicated here to avoid triggering JNI native library loading during
+  // Driver-side plan conversion (see github.com/NVIDIA/spark-rapids/issues/14184).
+  val MAX_STACK_DEPTH: Int = 8
+
   /**
    * Compute the max stack size that `inputType` will use,
    * refer to the function `check_nested_depth` in src/main/cpp/src/xxhash64.cu

@@ -35,6 +35,8 @@
 #   - LOCAL_JAR_PATH: Path to local jars if not building from source.
 #   - PLUGIN_JAR: Path to a built spark-rapids plugin jar, the default points to the target directory
 #   - INTEGRATION_TEST_VERSION_OVERRIDE: Overrides the auto-detected shim version.
+#   - ICEBERG_EXTRA_CLASSPATH: Colon- or comma-separated local Iceberg jars to use with
+#     spark.driver.extraClassPath and spark.executor.extraClassPath instead of --jars/--packages.
 #
 # Script Flow:
 #   1. Setup and Checks: Validates environment and detects Spark/Scala versions.
@@ -79,7 +81,7 @@ else
     # PySpark uses ".dev0" for "-SNAPSHOT" and either ".dev" for "preview" or ".devN" for "previewN"
     # https://github.com/apache/spark/blob/66f25e314032d562567620806057fcecc8b71f08/dev/create-release/release-build.sh#L267
     VERSION_STRING=$(PYTHONPATH=${SPARK_HOME}/python:${PY4J_FILE} python -c \
-        "import pyspark, re; print(re.sub('\.dev[012]?$', '', pyspark.__version__))"
+        "import pyspark, re; print(re.sub(r'\.dev[012]?$', '', pyspark.__version__))"
     )
     SCALA_VERSION=`$SPARK_HOME/bin/pyspark --version 2>&1| grep Scala | awk '{split($4,v,"."); printf "%s.%s", v[1], v[2]}'`
 
@@ -228,9 +230,9 @@ else
         # 0 is more efficient
         TEST_PARALLEL_OPTS=()
     elif [[ ${TEST_PARALLEL} -gt ${MAX_PARALLEL} ]]; then
-        TEST_PARALLEL_OPTS=("-n" "$MAX_PARALLEL")
+        TEST_PARALLEL_OPTS=("-n" "$MAX_PARALLEL" "--dist" "worksteal")
     else
-        TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL")
+        TEST_PARALLEL_OPTS=("-n" "$TEST_PARALLEL" "--dist" "worksteal")
     fi
 
     mkdir -p "$TARGET_DIR"
@@ -288,11 +290,38 @@ else
 
     SPARK_TASK_MAXFAILURES=${SPARK_TASK_MAXFAILURES:-1}
 
-    if [[ "${PYSP_TEST_spark_shuffle_manager}" =~ "RapidsShuffleManager" ]]; then
-        # If specified shuffle manager, set `extraClassPath` due to issue https://github.com/NVIDIA/spark-rapids/issues/5796
-        # Remove this line if the issue is fixed
-        export PYSP_TEST_spark_driver_extraClassPath="${ALL_JARS}"
-        export PYSP_TEST_spark_executor_extraClassPath="${ALL_JARS}"
+    ICEBERG_EXTRA_CLASSPATH_COMMA="${ICEBERG_EXTRA_CLASSPATH//:/,}"
+    if [[ -n "${ICEBERG_EXTRA_CLASSPATH_COMMA}" ]]; then
+        if [[ -n "${PYSP_TEST_spark_jars_packages}" ]]; then
+            >&2 echo "ICEBERG_EXTRA_CLASSPATH cannot be used with PYSP_TEST_spark_jars_packages."
+            >&2 echo "Use local Iceberg jar paths in ICEBERG_EXTRA_CLASSPATH instead of Maven coordinates."
+            exit 1
+        fi
+        if [[ -n "${PYSP_TEST_spark_jars}" ]]; then
+            PYSP_TEST_spark_jars="${PYSP_TEST_spark_jars},${ICEBERG_EXTRA_CLASSPATH_COMMA}"
+        else
+            PYSP_TEST_spark_jars="${ICEBERG_EXTRA_CLASSPATH_COMMA}"
+        fi
+    fi
+
+    if [[ "${PYSP_TEST_spark_shuffle_manager}" =~ "RapidsShuffleManager" ||
+          -n "${ICEBERG_EXTRA_CLASSPATH_COMMA}" ]]; then
+        # The RAPIDS shuffle manager and Iceberg package-private access tests need the plugin
+        # and dependency jars on extraClassPath instead of spark.jars/spark.jars.packages.
+        EXTRA_CLASSPATH="${ALL_JARS}"
+        if [[ -n "${PYSP_TEST_spark_jars}" ]]; then
+            EXTRA_CLASSPATH="${EXTRA_CLASSPATH}:${PYSP_TEST_spark_jars//,/:}"
+        fi
+        if [[ -n "${PYSP_TEST_spark_driver_extraClassPath}" ]]; then
+            EXTRA_CLASSPATH="${PYSP_TEST_spark_driver_extraClassPath}:${EXTRA_CLASSPATH}"
+        fi
+        EXECUTOR_EXTRA_CLASSPATH="${EXTRA_CLASSPATH}"
+        if [[ -n "${PYSP_TEST_spark_executor_extraClassPath}" ]]; then
+            EXECUTOR_EXTRA_CLASSPATH="${PYSP_TEST_spark_executor_extraClassPath}:${EXECUTOR_EXTRA_CLASSPATH}"
+        fi
+        export PYSP_TEST_spark_driver_extraClassPath="${EXTRA_CLASSPATH}"
+        export PYSP_TEST_spark_executor_extraClassPath="${EXECUTOR_EXTRA_CLASSPATH}"
+        unset PYSP_TEST_spark_jars
     else
         export PYSP_TEST_spark_jars="${ALL_JARS//:/,}"
     fi
@@ -331,7 +360,6 @@ else
     # Not the default 2G but should be large enough for a single batch for all data (we found
     # 200 MiB being allocated by a single test at most, and we typically have 4 tasks.
     export PYSP_TEST_spark_rapids_sql_batchSizeBytes='100m'
-    export PYSP_TEST_spark_rapids_sql_regexp_maxStateMemoryBytes='300m'
 
     export PYSP_TEST_spark_hadoop_hive_exec_scratchdir="$RUN_DIR/hive"
 
@@ -424,8 +452,12 @@ else
         if [[ "${PYSP_TEST_spark_shuffle_manager}" != "" ]]; then
             SPARK_SHELL_ARGS_ARR+=(
                 --conf spark.shuffle.manager="${PYSP_TEST_spark_shuffle_manager}"
+            )
+        fi
+        if [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(
                 --driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}"
-                --conf spark.executor.extraClassPath="${PYSP_TEST_spark_driver_extraClassPath}"
+                --conf spark.executor.extraClassPath="${PYSP_TEST_spark_executor_extraClassPath:-$PYSP_TEST_spark_driver_extraClassPath}"
             )
         elif [[ -n "$PYSP_TEST_spark_jars_packages" ]]; then
             SPARK_SHELL_ARGS_ARR+=(--packages "${PYSP_TEST_spark_jars_packages}")
@@ -436,25 +468,58 @@ else
         if [[ -n "$PYSP_TEST_spark_jars_repositories" ]]; then
             SPARK_SHELL_ARGS_ARR+=(--repositories "${PYSP_TEST_spark_jars_repositories}")
         fi
+
+        if [[ -n "$PYSP_TEST_spark_jars_ivySettings" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--conf "spark.jars.ivySettings=${PYSP_TEST_spark_jars_ivySettings}")
+        fi
+
         # NOTE grep is used not only for checking the output but also
         # to workaround the fact that spark-shell catches all failures.
         # In this test it exits not because of the failure but because it encounters
         # an EOF on stdin and injects a ":quit" command. Without a grep check
         # the exit code would be success 0 regardless of the exceptions.
         #
-        <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
-            "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>/dev/null \
-            | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'
-        echo "SUCCESS spark-shell smoke test"
+        # Capture combined stdout/stderr to a log so we can dump diagnostics
+        # on failure. Previously stderr was discarded, which made CI failures
+        # in this step opaque (the only signal was a non-zero grep exit).
+        smoke_log=$(mktemp -t spark-shell-smoke.XXXXXX.log)
+        if <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+                "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1 \
+                | tee "$smoke_log" \
+                | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'; then
+            rm -f "$smoke_log"
+            echo "SUCCESS spark-shell smoke test"
+        else
+            shell_status=${PIPESTATUS[0]}
+            grep_status=${PIPESTATUS[2]}
+            echo "FAILED spark-shell smoke test (spark-shell exit=${shell_status}, grep exit=${grep_status})"
+            echo "----- spark-shell combined stdout/stderr (tail -n 300 of $smoke_log) -----"
+            tail -n 300 "$smoke_log" || true
+            echo "----- spark-shell executor stderr (tail -n 200 each) -----"
+            for f in "${SPARK_HOME}"/work/*/*/stderr; do
+                [[ -f "$f" ]] || continue
+                echo "=== $f ==="
+                tail -n 200 "$f" || true
+            done
+            rm -f "$smoke_log"
+            exit 1
+        fi
     elif [[ "${EXPLAIN_ONLY_CPU_SMOKE_TEST}" != "0" ]]; then
         echo "Running explainOnly mode on CPU smoke test..."
         SPARK_SHELL_ARGS_ARR=(
             --master local[2]
-            --jars "${PYSP_TEST_spark_jars}"
             --conf spark.plugins=com.nvidia.spark.SQLPlugin
             --conf spark.deploy.maxExecutorRetries=0
             --conf spark.rapids.sql.mode=explainOnly
         )
+        if [[ -n "$PYSP_TEST_spark_driver_extraClassPath" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(
+                --driver-class-path "${PYSP_TEST_spark_driver_extraClassPath}"
+                --conf spark.executor.extraClassPath="${PYSP_TEST_spark_executor_extraClassPath:-$PYSP_TEST_spark_driver_extraClassPath}"
+            )
+        else
+            SPARK_SHELL_ARGS_ARR+=(--jars "${PYSP_TEST_spark_jars}")
+        fi
         output=$(<<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
             CUDA_VISIBLE_DEVICES="" "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1)
         grep 'WARN RapidsPluginUtils: RAPIDS Accelerator is in explain only mode' <<< "$output"
@@ -477,6 +542,16 @@ else
             SERVER_JARS="$PYSP_TEST_spark_jars"
         elif [[ -n "$ALL_JARS" ]]; then
             SERVER_JARS="${ALL_JARS//:/,}"
+        fi
+
+        SPARK_SHELL_ARGS_ARR=(
+            --master local-cluster[1,2,1024]
+            --conf spark.plugins=com.nvidia.spark.SQLPlugin
+            --packages "$CONNECT_PACKAGES"
+            ${SERVER_JARS:+--jars "$SERVER_JARS"}
+        )
+        if [[ -n "$PYSP_TEST_spark_jars_ivySettings" ]]; then
+            SPARK_SHELL_ARGS_ARR+=(--conf "spark.jars.ivySettings=${PYSP_TEST_spark_jars_ivySettings}")
         fi
 
         # Helper: check if port is listening
@@ -511,6 +586,16 @@ else
         CONNECT_SERVER_URL="sc://${CONNECT_HOST}:${CONNECT_PORT}"
 
         cleanup_connect_server() {
+            # dump connect server logs for troubleshooting
+            local connect_server_logs=("$SPARK_HOME"/logs/*SparkConnectServer*.out)
+            if [[ -f "${connect_server_logs[0]}" ]]; then
+                for f in "${connect_server_logs[@]}"; do
+                    echo "=== $f ==="
+                    cat "$f" || true
+                done
+            else
+                echo "No Spark Connect server .out log found in $SPARK_HOME/logs"
+            fi
             if [[ -f "${SPARK_HOME}/sbin/stop-connect-server.sh" ]]; then
                 timeout 20 "${SPARK_HOME}/sbin/stop-connect-server.sh" || true
             fi
@@ -520,10 +605,7 @@ else
         trap cleanup_connect_server EXIT
 
         if ! start_output=$("${SPARK_HOME}/sbin/start-connect-server.sh" \
-            --master local-cluster[1,2,1024] \
-            --conf spark.plugins=com.nvidia.spark.SQLPlugin \
-            --packages "$CONNECT_PACKAGES" \
-            ${SERVER_JARS:+--jars "$SERVER_JARS"} 2>&1); then
+            "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1); then
           echo "ERROR: Spark Connect server failed to launch"
           printf "%s\n" "$start_output" | tail -n 200
           exit 1
@@ -536,7 +618,7 @@ else
                 service_ready=1
                 break
             fi
-            sleep 1
+            sleep 10
         done
         if (( service_ready != 1 )); then
             echo "ERROR: Connect server failed to start on ${CONNECT_HOST}:${CONNECT_PORT}"
@@ -633,6 +715,11 @@ PY
         unset PYSP_TEST_spark_jars_packages
         unset PYSP_TEST_spark_jars_repositories
         unset PYSP_TEST_spark_rapids_memory_gpu_allocSize
+
+
+        # Comment this out if you want to run remote debug this local mode spark process
+        # Don't forget to set TEST_PARALLEL=1 to ensure local mode spark 
+        # export SPARK_SUBMIT_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005"
 
         exec "$SPARK_HOME"/bin/spark-submit "${jarOpts[@]}" \
             --driver-java-options "$driverJavaOpts" \

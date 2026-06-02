@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,17 @@
 package com.nvidia.spark.rapids.delta
 
 import com.nvidia.spark.rapids.{
-  AppendDataExecV1Meta, 
-  AtomicCreateTableAsSelectExecMeta, 
-  AtomicReplaceTableAsSelectExecMeta, 
-  CreatableRelationProviderRule, 
-  ExecRule, 
-  ExprRule, 
-  GpuExec, 
-  OverwriteByExpressionExecV1Meta, 
-  RunnableCommandRule, 
-  ShimLoaderTemp, 
+  AppendDataExecV1Meta,
+  AtomicCreateTableAsSelectExecMeta,
+  AtomicReplaceTableAsSelectExecMeta,
+  CreatableRelationProviderRule,
+  ExecRule,
+  ExprRule,
+  GpuExec,
+  OverwriteByExpressionExecV1Meta,
+  RapidsConf,
+  RunnableCommandRule,
+  ShimLoaderTemp,
   SparkPlanMeta
 }
 
@@ -63,7 +64,7 @@ trait DeltaProvider {
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit
 
-  def getReadFileFormat(relation: HadoopFsRelation): FileFormat
+  def getReadFileFormat(relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat
 
   def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean
 
@@ -92,6 +93,16 @@ trait DeltaProvider {
   def convertToGpu(
       cpuExec: OverwriteByExpressionExecV1,
       meta: OverwriteByExpressionExecV1Meta): GpuExec
+
+  /**
+   * Returns true if deletion vector predicates can be pushed down to the scan.
+   */
+  def canPushDVPredicateDownToScan(conf: RapidsConf): Boolean = false
+
+  /**
+   * Pushes down deletion vector predicates to the scan if possible
+   */
+  def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = plan
 
   def pruneFileMetadata(plan: SparkPlan): SparkPlan = plan
 
@@ -124,7 +135,7 @@ object NoDeltaProvider extends DeltaProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit =
     throw new IllegalStateException("unsupported format")
 
-  override def getReadFileFormat(relation: HadoopFsRelation): FileFormat =
+  override def getReadFileFormat(relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat =
     throw new IllegalStateException("unsupported format")
 
   override def isSupportedCatalog(catalogClass: Class[_ <: StagingTableCatalog]): Boolean = false

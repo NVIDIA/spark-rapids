@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,12 +14,14 @@
 
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
+from asserts import assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
+from conftest import is_iceberg_remote_catalog
 from data_gen import *
-from iceberg import get_full_table_name
+from iceberg import get_full_table_name, iceberg_unsupported_mark, _build_tblprops, \
+    _BASE_TBLPROPS_SQL, create_iceberg_table
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import is_databricks_runtime, with_cpu_session, \
-    with_gpu_session, is_spark_35x
+    with_gpu_session
 
 iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen ]] + \
@@ -41,9 +43,9 @@ iceberg_gens_list = [
     ] + iceberg_map_gens + decimal_gens ]
 
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
+_NO_FANOUT = _BASE_TBLPROPS_SQL
 
-pytestmark = pytest.mark.skipif(not is_spark_35x(),
-                                reason="Current spark-rapids only support spark 3.5.x")
+pytestmark = iceberg_unsupported_mark
 
 @allow_non_gpu("BatchScanExec")
 @iceberg
@@ -51,7 +53,7 @@ pytestmark = pytest.mark.skipif(not is_spark_35x(),
 def test_iceberg_fallback_not_unsafe_row(spark_tmp_table_factory):
     full_table = get_full_table_name(spark_tmp_table_factory)
     def setup_iceberg_table(spark):
-        spark.sql(f"CREATE TABLE {full_table} (id BIGINT, data STRING) USING ICEBERG")
+        spark.sql(f"CREATE TABLE {full_table} (id BIGINT, data STRING) USING ICEBERG {_NO_FANOUT}")
         spark.sql(f"INSERT INTO {full_table} VALUES (1, 'a'), (2, 'b'), (3, 'c')")
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
@@ -70,7 +72,7 @@ def test_iceberg_aqe_dpp(spark_tmp_table_factory, reader_type):
     def setup_iceberg_table(spark):
         df = two_col_df(spark, int_gen, int_gen)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} (a INT, b INT) USING ICEBERG PARTITIONED BY (a)")
+        spark.sql(f"CREATE TABLE {full_table} (a INT, b INT) USING ICEBERG PARTITIONED BY (a) {_NO_FANOUT}")
         spark.sql(f"INSERT INTO {full_table} SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
@@ -91,7 +93,7 @@ def test_iceberg_parquet_read_round_trip_select_one(spark_tmp_table_factory, dat
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG AS SELECT * FROM {tmpview}")
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG {_NO_FANOUT} AS SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     # explicitly only select 1 column to make sure we test that path in the schema parsing code
     assert_gpu_and_cpu_are_equal_collect(
@@ -109,7 +111,7 @@ def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, rea
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG AS SELECT * FROM {tmpview}")
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG {_NO_FANOUT} AS SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql(f"SELECT * FROM {full_table}"),
@@ -119,8 +121,6 @@ def test_iceberg_parquet_read_round_trip(spark_tmp_table_factory, data_gens, rea
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize("data_gens", iceberg_gens_list, ids=idfn)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-# TODO: Add support for nested data type: https://github.com/NVIDIA/spark-rapids/issues/12298
-@pytest.mark.allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 def test_iceberg_parquet_read_round_trip_all_types(spark_tmp_table_factory, data_gens, reader_type):
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(data_gens)]
     full_table = get_full_table_name(spark_tmp_table_factory)
@@ -128,7 +128,7 @@ def test_iceberg_parquet_read_round_trip_all_types(spark_tmp_table_factory, data
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG AS SELECT * FROM {tmpview}")
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG {_NO_FANOUT} AS SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql(f"SELECT * FROM {full_table}"),
@@ -145,8 +145,10 @@ def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg
     def setup_iceberg_table(spark):
         df = gen_df(spark, gen_list)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG " + \
-                  f"TBLPROPERTIES('write.format.default' = '{iceberg_format}') " + \
+        props = _build_tblprops({'write.format.default': iceberg_format})
+        props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in props.items())
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG "
+                  f"TBLPROPERTIES({props_sql}) "
                   f"AS SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     assert_spark_exception(
@@ -163,7 +165,7 @@ def test_iceberg_unsupported_formats(spark_tmp_table_factory, data_gens, iceberg
 def test_iceberg_read_fallback(spark_tmp_table_factory, disable_conf):
     full_table = get_full_table_name(spark_tmp_table_factory)
     def setup_iceberg_table(spark):
-        spark.sql(f"CREATE TABLE {full_table} (id BIGINT, data STRING) USING ICEBERG")
+        spark.sql(f"CREATE TABLE {full_table} (id BIGINT, data STRING) USING ICEBERG {_NO_FANOUT}")
         spark.sql(f"INSERT INTO {full_table} VALUES (1, 'a'), (2, 'b'), (3, 'c')")
     with_cpu_session(setup_iceberg_table)
     assert_gpu_fallback_collect(
@@ -190,8 +192,10 @@ def test_iceberg_read_parquet_compression_codec(spark_tmp_table_factory, codec_i
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} (id BIGINT, data BIGINT) USING ICEBERG " + \
-                  f"TBLPROPERTIES('write.parquet.compression-codec' = '{codec}')")
+        props = _build_tblprops({'write.parquet.compression-codec': codec})
+        props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in props.items())
+        spark.sql(f"CREATE TABLE {full_table} (id BIGINT, data BIGINT) USING ICEBERG "
+                  f"TBLPROPERTIES({props_sql})")
         spark.sql(f"INSERT INTO {full_table} SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     query = f"SELECT * FROM {full_table}"
@@ -213,7 +217,7 @@ def test_iceberg_read_partition_key(spark_tmp_table_factory, key_gen, reader_typ
     def setup_iceberg_table(spark):
         df = two_col_df(spark, key_gen, long_gen).orderBy("a")
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG PARTITIONED BY (a) " + \
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG PARTITIONED BY (a) {_NO_FANOUT} " + \
                   f"AS SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
@@ -229,7 +233,7 @@ def test_iceberg_input_meta(spark_tmp_table_factory, reader_type):
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen).orderBy("a")
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG PARTITIONED BY (a) " + \
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG PARTITIONED BY (a) {_NO_FANOUT} " + \
                   f"AS SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
@@ -247,7 +251,7 @@ def test_iceberg_disorder_read_schema(spark_tmp_table_factory, reader_type):
     def setup_iceberg_table(spark):
         df = three_col_df(spark, long_gen, string_gen, float_gen)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG " + \
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG {_NO_FANOUT} " + \
                   f"AS SELECT * FROM {tmpview}")
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
@@ -262,7 +266,7 @@ def test_iceberg_read_appended_table(spark_tmp_table_factory):
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG " + \
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG {_NO_FANOUT} " + \
                   f"AS SELECT * FROM {tmpview}")
         df = binary_op_df(spark, long_gen, seed=1)
         df.createOrReplaceTempView(tmpview)
@@ -281,7 +285,7 @@ def test_iceberg_read_metadata_fallback(spark_tmp_table_factory):
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG " + \
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG {_NO_FANOUT} " + \
                   f"AS SELECT * FROM {tmpview}")
         df = binary_op_df(spark, long_gen, seed=1)
         df.createOrReplaceTempView(tmpview)
@@ -304,7 +308,7 @@ def test_iceberg_read_metadata_count(spark_tmp_table_factory):
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG " + \
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG {_NO_FANOUT} " + \
                   f"AS SELECT * FROM {tmpview}")
         df = binary_op_df(spark, long_gen, seed=1)
         df.createOrReplaceTempView(tmpview)
@@ -326,7 +330,7 @@ def test_iceberg_read_timetravel(spark_tmp_table_factory, reader_type):
     def setup_snapshots(spark):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
-        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG " + \
+        spark.sql(f"CREATE TABLE {full_table} USING ICEBERG {_NO_FANOUT} " + \
                   f"AS SELECT * FROM {tmpview}".format(tmpview))
         df = binary_op_df(spark, long_gen, seed=1)
         df.createOrReplaceTempView(tmpview)
@@ -350,7 +354,7 @@ def test_iceberg_incremental_read(spark_tmp_table_factory, reader_type):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(full_table) + \
-                  "AS SELECT * FROM {}".format(tmpview))
+                  _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
         df = binary_op_df(spark, long_gen, seed=1)
         df.createOrReplaceTempView(tmpview)
         spark.sql("INSERT INTO {} ".format(full_table) + \
@@ -380,7 +384,7 @@ def test_iceberg_reorder_columns(spark_tmp_table_factory, reader_type):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "AS SELECT * FROM {}".format(tmpview))
+                  _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
         spark.sql("ALTER TABLE {} ALTER COLUMN b FIRST".format(table))
         df = binary_op_df(spark, long_gen, seed=1)
         df.createOrReplaceTempView(tmpview)
@@ -401,7 +405,7 @@ def test_iceberg_rename_column(spark_tmp_table_factory, reader_type):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "AS SELECT * FROM {}".format(tmpview))
+                  _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
         spark.sql("ALTER TABLE {} RENAME COLUMN a TO c".format(table))
         df = binary_op_df(spark, long_gen, seed=1)
         df.createOrReplaceTempView(tmpview)
@@ -422,7 +426,7 @@ def test_iceberg_column_names_swapped(spark_tmp_table_factory, reader_type):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "AS SELECT * FROM {}".format(tmpview))
+                  _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
         spark.sql("ALTER TABLE {} RENAME COLUMN a TO c".format(table))
         spark.sql("ALTER TABLE {} RENAME COLUMN b TO a".format(table))
         spark.sql("ALTER TABLE {} RENAME COLUMN c TO b".format(table))
@@ -445,7 +449,7 @@ def test_iceberg_alter_column_type(spark_tmp_table_factory, reader_type):
         df = three_col_df(spark, int_gen, float_gen, DecimalGen(precision=7, scale=3))
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "AS SELECT * FROM {}".format(tmpview))
+                  _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
         spark.sql("ALTER TABLE {} ALTER COLUMN a TYPE BIGINT".format(table))
         spark.sql("ALTER TABLE {} ALTER COLUMN b TYPE DOUBLE".format(table))
         spark.sql("ALTER TABLE {} ALTER COLUMN c TYPE DECIMAL(17, 3)".format(table))
@@ -468,7 +472,7 @@ def test_iceberg_add_column(spark_tmp_table_factory, reader_type):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "AS SELECT * FROM {}".format(tmpview))
+                  _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
         spark.sql("ALTER TABLE {} ADD COLUMNS (c DOUBLE)".format(table))
         df = three_col_df(spark, long_gen, long_gen, double_gen)
         df.createOrReplaceTempView(tmpview)
@@ -489,7 +493,7 @@ def test_iceberg_remove_column(spark_tmp_table_factory, reader_type):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "AS SELECT * FROM {}".format(tmpview))
+                  _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
         spark.sql("ALTER TABLE {} DROP COLUMN a".format(table))
         df = unary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
@@ -510,7 +514,7 @@ def test_iceberg_add_partition_field(spark_tmp_table_factory, reader_type):
         df = binary_op_df(spark, int_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "AS SELECT * FROM {}".format(tmpview))
+                  _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
         spark.sql("ALTER TABLE {} ADD PARTITION FIELD b".format(table))
         df = binary_op_df(spark, int_gen)
         df.createOrReplaceTempView(tmpview)
@@ -530,7 +534,7 @@ def test_iceberg_drop_partition_field(spark_tmp_table_factory, reader_type):
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, int_gen)
         df.createOrReplaceTempView(tmpview)
-        spark.sql("CREATE TABLE {} (a INT, b INT) USING ICEBERG PARTITIONED BY (b)".format(table))
+        spark.sql("CREATE TABLE {} (a INT, b INT) USING ICEBERG PARTITIONED BY (b) ".format(table) + _NO_FANOUT)
         spark.sql("INSERT INTO {} SELECT * FROM {} ORDER BY b".format(table, tmpview))
         spark.sql("ALTER TABLE {} DROP PARTITION FIELD b".format(table))
         df = binary_op_df(spark, int_gen)
@@ -552,7 +556,7 @@ def test_iceberg_v1_delete(spark_tmp_table_factory, reader_type):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
         spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + \
-                  "AS SELECT * FROM {}".format(tmpview))
+                  _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
         spark.sql("DELETE FROM {} WHERE a < 0".format(table))
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
@@ -568,12 +572,42 @@ def test_iceberg_parquet_read_with_input_file(spark_tmp_table_factory, reader_ty
     def setup_iceberg_table(spark):
         df = binary_op_df(spark, long_gen)
         df.createOrReplaceTempView(tmpview)
-        spark.sql("CREATE TABLE {} USING ICEBERG AS SELECT * FROM {}".format(table, tmpview))
+        spark.sql("CREATE TABLE {} USING ICEBERG ".format(table) + _NO_FANOUT + " AS SELECT * FROM {}".format(tmpview))
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : spark.sql("SELECT *, input_file_name() FROM {}".format(table)),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.skipif(not is_iceberg_remote_catalog(), reason="Filecache is only meaningful with remote storage, skipping for local Hadoop filesystem")
+def test_iceberg_read_with_filecache(spark_tmp_table_factory, reader_type):
+    """Create a table on CPU, read it twice on GPU with file cache enabled,
+    and verify both reads match the CPU result."""
+    filecache_enabled = with_gpu_session(
+        lambda spark: spark.conf.get("spark.rapids.filecache.enabled", "false"))
+    assert filecache_enabled == "true", \
+        "spark.rapids.filecache.enabled must be set to true to run this test"
+    table = get_full_table_name(spark_tmp_table_factory)
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        df = binary_op_df(spark, long_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql(f"CREATE TABLE {table} USING ICEBERG {_NO_FANOUT} AS SELECT * FROM {tmpview}")
+    with_cpu_session(setup_iceberg_table)
+    query = f"SELECT * FROM {table}"
+    cpu_result = with_cpu_session(lambda spark: spark.sql(query).collect())
+    # Note: spark.rapids.filecache.enabled is a startup-only config, so it must
+    # be set via PYSP_TEST_spark_rapids_filecache_enabled env var, not here.
+    filecache_conf = {
+        'spark.rapids.sql.format.parquet.reader.type': reader_type,
+    }
+    gpu_result_1 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
+    gpu_result_2 = with_gpu_session(lambda spark: spark.sql(query).collect(), conf=filecache_conf)
+    assert_equal_with_local_sort(cpu_result, gpu_result_1)
+    assert_equal_with_local_sort(cpu_result, gpu_result_2)
 
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
@@ -589,9 +623,200 @@ def test_iceberg_parquet_read_from_url_encoded_path(spark_tmp_table_factory, rea
     def setup_iceberg_table(spark):
         df = two_col_df(spark, long_gen, partition_gen).sortWithinPartitions('b')
         df.createOrReplaceTempView(tmp_view)
-        spark.sql("CREATE TABLE {} USING ICEBERG PARTITIONED BY (b) AS SELECT * FROM {}"
-                  .format(table, tmp_view))
+        spark.sql("CREATE TABLE {} USING ICEBERG PARTITIONED BY (b) ".format(table) + _NO_FANOUT + " AS SELECT * FROM {}".format(tmp_view))
     with_cpu_session(setup_iceberg_table)
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.sql("SELECT * FROM {}".format(table)),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+@iceberg
+@ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_read_metadata_columns_with_partition_evolution(spark_tmp_table_factory, reader_type):
+    """
+    Test reading Iceberg metadata columns (_file, _pos, _spec_id, _partition) with partition evolution.
+    """
+    table = get_full_table_name(spark_tmp_table_factory)
+    tmpview = spark_tmp_table_factory.get()
+    def setup_iceberg_table(spark):
+        # Create table partitioned by a
+        df = three_col_df(spark, long_gen, int_gen, string_gen)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql(f"CREATE TABLE {table} (a BIGINT, b INT, c STRING) USING ICEBERG PARTITIONED BY (a) {_NO_FANOUT}")
+        spark.sql(f"INSERT INTO {table} SELECT * FROM {tmpview}")
+        
+        # Evolve partition: add b as partition field
+        spark.sql(f"ALTER TABLE {table} ADD PARTITION FIELD b")
+        
+        # Insert more data after partition evolution
+        df = three_col_df(spark, long_gen, int_gen, string_gen, seed=1)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql(f"INSERT INTO {table} SELECT * FROM {tmpview}")
+        
+        # Evolve partition again: drop a, keep b
+        spark.sql(f"ALTER TABLE {table} DROP PARTITION FIELD a")
+        
+        # Insert more data after second partition evolution
+        df = three_col_df(spark, long_gen, int_gen, string_gen, seed=2)
+        df.createOrReplaceTempView(tmpview)
+        spark.sql(f"INSERT INTO {table} SELECT * FROM {tmpview}")
+    
+    with_cpu_session(setup_iceberg_table)
+    
+    # Test reading all metadata columns along with data columns
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT a, b, c, _file, _pos, _spec_id, _partition FROM {table}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_small_file_combine_with_schema_evolution(spark_tmp_table_factory, reader_type):
+    table = get_full_table_name(spark_tmp_table_factory)
+    schema_evolution_gens_v1 = [('a', long_gen), ('b', int_gen)]
+    schema_evolution_gens_v2 = schema_evolution_gens_v1 + [('c', string_gen)]
+    base_seed = get_datagen_seed()
+    create_iceberg_table(
+        table,
+        partition_col_sql='bucket(2, a)',
+        df_gen=lambda spark: gen_df(spark, schema_evolution_gens_v1))
+
+    def setup_iceberg_table(spark):
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                schema_evolution_gens_v1,
+                length=64,
+                seed=base_seed + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(f"ALTER TABLE {table} ADD COLUMN c STRING")
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                schema_evolution_gens_v2,
+                length=64,
+                seed=base_seed + 100 + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(
+            f"ALTER TABLE {table} SET TBLPROPERTIES ("
+            "'read.split.target-size' = '268435456', "
+            "'read.split.planning-lookback' = '100')")
+        spark.sql(f"REFRESH TABLE {table}")
+
+    with_cpu_session(setup_iceberg_table)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT a, b, c FROM {table}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+def test_iceberg_small_file_combine_with_partition_spec_evolution(
+        spark_tmp_table_factory, reader_type):
+    table = get_full_table_name(spark_tmp_table_factory)
+    partition_evolution_gens = [('a', long_gen), ('b', int_gen), ('c', string_gen)]
+    base_seed = get_datagen_seed()
+    create_iceberg_table(
+        table,
+        partition_col_sql='bucket(10, a)',
+        df_gen=lambda spark: gen_df(spark, partition_evolution_gens))
+
+    def setup_iceberg_table(spark):
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                partition_evolution_gens,
+                length=64,
+                seed=base_seed + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(f"ALTER TABLE {table} ADD PARTITION FIELD bucket(10, b)")
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                partition_evolution_gens,
+                length=64,
+                seed=base_seed + 100 + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(f"ALTER TABLE {table} DROP PARTITION FIELD bucket(10, a)")
+        for seed_offset in range(4):
+            gen_df(
+                spark,
+                partition_evolution_gens,
+                length=64,
+                seed=base_seed + 200 + seed_offset,
+                num_slices=1).writeTo(table).append()
+
+        spark.sql(
+            f"ALTER TABLE {table} SET TBLPROPERTIES ("
+            "'read.split.target-size' = '268435456', "
+            "'read.split.planning-lookback' = '100')")
+        spark.sql(f"REFRESH TABLE {table}")
+
+    with_cpu_session(setup_iceberg_table)
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT a, b, c, _spec_id, _partition FROM {table}"),
+        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+
+
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason = "S3tables catalog is managed")
+def test_iceberg_small_file_combine_with_add_files_identity_partition(
+        spark_tmp_table_factory, reader_type):
+    target_table = get_full_table_name(spark_tmp_table_factory)
+    source_table = get_full_table_name(spark_tmp_table_factory)
+    create_iceberg_table(
+        target_table,
+        partition_col_sql='a',
+        df_gen=lambda spark: spark.createDataFrame([], 'a long, b string'))
+
+    def setup_imported_table(spark):
+        spark.sql(
+            f"CREATE TABLE {source_table} (a BIGINT, b STRING) "
+            "USING PARQUET "
+            "PARTITIONED BY (a)")
+        source_columns = spark.table(source_table).columns
+
+        partition_values = [2451350, 2452349, 2452323]
+        for batch_id in range(4):
+            batch_gens = [
+                ('a', RepeatSeqGen(partition_values * 2, data_type=long_gen.data_type)),
+                ('b', RepeatSeqGen(
+                    [f"batch-{batch_id}-row-{row_idx}" for row_idx in range(6)],
+                    data_type=string_gen.data_type))
+            ]
+            (gen_df(
+                spark,
+                batch_gens,
+                length=6,
+                num_slices=1)
+                .select(*source_columns)
+                .write
+                .mode('append')
+                .insertInto(source_table))
+
+        spark.sql(
+            f"CALL spark_catalog.system.add_files("
+            f"table => '{target_table}', "
+            f"source_table => '{source_table}')")
+        spark.sql(
+            f"ALTER TABLE {target_table} SET TBLPROPERTIES ("
+            "'read.split.target-size' = '268435456', "
+            "'read.split.planning-lookback' = '100')")
+        spark.sql(f"REFRESH TABLE {target_table}")
+
+    with_cpu_session(setup_imported_table)
+
+    # Imported partitioned Parquet files materialize `a` from the path, not the file payload.
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT a, b FROM {target_table}"),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})

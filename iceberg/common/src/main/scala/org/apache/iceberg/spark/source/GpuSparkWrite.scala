@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,14 +25,13 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.GpuIcebergSpecPartitioner
+import com.nvidia.spark.rapids.shims.parquet.ParquetFieldIdShims
 import org.apache.hadoop.mapreduce.Job
-import org.apache.hadoop.shaded.org.apache.commons.lang3.reflect.{FieldUtils, MethodUtils}
 import org.apache.iceberg._
 import org.apache.iceberg.io._
-import org.apache.iceberg.spark.{Spark3Util, SparkSchemaUtil}
+import org.apache.iceberg.spark.{GpuTypeToSparkType, Spark3Util, SparkSchemaUtil}
 import org.apache.iceberg.spark.functions.{GpuFieldTransform, GpuTransform}
 import org.apache.iceberg.spark.source.GpuWriteContext.positionDeleteSparkType
-import org.apache.iceberg.spark.source.SparkWrite.TaskCommit
 
 import org.apache.spark.api.java.JavaSparkContext
 import org.apache.spark.broadcast.Broadcast
@@ -42,18 +41,21 @@ import org.apache.spark.sql.connector.distributions.Distribution
 import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write.{DataWriter, _}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
+import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
+import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 
 
-class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionAndOrdering  {
-  private[source] val table: Table = FieldUtils.readField(cpu, "table", true).asInstanceOf[Table]
-  private[source] val format: FileFormat = FieldUtils.readField(cpu, "format", true)
-    .asInstanceOf[FileFormat]
+class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrdering  {
+  private val writeRequirements = cpu.asInstanceOf[RequiresDistributionAndOrdering]
+
+  private[source] val table: Table = GpuSparkWriteAccess.table(cpu)
+  private[source] val format: FileFormat = GpuSparkWriteAccess.format(cpu)
 
   override def toBatch: BatchWrite = {
     // Call the CPU version's toBatch to get the appropriate BatchWrite implementation
@@ -67,7 +69,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     val cpuBatchClassName = cpuBatch.getClass.getSimpleName
 
     cpuBatchClassName match {
-      case "BatchAppend" => new GpuBatchAppend(this)
+      case "BatchAppend" => new GpuBatchAppend(this, cpuBatch)
       case "DynamicOverwrite" => new GpuDynamicOverwrite(this, cpuBatch)
       case "OverwriteByFilter" => new GpuOverwriteByFilter(this, cpuBatch)
       case "CopyOnWriteOperation" => new GpuCopyOnWriteOperation(this, cpuBatch)
@@ -82,32 +84,33 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
 
   override def toString: String = s"GpuIcebergWrite(table=$table, format=$format)"
 
-  private[source] def abort(messages: Array[WriterCommitMessage]): Unit = {
-    MethodUtils.invokeMethod(cpu, true, "abort", messages)
-  }
+  override def distributionStrictlyRequired(): Boolean =
+    writeRequirements.distributionStrictlyRequired()
 
-  override def distributionStrictlyRequired(): Boolean = cpu.distributionStrictlyRequired()
+  override def requiredNumPartitions(): Int = writeRequirements.requiredNumPartitions()
 
-  override def requiredNumPartitions(): Int = cpu.requiredNumPartitions()
+  override def advisoryPartitionSizeInBytes(): Long =
+    writeRequirements.advisoryPartitionSizeInBytes()
 
-  override def advisoryPartitionSizeInBytes(): Long = cpu.advisoryPartitionSizeInBytes()
+  override def requiredDistribution(): Distribution = writeRequirements.requiredDistribution()
 
-  override def requiredDistribution(): Distribution = cpu.requiredDistribution()
-
-  override def requiredOrdering(): Array[SortOrder] = cpu.requiredOrdering()
+  override def requiredOrdering(): Array[SortOrder] = writeRequirements.requiredOrdering()
 
   private[source] def createDataWriterFactory: DataWriterFactory = {
-    val sparkContext: JavaSparkContext = FieldUtils.readField(cpu, "sparkContext", true)
-      .asInstanceOf[JavaSparkContext]
+    val sparkContext: JavaSparkContext = GpuSparkWriteAccess.sparkContext(cpu)
     val tableBroadcast = sparkContext.broadcast(SerializableTable.copyOf(table))
-    val queryId = FieldUtils.readField(cpu, "queryId", true).asInstanceOf[String]
-    val outputSpecId = FieldUtils.readField(cpu, "outputSpecId", true).asInstanceOf[Int]
-    val targetFileSize = FieldUtils.readField(cpu, "targetFileSize", true).asInstanceOf[Long]
-    val writeSchema = FieldUtils.readField(cpu, "writeSchema", true).asInstanceOf[Schema]
-    val dsSchema = FieldUtils.readField(cpu, "dsSchema", true).asInstanceOf[StructType]
-    val useFanout = FieldUtils.readField(cpu, "useFanoutWriter", true).asInstanceOf[Boolean]
-    val writeProps = FieldUtils.readField(cpu, "writeProperties", true)
-      .asInstanceOf[java.util.Map[String, String]]
+    val queryId = GpuSparkWriteAccess.queryId(cpu)
+    val outputSpecId = GpuSparkWriteAccess.outputSpecId(cpu)
+    val targetFileSize = GpuSparkWriteAccess.targetFileSize(cpu)
+    val writeSchema = GpuSparkWriteAccess.writeSchema(cpu)
+    // Convert writeSchema to Spark StructType with Iceberg field IDs (PARQUET:field_id).
+    // The CPU path uses Iceberg's own Parquet writer which natively embeds field IDs, but
+    // the GPU path uses Spark's Parquet infrastructure which requires field IDs in the
+    // StructType metadata. Without them, Iceberg's ParquetMetrics cannot extract file-level
+    // statistics, causing StrictMetricsEvaluator to fail during overwrite validation.
+    val dsSchema = GpuTypeToSparkType.toSparkType(writeSchema)
+    val useFanout = GpuSparkWriteAccess.useFanoutWriter(cpu)
+    val writeProps = GpuSparkWriteAccess.writeProperties(cpu)
 
     if (!format.equals(FileFormat.PARQUET)) {
       throw new UnsupportedOperationException(
@@ -115,6 +118,7 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
     }
 
     val hadoopConf = sparkContext.hadoopConfiguration
+
     val job = {
       val tmpJob  = Job.getInstance(hadoopConf)
       tmpJob.setOutputKeyClass(classOf[Void])
@@ -148,22 +152,11 @@ class GpuSparkWrite(cpu: SparkWrite) extends GpuWrite with RequiresDistributionA
       statsTracker,
       serializedHadoopConf)
   }
-
-  private[source] def files(messages: Array[WriterCommitMessage]): Seq[DataFile] = {
-    messages.filter(_ != null)
-      .flatMap(_.asInstanceOf[TaskCommit].files)
-      .toSeq
-  }
-
-  private[source] def commitOperation(operation: SnapshotUpdate[_], desc: String) = {
-    MethodUtils.invokeMethod(cpu, true, "commitOperation", operation, desc)
-  }
 }
 
 object GpuSparkWrite {
   def supports(cpuClass: Class[_ <: Write]): Boolean = {
-    classOf[SparkWrite].isAssignableFrom(cpuClass)  ||
-      classOf[SparkPositionDeltaWrite].isAssignableFrom(cpuClass)
+    GpuSparkWriteAccess.supports(cpuClass)
   }
 
   /**
@@ -179,6 +172,16 @@ object GpuSparkWrite {
       deleteFormat: Option[FileFormat],
       partitionSpec: PartitionSpec,
       meta: SparkPlanMeta[_]): Unit = {
+
+    // Iceberg requires Parquet field IDs for correct file-level metrics. Without them,
+    // StrictMetricsEvaluator fails during overwrite validation.
+    val spark = SparkSessionUtils.sessionFromPlan(meta.wrapped.asInstanceOf[SparkPlan])
+    val hadoopConf = spark.sparkContext.hadoopConfiguration
+    val sqlConf = spark.sessionState.conf
+    if (!ParquetFieldIdShims.getParquetIdWriteEnabled(hadoopConf, sqlConf)) {
+      meta.willNotWorkOnGpu("Iceberg requires Parquet field IDs to be written for correct " +
+        "file-level metrics. Set spark.sql.parquet.fieldId.write.enabled=true")
+    }
 
     // Check file format support
     if (dataFormat.exists(!_.equals(FileFormat.PARQUET))) {
@@ -209,21 +212,19 @@ object GpuSparkWrite {
 
   def tagForGpu(cpuWrite: Write, meta: SparkPlanMeta[_]): Unit = {
     if (!supports(cpuWrite.getClass)) {
-      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports ${classOf[SparkWrite].getName}, " +
+      meta.willNotWorkOnGpu(s"GpuSparkWrite only supports " +
+        s"${GpuSparkWriteAccess.sparkWriteClassName()}, " +
         s"but got: ${cpuWrite.getClass.getName}")
       return
     }
 
-    val dataFileFormat: FileFormat = FieldUtils.readField(cpuWrite, "format", true)
-      .asInstanceOf[FileFormat]
+    val dataFileFormat: FileFormat = GpuSparkWriteAccess.format(cpuWrite)
 
-    val table: Table = FieldUtils.readField(cpuWrite, "table", true).asInstanceOf[Table]
+    val table: Table = GpuSparkWriteAccess.table(cpuWrite)
     val partitionSpec = table.spec()
 
-    val dsSchema = FieldUtils.readField(cpuWrite, "dsSchema", true)
-      .asInstanceOf[StructType]
-    val writeSchema = FieldUtils.readField(cpuWrite, "writeSchema", true)
-      .asInstanceOf[Schema]
+    val dsSchema = GpuSparkWriteAccess.dsSchema(cpuWrite)
+    val writeSchema = GpuSparkWriteAccess.writeSchema(cpuWrite)
 
     tagForGpuWrite(Some(dataFileFormat), Some(dsSchema), Some(writeSchema),
       None, partitionSpec, meta)
@@ -290,8 +291,9 @@ object GpuSparkWrite {
   }
 
   def convert(cpuWrite: Write): GpuSparkWrite = {
-    new GpuSparkWrite(cpuWrite.asInstanceOf[SparkWrite])
+    new GpuSparkWrite(cpuWrite)
   }
+
 }
 
 class GpuWriterFactory(val tableBroadcast: Broadcast[Table],
@@ -371,9 +373,7 @@ class GpuUnpartitionedDataWriter(
     close()
 
     val result = delegate.result()
-    val taskCommit = new TaskCommit(result.dataFiles().toArray(new Array(0)))
-    taskCommit.reportOutputMetrics()
-    taskCommit
+    GpuSparkWriteAccess.taskCommit(result.dataFiles().toArray(new Array[DataFile](0)))
   }
 
   override def abort(): Unit = {
@@ -421,9 +421,7 @@ class GpuPartitionedDataWriter(
     close()
 
     val result = delegate.result()
-    val taskCommit = new TaskCommit(result.dataFiles().toArray(new Array(0)))
-    taskCommit.reportOutputMetrics()
-    taskCommit
+    GpuSparkWriteAccess.taskCommit(result.dataFiles().toArray(new Array[DataFile](0)))
   }
 
   override def abort(): Unit = {

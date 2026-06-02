@@ -24,7 +24,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti}
-import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, UnspecifiedDistribution}
+import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
@@ -135,14 +135,45 @@ abstract class GpuBroadcastHashJoinExecBase(
     }
   }
 
+  override def outputPartitioning: Partitioning = streamedPlan.outputPartitioning
 
-  def broadcastExchange: GpuBroadcastExchangeExec = buildPlan match {
+  private def splitBroadcastPlan(plan: SparkPlan): (SparkPlan, List[GpuProjectExec]) = plan match {
+    case project: GpuProjectExec =>
+      val (broadcastPlan, projects) = splitBroadcastPlan(project.child)
+      (broadcastPlan, project :: projects)
+    case _ =>
+      (plan, List.empty)
+  }
+
+  protected def getBroadcastPlan(plan: SparkPlan): SparkPlan = splitBroadcastPlan(plan)._1
+
+  def broadcastExchange: GpuBroadcastExchangeExec = getBroadcastPlan(buildPlan) match {
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[GpuBroadcastExchangeExec] =>
       bqse.plan.asInstanceOf[GpuBroadcastExchangeExec]
     case bqse: BroadcastQueryStageExec if bqse.plan.isInstanceOf[ReusedExchangeExec] =>
       bqse.plan.asInstanceOf[ReusedExchangeExec].child.asInstanceOf[GpuBroadcastExchangeExec]
     case gpu: GpuBroadcastExchangeExec => gpu
     case reused: ReusedExchangeExec => reused.child.asInstanceOf[GpuBroadcastExchangeExec]
+  }
+
+  protected def buildSidePostProjection: Option[ColumnarBatch => ColumnarBatch] = {
+    val projects = splitBroadcastPlan(buildPlan)._2.reverse
+    if (projects.nonEmpty) {
+      val boundProjects = projects.map { project =>
+        // Match GpuProjectExec's tiered binding so build-side extraction has the same
+        // splitting and retry behavior as a normal project.
+        GpuBindReferences.bindGpuReferencesTiered(
+          project.projectList, project.child.output, conf, allMetrics)
+      }
+      Some((batch: ColumnarBatch) => boundProjects.foldLeft(batch) {
+        case (currentBatch, boundProject) =>
+          val spillableBatch = SpillableColumnarBatch(
+            currentBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          boundProject.projectAndCloseWithRetrySingleBatch(spillableBatch)
+      })
+    } else {
+      None
+    }
   }
 
   override def doExecute(): RDD[InternalRow] =
@@ -162,14 +193,17 @@ abstract class GpuBroadcastHashJoinExecBase(
     val broadcastRelation = broadcastExchange.executeColumnarBroadcast[Any]()
 
     val rdd = streamedPlan.executeColumnar()
-    val buildSchema = buildPlan.schema
+    val buildSchema = getBroadcastPlan(buildPlan).schema
+    val postProjectionAndClose = buildSidePostProjection
     val localIsNullAwareAntiJoin = isNullAwareAntiJoin
     rdd.mapPartitions { it =>
-      val (builtBatch, streamIter) =
+      val (broadcastBuiltBatch, streamIter) =
         GpuBroadcastHelper.getBroadcastBuiltBatchAndStreamIter(
           broadcastRelation,
           buildSchema,
           new CollectTimeIterator(NvtxRegistry.BROADCAST_JOIN_STREAM, it, streamTime))
+      val builtBatch = postProjectionAndClose.map(_(broadcastBuiltBatch))
+          .getOrElse(broadcastBuiltBatch)
       if (localIsNullAwareAntiJoin) {
         // This is to support the null-aware anti join for the LeftAnti join with
         // BuildRight. See the config "spark.sql.optimizeNullAwareAntiJoin".

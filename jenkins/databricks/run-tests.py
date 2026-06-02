@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024, NVIDIA CORPORATION.
+# Copyright (c) 2020-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,7 +46,11 @@ def main():
         subprocess.check_call(ssh_command, shell=True)
     finally:
         print("Copying test report tarball back")
-        report_path_prefix = params.jar_path if params.jar_path else "/home/ubuntu/spark-rapids"
+        if params.base_spark_pom_version.startswith("4."):
+            default_jar_path = "/home/ubuntu/spark-rapids/scala2.13"
+        else:
+            default_jar_path = "/home/ubuntu/spark-rapids"
+        report_path_prefix = params.jar_path if params.jar_path else default_jar_path
         rsync_command = "rsync -I -Pave \"ssh %s\" ubuntu@%s:%s/integration_tests/target/run_dir*/TEST-pytest-*.xml ./" % \
             (ssh_args, master_addr, report_path_prefix)
         print("rsync command: %s" % rsync_command)

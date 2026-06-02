@@ -30,7 +30,7 @@ for each version of Spark supported in the jar, i.e., spark330/, spark341/, etc.
 
 If you have to change the contents of the uber jar the following files control what goes into the base jar as classes that are not shaded.
 
-1. `unshimmed-common-from-spark320.txt` - This has classes and files that should go into the base jar with their normal
+1. `unshimmed-common-from-single-shim.txt` - This has classes and files that should go into the base jar with their normal
 package name (not shaded). This includes user visible classes (i.e., com/nvidia/spark/SQLPlugin), python files,
 and other files that aren't version specific. Uses Spark 3.2.0 built jar for these base classes as explained above.
 2. `unshimmed-from-each-spark3xx.txt` - This is applied to all the individual Spark specific version jars to pull

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.util.Objects
 
 import scala.collection.JavaConverters._
 
-import com.nvidia.spark.rapids.{DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
+import com.nvidia.spark.rapids.{CombineConf, DateTimeRebaseCorrected, GpuMetric, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
@@ -45,7 +45,8 @@ import org.apache.parquet.hadoop.metadata.BlockMetaData
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.execution.datasources.parquet.ParquetToSparkSchemaConverter
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 case class IcebergPartitionedFile(
@@ -60,9 +61,9 @@ case class IcebergPartitionedFile(
     GpuIcebergParquetReader.buildReaderOptions(file.getDelegate, split)
   }
 
-  def newReader: ParquetFileReader = {
+  def newReader(metrics: Map[String, GpuMetric] = Map.empty): ParquetFileReader = {
     try {
-      ParquetFileReader.open(GpuParquetIO.file(file.getDelegate), parquetReadOptions)
+      GpuParquetIO.openReader(file, path, parquetReadOptions, metrics)
     } catch {
       case e: IOException =>
         throw new UncheckedIOException(s"Failed to newInputFile Parquet file: " +
@@ -115,9 +116,16 @@ case object SingleFile extends ThreadConf
 
 case class MultiThread(
     poolConfBuilder: ThreadPoolConfBuilder,
-    maxNumFilesProcessed: Int) extends ThreadConf
+    maxNumFilesProcessed: Int,
+    combineConf: CombineConf,
+    disableCombining: Boolean,
+    hasFilePathMetadata: Boolean,
+    hasRowPositionMetadata: Boolean) extends ThreadConf
 
-case class MultiFile(poolConfBuilder: ThreadPoolConfBuilder) extends ThreadConf
+case class MultiFile(
+    poolConfBuilder: ThreadPoolConfBuilder,
+    hasFilePathMetadata: Boolean,
+    hasRowPositionMetadata: Boolean) extends ThreadConf
 
 
 case class GpuIcebergParquetReaderConf(
@@ -194,8 +202,8 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
   }
 
   def filterParquetBlocks(file: IcebergPartitionedFile,
-      requiredSchema: Schema): ParquetFileInfoWithBlockMeta = {
-    withResource(file.newReader) { reader =>
+      requiredSchema: Schema): (ParquetFileInfoWithBlockMeta, ShadedMessageType) = {
+    withResource(file.newReader(conf.metrics)) { reader =>
       val fileSchema = reader.getFileMetaData.getSchema
 
       val rowGroupFirstRowIndices = new Array[Long](reader.getRowGroups.size())
@@ -209,11 +217,16 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       val blockFirstRowIndices = filteredBlocks.map(b => rowGroupFirstRowIndices(b._2))
       val blocks = clipBlocksToSchema(fileReadSchema, filteredBlocks.map(_._1))
 
-      val partReaderSparkSchema = TypeWithSchemaVisitor.visit(requiredSchema.asStruct(),
-          fileReadSchema, new SparkSchemaConverter)
-        .asInstanceOf[StructType]
+      val sqlConf = SQLConf.get
+      val partReaderSparkSchema = new ParquetToSparkSchemaConverter(
+        sqlConf.isParquetBinaryAsString,
+        sqlConf.isParquetINT96AsTimestamp,
+        conf.caseSensitive,
+        sqlConf.parquetInferTimestampNTZEnabled,
+        sqlConf.legacyParquetNanosAsLong
+      ).convert(unshade(fileReadSchema))
 
-      ParquetFileInfoWithBlockMeta(file.path,
+      val parquetFileInfo = ParquetFileInfoWithBlockMeta(file.path,
         blocks,
         InternalRow.empty, // Iceberg handles partition values but itself
         unshade(fileReadSchema),
@@ -223,6 +236,8 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
         hasInt96Timestamps = true,
         blockFirstRowIndices,
       )
+      
+      (parquetFileInfo, fileReadSchema)
     }
   }
 }
