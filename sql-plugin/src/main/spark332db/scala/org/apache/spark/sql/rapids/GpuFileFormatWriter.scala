@@ -279,14 +279,24 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
       // descendant. Descend through wrappers (unwrapping AQE to its
       // already-finalized executedPlan and query stages to their plan) to the
       // GpuExec roots before collecting.
-      def collectExcludeMetrics(p: SparkPlan): Seq[GpuMetric] = p match {
-        case aqe: AdaptiveSparkPlanExec => collectExcludeMetrics(aqe.executedPlan)
-        case qs: QueryStageExec => collectExcludeMetrics(qs.plan)
-        case gpuExec: GpuExec => gpuExec.getOpTimeNewMetric.toSeq ++
-          gpuExec.getDescendantOpTimeMetrics
-        case other => other.children.flatMap(collectExcludeMetrics)
+      def collectExcludeMetrics(p: SparkPlan, visited: Set[SparkPlan]): Seq[GpuMetric] = {
+        if (visited.contains(p)) {
+          // Guard against cycles / re-visiting shared (reused) sub-plans.
+          Seq.empty
+        } else {
+          val seen = visited + p
+          p match {
+            case aqe: AdaptiveSparkPlanExec => collectExcludeMetrics(aqe.executedPlan, seen)
+            case qs: QueryStageExec => collectExcludeMetrics(qs.plan, seen)
+            case gpuExec: GpuExec => gpuExec.getOpTimeNewMetric.toSeq ++
+              gpuExec.getDescendantOpTimeMetrics
+            case other => other.children.flatMap(collectExcludeMetrics(_, seen))
+          }
+        }
       }
-      val excludeMetrics = collectExcludeMetrics(plan)
+      // distinct: a reused descendant reached via multiple GpuExec roots must be
+      // excluded once, not once per path (double-exclusion would under-count).
+      val excludeMetrics = collectExcludeMetrics(plan, Set.empty).distinct
 
       // SPARK-41448 map reduce job IDs need to consistent across attempts for correctness
       val jobTrackerID = SparkHadoopWriterUtils.createJobTrackerID(new Date())
