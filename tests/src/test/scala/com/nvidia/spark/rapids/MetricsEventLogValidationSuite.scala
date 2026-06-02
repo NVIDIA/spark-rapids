@@ -700,6 +700,21 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
   }
 
   test("write op_time stays within executorRunTime with empty partitions (#14901)") {
+    // Default write path: WriteFilesExec on Spark 3.4+ (exercises the
+    // GpuWriteFilesExec excludeMetrics forwarding), the direct
+    // GpuFileFormatWriter.write on Spark 3.3.x.
+    assertWriteOpTimeWithinExecRunTime(forceLegacyWritePath = false)
+  }
+
+  test("write op_time stays within executorRunTime on the non-WriteFilesExec path (#14901)") {
+    // Disabling planned-write routes Spark 3.4+ through GpuFileFormatWriter.write
+    // -- the path Hive/Delta/CTAS always take -- so the AdaptiveSparkPlanExec
+    // unwrap in excludeMetrics collection is exercised on those versions too,
+    // not just on Spark 3.3.x.
+    assertWriteOpTimeWithinExecRunTime(forceLegacyWritePath = true)
+  }
+
+  private def assertWriteOpTimeWithinExecRunTime(forceLegacyWritePath: Boolean): Unit = {
     val sparkSession = spark
     import sparkSession.implicits._
 
@@ -715,23 +730,30 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     // ~2x ratio (the Insert re-counting its descendants), independent of batch
     // size.
     spark.conf.set("spark.rapids.sql.batchSizeBytes", "536870912")
+    if (forceLegacyWritePath) {
+      // Spark 3.4+ inserts WriteFilesExec by default; disabling planned-write
+      // routes the command through GpuFileFormatWriter.write instead. The config
+      // is unknown (and harmless) on Spark 3.3.x, which always uses that path.
+      spark.conf.set("spark.sql.optimizer.plannedWrite.enabled", "false")
+    }
 
     val numRows = 1000000L
     val numWritePartitions = 64
     val parquetOutputPath = new File(tempDir, "empty_part_write").getAbsolutePath
 
     // The write stage itself must carry non-trivial descendant op_time for the
-    // bugs to show: hash-repartition on a 4-value key into 64 partitions FIRST
+    // bug to show: hash-repartition on a 4-value key into 64 partitions FIRST
     // (leaving ~60 partitions EMPTY at the write stage -> exercises the
     // empty-partition hasNext branch, bug 2), THEN do heavy GPU compute
     // (project + filter) AFTER the shuffle so those operators are descendants
-    // of the Insert inside the write stage. Pre-fix, GpuWriteFilesExec forwards
-    // no excludeMetrics (bug 1) so the Insert op_time double-counts that
-    // project/filter work, pushing the write stage's sum(op_time) past its
-    // sum(executorRunTime). The heavy transcendental expression makes the
-    // post-shuffle project carry the dominant share of the write stage's
-    // op_time, so the pre-fix double-count lands at ~1.85-2x (measured),
-    // clear of the 1.5x detection threshold, while the post-fix value is ~1x.
+    // of the Insert inside the write stage. Pre-fix the Insert op_time fails to
+    // exclude that project/filter work -- via missing excludeMetrics forwarding
+    // on the WriteFilesExec path (bug 1), or the AdaptiveSparkPlanExec match
+    // gap on the direct write path -- pushing the write stage's sum(op_time)
+    // past its sum(executorRunTime). The heavy transcendental expression makes
+    // the post-shuffle project carry the dominant share of the write stage's
+    // op_time, so the pre-fix double-count lands at ~1.85-2x (measured), clear
+    // of the 1.5x detection threshold, while the post-fix value is ~1x.
     val heavy = (0 until 24)
       .map(i => s"sin(id + $i) * cos(id - $i) + sqrt(abs(id * 1.0 + $i)) + log(abs(id) + ${i + 1})")
       .mkString(" + ")
@@ -752,11 +774,10 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     // The accounting invariant the write-path fixes restore: within a stage,
     // the summed op_time of all operators cannot exceed the stage's summed
     // executor run time (each operator's op_time is a slice of its task's wall
-    // time). Pre-fix, GpuWriteFilesExec forwards no excludeMetrics (bug 1), so
-    // the Insert op_time double-counts the heavy post-shuffle project/filter
-    // that are its descendants -- the write stage's sum(op_time) lands at ~2x
-    // its sum(executorRunTime). Post-fix the descendants are excluded and the
-    // ratio drops to ~1x.
+    // time). Pre-fix the Insert op_time double-counts the heavy post-shuffle
+    // project/filter that are its descendants -- the write stage's sum(op_time)
+    // lands at ~2x its sum(executorRunTime). Post-fix the descendants are
+    // excluded and the ratio drops to ~1x.
     //
     // Only stages that did non-trivial work (summed run time over the floor)
     // are checked, so we never divide by a stage whose run time is dominated by
@@ -782,7 +803,7 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
       }.mkString("; ")
       fail(s"${violators.size}/${meaningful.size} stages have summed op_time exceeding " +
         f"$marginFactor%.1fx summed executorRunTime, indicating write-path op_time " +
-        s"over-count (#14901 bug 1 not fixed). $sample")
+        s"over-count (#14901 not fixed). $sample")
     }
   }
 
