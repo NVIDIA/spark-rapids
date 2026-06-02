@@ -1145,13 +1145,6 @@ object GpuRegExpUtils {
     }
   }
 
-  def validateRegExpComplexity(meta: ExprMeta[_], regex: RegexAST): Unit = {
-    if(!RegexComplexityEstimator.isValid(meta.conf, regex)) {
-      meta.willNotWorkOnGpu(s"estimated memory needed for regular expression exceeds the maximum." +
-        s" Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY_BYTES} to change it.")
-    }
-  }
-
   /**
    * Recursively check if pattern contains only zero-match repetitions
    * ?, *, {0,}, or {0,n} or any combination of them.
@@ -1254,7 +1247,6 @@ class GpuRLikeMeta(
             }
             val (transpiledAST, _) = new CudfRegexTranspiler(RegexFindMode)
                 .getTranspiledAST(regexAst, None, None)
-            GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
             pattern = Some(transpiledAST.toRegexString)
           } catch {
             case e: RegexUnsupportedException =>
@@ -1516,7 +1508,6 @@ class GpuRegExpExtractMeta(
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
               javaRegexpPattern, groupIdx, None)
-          GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
@@ -1645,7 +1636,6 @@ class GpuRegExpExtractAllMeta(
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
               javaRegexpPattern, groupIdx, None)
-          GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
@@ -1900,7 +1890,6 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
           case None =>
             try {
               val (transpiledAST, _) = transpiler.getTranspiledAST(utf8Str.toString, None, None)
-              GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
               pattern = transpiledAST.toRegexString
               isRegExp = true
             } catch {

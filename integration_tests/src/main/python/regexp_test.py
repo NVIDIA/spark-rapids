@@ -598,13 +598,9 @@ def test_character_classes():
 
 @datagen_overrides(seed=0, reason="https://github.com/NVIDIA/spark-rapids/issues/10641")
 def test_regexp_choice():
-    # Pattern `(abc1a$|^ab2ab|a3abc)` below transpiles to 21 states; with the
-    # default `gpuTargetBatchSizeBytes = 1 GiB` and default
-    # `maxRegExpStateMemory = Integer.MAX_VALUE`, the post-#14849 estimator
-    # (correctly) computes ~2.25 GiB and falls back to CPU, which drags the
-    # whole Project to CPU and trips assertIsOnTheGpu under IT mode.
-    # 3 GiB matches the conf's documented "no more than 3x batchSizeBytes"
-    # guidance. Tracked by #14867; long-term plugin-level fix is #14887.
+    # These choice patterns transpile to many cuDF states (e.g. `(abc1a$|^ab2ab|a3abc)`
+    # is ~21 states). They run on the GPU directly now that the regex complexity gate
+    # has been removed (#14887).
     gen = mk_str_gen('[abcd]{1,3}[0-9]{1,3}[abcd]{1,3}[ \n\t\r]{0,2}')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
@@ -621,8 +617,7 @@ def test_regexp_choice():
                 'regexp_replace(a, "[ab]$|[cd]$", "@")',
                 'regexp_replace(a, "[ab]+|^cd1", "@")'
             ),
-        conf={**_regexp_conf,
-              'spark.rapids.sql.regexp.maxStateMemoryBytes': str(3 * 1024 * 1024 * 1024)})
+        conf=_regexp_conf)
 
 def test_regexp_hexadecimal_digits():
     gen = mk_str_gen(
@@ -1063,52 +1058,6 @@ def test_regexp_split_unicode_support():
             'split(a, "[bf]", -1)',
             'split(a, "[o]", -2)'),
             conf=_regexp_conf)
-
-@allow_non_gpu('ProjectExec', 'RLike')
-def test_regexp_memory_fallback():
-    gen = StringGen('test')
-    assert_gpu_fallback_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
-            'a rlike "a{6}"',
-            'a rlike "a{6,}"',
-            'a rlike "(?:ab){0,3}"',
-            'a rlike "(?:12345)?"',
-            'a rlike "(?:12345)+"',
-            'a rlike "(?:123456)*"',
-            'a rlike "a{1,6}"',
-            'a rlike "abcdef"',
-            'a rlike "(1)(2)(3)"',
-            'a rlike "1|2|3|4|5|6"'
-        ),
-        cpu_fallback_class_name='RLike',
-        conf={
-            'spark.rapids.sql.regexp.enabled': True,
-            'spark.rapids.sql.regexp.maxStateMemoryBytes': '10',
-            'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
-        }
-    )
-
-def test_regexp_memory_ok():
-    gen = StringGen('test')
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen).selectExpr(
-            'a rlike "a{6}"',
-            'a rlike "a{6,}"',
-            'a rlike "(?:ab){0,3}"',
-            'a rlike "(?:12345)?"',
-            'a rlike "(?:12345)+"',
-            'a rlike "(?:123456)*"',
-            'a rlike "a{1,6}"',
-            'a rlike "abcdef"',
-            'a rlike "(1)(2)(3)"',
-            'a rlike "1|2|3|4|5|6"'
-        ),
-        conf={
-            'spark.rapids.sql.regexp.enabled': True,
-            'spark.rapids.sql.regexp.maxStateMemoryBytes': '12',
-            'spark.rapids.sql.batchSizeBytes': '20' # 1 row in the batch
-        }
-    )
 
 def test_illegal_regexp_exception():
         gen = mk_str_gen('[abcdef]{0,5}')
