@@ -89,8 +89,9 @@ def _build_simple_descriptor_bytes(spark):
 
 
 @pytest.fixture
-def simple_desc(spark_tmp_path):
-    desc_path = spark_tmp_path + "/simple.desc"
+def simple_desc(local_tmp_path):
+    # from_protobuf reads descFilePath via java.io.File on the driver.
+    desc_path = local_tmp_path + "/simple.desc"
     desc_bytes = with_cpu_session(_build_simple_descriptor_bytes)
     with open(desc_path, "wb") as fp:
         fp.write(desc_bytes)
