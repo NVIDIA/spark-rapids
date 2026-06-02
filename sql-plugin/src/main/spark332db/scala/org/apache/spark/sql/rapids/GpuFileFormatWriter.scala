@@ -62,6 +62,7 @@ import org.apache.spark.sql.catalyst.expressions.{Ascending, Attribute, Attribut
 import org.apache.spark.sql.catalyst.util.{CaseInsensitiveMap, DateTimeUtils}
 import org.apache.spark.sql.connector.write.WriterCommitMessage
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.datasources.{GpuWriteFiles, GpuWriteFilesExec, GpuWriteFilesSpec, WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
 import org.apache.spark.sql.rapids.GpuFileFormatWriter.GpuConcurrentOutputWriterSpec
@@ -271,8 +272,17 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
         rdd
       }
 
-      // Collect exclude metrics from the plan
-      val excludeMetrics = plan match {
+      // Collect exclude metrics from the plan. With AQE enabled the child is
+      // wrapped in AdaptiveSparkPlanExec, which is not a GpuExec; unwrap it to
+      // its executed plan (already finalized by the executeColumnar call above)
+      // so the descendant op_time metrics can be collected. Without this the
+      // match falls through to Seq.empty and the Insert op_time double-counts
+      // every descendant.
+      val metricsRoot = plan match {
+        case aqe: AdaptiveSparkPlanExec => aqe.executedPlan
+        case other => other
+      }
+      val excludeMetrics = metricsRoot match {
         case gpuExec: GpuExec =>
           val currentMetric = gpuExec.getOpTimeNewMetric.toSeq
           val childMetrics = gpuExec.getDescendantOpTimeMetrics
