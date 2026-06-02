@@ -979,7 +979,7 @@ object GpuTransitionOverrides {
     }
   }
 
-  private def canExposeExchangeForAqeStage(
+  private[rapids] def canExposeExchangeForAqeStage(
       exchange: SparkPlan,
       parent: Option[SparkPlan]): Boolean = {
     parent.isEmpty &&
@@ -992,6 +992,10 @@ object GpuTransitionOverrides {
   // query-stage root, unlike user repartition exchanges with explicit repartition origins.
   private def exchangeGeneratedByEnsureRequirements(exchange: SparkPlan): Boolean = exchange match {
     case shuffle: ShuffleExchangeLike =>
+      // Compare by origin name instead of `==`. Some proprietary Spark distributions define
+      // their own ENSURE_REQUIREMENTS singleton to work around upstream ShuffleOrigin being
+      // sealed. Those instances are not equal to the upstream case object but preserve the
+      // same origin name.
       shuffle.shuffleOrigin.toString == ENSURE_REQUIREMENTS.toString
     case _ => false
   }
