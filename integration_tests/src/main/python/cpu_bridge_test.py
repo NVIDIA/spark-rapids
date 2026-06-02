@@ -38,6 +38,20 @@ def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, disallowed_bridge_
         conf['spark.rapids.sql.expression.cpuBridge.disallowList'] = ','.join(disallowed_bridge_expressions)
     return conf
 
+# gen_df builds a DataFrame from a Python RDD, so its leaf is a row-based RDDScanExec.
+# Under AQE an exchange is planned in isolation at the shuffle boundary, and
+# RapidsMeta.fixUpExchangeOverhead leaves a shuffle on the CPU when its only child is
+# non-columnar ("Columnar exchange without columnar children is inefficient") because it
+# cannot see the GPU consumer in the next query stage, only the row source. Real workloads
+# read columnar files, so the exchange has a columnar child and stays on the GPU. We
+# emulate that here with a trivial, lossless GPU filter (monotonically_increasing_id() is
+# always >= 0, and Spark will not constant-fold a nondeterministic expression) so the
+# exchange gets a columnar (GpuFilter) child. Without it these shuffle/sort/join tests
+# would fall back only because of the synthetic row source, which is not what they intend
+# to exercise.
+def with_columnar_source(df):
+    return df.filter(f.monotonically_increasing_id() >= f.lit(0))
+
 # Only include Add and Boundreference Expressions to verify that the CPU bridge is working
 # as expected.
 @allow_non_gpu('Add')
@@ -195,6 +209,8 @@ def test_cpu_bridge_window_lag_disabled_fallback():
     """Test that when lag() is disabled via config, WindowExec falls back to CPU entirely"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', string_gen)], length=1000)
+        # Give the window's partition-by shuffle a columnar child so it stays on GPU under AQE.
+        df = with_columnar_source(df)
         # lag() disabled via config should cause full WindowExec fallback, not bridge
         return df.selectExpr(
             "a", "b",
@@ -317,22 +333,25 @@ def test_cpu_bridge_simple_equality_join_works():
     # Should work: bridge expressions in select, simple equality in join
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-@allow_non_gpu('SortMergeJoinExec')
+@allow_non_gpu('Add')
 @ignore_order(local=True)
-def test_cpu_bridge_sort_merge_left_outer_join_fallback():
-    """Left outer join with bridge expressions in condition should cause SortMergeJoin fallback"""
+def test_cpu_bridge_sort_merge_left_outer_join_works():
+    """Left outer join with bridge expressions in condition runs on GPU via the CPU bridge"""
     def test_func(spark):
         # Use larger range to force sort-merge join instead of broadcast
         left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
                              ('a', IntegerGen(min_val=1, max_val=100))], length=500)
         right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
                               ('b', IntegerGen(min_val=1, max_val=100))], length=200)
-        
+        # Give each join input's shuffle a columnar child so they stay on GPU under AQE.
+        left = with_columnar_source(left)
+        right = with_columnar_source(right)
+
         left.createOrReplaceTempView("left_table")
         right.createOrReplaceTempView("right_table")
         
-        # Left outer join with disabled Add expressions in condition
-        # Should fall back: Outer joins require AST conversion for conditions
+        # Left outer join: a+10/b+5 are not AST-able (Add disabled), so they run via the
+        # CPU bridge inside the GPU join condition instead of forcing a CPU fallback.
         return spark.sql("""
             SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
             FROM left_table
@@ -341,25 +360,28 @@ def test_cpu_bridge_sort_merge_left_outer_join_fallback():
         """)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    # Should fall back: Outer joins require AST conversion for conditions
-    assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
+    # Outer joins now run on GPU: the non-AST a+10/b+5 are evaluated via the CPU bridge.
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-@allow_non_gpu('SortMergeJoinExec')
+@allow_non_gpu('Add')
 @ignore_order(local=True)
-def test_cpu_bridge_sort_merge_right_outer_join_fallback():
-    """Right outer join with bridge expressions in condition should cause SortMergeJoin fallback"""
+def test_cpu_bridge_sort_merge_right_outer_join_works():
+    """Right outer join with bridge expressions in condition runs on GPU via the CPU bridge"""
     def test_func(spark):
         # Use larger range to force sort-merge join instead of broadcast
         left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
                              ('a', IntegerGen(min_val=1, max_val=100))], length=200)
         right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
                               ('b', IntegerGen(min_val=1, max_val=100))], length=500)
-        
+        # Give each join input's shuffle a columnar child so they stay on GPU under AQE.
+        left = with_columnar_source(left)
+        right = with_columnar_source(right)
+
         left.createOrReplaceTempView("left_table")
         right.createOrReplaceTempView("right_table")
         
-        # Right outer join with disabled Add expressions in condition
-        # Should fall back: Outer joins require AST conversion for conditions
+        # Right outer join: a+10/b+5 are not AST-able (Add disabled), so they run via the
+        # CPU bridge inside the GPU join condition instead of forcing a CPU fallback.
         return spark.sql("""
             SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
             FROM left_table
@@ -368,25 +390,28 @@ def test_cpu_bridge_sort_merge_right_outer_join_fallback():
         """)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    # Should fall back: Outer joins require AST conversion for conditions
-    assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
+    # Outer joins now run on GPU: the non-AST a+10/b+5 are evaluated via the CPU bridge.
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
-@allow_non_gpu('SortMergeJoinExec')
+@allow_non_gpu('Add')
 @ignore_order(local=True)
-def test_cpu_bridge_sort_merge_full_outer_join_fallback():
-    """Full outer join with bridge expressions in condition should cause SortMergeJoin fallback"""
+def test_cpu_bridge_sort_merge_full_outer_join_works():
+    """Full outer join with bridge expressions in condition runs on GPU via the CPU bridge"""
     def test_func(spark):
         # Use larger range to force sort-merge join instead of broadcast
         left = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
                              ('a', IntegerGen(min_val=1, max_val=100))], length=300)
         right = gen_df(spark, [('id', IntegerGen(min_val=1, max_val=1000)), 
                               ('b', IntegerGen(min_val=1, max_val=100))], length=300)
-        
+        # Give each join input's shuffle a columnar child so they stay on GPU under AQE.
+        left = with_columnar_source(left)
+        right = with_columnar_source(right)
+
         left.createOrReplaceTempView("left_table")
         right.createOrReplaceTempView("right_table")
         
-        # Full outer join with disabled Add expressions in condition
-        # Should fall back: Outer joins require AST conversion for conditions
+        # Full outer join: a+10/b+5 are not AST-able (Add disabled), so they run via the
+        # CPU bridge inside the GPU join condition instead of forcing a CPU fallback.
         return spark.sql("""
             SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
             FROM left_table
@@ -395,8 +420,8 @@ def test_cpu_bridge_sort_merge_full_outer_join_fallback():
         """)
     
     conf = create_cpu_bridge_fallback_conf(['Add'])
-    # Should fall back: Outer joins require AST conversion for conditions
-    assert_gpu_fallback_collect(test_func, 'SortMergeJoinExec', conf=conf)
+    # Outer joins now run on GPU: the non-AST a+10/b+5 are evaluated via the CPU bridge.
+    assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 @allow_non_gpu('Add')
 @ignore_order(local=True)
@@ -463,6 +488,8 @@ def test_cpu_bridge_hash_partitioning_works():
     """Bridge expressions in partitioning should work with partition bridge optimization"""
     def test_func(spark):
         df = gen_df(spark, [('a', int_gen), ('b', int_gen), ('c', string_gen)], length=2000)
+        # Give the repartition's shuffle a columnar child so it stays on GPU under AQE.
+        df = with_columnar_source(df)
         # Partition by expression containing bridge - with partition bridge optimization,
         # hash partitioning should work entirely on GPU
         return df.repartition(10, df.a + df.b).groupBy("c").count()
@@ -482,6 +509,8 @@ def test_cpu_bridge_sort_key():
             ('a', IntegerGen(min_val=1, max_val=50, nullable=False)), 
             ('b', IntegerGen(min_val=100, max_val=150, nullable=False))
         ], length=1000)
+        # Give the global-sort shuffle a columnar child so it stays on GPU under AQE.
+        df = with_columnar_source(df)
         # Sort by bridge expression - with partition bridge optimization,
         # both partitioning and sort should work on GPU
         # Secondary sort by 'a' eliminates any remaining ambiguity
