@@ -23,6 +23,7 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimExpression
 import java.util.concurrent.Callable
+import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -42,9 +43,8 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * 4. Copies the results back to GPU memory
  *
  * @param gpuInputs GPU expressions that provide inputs to the CPU expression tree
- * @param cpuExpression The CPU expression tree to evaluate. It is returned as the last
- *                      element of children (after gpuInputs) so expression-tree walkers
- *                      traverse it; consumers that only want the GPU inputs must drop it.
+ * @param cpuExpression The CPU expression tree to evaluate; returned as the last element of
+ *                      children, after gpuInputs.
  * @param outputDataType The output data type of the expression
  * @param outputNullable Whether the output can be null
  */
@@ -132,21 +132,12 @@ case class GpuCpuBridgeExpression(
   @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =
     createEvaluationFunction()
 
-  // Attributes describing the bridge's input columns (one per gpuInput), carrying the declared
-  // data type and nullability so the UnsafeProjection below preserves null semantics.
+  // One input attribute per gpuInput, carrying its data type and nullability.
   @transient private lazy val inputAttrs: Seq[Attribute] = gpuInputs.zipWithIndex.map {
     case (e, i) => AttributeReference(s"_bridge_in_$i", e.dataType, e.nullable)()
   }
 
-  // Materialize the input ColumnarBatchRows as real UnsafeRows before evaluating the (often
-  // interpreted) CPU expression. ColumnarToRowIterator yields ColumnarBatchRows whose
-  // getArray/getMap return Spark ColumnarArray/ColumnarMap, and ColumnarArray.get(ordinal, dt)
-  // uses handleNull=false: a null nested element is read as a type default instead of null,
-  // which both corrupts results and trips cudf's host-vector null assertion. UnsafeProjection
-  // (codegen with interpreted fallback) copies the inputs into an UnsafeRow under isNullAt
-  // guards, so nested arrays become UnsafeArrayData (handleNull=true) and nulls are preserved --
-  // the same materialization GpuColumnarToRowExec already does via .map(toUnsafe). A fresh
-  // instance per call keeps the parallel evaluation path thread-safe.
+  // Returns a fresh projection that copies each input row into an UnsafeRow.
   private def makeInputToUnsafe(): UnsafeProjection =
     UnsafeProjection.create(inputAttrs, inputAttrs)
 
@@ -159,9 +150,7 @@ case class GpuCpuBridgeExpression(
     
     // Time the entire CPU bridge operation from the SparkPlan perspective
     GpuMetric.nsOption(cpuBridgeWaitTime) {
-      // Check if we should use parallel processing
-      // Note: Nondeterministic expressions are excluded from CPU bridge entirely,
-      // so all expressions reaching this point are safe for parallel processing
+      // Nondeterministic expressions are excluded from the bridge, so parallel evaluation is safe.
       if (GpuCpuBridgeThreadPool.shouldParallelize(numRows)) {
         logDebug(s"Using parallel processing for ${numRows} rows " +
           s"(expression: ${cpuExpression.getClass.getSimpleName})")
@@ -213,13 +202,9 @@ case class GpuCpuBridgeExpression(
     logDebug(s"Processing $numRows rows in $subBatchCount parallel sub-batches " +
       s"AVG ${numRows.toDouble/subBatchCount}")
 
-    // We are going to violate some constraints on the retry framework a little bit here
-    // We want to be able to have a retry block in the thread pool that will execute the
-    // CPU expressions, but to truly be correct all data must be spillable for the
-    // task when a retry block is rolled back. The issue here is that our input batch
-    // will not be spillable because we don't have control over that life cycle so
-    // we will just declare it good enough and realize that even if we roll back
-    // all the threads some data will still not be spillable.
+    // This bends the retry framework's contract: on rollback all data should be spillable, but
+    // the input batch's lifecycle is owned by the caller and is not. Accepted as good enough --
+    // a rollback may leave some data unspillable.
 
     // Evaluate GPU input expressions once
     val gpuInputColumns = gpuInputs.safeMap(_.columnarEval(batch))
@@ -238,32 +223,23 @@ case class GpuCpuBridgeExpression(
         GpuCpuBridgeThreadPool.submitPrioritizedTask(task)
       }
       
-      // Collect results in submission order. On failure, close the results gathered so far
-      // and drain only the futures we have not consumed yet -- the consumed ones are already
-      // closed below, so re-closing them would corrupt their ref counts.
-      // Note: Wait time is measured at the columnarEval level, not here.
-      val results = new scala.collection.mutable.ArrayBuffer[GpuColumnVector](futures.length)
-      var inFlightIdx = -1
-      try {
-        futures.zipWithIndex.foreach { case (future, i) =>
-          inFlightIdx = i
+      // Collect results in submission order. safeMap closes the already-collected results if a
+      // future fails; drain only the not-yet-consumed futures, since this one and the earlier
+      // ones are already closed.
+      futures.zipWithIndex.safeMap { case (future, i) =>
+        Try {
           // The spillable result transfers ownership, so we incRefCount the column we keep.
           withResource(future.get()) { spillableResult =>
             withResource(spillableResult.getColumnarBatch()) { cb =>
-              results += cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
+              cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
             }
           }
+        } match {
+          case Success(col) => col
+          case Failure(exception) =>
+            cleanupFuturesOnFailure(futures.drop(i + 1))
+            throw unwrapExecutionException(exception)
         }
-        inFlightIdx = -1
-        results.toSeq
-      } catch {
-        case t: Throwable =>
-          // The failed future cleaned up its own resources; drain only the futures after it.
-          if (inFlightIdx >= 0) {
-            cleanupFuturesOnFailure(futures.drop(inFlightIdx + 1))
-          }
-          results.safeClose()
-          throw unwrapExecutionException(t)
       }
     }
       
@@ -272,9 +248,7 @@ case class GpuCpuBridgeExpression(
   }
 
   /**
-   * Task for evaluating a sub-batch of rows on the CPU with spillable input and output.
-   * Note: All expressions using CPU bridge are deterministic (nondeterministic 
-   * expressions are excluded entirely), so parallel processing is safe.
+   * Evaluates a sub-batch of rows on the CPU with spillable input and output.
    */
   private class SpillableSubBatchEvaluationTask(
       spillableInputBatch: SpillableColumnarBatch,
@@ -319,7 +293,7 @@ case class GpuCpuBridgeExpression(
             cpuBridgeProcessingTime.foreach(_.add(processingTime))
           }
 
-          // Convert result to spillable format; close the result column if wrapping fails.
+          // Wrap the result column in a spillable batch.
           closeOnExcept(result) { result =>
             val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
             SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
@@ -329,20 +303,15 @@ case class GpuCpuBridgeExpression(
     }
   }
   
-  /**
-   * Unwrap the ExecutionException that Future.get() raises so retryable OOM types thrown by a
-   * sub-batch (RetryOOM/SplitAndRetryOOM) reach the surrounding retry framework unwrapped.
-   */
+  // Future.get() wraps failures in ExecutionException; unwrap so retryable OOM types reach
+  // the surrounding retry framework.
   private def unwrapExecutionException(t: Throwable): Throwable = t match {
     case e: java.util.concurrent.ExecutionException if e.getCause != null => e.getCause
     case other => other
   }
 
-  /**
-   * Properly cleanup futures on failure, handling both cancellable and non-cancellable futures.
-   * This method addresses the race condition where futures might be in the middle of allocating
-   * resources when cancellation is attempted.
-   */
+  // Cancel the given futures; for any that cannot be cancelled, wait briefly and close their
+  // results to avoid leaks.
   private def cleanupFuturesOnFailure(
       futures: Seq[java.util.concurrent.Future[SpillableColumnarBatch]]): Unit = {
     import java.util.concurrent.TimeUnit

@@ -26,9 +26,8 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
- * Exposes the scheduling priority of a CPU bridge task so it can be ordered both before
- * submission (PrioritizedCpuBridgeTask) and after ThreadPoolExecutor wraps it in a future
- * (ComparableFutureTask). Lower priority value runs first; ties break FIFO by submitTime.
+ * Scheduling priority of a CPU bridge task. Lower priority value runs first; ties break FIFO
+ * by submitTime.
  */
 private[rapids] trait CpuBridgeTaskPriority {
   def priority: Long
@@ -54,12 +53,10 @@ case class PrioritizedCpuBridgeTask[T](
   
   override def call(): T = {
     if (taskContext != null) {
-      // Install the Spark TaskContext and register this pool thread with the retry framework
-      // so GPU work done here (semaphore accounting, ColumnarToRowIterator task-completion
-      // cleanup, thread-local projection cleanup) is attributed to the owning task -- mirrors
-      // the async scan readers (e.g. GpuOrcScan.ReadBatchRunner). Uses the pool-thread API,
-      // not currentThreadIsDedicatedToTask, because the task's own thread is the dedicated one
-      // and several pool threads may serve the same task concurrently.
+      // Install the task's TaskContext and register this pool thread with the retry framework so
+      // GPU work here is attributed to the owning task (as the async scan readers do). Uses the
+      // pool-thread API, not currentThreadIsDedicatedToTask, since many pool threads may serve
+      // one task concurrently.
       TrampolineUtil.setTaskContext(taskContext)
       RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {
@@ -98,9 +95,8 @@ object CpuBridgeTaskComparator extends Comparator[Runnable] {
 }
 
 /**
- * A FutureTask that carries the priority of the PrioritizedCpuBridgeTask it wraps. submit()
- * wraps the submitted Callable in a future before enqueuing, so without this the priority
- * queue would only ever see plain FutureTasks and degrade to FIFO.
+ * A FutureTask that carries the priority of the PrioritizedCpuBridgeTask it wraps, so the
+ * priority queue can still order it after submit() turns the task into a future.
  */
 private[rapids] class ComparableFutureTask[T](prioritized: PrioritizedCpuBridgeTask[T])
     extends FutureTask[T](prioritized) with CpuBridgeTaskPriority {
@@ -201,8 +197,7 @@ object GpuCpuBridgeThreadPool extends Logging {
                 taskQueue,          // work queue with priority
                 createThreadFactory() // thread factory with GPU setup
               ) {
-                // Wrap prioritized tasks so the queued future preserves its priority; otherwise
-                // submit() enqueues a plain FutureTask and the priority queue degrades to FIFO.
+                // Wrap prioritized tasks so the queued future keeps its priority.
                 override protected def newTaskFor[T](callable: Callable[T]): RunnableFuture[T] =
                   callable match {
                     case p: PrioritizedCpuBridgeTask[_] =>

@@ -1303,15 +1303,12 @@ abstract class BaseExprMeta[INPUT <: Expression](
    * Check whether this node itself can be converted to AST. It will not recursively check its
    * children. It's used to check join condition AST-ability in top-down fashion.
    */
-  // Must be a def (not a memoized val): it depends on willUseGpuCpuBridge, which
-  // requireAstForGpu()/undoBridgeOptimization() can flip after this might first be read.
-  // Memoizing would cache a stale answer and make AstUtil extract the wrong sub-trees.
+  // A def, not a memoized val: willUseGpuCpuBridge can be flipped by requireAstForGpu()/
+  // undoBridgeOptimization() after a first read, so caching would return a stale answer.
   final def canSelfBeAst: Boolean = {
     tagForAst()
-    // An expression cannot be AST if it cannot be replaced (disabled), uses the CPU bridge
-    // (a GpuCpuBridgeExpression has no AST form), or if it has AST-specific issues. This must
-    // stay consistent with canThisBeAst so AstUtil extracts bridged sub-trees out of join
-    // conditions instead of trying to AST them.
+    // Not AST-able if disabled, bridged (a GpuCpuBridgeExpression has no AST form), or it has
+    // AST-specific issues.
     canThisBeReplaced && !willUseGpuCpuBridge && cannotBeAstReasons.isEmpty
   }
 

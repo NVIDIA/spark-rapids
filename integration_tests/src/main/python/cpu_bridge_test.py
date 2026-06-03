@@ -38,17 +38,11 @@ def create_cpu_bridge_fallback_conf(disabled_gpu_expressions, disallowed_bridge_
         conf['spark.rapids.sql.expression.cpuBridge.disallowList'] = ','.join(disallowed_bridge_expressions)
     return conf
 
-# gen_df builds a DataFrame from a Python RDD, so its leaf is a row-based RDDScanExec.
-# Under AQE an exchange is planned in isolation at the shuffle boundary, and
-# RapidsMeta.fixUpExchangeOverhead leaves a shuffle on the CPU when its only child is
-# non-columnar ("Columnar exchange without columnar children is inefficient") because it
-# cannot see the GPU consumer in the next query stage, only the row source. Real workloads
-# read columnar files, so the exchange has a columnar child and stays on the GPU. We
-# emulate that here with a trivial, lossless GPU filter (monotonically_increasing_id() is
-# always >= 0, and Spark will not constant-fold a nondeterministic expression) so the
-# exchange gets a columnar (GpuFilter) child. Without it these shuffle/sort/join tests
-# would fall back only because of the synthetic row source, which is not what they intend
-# to exercise.
+# gen_df's leaf is a row-based RDDScanExec. Under AQE, fixUpExchangeOverhead keeps a shuffle on
+# the CPU when its only child is non-columnar, because it cannot see the GPU consumer in the next
+# query stage. Real workloads read columnar files, so the shuffle has a columnar child and stays
+# on the GPU; this trivial always-true GPU filter (monotonically_increasing_id() >= 0, which is
+# nondeterministic so it is not constant-folded) gives the shuffle a columnar child to match.
 def with_columnar_source(df):
     return df.filter(f.monotonically_increasing_id() >= f.lit(0))
 
