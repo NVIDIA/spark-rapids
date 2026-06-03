@@ -1396,41 +1396,6 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   /**
-   * Deduplicate GPU inputs using semantic equality to reduce memory transfers and code size.
-   * @param gpuInputsWithIndex GPU expressions paired with their original child indices
-   * @return (deduplicated GPU inputs, mapping from original indices to deduplicated indices)
-   */
-  private def deduplicateGpuInputs(
-      gpuInputsWithIndex: Seq[(Expression, Int)]): (Seq[Expression], Map[Int, Int]) = {
-    
-    import org.apache.spark.sql.rapids.catalyst.expressions.GpuExpressionEquals
-    
-    val deduplicatedInputs = scala.collection.mutable.ListBuffer[Expression]()
-    val seenExpressions = scala.collection.mutable.Map[GpuExpressionEquals, Int]()
-    val inputMapping = scala.collection.mutable.Map[Int, Int]()
-    
-    var duplicateCount = 0
-    
-    gpuInputsWithIndex.foreach { case (gpuExpr, originalIndex) =>
-      val exprWrapper = GpuExpressionEquals(gpuExpr)
-      seenExpressions.get(exprWrapper) match {
-        case Some(existingIndex) =>
-          // This expression is a duplicate - map to existing index
-          inputMapping(originalIndex) = existingIndex
-          duplicateCount += 1
-        case None =>
-          // This is a new unique expression - add it
-          val newIndex = deduplicatedInputs.length
-          deduplicatedInputs += gpuExpr
-          seenExpressions(exprWrapper) = newIndex
-          inputMapping(originalIndex) = newIndex
-      }
-    }
-    
-    (deduplicatedInputs.toSeq, inputMapping.toMap)
-  }
-
-  /**
    * Converts a CPU expression to a GPU expression. Subclasses should
    * implement convertToGpuImpl() to provide custom logic for the conversion.
    * Anyone who wants to get the converted expression should call `convertToGpu`
@@ -1458,10 +1423,42 @@ abstract class BaseExprMeta[INPUT <: Expression](
   }
 
   /**
+   * Deduplicate GPU inputs using semantic equality to reduce memory transfers and code size.
+   * @param gpuInputsWithIndex GPU expressions paired with their original child indices
+   * @return (deduplicated GPU inputs, mapping from original indices to deduplicated indices)
+   */
+  private def deduplicateGpuInputs(
+      gpuInputsWithIndex: Seq[(Expression, Int)]): (Seq[Expression], Map[Int, Int]) = {
+
+    import org.apache.spark.sql.rapids.catalyst.expressions.GpuExpressionEquals
+
+    val deduplicatedInputs = scala.collection.mutable.ListBuffer[Expression]()
+    val seenExpressions = scala.collection.mutable.Map[GpuExpressionEquals, Int]()
+    val inputMapping = scala.collection.mutable.Map[Int, Int]()
+
+    gpuInputsWithIndex.foreach { case (gpuExpr, originalIndex) =>
+      val exprWrapper = GpuExpressionEquals(gpuExpr)
+      seenExpressions.get(exprWrapper) match {
+        case Some(existingIndex) =>
+          // This expression is a duplicate - map to existing index
+          inputMapping(originalIndex) = existingIndex
+        case None =>
+          // This is a new unique expression - add it
+          val newIndex = deduplicatedInputs.length
+          deduplicatedInputs += gpuExpr
+          seenExpressions(exprWrapper) = newIndex
+          inputMapping(originalIndex) = newIndex
+      }
+    }
+
+    (deduplicatedInputs.toSeq, inputMapping.toMap)
+  }
+
+  /**
    * Checks if this expression is compatible with CPU bridge execution.
    * This determines whether THIS specific expression can be wrapped in a bridge.
    * Can be overridden in specific expression metas to provide custom compatibility rules.
-   * 
+   *
    * @return true if this expression can be executed via CPU bridge, false otherwise
    */
   def isBridgeCompatible: Boolean = {
