@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimExpression
 import java.util.concurrent.Callable
-import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -43,7 +42,9 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  * 4. Copies the results back to GPU memory
  *
  * @param gpuInputs GPU expressions that provide inputs to the CPU expression tree
- * @param cpuExpression The CPU expression tree to evaluate (not included as children)
+ * @param cpuExpression The CPU expression tree to evaluate. It is returned as the last
+ *                      element of children (after gpuInputs) so expression-tree walkers
+ *                      traverse it; consumers that only want the GPU inputs must drop it.
  * @param outputDataType The output data type of the expression
  * @param outputNullable Whether the output can be null
  */
@@ -237,23 +238,32 @@ case class GpuCpuBridgeExpression(
         GpuCpuBridgeThreadPool.submitPrioritizedTask(task)
       }
       
-      // Collect results from all sub-batches - these will be spillable results
-      // Note: Wait time is measured at the columnarEval level, not here
-      futures.safeMap { future =>
-        Try(future.get()) match {
-          case Success(spillableResult) => 
-            // Convert spillable result back to regular GpuColumnVector for concatenation  
-            // The spillable result transfers ownership, so we don't need incRefCount
-            withResource(spillableResult) { _ =>
-              withResource(spillableResult.getColumnarBatch()) { cb =>
-                cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
-              }
+      // Collect results in submission order. On failure, close the results gathered so far
+      // and drain only the futures we have not consumed yet -- the consumed ones are already
+      // closed below, so re-closing them would corrupt their ref counts.
+      // Note: Wait time is measured at the columnarEval level, not here.
+      val results = new scala.collection.mutable.ArrayBuffer[GpuColumnVector](futures.length)
+      var inFlightIdx = -1
+      try {
+        futures.zipWithIndex.foreach { case (future, i) =>
+          inFlightIdx = i
+          // The spillable result transfers ownership, so we incRefCount the column we keep.
+          withResource(future.get()) { spillableResult =>
+            withResource(spillableResult.getColumnarBatch()) { cb =>
+              results += cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
             }
-          case Failure(exception) =>
-            // Cancel remaining futures on error with proper resource cleanup
-            cleanupFuturesOnFailure(futures)
-            throw new RuntimeException("Sub-batch evaluation failed", exception)
+          }
         }
+        inFlightIdx = -1
+        results.toSeq
+      } catch {
+        case t: Throwable =>
+          // The failed future cleaned up its own resources; drain only the futures after it.
+          if (inFlightIdx >= 0) {
+            cleanupFuturesOnFailure(futures.drop(inFlightIdx + 1))
+          }
+          results.safeClose()
+          throw unwrapExecutionException(t)
       }
     }
       
@@ -309,14 +319,25 @@ case class GpuCpuBridgeExpression(
             cpuBridgeProcessingTime.foreach(_.add(processingTime))
           }
 
-          // Convert result to spillable format
-          val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
-          SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          // Convert result to spillable format; close the result column if wrapping fails.
+          closeOnExcept(result) { result =>
+            val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
+            SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          }
         }
       }
     }
   }
   
+  /**
+   * Unwrap the ExecutionException that Future.get() raises so retryable OOM types thrown by a
+   * sub-batch (RetryOOM/SplitAndRetryOOM) reach the surrounding retry framework unwrapped.
+   */
+  private def unwrapExecutionException(t: Throwable): Throwable = t match {
+    case e: java.util.concurrent.ExecutionException if e.getCause != null => e.getCause
+    case other => other
+  }
+
   /**
    * Properly cleanup futures on failure, handling both cancellable and non-cancellable futures.
    * This method addresses the race condition where futures might be in the middle of allocating
