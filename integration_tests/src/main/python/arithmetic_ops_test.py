@@ -15,7 +15,7 @@
 from logging import exception
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides, disable_ansi_mode
 from pyspark.sql.types import *
@@ -1611,11 +1611,15 @@ def test_cpu_bridge_csc_select(aqe_enabled):
         'spark.rapids.sql.expression.cpuBridge.enabled': 'true',
         'spark.sql.adaptive.enabled': aqe_enabled,
     }
-    assert_gpu_and_cpu_are_equal_collect(
+    # Plan-level assertContains(GpuCpuBridgeExpression) guards against silent
+    # coverage regression if Csc ever gains a GPU implementation (the bridge
+    # would no longer fire and result-equality alone would mask the change).
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark,
             [('x', DoubleGen(min_exp=-3, max_exp=5, no_nans=True))],
             length=100
         ).selectExpr("x", "csc(x) AS csc_x", "x * 2 AS x2", "abs(x) AS abs_x"),
+        exist_classes='GpuCpuBridgeExpression',
         conf=conf)
 
 
@@ -1628,10 +1632,11 @@ def test_cpu_bridge_csc_filter(aqe_enabled):
     }
     # csc(x) in a filter predicate exercises the bridge in a Filter (not Project)
     # context. Result rows are reduced to those where csc(x) > 1.5.
-    assert_gpu_and_cpu_are_equal_collect(
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: gen_df(spark,
             [('x', DoubleGen(min_exp=-1, max_exp=2, no_nans=True))],
             length=200
         ).filter("csc(x) > 1.5").selectExpr("x", "csc(x) AS csc_x"),
+        exist_classes='GpuCpuBridgeExpression',
         conf=conf)
 
