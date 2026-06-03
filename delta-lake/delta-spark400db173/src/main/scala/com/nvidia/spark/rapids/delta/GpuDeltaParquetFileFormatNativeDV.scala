@@ -377,7 +377,8 @@ case class GpuDeltaParquetFileFormatNativeDV(
             scalaBitmap, rowGroupOffsets, rowGroupNumRows)
 
           require(numDeletedRows <= totalNumRows,
-            s"Deletion vector cardinality ($numDeletedRows) exceeds file row count ($totalNumRows)")
+            s"Deleted row count in selected row groups ($numDeletedRows) exceeds selected " +
+              s"row-group row count ($totalNumRows)")
           Math.toIntExact(totalNumRows - numDeletedRows)
         }
       }

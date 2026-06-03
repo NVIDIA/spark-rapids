@@ -1090,12 +1090,7 @@ def test_delta_deletion_vector_native_footer_multi_row_group_zero_column_aggrega
 
     with_cpu_session(setup_tables, conf=write_conf)
 
-    if is_databricks173_or_later():
-        assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: spark.sql(query.format(path=data_path)),
-            exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
-            conf=read_conf)
-    else:
-        assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.sql(query.format(path=data_path)),
-            conf=read_conf)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(query.format(path=data_path)),
+        exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
+        conf=read_conf)

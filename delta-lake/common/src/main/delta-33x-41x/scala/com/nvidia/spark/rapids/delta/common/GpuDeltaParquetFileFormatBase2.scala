@@ -285,7 +285,8 @@ class GpuDeltaParquetFileFormatBase2(
             scalaBitmap, rowGroupOffsets, rowGroupNumRows)
 
           require(numDeletedRows <= totalNumRows,
-            s"Deletion vector cardinality ($numDeletedRows) exceeds file row count ($totalNumRows)")
+            s"Deleted row count in selected row groups ($numDeletedRows) exceeds selected " +
+              s"row-group row count ($totalNumRows)")
           Math.toIntExact(totalNumRows - numDeletedRows)
         }
       }
@@ -385,7 +386,7 @@ class GpuDeltaParquetFileFormatBase2(
      * Computes the number of deleted rows within the given row ranges
      * in the bitmap.
      */
-    def countDeletedRows(
+    private[GpuDeltaParquetFileFormatBase2] def countDeletedRows(
         scalaBitmap: RoaringBitmapArray,
         rowGroupOffsets: Array[Long],
         rowGroupNumRows: Array[Int]): Long = {
