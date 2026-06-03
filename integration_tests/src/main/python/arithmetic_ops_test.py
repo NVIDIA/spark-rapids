@@ -1433,7 +1433,8 @@ def test_year_month_interval_division_number_no_overflow(data_gen):
     # Cast result to BIGINT (same reason as test_year_month_interval_multiply_number).
     gen_list = [('_c2', data_gen)]
     assert_gpu_and_cpu_are_equal_collect(
-        # divisor min_val starts at 1 for integer gens; DoubleGen min_exp=0 keeps it >=1
+        # divisor min_val starts at 1 for integer gens; DoubleGen min_exp=0 keeps |divisor| >= 1
+        # (sign bit is random). case-when guards the 0 case for completeness.
         lambda spark: gen_df(spark, gen_list).selectExpr(
             "CAST(INTERVAL '5-3' YEAR TO MONTH / case when _c2 = 0 then cast(1 as {}) else _c2 end AS BIGINT)".format(to_cast_string(data_gen.data_type)),
             "CAST(INTERVAL '100-0' YEAR TO MONTH / case when _c2 = 0 then cast(1 as {}) else _c2 end AS BIGINT)".format(to_cast_string(data_gen.data_type))))
