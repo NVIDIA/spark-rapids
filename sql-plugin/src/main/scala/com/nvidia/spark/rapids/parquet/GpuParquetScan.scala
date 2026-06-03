@@ -3565,7 +3565,8 @@ abstract class AbstractParquetPartitionReader(
         maxReadBatchSizeRows, maxReadBatchSizeBytes, readDataSchema)
       if (clippedParquetSchema.getFieldCount == 0) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
-        val numRows = currentChunkedBlocks.map(_.getRowCount).sum.toInt
+        val numRows = computeNumRowsAlive(
+          currentChunkedBlocks.map(_.getRowCount).sum, currentChunkedBlocks)
         if (numRows == 0) {
           EmptyGpuColumnarBatchIterator
         } else {
@@ -3606,6 +3607,16 @@ abstract class AbstractParquetPartitionReader(
       chunkedBlocks: Seq[BlockMetaData],
       dataBuffer: SpillableHostBuffer
   ): Iterator[ColumnarBatch]
+
+  /**
+   * Computes the number of rows alive in the output table. This is normally the same as
+   * totalNumRows, but formats with row-level deletes can override it for zero-column reads.
+   */
+  protected def computeNumRowsAlive(
+      totalNumRows: Long,
+      chunkedBlocks: Seq[BlockMetaData]): Int = {
+    Math.toIntExact(totalNumRows)
+  }
 }
 
 class ParquetPartitionReader(

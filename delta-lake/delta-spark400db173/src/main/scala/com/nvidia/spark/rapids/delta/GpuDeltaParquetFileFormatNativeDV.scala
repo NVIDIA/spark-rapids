@@ -359,6 +359,29 @@ case class GpuDeltaParquetFileFormatNativeDV(
         }
       }
     }
+
+    override protected def computeNumRowsAlive(
+        totalNumRows: Long,
+        chunkedBlocks: Seq[BlockMetaData]): Int = {
+      if (totalNumRows == 0 || tablePathOpt.isEmpty) {
+        Math.toIntExact(totalNumRows)
+      } else {
+        val scalaBitmap = RapidsDeletionVectors.loadScalaBitmap(
+          conf, split, tablePathOpt.get, deletionVectorReadInfo)
+        if (scalaBitmap.cardinality == 0) {
+          Math.toIntExact(totalNumRows)
+        } else {
+          val (rowGroupOffsets, rowGroupNumRows) =
+            RapidsDeletionVectors.getRowGroupMetadata(chunkedBlocks)
+          val numDeletedRows = SpillableDeletionVectorInfo.countDeletedRows(
+            scalaBitmap, rowGroupOffsets, rowGroupNumRows)
+
+          require(numDeletedRows <= totalNumRows,
+            s"Deletion vector cardinality ($numDeletedRows) exceeds file row count ($totalNumRows)")
+          Math.toIntExact(totalNumRows - numDeletedRows)
+        }
+      }
+    }
   }
 
   ///////////////////////////////////////

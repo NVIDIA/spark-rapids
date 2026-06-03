@@ -1040,18 +1040,24 @@ def test_db173_missing_row_index_filter_assertion_guard():
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.parametrize("parquet_reader_type", ["COALESCING", "MULTITHREADED"], ids=idfn)
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"],
+                         ids=idfn)
 @pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
+@pytest.mark.parametrize("query", [
+    "SELECT COUNT(*) FROM delta.`{path}` WHERE part = 0",
+    "SELECT SUM(part + 1) FROM delta.`{path}` WHERE part = 0",
+], ids=["count_star", "partition_aggregate"])
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
 @pytest.mark.skipif(is_databricks_runtime() and not is_databricks173_or_later(),
                     reason="Deletion vector scan is not supported on Databricks before 17.3")
-def test_delta_deletion_vector_native_footer_multi_row_group_count_star(
-        spark_tmp_path, parquet_reader_type, footer_type):
+def test_delta_deletion_vector_native_footer_multi_row_group_zero_column_aggregate(
+        spark_tmp_path, parquet_reader_type, footer_type, query):
     """
-    Tests zero-column projection (COUNT(*)) with deletion vectors on a partitioned Delta
-    table where each partition's Parquet file has multiple row groups. Uses a partition
-    filter so Spark performs a true zero-column scan while still applying DVs.
+    Tests a zero-column Parquet scan with deletion vectors on a partitioned Delta table where
+    each partition's Parquet file has multiple row groups. The queries either count rows or
+    reference only a partition column so Spark performs a true zero-column data scan while still
+    applying DVs.
     """
     data_path = spark_tmp_path + "/DELTA_DATA"
     num_rows = 10000
@@ -1086,10 +1092,10 @@ def test_delta_deletion_vector_native_footer_multi_row_group_count_star(
 
     if is_databricks173_or_later():
         assert_cpu_and_gpu_are_equal_collect_with_capture(
-            lambda spark: spark.sql(f"SELECT COUNT(*) FROM delta.`{data_path}` WHERE part = 0"),
-            exist_classes="GpuFileSourceScanExec",
+            lambda spark: spark.sql(query.format(path=data_path)),
+            exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
             conf=read_conf)
     else:
         assert_gpu_and_cpu_are_equal_collect(
-            lambda spark: spark.sql(f"SELECT COUNT(*) FROM delta.`{data_path}` WHERE part = 0"),
+            lambda spark: spark.sql(query.format(path=data_path)),
             conf=read_conf)
