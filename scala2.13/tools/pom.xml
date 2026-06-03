@@ -138,7 +138,7 @@
                                 <ac:if xmlns:ac="antlib:net.sf.antcontrib">
                                     <or>
                                       <equals arg1="spark${env.BASE_VER}" arg2="${spark.version.classifier}"/>
-                                      <equals arg1="spark321" arg2="${spark.version.classifier}"/>
+                                      <equals arg1="spark330" arg2="${spark.version.classifier}"/>
                                     </or>
                                     <ac:then>
                                         <!-- requires Spark jvm args for newer Java versions -->

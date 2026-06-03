@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.iceberg.parquet.{
   SingleFile,
   ThreadConf
 }
-import org.apache.iceberg.{FileFormat, MetadataColumns, ScanTask, ScanTaskGroup}
+import org.apache.iceberg.{FileFormat, MetadataColumns}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
@@ -65,10 +65,8 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
   override def supportColumnarReads(partition: InputPartition) = true
 
   private def calcThreadConf(partition: GpuSparkInputPartition): ThreadConf = {
-    val scans = partition
-      .cpuPartition
-      .taskGroup()
-      .asInstanceOf[ScanTaskGroup[ScanTask]]
+    val scans = GpuSparkScanAccess
+      .taskGroup(partition.cpuPartition)
       .tasks
       .asScala
       .map(_.asFileScanTask())

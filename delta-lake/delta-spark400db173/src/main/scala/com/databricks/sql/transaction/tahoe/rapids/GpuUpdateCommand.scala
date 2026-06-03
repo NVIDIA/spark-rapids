@@ -18,22 +18,18 @@ package com.databricks.sql.transaction.tahoe.rapids
 
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 
-import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.execution.command.LeafRunnableCommand
 
-// The shared Databricks conversion path still expects a GPU UPDATE command type.
-// DB-17.3 UPDATE is tagged to run on CPU, so this placeholder exists only to satisfy
-// that signature and to fail clearly if the guard is missed.
 case class GpuUpdateCommand(
     gpuDeltaLog: GpuDeltaLog,
     tahoeFileIndex: TahoeFileIndex,
     target: LogicalPlan,
     updateExpressions: Seq[Expression],
-    condition: Option[Expression]) extends LeafRunnableCommand {
-  override def run(sparkSession: SparkSession): Seq[Row] =
-    throw new UnsupportedOperationException(
-      "Delta Lake UPDATE is not yet supported on GPU for DB-17.3 " +
-        "(tracked in GitHub issue #14597)")
-}
+    condition: Option[Expression])
+    extends GpuUpdateCommandBase(
+      gpuDeltaLog,
+      tahoeFileIndex,
+      target,
+      updateExpressions,
+      condition)

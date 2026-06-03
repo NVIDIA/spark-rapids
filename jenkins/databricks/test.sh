@@ -150,13 +150,10 @@ if [[ "$(pwd)" == "$SOURCE_PATH" ]]; then
     fi
 
     if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "DELTA_LAKE_ONLY" ]]; then
-        if [[ "$SPARK_SHIM_VER" == "spark400db173" ]]; then
-            echo "Skipping Delta Lake tests: not yet supported for DB-17.3 (spark400db173)"
-        else
-            ## Run Delta Lake tests
-            DRIVER_MEMORY="4g" \
-                bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks"  -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
-        fi
+        ## Run Delta Lake tests
+        DRIVER_MEMORY="4g" \
+            bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" \
+                -m "delta_lake" --delta_lake --test_type=$TEST_TYPE
     fi
 
     if [[ "$TEST_MODE" == "DEFAULT" || $TEST_MODE == "CI_PART2" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; then
