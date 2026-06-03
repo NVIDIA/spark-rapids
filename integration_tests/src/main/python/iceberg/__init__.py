@@ -51,6 +51,90 @@ iceberg_gens_list = [iceberg_table_gen[col] for col in iceberg_base_table_cols]
 
 rapids_reader_types = ['PERFILE', 'MULTITHREADED', 'COALESCING']
 
+# Anchor list used by the single partition-transform coverage test
+# (iceberg_append_test.py::test_insert_into_partitioned_table_full_coverage).
+# That test exercises the partition writer against all 26 transforms. Every other
+# DML op only sanity-checks its own SQL path against a few distinct transforms
+# picked from this list via the per-op constants further down; the anchor is what
+# guarantees full transform coverage of the partition writer.
+full_coverage_partition_transforms = [
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("day(_c9)", id="day(timestamp_col)"),
+    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
+    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
+    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
+    pytest.param("bucket(16, _c3)", id="bucket(16, long_col)"),
+    pytest.param("bucket(16, _c8)", id="bucket(16, date_col)"),
+    pytest.param("bucket(16, _c9)", id="bucket(16, timestamp_col)"),
+    pytest.param("bucket(16, _c6)", id="bucket(16, string_col)"),
+    pytest.param("bucket(16, _c13)", id="bucket(16, decimal32_col)"),
+    pytest.param("bucket(16, _c14)", id="bucket(16, decimal64_col)"),
+    pytest.param("bucket(16, _c15)", id="bucket(16, decimal128_col)"),
+    pytest.param("_c0", id="identity(byte)"),
+    pytest.param("_c2", id="identity(int)"),
+    pytest.param("_c3", id="identity(long)"),
+    pytest.param("_c6", id="identity(string)"),
+    pytest.param("_c8", id="identity(date)"),
+    pytest.param("_c10", id="identity(decimal)"),
+]
+
+# Per-op subsets. Each transform picked here is distinct from every other pick
+# across all 7 op subsets (22 distinct transforms total). The four transforms
+# not picked here are still exercised by the anchor. Each 4-pick op covers one
+# transform from each family (datetime/truncate/bucket/identity); the single-mode
+# slots in delete/update/merge each pick from one family.
+ctas_partition_transforms = [
+    pytest.param("year(_c8)", id="year(date_col)"),
+    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
+    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
+    pytest.param("_c0", id="identity(byte)"),
+]
+
+rtas_partition_transforms = [
+    pytest.param("month(_c8)", id="month(date_col)"),
+    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
+    pytest.param("bucket(16, _c3)", id="bucket(16, long_col)"),
+    pytest.param("_c2", id="identity(int)"),
+]
+
+overwrite_static_partition_transforms = [
+    pytest.param("day(_c8)", id="day(date_col)"),
+    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
+    pytest.param("bucket(16, _c8)", id="bucket(16, date_col)"),
+    pytest.param("_c3", id="identity(long)"),
+]
+
+overwrite_dynamic_partition_transforms = [
+    pytest.param("month(_c9)", id="month(timestamp_col)"),
+    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
+    pytest.param("bucket(16, _c9)", id="bucket(16, timestamp_col)"),
+    pytest.param("_c6", id="identity(string)"),
+]
+
+# Each used as `@pytest.mark.parametrize("<mode_arg>,partition_col_sql", <list>)`.
+delete_partition_transforms_distributed = [
+    pytest.param('copy-on-write', "day(_c9)", id="copy-on-write-day(timestamp_col)"),
+    pytest.param('merge-on-read', "hour(_c9)", id="merge-on-read-hour(timestamp_col)"),
+]
+
+update_partition_transforms_distributed = [
+    pytest.param('copy-on-write', "truncate(10, _c14)", id="copy-on-write-truncate(10, decimal64_col)"),
+    pytest.param('merge-on-read', "truncate(10, _c15)", id="merge-on-read-truncate(10, decimal128_col)"),
+]
+
+merge_partition_transforms_distributed = [
+    pytest.param('copy-on-write', "bucket(16, _c6)", id="copy-on-write-bucket(16, string_col)"),
+    pytest.param('merge-on-read', "bucket(16, _c13)", id="merge-on-read-bucket(16, decimal32_col)"),
+]
+
 # All data types of iceberg, not all of them are supported by spark-rapids for now
 iceberg_map_gens = [MapGen(f(nullable=False), f()) for f in [
     BooleanGen, ByteGen, ShortGen, IntegerGen, LongGen, FloatGen, DoubleGen, DateGen, TimestampGen ]] + \
