@@ -1355,7 +1355,7 @@ def test_exact_percentile_groupby_partial_fallback_to_cpu(data_gen, replace_mode
 
 
 @ignore_order(local=True)
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec',
                'HashAggregateExec', 'HashPartitioning',
                'ApproximatePercentile', 'Alias', 'Literal', 'AggregateExpression')
@@ -1989,7 +1989,7 @@ def test_try_avg_fallback_to_cpu(data_gen):
         conf={'spark.sql.adaptive.enabled': 'false'})
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_reduction(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -1998,7 +1998,7 @@ def test_hash_groupby_approx_percentile_reduction(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf, reduction = True)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_reduction_single_row(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -2007,7 +2007,7 @@ def test_hash_groupby_approx_percentile_reduction_single_row(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf, reduction = True)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_reduction_no_rows(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -2016,7 +2016,7 @@ def test_hash_groupby_approx_percentile_reduction_no_rows(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf, reduction = True)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/14634")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_byte(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -2027,7 +2027,7 @@ def test_hash_groupby_approx_percentile_byte(aqe_enabled):
 
 @incompat
 @disable_ansi_mode  # https://github.com/NVIDIA/spark-rapids/issues/11198
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/14634")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_byte_scalar(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -2037,7 +2037,7 @@ def test_hash_groupby_approx_percentile_byte_scalar(aqe_enabled):
         0.5, conf)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -2047,7 +2047,7 @@ def test_hash_groupby_approx_percentile_long_repeated_keys(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -2057,7 +2057,7 @@ def test_hash_groupby_approx_percentile_long(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @disable_ansi_mode  # ANSI mode is tested in test_hash_groupby_approx_percentile_long_single_ansi
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
@@ -2069,7 +2069,7 @@ def test_hash_groupby_approx_percentile_long_single(aqe_enabled):
 
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec')
 def test_hash_groupby_approx_percentile_long_single_ansi(aqe_enabled):
@@ -2087,7 +2087,7 @@ def test_hash_groupby_approx_percentile_long_single_ansi(aqe_enabled):
 
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/14634")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_double(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -2097,7 +2097,7 @@ def test_hash_groupby_approx_percentile_double(aqe_enabled):
         [0.05, 0.25, 0.5, 0.75, 0.95], conf)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/14634")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 def test_hash_groupby_approx_percentile_double_single(aqe_enabled):
     conf = {'spark.sql.adaptive.enabled': aqe_enabled}
@@ -2107,7 +2107,7 @@ def test_hash_groupby_approx_percentile_double_single(aqe_enabled):
         0.05, conf)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
 @ignore_order(local=True)
 @allow_non_gpu('TakeOrderedAndProjectExec', 'Alias', 'Cast', 'ObjectHashAggregateExec', 'AggregateExpression',
@@ -2127,7 +2127,7 @@ def test_hash_groupby_approx_percentile_partial_fallback_to_cpu(aqe_enabled):
     assert_gpu_fallback_collect(lambda spark: approx_percentile_query(spark), 'ApproximatePercentile', conf)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal32():
     compare_percentile_approx(
@@ -2137,7 +2137,7 @@ def test_hash_groupby_approx_percentile_decimal32():
 
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @ignore_order(local=True)
 @disable_ansi_mode  # ANSI mode is tested with test_hash_groupby_approx_percentile_decimal_single_ansi.
 def test_hash_groupby_approx_percentile_decimal32_single():
@@ -2148,7 +2148,7 @@ def test_hash_groupby_approx_percentile_decimal32_single():
 
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @ignore_order(local=True)
 @allow_non_gpu('ObjectHashAggregateExec', 'ShuffleExchangeExec')
 def test_hash_groupby_approx_percentile_decimal_single_ansi():
@@ -2160,7 +2160,7 @@ def test_hash_groupby_approx_percentile_decimal_single_ansi():
 
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal64():
     compare_percentile_approx(
@@ -2169,7 +2169,7 @@ def test_hash_groupby_approx_percentile_decimal64():
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @disable_ansi_mode  # ANSI mode is tested with test_hash_groupby_approx_percentile_decimal_single_ansi.
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal64_single():
@@ -2179,7 +2179,7 @@ def test_hash_groupby_approx_percentile_decimal64_single():
         0.05)
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal128():
     compare_percentile_approx(
@@ -2188,7 +2188,7 @@ def test_hash_groupby_approx_percentile_decimal128():
         [0.05, 0.25, 0.5, 0.75, 0.95])
 
 @incompat
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
+@pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/13049")
 @disable_ansi_mode  # ANSI mode is tested with test_hash_groupby_approx_percentile_decimal_single_ansi.
 @ignore_order(local=True)
 def test_hash_groupby_approx_percentile_decimal128_single():
