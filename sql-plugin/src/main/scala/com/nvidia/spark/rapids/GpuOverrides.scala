@@ -614,6 +614,21 @@ object GpuOverrides extends Logging {
     lit.value == null
   }
 
+  private def isAstNullLiteral(exp: Expression): Boolean = {
+    extractLit(exp).exists(isNullLit)
+  }
+
+  private def isSimpleAstNullifyValue(exp: Expression): Boolean = exp match {
+    case _: AttributeReference | _: Literal => true
+    case a: Alias => isSimpleAstNullifyValue(a.child)
+    case _ => false
+  }
+
+  private def isAstNullifyIfPattern(exp: If): Boolean = {
+    (isAstNullLiteral(exp.trueValue) && isSimpleAstNullifyValue(exp.falseValue)) ||
+      (isAstNullLiteral(exp.falseValue) && isSimpleAstNullifyValue(exp.trueValue))
+  }
+
   def isSupportedStringReplacePattern(strLit: String): Boolean = {
     // check for regex special characters, except for \u0000, \n, \r, and \t which we can support
     val supported = Seq("\u0000", "\n", "\r", "\t")
@@ -2156,7 +2171,8 @@ object GpuOverrides extends Logging {
       }),
     expr[If](
       "IF expression",
-      ExprChecks.projectOnly(
+      ExprChecks.projectAndAst(
+        TypeSig.astTypes - TypeSig.STRING,
         (gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.BINARY + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all,
@@ -2170,6 +2186,16 @@ object GpuOverrides extends Logging {
                 TypeSig.BINARY + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (!conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST IF nullification requires row IR JIT support.")
+          }
+          if (!isAstNullifyIfPattern(a)) {
+            willNotWorkInAst(
+              "AST IF currently supports only nullifying a simple value branch.")
+          }
+        }
+
         override def convertToGpuImpl(): GpuExpression = {
           val Seq(boolExpr, trueExpr, falseExpr) = childExprs.map(_.convertToGpu())
           GpuIf(boolExpr, trueExpr, falseExpr)

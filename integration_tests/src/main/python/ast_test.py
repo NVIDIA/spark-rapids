@@ -375,6 +375,47 @@ def test_jit_coalesce(data_descr):
             f.coalesce(f.col('a'), f.col('b'), f.col('c'), scalar)),
         conf=_ansi_jit_ast_enabled_conf)
 
+_ast_nullify_if_descrs = _ast_coalesce_descrs
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_nullify_if_descrs, ids=idfn)
+def test_jit_if_nullify(data_descr):
+    data_gen, is_supported = data_descr
+    data_type = to_cast_string(data_gen.data_type)
+    assert_gpu_ast(is_supported,
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            'if(isnull(a), cast(null as {}), b)'.format(data_type),
+            'if(isnotnull(a), b, cast(null as {}))'.format(data_type),
+            'if(cast(null as BOOLEAN), cast(null as {}), b)'.format(data_type)),
+        conf=_ansi_jit_ast_enabled_conf)
+
+_ast_nullif_descrs = [
+    (boolean_gen, True),
+    (byte_gen, True),
+    (short_gen, True),
+    (int_gen, True),
+    (long_gen, True),
+    (timestamp_gen, True),
+    (date_gen, True),
+    (string_gen, False)
+]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_nullif_descrs, ids=idfn)
+def test_jit_nullif(data_descr):
+    data_gen, is_supported = data_descr
+    assert_gpu_ast(is_supported,
+        lambda spark: binary_op_df(spark, data_gen).selectExpr('nullif(a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_jit_if_nullify_complex_branch_falls_back():
+    data_gen = IntegerGen(min_val=-100, max_val=100, special_cases=[])
+    assert_gpu_ast(False,
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            'if(isnull(a), cast(null as INT), a + cast(1 as INT))'),
+        conf=_ansi_jit_ast_enabled_conf)
+
 _ast_shift_descrs = [(int_gen, True), (long_gen, True)]
 _ast_shift_amount_gen = IntegerGen(
     min_val=-80,
