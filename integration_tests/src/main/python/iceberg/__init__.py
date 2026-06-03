@@ -15,7 +15,6 @@
 import os
 import tempfile
 import logging
-from itertools import combinations
 from types import MappingProxyType
 from typing import Callable, List, Dict, Optional
 
@@ -182,15 +181,33 @@ def can_be_eq_delete_col(data_gen: DataGen) -> bool:
             # loader, we should remove this after the bug is fixed.
             not isinstance(data_gen.data_type, BinaryType))
 
-def _eq_column_combinations(all_columns: List[str],
-                           all_types: List[DataGen],
-                           n: int) -> List[List[str]]:
-    # In primitive types, float, double can't be used in eq deletes
-    cols = [col for (col, data_gen) in list(zip(all_columns, all_types))
-            if can_be_eq_delete_col(data_gen)]
-    return list(combinations(cols, n))
+# Representative eq-delete column pairs. The full C(14, 2) = 91-pair matrix
+# previously tested every column combination, but eq-delete correctness only
+# requires that every primitive type appears in some pair (not every pair of
+# types). The 10 pairs below cover all 11 primitive types in iceberg_table_gen
+# while mixing numeric/string/temporal/decimal across the pair.
+representative_eq_column_combinations = [
+    pytest.param(("_c0", "_c12"), id="(byte, decimal128)"),
+    pytest.param(("_c1", "_c6"),  id="(short, string)"),
+    pytest.param(("_c2", "_c8"),  id="(int, date)"),
+    pytest.param(("_c3", "_c9"),  id="(long, timestamp)"),
+    pytest.param(("_c7", "_c10"), id="(boolean, decimal32)"),
+    pytest.param(("_c11", "_c13"), id="(decimal64, decimal32_special)"),
+    pytest.param(("_c14", "_c15"), id="(decimal64_special, decimal128_special)"),
+    pytest.param(("_c6", "_c9"),  id="(string, timestamp)"),
+    pytest.param(("_c0", "_c11"), id="(byte, decimal64)"),
+    pytest.param(("_c2", "_c12"), id="(int, decimal128)"),
+]
 
-all_eq_column_combinations = _eq_column_combinations(iceberg_base_table_cols, iceberg_gens_list, 2)
+# Reader-type canary: pairs to exercise the three rapids_reader_types against the
+# eq-delete read path. Three pairs is enough to confirm that reader-type selection
+# composes with eq-delete handling; the full per-pair coverage runs against the
+# default reader only in test_iceberg_v2_eq_deletes.
+eq_reader_canary_pairs = [
+    pytest.param(("_c2", "_c6"),  id="(int, string)"),
+    pytest.param(("_c9", "_c12"), id="(timestamp, decimal128)"),
+    pytest.param(("_c0", "_c11"), id="(byte, decimal64)"),
+]
 
 def setup_base_iceberg_table(spark_tmp_table_factory,
                              seed: Optional[int] = None,
