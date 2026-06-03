@@ -941,7 +941,7 @@ def test_regexp_replace_fallback_configured_off():
     )
 
 
-@allow_non_gpu('ProjectExec', 'RegExpExtract')
+@allow_non_gpu('RegExpExtract')
 def test_unsupported_fallback_regexp_extract():
     gen = mk_str_gen('[abcdef]{0,2}')
     regex_gen = StringGen(r'\[a-z\]\+')
@@ -963,7 +963,7 @@ def test_unsupported_fallback_regexp_extract():
     assert_gpu_did_fallback('REGEXP_EXTRACT("PROD", reg_ex, num)')
 
 
-@allow_non_gpu('ProjectExec', 'RegExpExtractAll')
+@allow_non_gpu('RegExpExtractAll')
 def test_unsupported_fallback_regexp_extract_all():
     gen = mk_str_gen('[abcdef]{0,2}')
     regex_gen = StringGen(r'\[a-z\]\+')
