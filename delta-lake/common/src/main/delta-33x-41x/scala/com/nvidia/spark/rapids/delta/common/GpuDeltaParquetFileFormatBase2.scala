@@ -386,7 +386,7 @@ class GpuDeltaParquetFileFormatBase2(
      * Computes the number of deleted rows within the given row ranges
      * in the bitmap.
      */
-    private[GpuDeltaParquetFileFormatBase2] def countDeletedRows(
+    def countDeletedRows(
         scalaBitmap: RoaringBitmapArray,
         rowGroupOffsets: Array[Long],
         rowGroupNumRows: Array[Int]): Long = {
