@@ -32,6 +32,15 @@ class GpuCoalescingIcebergParquetReader(
     val constantsProvider: IcebergPartitionedFile => JMap[Integer, _],
     override val conf: GpuIcebergParquetReaderConf) extends GpuIcebergParquetReader {
 
+  // Class invariant: the parent coalescer can merge multiple Iceberg splits of the same
+  // physical Parquet file under a single per-file post-processor, so file-global `_pos`
+  // values would be wrong for any split past the first. GpuReaderFactory's canUseCoalescing
+  // predicate already excludes `_pos`-projecting scans; this require is a fail-loud
+  // regression guard if that factory gate is ever weakened.
+  require(!conf.threadConf.asInstanceOf[MultiFile].hasRowPositionMetadata,
+    "_pos scans must not use the Iceberg coalescing reader; GpuReaderFactory should have " +
+      "routed this scan to a per-file reader instead")
+
   private var inited = false
   private lazy val reader = createParquetReader()
 
@@ -48,7 +57,6 @@ class GpuCoalescingIcebergParquetReader(
   private def createParquetReader() = {
     val multiFileConf = conf.threadConf.asInstanceOf[MultiFile]
     val hasFilePathMetadata = multiFileConf.hasFilePathMetadata
-    val hasRowPositionMetadata = multiFileConf.hasRowPositionMetadata
     val clippedBlocks = files.map(f => (f, super.filterParquetBlocks(f, conf.expectedSchema)))
       .flatMap {
         case (file, (info, shadedFileReadSchema)) =>
@@ -99,22 +107,10 @@ class GpuCoalescingIcebergParquetReader(
       {
       override def checkIfNeedToSplitDataBlock(currentBlockInfo: SingleDataBlockInfo,
           nextBlockInfo: SingleDataBlockInfo): Boolean = {
-        val curExtra = currentBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
-        val nextExtra = nextBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
-        // Defensive: each IcebergPartitionedFile owns its own GpuParquetReaderPostProcessor
-        // and the coalescer must not finalize one split's batch with a different split's
-        // post-processor. GpuReaderFactory already routes _pos-projecting scans (the case
-        // where same-file multi-split coalescing would matter) away from this reader, so
-        // today this only fires across distinct files and is otherwise covered by the
-        // filePath comparison below. Kept as a safety net for future changes that could add
-        // per-split state to the post-processor.
-        if (curExtra.postProcessor ne nextExtra.postProcessor) {
-          return true
-        }
         if (currentBlockInfo.filePath == nextBlockInfo.filePath) {
           return false
         }
-        if (hasFilePathMetadata || hasRowPositionMetadata) {
+        if (hasFilePathMetadata) {
           return true
         }
         if (checkIfNeedToSplitBlocks(
@@ -128,6 +124,8 @@ class GpuCoalescingIcebergParquetReader(
           nextBlockInfo.filePath.toString)) {
           return true
         }
+        val curExtra = currentBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
+        val nextExtra = nextBlockInfo.extraInfo.asInstanceOf[IcebergParquetExtraInfo]
         !curExtra.postProcessor.compatibleForCombining(nextExtra.postProcessor)
       }
 
