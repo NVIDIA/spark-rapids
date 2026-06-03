@@ -60,6 +60,10 @@ object ShiftHelper {
 
 trait GpuShiftBase extends GpuBinaryExpression with ImplicitCastInputTypes {
   def shiftOp: BinaryOp
+  def astShiftOp: Option[ast.JitOperator] = None
+
+  private def unsupportedShiftType(t: DataType): Nothing =
+    throw new IllegalArgumentException(s"$t is not a supported type for java bit shifts")
 
   override def doColumnar(lhs: GpuColumnVector, rhs: GpuColumnVector): ColumnVector = {
     val lBase = lhs.getBase
@@ -86,6 +90,34 @@ trait GpuShiftBase extends GpuBinaryExpression with ImplicitCastInputTypes {
       doColumnar(expandedLhs, rhs)
     }
   }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    astShiftOp match {
+      case Some(op) =>
+        new ast.JitOperation(op,
+          left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+          astShiftDistance(numFirstTableColumns))
+      case None =>
+        throw new IllegalStateException(s"${this.getClass.getSimpleName} is not supported by AST")
+    }
+  }
+
+  private def astShiftDistance(numFirstTableColumns: Int): ast.AstExpression = {
+    val mask = left.dataType match {
+      case IntegerType => 0x1F
+      case LongType => 0x3F
+      case t => unsupportedShiftType(t)
+    }
+    // Spark uses Java shift semantics, so the distance is masked before the row IR shift.
+    val masked = new ast.BinaryOperation(ast.BinaryOperator.BITWISE_AND,
+      right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+      ast.Literal.ofInt(mask))
+    left.dataType match {
+      case IntegerType => masked
+      case LongType => new ast.UnaryOperation(ast.UnaryOperator.CAST_TO_INT64, masked)
+      case t => unsupportedShiftType(t)
+    }
+  }
 }
 
 case class GpuShiftLeft(left: Expression, right: Expression) extends GpuShiftBase {
@@ -93,6 +125,7 @@ case class GpuShiftLeft(left: Expression, right: Expression) extends GpuShiftBas
     Seq(TypeCollection(IntegerType, LongType), IntegerType)
 
   override def shiftOp: BinaryOp = BinaryOp.SHIFT_LEFT
+  override def astShiftOp: Option[ast.JitOperator] = Some(ast.JitOperator.BIT_SHIFT_LEFT)
 
   override def dataType: DataType = left.dataType
 }
@@ -102,6 +135,7 @@ case class GpuShiftRight(left: Expression, right: Expression) extends GpuShiftBa
     Seq(TypeCollection(IntegerType, LongType), IntegerType)
 
   override def shiftOp: BinaryOp = BinaryOp.SHIFT_RIGHT
+  override def astShiftOp: Option[ast.JitOperator] = Some(ast.JitOperator.BIT_SHIFT_RIGHT)
 
   override def dataType: DataType = left.dataType
 

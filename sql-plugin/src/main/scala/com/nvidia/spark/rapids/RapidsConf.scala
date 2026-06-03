@@ -1239,8 +1239,8 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .createWithDefault(false)
 
   val ENABLE_PROJECT_AST_ANSI_ARITHMETIC = conf("spark.rapids.sql.projectAstAnsiArithmeticEnabled")
-      .doc("Enable project AST support for ANSI integral arithmetic. This requires " +
-        "LIBCUDF_JIT_ENABLED=1 for executor processes.")
+      .doc("Enable project AST support for row IR JIT operations, including ANSI integral " +
+        "arithmetic. This requires LIBCUDF_JIT_ENABLED=1 for executor processes.")
       .internal()
       .booleanConf
       .createWithDefault(false)

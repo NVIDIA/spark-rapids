@@ -345,6 +345,74 @@ def test_bitwise_xor(data_descr):
             f.lit(-12).cast(data_type).bitwiseXOR(f.col('b')),
             f.col('a').bitwiseXOR(f.col('b'))))
 
+_ast_coalesce_descrs = [
+    (boolean_gen, True),
+    (byte_gen, True),
+    (short_gen, True),
+    (int_gen, True),
+    (long_gen, True),
+    (float_gen, True),
+    (double_gen, True),
+    (timestamp_gen, True),
+    (date_gen, True),
+    (string_gen, False)
+]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_coalesce_descrs, ids=idfn)
+def test_jit_coalesce(data_descr):
+    data_gen, is_supported = data_descr
+    scalar = with_cpu_session(
+        lambda spark: gen_scalar(data_gen, force_no_nulls=True))
+    gen = StructGen([
+        ('a', data_gen.copy_special_case(None, weight=1000.0)),
+        ('b', data_gen.copy_special_case(None, weight=1000.0)),
+        ('c', data_gen.copy_special_case(None, weight=1000.0))],
+        nullable=False)
+    assert_gpu_ast(is_supported,
+        lambda spark: gen_df(spark, gen).select(
+            f.coalesce(f.col('a'), f.col('b')),
+            f.coalesce(f.col('a'), f.col('b'), f.col('c'), scalar)),
+        conf=_ansi_jit_ast_enabled_conf)
+
+_ast_shift_descrs = [(int_gen, True), (long_gen, True)]
+_ast_shift_amount_gen = IntegerGen(
+    min_val=-80,
+    max_val=80,
+    special_cases=[-65, -64, -63, -33, -32, -31, -1, 0, 1, 31, 32, 33, 63, 64, 65])
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_shift_descrs, ids=idfn)
+def test_jit_shift_left(data_descr):
+    data_gen, is_supported = data_descr
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_ast(is_supported,
+        lambda spark: two_col_df(spark, data_gen, _ast_shift_amount_gen).selectExpr(
+            'shiftleft(a, cast(12 as INT))',
+            'shiftleft(a, cast(40 as INT))',
+            'shiftleft(a, cast(-1 as INT))',
+            'shiftleft(cast(-12 as {}), b)'.format(string_type),
+            'shiftleft(cast(null as {}), b)'.format(string_type),
+            'shiftleft(a, cast(null as INT))',
+            'shiftleft(a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_shift_descrs, ids=idfn)
+def test_jit_shift_right(data_descr):
+    data_gen, is_supported = data_descr
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_ast(is_supported,
+        lambda spark: two_col_df(spark, data_gen, _ast_shift_amount_gen).selectExpr(
+            'shiftright(a, cast(12 as INT))',
+            'shiftright(a, cast(40 as INT))',
+            'shiftright(a, cast(-1 as INT))',
+            'shiftright(cast(-12 as {}), b)'.format(string_type),
+            'shiftright(cast(null as {}), b)'.format(string_type),
+            'shiftright(a, cast(null as INT))',
+            'shiftright(a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
 @pytest.mark.parametrize('data_descr', ast_arithmetic_descrs, ids=idfn)
 @disable_ansi_mode
 def test_addition(data_descr):

@@ -119,6 +119,12 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression
 
   // Coalesce is foldable if all children are foldable.
   override def foldable: Boolean = children.forall(_.foldable)
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    children.map(_.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)).reduceRight {
+      (value, fallback) => new ast.JitOperation(ast.JitOperator.COALESCE, value, fallback)
+    }
+  }
 }
 
 /*

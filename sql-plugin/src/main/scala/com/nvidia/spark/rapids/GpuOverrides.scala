@@ -1452,19 +1452,35 @@ object GpuOverrides extends Logging {
       }),
     expr[ShiftLeft](
       "Bitwise shift left (<<)",
-      ExprChecks.binaryProject(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.INT + TypeSig.LONG,
+        TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
         ("value", TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG),
         ("amount", TypeSig.INT, TypeSig.INT)),
       (a, conf, p, r) => new BinaryExprMeta[ShiftLeft](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (!conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST shift requires row IR JIT support.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuShiftLeft(lhs, rhs)
       }),
     expr[ShiftRight](
       "Bitwise shift right (>>)",
-      ExprChecks.binaryProject(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.INT + TypeSig.LONG,
+        TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
         ("value", TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG),
         ("amount", TypeSig.INT, TypeSig.INT)),
       (a, conf, p, r) => new BinaryExprMeta[ShiftRight](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (!conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST shift requires row IR JIT support.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuShiftRight(lhs, rhs)
       }),
@@ -1557,7 +1573,8 @@ object GpuOverrides extends Logging {
       }),
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
-      ExprChecks.projectOnly(
+      ExprChecks.projectAndAst(
+        TypeSig.astTypes - TypeSig.STRING,
         (gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
           TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all,
@@ -1566,6 +1583,12 @@ object GpuOverrides extends Logging {
             TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (!conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST coalesce requires row IR JIT support.")
+          }
+        }
+
         override def convertToGpuImpl(): GpuExpression =
           GpuCoalesce(childExprs.map(_.convertToGpu()))
       }),
