@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2026, NVIDIA CORPORATION.
+# Copyright (c) 2020-2025, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_iterator
-from conftest import is_emr_runtime
 from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limit
 
 @incompat
@@ -23,8 +22,6 @@ from marks import approximate_float, incompat, ignore_order, allow_non_gpu, limi
 @limit
 @ignore_order
 @allow_non_gpu(any=True)
-@pytest.mark.xfail(condition=is_emr_runtime(),
-    reason='https://github.com/NVIDIA/spark-rapids/issues/14928')
 def test_mortgage(mortgage):
   assert_gpu_and_cpu_are_equal_iterator(
           lambda spark : mortgage.do_test_query(spark))
