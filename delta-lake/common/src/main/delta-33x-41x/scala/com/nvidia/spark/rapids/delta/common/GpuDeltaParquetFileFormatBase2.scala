@@ -264,6 +264,33 @@ class GpuDeltaParquetFileFormatBase2(
     readDataSchema, debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows, maxReadBatchSizeBytes,
     compressCfg, execMetrics, useFieldId) {
 
+    override protected def computeNumRowsAlive(
+        totalNumRows: Long,
+        chunkedBlocks: Seq[BlockMetaData]): Int = {
+      if (totalNumRows == 0 || tablePath.isEmpty) {
+        Math.toIntExact(totalNumRows)
+      } else {
+        val dvDescriptorOpt = split.otherConstantMetadataColumnValues
+          .get(FILE_ROW_INDEX_FILTER_ID_ENCODED).asInstanceOf[Option[String]]
+        val filterTypeOpt = split.otherConstantMetadataColumnValues
+          .get(FILE_ROW_INDEX_FILTER_TYPE).asInstanceOf[Option[RowIndexFilterType]]
+        val scalaBitmap = RapidsDeletionVectors.loadScalaBitmap(
+          conf, dvDescriptorOpt, filterTypeOpt, tablePath.get)
+        if (scalaBitmap.cardinality == 0) {
+          Math.toIntExact(totalNumRows)
+        } else {
+          val (rowGroupOffsets, rowGroupNumRows) =
+            RapidsDeletionVectors.getRowGroupMetadata(chunkedBlocks)
+          val numDeletedRows = SpillableDeletionVectorInfo.countDeletedRows(
+            scalaBitmap, rowGroupOffsets, rowGroupNumRows)
+
+          require(numDeletedRows <= totalNumRows,
+            s"Deletion vector cardinality ($numDeletedRows) exceeds file row count ($totalNumRows)")
+          Math.toIntExact(totalNumRows - numDeletedRows)
+        }
+      }
+    }
+
     override protected def readBuffer(
         parquetOpts: ParquetOptions,
         colTypes: Array[DataType],
@@ -358,7 +385,7 @@ class GpuDeltaParquetFileFormatBase2(
      * Computes the number of deleted rows within the given row ranges
      * in the bitmap.
      */
-    private def countDeletedRows(
+    def countDeletedRows(
         scalaBitmap: RoaringBitmapArray,
         rowGroupOffsets: Array[Long],
         rowGroupNumRows: Array[Int]): Long = {
