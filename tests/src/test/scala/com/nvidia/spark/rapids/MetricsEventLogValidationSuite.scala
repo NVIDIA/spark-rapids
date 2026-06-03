@@ -28,6 +28,8 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
@@ -811,6 +813,59 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
         f"$marginFactor%.1fx summed executorRunTime, indicating write-path op_time " +
         s"over-count (#14901 not fixed). $sample")
     }
+  }
+
+  test("shuffle-read op time is excluded from consumers across AQE query stages (#14933)") {
+    spark.conf.set("spark.rapids.sql.exec.opTimeTrackingRDD.enabled", "true")
+    // Disable AQE partition coalescing so the reduce stage reads the GpuColumnarExchange
+    // directly instead of through a GpuCustomShuffleReaderExec. AQE then materializes that
+    // exchange as a ShuffleQueryStageExec -- a LeafExecNode whose children are empty -- so
+    // a consumer's descendant-op-time walk only reaches the exchange's
+    // "op time (shuffle read)" metric if it descends through the query stage.
+    spark.conf.set("spark.sql.adaptive.coalescePartitions.enabled", "false")
+
+    // A group-by forces a shuffle (partial aggregate -> exchange -> final aggregate).
+    // collect() materializes the AQE query stages, so the executed plan contains the
+    // ShuffleQueryStageExec wrapping the reduce-side exchange.
+    val df = spark.range(0, 200000L, 1, 8).selectExpr("id % 1000 as k", "id as v")
+    val resultDF = df.groupBy("k").agg(sum("v").as("sv"))
+    assert(resultDF.collect().nonEmpty, "Query should produce results")
+
+    val finalPlan = resultDF.queryExecution.executedPlan match {
+      case a: AdaptiveSparkPlanExec => a.executedPlan
+      case other => other
+    }
+
+    // The in-stage consumer is the GpuExec whose child is the reduce-side query stage.
+    val consumers = finalPlan.collect {
+      case c: GpuExec if c.children.exists(_.isInstanceOf[ShuffleQueryStageExec]) => c
+    }
+    assert(consumers.nonEmpty,
+      s"expected a GpuExec consuming a ShuffleQueryStageExec; plan was:\n$finalPlan")
+    val consumer = consumers.head
+    val stage = consumer.children.collectFirst { case q: ShuffleQueryStageExec => q }.get
+    val exchange = stage.plan match {
+      case r: ReusedExchangeExec => r.child
+      case p => p
+    }
+    val readMetric = exchange match {
+      case g: GpuExec => g.getOpTimeNewMetric
+      case _ => None
+    }
+    assert(readMetric.isDefined,
+      s"reduce-side exchange (${exchange.nodeName}) should expose an OP_TIME_NEW " +
+        "(\"op time (shuffle read)\") metric")
+
+    // The fix: a consumer's getDescendantOpTimeMetrics must descend through the
+    // ShuffleQueryStageExec and collect the exchange's shuffle-read metric, so the
+    // consumer's op_time excludes it. Pre-fix the walk stops at the (leaf) query stage and
+    // the metric is missing, leaving the shuffle-read time double-counted (#14933).
+    val descendants = consumer.getDescendantOpTimeMetrics
+    assert(descendants.exists(_ eq readMetric.get),
+      s"${consumer.nodeName}.getDescendantOpTimeMetrics must include the reduce-side " +
+        "exchange's \"op time (shuffle read)\" metric (so it is excluded from the consumer's " +
+        "op time); it was missing, so the shuffle-read time would be double-counted. " +
+        s"Collected ${descendants.size} descendant op-time metrics.")
   }
 
 }
