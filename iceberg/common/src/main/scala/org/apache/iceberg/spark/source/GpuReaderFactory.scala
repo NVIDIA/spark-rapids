@@ -88,12 +88,13 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
       }
 
       val canUseMultiThread = canUseParquetMultiThread
-      // _pos must be file-global. The coalescing reader can merge multiple Iceberg splits
-      // of the same physical Parquet file under a single post-processor; tagging the path
-      // to force a chunk split breaks file IO because Hadoop FileSystem implementations
-      // (including the local filesystem) treat URI fragments as part of the filename. Route
-      // _pos-projecting scans through the multi-thread/single-file readers, which finalize
-      // batches per IcebergPartitionedFile and so see the correct per-split post-processor.
+      // `_pos` must be file-global. The coalescing reader's parent
+      // (MultiFileCoalescingPartitionReaderBase.populateCurrentBlockChunk) can merge blocks
+      // from multiple Iceberg splits of the same physical Parquet file into one chunk and
+      // finalize the whole chunk with the first split's per-file post-processor, which
+      // would emit wrong `_pos` for any rows past the first split. Route `_pos`-projecting
+      // scans to the multi-thread/single-file readers instead — those finalize batches per
+      // `IcebergPartitionedFile`, so each split's own post-processor handles its own rows.
       val canUseCoalescing = canUseParquetCoalescing && hasNoDeletes && !queryUsesInputFile &&
         !hasRowPositionMetadata
 

@@ -678,6 +678,11 @@ def test_iceberg_read_pos_with_split_file(spark_tmp_table_factory, reader_type):
     # byte boundaries via a tiny row-group size, a tiny split target, and a zero
     # per-file open cost. The query projects Iceberg's _pos metadata column; the
     # GPU result must match CPU regardless of how the planner splits the file.
+    # Note: with the COALESCING reader_type, GpuReaderFactory routes _pos scans
+    # away from the coalescing reader (canUseCoalescing excludes
+    # hasRowPositionMetadata), so that parametrization actually exercises the
+    # per-file/multi-thread path. The split-file _pos correctness assertion still
+    # holds in whichever reader is chosen.
     table = get_full_table_name(spark_tmp_table_factory)
     def setup_iceberg_table(spark):
         spark.sql(f"CREATE TABLE {table} (id BIGINT) USING ICEBERG {_NO_FANOUT}")
@@ -702,6 +707,10 @@ def test_iceberg_read_mor_with_pos_deletes_split_file(spark_tmp_table_factory, r
     # project _pos; the Iceberg reader still adds it internally to match against
     # the positional delete list. The test deletes a scattered subset by id and
     # asserts CPU and GPU return the same surviving rows.
+    # Note: the COALESCING reader_type does not actually exercise the coalescing
+    # reader here either — GpuReaderFactory.canUseCoalescing already excludes any
+    # scan with delete files (`hasNoDeletes` is false), so the test runs against
+    # the per-file/multi-thread reader regardless of the requested reader_type.
     table = get_full_table_name(spark_tmp_table_factory)
     def setup_iceberg_table(spark):
         spark.sql(
