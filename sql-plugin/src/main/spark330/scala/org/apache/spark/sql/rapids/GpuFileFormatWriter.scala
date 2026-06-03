@@ -48,6 +48,7 @@ import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec}
 import org.apache.spark.sql.execution.datasources.{WriteTaskResult, WriteTaskStats}
 import org.apache.spark.sql.execution.datasources.FileFormatWriter.OutputSpec
+import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.rapids.shims.RapidsHadoopWriterUtils
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -257,6 +258,10 @@ object GpuFileFormatWriter extends Logging {
             case qs: QueryStageExec => collectExcludeMetrics(qs.plan, seen)
             case gpuExec: GpuExec => gpuExec.getOpTimeNewMetric.toSeq ++
               gpuExec.getDescendantOpTimeMetrics
+            // Stop at a stage boundary: a (non-GPU) Exchange under a CPU subtree leads
+            // into a different stage whose op_time is not part of this write task's
+            // interval. Mirror the Exchange stop in GpuExec.getDescendantOpTimeMetrics.
+            case _: Exchange => Seq.empty
             case other => other.children.flatMap(collectExcludeMetrics(_, seen))
           }
         }
