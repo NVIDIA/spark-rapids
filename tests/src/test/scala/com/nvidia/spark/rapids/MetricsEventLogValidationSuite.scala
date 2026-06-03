@@ -28,7 +28,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, ShuffleQueryStageExec}
+import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, QueryStageExec, ShuffleQueryStageExec}
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -831,8 +831,15 @@ class MetricsEventLogValidationSuite extends AnyFunSuite with BeforeAndAfterEach
     val resultDF = df.groupBy("k").agg(sum("v").as("sv"))
     assert(resultDF.collect().nonEmpty, "Query should produce results")
 
-    val finalPlan = resultDF.queryExecution.executedPlan match {
+    val executed = resultDF.queryExecution.executedPlan match {
       case a: AdaptiveSparkPlanExec => a.executedPlan
+      case other => other
+    }
+    // Spark 4.0+ wraps the final stage in a ResultQueryStageExec (a QueryStageExec, i.e.
+    // a LeafExecNode whose children are empty); descend into its `.plan` so the operator
+    // tree below is reachable by the traversal. No-op on Spark 3.3 (no result stage).
+    val finalPlan = executed match {
+      case q: QueryStageExec => q.plan
       case other => other
     }
 
