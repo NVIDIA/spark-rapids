@@ -118,20 +118,28 @@ overwrite_dynamic_partition_transforms = [
     pytest.param("_c6", id="identity(string)"),
 ]
 
-# Each used as `@pytest.mark.parametrize("<mode_arg>,partition_col_sql", <list>)`.
+# Each list pairs (partition_col_sql, <mode>). Always used together as
+# `@pytest.mark.parametrize("partition_col_sql,<mode_arg>", <list>)` so the
+# parametrize-string order matches the tuple order and the function-signature
+# order (`partition_col_sql` first, then the mode arg). Keep them in lockstep.
+#
+# Each list is just two cases (one per mode, exercising one transform family):
+# the 26-transform partition-writer matrix lives in the append anchor
+# (test_insert_into_partitioned_table_full_coverage); per-op cross-mode coverage
+# of year(_c9) is preserved in the non-_full_coverage basic tests.
 delete_partition_transforms_distributed = [
-    pytest.param('copy-on-write', "day(_c9)", id="copy-on-write-day(timestamp_col)"),
-    pytest.param('merge-on-read', "hour(_c9)", id="merge-on-read-hour(timestamp_col)"),
+    pytest.param("day(_c9)", 'copy-on-write', id="copy-on-write-day(timestamp_col)"),
+    pytest.param("hour(_c9)", 'merge-on-read', id="merge-on-read-hour(timestamp_col)"),
 ]
 
 update_partition_transforms_distributed = [
-    pytest.param('copy-on-write', "truncate(10, _c14)", id="copy-on-write-truncate(10, decimal64_col)"),
-    pytest.param('merge-on-read', "truncate(10, _c15)", id="merge-on-read-truncate(10, decimal128_col)"),
+    pytest.param("truncate(10, _c14)", 'copy-on-write', id="copy-on-write-truncate(10, decimal64_col)"),
+    pytest.param("truncate(10, _c15)", 'merge-on-read', id="merge-on-read-truncate(10, decimal128_col)"),
 ]
 
 merge_partition_transforms_distributed = [
-    pytest.param('copy-on-write', "bucket(16, _c6)", id="copy-on-write-bucket(16, string_col)"),
-    pytest.param('merge-on-read', "bucket(16, _c13)", id="merge-on-read-bucket(16, decimal32_col)"),
+    pytest.param("bucket(16, _c6)", 'copy-on-write', id="copy-on-write-bucket(16, string_col)"),
+    pytest.param("bucket(16, _c13)", 'merge-on-read', id="merge-on-read-bucket(16, decimal32_col)"),
 ]
 
 # All data types of iceberg, not all of them are supported by spark-rapids for now
@@ -183,9 +191,11 @@ def can_be_eq_delete_col(data_gen: DataGen) -> bool:
 
 # Representative eq-delete column pairs. The full C(14, 2) = 91-pair matrix
 # previously tested every column combination, but eq-delete correctness only
-# requires that every primitive type appears in some pair (not every pair of
-# types). The 10 pairs below cover all 11 primitive types in iceberg_table_gen
-# while mixing numeric/string/temporal/decimal across the pair.
+# requires that every eligible column type appears in some pair (not every pair
+# of types). The 10 pairs below cover all 14 eligible eq-delete columns of
+# iceberg_table_gen (_c0..c3, _c6..c15; _c4 float and _c5 double are excluded by
+# can_be_eq_delete_col), spanning every distinct primitive Spark type used there
+# while mixing numeric/string/temporal/decimal across each pair.
 representative_eq_column_combinations = [
     pytest.param(("_c0", "_c12"), id="(byte, decimal128)"),
     pytest.param(("_c1", "_c6"),  id="(short, string)"),
@@ -202,11 +212,12 @@ representative_eq_column_combinations = [
 # Reader-type canary: pairs to exercise the three rapids_reader_types against the
 # eq-delete read path. Three pairs is enough to confirm that reader-type selection
 # composes with eq-delete handling; the full per-pair coverage runs against the
-# default reader only in test_iceberg_v2_eq_deletes.
+# default reader only in test_iceberg_v2_eq_deletes. Each canary pair is distinct
+# from representative_eq_column_combinations so the two tests don't overlap.
 eq_reader_canary_pairs = [
     pytest.param(("_c2", "_c6"),  id="(int, string)"),
     pytest.param(("_c9", "_c12"), id="(timestamp, decimal128)"),
-    pytest.param(("_c0", "_c11"), id="(byte, decimal64)"),
+    pytest.param(("_c1", "_c10"), id="(short, decimal32)"),
 ]
 
 def setup_base_iceberg_table(spark_tmp_table_factory,

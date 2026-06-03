@@ -180,7 +180,7 @@ def test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode):
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("merge_mode,partition_col_sql", merge_partition_transforms_distributed)
+@pytest.mark.parametrize("partition_col_sql,merge_mode", merge_partition_transforms_distributed)
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_iceberg_merge_full_coverage(spark_tmp_table_factory, partition_col_sql, merge_mode):
     """Full partition coverage test - skipped for remote catalogs."""

@@ -155,7 +155,7 @@ def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("delete_mode,partition_col_sql", delete_partition_transforms_distributed)
+@pytest.mark.parametrize("partition_col_sql,delete_mode", delete_partition_transforms_distributed)
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_iceberg_delete_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql, delete_mode):
     """Full partition coverage test - skipped for remote catalogs."""

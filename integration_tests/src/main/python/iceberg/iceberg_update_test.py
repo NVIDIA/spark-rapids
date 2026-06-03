@@ -168,7 +168,7 @@ def test_iceberg_update_partitioned_table_single_column(spark_tmp_table_factory,
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("update_mode,partition_col_sql", update_partition_transforms_distributed)
+@pytest.mark.parametrize("partition_col_sql,update_mode", update_partition_transforms_distributed)
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_iceberg_update_partitioned_table_single_column_full_coverage(spark_tmp_table_factory, update_mode, partition_col_sql):
     """Full partition coverage test - skipped for remote catalogs."""

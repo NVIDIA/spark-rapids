@@ -31,11 +31,13 @@ from spark_session import with_gpu_session, with_cpu_session
 pytestmark = iceberg_unsupported_mark
 
 
-# Eq-delete pair coverage. Each primitive type in iceberg_table_gen appears in at
-# least one pair below; the full C(14, 2) matrix is unnecessary because eq-delete
-# correctness depends on per-column type handling, not on the cross product of
-# every two columns. Runs against the default reader; reader-type compatibility is
-# checked separately by test_iceberg_v2_eq_deletes_reader_types.
+# Eq-delete pair coverage. All 14 eligible eq-delete columns of iceberg_table_gen
+# (_c0..c3, _c6..c15; _c4 float and _c5 double are excluded by can_be_eq_delete_col)
+# appear in at least one pair in representative_eq_column_combinations; the full
+# C(14, 2) matrix is unnecessary because eq-delete correctness depends on
+# per-column type handling, not on the cross product of every two columns. Runs
+# against the default reader; reader-type compatibility is checked separately by
+# test_iceberg_v2_eq_deletes_reader_types.
 # In spark/iceberg integration, there is no builtin way to generate eq deletion files using
 # sql, we used a low level api to add eq deletion files to iceberg table.
 # This does not work with aws s3tables, which is a managed table service.
