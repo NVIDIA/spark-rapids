@@ -71,6 +71,27 @@ def test_delta_optimize_fallback_with_existing_deletion_vectors(spark_tmp_path):
         post_setup_func=_delete_rows_and_disable_deletion_vectors)
 
 
+@delta_lake
+@allow_non_gpu('ExecutedCommandExec', *delta_meta_allow)
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Partitioned existing-DV OPTIMIZE fallback guard is for Databricks 17.3+")
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(), reason="Deletion vectors aren't supported")
+def test_delta_optimize_fallback_partitioned_table_with_existing_deletion_vectors(spark_tmp_path):
+    conf = copy_and_update(_optimize_conf, {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.sql.adaptive.enabled": "false"
+    })
+    _assert_optimize_fallback(
+        True,
+        spark_tmp_path,
+        partition_columns=["a"],
+        conf=conf,
+        post_setup_func=_delete_rows_with_deletion_vectors,
+        # Partitioned CPU OPTIMIZE can produce different compacted files and commit
+        # metadata across independent tables, so verify fallback and data parity here.
+        check_delta_log=False)
+
+
 def _write_many_small_files(spark, enable_deletion_vectors, path, partition_columns=None, clustering_columns=None):
     if partition_columns and clustering_columns:
         raise ValueError("Only one of partition_columns or clustering_columns can be specified")
@@ -144,6 +165,11 @@ def _delete_rows_and_disable_deletion_vectors(spark, path):
     assert num_deleted > 0, "Expected DELETE to create deletion vectors"
     spark.sql(f"ALTER TABLE delta.`{path}` SET TBLPROPERTIES " +
               "('delta.enableDeletionVectors' = 'false')")
+
+
+def _delete_rows_with_deletion_vectors(spark, path):
+    num_deleted = spark.sql(f"DELETE FROM delta.`{path}` WHERE b = 'a'").collect()[0][0]
+    assert num_deleted > 0, "Expected DELETE to create deletion vectors"
 
 
 def _read_sorted(spark, path):
@@ -228,7 +254,8 @@ def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_c
 
 
 def _assert_optimize_fallback(enable_deletion_vectors, spark_tmp_path, partition_columns=None,
-                              clustering_columns=None, conf=_optimize_conf, post_setup_func=None):
+                              clustering_columns=None, conf=_optimize_conf, post_setup_func=None,
+                              check_delta_log=True):
     data_path = spark_tmp_path + "/DELTA_OPTIMIZE_FALLBACK"
     cpu_path = data_path + "/CPU"
     gpu_path = data_path + "/GPU"
@@ -255,7 +282,8 @@ def _assert_optimize_fallback(enable_deletion_vectors, spark_tmp_path, partition
     gpu_data = with_cpu_session(lambda s: _read_sorted(s, gpu_path).collect(), conf=conf)
     assert_equal(cpu_data, gpu_data)
 
-    with_cpu_session(lambda s: assert_gpu_and_cpu_latest_delta_log_equivalent(s, data_path))
+    if check_delta_log:
+        with_cpu_session(lambda s: assert_gpu_and_cpu_latest_delta_log_equivalent(s, data_path))
 
 
 @allow_non_gpu(*delta_meta_allow)
