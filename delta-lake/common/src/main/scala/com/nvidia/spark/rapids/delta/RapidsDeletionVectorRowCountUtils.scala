@@ -16,11 +16,12 @@
 
 package com.nvidia.spark.rapids.delta
 
+import com.nvidia.spark.rapids.shims.parquet.GpuParquetUtilsShims
 import org.apache.parquet.hadoop.metadata.BlockMetaData
 
 object RapidsDeletionVectorRowCountUtils {
   def getRowGroupMetadata(blocks: collection.Seq[BlockMetaData]): (Array[Long], Array[Int]) = {
-    val rowGroupOffsets = blocks.map(_.getRowIndexOffset)
+    val rowGroupOffsets = blocks.map(GpuParquetUtilsShims.getRowIndexOffset)
     if (rowGroupOffsets.exists(_ < 0)) {
       throw new IllegalStateException("Found invalid row group offset")
     }

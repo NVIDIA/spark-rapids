@@ -51,6 +51,11 @@ object GpuParquetUtilsShims {
   }
 
   /**
+   * Gets the row index offset from the BlockMetaData.
+   */
+  def getRowIndexOffset(block: BlockMetaData): Long = block.getRowIndexOffset
+
+  /**
    * Build a new BlockMetaData from an existing one, but with a new set of column chunks metadata.
    *
    * @param existingMetadata the existing BlockMetaData to copy row count and row index offset from
