@@ -131,11 +131,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsJsonFunctionsSuite]
     .exclude("SPARK-33134: return partial results only for root JSON objects", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14088"))
   enableSuite[RapidsJsonSuite]
-    .exclude("SPARK-18352: Parse normal multi-line JSON files (uncompressed)", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("SPARK-18352: Parse normal multi-line JSON files (compressed)", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("Applying schemas", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("Loading a JSON dataset from a text file with SQL", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
-    .exclude("Loading a JSON dataset from a text file", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10773"))
   enableSuite[RapidsMathExpressionsSuite]
     .exclude("round/bround/floor/ceil", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13747"))
   enableSuite[RapidsMathFunctionsSuite]
@@ -161,8 +156,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsParquetPartitionDiscoverySuite]
     .exclude("Various partition value types", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11583"))
   enableSuite[RapidsParquetProtobufCompatibilitySuite]
-    .exclude("struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11475"))
-    .exclude("unannotated array of struct with unannotated array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11476"))
   enableSuite[RapidsParquetQuerySuite]
     .exclude("SPARK-26677: negated null-safe equality comparison should not filter matched row groups", ADJUST_UT("fetches the CPU version of Execution Plan instead of the GPU version."))
     .exclude("SPARK-34212 Parquet should read decimals correctly", ADJUST_UT("Vectorized Parquet reader throws an exception when scale is narrowed in Apache Spark where as the spark-rapids plugin does not."))
@@ -172,7 +165,6 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-31159: rebasing dates in write", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11480"))
     .exclude("SPARK-35427: datetime rebasing in the EXCEPTION mode", ADJUST_UT("original test case inherited from Spark cannot find the needed local resources"))
   enableSuite[RapidsParquetSchemaPruningSuite]
-    .excludeBySuffix("select explode of nested field of array of struct", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11653"))
   enableSuite[RapidsParquetSchemaSuite]
     .exclude("schema mismatch failure error message for parquet reader", WONT_FIX_ISSUE("GPU uses a unified parquet reader path; the non-vectorized CPU error variant rooted in ParquetDecodingException is not reachable by design. See https://github.com/NVIDIA/spark-rapids/issues/11434"))
   enableSuite[RapidsParquetThriftCompatibilitySuite]
@@ -189,7 +181,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsProductAggSuite]
   enableSuite[RapidsComplexTypesSuite]
   enableSuite[RapidsCSVSuite]
-    .exclude("DDL test parsing decimal type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13890"))
     .exclude("nullable fields with user defined null value of \"null\"", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13893"))
     .exclude("empty fields with user defined empty values", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13894"))
     .exclude("save csv with empty fields with user defined empty values", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/13895"))
@@ -219,6 +210,5 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-33084: Add jar support Ivy URI in SQL -- jar contains udf class", ADJUST_UT("Replaced by testRapids version that uses testFile() to access Spark test resources instead of getContextClassLoader"))
     .exclude("SPARK-33482: Fix FileScan canonicalization", ADJUST_UT("Replaced by testRapids version using V1 sources with AQE and broadcast disabled to assert ReusedExchangeExec directly"))
     .exclude("SPARK-36093: RemoveRedundantAliases should not change expression's name", ADJUST_UT("Replaced by testRapids version that checks the partition column name of the GpuInsertIntoHadoopFsRelationCommand"))
-    .exclude("SPARK-39190,SPARK-39208,SPARK-39210: Query context of decimal overflow error should be serialized to executors when WSCG is off", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14123"))
 }
 // scalastyle:on line.size.limit

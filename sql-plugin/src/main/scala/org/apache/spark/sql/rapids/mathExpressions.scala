@@ -25,7 +25,8 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.{Arithmetic, CastStrings, ExceptionWithRowIndex, RoundMode}
 
 import org.apache.spark.sql.catalyst.expressions.{Expression, ImplicitCastInputTypes}
-import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
+import org.apache.spark.sql.catalyst.trees.CurrentOrigin
+import org.apache.spark.sql.rapids.shims.{OriginContextShim, RapidsErrorUtils}
 import org.apache.spark.sql.types._
 
 abstract class CudfUnaryMathExpression(name: String) extends GpuUnaryMathExpression(name)
@@ -515,15 +516,6 @@ object GpuHypot {
     }
   }
 
-  def eitherNull(x: ColumnVector,
-                 y: ColumnVector): ColumnVector = {
-    withResource(x.isNull) { xIsNull =>
-      withResource(y.isNull) { yIsNull =>
-        xIsNull.or(yIsNull)
-      }
-    }
-  }
-
   def computeHypot(x: ColumnVector, y: ColumnVector): ColumnVector = {
     val yOverXSquared = withResource(y.div(x)) { yOverX =>
       yOverX.mul(yOverX)
@@ -590,11 +582,7 @@ case class GpuHypot(left: Expression, right: Expression) extends CudfBinaryMathE
       }
 
       withResource(infOrRest) { _ =>
-        withResource(Scalar.fromNull(x.getType)) { nullS =>
-          withResource(GpuHypot.eitherNull(x, y)) { eitherNull =>
-            eitherNull.ifElse(nullS, infOrRest)
-          }
-        }
+        infOrRest.mergeAndSetValidity(BinaryOp.BITWISE_AND, x, y)
       }
     }
   }
@@ -879,13 +867,11 @@ object RoundingErrorUtil {
    * @param outOfBounds A boolean column that indicates which value cannot be casted.
    * Users must make sure that there is at least one `true` in this column.
    * @param toType The type to cast.
-   * @param context The error context, default value is "".
    */
   def cannotChangeDecimalPrecisionError(
       values: ColumnView,
       outOfBounds: ColumnView,
-      toType: DecimalType,
-      context: String = ""): ArithmeticException = {
+      toType: DecimalType): ArithmeticException = {
     val rowId = withResource(outOfBounds.copyToHost()) { hcv =>
       (0L until outOfBounds.getRowCount)
         .find(i => !hcv.isNull(i) && hcv.getBoolean(i))
@@ -894,6 +880,9 @@ object RoundingErrorUtil {
     val value = withResource(values.getScalarElement(rowId.toInt)) { s =>
       s.getBigDecimal
     }
-    RapidsErrorUtils.cannotChangeDecimalPrecisionError(Decimal(value), toType)
+    // Pass the SQL query context (set on the executor via `CurrentOrigin.withOrigin`
+    // around `doColumnar`) so the exception message preserves SPARK-39190 parity.
+    RapidsErrorUtils.cannotChangeDecimalPrecisionError(
+      Decimal(value), toType, OriginContextShim.queryContext(CurrentOrigin.get))
   }
 }

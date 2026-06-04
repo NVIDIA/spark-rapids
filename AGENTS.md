@@ -33,7 +33,7 @@ spark-rapids/
 │   │       ├── GpuSemaphore.scala       # GPU access semaphore
 │   │       └── spill/SpillFramework.scala    # Spill-to-host/disk framework
 │   └── src/main/spark{VERSION}/   # Spark version-specific shims
-│       └── scala/                 #   e.g., spark321/, spark341/, spark400/
+│       └── scala/                 #   e.g., spark330/, spark341/, spark400/
 ├── sql-plugin-api/                # Plugin API definitions
 ├── shuffle-plugin/                # GPU shuffle optimization
 ├── tests/                         # Scala unit tests
@@ -99,7 +99,6 @@ to via a JSON annotation block after the copyright header:
 
 ```
 /*** spark-rapids-shim-json-lines
-{"spark": "321"}
 {"spark": "330"}
 {"spark": "330db"}
 spark-rapids-shim-json-lines ***/

@@ -873,9 +873,13 @@ protected case class GpuParquetFileFilterHandler(
           }
         } else {
           val fileGroupType = fileType.asGroupType()
-          if (fileGroupType.getFieldCount > 1 &&
-              fileGroupType.isRepetition(Type.Repetition.REPEATED)) {
-            // legacy array format where struct child is directly repeated under array type group
+          if (fileGroupType.isRepetition(Type.Repetition.REPEATED)) {
+            // Unannotated 1-level legacy list: the REPEATED group itself is the element,
+            // regardless of how many fields it has. Without this branch, a single-field
+            // repeated group (e.g. `repeated group g { optional int32 someId; }`) is
+            // mis-interpreted as a 2/3-level LIST wrapper and its primitive child is
+            // treated as a group, producing ClassCastException. The cuDF reader handles
+            // the actual decoding (see rapidsai/cudf#22541 for the matching cuDF-side fix).
             checkSchemaCompat(fileGroupType, array.elementType, errorCallback, isCaseSensitive,
               useFieldId, rootFileType, rootReadType)
           } else {
