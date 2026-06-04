@@ -526,6 +526,20 @@ properly without it. These tests assume Iceberg is not configured and are disabl
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.
 
+When testing Iceberg package-private access paths, load the local Iceberg runtime jar with
+`ICEBERG_EXTRA_CLASSPATH` instead of `PYSP_TEST_spark_jars` or
+`PYSP_TEST_spark_jars_packages`. The test driver will place the RAPIDS, test, and Iceberg
+jars on `spark.driver.extraClassPath` and `spark.executor.extraClassPath`:
+
+```shell
+ICEBERG_EXTRA_CLASSPATH=/path/to/iceberg-spark-runtime-3.5_2.12-1.10.1.jar \
+PYSP_TEST_spark_sql_extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
+PYSP_TEST_spark_sql_catalog_spark__catalog=org.apache.iceberg.spark.SparkSessionCatalog \
+PYSP_TEST_spark_sql_catalog_spark__catalog_type=hadoop \
+PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse=/tmp/spark-warehouse-$RANDOM \
+./integration_tests/run_pyspark_from_build.sh -m iceberg --iceberg
+```
+
 #### Disabling Iceberg fanout writer
 
 The Iceberg fanout writer holds all partition writers open simultaneously, which can cause
