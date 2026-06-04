@@ -28,10 +28,10 @@ import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
 /**
- * Test suite for BridgeUnsafeProjection to verify it correctly writes
+ * Test suite for BridgeHostColumnProjection to verify it correctly writes
  * various data types directly to RapidsHostColumnBuilder.
  */
-class BridgeUnsafeProjectionSuite extends AnyFunSuite {
+class BridgeHostColumnProjectionSuite extends AnyFunSuite {
 
   /**
    * Helper function to create test data and verify projection results.
@@ -43,7 +43,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       verifyFunction: (HostColumnVector, Int, T, Boolean) => Unit): Unit = {
     
     val expr = buildExpression
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     // Convert test data to InternalRow format
     val rows = testData.map { case (value, isNull) =>
@@ -469,7 +469,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       BoundReference(1, StringType, false)
     )
     
-    val projection = BridgeUnsafeProjection.create(exprs)
+    val projection = BridgeHostColumnProjection.create(exprs)
     
     val intType = GpuColumnVector.convertFrom(IntegerType, false)
     val stringType = GpuColumnVector.convertFrom(StringType, false)
@@ -555,7 +555,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
       Literal(UTF8String.fromString("constant"), StringType)
     )
     
-    val projection = BridgeUnsafeProjection.create(exprs)
+    val projection = BridgeHostColumnProjection.create(exprs)
     
     val intType = GpuColumnVector.convertFrom(IntegerType, false)
     val stringType = GpuColumnVector.convertFrom(StringType, false)
@@ -584,7 +584,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     // Test with zero rows
     val rows = Seq.empty[InternalRow]
     val expr = BoundReference(0, IntegerType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val intType = GpuColumnVector.convertFrom(IntegerType, true)
     withResource(new RapidsHostColumnBuilder(intType, 0)) { builder =>
@@ -602,7 +602,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     val rows = (0 until numRows).map(_ => InternalRow(null))
     
     val expr = BoundReference(0, NullType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val nullType = GpuColumnVector.convertFrom(NullType, true)
     withResource(new RapidsHostColumnBuilder(nullType, numRows)) { builder =>
@@ -638,7 +638,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, arrayType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(arrayType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
@@ -688,7 +688,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, structType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(structType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
@@ -744,7 +744,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, mapType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(mapType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
@@ -839,7 +839,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, arrayType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(arrayType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
@@ -901,7 +901,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, outerStructType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(outerStructType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
@@ -963,7 +963,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, arrayType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(arrayType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
@@ -1014,7 +1014,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, structType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(structType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
@@ -1184,7 +1184,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, arrayType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(arrayType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
@@ -1280,7 +1280,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, structType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(structType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>
@@ -1375,7 +1375,7 @@ class BridgeUnsafeProjectionSuite extends AnyFunSuite {
     }
     
     val expr = BoundReference(0, structType, true)
-    val projection = BridgeUnsafeProjection.create(Seq(expr))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
     
     val resultType = GpuColumnVector.convertFrom(structType, true)
     withResource(new RapidsHostColumnBuilder(resultType, rows.length)) { builder =>

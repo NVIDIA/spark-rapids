@@ -31,7 +31,7 @@ import org.apache.spark.unsafe.types.UTF8String
  *
  * CAUTION: the returned projection object should *not* be assumed to be thread-safe.
  */
-abstract class BridgeUnsafeProjection {
+abstract class BridgeHostColumnProjection {
   def apply(rows: Iterator[InternalRow],
             builders: Array[RapidsHostColumnBuilder]): Unit
 
@@ -39,16 +39,16 @@ abstract class BridgeUnsafeProjection {
 }
 
 /**
- * Interpreted implementation of BridgeUnsafeProjection.
+ * Interpreted implementation of BridgeHostColumnProjection.
  * Falls back to direct expression evaluation when code generation fails.
  * Shares the same append logic as GpuCpuBridgeExpression.
  */
-class InterpretedBridgeUnsafeProjection(expressions: Seq[Expression]) 
-  extends BridgeUnsafeProjection {
+class InterpretedBridgeHostColumnProjection(expressions: Seq[Expression])
+  extends BridgeHostColumnProjection {
   
   // Create optimized append functions once for each expression
   private val appendFunctions = expressions.map { expr =>
-    BridgeUnsafeProjection.createOptimizedAppendFunction(expr.dataType, expr.nullable)
+    BridgeHostColumnProjection.createOptimizedAppendFunction(expr.dataType, expr.nullable)
   }
   
   override def apply(rows: Iterator[InternalRow],
@@ -63,27 +63,29 @@ class InterpretedBridgeUnsafeProjection(expressions: Seq[Expression])
 }
 
 /**
- * The factory object for `UnsafeProjection`.
+ * Factory for [[BridgeHostColumnProjection]]. Uses a code-generated implementation and falls
+ * back to [[InterpretedBridgeHostColumnProjection]] if code generation fails.
  */
-object BridgeUnsafeProjection
-  extends CodeGeneratorWithInterpretedFallback[Seq[Expression], BridgeUnsafeProjection] {
+object BridgeHostColumnProjection
+  extends CodeGeneratorWithInterpretedFallback[Seq[Expression], BridgeHostColumnProjection] {
 
-  override protected def createCodeGeneratedObject(in: Seq[Expression]): BridgeUnsafeProjection = {
-    // Just call generate directly - let any exceptions propagate naturally
-    // The CodeGeneratorWithInterpretedFallback base class will catch exceptions 
-    // and fall back to createInterpretedObject
-    BridgeGenerateUnsafeProjection.generate(in, SQLConf.get.subexpressionEliminationEnabled)
+  override protected def createCodeGeneratedObject(
+      in: Seq[Expression]): BridgeHostColumnProjection = {
+    // Let any codegen exception propagate; CodeGeneratorWithInterpretedFallback catches it
+    // and calls createInterpretedObject.
+    GenerateBridgeHostColumnProjection.generate(in, SQLConf.get.subexpressionEliminationEnabled)
   }
 
-  override protected def createInterpretedObject(in: Seq[Expression]): BridgeUnsafeProjection = {
-    new InterpretedBridgeUnsafeProjection(in)
+  override protected def createInterpretedObject(
+      in: Seq[Expression]): BridgeHostColumnProjection = {
+    new InterpretedBridgeHostColumnProjection(in)
   }
 
   /**
    * Describes how to append a single non-null scalar value to a RapidsHostColumnBuilder.
    * Single source of truth for scalar type dispatch, shared by both the interpreted append
    * closures (createOptimizedAppendFunction) and the generated code
-   * (BridgeGenerateUnsafeProjection.generateBuilderAppendCode) so the two cannot drift.
+   * (GenerateBridgeHostColumnProjection.generateBuilderAppendCode) so the two cannot drift.
    *
    * @param interp      appends a known-non-null boxed value at runtime (interpreted path)
    * @param codegen     given an already-typed value var and a builder ref, returns the Java
@@ -130,7 +132,7 @@ object BridgeUnsafeProjection
 
   /**
    * Creates an optimized append function for the specific data type and nullability.
-   * Shared by InterpretedBridgeUnsafeProjection and GpuCpuBridgeExpression's interpreted path.
+   * Shared by InterpretedBridgeHostColumnProjection and GpuCpuBridgeExpression's interpreted path.
    */
   def createOptimizedAppendFunction(dataType: DataType,
       nullable: Boolean): (Any, RapidsHostColumnBuilder) => Unit = {
@@ -157,50 +159,50 @@ object BridgeUnsafeProjection
   }
 
   /**
-   * Returns an UnsafeProjection for given StructType.
+   * Returns a projection for the given StructType.
    *
    * CAUTION: the returned projection object is *not* thread-safe.
    */
-  def create(schema: StructType): BridgeUnsafeProjection = create(schema.fields.map(_.dataType))
+  def create(schema: StructType): BridgeHostColumnProjection = create(schema.fields.map(_.dataType))
 
   /**
-   * Returns an UnsafeProjection for given Array of DataTypes.
+   * Returns a projection for the given Array of DataTypes.
    *
    * CAUTION: the returned projection object is *not* thread-safe.
    */
-  def create(fields: Array[DataType]): BridgeUnsafeProjection = {
+  def create(fields: Array[DataType]): BridgeHostColumnProjection = {
     create(fields.zipWithIndex.map(x => BoundReference(x._2, x._1, true)))
   }
 
   /**
-   * Returns an UnsafeProjection for given sequence of bound Expressions.
+   * Returns a projection for the given sequence of bound Expressions.
    */
-  def create(exprs: Seq[Expression]): BridgeUnsafeProjection = {
+  def create(exprs: Seq[Expression]): BridgeHostColumnProjection = {
     createObject(exprs)
   }
 
-  def create(expr: Expression): BridgeUnsafeProjection = create(Seq(expr))
+  def create(expr: Expression): BridgeHostColumnProjection = create(Seq(expr))
 
   /**
-   * Returns an UnsafeProjection for given sequence of Expressions, which will be bound to
+   * Returns a projection for the given sequence of Expressions, which will be bound to
    * `inputSchema`.
    */
-  def create(exprs: Seq[Expression], inputSchema: Seq[Attribute]): BridgeUnsafeProjection = {
+  def create(exprs: Seq[Expression], inputSchema: Seq[Attribute]): BridgeHostColumnProjection = {
     create(bindReferences(exprs, inputSchema))
   }
 }
 
 /**
- * Generates a [[Projection]] that returns an [[UnsafeRow]].
+ * Code generator for [[BridgeHostColumnProjection]]. Adapted from Spark's
+ * `GenerateUnsafeProjection`: instead of packing each row into an `UnsafeRow`, it generates code
+ * that evaluates the expressions and appends each result directly into a per-column
+ * [[RapidsHostColumnBuilder]], so the output can be moved straight to the GPU.
  *
- * It generates the code for all the expressions, computes the total length for all the columns
- * (can be accessed via variables), and then copies the data into a scratch buffer space in the
- * form of UnsafeRow (the scratch buffer will grow as needed).
- *
- * @note The returned UnsafeRow will be pointed to a scratch buffer inside the projection.
+ * Because this mirrors Spark's generator, keep it aligned with the Spark version being built
+ * against when touching the codegen template or supported-type checks.
  */
-object BridgeGenerateUnsafeProjection extends
-  CodeGenerator[Seq[Expression], BridgeUnsafeProjection] {
+object GenerateBridgeHostColumnProjection extends
+  CodeGenerator[Seq[Expression], BridgeHostColumnProjection] {
 
   case class Schema(dataType: DataType, nullable: Boolean)
 
@@ -245,7 +247,7 @@ object BridgeGenerateUnsafeProjection extends
       isNullVar: String,
       builderRef: String): String = {
     
-    BridgeUnsafeProjection.scalarAppender(dataType) match {
+    BridgeHostColumnProjection.scalarAppender(dataType) match {
       case Some(sa) =>
         if (nullable) {
           val pred = if (sa.objectTyped) s"$isNullVar || $valueVar == null" else isNullVar
@@ -472,17 +474,17 @@ object BridgeGenerateUnsafeProjection extends
 
   def generate(
       expressions: Seq[Expression],
-      subexpressionEliminationEnabled: Boolean): BridgeUnsafeProjection = {
+      subexpressionEliminationEnabled: Boolean): BridgeHostColumnProjection = {
     create(canonicalize(expressions), subexpressionEliminationEnabled)
   }
 
-  protected def create(references: Seq[Expression]): BridgeUnsafeProjection = {
+  protected def create(references: Seq[Expression]): BridgeHostColumnProjection = {
     create(references, subexpressionEliminationEnabled = false)
   }
 
   private def create(
       expressions: Seq[Expression],
-      subexpressionEliminationEnabled: Boolean): BridgeUnsafeProjection = {
+      subexpressionEliminationEnabled: Boolean): BridgeHostColumnProjection = {
     // Check upfront if we can support all types with direct codegen
     // This provides a fast-fail mechanism before attempting expensive codegen
     val unsupportedTypes = expressions.map(_.dataType).filterNot(canSupportDirectCodegen)
@@ -529,18 +531,19 @@ object BridgeGenerateUnsafeProjection extends
       )
     )
 
+    val parentClassName = classOf[BridgeHostColumnProjection].getName
     val codeBody =
       s"""
          |public java.lang.Object generate(Object[] references) {
-         |  return new SpecificUnsafeProjection(references);
+         |  return new SpecificBridgeHostColumnProjection(references);
          |}
          |
-         |class SpecificUnsafeProjection extends ${classOf[BridgeUnsafeProjection].getName} {
+         |class SpecificBridgeHostColumnProjection extends $parentClassName {
          |
          |  private Object[] references;
          |  ${ctx.declareMutableStates()}
          |
-         |  public SpecificUnsafeProjection(Object[] references) {
+         |  public SpecificBridgeHostColumnProjection(Object[] references) {
          |    this.references = references;
          |    ${ctx.initMutableStates()}
          |  }
@@ -566,6 +569,6 @@ object BridgeGenerateUnsafeProjection extends
     logDebug(s"code for ${expressions.mkString(",")}:\n${CodeFormatter.format(code)}")
 
     val (clazz, _) = CodeGenerator.compile(code)
-    clazz.generate(ctx.references.toArray).asInstanceOf[BridgeUnsafeProjection]
+    clazz.generate(ctx.references.toArray).asInstanceOf[BridgeHostColumnProjection]
   }
 }

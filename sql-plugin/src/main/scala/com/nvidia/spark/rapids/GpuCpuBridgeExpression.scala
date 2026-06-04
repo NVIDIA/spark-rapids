@@ -28,7 +28,7 @@ import scala.util.{Failure, Success, Try}
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, UnsafeProjection}
-import org.apache.spark.sql.rapids.BridgeUnsafeProjection
+import org.apache.spark.sql.rapids.BridgeHostColumnProjection
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -117,7 +117,7 @@ case class GpuCpuBridgeExpression(
   // Cleanup is registered on first access per task to prevent memory leaks in thread pools.
   // Cleanup is probably unnecessary, as the expression should be collected, but
   // it's good practice.
-  @transient private lazy val threadLocalProjection: ThreadLocal[BridgeUnsafeProjection] =
+  @transient private lazy val threadLocalProjection: ThreadLocal[BridgeHostColumnProjection] =
     ThreadLocal.withInitial(() => {
       // Register cleanup when this thread first accesses the ThreadLocal in this task
       // Only register if we're actually in a Spark task (not in tests)
@@ -216,36 +216,47 @@ case class GpuCpuBridgeExpression(
       SpillableColumnarBatch(inputBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
     }
 
-    val subBatchResults = withResource(spillableInputBatch) { spillableInputBatch =>
-      // Submit sub-batch processing tasks to the thread pool with priority
-      val futures = ranges.map { case (startRow, endRow) =>
-        val task = new SpillableSubBatchEvaluationTask(spillableInputBatch, startRow, endRow, 
-          cpuBridgeProcessingTime)
-        GpuCpuBridgeThreadPool.submitPrioritizedTask(task)
-      }
-      
-      // Collect results in submission order. safeMap closes the already-collected results if a
-      // future fails; drain only the not-yet-consumed futures, since this one and the earlier
-      // ones are already closed.
-      futures.zipWithIndex.safeMap { case (future, i) =>
-        Try {
-          // The spillable result transfers ownership, so we incRefCount the column we keep.
-          withResource(future.get()) { spillableResult =>
-            withResource(spillableResult.getColumnarBatch()) { cb =>
-              cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
+    // Pool threads accumulate their CPU processing time here. The owning task adds the total
+    // to the shared metric once after all sub-batches complete, because GpuMetric (SQLMetric)
+    // updates are not thread-safe and would race across the pool threads.
+    val processingTimeNs = new java.util.concurrent.atomic.LongAdder()
+
+    try {
+      val subBatchResults = withResource(spillableInputBatch) { spillableInputBatch =>
+        // Submit sub-batch processing tasks to the thread pool with priority
+        val futures = ranges.map { case (startRow, endRow) =>
+          val task = new SpillableSubBatchEvaluationTask(spillableInputBatch, startRow, endRow,
+            processingTimeNs)
+          GpuCpuBridgeThreadPool.submitPrioritizedTask(task)
+        }
+
+        // Collect results in submission order. safeMap closes the already-collected results if a
+        // future fails; drain only the not-yet-consumed futures, since this one and the earlier
+        // ones are already closed.
+        futures.zipWithIndex.safeMap { case (future, i) =>
+          Try {
+            // The spillable result transfers ownership, so we incRefCount the column we keep.
+            withResource(future.get()) { spillableResult =>
+              withResource(spillableResult.getColumnarBatch()) { cb =>
+                cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
+              }
             }
+          } match {
+            case Success(col) => col
+            case Failure(exception) =>
+              cleanupFuturesOnFailure(futures.drop(i + 1))
+              throw unwrapExecutionException(exception)
           }
-        } match {
-          case Success(col) => col
-          case Failure(exception) =>
-            cleanupFuturesOnFailure(futures.drop(i + 1))
-            throw unwrapExecutionException(exception)
         }
       }
+
+      // Concatenate all sub-batch results
+      concatenateResults(subBatchResults)
+    } finally {
+      // Flush on both success and failure: a failing sub-batch throws out of the block above, and
+      // the time already recorded by completed workers would otherwise be lost.
+      cpuBridgeProcessingTime.foreach(_.add(processingTimeNs.sum()))
     }
-      
-    // Concatenate all sub-batch results
-    concatenateResults(subBatchResults)
   }
 
   /**
@@ -255,7 +266,8 @@ case class GpuCpuBridgeExpression(
       spillableInputBatch: SpillableColumnarBatch,
       startRow: Int,
       endRow: Int,
-      cpuBridgeProcessingTime: Option[GpuMetric]) extends Callable[SpillableColumnarBatch] {
+      processingTimeNs: java.util.concurrent.atomic.LongAdder)
+      extends Callable[SpillableColumnarBatch] {
     
     override def call(): SpillableColumnarBatch = {
       val subBatchSize = endRow - startRow
@@ -291,8 +303,7 @@ case class GpuCpuBridgeExpression(
             val result = try {
               evaluationFunction(rowIterator.map(makeInputToUnsafe()), subBatchSize)
             } finally {
-              val processingTime = System.nanoTime() - processingStartTime
-              cpuBridgeProcessingTime.foreach(_.add(processingTime))
+              processingTimeNs.add(System.nanoTime() - processingStartTime)
             }
 
             // Wrap the result column in a spillable batch.
@@ -391,7 +402,7 @@ case class GpuCpuBridgeExpression(
    * GpuColumnVector result.
    * 
    * Uses code generation by default. If codegen fails, Spark's CodeGeneratorWithInterpretedFallback
-   * will automatically create an InterpretedBridgeUnsafeProjection instead.
+   * will automatically create an InterpretedBridgeHostColumnProjection instead.
    */
   private def createEvaluationFunction(): (Iterator[InternalRow], Int) => GpuColumnVector = {
     (rowIterator: Iterator[InternalRow], numRows: Int) => {
@@ -416,6 +427,6 @@ case class GpuCpuBridgeExpression(
    * modified version of Spark's code generation.
    * This provides much better performance than interpreted evaluation.
    */
-  private def createCodeGeneratedProjection(): BridgeUnsafeProjection =
-    BridgeUnsafeProjection.create(Seq(cpuExpression))
+  private def createCodeGeneratedProjection(): BridgeHostColumnProjection =
+    BridgeHostColumnProjection.create(Seq(cpuExpression))
 }

@@ -101,6 +101,261 @@ object GpuCpuBridgeOptimizer extends Logging {
     case _ => None
   }
 
+  // Child-arity cutoff for switching from exact subset enumeration to the O(n) dual-greedy
+  // heuristic. Found empirically: on a modern CPU 8 children already costs over 1 ms to
+  // enumerate exactly, while the heuristic stays under ~500 us.
+  private val CpuSubsetExactMaxChildren = 7
+
+  /**
+   * One of the two greedy strategies behind [[chooseCpuSubset]] for large fan-out: keep each
+   * child on the GPU unless running it on CPU is strictly cheaper (or GPU is not possible).
+   * Returns (chosen child indices, local cost, CPU input leaves required by the chosen set).
+   */
+  private def cpuSubsetGpuBiased(
+      childMetas: Seq[BaseExprMeta[_]],
+      childCosts: Seq[PlacementCost]): (Set[Int], Int, Set[InputKey]) = {
+    val n = childMetas.length
+    var sumCpu = 0
+    var sumGpu = 0
+    var leaves: Set[InputKey] = Set.empty
+    var subset: Set[Int] = Set.empty
+    var ok = true
+    var i = 0
+    while (i < n && ok) {
+      val meta = childMetas(i)
+      val c = childCosts(i)
+      val gpuOk = c.gpuCost != Int.MaxValue
+      val cpuOk = c.cpuCost != Int.MaxValue
+      (gpuOk, cpuOk) match {
+        case (false, false) =>
+          ok = false
+        case (false, true) =>
+          subset += i
+          sumCpu += c.cpuCost
+          leaves ++= c.cpuRequiredLeaves
+        case (true, false) =>
+          sumGpu += c.gpuCost + (if (isScalarLike(meta)) 0 else 1)
+        case (true, true) =>
+          val gpuAlt = c.gpuCost + (if (isScalarLike(meta)) 0 else 1)
+          if (c.cpuCost < gpuAlt) {
+            subset += i
+            sumCpu += c.cpuCost
+            leaves ++= c.cpuRequiredLeaves
+          } else {
+            sumGpu += gpuAlt
+          }
+      }
+      i += 1
+    }
+    val local = if (ok) sumCpu + sumGpu else Int.MaxValue
+    (subset, local, leaves)
+  }
+
+  /**
+   * The other greedy strategy behind [[chooseCpuSubset]]: seed children onto CPU when doing so
+   * reuses a CPU input leaf another CPU child already needs, otherwise prefer GPU. Children are
+   * visited in descending order of leaf-reuse potential. Same return shape as
+   * [[cpuSubsetGpuBiased]].
+   */
+  private def cpuSubsetCpuSeeding(
+      childMetas: Seq[BaseExprMeta[_]],
+      childCosts: Seq[PlacementCost]): (Set[Int], Int, Set[InputKey]) = {
+    val n = childMetas.length
+    // Order children by potential reuse: sum of leaf frequencies desc.
+    val leafFreq = new scala.collection.mutable.HashMap[InputKey, Int]()
+    var j = 0
+    while (j < n) {
+      val it = childCosts(j).cpuRequiredLeaves.iterator
+      while (it.hasNext) {
+        val k = it.next()
+        leafFreq.put(k, leafFreq.getOrElse(k, 0) + 1)
+      }
+      j += 1
+    }
+    val order = (0 until n).sortBy { idx =>
+      val ks = childCosts(idx).cpuRequiredLeaves
+      // negative for descending
+      -ks.foldLeft(0)((acc, k) => acc + leafFreq.getOrElse(k, 0))
+    }
+    var sumCpu = 0
+    var sumGpu = 0
+    var leaves: Set[InputKey] = Set.empty
+    var subset: Set[Int] = Set.empty
+    val seen = new scala.collection.mutable.HashSet[InputKey]()
+    var ok = true
+    var p = 0
+    while (p < order.length && ok) {
+      val i = order(p)
+      val meta = childMetas(i)
+      val c = childCosts(i)
+      val gpuOk = c.gpuCost != Int.MaxValue
+      val cpuOk = c.cpuCost != Int.MaxValue
+      (gpuOk, cpuOk) match {
+        case (false, false) =>
+          ok = false
+        case (false, true) =>
+          subset += i
+          sumCpu += c.cpuCost
+          leaves ++= c.cpuRequiredLeaves
+          val it2 = c.cpuRequiredLeaves.iterator
+          while (it2.hasNext) seen.add(it2.next())
+        case (true, false) =>
+          sumGpu += c.gpuCost + (if (isScalarLike(meta)) 0 else 1)
+        case (true, true) =>
+          val gpuAlt = c.gpuCost + (if (isScalarLike(meta)) 0 else 1)
+          val ks = c.cpuRequiredLeaves
+          // Seed onto CPU if it reuses an already-seen leaf, or if CPU is strictly cheaper.
+          var reuses = false
+          val it3 = ks.iterator
+          while (it3.hasNext && !reuses) {
+            reuses = seen.contains(it3.next())
+          }
+          if (reuses || c.cpuCost < gpuAlt) {
+            subset += i
+            sumCpu += c.cpuCost
+            leaves ++= ks
+            val it4 = ks.iterator
+            while (it4.hasNext) seen.add(it4.next())
+          } else {
+            sumGpu += gpuAlt
+          }
+      }
+      p += 1
+    }
+    val local = if (ok) sumCpu + sumGpu else Int.MaxValue
+    (subset, local, leaves)
+  }
+
+  /**
+   * Choose which children of a CPU-placed parent also run on CPU, returning (chosen child
+   * indices, local placement cost, CPU input leaves required by the chosen set). Small fan-out
+   * is solved exactly; larger fan-out (above [[CpuSubsetExactMaxChildren]]) uses the dual-greedy
+   * heuristic because exact enumeration is 2^n.
+   */
+  private def chooseCpuSubset(
+      parent: BaseExprMeta[_],
+      childMetas: Seq[BaseExprMeta[_]],
+      childCosts: Seq[PlacementCost]): (Set[Int], Int, Set[InputKey]) = {
+    if (childMetas.length > CpuSubsetExactMaxChildren) {
+      chooseCpuSubsetHeuristic(parent, childMetas, childCosts)
+    } else {
+      chooseCpuSubsetExact(parent, childMetas, childCosts)
+    }
+  }
+
+  /**
+   * Approximate placement for large fan-out, where exact enumeration (2^n) is too slow: run both
+   * greedy strategies and keep the one with the lower score = local cost plus the number of
+   * distinct CPU input leaves it imports. Same return shape as [[cpuSubsetGpuBiased]].
+   */
+  private def chooseCpuSubsetHeuristic(
+      parent: BaseExprMeta[_],
+      childMetas: Seq[BaseExprMeta[_]],
+      childCosts: Seq[PlacementCost]): (Set[Int], Int, Set[InputKey]) = {
+    val (subG, localG, leavesG) = cpuSubsetGpuBiased(childMetas, childCosts)
+    val (subC, localC, leavesC) = cpuSubsetCpuSeeding(childMetas, childCosts)
+    val scoreG = if (localG == Int.MaxValue) Int.MaxValue else localG + leavesG.size
+    val scoreC = if (localC == Int.MaxValue) Int.MaxValue else localC + leavesC.size
+    val chooseCpuSeed = scoreC < scoreG || (scoreC == scoreG && subC.size < subG.size)
+    val chosen = if (chooseCpuSeed) (subC, localC, leavesC) else (subG, localG, leavesG)
+    logDebug(s"Heuristic dual for ${parent.wrapped.getClass.getSimpleName}: " +
+      s"gpuScore=$scoreG cpuSeedScore=$scoreC chosen=${if (chooseCpuSeed) "CPU" else "GPU"} " +
+      s"leaves=${chosen._3.size} subset=${chosen._1.mkString(",")}")
+    chosen
+  }
+
+  /**
+   * Exact placement for small fan-out: enumerate every subset of children placed on CPU and keep
+   * the cheapest. Ties favor the GPU: prefer fewer children on CPU, then fewer CPU input leaves.
+   * Same return shape as [[cpuSubsetGpuBiased]].
+   */
+  private def chooseCpuSubsetExact(
+      parent: BaseExprMeta[_],
+      childMetas: Seq[BaseExprMeta[_]],
+      childCosts: Seq[PlacementCost]): (Set[Int], Int, Set[InputKey]) = {
+    val n = childMetas.length
+    var bestCost = Int.MaxValue
+    var bestLeaves: Set[InputKey] = Set.empty
+    var bestSubset: Set[Int] = Set.empty
+
+    // Pre-compute scalar mask for efficiency in inner loop
+    val scalarMask = {
+      var mask = 0
+      var i = 0
+      while (i < n) {
+        if (isScalarLike(childMetas(i))) mask |= (1 << i)
+        i += 1
+      }
+      mask
+    }
+
+    var mask = 0
+    val maxMask = 1 << n
+    while (mask < maxMask) {
+      var sumCpu = 0
+      var sumGpu = 0
+      var leaves = Set.empty[InputKey]
+      var valid = true
+      var i = 0
+      while (i < n && valid) {
+        val costs = childCosts(i)
+        val onCpu = (mask & (1 << i)) != 0
+        if (onCpu) {
+          if (costs.cpuCost == Int.MaxValue) {
+            valid = false
+          } else {
+            sumCpu += costs.cpuCost
+            leaves ++= costs.cpuRequiredLeaves
+          }
+        } else {
+          if (costs.gpuCost == Int.MaxValue) {
+            valid = false
+          } else {
+            sumGpu += costs.gpuCost
+            // Use pre-computed scalar mask for move cost (more efficient than isScalarLike call)
+            if ((scalarMask & (1 << i)) == 0) {
+              sumGpu += 1  // Move cost for non-scalar
+            }
+          }
+        }
+        i += 1
+      }
+      if (valid) {
+        // IMPORTANT: Do NOT include leaves.size here; we charge import cost only at the
+        // CPU region boundary of the current parent, not per child subtree. This prevents
+        // double-charging when merging child CPU regions into a parent CPU region.
+        val total = sumCpu + sumGpu
+        // Tie-breaking policy: favor GPU on ties -> prefer fewer children on CPU, implemented by
+        // preferring a smaller chosen subset (then fewer leaves) on equal total cost.
+        val chosenSize = java.lang.Integer.bitCount(mask)
+        val bestSize = java.lang.Integer.bitCount({
+          var acc = 0
+          bestSubset.foreach(idx => acc |= (1 << idx))
+          acc
+        })
+        val takeThis = (total < bestCost) ||
+          (total == bestCost &&
+            (chosenSize < bestSize ||
+              (chosenSize == bestSize && leaves.size < bestLeaves.size)))
+        if (takeThis) {
+          bestCost = total
+          bestLeaves = leaves
+          var chosen: Set[Int] = Set.empty
+          var j = 0
+          while (j < n) {
+            if ((mask & (1 << j)) != 0) chosen += j
+            j += 1
+          }
+          bestSubset = chosen
+        }
+      }
+      mask += 1
+    }
+    logDebug(s"Best subset for ${parent.wrapped.getClass.getSimpleName}: " +
+      s"cost=$bestCost leaves=${bestLeaves.size} chosen=${bestSubset.mkString(",")}")
+    (bestSubset, bestCost, bestLeaves)
+  }
+
   /**
    * Optimize an expression tree by minimizing estimated data movement, using a
    * bottom-up dynamic programming approach. We assume the parent/consumer is running
@@ -110,238 +365,10 @@ object GpuCpuBridgeOptimizer extends Logging {
   def optimizeByMinimizingMovement(root: BaseExprMeta[_]): Unit = {
     val startTimeNs = System.nanoTime()
     val costCache = scala.collection.mutable.HashMap[BaseExprMeta[_], PlacementCost]()
-    var subsetEvaluations: Long = 0L
 
     def sideName(s: ExecSide): String = s match {
       case OnGpu => "GPU"
       case OnCpu => "CPU"
-    }
-
-    // Enumerate all child subsets to compute exact CPU placement cost and leaves
-    def chooseCpuSubset(
-        parent: BaseExprMeta[_],
-        childMetas: Seq[BaseExprMeta[_]],
-        childCosts: Seq[PlacementCost]): (Set[Int], Int, Set[InputKey]) = {
-      val n = childMetas.length
-      // Heuristic cutoff (child arity) for switching from exact subset enumeration
-      // to an approximate strategy.
-      // This default was found by experimentation. On a fairly modern CPU
-      // 8 children costs over 1 ms to compute, but the heuristic can do it in under 500 us.
-      val heuristicThreshold = 7
-      if (n > heuristicThreshold) {
-        // Dual-greedy heuristic for large fan-out. Evaluate two O(n) strategies and
-        // choose the one with the lower final score = localTotal + uniqueImports.
-        def runGpuBiased(): (Set[Int], Int, Set[InputKey]) = {
-          var sumCpu = 0
-          var sumGpu = 0
-          var leaves: Set[InputKey] = Set.empty
-          var subset: Set[Int] = Set.empty
-          var ok = true
-          var i = 0
-          while (i < n && ok) {
-            val meta = childMetas(i)
-            val c = childCosts(i)
-            val gpuOk = c.gpuCost != Int.MaxValue
-            val cpuOk = c.cpuCost != Int.MaxValue
-            if (!gpuOk && !cpuOk) {
-              ok = false
-            } else if (!gpuOk) {
-              subset += i; sumCpu += c.cpuCost; leaves ++= c.cpuRequiredLeaves
-            } else if (!cpuOk) {
-              val moveOut = if (isScalarLike(meta)) 0 else 1
-              sumGpu += c.gpuCost + moveOut
-            } else {
-              val moveOut = if (isScalarLike(meta)) 0 else 1
-              val gpuAlt = c.gpuCost + moveOut
-              if (c.cpuCost < gpuAlt) {
-                subset += i; sumCpu += c.cpuCost; leaves ++= c.cpuRequiredLeaves
-              } else {
-                sumGpu += gpuAlt
-              }
-            }
-            i += 1
-          }
-          val local = if (ok) sumCpu + sumGpu else Int.MaxValue
-          (subset, local, leaves)
-        }
-
-        def runCpuSeeding(): (Set[Int], Int, Set[InputKey]) = {
-          // Seed CPU when it reuses leaves; otherwise prefer GPU. Order children by
-          // potential reuse: sum of leaf frequencies desc.
-          val leafFreq = new scala.collection.mutable.HashMap[InputKey, Int]()
-          var j = 0
-          while (j < n) {
-            val it = childCosts(j).cpuRequiredLeaves.iterator
-            while (it.hasNext) {
-              val k = it.next()
-              leafFreq.put(k, leafFreq.getOrElse(k, 0) + 1)
-            }
-            j += 1
-          }
-          val order = (0 until n).sortBy { idx =>
-            val ks = childCosts(idx).cpuRequiredLeaves
-            // negative for descending
-            -ks.foldLeft(0)((acc, k) => acc + leafFreq.getOrElse(k, 0))
-          }
-          var sumCpu = 0
-          var sumGpu = 0
-          var leaves: Set[InputKey] = Set.empty
-          var subset: Set[Int] = Set.empty
-          val seen = new scala.collection.mutable.HashSet[InputKey]()
-          var ok = true
-          var p = 0
-          while (p < order.length && ok) {
-            val i = order(p)
-            val meta = childMetas(i)
-            val c = childCosts(i)
-            val gpuOk = c.gpuCost != Int.MaxValue
-            val cpuOk = c.cpuCost != Int.MaxValue
-            if (!gpuOk && !cpuOk) {
-              ok = false
-            } else if (!gpuOk) {
-              subset += i; sumCpu += c.cpuCost; leaves ++= c.cpuRequiredLeaves
-              val it2 = c.cpuRequiredLeaves.iterator
-              while (it2.hasNext) seen.add(it2.next())
-            } else if (!cpuOk) {
-              val moveOut = if (isScalarLike(meta)) 0 else 1
-              sumGpu += c.gpuCost + moveOut
-            } else {
-              val moveOut = if (isScalarLike(meta)) 0 else 1
-              val gpuAlt = c.gpuCost + moveOut
-              // reuses any seen leaf?
-              val ks = c.cpuRequiredLeaves
-              var reuses = false
-              val it3 = ks.iterator
-              while (it3.hasNext && !reuses) { reuses = seen.contains(it3.next()) }
-              if (reuses || c.cpuCost < gpuAlt) {
-                subset += i; sumCpu += c.cpuCost; leaves ++= ks
-                val it4 = ks.iterator
-                while (it4.hasNext) seen.add(it4.next())
-              } else {
-                // prefer GPU otherwise (including ties)
-                sumGpu += gpuAlt
-              }
-            }
-            p += 1
-          }
-          val local = if (ok) sumCpu + sumGpu else Int.MaxValue
-          (subset, local, leaves)
-        }
-
-        val (subG, localG, leavesG) = runGpuBiased()
-        val (subC, localC, leavesC) = runCpuSeeding()
-        val scoreG = if (localG == Int.MaxValue) Int.MaxValue else localG + leavesG.size
-        val scoreC = if (localC == Int.MaxValue) Int.MaxValue else localC + leavesC.size
-        val chooseCpuSeed = scoreC < scoreG || (scoreC == scoreG && subC.size < subG.size)
-        val (subset, local, leaves) = if (chooseCpuSeed) (subC, localC, leavesC)
-          else (subG, localG, leavesG)
-        logDebug(s"Heuristic dual for ${parent.wrapped.getClass.getSimpleName}: " +
-          s"gpuScore=$scoreG cpuSeedScore=$scoreC chosen=${if (chooseCpuSeed) "CPU" else "GPU"} " +
-          s"leaves=${leaves.size} subset=${subset.mkString(",")}")
-        return (subset, local, leaves)
-      }
-      var bestCost = Int.MaxValue
-      var bestLeaves: Set[InputKey] = Set.empty
-      var bestSubset: Set[Int] = Set.empty
-
-      // Pre-compute scalar mask for efficiency in inner loop
-      val scalarMask = {
-        var mask = 0
-        var i = 0
-        while (i < n) {
-          if (isScalarLike(childMetas(i))) mask |= (1 << i)
-          i += 1
-        }
-        mask
-      }
-
-      var mask = 0
-      val maxMask = 1 << n
-      while (mask < maxMask) {
-        subsetEvaluations += 1
-        var sumCpu = 0
-        var sumGpu = 0
-        var leaves = Set.empty[InputKey]
-        var valid = true
-        var i = 0
-        while (i < n && valid) {
-          val costs = childCosts(i)
-          val onCpu = (mask & (1 << i)) != 0
-          if (onCpu) {
-            if (costs.cpuCost == Int.MaxValue) {
-              valid = false
-            } else {
-              sumCpu += costs.cpuCost
-              leaves ++= costs.cpuRequiredLeaves
-            }
-          } else {
-            if (costs.gpuCost == Int.MaxValue) {
-              valid = false
-            } else {
-              sumGpu += costs.gpuCost
-              // Use pre-computed scalar mask for move cost (more efficient than isScalarLike call)
-              if ((scalarMask & (1 << i)) == 0) {
-                sumGpu += 1  // Move cost for non-scalar
-              }
-            }
-          }
-          i += 1
-        }
-        if (valid) {
-          // IMPORTANT: Do NOT include leaves.size here; we charge import cost only at the
-          // CPU region boundary of the current parent, not per child subtree. This prevents
-          // double-charging when merging child CPU regions into a parent CPU region.
-          val total = sumCpu + sumGpu
-
-          // Log this subset
-          val chosenStr = {
-            val b = new StringBuilder
-            var j = 0
-            var first = true
-            while (j < n) {
-              if ((mask & (1 << j)) != 0) {
-                if (!first) b.append(',')
-                b.append(j)
-                first = false
-              }
-              j += 1
-            }
-            b.toString
-          }
-          logDebug(s"Subset mask=$mask [$chosenStr] sumCpu=$sumCpu sumGpu=$sumGpu " + 
-            s"leaves=${leaves.size} total=$total")
-          // Tie-breaking policy: favor GPU on ties → prefer fewer children on CPU.
-          // Implement by preferring smaller chosen subset size on equal total cost.
-          val chosenSize = java.lang.Integer.bitCount(mask)
-          val bestSize = java.lang.Integer.bitCount({
-            var acc = 0; bestSubset.foreach(i => acc |= (1 << i)); acc
-          })
-          val takeThis = (total < bestCost) ||
-                         (total == bestCost && 
-                           (chosenSize < bestSize || 
-                             (chosenSize == bestSize && 
-                               leaves.size < bestLeaves.size)))
-          if (takeThis) {
-            bestCost = total
-            bestLeaves = leaves
-            // materialize subset indices
-            var chosen: Set[Int] = Set.empty
-            var j = 0
-            while (j < n) {
-              if ((mask & (1 << j)) != 0) chosen += j
-              j += 1
-            }
-            bestSubset = chosen
-
-            logDebug(s"New best subset mask=$mask cost=$bestCost leaves=${bestLeaves.size} " + 
-              s"chosen=${bestSubset.mkString(",")}")
-          }
-        }
-        mask += 1
-      }
-      logDebug(s"Best subset for ${parent.wrapped.getClass.getSimpleName}: " + 
-        s"cost=$bestCost leaves=${bestLeaves.size} chosen=${bestSubset.mkString(",")}")
-      (bestSubset, bestCost, bestLeaves)
     }
 
     def computeCosts(expr: BaseExprMeta[_]): PlacementCost = {
@@ -402,7 +429,7 @@ object GpuCpuBridgeOptimizer extends Logging {
     // Compute subtree costs
     val rootCosts = computeCosts(root)
 
-    // Root consumer is on GPU → include edge penalty for root output if on CPU
+    // Root consumer is on GPU -> include edge penalty for root output if on CPU
     val rootCpuWithOutputMove = if (rootCosts.cpuCost == Int.MaxValue) Int.MaxValue
       else rootCosts.cpuCost + rootCosts.cpuRequiredLeaves.size + (if (isScalarLike(root)) 0 else 1)
     val rootGpuWithOutputMove = rootCosts.gpuCost // output already on GPU; no move
@@ -479,29 +506,27 @@ object GpuCpuBridgeOptimizer extends Logging {
       if (meta.childExprs.isEmpty) 1 else 1 + meta.childExprs.map(maxDepth).max
       
     logDebug(s"optimizeByMinimizingMovement: nodes=${costCache.size} " +
-      s"depth=${maxDepth(root)} " +
-      s"subsets=$subsetEvaluations timeMs=$elapsedMs")
+      s"depth=${maxDepth(root)} timeMs=$elapsedMs")
   }
 
   /**
-   * Optimize a GPU expression tree by merging adjacent CPU bridge expressions.
-   * This should be called after initial GPU/CPU tagging but before execution.
+   * Collapse a bridge whose GPU inputs are themselves bridges into a single bridge, so a chain
+   * of CPU sub-trees becomes one CPU evaluation with one host round-trip.
+   *
+   * Called on the bridge that `convertForGpuCpuBridge` has just built for the current node. That
+   * node's non-bridge GPU inputs are already fully converted GPU expressions, so only the bridge
+   * inputs need merging; non-bridge expressions are returned unchanged.
    */
   def optimizeByMergingBridgeExpressions(expr: GpuExpression): GpuExpression = {
     expr match {
       case bridge: GpuCpuBridgeExpression =>
-        // Check if any of this bridge's inputs are also bridge expressions
         val hasBridgeInputs = bridge.gpuInputs.exists(_.isInstanceOf[GpuCpuBridgeExpression])
-        
         if (hasBridgeInputs) {
           mergeBridgeExpressions(bridge)
         } else {
           bridge
         }
-      case other => 
-        // For non-bridge expressions, recursively optimize children
-        // This is a simplified approach - in a full implementation we'd handle all expression types
-        other
+      case other => other
     }
   }
 
