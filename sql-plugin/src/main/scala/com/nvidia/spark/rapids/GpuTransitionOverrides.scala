@@ -697,7 +697,7 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       errorMessage.append("  DISALLOWED EXPRESSIONS:\n")
       disallowedExprs.foreach(expr => errorMessage.append(s"    - $expr\n"))
 
-      // Show allowed expressions for context
+      // Show allowed expressions only as context when reporting a failure.
       if (allowedExprs.nonEmpty) {
         errorMessage.append("  ALLOWED EXPRESSIONS (for context):\n")
         allowedExprs.foreach(expr => errorMessage.append(s"    - $expr\n"))

@@ -119,10 +119,29 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
     // Children should be on CPU bridge
     val childCompares = andMeta.childExprs.filter(m => m.wrapped.isInstanceOf[GreaterThan] ||
       m.wrapped.isInstanceOf[LessThan])
-    assert(childCompares.size == 2, 
+    assert(childCompares.size == 2,
       s"Expected two comparison children under AND: ${andMeta.childExprs}")
-    assert(childCompares.forall(_.willUseGpuCpuBridge), 
+    assert(childCompares.forall(_.willUseGpuCpuBridge),
       "Comparisons should use CPU bridge under AND")
+  }
+
+  test("Second pass includes CPU imports under GPU parent (unit)") {
+    val a = AttributeReference("a", LongType, nullable = false)()
+    val compare = GreaterThan(a, Literal(5L))
+    val childAnd = And(compare, Literal(true))
+    val rootAnd = And(childAnd, Literal(true))
+
+    val rootMeta = wrap(rootAnd)
+    rootMeta.childExprs.head.childExprs.head.willNotWorkOnGpu("disabled for test")
+
+    GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(rootMeta)
+
+    assert(!rootMeta.willUseGpuCpuBridge, "Root AND should remain on GPU")
+    val childAndMeta = rootMeta.childExprs.head
+    assert(!childAndMeta.willUseGpuCpuBridge,
+      "Child AND should stay on GPU when CPU import cost makes CPU a tie")
+    assert(childAndMeta.childExprs.head.willUseGpuCpuBridge,
+      "Forced comparison should still use CPU bridge")
   }
 
   test("Nested CaseWhen with CPU Add uses bridges only where needed (unit)") {

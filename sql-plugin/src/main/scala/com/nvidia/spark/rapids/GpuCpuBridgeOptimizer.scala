@@ -371,6 +371,17 @@ object GpuCpuBridgeOptimizer extends Logging {
       case OnCpu => "CPU"
     }
 
+    def cpuRegionCostForGpuConsumer(
+        exprMeta: BaseExprMeta[_],
+        costs: PlacementCost): Int = {
+      if (costs.cpuCost == Int.MaxValue) {
+        Int.MaxValue
+      } else {
+        costs.cpuCost + costs.cpuRequiredLeaves.size +
+          (if (isScalarLike(exprMeta)) 0 else 1)
+      }
+    }
+
     def computeCosts(expr: BaseExprMeta[_]): PlacementCost = {
       costCache.getOrElseUpdate(expr, {
         // Base case: data-carrying leaf input (AttributeReference/BoundReference)
@@ -400,13 +411,8 @@ object GpuCpuBridgeOptimizer extends Logging {
           // Cost if this node runs on GPU
           val gpuTotal: Int = if (gpuAllowed) {
             expr.childExprs.zip(childCosts).map { case (childMeta, costs) =>
-              // Choose child side to minimize (child cost + edge move of child's output if needed)
-              val childGpu = costs.gpuCost
-              val childCpu = costs.cpuCost
-              val moveCpuChildOutput = if (isScalarLike(childMeta)) 0 else 1
-              val cpuChoice =
-                if (childCpu == Int.MaxValue) Int.MaxValue else childCpu + moveCpuChildOutput
-              val gpuChoice = childGpu
+              val cpuChoice = cpuRegionCostForGpuConsumer(childMeta, costs)
+              val gpuChoice = costs.gpuCost
               Math.min(cpuChoice, gpuChoice)
             }.sum
           } else Int.MaxValue
@@ -429,9 +435,8 @@ object GpuCpuBridgeOptimizer extends Logging {
     // Compute subtree costs
     val rootCosts = computeCosts(root)
 
-    // Root consumer is on GPU -> include edge penalty for root output if on CPU
-    val rootCpuWithOutputMove = if (rootCosts.cpuCost == Int.MaxValue) Int.MaxValue
-      else rootCosts.cpuCost + rootCosts.cpuRequiredLeaves.size + (if (isScalarLike(root)) 0 else 1)
+    // Root consumer is on GPU, so a CPU root has to import inputs and export its output.
+    val rootCpuWithOutputMove = cpuRegionCostForGpuConsumer(root, rootCosts)
     val rootGpuWithOutputMove = rootCosts.gpuCost // output already on GPU; no move
 
     val chooseRootSide: ExecSide = {
@@ -464,11 +469,9 @@ object GpuCpuBridgeOptimizer extends Logging {
       chosenSide match {
         case OnGpu =>
           expr.childExprs.zip(childCosts).foreach { case (childMeta, costs) =>
-            val moveCpuChildOutput = if (isScalarLike(childMeta)) 0 else 1
             val gpuCandidate = if (costs.gpuCost == Int.MaxValue) Int.MaxValue
               else costs.gpuCost
-            val cpuCandidate = if (costs.cpuCost == Int.MaxValue) Int.MaxValue
-              else costs.cpuCost + moveCpuChildOutput
+            val cpuCandidate = cpuRegionCostForGpuConsumer(childMeta, costs)
 
             val childSide =
               if (gpuCandidate <= cpuCandidate || cpuCandidate == Int.MaxValue) OnGpu else OnCpu
