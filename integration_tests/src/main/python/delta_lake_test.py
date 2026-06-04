@@ -888,7 +888,7 @@ def test_delta_filter_out_metadata_col(spark_tmp_path, dv_predicate_pushdown):
         assert_gpu_and_cpu_are_equal_collect(read_table, conf=conf)
 
 
-@allow_non_gpu("FilterExec", *delta_meta_allow)
+@allow_non_gpu("FilterExec", "In", "InSet", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(not is_databricks173_or_later(),

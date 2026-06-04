@@ -54,6 +54,10 @@ delta_meta_allow = [
     "JsonToStructs"
 ]
 
+if is_databricks173_or_later():
+    # DBR 17.3 DV write/update paths can serialize Delta stats JSON on the CPU bridge.
+    delta_meta_allow += ["StructsToJson", "CreateNamedStruct"]
+
 delta_write = ["RapidsDeltaWrite"]
 
 # Parameterize Deletion Vectors only on runtimes that expose the feature in these tests.
