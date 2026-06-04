@@ -5,7 +5,8 @@ the `spark-rapids-private` plugin) end-to-end from public integration tests, by
 enabling the relevant private conf and building a query shape that makes the
 rule reachable.
 
-Each rule is semantics-preserving but default-off in public IT. A same-conf
+Each rule is semantics-preserving but default-off or otherwise dormant in public
+IT. A same-conf
 CPU-vs-GPU comparison cannot tell whether a rule actually fired, so these tests
 do **two** things:
 

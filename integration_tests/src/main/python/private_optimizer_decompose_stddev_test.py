@@ -40,4 +40,4 @@ def test_decompose_stddev_pop():
         {"spark.rapids.sql.optimizer.decomposeStddevPop.enabled": "true"}, extra_conf=base)
     off = private_optimizer_conf(
         {"spark.rapids.sql.optimizer.decomposeStddevPop.enabled": "false"}, extra_conf=base)
-    assert_rule_fires(fn, on, off, marker="_stddev_", float_compare=True)
+    assert_rule_fires(fn, on, off, marker="_stddev_")

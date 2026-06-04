@@ -18,7 +18,8 @@ This module is intentionally named without the ``_test`` suffix so pytest does
 not collect it as a test file. Each private-optimizer rule lives in its own
 ``private_optimizer_<rule>_test.py`` module and imports from here.
 
-The covered rules are semantics-preserving but default-off in public IT.
+The covered rules are semantics-preserving but default-off or otherwise dormant
+in public IT.
 Comparing a same-conf CPU run against a same-conf GPU run cannot tell whether a
 rule actually fired, so every test built on these helpers does two things:
 
@@ -32,12 +33,9 @@ rule actually fired, so every test built on these helpers does two things:
 See ``private_optimizer_README.md`` for how to add a new rule module.
 """
 
-import math
-
 import pytest
 
-from asserts import assert_equal, _sort_locally
-from conftest import get_float_check
+from asserts import assert_equal_with_local_sort
 from spark_session import is_before_spark_330, with_cpu_session, with_gpu_session
 
 # The private optimizer rules ship in the spark-rapids-private plugin, which is
@@ -84,7 +82,7 @@ def collect_and_plan(spark, fn, physical):
     return rows, plan
 
 
-def assert_rule_fires(fn, on_conf, off_conf, marker, physical=False, float_compare=False):
+def assert_rule_fires(fn, on_conf, off_conf, marker, physical=False):
     """OFF-rule CPU baseline vs ON-rule GPU run, plus a plan marker check.
 
     marker must be present in the ON plan and absent from the OFF plan; results
@@ -100,19 +98,4 @@ def assert_rule_fires(fn, on_conf, off_conf, marker, physical=False, float_compa
     assert marker not in off_plan, \
         "marker '%s' present with rule OFF, not a valid discriminator\n%s" % (marker, off_plan)
 
-    _sort_locally(cpu_rows, gpu_rows)
-    if float_compare:
-        float_check = get_float_check()
-        assert len(cpu_rows) == len(gpu_rows)
-        for cr, gr in zip(cpu_rows, gpu_rows):
-            assert len(cr) == len(gr)
-            for c, g in zip(cr, gr):
-                if isinstance(c, float):
-                    if math.isnan(c):
-                        assert math.isnan(g), "off-CPU nan vs on-GPU %s" % (g,)
-                    else:
-                        assert float_check(c, g), "off-CPU %s vs on-GPU %s" % (c, g)
-                else:
-                    assert c == g, "off-CPU %s vs on-GPU %s" % (c, g)
-    else:
-        assert_equal(cpu_rows, gpu_rows)
+    assert_equal_with_local_sort(cpu_rows, gpu_rows)
