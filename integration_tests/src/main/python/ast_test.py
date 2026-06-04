@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ from data_gen import *
 from marks import approximate_float, datagen_overrides, ignore_order, disable_ansi_mode
 from spark_session import with_cpu_session, is_before_spark_330
 import pyspark.sql.functions as f
+from pyspark.sql.types import DecimalType
 
 # Each descriptor contains a list of data generators and a corresponding boolean
 # indicating whether that data type is supported by the AST
@@ -64,9 +65,10 @@ ast_boolean_descr = [(boolean_gen, True)]
 ast_double_descr = [(double_gen, True)]
 
 _project_ast_enabled_conf = {"spark.rapids.sql.projectAstEnabled": "true"}
-_ansi_jit_ast_enabled_conf = copy_and_update(ansi_enabled_conf, {
+_jit_ast_enabled_conf = {
     "spark.rapids.sql.projectAstAnsiArithmeticEnabled": "true",
-    "spark.executorEnv.LIBCUDF_JIT_ENABLED": "1"})
+    "spark.executorEnv.LIBCUDF_JIT_ENABLED": "1"}
+_ansi_jit_ast_enabled_conf = copy_and_update(ansi_enabled_conf, _jit_ast_enabled_conf)
 _requires_libcudf_jit = pytest.mark.skipif(
     os.environ.get("LIBCUDF_JIT_ENABLED") != "1",
     reason="ANSI JIT AST requires LIBCUDF_JIT_ENABLED=1 before libcudf initialization")
@@ -415,6 +417,35 @@ def test_jit_if_nullify_complex_branch_falls_back():
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             'if(isnull(a), cast(null as INT), a + cast(1 as INT))'),
         conf=_ansi_jit_ast_enabled_conf)
+
+_ast_decimal_cast_descrs = [
+    (DecimalGen(7, 2, special_cases=[]), DecimalType(9, 4), True),
+    (DecimalGen(7, 2, special_cases=[]), DecimalType(18, 4), True),
+    (DecimalGen(18, 2, special_cases=[]), DecimalType(30, 4), True),
+    (DecimalGen(7, 4, special_cases=[]), DecimalType(9, 2), False)
+]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_decimal_cast_descrs, ids=idfn)
+def test_jit_decimal_cast(data_descr):
+    data_gen, to_type, is_supported = data_descr
+    assert_gpu_ast(is_supported,
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)),
+        conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_jit_decimal_cast_precision_check_ansi_disabled():
+    data_gen = DecimalGen(18, 2)
+    assert_gpu_ast(True,
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast(DecimalType(9, 2))),
+        conf=_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_jit_decimal_cast_scale_up_precision_check_ansi_disabled():
+    data_gen = DecimalGen(18, 0)
+    assert_gpu_ast(False,
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast(DecimalType(18, 2))),
+        conf=_jit_ast_enabled_conf)
 
 _ast_shift_descrs = [(int_gen, True), (long_gen, True)]
 _ast_shift_amount_gen = IntegerGen(

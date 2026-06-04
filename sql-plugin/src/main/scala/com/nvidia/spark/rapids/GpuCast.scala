@@ -21,7 +21,9 @@ import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType, RegexProgram, Scalar}
+import ai.rapids.cudf.{BinaryOp, CaptureGroups, ColumnVector, ColumnView, DType}
+import ai.rapids.cudf.{RegexProgram, Scalar}
+import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{Arithmetic, CastException, CastStrings, DecimalUtils, GpuTimeZoneDB, RoundMode}
@@ -291,6 +293,80 @@ object GpuCast {
     "required range"
 
   val OVERFLOW_MESSAGE: String = "overflow occurred"
+
+  def canDecimalCastToAst(from: DecimalType, to: DecimalType): Boolean = {
+    val scaleDelta = to.scale - from.scale
+    val needsPrecisionCheck =
+      from.precision - from.scale > to.precision - to.scale
+    scaleDelta >= 0 && !(scaleDelta > 0 && needsPrecisionCheck)
+  }
+
+  private def decimalStorageWidth(dt: DecimalType): Int = {
+    if (DecimalType.is32BitDecimalType(dt)) {
+      32
+    } else if (DecimalType.is64BitDecimalType(dt)) {
+      64
+    } else {
+      128
+    }
+  }
+
+  private def decimalCastStorageOp(width: Int): ast.JitOperator = width match {
+    case 32 => ast.JitOperator.CAST_TO_DEC32
+    case 64 => ast.JitOperator.CAST_TO_DEC64
+    case 128 => ast.JitOperator.CAST_TO_DEC128
+    case _ => throw new IllegalArgumentException(s"Unexpected decimal width $width")
+  }
+
+  private def decimalPrecisionCheckToAst(
+      childAst: ast.AstExpression,
+      precision: Int,
+      ansiMode: Boolean): ast.AstExpression = {
+    val op = if (ansiMode) {
+      ast.JitOperator.ANSI_PRECISION_CHECK
+    } else {
+      ast.JitOperator.ANSI_TRY_PRECISION_CHECK
+    }
+    new ast.JitOperation(op, childAst, ast.Literal.ofInt(precision))
+  }
+
+  def decimalCastToAst(
+      childAst: ast.AstExpression,
+      from: DecimalType,
+      to: DecimalType,
+      ansiMode: Boolean): ast.AstExpression = {
+    require(canDecimalCastToAst(from, to),
+      s"AST decimal cast from $from to $to is not supported")
+
+    val fromWholeNumPrecision = from.precision - from.scale
+    val toWholeNumPrecision = to.precision - to.scale
+    val needsPrecisionCheck = fromWholeNumPrecision > toWholeNumPrecision
+    val scaleDelta = to.scale - from.scale
+    val fromWidth = decimalStorageWidth(from)
+    val toWidth = decimalStorageWidth(to)
+
+    var ret = childAst
+    var retWidth = fromWidth
+
+    if (toWidth > retWidth) {
+      ret = new ast.JitOperation(decimalCastStorageOp(toWidth), ret)
+      retWidth = toWidth
+    }
+
+    if (scaleDelta > 0) {
+      ret = new ast.JitOperation(ast.JitOperator.RESCALE, -to.scale, ret)
+    }
+
+    if (needsPrecisionCheck) {
+      ret = decimalPrecisionCheckToAst(ret, to.precision, ansiMode)
+    }
+
+    if (toWidth < retWidth) {
+      ret = new ast.JitOperation(decimalCastStorageOp(toWidth), ret)
+    }
+
+    ret
+  }
 
   def doCast(
       input: ColumnView,
@@ -1670,6 +1746,7 @@ case class GpuCast(
     (child.dataType, dataType) match {
       case (StringType, _) if ansiMode => true
       case (TimestampType, ByteType | ShortType | IntegerType) if ansiMode => true
+      case (_: DecimalType, _: DecimalType) if ansiMode => true
       case (_: DecimalType, LongType) if ansiMode => true
       case (LongType | _: DecimalType, IntegerType) if ansiMode => true
       case (LongType | IntegerType | _: DecimalType, ShortType) if ansiMode => true
@@ -1727,6 +1804,20 @@ case class GpuCast(
     // converting back to SQL query string.
     case _: ArrayType | _: MapType | _: StructType => child.sql
     case _ => s"CAST(${child.sql} AS ${dataType.sql})"
+  }
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    (child.dataType, dataType) match {
+      case (from: DecimalType, to: DecimalType) if canDecimalCastToAst(from, to) =>
+        decimalCastToAst(
+          child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+          from,
+          to,
+          ansiMode)
+      case _ =>
+        throw new IllegalStateException(
+          s"Cast from ${child.dataType} to $dataType is not supported by AST")
+    }
   }
 
   override def doColumnar(input: GpuColumnVector): ColumnVector = {

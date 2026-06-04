@@ -965,24 +965,39 @@ object GpuOverrides extends Logging {
     expr[Alias](
       "Gives a column a name",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.astTypes + GpuTypeShims.additionalCommonOperatorSupportedTypes,
+        TypeSig.astTypes + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalCommonOperatorSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
             + TypeSig.DECIMAL_128 + TypeSig.BINARY
             + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (a.dataType.isInstanceOf[DecimalType] && !conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST decimal references require row IR JIT support.")
+          }
+        }
+
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
       }),
     expr[BoundReference](
       "Reference to a bound variable",
       ExprChecks.projectAndAst(
-        TypeSig.astTypes + GpuTypeShims.additionalCommonOperatorSupportedTypes,
+        TypeSig.astTypes + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalCommonOperatorSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT +
           TypeSig.DECIMAL_128 + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (currentRow, conf, p, r) => new ExprMeta[BoundReference](currentRow, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (currentRow.dataType.isInstanceOf[DecimalType] &&
+              !conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST decimal references require row IR JIT support.")
+          }
+        }
+
         override def convertToGpuImpl(): GpuExpression = GpuBoundReference(
           currentRow.ordinal, currentRow.dataType, currentRow.nullable)(
           NamedExpression.newExprId, "")
@@ -990,12 +1005,20 @@ object GpuOverrides extends Logging {
     expr[AttributeReference](
       "References an input column",
       ExprChecks.projectAndAst(
-        TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
+        TypeSig.astTypes + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalArithmeticSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all),
         (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
+          override def tagSelfForAst(): Unit = {
+            if (att.dataType.isInstanceOf[DecimalType] &&
+                !conf.isProjectAstAnsiArithmeticEnabled) {
+              willNotWorkInAst("AST decimal references require row IR JIT support.")
+            }
+          }
+
           // This is the only NOOP operator.  It goes away when things are bound
           override def convertToGpuImpl(): Expression = att
 
