@@ -167,17 +167,18 @@ def test_host_columnar_transition(spark_tmp_path, data_gen):
         conf={ 'spark.rapids.sql.exec.FileSourceScanExec' : 'false'})
 
 
-# Mixed-primitives parquet read+collect walks every CudfUnsafeRowBase.getXxx
-# accessor on the GPU -> host row path (Boolean / Byte / Short / Int / Long /
-# Float / Double / Decimal at varying precision / scale / UTF8String). The
-# common Int/Long/Double arms are already exercised by other tests; this
-# fills the under-tested Boolean / Byte / Short / Float / Decimal / String
-# arms.
+# Mixed-primitives parquet read+collect walks the primitive-type
+# CudfUnsafeRowBase.getXxx accessors on the GPU -> host row path
+# (Boolean / Byte / Short / Int / Long / Float / Double / Decimal at varying
+# precision / scale / UTF8String). The common Int/Long/Double arms are
+# already exercised by other tests; this fills the under-tested Boolean /
+# Byte / Short / Float / Decimal / String arms. Nested-type (Struct / Array /
+# Map), Binary, and Interval accessors are intentionally out of scope.
 #
-# BinaryType is intentionally NOT in the gen list: CudfRowTransitions's
-# isC2RSupportedType has no Binary branch, so including it would route the
-# scan through the fallback (non-Cudf) ColumnarToRowIterator and contribute
-# 0 LC to the target class.
+# BinaryType is intentionally NOT in the gen list: CudfRowTransitions
+# .isC2RSupportedType has no BinaryType branch, so including it would route
+# the scan through the fallback (non-Cudf) ColumnarToRowIterator and
+# contribute 0 LC to the target class.
 def test_cudf_unsafe_row_primitive_sweep(spark_tmp_path):
     data_path = spark_tmp_path + "/cudf_unsafe_row"
     gen_list = [
