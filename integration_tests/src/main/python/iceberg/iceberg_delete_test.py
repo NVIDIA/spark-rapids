@@ -557,3 +557,41 @@ def test_mor_delete_honors_iceberg_compression_codec(
     with_cpu_session(
         lambda spark: assert_iceberg_files_use_codec(
             spark, table_name, expected_codec, files_table="delete_files"))
+
+
+# When the resolved delete codec (write.delete.parquet.compression-codec) differs from the
+# data codec, the GPU position-delta writer cannot honor both — it builds a single
+# ColumnarOutputWriterFactory shared by data and delete files. So it must fall back to CPU
+# rather than silently writing delete files with the data codec. Regression for #14905.
+@allow_non_gpu("WriteDeltaExec", "BatchScanExec", "ShuffleExchangeExec", "SortExec",
+               "ProjectExec", "ColumnarToRowExec")
+@iceberg
+@ignore_order(local=True)
+@pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+def test_mor_delete_falls_back_on_divergent_delete_codec(spark_tmp_table_factory):
+    base_table_name = get_full_table_name(spark_tmp_table_factory)
+    cpu_table_name = f"{base_table_name}_cpu"
+    gpu_table_name = f"{base_table_name}_gpu"
+    # Data codec zstd, delete codec uncompressed — both GPU-supported individually, but
+    # differ, so the single-factory GPU writer cannot reproduce CPU Iceberg's output.
+    divergent_codecs = {
+        "write.parquet.compression-codec": "zstd",
+        "write.delete.parquet.compression-codec": "uncompressed",
+    }
+    create_iceberg_table_with_data(cpu_table_name, delete_mode="merge-on-read",
+                                   table_properties=divergent_codecs)
+    create_iceberg_table_with_data(gpu_table_name, delete_mode="merge-on-read",
+                                   table_properties=divergent_codecs)
+
+    def write_func(spark, table_name):
+        spark.sql(f"DELETE FROM {table_name} WHERE _c2 % 3 = 0")
+
+    def read_func(spark, table_name):
+        return spark.sql(f"SELECT * FROM {table_name}")
+
+    # WriteDeltaExec is enabled by iceberg_delete_mor_enabled_conf, so the divergent-codec
+    # guard is the only reason it can fall back here.
+    assert_gpu_fallback_write_sql(
+        write_func, read_func, base_table_name, ["WriteDeltaExec"],
+        conf=iceberg_delete_mor_enabled_conf)
