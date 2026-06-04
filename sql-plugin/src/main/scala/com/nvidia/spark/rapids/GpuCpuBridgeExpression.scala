@@ -22,7 +22,8 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimExpression
-import java.util.concurrent.Callable
+import java.util.concurrent.{Callable, CancellationException, Future, TimeoutException, TimeUnit}
+import java.util.concurrent.atomic.{AtomicBoolean, LongAdder}
 import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.internal.Logging
@@ -219,24 +220,24 @@ case class GpuCpuBridgeExpression(
     // Pool threads accumulate their CPU processing time here. The owning task adds the total
     // to the shared metric once after all sub-batches complete, because GpuMetric (SQLMetric)
     // updates are not thread-safe and would race across the pool threads.
-    val processingTimeNs = new java.util.concurrent.atomic.LongAdder()
+    val processingTimeNs = new LongAdder()
+
+    val abortRequested = new AtomicBoolean(false)
 
     try {
-      val subBatchResults = withResource(spillableInputBatch) { spillableInputBatch =>
+      val subBatchResults = withResource(
+        new SharedSpillableInput(spillableInputBatch)) { sharedInput =>
         // Submit sub-batch processing tasks to the thread pool with priority
-        val futures = ranges.map { case (startRow, endRow) =>
-          val task = new SpillableSubBatchEvaluationTask(spillableInputBatch, startRow, endRow,
-            processingTimeNs)
-          GpuCpuBridgeThreadPool.submitPrioritizedTask(task)
-        }
+        val submittedTasks = submitSubBatchTasks(sharedInput, ranges, processingTimeNs,
+          abortRequested)
 
         // Collect results in submission order. safeMap closes the already-collected results if a
-        // future fails; drain only the not-yet-consumed futures, since this one and the earlier
-        // ones are already closed.
-        futures.zipWithIndex.safeMap { case (future, i) =>
+        // future fails; drain only the not-yet-consumed tasks, since this one and the earlier
+        // ones have either failed or are already closed.
+        submittedTasks.zipWithIndex.safeMap { case (submittedTask, i) =>
           Try {
             // The spillable result transfers ownership, so we incRefCount the column we keep.
-            withResource(future.get()) { spillableResult =>
+            withResource(submittedTask.future.get()) { spillableResult =>
               withResource(spillableResult.getColumnarBatch()) { cb =>
                 cb.column(0).asInstanceOf[GpuColumnVector].incRefCount()
               }
@@ -244,7 +245,7 @@ case class GpuCpuBridgeExpression(
           } match {
             case Success(col) => col
             case Failure(exception) =>
-              cleanupFuturesOnFailure(futures.drop(i + 1))
+              cleanupFuturesOnFailure(submittedTasks.drop(i + 1), abortRequested)
               throw unwrapExecutionException(exception)
           }
         }
@@ -259,63 +260,147 @@ case class GpuCpuBridgeExpression(
     }
   }
 
+  private def submitSubBatchTasks(
+      sharedInput: SharedSpillableInput,
+      ranges: Seq[(Int, Int)],
+      processingTimeNs: LongAdder,
+      abortRequested: AtomicBoolean): Seq[SubmittedSubBatchTask] = {
+    val submittedTasks = scala.collection.mutable.ArrayBuffer[SubmittedSubBatchTask]()
+    try {
+      ranges.foreach { case (startRow, endRow) =>
+        val submittedTask = closeOnExcept(sharedInput.acquire()) { inputRef =>
+          val task = new SpillableSubBatchEvaluationTask(inputRef, startRow, endRow,
+            processingTimeNs, abortRequested)
+          closeOnExcept(task) { task =>
+            SubmittedSubBatchTask(task, GpuCpuBridgeThreadPool.submitPrioritizedTask(task))
+          }
+        }
+        submittedTasks += submittedTask
+      }
+      submittedTasks.toSeq
+    } catch {
+      case t: Throwable =>
+        cleanupFuturesOnFailure(submittedTasks.toSeq, abortRequested)
+        throw t
+    }
+  }
+
   /**
    * Evaluates a sub-batch of rows on the CPU with spillable input and output.
    */
   private class SpillableSubBatchEvaluationTask(
-      spillableInputBatch: SpillableColumnarBatch,
+      spillableInputRef: SharedSpillableInputRef,
       startRow: Int,
       endRow: Int,
-      processingTimeNs: java.util.concurrent.atomic.LongAdder)
-      extends Callable[SpillableColumnarBatch] {
-    
+      processingTimeNs: LongAdder,
+      abortRequested: AtomicBoolean)
+      extends Callable[SpillableColumnarBatch] with AutoCloseable {
+
+    override def close(): Unit = spillableInputRef.close()
+
     override def call(): SpillableColumnarBatch = {
       val subBatchSize = endRow - startRow
 
       // spillableInputBatch is what we are going to retry around, but its life cycle is
       // controlled by the main task thread and shared between multiple threads in this pool.
       // So we will not try and close it, nor try and split it as a part of the retry.
-      withRetryNoSplit {
-        // Create a sub-batch wrapper that represents just the slice we need
-        val subBatchInput = withResource(spillableInputBatch.getColumnarBatch()) { inputBatch =>
-          val subBatchColumns = (0 until inputBatch.numCols()).safeMap { i =>
-            val col = inputBatch.column(i).asInstanceOf[GpuColumnVector]
-            closeOnExcept(col.getBase.subVector(startRow, endRow)) { sliced =>
-              GpuColumnVector.from(sliced, col.dataType())
+      try {
+        withRetryNoSplit {
+          throwIfAborted()
+          // Create a sub-batch wrapper that represents just the slice we need
+          val subBatchInput = withResource(spillableInputRef.getColumnarBatch()) { inputBatch =>
+            val subBatchColumns = (0 until inputBatch.numCols()).safeMap { i =>
+              val col = inputBatch.column(i).asInstanceOf[GpuColumnVector]
+              closeOnExcept(col.getBase.subVector(startRow, endRow)) { sliced =>
+                GpuColumnVector.from(sliced, col.dataType())
+              }
             }
+            new ColumnarBatch(subBatchColumns.toArray, subBatchSize)
           }
-          new ColumnarBatch(subBatchColumns.toArray, subBatchSize)
-        }
-        // The iterator takes ownership of the subBatchInput
-        val rowIterator = new ColumnarToRowIterator(
-          Iterator.single(subBatchInput),
-          NoopMetric,
-          NoopMetric,
-          NoopMetric,
-          NoopMetric,
-          nullSafe = false,
-          releaseSemaphore = false
-        )
-        withResource(rowIterator) { rowIterator =>
-          withResource(new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)) { _ =>
-            // Time the actual CPU processing on this thread
-            val processingStartTime = System.nanoTime()
-            val result = try {
-              evaluationFunction(rowIterator.map(makeInputToUnsafe()), subBatchSize)
-            } finally {
-              processingTimeNs.add(System.nanoTime() - processingStartTime)
-            }
+          // The iterator takes ownership of the subBatchInput
+          val rowIterator = new ColumnarToRowIterator(
+            Iterator.single(subBatchInput),
+            NoopMetric,
+            NoopMetric,
+            NoopMetric,
+            NoopMetric,
+            nullSafe = false,
+            releaseSemaphore = false
+          )
+          withResource(rowIterator) { rowIterator =>
+            withResource(new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)) { _ =>
+              // Time the actual CPU processing on this thread
+              val processingStartTime = System.nanoTime()
+              val result = try {
+                evaluationFunction(rowIterator.map(makeInputToUnsafe()), subBatchSize)
+              } finally {
+                processingTimeNs.add(System.nanoTime() - processingStartTime)
+              }
 
-            // Wrap the result column in a spillable batch.
-            closeOnExcept(result) { result =>
-              val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
-              SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+              // Wrap the result column in a spillable batch.
+              if (abortRequested.get()) {
+                withResource(result) { _ =>
+                  throw new CancellationException("Sub-batch evaluation aborted")
+                }
+              }
+              val spillableResult = closeOnExcept(result) { result =>
+                val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
+                SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+              }
+              if (abortRequested.get()) {
+                withResource(spillableResult) { _ =>
+                  throw new CancellationException("Sub-batch evaluation aborted")
+                }
+              }
+              spillableResult
             }
           }
+        }
+      } finally {
+        spillableInputRef.close()
+      }
+    }
+
+    private def throwIfAborted(): Unit = {
+      if (abortRequested.get()) {
+        throw new CancellationException("Sub-batch evaluation aborted")
+      }
+    }
+  }
+
+  private class SharedSpillableInput(spillableInputBatch: SpillableColumnarBatch)
+      extends AutoCloseable {
+    private[this] val lock = new Object()
+
+    def acquire(): SharedSpillableInputRef = lock.synchronized {
+      spillableInputBatch.incRefCount()
+      new SharedSpillableInputRef(spillableInputBatch, lock)
+    }
+
+    override def close(): Unit = lock.synchronized {
+      spillableInputBatch.close()
+    }
+  }
+
+  private class SharedSpillableInputRef(
+      spillableInputBatch: SpillableColumnarBatch,
+      lock: AnyRef) extends AutoCloseable {
+    private[this] val closed = new AtomicBoolean(false)
+
+    def getColumnarBatch(): ColumnarBatch = spillableInputBatch.getColumnarBatch()
+
+    override def close(): Unit = {
+      if (closed.compareAndSet(false, true)) {
+        lock.synchronized {
+          spillableInputBatch.close()
         }
       }
     }
   }
+
+  private case class SubmittedSubBatchTask(
+      task: SpillableSubBatchEvaluationTask,
+      future: Future[SpillableColumnarBatch])
   
   // Future.get() wraps failures in ExecutionException; unwrap so retryable OOM types reach
   // the surrounding retry framework.
@@ -324,47 +409,50 @@ case class GpuCpuBridgeExpression(
     case other => other
   }
 
-  // Cancel the given futures; for any that cannot be cancelled, wait briefly and close their
-  // results to avoid leaks.
+  // Request abort, cancel tasks that have not started, and wait briefly for running tasks so any
+  // returned spillable results can be closed. Running tasks own their input refs and release them
+  // in their own finally blocks.
   private def cleanupFuturesOnFailure(
-      futures: Seq[java.util.concurrent.Future[SpillableColumnarBatch]]): Unit = {
-    import java.util.concurrent.TimeUnit
-    
-    // Track which futures were successfully cancelled vs. which are still running
-    val futuresAndCancellations = futures.map { f =>
-      val didCancel = f.cancel(true)
-      (f, didCancel)
+      submittedTasks: Seq[SubmittedSubBatchTask],
+      abortRequested: AtomicBoolean): Unit = {
+    abortRequested.set(true)
+
+    val runningOrCompletedTasks = submittedTasks.filter { submitted =>
+      val cancelledBeforeStart = submitted.future.cancel(false)
+      if (cancelledBeforeStart) {
+        submitted.task.close()
+      }
+      !cancelledBeforeStart
     }
-    
-    // For futures that couldn't be cancelled, we need to wait for them to complete
-    // and clean up their resources to prevent leaks
-    val uncancelledFutures = futuresAndCancellations.filter { case (_, didCancel) => !didCancel }
-    
-    if (uncancelledFutures.nonEmpty) {
-      logDebug(s"${uncancelledFutures.length} futures could not be cancelled, " +
+
+    if (runningOrCompletedTasks.nonEmpty) {
+      logDebug(s"${runningOrCompletedTasks.length} futures were already running or completed, " +
         "waiting for completion to clean up resources")
     }
-    
+
     var cleanupFailure: Option[Throwable] = None
-    uncancelledFutures.foreach { case (future, _) =>
+    runningOrCompletedTasks.foreach { submitted =>
       try {
-        // Wait up to 1 second for the future to complete
-        // Sub-batches are small so should finish quickly
-        // If it times out, the leak will eventually be recovered
-        val spillableResult = future.get(1, TimeUnit.SECONDS)
-        spillableResult.close() // Clean up the spillable result
+        // Wait up to 1 second for the future to complete. If it times out, the worker still owns
+        // its input reference and will close it when it exits.
+        withResource(submitted.future.get(1, TimeUnit.SECONDS)) { _ => () }
       } catch {
-        case _: java.util.concurrent.TimeoutException =>
+        case _: TimeoutException =>
           logWarning("Timed out waiting for future completion during cleanup. " +
-            "Resource will be recovered eventually.")
-        case _: java.util.concurrent.CancellationException =>
-          // Future was cancelled after all, no cleanup needed
+            "The worker owns its input reference and will close it when it exits.")
+        case _: CancellationException =>
+          // Future was cancelled. No output was returned.
         case t: Throwable =>
-          // Capture the first cleanup exception but don't let it mask the original error
-          if (cleanupFailure.isEmpty) {
-            cleanupFailure = Some(t)
-          } else {
-            logWarning(s"Exception during future cleanup: ${t.getMessage}")
+          unwrapExecutionException(t) match {
+            case _: CancellationException =>
+              // The worker observed abortRequested. No output was returned.
+            case cleanupException =>
+              // Capture the first cleanup exception but don't let it mask the original error
+              if (cleanupFailure.isEmpty) {
+                cleanupFailure = Some(cleanupException)
+              } else {
+                logWarning(s"Exception during future cleanup: ${cleanupException.getMessage}")
+              }
           }
       }
     }

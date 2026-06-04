@@ -82,7 +82,8 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
     assert(maybeHashMeta.isDefined, "Expected xxhash64 under Add")
     val hashMeta = maybeHashMeta.get
     // Siblings share a leaf (a) so CPU is strictly cheaper than GPU.
-    assert(hashMeta.willUseGpuCpuBridge, "xxhash64 should prefer GPU on tie under CPU Add")
+    assert(hashMeta.willUseGpuCpuBridge,
+      "xxhash64 should use CPU bridge under CPU Add when siblings share a leaf")
   }
 
   test("No CPU requirements stays on GPU (unit)") {
