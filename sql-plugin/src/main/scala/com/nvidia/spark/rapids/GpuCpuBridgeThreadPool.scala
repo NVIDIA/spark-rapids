@@ -151,7 +151,8 @@ object GpuCpuBridgeThreadPool extends Logging {
    */
   private def createThreadFactory(): ThreadFactory = {
     val baseFactory: ThreadFactory = (r: Runnable) => {
-      val thread = new Thread(r, s"gpu-cpu-bridge-worker-${Thread.currentThread().getId}")
+      val thread = new Thread(r)
+      thread.setName(s"gpu-cpu-bridge-worker-${thread.getId}")
       thread.setDaemon(true)
       thread
     }

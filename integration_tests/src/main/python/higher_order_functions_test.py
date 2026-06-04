@@ -16,7 +16,8 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect
 from data_gen import *
-from marks import allow_non_gpu, disable_ansi_mode, ignore_order
+from marks import allow_non_gpu, allow_non_gpu_conditional, disable_ansi_mode, ignore_order
+from spark_session import is_before_spark_340, is_databricks_runtime
 
 
 @ignore_order(local=True)
@@ -285,7 +286,10 @@ def test_array_aggregate_cpu_only_g_fallback():
         'ArrayAggregate')
 
 
+# Spark 3.3 non-DB wraps decimal lambda arithmetic in CheckOverflow. CheckOverflow
+# blocks CPU bridge optimization, so the containing ProjectExec falls back there.
 @disable_ansi_mode
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), 'ProjectExec')
 @allow_non_gpu('ArrayAggregate', 'LambdaFunction', 'NamedLambdaVariable', 'Add')
 def test_array_aggregate_decimal_sum_overflow_fallback():
     def do_it(spark):
@@ -379,6 +383,7 @@ def test_array_aggregate_float_sum_product_fallback_when_variable_float_agg_disa
     (DecimalGen(precision=10, scale=2, nullable=False),
         '(acc, x) -> acc + cast(x as decimal(38,2))', 'cast(0 as decimal(38,2))'),
 ], ids=['int-to-long-sum', 'long-sum', 'long-product', 'decimal-sum'])
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), 'ProjectExec')
 @allow_non_gpu('ArrayAggregate', 'LambdaFunction', 'NamedLambdaVariable', 'Add', 'Multiply', 'Cast')
 def test_array_aggregate_ansi_sum_product_fallback(elem_gen, lambda_sql, init_sql):
     assert_gpu_fallback_collect(

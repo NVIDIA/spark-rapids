@@ -186,8 +186,9 @@ case class GpuCpuBridgeExpression(
         releaseSemaphore = false
       )
 
-      // Delegate to evaluation function - ColumnarToRowIterator manages the batch lifecycle
-      evaluationFunction(rowIterator.map(makeInputToUnsafe()), numRows)
+      withResource(rowIterator) { rowIterator =>
+        evaluationFunction(rowIterator.map(makeInputToUnsafe()), numRows)
+      }
     }
   }
   
@@ -283,20 +284,22 @@ case class GpuCpuBridgeExpression(
           nullSafe = false,
           releaseSemaphore = false
         )
-        withResource(new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)) { _ =>
-          // Time the actual CPU processing on this thread
-          val processingStartTime = System.nanoTime()
-          val result = try {
-            evaluationFunction(rowIterator.map(makeInputToUnsafe()), subBatchSize)
-          } finally {
-            val processingTime = System.nanoTime() - processingStartTime
-            cpuBridgeProcessingTime.foreach(_.add(processingTime))
-          }
+        withResource(rowIterator) { rowIterator =>
+          withResource(new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)) { _ =>
+            // Time the actual CPU processing on this thread
+            val processingStartTime = System.nanoTime()
+            val result = try {
+              evaluationFunction(rowIterator.map(makeInputToUnsafe()), subBatchSize)
+            } finally {
+              val processingTime = System.nanoTime() - processingStartTime
+              cpuBridgeProcessingTime.foreach(_.add(processingTime))
+            }
 
-          // Wrap the result column in a spillable batch.
-          closeOnExcept(result) { result =>
-            val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
-            SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+            // Wrap the result column in a spillable batch.
+            closeOnExcept(result) { result =>
+              val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
+              SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+            }
           }
         }
       }

@@ -1464,6 +1464,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
   def isBridgeCompatible: Boolean = {
     import org.apache.spark.sql.catalyst.expressions.{Generator, NamedLambdaVariable, TryEval, Unevaluable, WindowFunction}
     import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
+    import org.apache.spark.sql.catalyst.expressions.objects.LambdaVariable
     
     if (!conf.isCpuBridgeEnabled) return false
     
@@ -1472,13 +1473,25 @@ abstract class BaseExprMeta[INPUT <: Expression](
     // Check config-level disallow list
     if (conf.bridgeDisallowList.contains(exprClass.getName)) return false
     
-    // Filter out expression types that cannot be directly executed on CPU
+    // TryEval implements try_* by evaluating the child expression on CPU, catching CPU
+    // exceptions, and converting them to null. To preserve that contract, the entire child
+    // tree would need to stay on CPU; bridging TryEval with GPU children would bypass the
+    // CPU exception path. Let the enclosing plan node fall back instead.
+    if (classOf[TryEval].isAssignableFrom(exprClass)) return false
+
+    // LambdaVariable is a scoped placeholder owned by Spark object expressions such as
+    // MapObjects, CatalystToExternalMap, and ExternalMapToCatalyst. Those expressions require
+    // LambdaVariable children in fixed positions and cast them back during tree rewrites.
+    // Bridging LambdaVariable independently can replace the placeholder with a BoundReference
+    // and corrupt the parent expression tree.
+    if (classOf[LambdaVariable].isAssignableFrom(exprClass)) return false
+
+    // Filter out expression types that cannot be directly executed on CPU.
     if (classOf[Unevaluable].isAssignableFrom(exprClass) ||
         classOf[AggregateFunction].isAssignableFrom(exprClass) ||
         classOf[WindowFunction].isAssignableFrom(exprClass) ||
         classOf[NamedLambdaVariable].isAssignableFrom(exprClass) ||
-        classOf[Generator].isAssignableFrom(exprClass) ||
-        classOf[TryEval].isAssignableFrom(exprClass)) {
+        classOf[Generator].isAssignableFrom(exprClass)) {
       return false
     }
     

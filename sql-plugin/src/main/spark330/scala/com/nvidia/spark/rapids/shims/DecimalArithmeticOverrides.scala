@@ -46,10 +46,14 @@ object DecimalArithmeticOverrides {
       ExprChecks.unaryProjectInputMatchesOutput(TypeSig.DECIMAL_128,
         TypeSig.DECIMAL_128),
       (a, conf, p, r) => new ExprMeta[CheckOverflow](a, conf, p, r) {
-        // CheckOverflow prevents all bridge optimization in the tree. The CPU version
-        // takes a BigDecimal as input which could be outside the bounds of what the GPU
-        // can represent, so we cannot safely bridge any expressions when CheckOverflow
-        // is present.
+        // CheckOverflow prevents all bridge optimization in the tree. Spark's CPU
+        // CheckOverflow evaluates the child with Scala Decimal/BigDecimal values and then
+        // checks whether the final value fits the target DecimalType. The GPU path cannot
+        // carry intermediate decimal values outside cuDF/GPU bounds; decimal arithmetic
+        // overflow is checked in the GPU arithmetic expressions themselves, making
+        // GpuCheckOverflow a wrapper around an already-checked value. Because the CPU and
+        // GPU CheckOverflow contracts are not compatible, expression trees that contain
+        // CheckOverflow cannot safely use CPU bridge optimization.
         override def preventsTreeBridgeOptimization: Boolean = true
         
         private[this] def extractOrigParam(expr: BaseExprMeta[_]): BaseExprMeta[_] =

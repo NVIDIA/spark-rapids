@@ -17,7 +17,7 @@ import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
-from marks import ignore_order, incompat, approximate_float, allow_non_gpu, datagen_overrides, disable_ansi_mode
+from marks import ignore_order, incompat, approximate_float, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides, disable_ansi_mode
 from pyspark.sql.types import *
 from pyspark.sql.types import IntegralType
 from spark_session import *
@@ -381,6 +381,9 @@ def test_pmod(data_gen):
                 'pmod(a, b)'))
 
 
+# Spark 3.3 non-DB wraps decimal arithmetic in CheckOverflow. CheckOverflow blocks
+# CPU bridge optimization, so decimal pmod falls back at ProjectExec on those builds.
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu("Pmod", "PromotePrecision")
 @pytest.mark.parametrize('data_gen', test_pmod_fallback_decimal_gens + [_decimal_gen_38_0, _decimal_gen_38_10], ids=idfn)
 @disable_ansi_mode
@@ -480,6 +483,8 @@ def test_pmod_mixed_numeric(lhs, rhs):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"))
 
+# Decimal pmod mixed-type plans also contain CheckOverflow on Spark 3.3 non-DB.
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu("Pmod", "Cast", "PromotePrecision")
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
     DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
@@ -491,6 +496,7 @@ def test_pmod_mixed_decimal_lhs(lhs, rhs):
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
         "Pmod")
 
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu("Pmod", "Cast", "PromotePrecision")
 @pytest.mark.parametrize('lhs', [byte_gen, short_gen, int_gen, long_gen], ids=idfn)
 @pytest.mark.parametrize('rhs', [DecimalGen(6, 3), DecimalGen(10, -2), DecimalGen(15, 3),
@@ -502,6 +508,7 @@ def test_pmod_mixed_decimal_rhs(lhs, rhs):
         lambda spark : two_col_df(spark, lhs, rhs).selectExpr(f"pmod(a, b)"),
         "Pmod")
 
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu("Pmod", "PromotePrecision", "Cast")
 @pytest.mark.parametrize('lhs', [DecimalGen(6, 5), DecimalGen(6, 4), DecimalGen(5, 4), DecimalGen(5, 3),
     DecimalGen(4, 2), DecimalGen(3, -2), DecimalGen(16, 7), DecimalGen(19, 0), DecimalGen(30, 10)
@@ -1538,7 +1545,10 @@ def test_decimal_nullability_of_overflow_for_binary_ops(op_str):
     assert_gpu_and_cpu_are_equal_collect(test_func, conf = conf_no_ansi)
 
 
-# Test that try_* functions falls back to CPU when TRY mode is used
+# Spark 3.3 non-DB represents try_* arithmetic with TryEval. TryEval needs its
+# child expression tree on CPU to catch CPU exceptions and convert them to null,
+# so the enclosing ProjectExec falls back on those builds.
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu('Add')
 @pytest.mark.parametrize('data_gen', integral_gens, ids=idfn)
 def test_try_add_fallback_to_cpu(data_gen):
@@ -1546,6 +1556,7 @@ def test_try_add_fallback_to_cpu(data_gen):
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             "try_add(a, b) as result"), "Add")
 
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu('Divide', 'Cast')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_divide_fallback_to_cpu(data_gen):
@@ -1562,6 +1573,7 @@ def test_try_mod_fallback_to_cpu(data_gen):
             "try_mod(a, b) as result"), "Remainder")
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_subtract is not supported before Spark 3.3.0")
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu('Subtract')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_subtract_fallback_to_cpu(data_gen):
@@ -1570,6 +1582,7 @@ def test_try_subtract_fallback_to_cpu(data_gen):
             "try_subtract(a, b) as result"), "Subtract")
 
 @pytest.mark.skipif(is_before_spark_330(), reason="try_multiply is not supported before Spark 3.3.0")
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu('Multiply')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_multiply_fallback_to_cpu(data_gen):
