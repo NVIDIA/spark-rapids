@@ -117,10 +117,10 @@ abstract class GpuWindowExpressionMetaBase(
             } else {
               // check whether order by column is supported or not
               val orderSpec = wrapped.windowSpec.orderSpec
-              if (orderSpec.length > 1) {
-                // We only support a single order by column
-                willNotWorkOnGpu("only a single date/time or numeric (Boolean exclusive) " +
-                  "based column in window range functions is supported")
+              val hasMultipleOrderByColumns = orderSpec.length > 1
+              if (hasMultipleOrderByColumns && spec.isValueBound) {
+                willNotWorkOnGpu("range window frames with value boundaries are not supported " +
+                  "with multiple order-by columns")
               }
               val orderByTypeSupported = orderSpec.forall { so =>
                 so.dataType match {
