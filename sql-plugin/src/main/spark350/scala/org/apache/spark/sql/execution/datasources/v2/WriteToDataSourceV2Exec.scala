@@ -47,10 +47,12 @@ import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, UPDAT
 import org.apache.spark.sql.catalyst.util.WriteDeltaProjections
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, DeltaWriter, PhysicalWriteInfoImpl, Write, WriterCommitMessage}
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{SparkPlan, SparkPlanInfo, SQLExecution, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.datasources.v2.GpuDelteWritingSparkTask.filterByOperation
 import org.apache.spark.sql.execution.metric.{CustomMetrics, SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{LongAccumulator, Utils}
 
@@ -95,6 +97,35 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
       case p => p
   }
 
+  /**
+   * Re-post the final, post-AQE plan to the SQL UI so the GPU nodes show up.
+   *
+   * An Iceberg (V2) write wraps its query in an `AdaptiveSparkPlanExec`. AQE's own
+   * final-plan update only refreshes its own subtree, so the SQL UI keeps showing this
+   * write node's pre-AQE plan and the GPU operators under it never appear. Once the write
+   * has executed (the AQE `executedPlan` is settled) we re-post a
+   * `SparkListenerSQLAdaptiveExecutionUpdate` for this execution with every
+   * `AdaptiveSparkPlanExec` replaced by its `executedPlan`.
+   *
+   * Uses `transformDown` (not a shallow match on the root) so nested
+   * `AdaptiveSparkPlanExec` — e.g. wrapped under a `ProjectExec` — are also unwrapped,
+   * keeping the unwrap symmetric with the deep AQE that produced the plan.
+   */
+  protected def postFinalPlanUpdateToSqlUi(): Unit = {
+    val executionIdStr = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
+    if (executionIdStr != null) {
+      val finalChildPlan = finalQuery.transformDown {
+        case aqe: AdaptiveSparkPlanExec => aqe.executedPlan
+      }
+      val planForUi = this.withNewChildren(Seq(finalChildPlan))
+      TrampolineUtil.postEvent(sparkContext,
+        SparkListenerSQLAdaptiveExecutionUpdate(
+          executionIdStr.toLong,
+          planForUi.toString,
+          SparkPlanInfo.fromSparkPlan(planForUi)))
+    }
+  }
+
   protected def writeWithV2(batchWrite: BatchWrite): Seq[InternalRow] = {
     val rdd: RDD[ColumnarBatch] = {
       val tempRdd = finalQuery.executeColumnar()
@@ -133,6 +164,11 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
           batchWrite.onDataWriterCommit(commitMessage)
         }
       )
+
+      // The write has executed and the AQE plan is settled; refresh the SQL UI so the
+      // GPU plan is visible for this V2 write. Done before commit so the UI reflects the
+      // executed plan even if the commit later fails.
+      postFinalPlanUpdateToSqlUi()
 
       logInfo(s"Data source write support $batchWrite is committing.")
       batchWrite.commit(messages)
