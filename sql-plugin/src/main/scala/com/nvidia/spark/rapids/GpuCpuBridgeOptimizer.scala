@@ -47,7 +47,29 @@ object GpuCpuBridgeOptimizer extends Logging {
       }
     }
   }
-  
+
+  /**
+   * Bridge-optimize only the non-AST subtrees of a join condition, leaving AST-capable nodes
+   * on GPU. This is called after join condition extraction has been proven possible, and before
+   * any bridge optimization has been applied to the condition tree. That ordering matters
+   * because bridge-marked nodes report canSelfBeAst = false, so running this after
+   * whole-condition bridge optimization would misclassify AST-capable condition nodes as subtrees
+   * to extract.
+   */
+  def checkAndOptimizeNonAstSubtrees(expr: BaseExprMeta[_]): Unit = {
+    if (expr.conf.isCpuBridgeEnabled) {
+      optimizeNonAstSubtreesRecursive(expr)
+    }
+  }
+
+  private def optimizeNonAstSubtreesRecursive(expr: BaseExprMeta[_]): Unit = {
+    if (!expr.canSelfBeAst) {
+      checkAndOptimizeExpressionMetas(Seq(expr))
+    } else {
+      expr.childExprs.foreach(optimizeNonAstSubtreesRecursive)
+    }
+  }
+
   /**
    * Check if an expression tree requires AST conversion by looking for expressions
    * that have been marked as requiring AST during the tagging phase.

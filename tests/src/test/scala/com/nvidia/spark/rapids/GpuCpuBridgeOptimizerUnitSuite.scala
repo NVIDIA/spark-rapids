@@ -115,6 +115,23 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
       "Scalar literal child should stay on GPU side of the tie")
   }
 
+  test("Non-AST subtree optimization keeps AST join skeleton on GPU (unit)") {
+    val a = AttributeReference("a", LongType, nullable = false)()
+    val b = AttributeReference("b", LongType, nullable = false)()
+    val condition = GreaterThan(Add(a, Literal(10L)), Add(b, Literal(5L)))
+
+    val conditionMeta = wrap(condition)
+    val addMetas = conditionMeta.childExprs.filter(_.wrapped.isInstanceOf[Add])
+    assert(addMetas.size == 2)
+    addMetas.foreach(_.willNotWorkOnGpu("disabled for test"))
+
+    GpuCpuBridgeOptimizer.checkAndOptimizeNonAstSubtrees(conditionMeta)
+
+    assert(!conditionMeta.willUseGpuCpuBridge, "GreaterThan should remain GPU/AST-capable")
+    assert(addMetas.forall(_.willUseGpuCpuBridge),
+      s"Expected Add children to use CPU bridge: $addMetas")
+  }
+
   test("Second pass includes CPU imports under GPU parent (unit)") {
     val a = AttributeReference("a", LongType, nullable = false)()
     val compare = GreaterThan(a, Literal(5L))

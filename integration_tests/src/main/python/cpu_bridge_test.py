@@ -478,6 +478,20 @@ def test_cpu_bridge_hash_join_left_outer_works():
 
 @allow_non_gpu('Add')
 @ignore_order(local=True)
+def test_cpu_bridge_broadcast_nested_loop_join_condition_works():
+    """BNLJ extracts bridged non-AST sub-expressions before AST condition tagging."""
+    def test_func(spark):
+        left = gen_df(spark, [('a', IntegerGen(min_val=1, max_val=100))], length=50)
+        right = gen_df(spark, [('b', IntegerGen(min_val=1, max_val=100))], length=20)
+
+        return left.join(f.broadcast(right), (left.a + 10) > (right.b + 5), 'Left')
+
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        test_func, exist_classes='GpuBroadcastNestedLoopJoin', conf=conf)
+
+@allow_non_gpu('Add')
+@ignore_order(local=True)
 def test_cpu_bridge_hash_partitioning_works():
     """Bridge expressions in partitioning should work with partition bridge optimization"""
     def test_func(spark):
