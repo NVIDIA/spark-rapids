@@ -18,7 +18,8 @@ package com.nvidia.spark.rapids
 
 import org.scalatest.funsuite.AnyFunSuite
 
-import org.apache.spark.sql.catalyst.expressions.{Add, And, AttributeReference, CaseWhen, GreaterThan, LessThan, Literal, Multiply, XxHash64}
+import org.apache.spark.sql.catalyst.expressions.{Add, And, AttributeReference, CaseWhen,
+  GreaterThan, Literal, Multiply, XxHash64}
 import org.apache.spark.sql.types.LongType
 
 class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
@@ -94,35 +95,24 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
     assert(!mulMeta.willUseGpuCpuBridge)
   }
 
-  test("CPU children tie at prefers GPU (unit)") {
+  test("CPU child tie prefers GPU (unit)") {
     val a = AttributeReference("a", LongType, nullable = false)()
     val gt = GreaterThan(a, Literal(5L))
-    val lt = LessThan(a, Literal(10L))
-    val andExpr = And(gt, lt)
+    val andExpr = And(gt, Literal(true))
 
     val andMeta = wrap(andExpr)
-    // Force both comparisons to CPU bridge
-    def forceCompares(meta: BaseExprMeta[_]): Unit = {
-      val w = meta.wrapped
-      if (w.isInstanceOf[GreaterThan] || w.isInstanceOf[LessThan]) {
-        meta.willNotWorkOnGpu("disabled for test")
-      }
-      meta.childExprs.foreach(forceCompares)
-    }
-    forceCompares(andMeta)
+    val compareMeta = andMeta.childExprs.head
+    compareMeta.willNotWorkOnGpu("disabled for test")
 
     GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(andMeta)
 
-    // Parent AND should prefer GPU on a true tie
+    // Root GPU cost: bridge the comparison child, import a once, export the child result.
+    // Root CPU cost: run the comparison in the CPU region, import a once, export the AND result.
+    // Both cost 2, so the GPU-biased tie-break should keep the AND on GPU.
     assert(!andMeta.willUseGpuCpuBridge, "AND should prefer GPU on a true tie")
-
-    // Children should be on CPU bridge
-    val childCompares = andMeta.childExprs.filter(m => m.wrapped.isInstanceOf[GreaterThan] ||
-      m.wrapped.isInstanceOf[LessThan])
-    assert(childCompares.size == 2,
-      s"Expected two comparison children under AND: ${andMeta.childExprs}")
-    assert(childCompares.forall(_.willUseGpuCpuBridge),
-      "Comparisons should use CPU bridge under AND")
+    assert(compareMeta.willUseGpuCpuBridge, "Comparison should use CPU bridge under AND")
+    assert(!andMeta.childExprs(1).willUseGpuCpuBridge,
+      "Scalar literal child should stay on GPU side of the tie")
   }
 
   test("Second pass includes CPU imports under GPU parent (unit)") {

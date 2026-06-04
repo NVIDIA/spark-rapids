@@ -20,7 +20,6 @@ import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
-import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimExpression
 import java.util.concurrent.{Callable, CancellationException, Future, TimeoutException, TimeUnit}
 import java.util.concurrent.atomic.{AtomicBoolean, LongAdder}
@@ -112,23 +111,30 @@ case class GpuCpuBridgeExpression(
 
   @transient private lazy val resultType = GpuColumnVector.convertFrom(dataType, nullable)
   
-  // Thread-local projection for code generation path
-  // Each thread gets its own projection to avoid internal memory reuse conflicts
-  // while allowing reuse across batches within a thread.
-  // Cleanup is registered on first access per task to prevent memory leaks in thread pools.
-  // Cleanup is probably unnecessary, as the expression should be collected, but
-  // it's good practice.
-  @transient private lazy val threadLocalProjection: ThreadLocal[BridgeHostColumnProjection] =
-    ThreadLocal.withInitial(() => {
-      // Register cleanup when this thread first accesses the ThreadLocal in this task
-      // Only register if we're actually in a Spark task (not in tests)
-      Option(org.apache.spark.TaskContext.get()).foreach { _ =>
-        onTaskCompletion {
-          threadLocalProjection.remove()
-        }
-      }
-      createCodeGeneratedProjection()
-    })
+  // Thread-local projection for code generation path. Each thread gets its own projection to
+  // avoid internal memory reuse conflicts, and the cached projection is scoped to the current
+  // Spark task attempt so long-lived bridge worker threads do not reuse stale projections.
+  @transient private lazy val threadLocalProjection:
+      ThreadLocal[(Long, BridgeHostColumnProjection)] =
+    new ThreadLocal[(Long, BridgeHostColumnProjection)]()
+
+  private def currentTaskAttemptId: Long =
+    Option(org.apache.spark.TaskContext.get()).map(_.taskAttemptId()).getOrElse(Long.MinValue)
+
+  private def getThreadLocalProjection(): BridgeHostColumnProjection = {
+    val taskAttemptId = currentTaskAttemptId
+    val cached = threadLocalProjection.get()
+    if (cached == null || cached._1 != taskAttemptId) {
+      threadLocalProjection.remove()
+      val projection = createCodeGeneratedProjection()
+      threadLocalProjection.set((taskAttemptId, projection))
+      projection
+    } else {
+      cached._2
+    }
+  }
+
+  private def clearThreadLocalProjection(): Unit = threadLocalProjection.remove()
   
   @transient private lazy val evaluationFunction: (Iterator[InternalRow], Int) => GpuColumnVector =
     createEvaluationFunction()
@@ -357,6 +363,7 @@ case class GpuCpuBridgeExpression(
           }
         }
       } finally {
+        clearThreadLocalProjection()
         spillableInputRef.close()
       }
     }
@@ -494,7 +501,7 @@ case class GpuCpuBridgeExpression(
       withResource(new RapidsHostColumnBuilder(resultType, numRows)) { builder =>
         // Get thread-local projection - each thread has its own to avoid memory conflicts
         // but the projection is reused across batches within the same thread for performance
-        val projection = threadLocalProjection.get()
+        val projection = getThreadLocalProjection()
         
         // Stream through the iterator without caching - preserves memory efficiency
         projection.apply(rowIterator, Array(builder))

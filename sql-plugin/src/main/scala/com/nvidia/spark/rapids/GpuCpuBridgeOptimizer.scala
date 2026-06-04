@@ -572,8 +572,8 @@ object GpuCpuBridgeOptimizer extends Logging {
   private def flattenBridgeInputs(
       inputs: Seq[Expression]): (Seq[Expression], Map[Int, InputMapping]) = {
     
-    // Use memoization to avoid redundant flattening of the same bridge
-    val flattenCache = scala.collection.mutable.Map[GpuCpuBridgeExpression, 
+    // Use identity-based memoization to avoid structural hash/equals walks of nested bridges.
+    val flattenCache = new java.util.IdentityHashMap[GpuCpuBridgeExpression,
       (Seq[Expression], Map[Int, InputMapping])]()
     
     def flattenWithCache(inputs: Seq[Expression]): (Seq[Expression], Map[Int, InputMapping]) = {
@@ -584,9 +584,14 @@ object GpuCpuBridgeOptimizer extends Logging {
       input match {
         case bridge: GpuCpuBridgeExpression =>
             // Check cache first to avoid redundant work
-            val (nestedInputs, _) = flattenCache.getOrElseUpdate(bridge, {
-              flattenWithCache(bridge.gpuInputs)
-            })
+            val cached = flattenCache.get(bridge)
+            val (nestedInputs, _) = if (cached != null) {
+              cached
+            } else {
+              val flattened = flattenWithCache(bridge.gpuInputs)
+              flattenCache.put(bridge, flattened)
+              flattened
+            }
             
           val startIndex = flattenedInputs.length
           flattenedInputs ++= nestedInputs
