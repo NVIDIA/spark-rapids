@@ -229,6 +229,10 @@ trait GpuPartitioning extends Partitioning {
 
     NvtxRegistry.GPU_KUDO_SLICE_BUFFERS {
       withResource(Seq(dataHost, offsetsHost)) { _ =>
+        require(dataHost.getLength <= Int.MaxValue,
+          s"GPU-serialized shuffle batch is ${dataHost.getLength} bytes, exceeding the " +
+          s"${Int.MaxValue}-byte (2GB) limit addressable by the Int serialized-slice offsets; " +
+          s"reduce spark.rapids.sql.batchSizeBytes")
         val numSlices = numPartitions + 1
         val elemSize = offsetsHost.getLength / numSlices
 
