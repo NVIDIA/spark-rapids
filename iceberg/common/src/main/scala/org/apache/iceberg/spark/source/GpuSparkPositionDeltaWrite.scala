@@ -186,6 +186,12 @@ object GpuSparkPositionDeltaWrite {
       Option(context.deleteFileFormat),
       partitionSpec,
       meta)
+
+    // Merge-on-read writes both data files and position-delete files, so the resolved
+    // delete codec matters too.
+    val writeProps = FieldUtils.readField(deltaWrite, "writeProperties", true)
+      .asInstanceOf[java.util.Map[String, String]]
+    GpuSparkWrite.tagParquetCompressionForGpu(writeProps, hasDeleteFiles = true, meta)
   }
 
   def convert(deltaWrite: DeltaWrite): GpuSparkPositionDeltaWrite = {

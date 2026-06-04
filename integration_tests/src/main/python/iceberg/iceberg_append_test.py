@@ -16,12 +16,13 @@ from typing import Callable, Any
 import pytest
 
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
-from conftest import is_iceberg_remote_catalog, spark_jvm
+from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import create_iceberg_table, \
     iceberg_base_table_cols, iceberg_gens_list, get_full_table_name, \
     iceberg_full_gens_list, \
-    iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops
+    iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops, \
+    assert_iceberg_files_use_codec
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session
 
@@ -444,23 +445,6 @@ def test_insert_into_partitioned_table_fanout_enabled(spark_tmp_table_factory):
         table_prop={"format-version": "2", "write.spark.fanout.enabled": "true"})
 
 
-def _read_parquet_codec(spark, path):
-    # Opens the Parquet footer of `path` and returns the codec name of the first
-    # column of the first row group (uppercase, e.g. "ZSTD", "GZIP").
-    jvm = spark_jvm()
-    hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
-    hadoop_path = jvm.org.apache.hadoop.fs.Path(path)
-    reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(hadoop_conf, hadoop_path)
-    try:
-        blocks = reader.getFooter().getBlocks()
-        assert blocks.size() > 0, f"Parquet file {path} has no row groups"
-        cols = blocks.get(0).getColumns()
-        assert cols.size() > 0, f"Row group 0 in {path} has no column chunks"
-        return cols.get(0).getCodec().name()
-    finally:
-        reader.close()
-
-
 # Regression for https://github.com/NVIDIA/spark-rapids/issues/14905 — the GPU writer
 # must honor Iceberg's resolved codec (`write.parquet.compression-codec`, default zstd)
 # and ignore `spark.sql.parquet.compression.codec`, matching CPU Iceberg behavior.
@@ -507,14 +491,29 @@ def test_insert_into_table_honors_iceberg_compression_codec(
             f"INSERT INTO {table_name} SELECT id, CAST(id AS STRING) FROM range(20000)").collect(),
         conf=conf)
 
-    def check_codecs(spark):
-        file_rows = spark.sql(f"SELECT file_path FROM {table_name}.files").collect()
-        assert len(file_rows) > 0, "no data files were written"
-        # Parquet's footer reports UNCOMPRESSED for the "uncompressed" Iceberg codec.
-        expected_footer = expected_codec.upper()
-        for row in file_rows:
-            actual = _read_parquet_codec(spark, row.file_path)
-            assert actual == expected_footer, \
-                f"expected codec {expected_footer} but file {row.file_path} used {actual}"
+    with_cpu_session(
+        lambda spark: assert_iceberg_files_use_codec(spark, table_name, expected_codec))
 
-    with_cpu_session(check_codecs)
+
+# cuDF's Parquet writer only supports uncompressed/snappy/zstd. A table whose Iceberg-resolved
+# codec is something else (e.g. gzip, a valid Iceberg codec) must fall back to the CPU at plan
+# time rather than reaching prepareWrite and failing at execution. Regression for #14905.
+@iceberg
+@ignore_order(local=True)
+@allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
+@pytest.mark.parametrize("codec", ["gzip", "lz4"])
+def test_insert_into_table_falls_back_on_unsupported_codec(spark_tmp_table_factory, codec):
+    table_name = get_full_table_name(spark_tmp_table_factory)
+    create_iceberg_table(
+        table_name,
+        table_prop={"format-version": "2", "write.parquet.compression-codec": codec})
+
+    def insert_data(spark):
+        df = gen_df(spark, list(zip(iceberg_base_table_cols, iceberg_gens_list)))
+        view_name = spark_tmp_table_factory.get()
+        df.createOrReplaceTempView(view_name)
+        return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
+
+    assert_gpu_fallback_collect(insert_data, "AppendDataExec", conf=iceberg_write_enabled_conf)
+

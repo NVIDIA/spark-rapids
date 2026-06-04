@@ -19,8 +19,7 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_nested_write_gens_list,
-                     iceberg_unsupported_mark, _build_tblprops)
-from iceberg.iceberg_append_test import _read_parquet_codec
+                     iceberg_unsupported_mark, _build_tblprops, assert_iceberg_files_use_codec)
 from marks import allow_non_gpu, allow_non_gpu_conditional, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_400_or_later, with_cpu_session, with_gpu_session
 
@@ -555,14 +554,6 @@ def test_mor_delete_honors_iceberg_compression_codec(
         lambda spark: spark.sql(f"DELETE FROM {table_name} WHERE id % 3 = 0").collect(),
         conf=conf)
 
-    def check_codecs(spark):
-        delete_rows = spark.sql(
-            f"SELECT file_path FROM {table_name}.delete_files").collect()
-        assert len(delete_rows) > 0, "no position-delete files were written"
-        expected_footer = expected_codec.upper()
-        for row in delete_rows:
-            actual = _read_parquet_codec(spark, row.file_path)
-            assert actual == expected_footer, \
-                f"expected codec {expected_footer} but file {row.file_path} used {actual}"
-
-    with_cpu_session(check_codecs)
+    with_cpu_session(
+        lambda spark: assert_iceberg_files_use_codec(
+            spark, table_name, expected_codec, files_table="delete_files"))

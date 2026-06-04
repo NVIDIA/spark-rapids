@@ -24,6 +24,7 @@ from pyspark.sql.types import FloatType, DoubleType, BinaryType
 
 import pytest
 
+from conftest import spark_jvm
 from data_gen import *
 from spark_session import is_iceberg_supported_spark, with_cpu_session
 
@@ -205,6 +206,36 @@ def _build_tblprops(extra_props: Optional[Dict[str, str]] = None) -> Dict[str, s
 # SQL fragment for raw CREATE TABLE statements that have no other TBLPROPERTIES.
 _BASE_TBLPROPS_SQL = "TBLPROPERTIES (" + \
     ", ".join(f"'{k}' = '{v}'" for k, v in _build_tblprops().items()) + ")"
+
+
+def read_parquet_codec(spark: SparkSession, path: str) -> str:
+    """Open the Parquet footer of `path` and return the codec name of the first column of
+    the first row group (uppercase, e.g. "ZSTD", "UNCOMPRESSED")."""
+    jvm = spark_jvm()
+    hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+    hadoop_path = jvm.org.apache.hadoop.fs.Path(path)
+    reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(hadoop_conf, hadoop_path)
+    try:
+        blocks = reader.getFooter().getBlocks()
+        assert blocks.size() > 0, f"Parquet file {path} has no row groups"
+        cols = blocks.get(0).getColumns()
+        assert cols.size() > 0, f"Row group 0 in {path} has no column chunks"
+        return cols.get(0).getCodec().name()
+    finally:
+        reader.close()
+
+
+def assert_iceberg_files_use_codec(spark: SparkSession, table_name: str, expected_codec: str,
+                                   files_table: str = "files") -> None:
+    """Assert every Parquet file listed in `{table_name}.{files_table}` uses `expected_codec`.
+    Parquet reports the "uncompressed" Iceberg codec as "UNCOMPRESSED" in the footer."""
+    file_rows = spark.sql(f"SELECT file_path FROM {table_name}.{files_table}").collect()
+    assert len(file_rows) > 0, f"no files found in {table_name}.{files_table}"
+    expected_footer = expected_codec.upper()
+    for row in file_rows:
+        actual = read_parquet_codec(spark, row.file_path)
+        assert actual == expected_footer, \
+            f"expected codec {expected_footer} but file {row.file_path} used {actual}"
 
 
 def create_iceberg_table(table_name: str,
