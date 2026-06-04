@@ -382,16 +382,13 @@ case class GpuCpuBridgeExpression(
     if (subBatchResults.length == 1) {
       subBatchResults.head
     } else {
-      try {
+      withResource(subBatchResults) { ownedResults =>
         // Convert to cuDF columns for concatenation
-        val cudfColumns = subBatchResults.map(_.getBase)
+        val cudfColumns = ownedResults.map(_.getBase)
         val concatenated = ai.rapids.cudf.ColumnVector.concatenate(cudfColumns: _*)
         closeOnExcept(concatenated) { concat =>
           GpuColumnVector.from(concat, dataType)
         }
-      } finally {
-        // Clean up sub-batch results
-        subBatchResults.safeClose()
       }
     }
   }

@@ -1500,25 +1500,25 @@ abstract class BaseExprMeta[INPUT <: Expression](
     
     true
   }
-  
+
   /**
    * Checks if the presence of this expression in a tree should prevent ALL bridge
-   * optimization for the entire plan node. 
-   * 
+   * optimization for the entire plan node.
+   *
    * @return true if this expression prevents all bridge optimization in the tree
    */
   def preventsTreeBridgeOptimization: Boolean = false
-  
+
   /**
    * Checks if this expression tree contains any expression that prevents bridge optimization.
    * Used by the optimizer to determine if bridge optimization should be skipped entirely.
-   * 
+   *
    * @return true if this expression or any child prevents bridge optimization
    */
   final def containsExpressionThatPreventsBridge: Boolean = {
     preventsTreeBridgeOptimization || childExprs.exists(_.containsExpressionThatPreventsBridge)
   }
-  
+
   /**
    * Is this particular class allowed to run under the GpuCpuBridge (according to the
    * configs)
@@ -1547,13 +1547,13 @@ abstract class BaseExprMeta[INPUT <: Expression](
     // and removing the bridge optimization reason
     if (willUseGpuCpuBridge) {
       // Move non-optimization reasons back to cannotBeReplacedReasons
-      val nonOptimizationReasons = 
+      val nonOptimizationReasons =
         willRunViaCpuBridgeReasons.get.filterNot(_ == BRIDGE_OPTIMIZATION_REASON)
       cannotBeReplacedReasons.get ++= nonOptimizationReasons
-      
+
       // Clear bridge reasons
       willRunViaCpuBridgeReasons.get.clear()
-      
+
       // Apply to children recursively
       childExprs.foreach(_.undoBridgeOptimization())
     }

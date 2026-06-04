@@ -692,13 +692,11 @@ class GpuTransitionOverrides extends Rule[SparkPlan] {
       errorMessage.append(s"GpuCpuBridgeExpression contains disallowed CPU expressions:\n")
       errorMessage.append(s"Bridge: ${bridge.toString}\n")
       errorMessage.append(s"CPU Expression Tree Analysis:\n")
-      
+
       // Show disallowed expressions first
-      if (disallowedExprs.nonEmpty) {
-        errorMessage.append("  DISALLOWED EXPRESSIONS:\n")
-        disallowedExprs.foreach(expr => errorMessage.append(s"    - $expr\n"))
-      }
-      
+      errorMessage.append("  DISALLOWED EXPRESSIONS:\n")
+      disallowedExprs.foreach(expr => errorMessage.append(s"    - $expr\n"))
+
       // Show allowed expressions for context
       if (allowedExprs.nonEmpty) {
         errorMessage.append("  ALLOWED EXPRESSIONS (for context):\n")
