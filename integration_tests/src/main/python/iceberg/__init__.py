@@ -119,9 +119,10 @@ overwrite_dynamic_partition_transforms = [
 ]
 
 # Each list pairs (partition_col_sql, <mode>). Always used together as
-# `@pytest.mark.parametrize("partition_col_sql,<mode_arg>", <list>)` so the
-# parametrize-string order matches the tuple order and the function-signature
-# order (`partition_col_sql` first, then the mode arg). Keep them in lockstep.
+# `@pytest.mark.parametrize("partition_col_sql,<mode_arg>", <list>)`, so the
+# tuple order must match the order of names in the parametrize arg string
+# (`partition_col_sql` first, then the mode arg). Pytest binds parameters to the
+# test function by name, so the function-signature order does not matter.
 #
 # Each list is just two cases (one per mode, exercising one transform family):
 # the 26-transform partition-writer matrix lives in the append anchor

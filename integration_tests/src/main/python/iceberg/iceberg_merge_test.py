@@ -183,7 +183,10 @@ def test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode):
 @pytest.mark.parametrize("partition_col_sql,merge_mode", merge_partition_transforms_distributed)
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_iceberg_merge_full_coverage(spark_tmp_table_factory, partition_col_sql, merge_mode):
-    """Full partition coverage test - skipped for remote catalogs."""
+    """Sanity-check MERGE across the two write modes against partition transforms
+    distinct from those picked by other DML ops. The 26-transform partition-writer
+    coverage anchor lives in
+    iceberg_append_test.py::test_insert_into_partitioned_table_full_coverage."""
     _do_test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode)
 
 
