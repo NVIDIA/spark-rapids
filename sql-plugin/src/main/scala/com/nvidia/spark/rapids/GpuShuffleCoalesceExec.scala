@@ -306,6 +306,19 @@ sealed trait SerializedTableOperator[T <: AutoCloseable, R] {
   def getNumRows(table: T): Int
 
   def concat(tables: Array[T]): R
+
+  /**
+   * Sum the per-table row counts as `Long` so the accumulation cannot wrap, and
+   * fail fast if the total exceeds the `Int` row-count limit of the downstream
+   * batch metadata rather than silently propagating a wrapped (possibly
+   * negative) count.
+   */
+  final def totalNumRows(tables: Array[T]): Int = {
+    val total = tables.foldLeft(0L)((acc, t) => acc + getNumRows(t).toLong)
+    require(total <= Int.MaxValue,
+      s"coalesced row count $total exceeds Int.MaxValue")
+    total.toInt
+  }
 }
 
 class JCudfCoalescedHostResult(hostConcatResult: HostConcatResult) extends CoalescedHostResult {
@@ -329,7 +342,7 @@ class JCudfTableOperator
     assert(tables.nonEmpty, "no tables to be concatenated")
     val numCols = tables.head.header.getNumColumns
     val ret = if (numCols == 0) {
-      val totalRowsNum = tables.map(getNumRows).sum
+      val totalRowsNum = totalNumRows(tables)
       cudf_utils.HostConcatResultUtil.rowsOnlyHostConcatResult(totalRowsNum)
     } else {
       val (headers, buffers) = tables.map(t => (t.header, t.hostBuffer)).unzip
@@ -378,7 +391,7 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
     require(columns.nonEmpty, "no tables to be concatenated")
     val numCols = columns.head.spillableKudoTable.header.getNumColumns
     if (numCols == 0) {
-      val totalRowsNum = columns.map(getNumRows).sum
+      val totalRowsNum = totalNumRows(columns)
       RowCountOnlyMergeResult(totalRowsNum)
     } else {
       // "lock" all input tables in memory before merge
@@ -406,7 +419,7 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
     require(columns.nonEmpty, "no tables to be concatenated")
     val numCols = columns.head.spillableKudoTable.header.getNumColumns
     if (numCols == 0) {
-      val totalRowsNum = columns.map(getNumRows).sum
+      val totalRowsNum = totalNumRows(columns)
       new ColumnarBatch(Array.empty, totalRowsNum)
     } else {
       withResource(columns.safeMap(_.spillableKudoTable.makeKudoTable)) { kudoTables =>

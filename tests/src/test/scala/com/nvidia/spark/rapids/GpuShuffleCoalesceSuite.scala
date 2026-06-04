@@ -16,10 +16,11 @@
 
 package com.nvidia.spark.rapids
 
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream}
 import java.math.RoundingMode
 
-import ai.rapids.cudf.{ColumnVector, Cuda, DType, Table}
-import com.nvidia.spark.rapids.Arm.withResource
+import ai.rapids.cudf.{ColumnVector, Cuda, DType, HostMemoryBuffer, JCudfSerialization, Table}
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.jni.kudo.DumpOption
 import org.scalatest.BeforeAndAfterEach
@@ -267,6 +268,54 @@ class GpuShuffleCoalesceSuite extends AnyFunSuite with BeforeAndAfterEach {
       targetBatchSize = 100000,
       minSplitSize = Some(1L),
       forceSplitRetry = true)
+  }
+
+  /**
+   * Build a rows-only (zero-column) SerializedTableColumn carrying `numRows`.
+   * `writeRowsToStream` serializes only header metadata, so a row count near
+   * Int.MaxValue costs nothing to construct (no per-row allocation).
+   */
+  private def rowsOnlySerializedColumn(numRows: Int): SerializedTableColumn = {
+    val outStream = new ByteArrayOutputStream()
+    JCudfSerialization.writeRowsToStream(outStream, numRows)
+    val dIn = new DataInputStream(new ByteArrayInputStream(outStream.toByteArray))
+    val header = new JCudfSerialization.SerializedTableHeader(dIn)
+    closeOnExcept(HostMemoryBuffer.allocate(header.getDataLen, false)) { hostBuffer =>
+      JCudfSerialization.readTableIntoBuffer(dIn, header, hostBuffer)
+      new SerializedTableColumn(header, hostBuffer)
+    }
+  }
+
+  test("issue-14962: concat row-count sum widens to Long and fails fast past Int.MaxValue") {
+    val op = new JCudfTableOperator
+    // Two rows-only tables whose Int sum overflows: Int.MaxValue + a positive
+    // count wraps to a negative number under the old `.map(getNumRows).sum`.
+    withResource(rowsOnlySerializedColumn(Int.MaxValue)) { big =>
+      withResource(rowsOnlySerializedColumn(100)) { small =>
+        val tables = Array(big, small)
+
+        // RED witness: the previous Int accumulation silently wraps negative.
+        val oldIntSum = tables.map(t => t.header.getNumRows).sum
+        assert(oldIntSum < 0,
+          s"expected the old Int sum to wrap negative, got $oldIntSum")
+        assert(oldIntSum.toLong != Int.MaxValue.toLong + 100L,
+          "old Int sum should not equal the true Long total")
+
+        // GREEN: totalNumRows sums in Long and fails fast instead of wrapping.
+        val ex = intercept[IllegalArgumentException] {
+          op.totalNumRows(tables)
+        }
+        assert(ex.getMessage.contains("exceeds Int.MaxValue"),
+          s"unexpected message: ${ex.getMessage}")
+
+        // Parity: an in-range total is returned unchanged (no spurious throw).
+        withResource(rowsOnlySerializedColumn(7)) { a =>
+          withResource(rowsOnlySerializedColumn(35)) { b =>
+            assertResult(42)(op.totalNumRows(Array(a, b)))
+          }
+        }
+      }
+    }
   }
 
 }
