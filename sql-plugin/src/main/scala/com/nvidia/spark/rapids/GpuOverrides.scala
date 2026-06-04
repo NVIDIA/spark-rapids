@@ -5095,15 +5095,15 @@ case class GpuOverrides() extends Rule[SparkPlan] with Logging {
         val foundExprs = project.expressions.flatMap { e =>
           PlanUtils.findExpressions(e, {
             case udf: ScalaUDF =>
-              val functionClassName = Option(udf.function.getClass.getCanonicalName)
-              functionClassName.exists { name =>
-                val contains = name.contains("tahoe.Snapshot")
-                if (contains) {
-                  logDebug(s"Found ScalaUDF with tahoe.Snapshot: $udf," +
-                    s" function class name is: $name")
-                }
-                contains
+              val functionClass = udf.function.getClass
+              val functionClassName = Option(functionClass.getCanonicalName)
+                .getOrElse(functionClass.getName)
+              val contains = functionClassName.contains("tahoe.Snapshot")
+              if (contains) {
+                logDebug(s"Found ScalaUDF with tahoe.Snapshot: $udf," +
+                  s" function class name is: $functionClassName")
               }
+              contains
             case _ => false
           })
         }
