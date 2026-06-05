@@ -126,10 +126,14 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
           case aqe: AdaptiveSparkPlanExec => aqe.executedPlan
         }
         val planForUi = this.withNewChildren(Seq(finalChildPlan))
+        // Redact the plan description with the configured pattern, mirroring Spark's
+        // explain / AQE update path, so sensitive strings (e.g. credentials in options)
+        // are not written to the SQL UI / History Server event log.
+        val planDescription = Utils.redact(conf.stringRedactionPattern, planForUi.toString)
         TrampolineUtil.postEvent(sparkContext,
           SparkListenerSQLAdaptiveExecutionUpdate(
             executionIdStr.toLong,
-            planForUi.toString,
+            planDescription,
             SparkPlanInfo.fromSparkPlan(planForUi)))
       } catch {
         case NonFatal(e) =>
