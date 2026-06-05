@@ -163,6 +163,18 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
   }
 
   override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
+    def pruneMetadataProject(
+        project: GpuProjectExec,
+        scan: GpuFileSourceScanExec): SparkPlan = {
+      project.copy(projectList = project.projectList.filterNot(_.name == "_metadata"))
+        .withNewChildren(Seq(
+          scan.copy(
+            originalOutput = scan.originalOutput.filterNot(_.name == "_tmp_metadata_row_index"),
+            requiredSchema = StructType(
+              scan.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
+            ))(scan.rapidsConf)))
+    }
+
     plan match {
       // This logic is a special case of eliminating of unused columns.
       //
@@ -186,30 +198,20 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
           inputList.exists(_.name == "_metadata") =>
         dvRoot.withNewChildren(Seq(
           dvFilter.withNewChildren(Seq(
-            dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
-              .withNewChildren(Seq(
-                fsse.copy(
-                  originalOutput =
-                    fsse.originalOutput.filterNot(_.name == "_tmp_metadata_row_index"),
-                  requiredSchema = StructType(
-                    fsse.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
-                  ))(fsse.rapidsConf)))))))
+            pruneMetadataProject(dvFilterInput, fsse)))))
       case dvRoot @ GpuProjectExec(outputList,
+      rowToCol @ RowToColumnarExec(
       dvFilter @ FilterExec(condition,
-      dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
+      colToRow @ ColumnarToRowExec(
+      dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)))), _)
         if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
           !outputList.flatMap(_.references).exists(_.name == "_metadata") &&
           inputList.exists(_.name == "_metadata") =>
         dvRoot.withNewChildren(Seq(
-          dvFilter.withNewChildren(Seq(
-            dvFilterInput.copy(projectList = inputList.filterNot(_.name == "_metadata"))
-              .withNewChildren(Seq(
-                fsse.copy(
-                  originalOutput =
-                    fsse.originalOutput.filterNot(_.name == "_tmp_metadata_row_index"),
-                  requiredSchema = StructType(
-                    fsse.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
-                  ))(fsse.rapidsConf)))))))
+          rowToCol.withNewChildren(Seq(
+            dvFilter.withNewChildren(Seq(
+              colToRow.withNewChildren(Seq(
+                pruneMetadataProject(dvFilterInput, fsse)))))))))
       case _ =>
         plan.withNewChildren(plan.children.map(pruneFileMetadata))
     }
