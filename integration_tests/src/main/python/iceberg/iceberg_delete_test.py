@@ -156,38 +156,13 @@ def test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=DELETE_TEST_SEED, reason=DELETE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("partition_col_sql", [
-    pytest.param("year(_c8)", id="year(date_col)"),
-    pytest.param("month(_c8)", id="month(date_col)"),
-    pytest.param("day(_c8)", id="day(date_col)"),
-    pytest.param("month(_c9)", id="month(timestamp_col)"),
-    pytest.param("day(_c9)", id="day(timestamp_col)"),
-    pytest.param("hour(_c9)", id="hour(timestamp_col)"),
-    pytest.param("truncate(10, _c2)", id="truncate(10, int_col)"),
-    pytest.param("truncate(10, _c3)", id="truncate(10, long_col)"),
-    pytest.param("truncate(5, _c6)", id="truncate(5, string_col)"),
-    pytest.param("truncate(10, _c13)", id="truncate(10, decimal32_col)"),
-    pytest.param("truncate(10, _c14)", id="truncate(10, decimal64_col)"),
-    pytest.param("truncate(10, _c15)", id="truncate(10, decimal128_col)"),
-    pytest.param("bucket(16, _c2)", id="bucket(16, int_col)"),
-    pytest.param("bucket(16, _c3)", id="bucket(16, long_col)"),
-    pytest.param("bucket(16, _c8)", id="bucket(16, date_col)"),
-    pytest.param("bucket(16, _c9)", id="bucket(16, timestamp_col)"),
-    pytest.param("bucket(16, _c6)", id="bucket(16, string_col)"),
-    pytest.param("bucket(16, _c13)", id="bucket(16, decimal32_col)"),
-    pytest.param("bucket(16, _c14)", id="bucket(16, decimal64_col)"),
-    pytest.param("bucket(16, _c15)", id="bucket(16, decimal128_col)"),
-    pytest.param("_c0", id="identity(byte)"),
-    pytest.param("_c2", id="identity(int)"),
-    pytest.param("_c3", id="identity(long)"),
-    pytest.param("_c6", id="identity(string)"),
-    pytest.param("_c8", id="identity(date)"),
-    pytest.param("_c10", id="identity(decimal)"),
-])
-@pytest.mark.parametrize('delete_mode', ['copy-on-write', 'merge-on-read'])
+@pytest.mark.parametrize("partition_col_sql,delete_mode", delete_partition_transforms_distributed)
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 def test_iceberg_delete_partitioned_table_full_coverage(spark_tmp_table_factory, partition_col_sql, delete_mode):
-    """Full partition coverage test - skipped for remote catalogs."""
+    """Sanity-check DELETE across the two write modes against partition transforms
+    distinct from those picked by other DML ops. The 26-transform partition-writer
+    coverage anchor lives in
+    iceberg_append_test.py::test_insert_into_partitioned_table_full_coverage."""
     _do_test_iceberg_delete_partitioned_table(spark_tmp_table_factory, partition_col_sql, delete_mode)
 
 @iceberg
