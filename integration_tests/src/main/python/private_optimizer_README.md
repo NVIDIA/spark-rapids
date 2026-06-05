@@ -49,13 +49,14 @@ All modules carry `@pytest.mark.private_optimizer`, so the whole area runs with:
      `spark.rapids.sql.private.enabled=true`), merges each positional rule-conf
      dict in order, then applies the optional `extra_conf` (query-shaping confs
      such as broadcast thresholds or AQE toggles).
-   - `assert_rule_fires(fn, on_conf, off_conf, marker, physical=False, float_compare=False)`
+   - `assert_rule_fires(fn, on_conf, off_conf, marker, physical=False)`
      — runs the OFF-CPU vs ON-GPU comparison and the plan-marker check.
    - `require_private_optimizer` — the shared compatibility guard (see below).
 3. **Decorate** the test with `@pytest.mark.private_optimizer` and
-   `@require_private_optimizer`. Add `@approximate_float` (and
-   `float_compare=True`) only when the rule changes floating-point evaluation
-   order.
+   `@require_private_optimizer`. Add `@approximate_float` only when the rule
+   changes floating-point evaluation order — that is enough for floating-point
+   tolerance, since `assert_rule_fires` routes result comparison through
+   `assert_equal_with_local_sort`, whose `get_float_check()` honors it.
 
 ### Choosing the gate conf(s)
 
