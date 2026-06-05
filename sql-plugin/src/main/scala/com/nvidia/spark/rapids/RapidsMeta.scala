@@ -1486,6 +1486,20 @@ abstract class BaseExprMeta[INPUT <: Expression](
     // and corrupt the parent expression tree.
     if (classOf[LambdaVariable].isAssignableFrom(exprClass)) return false
 
+    // convertForGpuCpuBridge rebuilds the CPU expression by positionally replacing the
+    // GPU-convertible children with BoundReferences and calling expr.withNewChildren. That is
+    // only valid when this meta's childExprs correspond one-to-one, in order, with
+    // expr.children. Some metas intentionally override childExprs to drop or reorder children
+    // (e.g. InvokeExprMeta hides the evaluator-literal child of the Invoke that Spark 4.0 uses
+    // for parse_url/to_json). Bridging those would fail with "Incorrect number of children" or
+    // silently rebuild the wrong tree, so let the enclosing node fall back instead.
+    val wrappedChildren = childExprs.map(_.wrapped.asInstanceOf[AnyRef])
+    val exprChildren = expr.children
+    if (wrappedChildren.length != exprChildren.length ||
+        wrappedChildren.zip(exprChildren).exists { case (w, c) => !w.eq(c.asInstanceOf[AnyRef]) }) {
+      return false
+    }
+
     // Filter out expression types that cannot be directly executed on CPU.
     if (classOf[Unevaluable].isAssignableFrom(exprClass) ||
         classOf[AggregateFunction].isAssignableFrom(exprClass) ||

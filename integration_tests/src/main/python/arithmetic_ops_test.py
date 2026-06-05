@@ -1565,7 +1565,7 @@ def test_try_divide_fallback_to_cpu(data_gen):
             "try_divide(a, b) as result"), "Divide")
 
 @pytest.mark.skipif(is_before_spark_400(), reason="try_mod is not supported before Spark 4.0.0")
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('Remainder')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_mod_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(
