@@ -309,6 +309,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
         combinePredicates: (Expression, Expression) => Expression,
         copyFilter: (Expression, SparkPlan) => SparkPlan): Option[SparkPlan] = {
       val conjuncts = splitConjunctivePredicates(condition)
+      // the dv condition should be "IS_ROW_DELETED_COLUMN_NAME == 0"
       val (dvPredicate, otherPredicates) = conjuncts.partition { predicate =>
         predicate.references.size == 1 &&
           predicate.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&

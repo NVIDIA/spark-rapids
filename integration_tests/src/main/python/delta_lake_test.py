@@ -939,19 +939,18 @@ def test_delta_dv_cpu_filter_after_native_scan(spark_tmp_path):
 @allow_non_gpu("FilterExec", "ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_databricks_runtime(),
-                    reason="This regression targets the open-source Delta provider")
 @pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
                     reason="Delta Lake deletion vector support is required")
 @pytest.mark.skipif(is_before_spark_353(),
                     reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
-def test_delta_dv_cpu_filter_after_native_scan_oss(spark_tmp_path):
+def test_delta_dv_cpu_filter_after_gpu_scan(spark_tmp_path):
     data_path = spark_tmp_path + "/DELTA_DATA"
     conf = {
         "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
         "spark.databricks.delta.delete.deletionVectors.persistent": "true",
         "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
         "spark.sql.adaptive.enabled": "false",
+        # Disable IN and INSET to force the FilterExec on CPU.
         "spark.rapids.sql.expression.In": "false",
         "spark.rapids.sql.expression.InSet": "false"
     }
@@ -979,6 +978,7 @@ def test_delta_dv_cpu_filter_after_native_scan_oss(spark_tmp_path):
             assert callback.contains(plan, "org.apache.spark.sql.execution.FilterExec"), \
                 explain_str
             assert "__delta_internal_is_row_deleted" not in explain_str
+            assert "_metadata" not in explain_str
         return df
 
     with_cpu_session(create_delta, conf=conf)
