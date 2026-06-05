@@ -20,7 +20,7 @@ from datetime import date, datetime, timezone
 from dateutil import tz
 from marks import allow_non_gpu, approximate_float, datagen_overrides, disable_ansi_mode, ignore_order, incompat, tz_sensitive_test
 from pyspark.sql.types import *
-from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350, is_databricks143_or_later
+from spark_session import with_cpu_session, is_before_spark_330, is_before_spark_350, is_before_spark_400, is_databricks143_or_later
 import pyspark.sql.functions as f
 from timezones import all_timezones, fixed_offset_timezones, fixed_offset_timezones_iana, variable_offset_timezones, variable_offset_timezones_iana
 
@@ -733,6 +733,80 @@ def test_formats_for_legacy_mode_other_formats_tz_rules():
         '''.format(format, format, format, format, format),
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
+@disable_ansi_mode
+@tz_sensitive_test
+@pytest.mark.parametrize("input_str", [
+    "1999-12-31 11:59:59",
+    "1999-12-31  11:59:59",
+    "1999-12-31   11:59:59",
+    "1999-12-31 \t 11:59:59",
+    "1999-12-31 11: 59: 59",
+], ids=idfn)
+def test_to_timestamp_legacy_multi_whitespace(input_str):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame([(input_str,)], "a string")
+            .select(f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
+# LEGACY SimpleDateFormat skips only space and tab before fields, so a leading space/tab parses but
+# any other leading control byte (\r \f \v \b ...) is NULL on CPU. The GPU outer trim must match
+# and not strip arbitrary control characters.
+@disable_ansi_mode
+@tz_sensitive_test
+@pytest.mark.parametrize("input_str", [
+    " 2024-05-06",
+    "\t2024-05-06",
+    "\r2024-05-06",
+    "\f2024-05-06",
+    "\v2024-05-06",
+    "\b2024-05-06",
+], ids=idfn)
+def test_to_timestamp_legacy_leading_control_chars(input_str):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame([(input_str,)], "a string")
+            .select(f.to_timestamp(f.col("a"), "yyyy-MM-dd")),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
+@disable_ansi_mode
+@tz_sensitive_test
+@pytest.mark.parametrize("parser_policy", ['LEGACY', 'CORRECTED'], ids=idfn)
+def test_to_timestamp_rejects_t_separator(parser_policy):
+    conf = {'spark.sql.legacy.timeParserPolicy': parser_policy}
+    if parser_policy == 'LEGACY':
+        conf['spark.rapids.sql.incompatibleDateFormats.enabled'] = True
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(
+            [("1999-12-31 11:59:59",), ("1999-12-31T11:59:59",)], "a string")
+            .select(f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
+        conf)
+
+@disable_ansi_mode
+@tz_sensitive_test
+def test_to_timestamp_legacy_packed_rejects_t_separator():
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(
+            [("20241231 23:59:58",), ("20241231T23:59:58",)], "a string")
+            .select(f.to_timestamp(f.col("a"), "yyyyMMdd HH:mm:ss")),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
+# Spark 4.0+ defaults timeParserPolicy to CORRECTED, while the plugin's getTimeParserPolicy falls
+# back to EXCEPTION. Both route through the non-legacy parser, so with the policy left UNSET the
+# GPU and CPU must still agree: one ' ' separator only, no leading-whitespace trim ('T', double
+# space, leading control char all NULL).
+@disable_ansi_mode  # ANSI mode is tested separately.
+@tz_sensitive_test
+@pytest.mark.skipif(is_before_spark_400(),
+                    reason="Spark 4.0+ defaults timeParserPolicy to CORRECTED")
+def test_to_timestamp_unset_policy_corrected_default():
+    data = [("2024-05-06 11:59:59",), ("2024-05-06  11:59:59",),
+            ("2024-05-06T11:59:59",), ("\r2024-05-06 11:59:59",)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data, "a string")
+            .select(f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")))
 
 @tz_sensitive_test
 @pytest.mark.parametrize("ansi_enabled", [True, False], ids=['ANSI_ON', 'ANSI_OFF'])

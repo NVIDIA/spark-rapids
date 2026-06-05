@@ -36,7 +36,8 @@ import org.apache.spark.sql.execution.adaptive._
 import org.apache.spark.sql.execution.columnar.InMemoryTableScanExec
 import org.apache.spark.sql.execution.command.{DataWritingCommandExec, ExecutedCommandExec}
 import org.apache.spark.sql.execution.datasources.v2.{DataSourceV2ScanExecBase, DropTableExec, ShowTablesExec}
-import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, Exchange, ReusedExchangeExec, ShuffleExchangeLike}
+import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ENSURE_REQUIREMENTS,
+  Exchange, ReusedExchangeExec, ShuffleExchangeLike}
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, BroadcastNestedLoopJoinExec}
 import org.apache.spark.sql.rapids.{GpuDataSourceScanExec, GpuFileSourceScanExec, GpuShuffleEnv, GpuTaskMetrics}
 import org.apache.spark.sql.rapids.execution.{ExchangeMappingCache, GpuBroadcastExchangeExec, GpuBroadcastExchangeExecBase, GpuBroadcastToRowExec, GpuCustomShuffleReaderExec, GpuHashJoin, GpuShuffleExchangeExecBase, GpuSubqueryBroadcastExec}
@@ -1016,11 +1017,23 @@ object GpuTransitionOverrides {
   val aqeQueryStageExchange = TreeNodeTag[Boolean]("rapids.aqe.queryStageExchange")
 
   def tagAqeQueryStageExchanges(plan: SparkPlan): Unit = {
-    plan.foreach {
-      case exchange: Exchange =>
-        exchange.setTagValue(aqeQueryStageExchange, true)
-      case _ =>
+    def tagPlanAndSubqueries(plan: SparkPlan): Unit = {
+      plan.foreach { node =>
+        node match {
+          case exchange: Exchange =>
+            exchange.setTagValue(aqeQueryStageExchange, true)
+          case reused: ReusedSubqueryExec =>
+            tagPlanAndSubqueries(reused.child)
+          case _ =>
+        }
+        node.expressions.foreach(_.foreach {
+          case subquery: ExecSubqueryExpression =>
+            tagPlanAndSubqueries(subquery.plan)
+          case _ =>
+        })
+      }
     }
+    tagPlanAndSubqueries(plan)
   }
 
   def copyAqeQueryStageExchangeTag(from: SparkPlan, to: SparkPlan): Unit = {
@@ -1029,10 +1042,25 @@ object GpuTransitionOverrides {
     }
   }
 
-  private def canExposeExchangeForAqeStage(
+  private[rapids] def canExposeExchangeForAqeStage(
       exchange: SparkPlan,
       parent: Option[SparkPlan]): Boolean = {
-    parent.isEmpty && exchange.getTagValue(aqeQueryStageExchange).contains(true)
+    parent.isEmpty &&
+        (exchange.getTagValue(aqeQueryStageExchange).contains(true) ||
+            exchangeGeneratedByEnsureRequirements(exchange))
+  }
+
+  // AQE can insert generated shuffles during re-optimization after query-stage prep has
+  // already tagged the original exchanges. A parentless ENSURE_REQUIREMENTS shuffle is a
+  // query-stage root, unlike user repartition exchanges with explicit repartition origins.
+  private def exchangeGeneratedByEnsureRequirements(exchange: SparkPlan): Boolean = exchange match {
+    case shuffle: ShuffleExchangeLike =>
+      // Compare by origin name instead of `==`. Some proprietary Spark distributions define
+      // their own ENSURE_REQUIREMENTS singleton to work around upstream ShuffleOrigin being
+      // sealed. Those instances are not equal to the upstream case object but preserve the
+      // same origin name.
+      shuffle.shuffleOrigin.toString == ENSURE_REQUIREMENTS.toString
+    case _ => false
   }
 
   /**

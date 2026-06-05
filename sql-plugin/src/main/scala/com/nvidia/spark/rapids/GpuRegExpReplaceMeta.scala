@@ -55,7 +55,17 @@ class GpuRegExpReplaceMeta(
           val (pat, repl) =
               new CudfRegexTranspiler(RegexReplaceMode).getTranspiledAST(s.toString, None,
                   replacement)
-          repl.map { r => GpuRegExpUtils.backrefConversion(r.toRegexString) }.foreach {
+          // Use the user's Java pattern group count for the greedy-with-backoff parse so that
+          // user-authored backref tokens (e.g. `$13` on a 12-group pattern) follow Java's
+          // `Matcher.appendReplacement` spec. The transpiler emits internally-generated
+          // backrefs (e.g. the line-anchor rewrite's captured terminator) in braced
+          // `${N}` form, which `backrefConversion` passes through verbatim and which the
+          // user count therefore does not need to cover.
+          val userNumCaptureGroups =
+            java.util.regex.Pattern.compile(s.toString).matcher("").groupCount()
+          repl.map { r =>
+            GpuRegExpUtils.backrefConversion(r.toRegexString, userNumCaptureGroups)
+          }.foreach {
               case (hasBackref, convertedRep) =>
                 containsBackref = hasBackref
                 replacement = Some(GpuRegExpUtils.unescapeReplaceString(convertedRep))
