@@ -19,7 +19,8 @@ from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (create_iceberg_table, get_full_table_name, iceberg_write_enabled_conf,
                      iceberg_base_table_cols, iceberg_gens_list, iceberg_nested_write_gens_list,
-                     iceberg_unsupported_mark, _build_tblprops, assert_iceberg_files_use_codec)
+                     iceberg_unsupported_mark, delete_partition_transforms_distributed,
+                     _build_tblprops, assert_iceberg_files_use_codec)
 from marks import allow_non_gpu, allow_non_gpu_conditional, iceberg, ignore_order, datagen_overrides
 from spark_session import is_spark_400_or_later, with_cpu_session, with_gpu_session
 
