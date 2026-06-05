@@ -32,6 +32,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
+import scala.util.control.NonFatal
+
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar => CudfScalar}
 import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuColumnVector, GpuDeltaWrite, GpuExec, GpuMetric, GpuWrite}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -114,15 +116,26 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
   protected def postFinalPlanUpdateToSqlUi(): Unit = {
     val executionIdStr = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
     if (executionIdStr != null) {
-      val finalChildPlan = finalQuery.transformDown {
-        case aqe: AdaptiveSparkPlanExec => aqe.executedPlan
+      // This is a purely observational UI refresh and is called inside the write's
+      // try/catch that aborts the write on any Throwable. A failure here (e.g. building
+      // SparkPlanInfo for an unusual plan node, or posting while the SparkContext is
+      // stopping) must never abort a write whose tasks have already committed, so log
+      // and swallow non-fatal errors instead of letting them propagate.
+      try {
+        val finalChildPlan = finalQuery.transformDown {
+          case aqe: AdaptiveSparkPlanExec => aqe.executedPlan
+        }
+        val planForUi = this.withNewChildren(Seq(finalChildPlan))
+        TrampolineUtil.postEvent(sparkContext,
+          SparkListenerSQLAdaptiveExecutionUpdate(
+            executionIdStr.toLong,
+            planForUi.toString,
+            SparkPlanInfo.fromSparkPlan(planForUi)))
+      } catch {
+        case NonFatal(e) =>
+          logWarning("Failed to post the final GPU plan to the SQL UI for this V2 " +
+            "write; the write itself is unaffected.", e)
       }
-      val planForUi = this.withNewChildren(Seq(finalChildPlan))
-      TrampolineUtil.postEvent(sparkContext,
-        SparkListenerSQLAdaptiveExecutionUpdate(
-          executionIdStr.toLong,
-          planForUi.toString,
-          SparkPlanInfo.fromSparkPlan(planForUi)))
     }
   }
 
