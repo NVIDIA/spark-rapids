@@ -936,6 +936,55 @@ def test_delta_dv_cpu_filter_after_native_scan(spark_tmp_path):
     assert_gpu_and_cpu_are_equal_collect(read_table, conf=conf)
 
 
+@allow_non_gpu("FilterExec", "ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(),
+                    reason="This regression targets the open-source Delta provider")
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
+def test_delta_dv_cpu_filter_after_native_scan_oss(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.sql.adaptive.enabled": "false",
+        "spark.rapids.sql.expression.In": "false",
+        "spark.rapids.sql.expression.InSet": "false"
+    }
+
+    def create_delta(spark):
+        spark.range(2000).selectExpr(
+            "CAST(id AS INT) AS id",
+            "CAST(id % 7 AS INT) AS b",
+            "CONCAT('p', CAST(id % 4 AS INT)) AS part"
+        ).write.format("delta") \
+            .option("delta.enableDeletionVectors", "true") \
+            .partitionBy("part").save(data_path)
+
+        count = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE id % 5 = 0").collect()[0][0]
+        assert count > 100, "Expected enough rows to be deleted to create deletion vectors"
+
+    def read_table(spark):
+        df = spark.sql(f"SELECT id, b FROM delta.`{data_path}` WHERE b IN (1, 2, 3)")
+        is_gpu = str(spark.conf.get("spark.rapids.sql.enabled", "false")).lower() == "true"
+        if is_gpu:
+            plan = df._jdf.queryExecution().executedPlan()
+            explain_str = str(plan)
+            callback = spark._sc._jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+            assert callback.contains(plan, "GpuFileSourceScanExec"), explain_str
+            assert callback.contains(plan, "org.apache.spark.sql.execution.FilterExec"), \
+                explain_str
+            assert "__delta_internal_is_row_deleted" not in explain_str
+        return df
+
+    with_cpu_session(create_delta, conf=conf)
+    assert_gpu_and_cpu_are_equal_collect(read_table, conf=conf)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
