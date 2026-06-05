@@ -155,7 +155,7 @@ else
         export INCLUDE_SPARK_PROTOBUF_JAR=true
     else
         if [[ "$INCLUDE_SPARK_PROTOBUF_JAR_REQUESTED" == "true" ]]; then
-            >&2 echo "WARNING: INCLUDE_SPARK_PROTOBUF_JAR=true was requested but spark-protobuf/protobuf-java jars were not found under $TARGET_DIR/dependency; disabling protobuf tests."
+            >&2 echo "WARNING: INCLUDE_SPARK_PROTOBUF_JAR=true was requested but spark-protobuf/protobuf-java jars were not found (searched: $PROTOBUF_JARS); disabling protobuf tests."
         fi
         export INCLUDE_SPARK_PROTOBUF_JAR=false
         PROTOBUF_JARS=""
