@@ -291,7 +291,7 @@ def test_unsupported_fallback_locate():
     assert_gpu_did_fallback('locate(a, a, pos)')
     assert_gpu_did_fallback('locate(a, "a", pos)')
 
-# There is no contains function exposed in older versions Spark. You can turn it into a
+# There is no contains function exposed in older versions of Spark. You can turn it into a
 # LIKE %FOO% or we have seen some use instr > 0 to do the same thing.
 # Spark optimizes LIKE to be a contains, we also optimize instr to do
 # something similar.

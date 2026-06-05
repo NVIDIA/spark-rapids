@@ -141,7 +141,8 @@ object GpuCpuBridgeThreadPool extends Logging {
         
         logDebug(s"Estimated cores: $estimatedCores, task CPUs: $taskSlots, max tasks: $maxTasks")
         
-        // Ensure we have at least 1 thread, but cap at a reasonable maximum
+        // Ensure we have at least 1 thread. The upper bound is naturally limited by
+        // maxTasks, which is derived from the estimated cores divided by the CPUs per task.
         Math.max(1, maxTasks)
     }
   }
