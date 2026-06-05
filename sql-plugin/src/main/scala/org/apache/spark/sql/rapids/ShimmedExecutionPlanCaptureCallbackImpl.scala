@@ -145,19 +145,15 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
   }
 
   override def assertDidFallBack(gpuPlans: Array[SparkPlan], fallbackCpuClass: String): Unit = {
-    val executedPlans = gpuPlans.map(extractExecutedPlan)
     // Verify at least one of the plans has the fallback class
-    val found = executedPlans.exists { executedPlan =>
-      executedPlan.find(didFallBack(_, fallbackCpuClass)).isDefined
-    }
-    assert(found, s"Could not find $fallbackCpuClass in the GPU plans:\n" +
-        executedPlans.mkString("\n"))
+    assert(gpuPlans.exists(didFallBack(_, fallbackCpuClass)),
+      s"Could not find $fallbackCpuClass in the GPU plans:\n" +
+          gpuPlans.map(extractExecutedPlan).mkString("\n"))
   }
 
   override def assertDidFallBack(gpuPlan: SparkPlan, fallbackCpuClass: String): Unit = {
-    val executedPlan = extractExecutedPlan(gpuPlan)
-    assert(executedPlan.find(didFallBack(_, fallbackCpuClass)).isDefined,
-      s"Could not find $fallbackCpuClass in the GPU plan\n$executedPlan")
+    assert(didFallBack(gpuPlan, fallbackCpuClass),
+      s"Could not find $fallbackCpuClass in the GPU plan\n${extractExecutedPlan(gpuPlan)}")
   }
 
   override def assertDidFallBack(df: DataFrame, fallbackCpuClass: String): Unit = {
@@ -211,9 +207,11 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
 
   override def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
     val executedPlan = extractExecutedPlan(plan)
-    !executedPlan.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
-        PlanUtils.sameClass(executedPlan, fallbackCpuClass) ||
-        executedPlan.expressions.exists(didFallBack(_, fallbackCpuClass))
+    executedPlan.find { node =>
+      (!node.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
+          PlanUtils.sameClass(node, fallbackCpuClass)) ||
+          node.expressions.exists(didFallBack(_, fallbackCpuClass))
+    }.isDefined
   }
 
   override def contains(gpuPlan: SparkPlan, className: String): Boolean = {

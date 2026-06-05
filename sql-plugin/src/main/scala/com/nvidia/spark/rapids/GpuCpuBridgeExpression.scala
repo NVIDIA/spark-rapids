@@ -183,15 +183,17 @@ case class GpuCpuBridgeExpression(
       // Convert columnar data to rows for CPU expression evaluation
       // Note: ColumnarBatch takes ownership of the columns, so we don't close them separately
       val inputBatch = new ColumnarBatch(gpuInputColumns.toArray, numRows)
-      val rowIterator = new ColumnarToRowIterator(
-        Iterator.single(inputBatch),
-        NoopMetric,
-        NoopMetric,
-        NoopMetric,
-        NoopMetric,
-        nullSafe = false,
-        releaseSemaphore = false
-      )
+      val rowIterator = closeOnExcept(inputBatch) { _ =>
+        new ColumnarToRowIterator(
+          Iterator.single(inputBatch),
+          NoopMetric,
+          NoopMetric,
+          NoopMetric,
+          NoopMetric,
+          nullSafe = false,
+          releaseSemaphore = false
+        )
+      }
 
       withResource(rowIterator) { rowIterator =>
         evaluationFunction(rowIterator.map(makeInputToUnsafe()), numRows)
@@ -324,15 +326,17 @@ case class GpuCpuBridgeExpression(
             new ColumnarBatch(subBatchColumns.toArray, subBatchSize)
           }
           // The iterator takes ownership of the subBatchInput
-          val rowIterator = new ColumnarToRowIterator(
-            Iterator.single(subBatchInput),
-            NoopMetric,
-            NoopMetric,
-            NoopMetric,
-            NoopMetric,
-            nullSafe = false,
-            releaseSemaphore = false
-          )
+          val rowIterator = closeOnExcept(subBatchInput) { _ =>
+            new ColumnarToRowIterator(
+              Iterator.single(subBatchInput),
+              NoopMetric,
+              NoopMetric,
+              NoopMetric,
+              NoopMetric,
+              nullSafe = false,
+              releaseSemaphore = false
+            )
+          }
           withResource(rowIterator) { rowIterator =>
             withResource(new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)) { _ =>
               // Time the actual CPU processing on this thread

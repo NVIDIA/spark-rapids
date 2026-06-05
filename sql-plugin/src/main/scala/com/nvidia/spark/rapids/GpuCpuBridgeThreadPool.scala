@@ -247,7 +247,7 @@ object GpuCpuBridgeThreadPool extends Logging {
     if (!shouldParallelize(numRows)) {
       1
     } else {
-      val poolSize = getThreadPoolSize
+      val poolSize = getThreadPool.getCorePoolSize
       val idealSubBatches = Math.ceil(numRows.toDouble / MIN_ROWS_PER_SUBBATCH).toInt
       Math.min(idealSubBatches, poolSize * 2) // Allow up to 2x pool size for better utilization
     }

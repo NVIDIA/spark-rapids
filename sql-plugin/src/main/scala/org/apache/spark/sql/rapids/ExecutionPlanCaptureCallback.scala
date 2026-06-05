@@ -44,6 +44,8 @@ trait ExecutionPlanCaptureCallbackBase {
       timeoutMs: Long): Unit
   def assertCapturedAndGpuFellBack(fallbackCpuClass: String, timeoutMs: Long = 2000): Unit
   def assertSchemataMatch(cpuDf: DataFrame, gpuDf: DataFrame, expectedSchema: String): Unit
+  /** Returns true if any node in the plan tree fell back to the named CPU class, including
+   * CPU expressions wrapped inside a GpuCpuBridgeExpression. */
   def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean
   def contains(gpuPlan: SparkPlan, className: String): Boolean
 }
