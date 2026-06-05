@@ -206,12 +206,19 @@ class ShimmedExecutionPlanCaptureCallbackImpl extends ExecutionPlanCaptureCallba
   }
 
   override def didFallBack(plan: SparkPlan, fallbackCpuClass: String): Boolean = {
-    val executedPlan = extractExecutedPlan(plan)
-    executedPlan.find { node =>
-      (!node.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
-          PlanUtils.sameClass(node, fallbackCpuClass)) ||
-          node.expressions.exists(didFallBack(_, fallbackCpuClass))
-    }.isDefined
+    // Recurse through AQE wrappers explicitly. extractExecutedPlan only unwraps a single
+    // node, and AdaptiveSparkPlanExec/QueryStageExec are leaves for tree traversal, so a
+    // plain SparkPlan.find cannot descend into the plan they wrap (e.g. a Databricks Delta
+    // write command nested inside a ResultQueryStageExec).
+    extractExecutedPlan(plan) match {
+      case p: AdaptiveSparkPlanExec => didFallBack(p.executedPlan, fallbackCpuClass)
+      case p: QueryStageExec => didFallBack(p.plan, fallbackCpuClass)
+      case node =>
+        (!node.getClass.getCanonicalName.equals("com.nvidia.spark.rapids.GpuExec") &&
+            PlanUtils.sameClass(node, fallbackCpuClass)) ||
+            node.expressions.exists(didFallBack(_, fallbackCpuClass)) ||
+            node.children.exists(didFallBack(_, fallbackCpuClass))
+    }
   }
 
   override def contains(gpuPlan: SparkPlan, className: String): Boolean = {
