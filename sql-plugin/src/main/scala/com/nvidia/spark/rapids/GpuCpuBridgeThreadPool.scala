@@ -53,10 +53,9 @@ case class PrioritizedCpuBridgeTask[T](
   
   override def call(): T = {
     if (taskContext != null) {
-      // Install the task's TaskContext and register this pool thread with the retry framework so
-      // GPU work here is attributed to the owning task (as the async scan readers do). Uses the
-      // pool-thread API, not currentThreadIsDedicatedToTask, since many pool threads may serve
-      // one task concurrently.
+      // Install the task's TaskContext and attribute GPU work here to the owning task. This is
+      // not a retry boundary; retryable failures should propagate to the caller instead of
+      // blocking shared pool threads.
       TrampolineUtil.setTaskContext(taskContext)
       RmmSpark.poolThreadWorkingOnTask(taskContext.taskAttemptId())
       try {

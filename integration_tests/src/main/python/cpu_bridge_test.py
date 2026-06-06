@@ -20,7 +20,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are
 from marks import allow_non_gpu
 from data_gen import *
 from marks import ignore_order
-from spark_session import is_before_spark_330, is_databricks_runtime, with_cpu_session
+from spark_session import is_before_spark_330, is_databricks_runtime, is_spark_341_or_later, with_cpu_session
 
 
 # Helper function to create config that forces specific expressions to CPU bridge
@@ -73,6 +73,40 @@ def test_cpu_bridge_multiply_fallback():
     # Force Multiply to fall back to CPU bridge
     conf = create_cpu_bridge_fallback_conf(['Multiply'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(not is_spark_341_or_later(),
+                    reason='TimestampNTZType is only supported in PySpark 3.4.1+')
+def test_cpu_bridge_timestamp_ntz_output_falls_back():
+    """ProjectExec should fall back instead of bridging TimestampNTZ output."""
+    def test_func(spark):
+        seconds = "lpad(cast(id % 60 as string), 2, '0')"
+        return spark.range(1024).selectExpr(
+            f"cast(concat('2021-01-01 00:00:', {seconds}) as timestamp_ntz) as ts_ntz")
+
+    conf = create_cpu_bridge_fallback_conf(['Cast'])
+    assert_gpu_fallback_collect(test_func, 'ProjectExec', conf=conf)
+
+
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(not is_spark_341_or_later(),
+                    reason='TimestampNTZType is only supported in PySpark 3.4.1+')
+def test_cpu_bridge_timestamp_ntz_input_falls_back():
+    """ProjectExec should fall back instead of bridging TimestampNTZ input."""
+    def test_func(spark):
+        from datetime import datetime
+        from pyspark.sql.types import StructField, StructType, TimestampNTZType
+
+        schema = StructType([StructField('ts_ntz', TimestampNTZType(), True)])
+        df = spark.createDataFrame([
+            (datetime(2021, 1, 1, 0, 0, 0),),
+            (datetime(2021, 1, 1, 0, 0, 1, 123456),),
+            (None,)
+        ], schema)
+        return df.selectExpr("cast(ts_ntz as string) as ts_string")
+
+    conf = create_cpu_bridge_fallback_conf(['Cast'])
+    assert_gpu_fallback_collect(test_func, 'ProjectExec', conf=conf)
 
 @allow_non_gpu('Add', 'Multiply', 'CaseWhen', 'GreaterThan')
 def test_cpu_bridge_complex_expression_tree():

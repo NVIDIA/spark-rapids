@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.ShimExpression
 import java.util.concurrent.{Callable, CancellationException, Future, TimeoutException, TimeUnit}
 import java.util.concurrent.atomic.{AtomicBoolean, LongAdder}
@@ -309,61 +308,59 @@ case class GpuCpuBridgeExpression(
     override def call(): SpillableColumnarBatch = {
       val subBatchSize = endRow - startRow
 
-      // spillableInputBatch is what we are going to retry around, but its life cycle is
-      // controlled by the main task thread and shared between multiple threads in this pool.
-      // So we will not try and close it, nor try and split it as a part of the retry.
+      // Retry is owned by the operator evaluating this expression. Do not add a retry boundary
+      // inside these workers, because blocking shared pool threads can prevent higher-priority
+      // bridge work from starting. Retryable failures must propagate to the owning task thread.
       try {
-        withRetryNoSplit {
-          throwIfAborted()
-          // Create a sub-batch wrapper that represents just the slice we need
-          val subBatchInput = withResource(spillableInputRef.getColumnarBatch()) { inputBatch =>
-            val subBatchColumns = (0 until inputBatch.numCols()).safeMap { i =>
-              val col = inputBatch.column(i).asInstanceOf[GpuColumnVector]
-              closeOnExcept(col.getBase.subVector(startRow, endRow)) { sliced =>
-                GpuColumnVector.from(sliced, col.dataType())
-              }
+        throwIfAborted()
+        // Create a sub-batch wrapper that represents just the slice we need
+        val subBatchInput = withResource(spillableInputRef.getColumnarBatch()) { inputBatch =>
+          val subBatchColumns = (0 until inputBatch.numCols()).safeMap { i =>
+            val col = inputBatch.column(i).asInstanceOf[GpuColumnVector]
+            closeOnExcept(col.getBase.subVector(startRow, endRow)) { sliced =>
+              GpuColumnVector.from(sliced, col.dataType())
             }
-            new ColumnarBatch(subBatchColumns.toArray, subBatchSize)
           }
-          // The iterator takes ownership of the subBatchInput
-          val rowIterator = closeOnExcept(subBatchInput) { _ =>
-            new ColumnarToRowIterator(
-              Iterator.single(subBatchInput),
-              NoopMetric,
-              NoopMetric,
-              NoopMetric,
-              NoopMetric,
-              nullSafe = false,
-              releaseSemaphore = false
-            )
-          }
-          withResource(rowIterator) { rowIterator =>
-            withResource(new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)) { _ =>
-              // Time the actual CPU processing on this thread
-              val processingStartTime = System.nanoTime()
-              val result = try {
-                evaluationFunction(rowIterator.map(makeInputToUnsafe()), subBatchSize)
-              } finally {
-                processingTimeNs.add(System.nanoTime() - processingStartTime)
-              }
+          new ColumnarBatch(subBatchColumns.toArray, subBatchSize)
+        }
+        // The iterator takes ownership of the subBatchInput
+        val rowIterator = closeOnExcept(subBatchInput) { _ =>
+          new ColumnarToRowIterator(
+            Iterator.single(subBatchInput),
+            NoopMetric,
+            NoopMetric,
+            NoopMetric,
+            NoopMetric,
+            nullSafe = false,
+            releaseSemaphore = false
+          )
+        }
+        withResource(rowIterator) { rowIterator =>
+          withResource(new NvtxRange("evaluateOnCPU", NvtxColor.BLUE)) { _ =>
+            // Time the actual CPU processing on this thread
+            val processingStartTime = System.nanoTime()
+            val result = try {
+              evaluationFunction(rowIterator.map(makeInputToUnsafe()), subBatchSize)
+            } finally {
+              processingTimeNs.add(System.nanoTime() - processingStartTime)
+            }
 
-              // Wrap the result column in a spillable batch.
-              if (abortRequested.get()) {
-                withResource(result) { _ =>
-                  throw new CancellationException("Sub-batch evaluation aborted")
-                }
+            // Wrap the result column in a spillable batch.
+            if (abortRequested.get()) {
+              withResource(result) { _ =>
+                throw new CancellationException("Sub-batch evaluation aborted")
               }
-              val spillableResult = closeOnExcept(result) { result =>
-                val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
-                SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-              }
-              if (abortRequested.get()) {
-                withResource(spillableResult) { _ =>
-                  throw new CancellationException("Sub-batch evaluation aborted")
-                }
-              }
-              spillableResult
             }
+            val spillableResult = closeOnExcept(result) { result =>
+              val resultBatch = new ColumnarBatch(Array(result), subBatchSize)
+              SpillableColumnarBatch(resultBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+            }
+            if (abortRequested.get()) {
+              withResource(spillableResult) { _ =>
+                throw new CancellationException("Sub-batch evaluation aborted")
+              }
+            }
+            spillableResult
           }
         }
       } finally {
