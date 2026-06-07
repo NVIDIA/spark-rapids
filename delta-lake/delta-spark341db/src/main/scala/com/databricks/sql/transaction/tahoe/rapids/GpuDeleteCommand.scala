@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * This file was derived from DeleteCommand.scala
  * in the Delta Lake project at https://github.com/delta-io/delta.
