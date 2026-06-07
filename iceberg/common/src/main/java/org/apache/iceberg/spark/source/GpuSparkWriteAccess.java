@@ -17,11 +17,14 @@
 package org.apache.iceberg.spark.source;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Map;
 
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.SnapshotUpdate;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.deletes.DeleteGranularity;
 import org.apache.iceberg.io.DeleteWriteResult;
@@ -92,6 +95,23 @@ public final class GpuSparkWriteAccess {
   @SuppressWarnings("unchecked")
   public static Map<String, String> writeProperties(Write write) {
     return readField(sparkWrite(write), "writeProperties", Map.class);
+  }
+
+  public static void abort(Write write, WriterCommitMessage[] messages) {
+    invokeMethod(
+        sparkWrite(write),
+        "abort",
+        new Class<?>[] {WriterCommitMessage[].class},
+        new Object[] {messages});
+  }
+
+  public static void commitOperation(
+      Write write, SnapshotUpdate<?> operation, String description) {
+    invokeMethod(
+        sparkWrite(write),
+        "commitOperation",
+        new Class<?>[] {SnapshotUpdate.class, String.class},
+        new Object[] {operation, description});
   }
 
   public static Table table(DeltaWrite write) {
@@ -169,6 +189,10 @@ public final class GpuSparkWriteAccess {
     return commit;
   }
 
+  public static DataFile[] taskCommitFiles(WriterCommitMessage message) {
+    return ((SparkWrite.TaskCommit) message).files();
+  }
+
   public static WriterCommitMessage deltaTaskCommit(WriteResult result) {
     return new SparkPositionDeltaWrite.DeltaTaskCommit(result);
   }
@@ -208,4 +232,38 @@ public final class GpuSparkWriteAccess {
     throw new IllegalStateException("No field " + fieldName + " in " + targetClass.getName());
   }
 
+  private static void invokeMethod(
+      Object target, String methodName, Class<?>[] parameterTypes, Object[] args) {
+    try {
+      Method method = findMethod(target.getClass(), methodName, parameterTypes);
+      method.setAccessible(true);
+      method.invoke(target, args);
+    } catch (IllegalAccessException e) {
+      throw new IllegalStateException(
+          "Unable to invoke " + methodName + " on " + target.getClass().getName(), e);
+    } catch (InvocationTargetException e) {
+      Throwable cause = e.getCause();
+      if (cause instanceof RuntimeException) {
+        throw (RuntimeException) cause;
+      }
+      if (cause instanceof Error) {
+        throw (Error) cause;
+      }
+      throw new IllegalStateException(
+          "Unable to invoke " + methodName + " on " + target.getClass().getName(), cause);
+    }
+  }
+
+  private static Method findMethod(
+      Class<?> targetClass, String methodName, Class<?>[] parameterTypes) {
+    Class<?> current = targetClass;
+    while (current != null) {
+      try {
+        return current.getDeclaredMethod(methodName, parameterTypes);
+      } catch (NoSuchMethodException e) {
+        current = current.getSuperclass();
+      }
+    }
+    throw new IllegalStateException("No method " + methodName + " in " + targetClass.getName());
+  }
 }

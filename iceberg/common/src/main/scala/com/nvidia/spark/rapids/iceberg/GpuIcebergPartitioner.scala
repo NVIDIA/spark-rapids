@@ -98,7 +98,7 @@ class GpuIcebergPartitioner(
 
           // Combine the partition keys and partitioned tables
           partitionKeys.zip(partitions).map { case (partKey, partition) =>
-            ColumnarBatchWithPartition(SpillableColumnarBatch(partition,
+            new ColumnarBatchWithPartition(SpillableColumnarBatch(partition,
               valueSparkType,
               SpillPriorities.ACTIVE_BATCHING_PRIORITY),
               partKey)
@@ -178,8 +178,9 @@ class GpuIcebergSpecPartitioner(val spec: PartitionSpec,
   }
 }
 
-case class ColumnarBatchWithPartition(batch: SpillableColumnarBatch, partition: StructLike) extends
-  AutoCloseable {
+class ColumnarBatchWithPartition(
+    val batch: SpillableColumnarBatch,
+    val partition: StructLike) extends AutoCloseable {
   override def close(): Unit = {
     batch.close()
   }
