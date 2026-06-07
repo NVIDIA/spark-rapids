@@ -203,6 +203,16 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
         dvRoot.withNewChildren(Seq(
           dvFilter.withNewChildren(Seq(
             pruneMetadataProject(dvFilterInput, fsse)))))
+      // Defensive match for a CPU FilterExec shape before GPU/CPU transitions are inserted.
+      case dvRoot @ GpuProjectExec(outputList,
+      dvFilter @ FilterExec(condition,
+      dvFilterInput @ GpuProjectExec(inputList, fsse: GpuFileSourceScanExec, _)), _)
+        if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) &&
+          !outputList.flatMap(_.references).exists(_.name == "_metadata") &&
+          inputList.exists(_.name == "_metadata") =>
+        dvRoot.withNewChildren(Seq(
+          dvFilter.withNewChildren(Seq(
+            pruneMetadataProject(dvFilterInput, fsse)))))
       case dvRoot @ GpuProjectExec(outputList,
       rowToCol @ RowToColumnarExec(
       dvFilter @ FilterExec(condition,
