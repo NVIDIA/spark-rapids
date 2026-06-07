@@ -494,4 +494,3 @@ def test_insert_into_table_falls_back_on_unsupported_codec(spark_tmp_table_facto
         return spark.sql(f"INSERT INTO {table_name} SELECT * FROM {view_name}")
 
     assert_gpu_fallback_collect(insert_data, "AppendDataExec", conf=iceberg_write_enabled_conf)
-

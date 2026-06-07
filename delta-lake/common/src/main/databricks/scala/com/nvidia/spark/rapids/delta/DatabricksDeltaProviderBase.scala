@@ -174,10 +174,10 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
       "Delta RTAS was tagged as unsupported and should not be converted to GPU")
   }
 
-  protected case class DeltaWriteV1Config(
-      deltaLog: DeltaLog,
-      forceOverwrite: Boolean,
-      options: mutable.HashMap[String, String])
+  protected class DeltaWriteV1Config(
+      val deltaLog: DeltaLog,
+      val forceOverwrite: Boolean,
+      val options: mutable.HashMap[String, String])
 
   private def extractWriteV1Config(
       meta: RapidsMeta[_, _, _],
@@ -210,7 +210,7 @@ trait DatabricksDeltaProviderBase extends DeltaProviderImplBase {
           f.get(outerObj).asInstanceOf[mutable.HashMap[String, String]]
         }
         if (forceOverwrite.isDefined && options.isDefined) {
-          Some(DeltaWriteV1Config(deltaLog, forceOverwrite.get, options.get))
+          Some(new DeltaWriteV1Config(deltaLog, forceOverwrite.get, options.get))
         } else {
           meta.willNotWorkOnGpu(s"write class has unsupported outer class $outerClass")
           None

@@ -41,11 +41,12 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 // Expression support shared across versions - defined outside class to avoid serialization issues
-case class GpuIncrementMetricMeta(
-  cpuInc: IncrementMetric,
-  override val conf: RapidsConf,
-  p: Option[RapidsMeta[_, _, _]],
-  r: DataFromReplacementRule) extends ExprMeta[IncrementMetric](cpuInc, conf, p, r) {
+class GpuIncrementMetricMeta(
+    val cpuInc: IncrementMetric,
+    override val conf: RapidsConf,
+    val p: Option[RapidsMeta[_, _, _]],
+    val r: DataFromReplacementRule)
+    extends ExprMeta[IncrementMetric](cpuInc, conf, p, r) with Serializable {
   override def convertToGpuImpl(): GpuExpression = {
     val gpuChild = childExprs.head.convertToGpu()
     GpuIncrementMetric(cpuInc, gpuChild)
@@ -88,7 +89,7 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     GpuOverrides.expr[IncrementMetric](
       "IncrementMetric",
       ExprChecks.unaryProject(TypeSig.all, TypeSig.all, TypeSig.all, TypeSig.all),
-      (cpuInc, conf, p, r) => GpuIncrementMetricMeta(cpuInc, conf, p, r)
+      (cpuInc, conf, p, r) => new GpuIncrementMetricMeta(cpuInc, conf, p, r)
     )
   ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 

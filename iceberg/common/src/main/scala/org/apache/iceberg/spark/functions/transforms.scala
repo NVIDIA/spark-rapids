@@ -98,7 +98,7 @@ object GpuTransform {
   }
 }
 
-case class GpuFieldTransform(sourceFieldId: Int, transform: GpuTransform) {
+class GpuFieldTransform(val sourceFieldId: Int, val transform: GpuTransform) {
   def supports(inputType: StructType, inputSchema: Schema): Boolean = {
     // Iceberg allows partition source fields to reference nested-leaf field ids
     // (e.g. `bucket(4, contact.email)`). Those ids do not appear in

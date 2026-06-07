@@ -347,7 +347,7 @@ trait GpuDeltaWriter extends DeltaWriter[ColumnarBatch] {
   protected def newDeleteWriteContext(metadata: ColumnarBatch, rowId: ColumnarBatch)
   : DeleteWriteContext = {
     withResource(Seq(metadata, rowId)) { _ =>
-      var ret = DeleteWriteContext(spillPartValues = SpillableColumnarBatch(
+      var ret = new DeleteWriteContext(spillPartValues = SpillableColumnarBatch(
         extractToStruct(metadata, context.partitionOrdinal()),
         ACTIVE_ON_DECK_PRIORITY))
 
@@ -371,17 +371,22 @@ trait GpuDeltaWriter extends DeltaWriter[ColumnarBatch] {
   }
 }
 
-case class DeleteWriteContext(
-  spillPartValues: SpillableColumnarBatch = null,
-  spillPosDeletes: SpillableColumnarBatch = null,
-  uniqueSpecIdCol: RapidsHostColumnVector = null,
-  specIdCol: CudfColumnVector = null) extends AutoCloseable {
+class DeleteWriteContext(
+  val spillPartValues: SpillableColumnarBatch = null,
+  val spillPosDeletes: SpillableColumnarBatch = null,
+  val uniqueSpecIdCol: RapidsHostColumnVector = null,
+  val specIdCol: CudfColumnVector = null) extends AutoCloseable {
+
+  def copy(
+      spillPartValues: SpillableColumnarBatch = this.spillPartValues,
+      spillPosDeletes: SpillableColumnarBatch = this.spillPosDeletes,
+      uniqueSpecIdCol: RapidsHostColumnVector = this.uniqueSpecIdCol,
+      specIdCol: CudfColumnVector = this.specIdCol): DeleteWriteContext = {
+    new DeleteWriteContext(spillPartValues, spillPosDeletes, uniqueSpecIdCol, specIdCol)
+  }
 
   override def close(): Unit = {
-    productIterator
-      .map(_.asInstanceOf[AutoCloseable])
-      .toSeq
-      .safeClose()
+    Seq[AutoCloseable](spillPartValues, spillPosDeletes, uniqueSpecIdCol, specIdCol).safeClose()
   }
 }
 
@@ -480,7 +485,7 @@ trait GpuDeleteAndDataDeltaWriter extends GpuDeltaWriter {
                     }
                   } else {
                     // Unpartitioned spec
-                    Seq(ColumnarBatchWithPartition(
+                    Seq(new ColumnarBatchWithPartition(
                       SpillableColumnarBatch(filteredPositionDeletes,
                         SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
                       emptyPartitionData
@@ -601,7 +606,7 @@ class GpuDeleteOnlyDeltaWriter(
                     }
                   } else {
                     // Unpartitioned spec
-                    Seq(ColumnarBatchWithPartition(
+                    Seq(new ColumnarBatchWithPartition(
                       SpillableColumnarBatch(filteredPositionDeletes,
                         SpillPriorities.ACTIVE_ON_DECK_PRIORITY),
                       emptyPartitionData
