@@ -28,10 +28,8 @@ provider discovery mechanism
 [ParallelWorldClassloader](https://github.com/openjdk/jdk/blob/jdk8-b120/jaxws/src/share/jaxws_classes/com/sun/istack/internal/tools/ParallelWorldClassLoader.java)) 
 for each version of Spark supported in the jar, i.e., spark330/, spark341/, etc.
 
-If you have to change the contents of the uber jar the following files control what goes into the base jar as classes that are not shaded.
+If you have to change the contents of the uber jar, the packaging defaults common classes to the base jar when binary dedupe proves they are bitwise-identical across shims. New common classes should normally remain unshimmed by default. The following files control explicit exceptions and non-class resources.
 
-1. `unshimmed-common-from-single-shim.txt` - This has classes and files that should go into the base jar with their normal
-package name (not shaded). This includes user visible classes (i.e., com/nvidia/spark/SQLPlugin), python files,
-and other files that aren't version specific. Uses Spark 3.2.0 built jar for these base classes as explained above.
-2. `unshimmed-from-each-spark3xx.txt` - This is applied to all the individual Spark specific version jars to pull
-any files that need to go into the base of the jar and not into the Spark specific directory.
+1. `keep-in-spark-shared.txt` - Patterns for bitwise-identical common `spark-shared` class files that must stay in `spark-shared` instead of being promoted to the base jar. This should stay small; add entries only for compatibility or packaging exceptions.
+2. `unshimmed-common-from-single-shim.txt` - Files that must go into the base jar from one representative shim but are not selected by default class promotion, such as root `META-INF` resources and Python worker files. Avoid adding class files here unless they need special root-layout treatment outside bitwise-identical default promotion.
+3. `unshimmed-from-each-spark3xx.txt` - This is applied to all the individual Spark specific version jars to pull any files that need to go into the base of the jar and not into the Spark specific directory. These are per-shim root artifacts rather than common `spark-shared` classes.
