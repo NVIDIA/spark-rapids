@@ -365,7 +365,9 @@ object DVPredicatePushdown extends ShimPredicateHelper {
         if (nonDvPredicates.isEmpty) {
           newChild
         } else {
-          filter.copy(condition = nonDvPredicates.reduce(GpuAnd), child = newChild)(filter.coalesceAfter)
+          filter.copy(
+            condition = nonDvPredicates.reduce(GpuAnd),
+            child = newChild)(filter.coalesceAfter)
         }
       case filter @ FilterExec(condition, child)
         if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) =>
