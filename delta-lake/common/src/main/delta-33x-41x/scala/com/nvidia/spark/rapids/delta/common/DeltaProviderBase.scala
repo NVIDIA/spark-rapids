@@ -307,11 +307,24 @@ object DVPredicatePushdown extends ShimPredicateHelper {
       }
     }
 
-    def rewriteFilter(
+    /**
+     * Removes DV predicates from the filter condition and, when safe, prunes the
+     * [[IS_ROW_DELETED_COLUMN_NAME]] column from the child plan.
+     *
+     * DV predicates are always dropped from the returned predicate list. Pruning the column
+     * from the child is safe only when no other predicate in the condition also reads
+     * [[IS_ROW_DELETED_COLUMN_NAME]].
+     *
+     * Returns a pair of:
+     *   - `Some(newChild)` with [[IS_ROW_DELETED_COLUMN_NAME]] pruned from the subtree, or
+     *     `None` if column pruning is not safe (the caller should use the original child)
+     *   - the remaining non-DV predicates that the caller should re-attach as a new filter
+     *     (empty if the entire condition consisted of DV predicates)
+     */
+    def pruneDvPredicate(
         condition: Expression,
-        child: SparkPlan,
-        combinePredicates: (Expression, Expression) => Expression,
-        copyFilter: (Expression, SparkPlan) => SparkPlan): Option[SparkPlan] = {
+        child: SparkPlan): (Option[SparkPlan], Seq[Expression]) = {
+      // Decompose the condition into CNF
       val conjuncts = splitConjunctivePredicates(condition)
       // the dv condition should be "IS_ROW_DELETED_COLUMN_NAME == 0"
       val (dvPredicate, otherPredicates) = conjuncts.partition { predicate =>
@@ -324,30 +337,35 @@ object DVPredicatePushdown extends ShimPredicateHelper {
         predicate.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)
       }
 
-      if (dvPredicate.nonEmpty &&
-          !otherPredicatesReadingIsRowDeleted) {
-        val newChild = pruneIsRowDeletedColumn(child)
-        Some(if (otherPredicates.isEmpty) {
-          newChild
-        } else {
-          copyFilter(otherPredicates.reduce(combinePredicates), newChild)
-        })
+      if (dvPredicate.nonEmpty && !otherPredicatesReadingIsRowDeleted) {
+        // Since we are going to drop this dvPredicate and isRowDeleted is not used in other
+        // predicates, we can prune isRowDeleted column from the child plan
+        val pruned = pruneIsRowDeletedColumn(child)
+        (Some(pruned), otherPredicates)
       } else {
-        None
+        (None, otherPredicates)
       }
     }
 
     plan.transformUp {
       case filter @ GpuFilterExec(condition, child)
         if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) =>
-        rewriteFilter(condition, child, GpuAnd(_, _),
-          (newCondition, newChild) => filter.copy(condition = newCondition,
-            child = newChild)(filter.coalesceAfter)).getOrElse(filter)
+        val (maybeNewChild, nonDvPredicates) = pruneDvPredicate(condition, child)
+        val newChild = maybeNewChild.getOrElse(child)
+        if (nonDvPredicates.isEmpty) {
+          newChild
+        } else {
+          filter.copy(condition = nonDvPredicates.reduce(GpuAnd), child = newChild)(filter.coalesceAfter)
+        }
       case filter @ FilterExec(condition, child)
         if condition.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME) =>
-        rewriteFilter(condition, child, And(_, _),
-          (newCondition, newChild) => filter.copy(condition = newCondition, child = newChild))
-          .getOrElse(filter)
+        val (maybeNewChild, nonDvPredicates) = pruneDvPredicate(condition, child)
+        val newChild = maybeNewChild.getOrElse(child)
+        if (nonDvPredicates.isEmpty) {
+          newChild
+        } else {
+          filter.copy(condition = nonDvPredicates.reduce(And), child = newChild)
+        }
     }
   }
 
