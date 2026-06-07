@@ -908,19 +908,20 @@ def test_delta_dv_cpu_filter_after_native_scan(spark_tmp_path):
         "spark.rapids.sql.reader.chunked": "true"
     }
 
-    col_a_gen = IntegerGen(min_val=0, max_val=100, nullable=False, special_cases=[])
-    col_b_gen = IntegerGen(min_val=0, max_val=5, nullable=False, special_cases=[0, 1, 2, 3])
-
     def create_delta(spark):
-        two_col_df(spark, col_a_gen, col_b_gen, length=4000).coalesce(1).write.format("delta") \
+        spark.range(2000).selectExpr(
+            "CAST(id AS INT) AS id",
+            "CAST(id % 7 AS INT) AS b",
+            "CONCAT('p', CAST(id % 4 AS INT)) AS part"
+        ).write.format("delta") \
             .option("delta.enableDeletionVectors", "true") \
-            .partitionBy("a").save(data_path)
+            .partitionBy("part").save(data_path)
 
-        count = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE b = 0").collect()[0][0]
+        count = spark.sql(f"DELETE FROM delta.`{data_path}` WHERE id % 5 = 0").collect()[0][0]
         assert count > 100, "Expected enough rows to be deleted to create deletion vectors"
 
     def read_table(spark):
-        df = spark.sql(f"SELECT a, b FROM delta.`{data_path}` WHERE b IN (1, 2, 3)")
+        df = spark.sql(f"SELECT id, b FROM delta.`{data_path}` WHERE b IN (1, 2, 3)")
         is_gpu = str(spark.conf.get("spark.rapids.sql.enabled", "false")).lower() == "true"
         if is_gpu:
             _assert_db173_gpu_delta_scan_if_enabled(spark, df)
@@ -931,6 +932,7 @@ def test_delta_dv_cpu_filter_after_native_scan(spark_tmp_path):
                 assert callback.contains(plan, "GpuFileGpuScan"), explain_str
                 assert "_databricks_internal_edge_computed_column_skip_row" not in explain_str
                 assert "__delta_internal_is_row_deleted" not in explain_str
+                assert "_metadata" not in explain_str
             else:
                 assert callback.contains(plan, "GpuFileSourceScanExec"), explain_str
                 assert "__delta_internal_is_row_deleted" not in explain_str
