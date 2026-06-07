@@ -146,24 +146,20 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
   }
 
   override def tryPushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
-    if (DVPredicatePushdown.hasNativeDeletionVectorGpuScan(plan)) {
-      val pushed = DVPredicatePushdown.pushToScan(plan)
+    val pushed = DVPredicatePushdown.pushToScan(plan)
 
-      // Spark often generates a plan that looks like below for deletion vector scans:
-      // ...
-      // ProjectExec <- prune is_row_deleted
-      //   FilterExec <- condition on is_row_deleted
-      //     ProjectExec <- project is_row_deleted
-      //       FileSourceScanExec
-      //
-      // The FilterExec can be removed during the pushdown if the only remaining predicates
-      // are deletion vector predicates. If the FilterExec is removed, the `is_row_deleted`
-      // column is pruned from the subtree below the FilterExec. This can leave two consecutive
-      // identical ProjectExecs. We merge them here to simplify the plan.
-      DVPredicatePushdown.mergeIdenticalProjects(pushed)
-    } else {
-      plan
-    }
+    // Spark often generates a plan that looks like below for deletion vector scans:
+    // ...
+    // ProjectExec <- prune is_row_deleted
+    //   FilterExec <- condition on is_row_deleted
+    //     ProjectExec <- project is_row_deleted
+    //       FileSourceScanExec
+    //
+    // The FilterExec can be removed during the pushdown if the only remaining predicates
+    // are deletion vector predicates. If the FilterExec is removed, the `is_row_deleted`
+    // column is pruned from the subtree below the FilterExec. This can leave two consecutive
+    // identical ProjectExecs. We merge them here to simplify the plan.
+    DVPredicatePushdown.mergeIdenticalProjects(pushed)
   }
 
   override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
@@ -321,15 +317,15 @@ object DVPredicatePushdown extends ShimPredicateHelper {
      * Removes DV predicates from the filter condition and, when safe, prunes the
      * [[IS_ROW_DELETED_COLUMN_NAME]] column from the child plan.
      *
-     * DV predicates are always dropped from the returned predicate list. Pruning the column
-     * from the child is safe only when no other predicate in the condition also reads
-     * [[IS_ROW_DELETED_COLUMN_NAME]].
+     * DV predicates are dropped from the returned predicate list only when the filter child
+     * contains a native deletion-vector GPU scan. Pruning the column from the child is safe
+     * only when no other predicate in the condition also reads [[IS_ROW_DELETED_COLUMN_NAME]].
      *
      * Returns a pair of:
      *   - `Some(newChild)` with [[IS_ROW_DELETED_COLUMN_NAME]] pruned from the subtree, or
      *     `None` if column pruning is not safe (the caller should use the original child)
-     *   - the remaining non-DV predicates that the caller should re-attach as a new filter
-     *     (empty if the entire condition consisted of DV predicates)
+     *   - the remaining predicates that the caller should re-attach as a new filter
+     *     (empty if the entire condition consisted of pushed deletion-vector predicates)
      */
     def pruneDvPredicate(
         condition: Expression,
@@ -347,13 +343,17 @@ object DVPredicatePushdown extends ShimPredicateHelper {
         predicate.references.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)
       }
 
-      if (dvPredicate.nonEmpty && !otherPredicatesReadingIsRowDeleted) {
+      val canDropDvPredicate = dvPredicate.nonEmpty && hasNativeDeletionVectorGpuScan(child)
+
+      if (canDropDvPredicate && !otherPredicatesReadingIsRowDeleted) {
         // Since we are going to drop this dvPredicate and isRowDeleted is not used in other
         // predicates, we can prune isRowDeleted column from the child plan
         val pruned = pruneIsRowDeletedColumn(child)
         (Some(pruned), otherPredicates)
-      } else {
+      } else if (canDropDvPredicate) {
         (None, otherPredicates)
+      } else {
+        (None, Seq(condition))
       }
     }
 
