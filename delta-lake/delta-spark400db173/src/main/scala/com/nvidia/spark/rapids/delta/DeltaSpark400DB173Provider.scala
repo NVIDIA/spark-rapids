@@ -106,7 +106,7 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
     }
   }
 
-  override def canPushDVPredicateDownToScan(conf: RapidsConf): Boolean = {
+  override def isPushDVPredicateDownEnabled(conf: RapidsConf): Boolean = {
     val dvConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
     val useMetadataRowIndex = conf.getStr(dvConf.key)
       .getOrElse(dvConf.defaultValueString).toBoolean
@@ -116,7 +116,7 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
     useMetadataRowIndex && conf.isDeltaDeletionVectorPredicatePushdownEnabled
   }
 
-  override def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
+  override def tryPushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
     val pushed = DB173DVPredicatePushdown.pushToScan(plan)
     DB173DVPredicatePushdown.mergeIdenticalProjects(pushed)
   }

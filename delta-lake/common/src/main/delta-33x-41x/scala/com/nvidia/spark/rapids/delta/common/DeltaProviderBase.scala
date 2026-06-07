@@ -138,28 +138,32 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
       InvalidateCacheShims.getInvalidateCache(cpuExec.invalidateCache))
   }
 
-  override def canPushDVPredicateDownToScan(conf: RapidsConf): Boolean = {
+  override def isPushDVPredicateDownEnabled(conf: RapidsConf): Boolean = {
     val dvConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
     val useMetadataRowIndex = conf.getStr(dvConf.key)
       .getOrElse(dvConf.defaultValueString).toBoolean
     useMetadataRowIndex && conf.isDeltaDeletionVectorPredicatePushdownEnabled
   }
 
-  override def pushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
-    val pushed = DVPredicatePushdown.pushToScan(plan)
+  override def tryPushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
+    if (DVPredicatePushdown.hasNativeDeletionVectorGpuScan(plan)) {
+      val pushed = DVPredicatePushdown.pushToScan(plan)
 
-    // Spark often generates a plan that looks like below for deletion vector scans:
-    // ...
-    // ProjectExec <- prune is_row_deleted
-    //   FilterExec <- condition on is_row_deleted
-    //     ProjectExec <- project is_row_deleted
-    //       FileSourceScanExec
-    //
-    // The FilterExec can be removed during the pushdown if the only remaining predicates
-    // are deletion vector predicates. If the FilterExec is removed, the `is_row_deleted`
-    // column is pruned from the subtree below the FilterExec. This can leave two consecutive
-    // identical ProjectExecs. We merge them here to simplify the plan.
-    DVPredicatePushdown.mergeIdenticalProjects(pushed)
+      // Spark often generates a plan that looks like below for deletion vector scans:
+      // ...
+      // ProjectExec <- prune is_row_deleted
+      //   FilterExec <- condition on is_row_deleted
+      //     ProjectExec <- project is_row_deleted
+      //       FileSourceScanExec
+      //
+      // The FilterExec can be removed during the pushdown if the only remaining predicates
+      // are deletion vector predicates. If the FilterExec is removed, the `is_row_deleted`
+      // column is pruned from the subtree below the FilterExec. This can leave two consecutive
+      // identical ProjectExecs. We merge them here to simplify the plan.
+      DVPredicatePushdown.mergeIdenticalProjects(pushed)
+    } else {
+      plan
+    }
   }
 
   override def pruneFileMetadata(plan: SparkPlan): SparkPlan = {
@@ -237,6 +241,14 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
 
 object DVPredicatePushdown extends ShimPredicateHelper {
 
+  def hasNativeDeletionVectorGpuScan(plan: SparkPlan): Boolean = {
+    plan.exists {
+      case fsse: GpuFileSourceScanExec =>
+        fsse.relation.fileFormat.isInstanceOf[GpuDeltaParquetFileFormatBase2]
+      case _ => false
+    }
+  }
+
   /**
    * Pushes down deletion vector predicates to scan level by removing them from the FilterExec.
    * The deletion vector predicates will be processed in the scan instead.
@@ -295,14 +307,6 @@ object DVPredicatePushdown extends ShimPredicateHelper {
       }
     }
 
-    def hasNativeDeletionVectorGpuScan(plan: SparkPlan): Boolean = {
-      plan.exists {
-        case fsse: GpuFileSourceScanExec =>
-          fsse.relation.fileFormat.isInstanceOf[GpuDeltaParquetFileFormatBase2]
-        case _ => false
-      }
-    }
-
     def rewriteFilter(
         condition: Expression,
         child: SparkPlan,
@@ -321,8 +325,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
       }
 
       if (dvPredicate.nonEmpty &&
-          !otherPredicatesReadingIsRowDeleted &&
-          hasNativeDeletionVectorGpuScan(child)) {
+          !otherPredicatesReadingIsRowDeleted) {
         val newChild = pruneIsRowDeletedColumn(child)
         Some(if (otherPredicates.isEmpty) {
           newChild
