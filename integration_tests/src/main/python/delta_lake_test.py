@@ -599,7 +599,7 @@ def test_delta_deletion_vector_interleaved_file_splits(
     """
     Tests deletion vector handling when files are interleaved in a way that causes their
     blocks to be split non-consecutively.
-    
+
     For this test, we set up two files A (large) and B (small) such that:
       - A is split into N PartitionedFiles: [max, ..., max, tail].
       - tail(A) < len(B) < max_split.

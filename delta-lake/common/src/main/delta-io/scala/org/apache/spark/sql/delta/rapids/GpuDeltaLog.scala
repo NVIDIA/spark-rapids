@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
    * directly to the DeltaLog otherwise they will not be checked for conflicts.
    */
   def startTransaction(): GpuOptimisticTransactionBase = {
-    DeltaRuntimeShim.startTransaction(StartTransactionArg(deltaLog, rapidsConf, _clock, None,
+    DeltaRuntimeShim.startTransaction(new StartTransactionArg(deltaLog, rapidsConf, _clock, None,
       None))
   }
 
@@ -62,7 +62,7 @@ class GpuDeltaLog(val deltaLog: DeltaLog, val rapidsConf: RapidsConf) {
   def startTransaction(
       catalogTableOpt: Option[CatalogTable],
       snapshotOpt: Option[Snapshot] = None): GpuOptimisticTransactionBase = {
-    DeltaRuntimeShim.startTransaction(StartTransactionArg(deltaLog, rapidsConf, _clock,
+    DeltaRuntimeShim.startTransaction(new StartTransactionArg(deltaLog, rapidsConf, _clock,
       catalogTableOpt, snapshotOpt))
   }
 

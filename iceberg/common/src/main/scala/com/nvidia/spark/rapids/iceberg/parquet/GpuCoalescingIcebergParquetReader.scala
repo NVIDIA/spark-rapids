@@ -68,11 +68,11 @@ class GpuCoalescingIcebergParquetReader(
             conf.metrics)
 
           info.blocks.map { block =>
-            ParquetSingleDataBlockMeta(
+            new ParquetSingleDataBlockMeta(
               info.filePath,
-              ParquetDataBlock(block, CpuCompressionConfig.disabled()),
+              new ParquetDataBlock(block, CpuCompressionConfig.disabled()),
               InternalRow.empty,
-              ParquetSchemaWrapper(info.schema),
+              new ParquetSchemaWrapper(info.schema),
               info.readSchema,
               IcebergParquetExtraInfo(
                 info.dateRebaseMode,

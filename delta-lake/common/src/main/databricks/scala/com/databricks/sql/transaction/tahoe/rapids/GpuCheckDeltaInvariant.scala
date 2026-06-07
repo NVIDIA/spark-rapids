@@ -136,7 +136,7 @@ object GpuCheckDeltaInvariant extends Logging {
     ExprChecks.projectOnly(
       TypeSig.all,
       TypeSig.all,
-      paramCheck = Seq(ParamCheck("input", TypeSig.all, TypeSig.all))),
+      paramCheck = Seq(new ParamCheck("input", TypeSig.all, TypeSig.all))),
     (c, conf, p, r) => new GpuCheckDeltaInvariantMeta(c, conf, p, r))
 
   def maybeConvertToGpu(

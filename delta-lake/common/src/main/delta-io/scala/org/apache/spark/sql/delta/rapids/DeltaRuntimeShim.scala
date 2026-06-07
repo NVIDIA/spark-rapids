@@ -30,15 +30,15 @@ import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.util.Clock
 
-case class StartTransactionArg(log: DeltaLog, conf: RapidsConf, clock: Clock,
-    catalogTable: Option[CatalogTable] = None, snapshot: Option[Snapshot] = None)
+class StartTransactionArg(val log: DeltaLog, val conf: RapidsConf, val clock: Clock,
+    val catalogTable: Option[CatalogTable] = None, val snapshot: Option[Snapshot] = None)
 
 trait DeltaRuntimeShim {
   def getDeltaConfigChecker: DeltaConfigChecker
   def getDeltaProvider: DeltaProvider
   def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock)
   : GpuOptimisticTransactionBase = {
-    startTransaction(StartTransactionArg(log, conf, clock))
+    startTransaction(new StartTransactionArg(log, conf, clock))
   }
   def startTransaction(arg: StartTransactionArg): GpuOptimisticTransactionBase
   def stringFromStringUdf(f: String => String): UserDefinedFunction
