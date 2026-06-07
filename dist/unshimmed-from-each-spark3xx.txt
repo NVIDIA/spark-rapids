@@ -9,4 +9,6 @@ com/nvidia/spark/rapids/delta/DeltaProbe.class
 com/nvidia/spark/rapids/delta/DeltaProvider.class
 com/nvidia/spark/rapids/delta/DeltaProvider$.class
 com/nvidia/spark/rapids/PlanShims*
+org/apache/spark/sql/rapids/GpuShuffleDependency.class
+org/apache/spark/sql/rapids/execution/python/shims/WindowInPandasExecTypeShim.class
 spark-*-info.properties
