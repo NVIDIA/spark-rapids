@@ -21,7 +21,6 @@ import scala.annotation.nowarn
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
@@ -51,7 +50,7 @@ import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
  * Shim base class that can be compiled with every supported 3.2.0+
  */
 trait Spark320PlusShims extends SparkShims with RebaseShims
-    with WindowInPandasShims with Logging {
+    with WindowInPandasShims {
 
 
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
@@ -136,7 +135,7 @@ trait Spark320PlusShims extends SparkShims with RebaseShims
         TypeSig.DOUBLE + TypeSig.DECIMAL_128,
         // NullType is not technically allowed by Spark, but in practice in 3.2.0
         // it can show up
-        Seq(ParamCheck("input",
+        Seq(new ParamCheck("input",
           TypeSig.integral + TypeSig.fp + TypeSig.DECIMAL_128 + TypeSig.NULL,
           TypeSig.numericAndInterval + TypeSig.NULL))),
       (a, conf, p, r) => new AggExprMeta[Average](a, conf, p, r) {
@@ -184,11 +183,11 @@ trait Spark320PlusShims extends SparkShims with RebaseShims
         TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME,
         TypeSig.numericAndInterval,
         Seq(
-          ParamCheck("lower",
+          new ParamCheck("lower",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
               + TypeSig.DECIMAL_128 + TypeSig.FLOAT + TypeSig.DOUBLE,
             TypeSig.numericAndInterval),
-          ParamCheck("upper",
+          new ParamCheck("upper",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DAYTIME
               + TypeSig.DECIMAL_128 + TypeSig.FLOAT + TypeSig.DOUBLE,
             TypeSig.numericAndInterval))),
@@ -199,8 +198,8 @@ trait Spark320PlusShims extends SparkShims with RebaseShims
       ExprChecks.windowOnly(
         TypeSig.all,
         TypeSig.all,
-        Seq(ParamCheck("windowFunction", TypeSig.all, TypeSig.all),
-          ParamCheck("windowSpec",
+        Seq(new ParamCheck("windowFunction", TypeSig.all, TypeSig.all),
+          new ParamCheck("windowSpec",
             TypeSig.CALENDAR + TypeSig.NULL + TypeSig.integral + TypeSig.DECIMAL_64 +
               TypeSig.DAYTIME, TypeSig.numericAndInterval))),
       (windowExpression, conf, p, r) => new GpuWindowExpressionMeta(windowExpression, conf, p, r))

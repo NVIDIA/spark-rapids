@@ -21,7 +21,7 @@ import java.util.{Locale, ServiceConfigurationError, ServiceLoader}
 
 import scala.util.{Failure, Success, Try}
 
-import com.nvidia.spark.rapids.GpuParquetFileFormat
+import com.nvidia.spark.rapids.{GpuParquetFileFormat, RapidsLocalLog}
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.commons.lang3.reflect.ConstructorUtils
 import org.apache.hadoop.conf.Configuration
@@ -29,7 +29,6 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkException
 import org.apache.spark.deploy.SparkHadoopUtil
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.catalog.{BucketSpec, CatalogTable}
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
@@ -62,7 +61,7 @@ abstract class GpuDataSourceBase(
     bucketSpec: Option[BucketSpec] = None,
     options: Map[String, String] = Map.empty,
     catalogTable: Option[CatalogTable] = None,
-    origProvider: Class[_]) extends Logging {
+    origProvider: Class[_]) extends RapidsLocalLog {
 
   protected def originalProvidingInstance() = origProvider.getConstructor().newInstance()
 
@@ -311,7 +310,7 @@ abstract class GpuDataSourceBase(
   }
 }
 
-object GpuDataSourceBase extends Logging {
+object GpuDataSourceBase extends RapidsLocalLog {
 
   /** A map to maintain backward compatibility in case we move data sources around. */
   private val backwardCompatibilityMap: Map[String, String] = {

@@ -48,15 +48,15 @@ object PythonArgumentUtils {
             (None, e)
         }
         if (allInputs.exists(_.semanticEquals(value))) {
-          GpuArgumentMeta(allInputs.indexWhere(_.semanticEquals(value)), key)
+          new GpuArgumentMeta(allInputs.indexWhere(_.semanticEquals(value)), key)
         } else {
           allInputs += value
           dataTypes += value.dataType
-          GpuArgumentMeta(allInputs.length - 1, key)
+          new GpuArgumentMeta(allInputs.length - 1, key)
         }
       }.toArray
     }.toArray
-    GpuPythonArguments(allInputs.toSeq, dataTypes.toSeq,
+    new GpuPythonArguments(allInputs.toSeq, dataTypes.toSeq,
       argMetas.map(_.map(_.offset)), Some(argMetas.map(_.map(_.name))))
   }
 }

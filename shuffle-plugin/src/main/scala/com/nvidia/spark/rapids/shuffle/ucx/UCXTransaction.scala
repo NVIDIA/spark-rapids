@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2021, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -280,7 +280,7 @@ private[ucx] class UCXTransaction(conn: UCXConnection, val txId: Long)
     val diff: Double = (end - start)/1000000.0D
     val sendThroughput: Double = (sendSize.get()/1024.0D/1024.0D/1024.0D) / (diff / 1000.0D)
     val recvThroughput: Double = (receiveSize.get()/1024.0D/1024.0D/1024.0D) / (diff / 1000.0D)
-    TransactionStats(diff, sendSize.get(), receiveSize.get(), sendThroughput, recvThroughput)
+    new TransactionStats(diff, sendSize.get(), receiveSize.get(), sendThroughput, recvThroughput)
   }
 
   var callbackCalled: Boolean = false

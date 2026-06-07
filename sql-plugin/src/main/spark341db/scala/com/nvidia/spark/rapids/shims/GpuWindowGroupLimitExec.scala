@@ -41,7 +41,6 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRows, withRetry}
 import com.nvidia.spark.rapids.window.{GpuDenseRank, GpuRank, GpuRowNumber}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Alias, And, Attribute, AttributeReference, DenseRank, EqualTo, Expression, GreaterThan, GreaterThanOrEqual, LessThan, LessThanOrEqual, Literal, NamedExpression, Rank, RowNumber, SortOrder, WindowExpression, WindowSpecDefinition}
@@ -260,8 +259,7 @@ class GpuWindowGroupLimitingIterator(input: Iterator[ColumnarBatch],
                                      limit: Int,
                                      numOutputBatches: GpuMetric,
                                      numOutputRows: GpuMetric)
-  extends Iterator[ColumnarBatch]
-  with Logging {
+  extends Iterator[ColumnarBatch] {
 
   override def hasNext: Boolean = input.hasNext
 

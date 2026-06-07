@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.parquet
 
 import java.io.{Closeable, EOFException, FileNotFoundException, InputStream, IOException, OutputStream}
 import java.net.URI
-import java.nio.{ByteBuffer, ByteOrder}
+import java.nio.{Buffer, ByteBuffer, ByteOrder}
 import java.nio.channels.SeekableByteChannel
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale}
@@ -39,6 +39,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.filecache.FileCache
 import com.nvidia.spark.rapids.fileio.hadoop.HadoopFileIO
+import com.nvidia.spark.rapids.fileio.hadoop.PerfIOHadoopInputFileFactory
 import com.nvidia.spark.rapids.io.async._
 import com.nvidia.spark.rapids.jni.{DateTimeRebase, ParquetFooter, RmmSpark}
 import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsInputFile}
@@ -66,7 +67,6 @@ import org.xerial.snappy.Snappy
 
 import org.apache.spark.TaskContext
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
@@ -117,7 +117,7 @@ case class GpuParquetScan(
     dataFilters: Seq[Expression],
     rapidsConf: RapidsConf,
     queryUsesInputFile: Boolean = false)
-  extends FileScan with GpuScan with Logging {
+  extends FileScan with GpuScan {
 
   override def isSplitable(path: Path): Boolean = true
 
@@ -428,14 +428,14 @@ class HMBSeekableInputStream(
     if (bytesRead < 0) {
       bytesRead
     } else {
-      buf.position(buf.position() + bytesRead)
+      buf.asInstanceOf[Buffer].position(buf.position() + bytesRead)
       bytesRead
     }
   }
 
   private def readFullyHeapBuffer(buf: ByteBuffer): Unit = {
     readFully(buf.array, buf.arrayOffset + buf.position(), buf.remaining)
-    buf.position(buf.limit)
+    buf.asInstanceOf[Buffer].position(buf.limit)
   }
 
   private def readDirectBuffer(buf: ByteBuffer): Int = {
@@ -492,7 +492,7 @@ class HMBInputFile(buffer: HostMemoryBuffer) extends InputFile {
 
 protected case class GpuParquetFileFilterHandler(
     @transient sqlConf: SQLConf,
-    metrics: Map[String, GpuMetric]) extends Logging {
+    metrics: Map[String, GpuMetric]) extends RapidsLocalLog {
 
   private val FOOTER_LENGTH_SIZE = 4
   private val isCaseSensitive = sqlConf.caseSensitiveAnalysis
@@ -1142,7 +1142,9 @@ abstract class AbstractGpuParquetMultiFilePartitionReaderFactory(
   // from a task when we need to create the fileIO instance. This stops a regression
   // when we materialize the hadoop conf eagerly, see:
   // https://github.com/NVIDIA/spark-rapids/issues/13353
-  @transient protected lazy val fileIO = new HadoopFileIO(broadcastedConf.value.value)
+  @transient protected lazy val fileIO = new HadoopFileIO(
+    broadcastedConf.value.value,
+    PerfIOHadoopInputFileFactory.INSTANCE)
   protected val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   protected val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   protected val debugDumpAlways = rapidsConf.parquetDebugDumpAlways
@@ -1231,7 +1233,7 @@ abstract class AbstractGpuParquetMultiFilePartitionReaderFactory(
       filterHandler.filterBlocks(fileIO, footerReadType, file, new Configuration(conf),
         filters, readDataSchema)
     }
-    val combineConf = CombineConf(combineThresholdSize, combineWaitTime)
+    val combineConf = new CombineConf(combineThresholdSize, combineWaitTime)
     val poolConf = poolConfBuilder.build()
     val reader = createBaseMultiFileCloudReader(fileIO, conf, files, filterFunc,
       isCaseSensitive,
@@ -1292,7 +1294,7 @@ abstract class AbstractGpuParquetMultiFilePartitionReaderFactory(
       conf: Configuration,
       filters: Array[Filter],
       readDataSchema: StructType) extends UnboundedAsyncRunner[Array[BlockMetaWithPartFile]]
-      with Logging {
+      with RapidsLocalLog {
 
     override def callImpl(): Array[BlockMetaWithPartFile] = {
       TrampolineUtil.setTaskContext(taskContext)
@@ -1359,11 +1361,11 @@ abstract class AbstractGpuParquetMultiFilePartitionReaderFactory(
         metaAndFilesArr.foreach { metaAndFile =>
           val singleFileInfo = metaAndFile.meta
           clippedBlocks ++= singleFileInfo.blocks.map(block =>
-            ParquetSingleDataBlockMeta(
+            new ParquetSingleDataBlockMeta(
               singleFileInfo.filePath,
-              ParquetDataBlock(block, compressCfg),
+              new ParquetDataBlock(block, compressCfg),
               metaAndFile.file.partitionValues,
-              ParquetSchemaWrapper(singleFileInfo.schema),
+              new ParquetSchemaWrapper(singleFileInfo.schema),
               singleFileInfo.readSchema,
               new ParquetExtraInfo(singleFileInfo.dateRebaseMode,
                 singleFileInfo.timestampRebaseMode,
@@ -1474,7 +1476,9 @@ abstract class GpuParquetPartitionReaderFactoryBase(
   // from a task when we need to create the fileIO instance. This stops a regression
   // when we materialize the hadoop conf eagerly, see:
   // https://github.com/NVIDIA/spark-rapids/issues/13353
-  @transient protected lazy val fileIO = new HadoopFileIO(broadcastedConf.value.value)
+  @transient protected lazy val fileIO = new HadoopFileIO(
+    broadcastedConf.value.value,
+    PerfIOHadoopInputFileFactory.INSTANCE)
   protected val isCaseSensitive = sqlConf.caseSensitiveAnalysis
   protected val debugDumpPrefix = rapidsConf.parquetDebugDumpPrefix
   protected val debugDumpAlways = rapidsConf.parquetDebugDumpAlways
@@ -1524,7 +1528,7 @@ case class GpuParquetPartitionReaderFactory(
     @transient params: Map[String, String])
   extends GpuParquetPartitionReaderFactoryBase(
     sqlConf, broadcastedConf, dataSchema, readDataSchema, partitionSchema,
-    rapidsConf, metrics, params) with Logging {
+    rapidsConf, metrics, params) with RapidsLocalLog {
 
   override protected def buildBaseColumnarParquetReader(
       file: PartitionedFile): PartitionReader[ColumnarBatch] = {
@@ -1563,7 +1567,7 @@ object CpuCompressionConfig {
   def disabled(): CpuCompressionConfig = CpuCompressionConfig(false, false)
 }
 
-trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
+trait ParquetPartitionReaderBase extends RapidsLocalLog with ScanWithMetrics
     with MultiFileReaderFunctions {
   // the size of Parquet magic (at start+end) and footer length values
   val PARQUET_META_SIZE: Long = 4 + 4 + 4
@@ -2254,21 +2258,21 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     block.asInstanceOf[ParquetDataBlock].dataBlock
 
   implicit def toDataBlockBase(blocks: Seq[BlockMetaData]): Seq[DataBlockBase] =
-    blocks.map(b => ParquetDataBlock(b, compressCfg))
+    blocks.map(b => new ParquetDataBlock(b, compressCfg))
 
   implicit def toBlockMetaDataSeq(blocks: Seq[DataBlockBase]): Seq[BlockMetaData] =
     blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
 }
 
 // Parquet schema wrapper
-case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
+class ParquetSchemaWrapper(val schema: MessageType) extends SchemaBase with Serializable {
   override def isEmpty: Boolean = schema.getFields.isEmpty
 }
 
 // Parquet BlockMetaData wrapper
-case class ParquetDataBlock(
-    dataBlock: BlockMetaData,
-    compressCfg: CpuCompressionConfig) extends DataBlockBase {
+class ParquetDataBlock(
+    val dataBlock: BlockMetaData,
+    val compressCfg: CpuCompressionConfig) extends DataBlockBase with Serializable {
   override def getRowCount: Long = dataBlock.getRowCount
   override def getReadDataSize: Long = dataBlock.getTotalByteSize
   override def getBlockSize: Long = {
@@ -2282,13 +2286,13 @@ class ParquetExtraInfo(val dateRebaseMode: DateTimeRebaseMode,
     val hasInt96Timestamps: Boolean) extends ExtraInfo
 
 // contains meta about a single block in a file
-case class ParquetSingleDataBlockMeta(
-  filePath: Path,
-  dataBlock: ParquetDataBlock,
-  partitionValues: InternalRow,
-  schema: ParquetSchemaWrapper,
-  readSchema: StructType,
-  extraInfo: ParquetExtraInfo) extends SingleDataBlockInfo
+class ParquetSingleDataBlockMeta(
+  val filePath: Path,
+  val dataBlock: ParquetDataBlock,
+  val partitionValues: InternalRow,
+  val schema: ParquetSchemaWrapper,
+  val readSchema: StructType,
+  val extraInfo: ParquetExtraInfo) extends SingleDataBlockInfo with Serializable
 
 /**
  * Abstract base class for coalescing Parquet partition readers.
@@ -2676,8 +2680,8 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
       next.dateRebaseMode,
       current.timestampRebaseMode,
       next.timestampRebaseMode,
-      ParquetSchemaWrapper(current.clippedSchema),
-      ParquetSchemaWrapper(next.clippedSchema),
+      new ParquetSchemaWrapper(current.clippedSchema),
+      new ParquetSchemaWrapper(next.clippedSchema),
       current.partitionedFile.filePath.toString(),
       next.partitionedFile.filePath.toString()
     )
@@ -2916,7 +2920,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
   private class ReadBatchRunner(
       file: PartitionedFile,
       filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta,
-      taskContext: TaskContext) extends MemoryBoundedAsyncRunner[BufferInfo] with Logging {
+      taskContext: TaskContext) extends MemoryBoundedAsyncRunner[BufferInfo] with RapidsLocalLog {
 
     // Set TaskContext in terms of an AsyncRunner
     override def sparkTaskContext: Option[TaskContext] = Some(taskContext)
@@ -3325,7 +3329,15 @@ class MultiFileCloudParquetPartitionReader(
   }
 }
 
-object MakeParquetTableProducer extends Logging {
+object MakeParquetTableProducer {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
   def apply(
       useChunkedReader: Boolean,
       maxChunkedReaderMemoryUsageSizeBytes: Long,
@@ -3406,7 +3418,7 @@ trait ChunkedReader extends AutoCloseable {
 /**
  * A simple wrapper to adapt the JniParquetChunkedReader to the ChunkedReader interface.
  */
-case class ParquetChunkedReader(delegate: JniParquetChunkedReader) extends ChunkedReader {
+class ParquetChunkedReader(val delegate: JniParquetChunkedReader) extends ChunkedReader {
   override def hasNext: Boolean = delegate.hasNext
   override def next: Table = delegate.readChunk()
   override def close(): Unit = delegate.close()
@@ -3427,7 +3439,7 @@ abstract class AbstractParquetTableReader(
     clippedParquetSchema: MessageType,
     splits: Array[PartitionedFile],
     debugDumpPrefix: Option[String],
-    debugDumpAlways: Boolean) extends GpuDataProducer[Table] with Logging {
+    debugDumpAlways: Boolean) extends GpuDataProducer[Table] with RapidsLocalLog {
 
   protected val reader: ChunkedReader
 
@@ -3500,7 +3512,7 @@ case class ParquetTableReader(
   opts, buffers, metrics, dateRebaseMode, timestampRebaseMode, isSchemaCaseSensitive, useFieldId,
   readDataSchema, clippedParquetSchema, splits, debugDumpPrefix, debugDumpAlways) {
 
-  override protected val reader: ChunkedReader = ParquetChunkedReader(
+  override protected val reader: ChunkedReader = new ParquetChunkedReader(
     new JniParquetChunkedReader(chunkSizeByteLimit, maxChunkedReaderMemoryUsageSizeBytes,
       opts, buffers:_*)
   )

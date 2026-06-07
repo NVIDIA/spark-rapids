@@ -31,7 +31,6 @@ import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.AggregationTagging
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Alias, Ascending, Attribute, AttributeReference, AttributeSeq, AttributeSet, Expression, ExprId, If, NamedExpression, SortOrder}
@@ -48,7 +47,15 @@ import org.apache.spark.sql.rapids.execution.{GpuBatchSubPartitioner, GpuShuffle
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object AggregateUtils extends Logging {
+object AggregateUtils {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
 
   private val aggs = List("min", "max", "avg", "sum", "count", "first", "last")
 
@@ -308,40 +315,20 @@ object AggregateUtils extends Logging {
 }
 
 /** Utility class to hold all of the metrics related to hash aggregation */
-case class GpuHashAggregateMetrics(
-    numOutputRows: GpuMetric,
-    numOutputBatches: GpuMetric,
-    numTasksRepartitioned: GpuMetric,
-    numTasksSkippedAgg: GpuMetric,
-    opTime: GpuMetric,
-    computeAggTime: GpuMetric,
-    concatTime: GpuMetric,
-    sortTime: GpuMetric,
-    repartitionTime: GpuMetric,
-    numAggOps: GpuMetric,
-    numPreSplits: GpuMetric,
-    singlePassTasks: GpuMetric,
-    heuristicTime: GpuMetric) {
-}
-
-/** Utility class to convey information on the aggregation modes being used */
-case class AggregateModeInfo(
-    uniqueModes: Seq[AggregateMode],
-    hasPartialMode: Boolean,
-    hasPartialMergeMode: Boolean,
-    hasFinalMode: Boolean,
-    hasCompleteMode: Boolean)
-
-object AggregateModeInfo {
-  def apply(uniqueModes: Seq[AggregateMode]): AggregateModeInfo = {
-    AggregateModeInfo(
-      uniqueModes = uniqueModes,
-      hasPartialMode = uniqueModes.contains(Partial),
-      hasPartialMergeMode = uniqueModes.contains(PartialMerge),
-      hasFinalMode = uniqueModes.contains(Final),
-      hasCompleteMode = uniqueModes.contains(Complete)
-    )
-  }
+class GpuHashAggregateMetrics(
+    val numOutputRows: GpuMetric,
+    val numOutputBatches: GpuMetric,
+    val numTasksRepartitioned: GpuMetric,
+    val numTasksSkippedAgg: GpuMetric,
+    val opTime: GpuMetric,
+    val computeAggTime: GpuMetric,
+    val concatTime: GpuMetric,
+    val sortTime: GpuMetric,
+    val repartitionTime: GpuMetric,
+    val numAggOps: GpuMetric,
+    val numPreSplits: GpuMetric,
+    val singlePassTasks: GpuMetric,
+    val heuristicTime: GpuMetric) extends Serializable {
 }
 
 /**
@@ -619,7 +606,8 @@ class AggHelper(
   }
 }
 
-object GpuAggregateIterator extends Logging {
+object GpuAggregateIterator {
+
   /**
    * @note abstracted away for a unit test..
    * @param helper
@@ -753,9 +741,9 @@ object GpuAggFirstPassIterator {
 //  * boundFinalProjections: on merged batches, finalize aggregates
 //     (GpuAverage => CudfSum/CudfCount)
 //  * boundResultReferences: project the result expressions Spark expects in the output.
-case class BoundExpressionsModeAggregates(
-    boundFinalProjections: Option[Seq[GpuExpression]],
-    boundResultReferences: Seq[Expression])
+class BoundExpressionsModeAggregates(
+    val boundFinalProjections: Option[Seq[GpuExpression]],
+    val boundResultReferences: Seq[Expression])
 
 object GpuAggFinalPassIterator {
 
@@ -805,7 +793,7 @@ object GpuAggFinalPassIterator {
     } else {
       GpuBindReferences.bindGpuReferences(resultExpressions, groupingAttributes, metrics)
     }
-    BoundExpressionsModeAggregates(
+    new BoundExpressionsModeAggregates(
       boundFinalProjections,
       boundResultReferences)
   }
@@ -909,7 +897,7 @@ class GpuMergeAggregateIterator(
     localInputRowsCount: LocalGpuMetric,
     allMetrics: Map[String, GpuMetric]
 )
-  extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
+  extends Iterator[ColumnarBatch] with AutoCloseable with RapidsLocalLog {
   private[this] val isReductionOnly = groupingExpressions.isEmpty
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
 
@@ -978,7 +966,7 @@ class GpuMergeAggregateIterator(
             s"$firstPassReductionRatioEstimate")
           // if so, skip any aggregation, return the origin batch directly
 
-          realIter = Some(ConcatIterator(firstPassIter, configuredTargetBatchSize))
+          realIter = Some(new ConcatIterator(firstPassIter, configuredTargetBatchSize))
           metrics.numTasksSkippedAgg += 1
           return realIter.get.next()
         } else {
@@ -1011,7 +999,7 @@ class GpuMergeAggregateIterator(
         metrics.numTasksRepartitioned += 1
       }
 
-      realIter = Some(ConcatIterator(
+      realIter = Some(new ConcatIterator(
         new CloseableBufferedIterator(buildBucketIterator()), configuredTargetBatchSize))
       realIter.get.next()
     }
@@ -1032,7 +1020,7 @@ class GpuMergeAggregateIterator(
     new AggHelper(inputAttributes, groupingExpressions, aggregateExpressions,
       forceMerge = true, conf, isSorted = false, allMetrics)
 
-  private case class ConcatIterator(
+  private class ConcatIterator(
       input: CloseableBufferedIterator[SpillableColumnarBatch],
       targetSize: Long)
     extends Iterator[ColumnarBatch] {
@@ -1061,7 +1049,7 @@ class GpuMergeAggregateIterator(
     }
   }
 
-  private case class RepartitionAggregateIterator(opTime: GpuMetric)
+  private class RepartitionAggregateIterator(opTime: GpuMetric)
     extends Iterator[SpillableColumnarBatch] {
 
     batchesByBucket = batchesByBucket.filter(_.size() > 0)
@@ -1098,7 +1086,7 @@ class GpuMergeAggregateIterator(
 
   /** Build an iterator merging aggregated batches in each bucket. */
   private def buildBucketIterator(): Iterator[SpillableColumnarBatch] = {
-    bucketIter = Some(RepartitionAggregateIterator(opTime = metrics.opTime))
+    bucketIter = Some(new RepartitionAggregateIterator(metrics.opTime))
     bucketIter.get
   }
 
@@ -1952,7 +1940,7 @@ case class GpuHashAggregateExec(
     allowSinglePassAgg: Boolean,
     allowNonFullyAggregatedOutput: Boolean,
     skipAggPassReductionRatio: Double
-) extends GpuPartitioningPreservingUnaryExecNode with GpuExec with Logging {
+) extends GpuPartitioningPreservingUnaryExecNode with GpuExec {
 
   // lifted directly from `BaseAggregateExec.inputAttributes`, edited comment.
   def inputAttributes: Seq[Attribute] =
@@ -1998,7 +1986,7 @@ case class GpuHashAggregateExec(
   }
 
   override def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    val aggMetrics = GpuHashAggregateMetrics(
+    val aggMetrics = new GpuHashAggregateMetrics(
       numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS),
       numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES),
       numTasksRepartitioned = gpuLongMetric(NUM_TASKS_REPARTITIONED),
@@ -2019,7 +2007,7 @@ case class GpuHashAggregateExec(
     val aggregateExprs = aggregateExpressions
     val aggregateAttrs = aggregateAttributes
     val resultExprs = resultExpressions
-    val modeInfo = AggregateModeInfo(uniqueModes)
+    val modeInfo = AggregateModeInfo.from(uniqueModes)
     val targetBatchSize = configuredTargetBatchSize
 
     val rdd = child.executeColumnar()
@@ -2213,7 +2201,7 @@ class DynamicGpuPartialAggregateIterator(
       inputIter
     } else {
       val sorter = new GpuSorter(ordering, inputAttrs, allMetrics)
-      GpuOutOfCoreSortIterator(inputIter,
+      new GpuOutOfCoreSortIterator(inputIter,
         sorter,
         configuredTargetBatchSize,
         opTime = metrics.opTime,

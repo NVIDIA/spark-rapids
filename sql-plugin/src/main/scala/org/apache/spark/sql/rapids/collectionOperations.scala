@@ -29,6 +29,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{GpuListSliceUtils, MapUtils}
 import com.nvidia.spark.rapids.shims.{GetSequenceSize, NullIntolerantShim, ShimExpression}
 
+import org.apache.spark.internal.config.ConfigEntry
 import org.apache.spark.sql.catalyst.analysis.{TypeCheckResult, TypeCoercion}
 import org.apache.spark.sql.catalyst.expressions.{ElementAt, ExpectsInputTypes, Expression, ImplicitCastInputTypes, NamedExpression, RowOrdering, Sequence, TimeZoneAwareExpression}
 import org.apache.spark.sql.catalyst.trees.{CurrentOrigin, Origin}
@@ -38,6 +39,14 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.unsafe.array.ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH
+
+object GpuMapDedupPolicy {
+  private val confEntry = SQLConf.MAP_KEY_DEDUP_POLICY.asInstanceOf[ConfigEntry[AnyRef]]
+
+  def current: String = SQLConf.get.getConf(confEntry).toString
+
+  def isException: Boolean = current.toUpperCase == "EXCEPTION"
+}
 
 case class GpuConcat(children: Seq[Expression]) extends GpuComplexTypeMergingExpression {
 
@@ -522,9 +531,10 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
               }
               withResource(hasLargerIndices) { _ =>
                 if (BoolUtils.isAnyValidTrue(hasLargerIndices)) {
-                  val (index, numElem) = firstIndexAndNumElementUnchecked(hasLargerIndices,
+                  val indexAndNumElement = firstIndexAndNumElementUnchecked(hasLargerIndices,
                     indices, numElements)
-                  throw RapidsErrorUtils.invalidArrayIndexError(index, numElem, true)
+                  throw RapidsErrorUtils.invalidArrayIndexError(
+                    indexAndNumElement.getIndex, indexAndNumElement.getNumElements, true)
                 }
               }
             }
@@ -739,7 +749,7 @@ case class GpuMapEntries(child: Expression) extends GpuUnaryExpression with Expe
 
 case class GpuMapFromEntries(child: Expression) extends GpuUnaryExpression with ExpectsInputTypes {
 
-  private val mapKeyDedupPolicy = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY)
+  private val mapKeyDedupPolicy = GpuMapDedupPolicy.current
 
   override def inputTypes: Seq[AbstractDataType] = Seq(ArrayType)
 
@@ -1533,7 +1543,7 @@ case class GpuArraysOverlap(left: Expression, right: Expression)
 
 case class GpuMapFromArrays(left: Expression, right: Expression) extends GpuBinaryExpression {
 
-  private val mapKeyDedupPolicy = SQLConf.get.getConf(SQLConf.MAP_KEY_DEDUP_POLICY)
+  private val mapKeyDedupPolicy = GpuMapDedupPolicy.current
 
   override def dataType: MapType = {
     MapType(

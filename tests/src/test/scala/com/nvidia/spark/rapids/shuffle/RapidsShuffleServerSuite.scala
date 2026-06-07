@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,7 +57,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         fillBuffer(hostBuff)
         deviceBuffer.copyFromHostBuffer(hostBuff)
         val mockMeta = RapidsShuffleTestHelper.mockTableMeta(100000)
-        RapidsShuffleHandle(SpillableDeviceBufferHandle(deviceBuffer), mockMeta)
+        new RapidsShuffleHandle(SpillableDeviceBufferHandle(deviceBuffer), mockMeta)
       }
     }
     new MockRapidsShuffleRequestHandler(mockBuffers)
@@ -208,7 +208,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       withResource(new RefCountedDirectByteBuffer(bb)) { _ =>
         val tableMeta = MetaUtils.buildTableMeta(1, 456, bb, 100)
         val testHandle = SpillableDeviceBufferHandle(DeviceMemoryBuffer.allocate(456))
-        val rapidsBuffer = RapidsShuffleHandle(testHandle, tableMeta)
+        val rapidsBuffer = new RapidsShuffleHandle(testHandle, tableMeta)
         when(mockRequestHandler.getShuffleHandle(ArgumentMatchers.eq(1)))
           .thenReturn(rapidsBuffer)
 
@@ -277,8 +277,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       val ex = new IllegalStateException("something happened")
       when(mockHandleThatThrows.materialize()).thenThrow(ex)
 
-      val rapidsBuffer = RapidsShuffleHandle(mockHandle, tableMeta)
-      val rapidsBufferThatThrows = RapidsShuffleHandle(mockHandleThatThrows, tableMeta)
+      val rapidsBuffer = new RapidsShuffleHandle(mockHandle, tableMeta)
+      val rapidsBufferThatThrows = new RapidsShuffleHandle(mockHandleThatThrows, tableMeta)
 
       when(mockRequestHandler.getShuffleHandle(ArgumentMatchers.eq(1)))
         .thenReturn(rapidsBuffer)
@@ -359,7 +359,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         val tableMeta = MetaUtils.buildTableMeta(tableId, 456, bb, 100)
         val rapidsBuffer = if (error) {
           val mockHandle = mock[SpillableDeviceBufferHandle]
-          val rapidsBuffer = RapidsShuffleHandle(mockHandle, tableMeta)
+          val rapidsBuffer = new RapidsShuffleHandle(mockHandle, tableMeta)
           when(mockHandle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
           // mock an error with the copy
           when(rapidsBuffer.spillable.materialize())
@@ -369,7 +369,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
           rapidsBuffer
         } else {
           val testHandle = spy(SpillableDeviceBufferHandle(spy(DeviceMemoryBuffer.allocate(456))))
-          RapidsShuffleHandle(testHandle, tableMeta)
+          new RapidsShuffleHandle(testHandle, tableMeta)
         }
         when(mockRequestHandler.getShuffleHandle(ArgumentMatchers.eq(tableId)))
           .thenAnswer(_ => rapidsBuffer)

@@ -16,6 +16,8 @@
 
 package org.apache.spark.sql.rapids
 
+import scala.util.control.NonFatal
+
 import com.nvidia.spark.rapids.RapidsHostColumnBuilder
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -65,17 +67,48 @@ class InterpretedBridgeUnsafeProjection(expressions: Seq[Expression])
 /**
  * The factory object for `UnsafeProjection`.
  */
-object BridgeUnsafeProjection
-  extends CodeGeneratorWithInterpretedFallback[Seq[Expression], BridgeUnsafeProjection] {
+object BridgeUnsafeProjection {
 
-  override protected def createCodeGeneratedObject(in: Seq[Expression]): BridgeUnsafeProjection = {
-    // Just call generate directly - let any exceptions propagate naturally
-    // The CodeGeneratorWithInterpretedFallback base class will catch exceptions 
-    // and fall back to createInterpretedObject
+  def createOptimizedAppendFunction(dataType: DataType,
+    nullable: Boolean): (Any, RapidsHostColumnBuilder) => Unit = {
+    BridgeUnsafeProjectionCodegen.createOptimizedAppendFunction(dataType, nullable)
+  }
+
+  def create(schema: StructType): BridgeUnsafeProjection = create(schema.fields.map(_.dataType))
+
+  def create(fields: Array[DataType]): BridgeUnsafeProjection = {
+    create(fields.zipWithIndex.map(x => BoundReference(x._2, x._1, true)))
+  }
+
+  def create(exprs: Seq[Expression]): BridgeUnsafeProjection = {
+    BridgeUnsafeProjectionCodegen.create(exprs)
+  }
+
+  def create(expr: Expression): BridgeUnsafeProjection = create(Seq(expr))
+
+  def create(exprs: Seq[Expression], inputSchema: Seq[Attribute]): BridgeUnsafeProjection = {
+    create(bindReferences(exprs, inputSchema))
+  }
+}
+
+private object BridgeUnsafeProjectionCodegen {
+  private[this] val log = org.slf4j.LoggerFactory.getLogger(getClass)
+
+  private def createObject(in: Seq[Expression]): BridgeUnsafeProjection = {
+    try {
+      createCodeGeneratedObject(in)
+    } catch {
+      case NonFatal(e) =>
+        log.warn("Expr codegen error and falling back to interpreter mode", e)
+        createInterpretedObject(in)
+    }
+  }
+
+  private def createCodeGeneratedObject(in: Seq[Expression]): BridgeUnsafeProjection = {
     BridgeGenerateUnsafeProjection.generate(in, SQLConf.get.subexpressionEliminationEnabled)
   }
 
-  override protected def createInterpretedObject(in: Seq[Expression]): BridgeUnsafeProjection = {
+  private def createInterpretedObject(in: Seq[Expression]): BridgeUnsafeProjection = {
     new InterpretedBridgeUnsafeProjection(in)
   }
 
@@ -238,8 +271,8 @@ object BridgeUnsafeProjection
  *
  * @note The returned UnsafeRow will be pointed to a scratch buffer inside the projection.
  */
-object BridgeGenerateUnsafeProjection extends
-  CodeGenerator[Seq[Expression], BridgeUnsafeProjection] {
+object BridgeGenerateUnsafeProjection {
+  private val codegenLog = org.slf4j.LoggerFactory.getLogger(getClass)
 
   case class Schema(dataType: DataType, nullable: Boolean)
 
@@ -547,6 +580,18 @@ object BridgeGenerateUnsafeProjection extends
   protected def bind(in: Seq[Expression], inputSchema: Seq[Attribute]): Seq[Expression] =
     bindReferences(in, inputSchema)
 
+  def newCodeGenContext(): CodegenContext = new CodegenContext
+
+  def generate(expressions: Seq[Expression]): BridgeUnsafeProjection = {
+    create(canonicalize(expressions))
+  }
+
+  def generate(
+      expressions: Seq[Expression],
+      inputSchema: Seq[Attribute]): BridgeUnsafeProjection = {
+    generate(bind(expressions, inputSchema))
+  }
+
   def generate(
       expressions: Seq[Expression],
       subexpressionEliminationEnabled: Boolean): BridgeUnsafeProjection = {
@@ -640,7 +685,9 @@ object BridgeGenerateUnsafeProjection extends
 
     val code = CodeFormatter.stripOverlappingComments(
       new CodeAndComment(codeBody, ctx.getPlaceHolderToComments()))
-    logDebug(s"code for ${expressions.mkString(",")}:\n${CodeFormatter.format(code)}")
+    if (codegenLog.isDebugEnabled) {
+      codegenLog.debug(s"code for ${expressions.mkString(",")}:\n${CodeFormatter.format(code)}")
+    }
 
     val (clazz, _) = CodeGenerator.compile(code)
     clazz.generate(ctx.references.toArray).asInstanceOf[BridgeUnsafeProjection]

@@ -18,12 +18,12 @@ package com.nvidia.spark.rapids
 
 import org.apache.spark.scheduler.SparkListenerEvent
 
-case class SparkRapidsBuildInfoEvent(
-  sparkRapidsBuildInfo: Map[String, String],
-  sparkRapidsJniBuildInfo: Map[String, String],
-  cudfBuildInfo: Map[String, String],
-  sparkRapidsPrivateBuildInfo: Map[String, String]
-) extends SparkListenerEvent
+class SparkRapidsBuildInfoEvent(
+  val sparkRapidsBuildInfo: Map[String, String],
+  val sparkRapidsJniBuildInfo: Map[String, String],
+  val cudfBuildInfo: Map[String, String],
+  val sparkRapidsPrivateBuildInfo: Map[String, String]
+) extends SparkListenerEvent with Serializable
 
 /**
  * Event posted when a shuffle is unregistered, containing disk I/O savings statistics.
@@ -37,11 +37,11 @@ case class SparkRapidsBuildInfoEvent(
  * @param numSpills Number of buffers that were spilled to disk
  * @param numForcedFileOnly Number of buffers that used forced file-only mode
  */
-case class SparkRapidsShuffleDiskSavingsEvent(
-  shuffleId: Int,
-  bytesFromMemory: Long,
-  bytesFromDisk: Long,
-  numExpansions: Int = 0,
-  numSpills: Int = 0,
-  numForcedFileOnly: Int = 0
-) extends SparkListenerEvent
+class SparkRapidsShuffleDiskSavingsEvent(
+  val shuffleId: Int,
+  val bytesFromMemory: Long,
+  val bytesFromDisk: Long,
+  val numExpansions: Int,
+  val numSpills: Int,
+  val numForcedFileOnly: Int
+) extends SparkListenerEvent with Serializable

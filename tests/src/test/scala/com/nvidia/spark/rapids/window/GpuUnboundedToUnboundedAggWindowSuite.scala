@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
     val finalProject = GpuUnboundedToUnboundedAggWindowIterator.computeFinalProject(
       rideAlongOutput, repeatOutput, repeatOutput ++ rideAlongOutput, Map.empty)
 
-    val conf = GpuUnboundedToUnboundedAggStages(Seq.empty, Seq.empty, Seq.empty,
+    val conf = new GpuUnboundedToUnboundedAggStages(Seq.empty, Seq.empty, Seq.empty,
                                                 Seq.empty, finalProject)
 
     def makeRepeatCb(): SpillableColumnarBatch = {
@@ -89,7 +89,7 @@ class GpuUnboundedToUnboundedAggWindowSuite extends RmmSparkRetrySuiteBase {
       rowsRemaining -= rowsToAdd
       rideAlongList.add(makeRideAlongCb(rowsToAdd.toInt))
     }
-    val inputIter = Seq(SecondPassAggResult(rideAlongList, makeRepeatCb())).toIterator
+    val inputIter = Seq(new SecondPassAggResult(rideAlongList, makeRepeatCb())).toIterator
     val splitIter = new GpuUnboundedToUnboundedAggSliceBySizeIterator(inputIter, conf,
       targetSizeBytes, NoopMetric)
     val repeatIter = new GpuUnboundedToUnboundedAggFinalIterator(splitIter, conf,

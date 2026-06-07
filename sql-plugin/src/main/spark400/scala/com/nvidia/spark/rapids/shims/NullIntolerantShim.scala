@@ -28,3 +28,24 @@ import org.apache.spark.sql.catalyst.expressions.Expression
 trait NullIntolerantShim extends Expression {
   override def nullIntolerant: Boolean = true
 }
+
+abstract class GpuLiteralShim extends com.nvidia.spark.rapids.GpuLeafExpression {
+  def value: Any
+  def dataType: org.apache.spark.sql.types.DataType
+
+  override protected def jsonFields: List[org.json4s.JsonAST.JField] = {
+    val jsonValue = (value, dataType) match {
+      case (null, _) => org.json4s.JsonAST.JNull
+      case (i: Int, org.apache.spark.sql.types.DateType) =>
+        org.json4s.JsonAST.JString(
+          org.apache.spark.sql.catalyst.util.DateTimeUtils.toJavaDate(i).toString)
+      case (l: Long, org.apache.spark.sql.types.TimestampType) =>
+        org.json4s.JsonAST.JString(
+          org.apache.spark.sql.catalyst.util.DateTimeUtils.toJavaTimestamp(l).toString)
+      case (other, _) => org.json4s.JsonAST.JString(other.toString)
+    }
+    ("value" -> jsonValue) ::
+      ("dataType" -> org.apache.spark.sql.rapids.execution.TrampolineUtil.jsonValue(dataType)
+        .asInstanceOf[org.json4s.JsonAST.JValue]) :: Nil
+  }
+}

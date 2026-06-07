@@ -28,7 +28,6 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.{GpuWindowUtil, ShimExpression}
 import scala.util.{Left, Right}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult.{TypeCheckFailure, TypeCheckSuccess}
 import org.apache.spark.sql.catalyst.expressions._
@@ -1088,7 +1087,7 @@ class BatchedUnboundedToUnboundedBinaryFixer(val binOp: BinaryOp, val dataType: 
  * right thing when they see a null.
  */
 class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
-    extends BatchedRunningWindowFixer with Logging {
+    extends BatchedRunningWindowFixer with RapidsLocalLog {
   private var previousResult: Option[Scalar] = None
 
   // checkpoint
@@ -1157,7 +1156,7 @@ class BatchedRunningWindowBinaryFixer(val binOp: BinaryOp, val name: String)
  * @param ignoreNulls Whether the function needs to ignore NULL values in the calculation.
  */
 abstract class FirstLastRunningWindowFixerBase(val name: String, val ignoreNulls: Boolean = false)
-  extends BatchedRunningWindowFixer with Logging {
+  extends BatchedRunningWindowFixer with RapidsLocalLog {
 
   /**
    * Saved "carry-over" result that might be applied to the next batch.
@@ -1365,7 +1364,7 @@ class LastRunningWindowFixer(ignoreNulls: Boolean = false)
  * might be able to make this more generic but we need to see what the use case really is.
  */
 class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
-    extends BatchedRunningWindowFixer with Logging {
+    extends BatchedRunningWindowFixer with RapidsLocalLog {
   private val name = "sum"
   private var previousResult: Option[Scalar] = None
   private var previousOverflow: Option[Scalar] = None
@@ -1642,7 +1641,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
  * happens in the `scanCombine` method for GpuRank.  It is a little ugly but it works to maintain
  * the requirement that the input to the fixer is a single column.
  */
-class RankFixer extends BatchedRunningWindowFixer with Logging {
+class RankFixer extends BatchedRunningWindowFixer with RapidsLocalLog {
   import RankFixer._
 
   // We have to look at row number as well as rank.  This fixer is the same one that `GpuRowNumber`
@@ -1769,7 +1768,7 @@ object RankFixer {
  * If anything is outside of a continues partition by group then we just keep
  * those values unchanged.
  */
-class DenseRankFixer extends BatchedRunningWindowFixer with Logging {
+class DenseRankFixer extends BatchedRunningWindowFixer with RapidsLocalLog {
   import DenseRankFixer._
 
   private var previousRank: Option[Scalar] = None
@@ -1942,11 +1941,11 @@ case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
       isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] = {
     if (isRunningBatched) {
       // We are computing both rank and row number so we can fix it up at the end
-      Seq(AggAndReplace(GroupByScanAggregation.rank(), None),
-        AggAndReplace(GroupByScanAggregation.sum(), None))
+      Seq(new AggAndReplace(GroupByScanAggregation.rank(), None),
+        new AggAndReplace(GroupByScanAggregation.sum(), None))
     } else {
       // Not batched just do the rank
-      Seq(AggAndReplace(GroupByScanAggregation.rank(), None))
+      Seq(new AggAndReplace(GroupByScanAggregation.rank(), None))
     }
   }
 
@@ -1955,10 +1954,12 @@ case class GpuRank(children: Seq[Expression]) extends GpuRunningWindowFunction
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] = {
     if (isRunningBatched) {
       // We are computing both rank and row number so we can fix it up at the end
-      Seq(AggAndReplace(ScanAggregation.rank(), None), AggAndReplace(ScanAggregation.sum(), None))
+      Seq(
+        new AggAndReplace(ScanAggregation.rank(), None),
+        new AggAndReplace(ScanAggregation.sum(), None))
     } else {
       // Not batched just do the rank
-      Seq(AggAndReplace(ScanAggregation.rank(), None))
+      Seq(new AggAndReplace(ScanAggregation.rank(), None))
     }
   }
 
@@ -2007,13 +2008,13 @@ case class GpuDenseRank(children: Seq[Expression]) extends GpuRunningWindowFunct
 
   override def groupByScanAggregation(
       isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
-    Seq(AggAndReplace(GroupByScanAggregation.denseRank(), None))
+    Seq(new AggAndReplace(GroupByScanAggregation.denseRank(), None))
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     groupByScanInputProjection(isRunningBatched)
 
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
-    Seq(AggAndReplace(ScanAggregation.denseRank(), None))
+    Seq(new AggAndReplace(ScanAggregation.denseRank(), None))
 
   override def newFixer(): BatchedRunningWindowFixer = new DenseRankFixer()
 }
@@ -2040,14 +2041,14 @@ case object GpuRowNumber extends GpuRunningWindowFunction
 
   override def groupByScanAggregation(
       isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
-    Seq(AggAndReplace(GroupByScanAggregation.sum(), None))
+    Seq(new AggAndReplace(GroupByScanAggregation.sum(), None))
 
   // For regular scans cudf does not support ROW_NUMBER, nor does it support COUNT_ALL
   // so we will do a SUM on a column of 1s
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     groupByScanInputProjection(isRunningBatched)
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
-    Seq(AggAndReplace(ScanAggregation.sum(), None))
+    Seq(new AggAndReplace(ScanAggregation.sum(), None))
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
     cols.head.castTo(DType.INT32)

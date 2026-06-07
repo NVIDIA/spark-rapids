@@ -41,14 +41,14 @@ object BloomFilterShims {
         }),
       GpuOverrides.expr[BloomFilterAggregate](
         "Bloom filter build",
-        ExprChecksImpl(Map(
+        new ExprChecksImpl(Map(
           (ReductionAggExprContext,
-            ContextChecks(TypeSig.BINARY, TypeSig.BINARY,
-              Seq(ParamCheck("child", TypeSig.LONG, TypeSig.LONG),
-                ParamCheck("estimatedItems",
+            new ContextChecks(TypeSig.BINARY, TypeSig.BINARY,
+              Seq(new ParamCheck("child", TypeSig.LONG, TypeSig.LONG),
+                new ParamCheck("estimatedItems",
                   TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG)),
-                ParamCheck("numBits",
-                  TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG))))))),
+                new ParamCheck("numBits",
+                  TypeSig.lit(TypeEnum.LONG), TypeSig.lit(TypeEnum.LONG))), None)))),
         (a, conf, p, r) => new TypedImperativeAggExprMeta[BloomFilterAggregate](a, conf, p, r) {
           private lazy val estimatedNumItems =
             GpuBloomFilterAggregate.clampEstimatedNumItems(

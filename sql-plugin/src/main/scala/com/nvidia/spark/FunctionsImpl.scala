@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function0[Column]): UserDefinedFunction =
-    sp_udf(DFUDF0(f), LongType)
+    sp_udf(new DFUDF0(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -43,7 +43,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function1[Column, Column]): UserDefinedFunction =
-    sp_udf(DFUDF1(f), LongType)
+    sp_udf(new DFUDF1(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -51,7 +51,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function2[Column, Column, Column]): UserDefinedFunction =
-    sp_udf(DFUDF2(f), LongType)
+    sp_udf(new DFUDF2(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -59,7 +59,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function3[Column, Column, Column, Column]): UserDefinedFunction =
-    sp_udf(DFUDF3(f), LongType)
+    sp_udf(new DFUDF3(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -67,7 +67,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function4[Column, Column, Column, Column, Column]): UserDefinedFunction =
-    sp_udf(DFUDF4(f), LongType)
+    sp_udf(new DFUDF4(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -75,7 +75,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function5[Column, Column, Column, Column, Column,
-    Column]): UserDefinedFunction = sp_udf(DFUDF5(f), LongType)
+    Column]): UserDefinedFunction = sp_udf(new DFUDF5(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -83,7 +83,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function6[Column, Column, Column, Column, Column, Column,
-    Column]): UserDefinedFunction = sp_udf(DFUDF6(f), LongType)
+    Column]): UserDefinedFunction = sp_udf(new DFUDF6(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -91,7 +91,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function7[Column, Column, Column, Column, Column, Column,
-    Column, Column]): UserDefinedFunction = sp_udf(DFUDF7(f), LongType)
+    Column, Column]): UserDefinedFunction = sp_udf(new DFUDF7(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -99,7 +99,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function8[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column]): UserDefinedFunction = sp_udf(DFUDF8(f), LongType)
+    Column, Column, Column]): UserDefinedFunction = sp_udf(new DFUDF8(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -107,7 +107,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function9[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column, Column]): UserDefinedFunction = sp_udf(DFUDF9(f), LongType)
+    Column, Column, Column, Column]): UserDefinedFunction = sp_udf(new DFUDF9(f), LongType)
 
   /**
    * Defines a Scala closure of Columns as user-defined function (UDF).
@@ -115,7 +115,7 @@ class FunctionsImpl extends Functions {
    * nondeterministic, call the API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: Function10[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column, Column, Column]): UserDefinedFunction = sp_udf(DFUDF10(f), LongType)
+    Column, Column, Column, Column, Column]): UserDefinedFunction = sp_udf(new DFUDF10(f), LongType)
 
 
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -128,7 +128,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF0[Column]): UserDefinedFunction =
-    sp_udf(JDFUDF0(f), LongType)
+    sp_udf(new JDFUDF0(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -136,7 +136,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF1[Column, Column]): UserDefinedFunction =
-    sp_udf(JDFUDF1(f), LongType)
+    sp_udf(new JDFUDF1(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -144,7 +144,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF2[Column, Column, Column]): UserDefinedFunction =
-    sp_udf(JDFUDF2(f), LongType)
+    sp_udf(new JDFUDF2(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -152,7 +152,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF3[Column, Column, Column, Column]): UserDefinedFunction =
-    sp_udf(JDFUDF3(f), LongType)
+    sp_udf(new JDFUDF3(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -160,7 +160,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF4[Column, Column, Column, Column, Column]): UserDefinedFunction =
-    sp_udf(JDFUDF4(f), LongType)
+    sp_udf(new JDFUDF4(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -168,7 +168,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF5[Column, Column, Column, Column, Column,
-    Column]): UserDefinedFunction = sp_udf(JDFUDF5(f), LongType)
+    Column]): UserDefinedFunction = sp_udf(new JDFUDF5(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -176,7 +176,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF6[Column, Column, Column, Column, Column, Column,
-    Column]): UserDefinedFunction = sp_udf(JDFUDF6(f), LongType)
+    Column]): UserDefinedFunction = sp_udf(new JDFUDF6(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -184,7 +184,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF7[Column, Column, Column, Column, Column, Column,
-    Column, Column]): UserDefinedFunction = sp_udf(JDFUDF7(f), LongType)
+    Column, Column]): UserDefinedFunction = sp_udf(new JDFUDF7(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -192,7 +192,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF8[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column]): UserDefinedFunction = sp_udf(JDFUDF8(f), LongType)
+    Column, Column, Column]): UserDefinedFunction = sp_udf(new JDFUDF8(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -200,7 +200,7 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF9[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column, Column]): UserDefinedFunction = sp_udf(JDFUDF9(f), LongType)
+    Column, Column, Column, Column]): UserDefinedFunction = sp_udf(new JDFUDF9(f), LongType)
 
   /**
    * Defines a Java UDF instance of Columns as user-defined function (UDF).
@@ -208,5 +208,6 @@ class FunctionsImpl extends Functions {
    * API `UserDefinedFunction.asNondeterministic()`.
    */
   override def df_udf(f: UDF10[Column, Column, Column, Column, Column, Column,
-    Column, Column, Column, Column, Column]): UserDefinedFunction = sp_udf(JDFUDF10(f), LongType)
+    Column, Column, Column, Column, Column]): UserDefinedFunction =
+    sp_udf(new JDFUDF10(f), LongType)
 }

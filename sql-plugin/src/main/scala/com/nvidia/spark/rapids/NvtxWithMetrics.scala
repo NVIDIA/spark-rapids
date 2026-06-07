@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,11 +76,11 @@ object NvtxIdWithMetrics {
   }
 }
 
-class MetricRange(val metrics: Seq[GpuMetric], val excludeMetric: Seq[GpuMetric] = Seq.empty)
+class MetricRange(val metrics: Seq[GpuMetric], val excludeMetric: Seq[GpuMetric])
   extends AutoCloseable {
 
   // add a convenient constructor
-  def this(metrics: GpuMetric*) = this(metrics.toSeq)
+  def this(metrics: GpuMetric*) = this(metrics.toSeq, Seq.empty)
 
   val needTracks = metrics.map(_.tryActivateTimer(excludeMetric))
   private val start = System.nanoTime()

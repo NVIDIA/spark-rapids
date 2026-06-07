@@ -36,6 +36,19 @@ class GpuOrcDataReader(
 }
 
 
+// Keep executable line numbers aligned with pre-Spark-4 shims for binary-dedupe.
+
+
+
+
+
+
+
+
+
+
+
+
 object GpuOrcDataReader {
   // File cache is being used, so we want read ranges that can be cached separately
   val shouldMergeDiskRanges: Boolean = false

@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.parquet
 
 import java.io.{InputStream, IOException}
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -95,7 +95,7 @@ private class ByteBufferInputStream(private var buffer: ByteBuffer)
   override def skip(bytes: Long): Long = {
     if (buffer != null) {
       val amountToSkip = math.min(bytes, buffer.remaining).toInt
-      buffer.position(buffer.position() + amountToSkip)
+      buffer.asInstanceOf[Buffer].position(buffer.position() + amountToSkip)
       if (buffer.remaining() == 0) {
         cleanUp()
       }
@@ -128,7 +128,7 @@ class ByteArrayInputFile(buff: Array[Byte]) extends InputFile {
         if (newPos > Int.MaxValue || newPos < Int.MinValue) {
           throw new IllegalStateException("seek value is out of supported range " + newPos)
         }
-        byteBuffer.position(newPos.toInt)
+        byteBuffer.asInstanceOf[Buffer].position(newPos.toInt)
       }
     }
   }
@@ -231,7 +231,7 @@ case class ParquetCachedBatch(
  * Spark wants the producer to close the batch. We have a listener in this iterator that will close
  * the batch after the task is completed
  */
-private case class CloseableColumnBatchIterator(iter: Iterator[ColumnarBatch]) extends
+private class CloseableColumnBatchIterator(val iter: Iterator[ColumnarBatch]) extends
     Iterator[ColumnarBatch] {
   var cb: ColumnarBatch = _
 
@@ -592,7 +592,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
           new ColumnarBatch(cols.safeMap(_.copyToHost()).toArray, gpuBatch.numRows())
         }
       })
-      cbRdd.mapPartitions(iter => CloseableColumnBatchIterator(iter))
+      cbRdd.mapPartitions(iter => new CloseableColumnBatchIterator(iter))
     } else {
       val origSelectedAttributesWithUnambiguousNames =
         sanitizeColumnNames(selectedAttributes, selectedSchemaWithNames)

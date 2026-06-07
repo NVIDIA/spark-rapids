@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,7 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ContiguousTable, Cuda, DeviceMemoryBuffer}
 import ai.rapids.cudf.nvcomp.{BatchedZstdCompressor, BatchedZstdDecompressor}
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.format.{BufferMeta, CodecType}
 
 /** A table compression codec that uses nvcomp's ZSTD-GPU codec */
@@ -59,7 +58,7 @@ class BatchedNvcompZSTDCompressor(maxBatchMemorySize: Long,
         compressedBufs.zip(tables).map { case (buffer, table) =>
           val compressedLen = buffer.getLength
           val meta = MetaUtils.buildTableMeta(None, table, CodecType.NVCOMP_ZSTD, compressedLen)
-          CompressedTable(compressedLen, meta, buffer)
+          new CompressedTable(compressedLen, meta, buffer)
         }.toArray
       }
     }
@@ -88,25 +87,5 @@ class BatchedNvcompZSTDDecompressor(maxBatchMemory: Long,
     batchDecompressor.decompressAsync(compressedBufs,
       outputBufs.asInstanceOf[Array[BaseDeviceMemoryBuffer]], stream)
     outputBufs
-  }
-}
-
-object DeviceBuffersUtils {
-  def incRefCount(bufs: Array[BaseDeviceMemoryBuffer]): Array[BaseDeviceMemoryBuffer] = {
-    bufs.safeMap { b =>
-      b.incRefCount()
-      b
-    }
-  }
-
-  def allocateBuffers(bufSizes: Array[Long]): Array[DeviceMemoryBuffer] = {
-    var curPos = 0L
-    withResource(DeviceMemoryBuffer.allocate(bufSizes.sum)) { singleBuf =>
-      bufSizes.safeMap { len =>
-        val ret = singleBuf.slice(curPos, len)
-        curPos += len
-        ret
-      }
-    }
   }
 }

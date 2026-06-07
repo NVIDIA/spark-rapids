@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.ShimExpression
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeSeq, Expression}
 import org.apache.spark.sql.rapids.BridgeUnsafeProjection
@@ -47,8 +46,16 @@ case class GpuCpuBridgeExpression(
     gpuInputs: Seq[Expression],
     cpuExpression: Expression,
     outputDataType: DataType,
-    outputNullable: Boolean) extends GpuExpression with ShimExpression 
-    with Logging with GpuBind with GpuMetricsInjectable {
+    outputNullable: Boolean) extends GpuExpression with ShimExpression
+    with GpuBind with GpuMetricsInjectable {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
 
   override def children: Seq[Expression] = gpuInputs ++ Seq(cpuExpression)
 

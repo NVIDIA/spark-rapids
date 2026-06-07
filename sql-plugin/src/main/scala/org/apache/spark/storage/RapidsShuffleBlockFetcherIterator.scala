@@ -33,7 +33,7 @@ import org.roaringbitmap.RoaringBitmap
 import org.apache.spark.{MapOutputTracker, SparkEnv, TaskContext}
 import org.apache.spark.MapOutputTracker.SHUFFLE_PUSH_MAP_ID
 import org.apache.spark.SparkException
-import org.apache.spark.internal.{config, Logging}
+import org.apache.spark.internal.config
 import org.apache.spark.network.buffer.{FileSegmentManagedBuffer, ManagedBuffer}
 import org.apache.spark.network.shuffle._
 import org.apache.spark.network.shuffle.checksum.{Cause, ShuffleChecksumHelper}
@@ -115,7 +115,51 @@ final class RapidsShuffleBlockFetcherIterator(
     checksumAlgorithm: String,
     shuffleMetrics: ShuffleReadMetricsReporter,
     doBatchFetch: Boolean)
-  extends Iterator[(BlockId, InputStream)] with DownloadFileManager with Logging {
+  extends Iterator[(BlockId, InputStream)] with DownloadFileManager {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg, throwable)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logTrace(msg: => String): Unit = {
+    if (log.isTraceEnabled) {
+      log.trace(msg)
+    }
+  }
+
+  private def logError(msg: => String): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg)
+    }
+  }
+
+  private def logError(msg: => String, throwable: Throwable): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg, throwable)
+    }
+  }
 
   import RapidsShuffleBlockFetcherIterator._
 

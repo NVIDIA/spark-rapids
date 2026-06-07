@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,18 +22,17 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
 
-import org.apache.spark.internal.Logging
-
-object RangeDebugger extends Logging {
+object RangeDebugger {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
   val threadLocalStack = new ThreadLocal[mutable.ArrayStack[NvtxId]] {
     override def initialValue(): mutable.ArrayStack[NvtxId] = mutable.ArrayStack[NvtxId]()
   }
 
   private def dumpOrderErrorMessage(popped: Option[NvtxId], elem: NvtxId): Unit = {
-    logError(s"OUT OF ORDER POP of $elem")
-    logError(s"TOP OF STACK IS ${popped.getOrElse("<nil>")}")
+    log.error(s"OUT OF ORDER POP of $elem")
+    log.error(s"TOP OF STACK IS ${popped.getOrElse("<nil>")}")
     val stackTrace = Thread.currentThread.getStackTrace
-    stackTrace.foreach(elem => logError(elem.toString))
+    stackTrace.foreach(elem => log.error(elem.toString))
   }
 
   def push(elem: NvtxId): Unit = {

@@ -22,9 +22,22 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.ShuffleManagerShimUtils
 
 import org.apache.spark.{SparkConf, SparkEnv}
-import org.apache.spark.internal.Logging
 
-class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
+class GpuShuffleEnv(rapidsConf: RapidsConf) {
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[GpuShuffleEnv])
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
   private var shuffleCatalog: ShuffleBufferCatalog = _
   private var shuffleReceivedBufferCatalog: ShuffleReceivedBufferCatalog = _
   private var multithreadedCatalog: MultithreadedShuffleBufferCatalog = _
@@ -89,7 +102,7 @@ class GpuShuffleEnv(rapidsConf: RapidsConf) extends Logging {
   }
 }
 
-object GpuShuffleEnv extends Logging {
+object GpuShuffleEnv {
   def isUCXShuffleAndEarlyStart(conf: RapidsConf): Boolean = {
     conf.isUCXShuffleManagerMode &&
       conf.shuffleTransportEarlyStart

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,22 +21,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, ContiguousTable, Cuda, DeviceMemoryBuffer}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.format.{BufferMeta, CodecType, TableMeta}
-
-import org.apache.spark.internal.Logging
-
-/**
- * Compressed table descriptor
- * @param compressedSize size of the compressed data in bytes
- * @param meta metadata describing the table layout when uncompressed
- * @param buffer buffer containing the compressed data
- */
-case class CompressedTable(
-    compressedSize: Long,
-    meta: TableMeta,
-    buffer: DeviceMemoryBuffer) extends AutoCloseable {
-  override def close(): Unit = buffer.close()
-}
+import com.nvidia.spark.rapids.format.{BufferMeta, CodecType}
 
 /** An interface to a compression codec that can compress a contiguous Table on the GPU */
 trait TableCompressionCodec {
@@ -71,12 +56,15 @@ trait TableCompressionCodec {
       stream: Cuda.Stream): BatchedBufferDecompressor
 }
 
-/**
- * A small case class used to carry codec-specific settings.
- */
-case class TableCompressionCodecConfig(lz4ChunkSize: Long, zstdChunkSize: Long)
+object TableCompressionCodec {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
 
-object TableCompressionCodec extends Logging {
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
   private val codecNameToId = Map(
     "copy" -> CodecType.COPY,
     "zstd" -> CodecType.NVCOMP_ZSTD,
@@ -84,7 +72,7 @@ object TableCompressionCodec extends Logging {
 
   /** Make a codec configuration object which can be serialized (can be used in tasks) */
   def makeCodecConfig(rapidsConf: RapidsConf): TableCompressionCodecConfig =
-    TableCompressionCodecConfig(
+    new TableCompressionCodecConfig(
       rapidsConf.shuffleCompressionLz4ChunkSize,
       rapidsConf.shuffleCompressionZstdChunkSize)
 
@@ -117,7 +105,15 @@ object TableCompressionCodec extends Logging {
  * @param stream CUDA stream to use
  */
 abstract class BatchedTableCompressor(maxBatchMemorySize: Long, stream: Cuda.Stream)
-    extends AutoCloseable with Logging {
+    extends AutoCloseable {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
   // The tables that need to be compressed in the next batch
   private[this] val tables = new ArrayBuffer[ContiguousTable]
 
@@ -237,7 +233,7 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long, stream: Cuda.Str
             ct.buffer.incRefCount()
             ct.buffer
           }
-          CompressedTable(ct.compressedSize, ct.meta, newBuffer)
+          new CompressedTable(ct.compressedSize, ct.meta, newBuffer)
         }
       }
     }
@@ -262,7 +258,15 @@ abstract class BatchedTableCompressor(maxBatchMemorySize: Long, stream: Cuda.Str
  * @param stream CUDA stream to use
  */
 abstract class BatchedBufferDecompressor(maxBatchMemorySize: Long, stream: Cuda.Stream)
-    extends AutoCloseable with Logging {
+    extends AutoCloseable {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
   // The buffers of compressed data that will be decompressed in the next batch
   private[this] val inputBuffers = new ArrayBuffer[BaseDeviceMemoryBuffer]
 

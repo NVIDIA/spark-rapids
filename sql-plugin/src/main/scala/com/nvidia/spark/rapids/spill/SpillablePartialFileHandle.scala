@@ -17,14 +17,13 @@
 package com.nvidia.spark.rapids.spill
 
 import java.io.{BufferedInputStream, BufferedOutputStream, File, FileInputStream, FileOutputStream, IOException, RandomAccessFile}
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.channels.FileChannel
 
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.HostAlloc
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
@@ -74,7 +73,25 @@ class SpillablePartialFileHandle private (
     priority: Long,
     syncWrites: Boolean,
     capacityHintProvider: Option[(Long, Long) => Long])
-  extends HostSpillableHandle[ai.rapids.cudf.HostMemoryBuffer] with Logging {
+  extends HostSpillableHandle[ai.rapids.cudf.HostMemoryBuffer] {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logDebug(msg: => String, throwable: Throwable): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg, throwable)
+    }
+  }
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    log.warn(msg, throwable)
+  }
+
 
   // State management
   @volatile private var spilledToDisk: Boolean = false
@@ -257,7 +274,7 @@ class SpillablePartialFileHandle private (
     withResource(new FileOutputStream(file)) { fos =>
       val channel = fos.getChannel
       val bb = buffer.asByteBuffer()
-      bb.limit(writePosition.toInt)
+      bb.asInstanceOf[Buffer].limit(writePosition.toInt)
       while (bb.hasRemaining) {
         channel.write(bb)
       }
@@ -669,7 +686,7 @@ class SpillablePartialFileHandle private (
       try {
         val channel = fos.getChannel
         val bb = bufferToSpill.asByteBuffer()
-        bb.limit(totalBytesWritten.toInt)
+        bb.asInstanceOf[Buffer].limit(totalBytesWritten.toInt)
         while (bb.hasRemaining) {
           channel.write(bb)
         }
@@ -798,7 +815,7 @@ class SpillablePartialFileHandle private (
   }
 }
 
-object SpillablePartialFileHandle extends Logging {
+object SpillablePartialFileHandle {
 
   /**
    * Create a file-only handle.

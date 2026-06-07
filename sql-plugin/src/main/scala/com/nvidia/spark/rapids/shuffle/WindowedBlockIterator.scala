@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,37 +17,6 @@
 package com.nvidia.spark.rapids.shuffle
 
 import scala.collection.mutable.ArrayBuffer
-
-// Helper trait that callers can use to add blocks to the iterator
-// as long as they can provide a size
-trait BlockWithSize {
-  /**
-   * Abstract method to return the size in bytes of this block
-   * @return Long - size in bytes
-   */
-  def size: Long
-}
-
-/**
- * Specifies a start and end range of bytes for a block.
- * @param block - a BlockWithSize instance
- * @param rangeStart - byte offset for the start of the range (inclusive)
- * @param rangeEnd - byte offset for the end of the range (exclusive)
- * @tparam T - the specific type of `BlockWithSize`
- */
-case class BlockRange[T <: BlockWithSize](
-    block: T, rangeStart: Long, rangeEnd: Long) {
-  require(rangeStart < rangeEnd,
-    s"Instantiated a BlockRange with invalid boundaries: $rangeStart to $rangeEnd")
-
-  /**
-   * Returns the size of this range in bytes
-   * @return - Long - size in bytes
-   */
-  def rangeSize(): Long = rangeEnd - rangeStart
-
-  def isComplete(): Boolean = rangeEnd == block.size
-}
 
 /**
  * Given a set of blocks, this iterator returns BlockRanges
@@ -90,21 +59,21 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
 
   require(windowSize > 0, s"Invalid window size specified $windowSize")
 
-  private case class BlockWindow(start: Long, size: Long) {
-    val end = start + size // exclusive end offset
+  private class BlockWindow(val start: Long, val size: Long) {
+    val end: Long = start + size // exclusive end offset
     def move(): BlockWindow = {
-      BlockWindow(start + size, size)
+      new BlockWindow(start + size, size)
     }
   }
 
   // start the window at byte 0
-  private[this] var window = BlockWindow(0, windowSize)
+  private[this] var window = new BlockWindow(0, windowSize)
   private[this] var done = false
 
   // helper class that captures the start/end byte offset
   // for `block` on creation
-  private case class BlockWithOffset[T <: BlockWithSize](
-      block: T, startOffset: Long, endOffset: Long)
+  private class BlockWithOffset[T <: BlockWithSize](
+      val block: T, val startOffset: Long, val endOffset: Long)
 
   private[this] val blocksWithOffsets = {
     var lastOffset = 0L
@@ -113,7 +82,7 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
       val startOffset = lastOffset
       val endOffset = startOffset + block.size
       lastOffset = endOffset // for next block
-      BlockWithOffset(block, startOffset, endOffset)
+      new BlockWithOffset(block, startOffset, endOffset)
     }
   }
 
@@ -121,9 +90,10 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
   // is an index into the `blocksWithOffsets` sequence
   private[this] var lastSeenBlock = 0
 
-  case class BlocksForWindow(lastBlockIndex: Option[Int],
-      blockRanges: Seq[BlockRange[T]],
-      hasMoreBlocks: Boolean)
+  private class BlocksForWindow(
+      val lastBlockIndex: Option[Int],
+      val blockRanges: Seq[BlockRange[T]],
+      val hasMoreBlocks: Boolean)
 
   private def getBlocksForWindow(
       window: BlockWindow,
@@ -144,7 +114,7 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
         if (window.end >= b.endOffset) {
           rangeEnd = b.endOffset - b.startOffset
         }
-        blockRangesInWindow.append(BlockRange[T](b.block, rangeStart, rangeEnd))
+        blockRangesInWindow.append(new BlockRange[T](b.block, rangeStart, rangeEnd))
         lastBlockIndex = Some(thisBlock)
       } else {
         // skip this block, unless it's before our window starts
@@ -153,7 +123,7 @@ class WindowedBlockIterator[T <: BlockWithSize](blocks: Seq[T], windowSize: Long
       thisBlock = thisBlock + 1
     }
     val lastBlock = blockRangesInWindow.last
-    BlocksForWindow(lastBlockIndex,
+    new BlocksForWindow(lastBlockIndex,
       blockRangesInWindow.toSeq,
       !continue || !lastBlock.isComplete())
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -134,8 +134,9 @@ class MetaUtilsSuite extends AnyFunSuite {
       withResource(GpuPackedTableColumn.from(contigTable)) { uncompressedBatch =>
         val uncompressedMeta = MetaUtils.buildDegenerateTableMeta(uncompressedBatch)
         withResource(DeviceMemoryBuffer.allocate(0)) { buffer =>
-          val compressedTable = CompressedTable(0, uncompressedMeta, buffer)
-          withResource(GpuCompressedColumnVector.from(compressedTable)) { batch =>
+          val compressedTable = new CompressedTable(0, uncompressedMeta, buffer)
+          withResource(GpuCompressedColumnVector.from(
+              compressedTable.buffer, compressedTable.meta)) { batch =>
             val meta = MetaUtils.buildDegenerateTableMeta(batch)
             assertResult(null)(meta.bufferMeta)
             assertResult(0)(meta.rowCount)

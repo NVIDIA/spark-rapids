@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,19 +22,19 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableColumn
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class RapidsShuffleHandle(
-    spillable: SpillableDeviceBufferHandle, tableMeta: TableMeta) extends AutoCloseable {
+class RapidsShuffleHandle(
+    val spillable: SpillableDeviceBufferHandle,
+    val tableMeta: TableMeta) extends AutoCloseable with Serializable {
   override def close(): Unit = {
     spillable.safeClose()
   }
 }
 
 /** Catalog for lookup of shuffle buffers by block ID */
-class ShuffleReceivedBufferCatalog() extends Logging {
+class ShuffleReceivedBufferCatalog() {
 
   /**
    * Adds a buffer to the device storage, taking ownership of the buffer.
@@ -52,7 +52,7 @@ class ShuffleReceivedBufferCatalog() extends Logging {
       buffer: DeviceMemoryBuffer,
       tableMeta: TableMeta,
       initialSpillPriority: Long): RapidsShuffleHandle = {
-    RapidsShuffleHandle(SpillableDeviceBufferHandle(buffer), tableMeta)
+    new RapidsShuffleHandle(SpillableDeviceBufferHandle(buffer), tableMeta)
   }
 
   /**
@@ -62,7 +62,7 @@ class ShuffleReceivedBufferCatalog() extends Logging {
    * @return RapidsShuffleHandle associated with this buffer
    */
   def addDegenerateBatch(meta: TableMeta): RapidsShuffleHandle  = {
-    RapidsShuffleHandle(null, meta)
+    new RapidsShuffleHandle(null, meta)
   }
 
   def getColumnarBatchAndRemove(handle: RapidsShuffleHandle,

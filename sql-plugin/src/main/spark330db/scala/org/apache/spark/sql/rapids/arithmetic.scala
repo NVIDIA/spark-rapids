@@ -49,7 +49,6 @@ import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.trees.{CurrentOrigin, Origin}
@@ -279,7 +278,7 @@ case class GpuDecimalRemainder(
     left: Expression,
     right: Expression,
     failOnError: Boolean = SQLConf.get.ansiEnabled)
-  extends GpuRemainderBase(left, right) with Logging {
+  extends GpuRemainderBase(left, right) {
 
   // scalastyle:off
   // The formula follows Hive which is based on the SQL standard and MS SQL:

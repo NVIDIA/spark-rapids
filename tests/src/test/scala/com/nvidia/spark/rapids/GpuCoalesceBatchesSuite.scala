@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -657,7 +657,7 @@ class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
     withResource(codec.createBatchCompressor(0, Cuda.DEFAULT_STREAM)) { compressor =>
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
       withResource(compressor.finish()) { compressed =>
-        GpuCompressedColumnVector.from(compressed.head)
+        GpuCompressedColumnVector.from(compressed.head.buffer, compressed.head.meta)
       }
     }
   }

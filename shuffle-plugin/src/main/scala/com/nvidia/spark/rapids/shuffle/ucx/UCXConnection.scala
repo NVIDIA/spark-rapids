@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shuffle.ucx
 
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.util.concurrent.ConcurrentHashMap
 
 import ai.rapids.cudf.MemoryBuffer
@@ -30,7 +30,6 @@ import org.apache.spark.internal.Logging
  * These are private apis used within the ucx package.
  */
 
-case class UCXError(ucsStatus: Int, errorMsg: String)
 
 /**
  * `UCXAmCallback` is used by [[Transaction]] to handle UCX Active Messages operations.
@@ -94,8 +93,8 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
     logDebug(s"Sending to ${peerExecutorId} at ${TransportUtils.toHex(header)} " +
       s"with ${buffer}")
 
-    val sendAm = UCXActiveMessage(UCXConnection.composeSendAmId(messageType),
-      header, forceRndv = true)
+    val sendAm = new UCXActiveMessage(UCXConnection.composeSendAmId(messageType),
+      header, true)
 
     ucx.sendActiveMessage(peerExecutorId, sendAm, buffer,
       new UcxCallback {
@@ -123,7 +122,7 @@ class UCXServerConnection(ucx: UCX, transport: UCXShuffleTransport)
     logDebug(s"Responding to ${peerExecutorId} at ${TransportUtils.toHex(header)} " +
       s"with ${response}")
 
-    val responseAm = UCXActiveMessage(
+    val responseAm = new UCXActiveMessage(
       UCXConnection.composeResponseAmId(messageType), header, false)
     ucx.sendActiveMessage(peerExecutorId, responseAm, response,
       new UcxCallback {
@@ -191,12 +190,12 @@ class UCXClientConnection(peerExecutorId: Long, ucx: UCX, transport: UCXShuffleT
     // Register the active message response handler. Note that the `requestHeader`
     // is expected to come back with the response, and is used to find the
     // correct callback (this is an implementation detail in UCX.scala)
-    val responseAm = UCXActiveMessage(
+    val responseAm = new UCXActiveMessage(
       UCXConnection.composeResponseAmId(messageType), requestHeader, false)
     ucx.registerResponseHandler(responseAm, amCallback)
 
     // kick-off the request
-    val requestAm = UCXActiveMessage(
+    val requestAm = new UCXActiveMessage(
       UCXConnection.composeRequestAmId(messageType), requestHeader, false)
 
     logDebug(s"Performing a ${messageType} request of size ${request.remaining()} " +
@@ -285,7 +284,7 @@ class UCXConnection(peerExecutorId: Long, val ucx: UCX) extends Logging {
   }
 }
 
-object UCXConnection extends Logging {
+object UCXConnection {
   /**
    * 1) client gets upper 28 bits
    * 2) then comes the type, which gets 4 bits
@@ -389,8 +388,8 @@ object UCXConnection extends Logging {
     val rkeys = (0 until numRkeys).map { _ =>
       val rkeySize = buff.getInt
       val rkeySlice = buff.slice()
-      rkeySlice.limit(rkeySize)
-      buff.position(buff.position() + rkeySize)
+      rkeySlice.asInstanceOf[Buffer].limit(rkeySize)
+      buff.asInstanceOf[Buffer].position(buff.position() + rkeySize)
       rkeySlice
     }
     (remoteExecutorId, rkeys)
@@ -419,7 +418,7 @@ object UCXConnection extends Logging {
       hsBuff.putInt(rkey.capacity)
       hsBuff.put(rkey)
     }
-    hsBuff.flip()
+    hsBuff.asInstanceOf[Buffer].flip()
     hsBuff
   }
 }

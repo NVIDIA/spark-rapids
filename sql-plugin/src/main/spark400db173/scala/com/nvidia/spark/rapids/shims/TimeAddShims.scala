@@ -22,12 +22,40 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, TimestampAddInterval}
+import org.apache.spark.sql.rapids.shims.GpuTimestampAddInterval
+import org.apache.spark.sql.types.{CalendarIntervalType, DayTimeIntervalType}
+import org.apache.spark.unsafe.types.CalendarInterval
 
 /**
- * Empty TimeAddShims for Spark 4.1.0+ and Databricks 17.3.
- * TimeAdd was renamed to TimestampAddInterval and is handled by DayTimeIntervalShims.
+ * TimestampAddInterval support for Spark 4.1.0+ and Databricks 17.3.
+ * TimeAdd was renamed to TimestampAddInterval in Spark 4.1.
  */
 object TimeAddShims {
-  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Map.empty
+  val exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
+    GpuOverrides.expr[TimestampAddInterval](
+      "Adds interval to timestamp",
+      ExprChecks.binaryProject(TypeSig.TIMESTAMP, TypeSig.TIMESTAMP,
+        ("start", TypeSig.TIMESTAMP, TypeSig.TIMESTAMP),
+        ("interval", TypeSig.DAYTIME + TypeSig.lit(TypeEnum.CALENDAR)
+            .withPsNote(TypeEnum.CALENDAR, "month intervals are not supported"),
+            TypeSig.DAYTIME + TypeSig.CALENDAR)),
+      (timeAdd, conf, p, r) => new BinaryExprMeta[TimestampAddInterval](timeAdd, conf, p, r) {
+        override def tagExprForGpu(): Unit = {
+          GpuOverrides.extractLit(timeAdd.interval).foreach { lit =>
+            lit.dataType match {
+              case CalendarIntervalType =>
+                val intvl = lit.value.asInstanceOf[CalendarInterval]
+                if (intvl.months != 0) {
+                  willNotWorkOnGpu("interval months isn't supported")
+                }
+              case _: DayTimeIntervalType =>
+            }
+          }
+        }
+
+        override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
+          GpuTimestampAddInterval(lhs, rhs)
+      })
+  ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
 }

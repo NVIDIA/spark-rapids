@@ -26,6 +26,18 @@ package com.nvidia.spark.rapids.shims
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
 import org.apache.spark.sql.execution.datasources.{FileIndex, HadoopFsRelation, LogicalRelationWithTable}
 
+// Keep companion line metadata aligned with pre-Spark-4 shims for binary-dedupe.
+
+
+
+
+
+
+
+
+
+
+
 object LogicalPlanShims {
   def getLocations(plan: LogicalPlan): Seq[FileIndex] = plan.collect {
     case LogicalRelationWithTable(t: HadoopFsRelation, _) => t.location

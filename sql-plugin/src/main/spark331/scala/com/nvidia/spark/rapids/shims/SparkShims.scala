@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,14 +24,15 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
+import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 
 object SparkShimImpl extends Spark331PlusNonDBShims with AnsiCastRuleShims {
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
       DataWritingCommandRule[_ <: DataWritingCommand]] = {
-    Seq(GpuOverrides.dataWriteCmd[CreateDataSourceTableAsSelectCommand](
-    "Create table with select command",
-    (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
+    Seq(
+      GpuOverrides.dataWriteCmdFromShim(
+        CreateDataSourceTableAsSelectRules.dataWriteCmd,
+        (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[DataWritingCommand]), r)).toMap
   }
 
