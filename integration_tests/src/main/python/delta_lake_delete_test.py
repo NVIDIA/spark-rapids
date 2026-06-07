@@ -60,7 +60,8 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
                                     partition_columns=None,
                                     conf=delta_delete_enabled_conf,
                                     skip_sql_result_check=False, expect_write=True,
-                                    expected_num_affected_rows=None):
+                                    expected_num_affected_rows=None,
+                                    assert_gpu_delete_command=False):
     def read_data(spark, path):
         read_func = read_delta_path_with_cdf if use_cdf else read_delta_path
         df = read_func(spark, path)
@@ -74,6 +75,9 @@ def assert_delta_sql_delete_collect(spark_tmp_path, use_cdf, dest_table_func, de
             cpu_result = with_cpu_session(lambda spark: do_delete(spark, cpu_path).collect(), conf=conf)
             if expect_write:
                 gpu_result = assert_rapids_delta_write(lambda spark: do_delete(spark, gpu_path).collect(), conf=conf)
+            elif assert_gpu_delete_command:
+                gpu_result = assert_rapids_gpu_delete_ran(
+                    lambda spark: do_delete(spark, gpu_path).collect(), conf=conf)
             else:
                 gpu_result = with_gpu_session(lambda spark: do_delete(spark, gpu_path).collect(), conf=conf)
             assert_equal(cpu_result, gpu_result)
@@ -362,7 +366,7 @@ def test_delta_delete_entire_table_reports_row_count(spark_tmp_path):
     assert_delta_sql_delete_collect(
         spark_tmp_path, use_cdf=False, dest_table_func=generate_dest_data, delete_sql=delete_sql,
         enable_deletion_vectors=False, conf=conf, expect_write=False,
-        expected_num_affected_rows=5)
+        expected_num_affected_rows=5, assert_gpu_delete_command=True)
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
@@ -383,7 +387,7 @@ def test_delta_delete_metadata_only_reports_row_count(spark_tmp_path):
     assert_delta_sql_delete_collect(
         spark_tmp_path, use_cdf=False, dest_table_func=generate_dest_data, delete_sql=delete_sql,
         enable_deletion_vectors=False, partition_columns=["a"], conf=conf, expect_write=False,
-        expected_num_affected_rows=2)
+        expected_num_affected_rows=2, assert_gpu_delete_command=True)
 
 @allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
