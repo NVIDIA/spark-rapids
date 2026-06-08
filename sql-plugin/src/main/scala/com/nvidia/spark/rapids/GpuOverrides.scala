@@ -4552,6 +4552,28 @@ object GpuOverrides extends Logging {
           "unionByName will not optionally impute nulls for missing struct fields " +
           "when the column is a struct and there are non-overlapping fields"), TypeSig.all),
       (union, conf, p, r) => new SparkPlanMeta[UnionExec](union, conf, p, r) {
+        // DBR 14.3's UnionWithLocalDataExec is a Databricks-private class, so identify it by
+        // simple class name to keep non-Databricks builds from depending on that class.
+        private def isUnderUnionWithLocalDataExec: Boolean =
+          p.exists(_.wrapped.getClass.getSimpleName == "UnionWithLocalDataExec")
+
+        override def tagPlanForGpu(): Unit = {
+          // This DBR 14.3 local-source union path executes its children through the row path.
+          if (isUnderUnionWithLocalDataExec) {
+            willNotWorkOnGpu("UnionWithLocalDataExec requires row-based UnionExec children")
+          }
+        }
+
+        override def convertToCpu(): SparkPlan = {
+          if (isUnderUnionWithLocalDataExec) {
+            // Keep the original CPU UnionExec subtree; transition insertion is not guaranteed on
+            // this Databricks-local row execution path.
+            union
+          } else {
+            super.convertToCpu()
+          }
+        }
+
         override def convertToGpu(): GpuExec =
           GpuUnionExec(childPlans.map(_.convertIfNeeded()))
       }),
