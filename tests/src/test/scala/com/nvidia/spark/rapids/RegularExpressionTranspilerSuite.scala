@@ -1133,7 +1133,9 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
       input: Seq[String]): Array[String] = {
     val result = new Array[String](input.length)
     val replace = GpuRegExpUtils.unescapeReplaceString(replaceString)
-    val (hasBackrefs, converted) = GpuRegExpUtils.backrefConversion(replace)
+    // Pass -1 to opt out of Java-spec greedy-with-backoff; the REPLACE_STRING used by this
+    // helper contains no `$N` backrefs, so the legacy behavior is sufficient here.
+    val (hasBackrefs, converted) = GpuRegExpUtils.backrefConversion(replace, -1)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
       val c = if (hasBackrefs) {
         cv.stringReplaceWithBackrefs(new RegexProgram(cudfPattern,

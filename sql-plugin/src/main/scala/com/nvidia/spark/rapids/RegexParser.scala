@@ -390,8 +390,11 @@ class RegexParser(pattern: String) {
         if (peek().contains('}')) {
           consumeExpected('}')
           num match {
-            case Some(n) =>
-              RegexBackref(n)
+            case Some(_) =>
+              throw new RegexUnsupportedException(
+                "Numeric `${N}` backref in replacement string is not supported on GPU " +
+                  "(Java's Matcher.appendReplacement rejects this syntax)",
+                Some(start))
             case _ =>
               treatAsLiteralDollar()
           }
@@ -2043,7 +2046,11 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
     this.position = Some(position)
   }
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"$$$num"
+  // Internally-generated backrefs (e.g. from line-anchor rewriting) are emitted in braced
+  // `${N}` form so `backrefConversion` can tell them apart from user-authored `$N` tokens
+  // and pass them through verbatim. User-authored backrefs keep the raw `$N` form so the
+  // greedy-with-backoff parser in `backrefConversion` honors the user's pattern group count.
+  override def toRegexString: String = if (isNew) s"$${$num}" else s"$$$num"
 }
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST],
