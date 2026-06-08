@@ -19,17 +19,23 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.charset.StandardCharsets
 
+import ai.rapids.cudf.CompressionType
 import com.nvidia.spark.rapids.shims.SparkShimImpl
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.FileUtil.fullyDelete
 import org.apache.hadoop.fs.Path
-import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
-import org.apache.parquet.hadoop.ParquetFileReader
+import org.apache.hadoop.mapreduce.{Job, JobContext, TaskAttemptContext, TaskAttemptID, TaskType}
+import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
+import org.apache.parquet.hadoop.{ParquetFileReader, ParquetOutputFormat, ParquetWriter}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.io.FileCommitProtocol
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.SQLHadoopMapReduceCommitProtocol
+import org.apache.spark.sql.hive.rapids.GpuHiveParquetFileFormat
 import org.apache.spark.sql.rapids.BasicColumnarWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
+import org.apache.spark.sql.types.StructType
 
 /**
  * Tests for writing Parquet files with the GPU.
@@ -104,6 +110,109 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  test("parquet writer row group size rows config") {
+    // cuDF row group boundaries are page-fragment based, so use a value that is observable.
+    val rowGroupRows = 5000
+    val numRows = rowGroupRows * 2 + 2000
+    val conf = new SparkConf()
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.key, rowGroupRows.toString)
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key, "1m")
+    withGpuSparkSession(spark => {
+      withTempPath { writePath =>
+        spark.range(0, numRows, 1, 1).write.mode("overwrite").parquet(writePath.getAbsolutePath)
+
+        val rowGroupCounts = getSingleParquetFileRowGroupCounts(spark, writePath)
+        assert(rowGroupCounts.length > 1, s"Expected multiple row groups, got $rowGroupCounts")
+        assert(rowGroupCounts.forall(_ <= rowGroupRows.toLong),
+          s"Expected all row groups <= $rowGroupRows rows, got $rowGroupCounts")
+        assertResult(numRows.toLong) {
+          rowGroupCounts.sum
+        }
+      }
+    }, conf)
+  }
+
+  test("hive parquet writer row group size bytes config partition flush size") {
+    val rowGroupSizeBytes = 1024L
+    val conf = new SparkConf()
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key, rowGroupSizeBytes.toString)
+    withGpuSparkSession(spark => {
+      val job = Job.getInstance(spark.sparkContext.hadoopConfiguration)
+      val factory = new GpuHiveParquetFileFormat(CompressionType.NONE)
+        .prepareWrite(spark, job, Map.empty, new StructType())
+      val attemptId = new TaskAttemptID("job", 0, TaskType.MAP, 0, 0)
+      val context = new TaskAttemptContextImpl(job.getConfiguration, attemptId)
+
+      assertResult(rowGroupSizeBytes) {
+        factory.partitionFlushSize(context)
+      }
+    }, conf)
+  }
+
+  test("parquet writer row group size bytes config") {
+    val rowGroupRows = 1000000
+    val rowGroupSizeBytes = 1024L
+    val bytesPerRow = java.lang.Long.BYTES * 2
+    val rowGroupByteSizeOverhead = 512L
+    val conf = new SparkConf()
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.key, rowGroupRows.toString)
+      .set(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key, rowGroupSizeBytes.toString)
+    withGpuSparkSession(spark => {
+      withTempPath { writePath =>
+        spark.range(0, 10000, 1, 1)
+          .selectExpr("id", "id + 1 as id2")
+          .write.mode("overwrite")
+          .parquet(writePath.getAbsolutePath)
+
+        val rowGroups = getSingleParquetFileRowGroups(spark, writePath)
+        assert(rowGroups.length > 1, s"Expected multiple row groups, got $rowGroups")
+        assert(rowGroups.forall(_.rowCount <= rowGroupRows.toLong),
+          s"Expected all row groups <= $rowGroupRows rows, got $rowGroups")
+        // cuDF sizes row groups from uncompressed data estimates; footer sizes
+        // include page overhead.
+        assert(rowGroups.forall(_.rowCount * bytesPerRow <= rowGroupSizeBytes),
+          s"Expected estimated data bytes <= $rowGroupSizeBytes, got $rowGroups")
+        assert(rowGroups.forall(_.totalByteSize <= rowGroupSizeBytes + rowGroupByteSizeOverhead),
+          s"Expected row group byte sizes <= $rowGroupSizeBytes plus " +
+            s"$rowGroupByteSizeOverhead bytes of page overhead, got $rowGroups")
+        assertResult(10000L) {
+          rowGroups.map(_.rowCount).sum
+        }
+      }
+    }, conf)
+  }
+
+  test("parquet block size warning") {
+    val unsetConf = new Configuration(false)
+    assert(GpuParquetFileFormat.parquetBlockSizeWarning(unsetConf, Map.empty).isEmpty)
+
+    val defaultConf = new Configuration(false)
+    defaultConf.setLong(ParquetOutputFormat.BLOCK_SIZE, ParquetWriter.DEFAULT_BLOCK_SIZE)
+    assert(GpuParquetFileFormat.parquetBlockSizeWarning(defaultConf, Map.empty).isEmpty)
+
+    val defaultOptions = Map(ParquetOutputFormat.BLOCK_SIZE ->
+      ParquetWriter.DEFAULT_BLOCK_SIZE.toString)
+    assert(GpuParquetFileFormat.parquetBlockSizeWarning(unsetConf, defaultOptions).isEmpty)
+
+    val nonDefaultConf = new Configuration(false)
+    nonDefaultConf.setLong(ParquetOutputFormat.BLOCK_SIZE,
+      ParquetWriter.DEFAULT_BLOCK_SIZE.toLong * 2)
+    val warning = GpuParquetFileFormat.parquetBlockSizeWarning(nonDefaultConf, Map.empty)
+    assert(warning.exists(_.contains(ParquetOutputFormat.BLOCK_SIZE)))
+    assert(warning.exists(_.contains(RapidsConf.ENABLE_PARQUET_WRITE.key)))
+    assert(warning.exists(_.contains(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_ROWS.key)))
+    assert(warning.exists(_.contains(RapidsConf.PARQUET_WRITER_ROW_GROUP_SIZE_BYTES.key)))
+    assert(warning.exists(_.contains("not equivalent")))
+
+    // Options override the Hadoop conf: a non-default option warns even when the
+    // conf is set to the default.
+    val mixedConf = new Configuration(false)
+    mixedConf.setLong(ParquetOutputFormat.BLOCK_SIZE, ParquetWriter.DEFAULT_BLOCK_SIZE)
+    val nonDefaultOptions = Map(ParquetOutputFormat.BLOCK_SIZE ->
+      (ParquetWriter.DEFAULT_BLOCK_SIZE.toLong * 2).toString)
+    assert(GpuParquetFileFormat.parquetBlockSizeWarning(mixedConf, nonDefaultOptions).nonEmpty)
+  }
+
   private def listAllFiles(f: File): Array[File] = {
     if (f.isFile()) {
       Array(f)
@@ -113,6 +222,30 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
         .flatMap(f => listAllFiles(f))
     } else {
       Array.empty
+    }
+  }
+
+  private def getSingleParquetFileRowGroupCounts(
+      spark: SparkSession,
+      parquetPath: File): Seq[Long] = {
+    getSingleParquetFileRowGroups(spark, parquetPath).map(_.rowCount)
+  }
+
+  private case class ParquetRowGroup(rowCount: Long, totalByteSize: Long)
+
+  private def getSingleParquetFileRowGroups(
+      spark: SparkSession,
+      parquetPath: File): Seq[ParquetRowGroup] = {
+    val parquetFiles = listAllFiles(parquetPath).filter(_.getName.endsWith(".parquet"))
+    assertResult(1) {
+      parquetFiles.length
+    }
+    val footer = ParquetFileReader.readFooters(spark.sparkContext.hadoopConfiguration,
+      new Path(parquetFiles.head.getAbsolutePath)).get(0)
+    val blocks = footer.getParquetMetadata.getBlocks
+    (0 until blocks.size()).map { i =>
+      val block = blocks.get(i)
+      ParquetRowGroup(block.getRowCount, block.getTotalByteSize)
     }
   }
 

@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{Arithmetic, RoundMode}
 import com.nvidia.spark.rapids.jni.CastStrings
+import com.nvidia.spark.rapids.jni.CharsetDecode
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.NumberConverter
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
@@ -700,12 +701,8 @@ case class GpuSubstring(str: Expression, pos: Expression, len: Expression)
       lenS: GpuScalar): ColumnVector = {
     val strs = strCol.getBase
     val poses = posCol.getBase
-    val numRows =  strCol.getRowCount.toInt
     withResource(computeStarts(strs, poses)) { starts =>
-      val ends = withResource(ColumnVector.fromScalar(lenS.getBase, numRows)) { lens =>
-        computeEnds(starts, lens)
-      }
-      withResource(ends) { _ =>
+      withResource(computeEnds(starts, lenS.getBase)) { ends =>
         substringColumn(strs, starts, ends)
       }
     }
@@ -863,7 +860,7 @@ case class GpuStringReplace(
     srcExpr: Expression,
     searchExpr: Expression,
     replaceExpr: Expression)
-  extends GpuTernaryExpressionArgsAnyScalarScalar
+  extends GpuTernaryExpression
       with ImplicitCastInputTypes
       with HasGpuStringReplace {
 
@@ -893,6 +890,64 @@ case class GpuStringReplace(
       replaceExpr: GpuScalar): ColumnVector = {
     withResource(GpuColumnVector.from(strExpr, numRows)) { strExprCol =>
       doColumnar(strExprCol, searchExpr, replaceExpr)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    strExpr.getBase.stringReplacePerRow(searchExpr.getBase, replaceExpr.getBase)
+  }
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(strExpr, searchExpr.getRowCount.toInt)) { expandedStr =>
+      doColumnar(expandedStr, searchExpr, replaceExpr)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(searchExpr, strExpr.getRowCount.toInt)) { expandedSearch =>
+      doColumnar(strExpr, expandedSearch, replaceExpr)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuColumnVector,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(replaceExpr, strExpr.getRowCount.toInt)) { expandedRepl =>
+      doColumnar(strExpr, searchExpr, expandedRepl)
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuScalar,
+      replaceExpr: GpuColumnVector): ColumnVector = {
+    withResource(GpuColumnVector.from(strExpr, replaceExpr.getRowCount.toInt)) { expandedStr =>
+      withResource(GpuColumnVector.from(searchExpr, replaceExpr.getRowCount.toInt)) {
+        expandedSearch =>
+          doColumnar(expandedStr, expandedSearch, replaceExpr)
+      }
+    }
+  }
+
+  override def doColumnar(
+      strExpr: GpuScalar,
+      searchExpr: GpuColumnVector,
+      replaceExpr: GpuScalar): ColumnVector = {
+    withResource(GpuColumnVector.from(strExpr, searchExpr.getRowCount.toInt)) { expandedStr =>
+      withResource(GpuColumnVector.from(replaceExpr, searchExpr.getRowCount.toInt)) {
+        expandedRepl =>
+          doColumnar(expandedStr, searchExpr, expandedRepl)
+      }
     }
   }
 }
@@ -1024,28 +1079,82 @@ object GpuRegExpUtils {
    * This method transforms above two patterns into cuDF pattern \${group_index}, except they are
    * preceded by escape character.
    *
+   * Java's `Matcher.appendReplacement` reads the digits after `$` or `\` one at a time and
+   * stops as soon as adding the next digit would make the running group index exceed the
+   * actual capture-group count; any further digits are treated as literal characters
+   * (greedy-with-backoff). When `numCaptureGroups` is negative the caller is opting out of the
+   * Java-spec check (used by tests and legacy callers), in which case we keep the original
+   * eagerly-greedy behavior so cuDF still raises on out-of-range indices.
+   *
    * @param rep replacement string
+   * @param numCaptureGroups number of capturing groups in the corresponding pattern; pass a
+   *                         negative value to disable greedy-with-backoff
    * @return A pair consists of a boolean indicating whether containing any backref and the
    *         converted replacement.
    */
-  def backrefConversion(rep: String): (Boolean, String) = {
+  def backrefConversion(rep: String, numCaptureGroups: Int): (Boolean, String) = {
     val b = new StringBuilder
     var i = 0
+    var hasBracedBackref = false
     while (i < rep.length) {
-      // match $group_index or \group_index
-      if (Seq('$', '\\').contains(rep.charAt(i))
+      // Pass through already-braced `${N}` tokens unchanged. These are emitted by the
+      // transpiler for internally-generated backrefs (e.g. the line-anchor rewrite's
+      // captured line terminator) and must not be re-parsed against the user pattern's
+      // group count, which would mis-resolve them when the user count is less than the
+      // generated index.
+      if (rep.charAt(i) == '$' && i + 2 < rep.length && rep.charAt(i + 1) == '{') {
+        val close = rep.indexOf('}', i + 2)
+        val allDigits = close > i + 2 &&
+          (i + 2 until close).forall(k => rep.charAt(k).isDigit)
+        if (allDigits) {
+          b.append(rep.substring(i, close + 1))
+          hasBracedBackref = true
+          i = close + 1
+        } else {
+          b.append(rep.charAt(i))
+          i += 1
+        }
+      } else if (Seq('$', '\\').contains(rep.charAt(i))
         && i + 1 < rep.length && rep.charAt(i + 1).isDigit) {
 
-        b.append("${")
+        // Consume digits one at a time. If the running group index would exceed the actual
+        // capture-group count, stop and leave the remaining digits as literals. When no digit
+        // can be consumed without exceeding the count (e.g. `$5` against a 4-group pattern),
+        // fall through to the legacy eagerly-greedy path so cuDF surfaces the out-of-range
+        // error.
         var j = i + 1
-        do {
-          b.append(rep.charAt(j))
-          j += 1
-        } while (j < rep.length && rep.charAt(j).isDigit)
-        b.append("}")
-        i = j
+        var n = 0
+        val consumed = new StringBuilder
+        var stopped = false
+        while (j < rep.length && rep.charAt(j).isDigit && !stopped) {
+          val nextN = n * 10 + (rep.charAt(j) - '0')
+          if (numCaptureGroups >= 0 && nextN > numCaptureGroups) {
+            stopped = true
+          } else {
+            n = nextN
+            consumed.append(rep.charAt(j))
+            j += 1
+          }
+        }
+        if (consumed.nonEmpty) {
+          b.append("${").append(consumed).append("}")
+          i = j
+        } else {
+          // Legacy path: greedily swallow every digit so cuDF errors on the out-of-range
+          // index (preserves existing behavior covered by
+          // `test_re_replace_backrefs_idx_out_of_bounds`).
+          b.append("${")
+          var k = i + 1
+          do {
+            b.append(rep.charAt(k))
+            k += 1
+          } while (k < rep.length && rep.charAt(k).isDigit)
+          b.append("}")
+          i = k
+        }
       } else if (rep.charAt(i) == '\\' && i + 1 < rep.length) {
-        // skip potential \$group_index or \\group_index
+        // skip potential escape sequences like `\$` or `\\`; `\digit` is handled by the
+        // greedy-with-backoff branch above.
         b.append('\\').append(rep.charAt(i + 1))
         i += 2
       } else {
@@ -1055,7 +1164,9 @@ object GpuRegExpUtils {
     }
 
     val converted = b.toString
-    !rep.equals(converted) -> converted
+    // A pass-through `${N}` token does not modify the string, so equality alone would miss
+    // it; treat it as a backref so the caller routes through `stringReplaceWithBackrefs`.
+    (hasBracedBackref || !rep.equals(converted)) -> converted
   }
 
   /**
@@ -1087,13 +1198,6 @@ object GpuRegExpUtils {
       case _ =>
         meta.willNotWorkOnGpu(s"regular expression support is disabled because the GPU only " +
         "supports the UTF-8 charset when using regular expressions")
-    }
-  }
-
-  def validateRegExpComplexity(meta: ExprMeta[_], regex: RegexAST): Unit = {
-    if(!RegexComplexityEstimator.isValid(meta.conf, regex)) {
-      meta.willNotWorkOnGpu(s"estimated memory needed for regular expression exceeds the maximum." +
-        s" Set ${RapidsConf.REGEXP_MAX_STATE_MEMORY_BYTES} to change it.")
     }
   }
 
@@ -1199,7 +1303,6 @@ class GpuRLikeMeta(
             }
             val (transpiledAST, _) = new CudfRegexTranspiler(RegexFindMode)
                 .getTranspiledAST(regexAst, None, None)
-            GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
             pattern = Some(transpiledAST.toRegexString)
           } catch {
             case e: RegexUnsupportedException =>
@@ -1461,7 +1564,6 @@ class GpuRegExpExtractMeta(
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
               javaRegexpPattern, groupIdx, None)
-          GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
@@ -1590,7 +1692,6 @@ class GpuRegExpExtractAllMeta(
           val (transpiledAST, _) =
             new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(
               javaRegexpPattern, groupIdx, None)
-          GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
           pattern = Some(transpiledAST.toRegexString)
           numGroups = GpuRegExpUtils.countGroups(javaRegexpPattern)
         } catch {
@@ -1670,11 +1771,7 @@ case class GpuRegExpExtractAll(
                 val maxSizeInt = maxSize.getInt
                 val stringCols = Range(0, maxSizeInt, 1).safeMap {
                   i =>
-                    withResource(Scalar.fromInt(i)) { scalarIndex =>
-                      withResource(ColumnVector.fromScalar(scalarIndex, rowCount.toInt)) {
-                        index => allExtracted.extractListElement(index)
-                      }
-                    }
+                    allExtracted.extractListElement(i)
                 }
                 withResource(stringCols) { _ =>
                   ColumnVector.makeList(rowCount, DType.STRING, stringCols: _*)
@@ -1849,7 +1946,6 @@ abstract class StringSplitRegExpMeta[INPUT <: TernaryExpression](expr: INPUT,
           case None =>
             try {
               val (transpiledAST, _) = transpiler.getTranspiledAST(utf8Str.toString, None, None)
-              GpuRegExpUtils.validateRegExpComplexity(this, transpiledAST)
               pattern = transpiledAST.toRegexString
               isRegExp = true
             } catch {
@@ -2545,5 +2641,46 @@ case class GpuFormatNumber(x: Expression, d: Expression)
     withResource(GpuColumnVector.from(lhs, numRows)) { col =>
       doColumnar(col, rhs)
     }
+  }
+}
+
+case class GpuStringDecode(
+    bin: Expression,
+    charsetName: String,
+    reportMalformed: Boolean = false)
+  extends GpuUnaryExpression with ImplicitCastInputTypes with NullIntolerantShim {
+
+  override def child: Expression = bin
+
+  override def dataType: DataType = StringType
+
+  override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
+
+  override def doColumnar(input: GpuColumnVector): ColumnVector = {
+    val charsetId = charsetName match {
+      case "GBK" => CharsetDecode.GBK
+      case other =>
+        throw new UnsupportedOperationException(s"Unsupported charset on GPU: $other")
+    }
+    val errorAction =
+      if (reportMalformed) CharsetDecode.REPORT else CharsetDecode.REPLACE
+    try {
+      CharsetDecode.decode(input.getBase, charsetId, errorAction)
+    } catch {
+      case _: CharsetDecode.MalformedInputException =>
+        // MALFORMED_CHARACTER_CODING was introduced in Spark 4.0 alongside the
+        // legacyCodingErrorAction flag, which is the only code path that can set
+        // reportMalformed=true. Invoke QueryExecutionErrors.malformedCharacterCoding via
+        // reflection so this file still compiles against Spark 3.x shims.
+        throw GpuStringDecode.raiseMalformedCharacterCoding(charsetName)
+    }
+  }
+}
+
+object GpuStringDecode {
+  private def raiseMalformedCharacterCoding(charset: String): RuntimeException = {
+    val cls    = Class.forName("org.apache.spark.sql.errors.QueryExecutionErrors")
+    val method = cls.getMethod("malformedCharacterCoding", classOf[String], classOf[String])
+    method.invoke(null, "decode", charset).asInstanceOf[RuntimeException]
   }
 }

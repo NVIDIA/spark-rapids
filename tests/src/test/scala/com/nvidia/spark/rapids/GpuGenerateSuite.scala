@@ -238,6 +238,20 @@ class GpuGenerateSuite
     }
   }
 
+  test("all null inputs with single exploding column (generatorOffset == 0)") {
+    // Regression for #11653: when the batch contains only the exploding column
+    // and every row is null, estimatedOutputSizeBytes == 0 so
+    // numSplitsForTargetSize == 0. Before the fix this passed 0 to
+    // GpuBatchUtils.generateSplitIndices, which fails `require(numSplits > 0)`.
+    val (batch, _) = makeBatch(numRows = 100, includeRepeatColumn = false,
+      allNulls = true)
+    withResource(batch) { _ =>
+      val e = GpuExplode(null)
+      val splits = e.inputSplitIndices(batch, generatorOffset = 0, false, 4)
+      assertResult(0)(splits.length)
+    }
+  }
+
   test("0-row batches short-circuits to no splits") {
     val (batch, _) = makeBatch(numRows = 0)
     withResource(batch) { _ =>
