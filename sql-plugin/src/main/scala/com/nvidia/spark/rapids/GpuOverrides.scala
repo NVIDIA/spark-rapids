@@ -610,23 +610,14 @@ object GpuOverrides extends Logging {
 
   def isLit(exp: Expression): Boolean = extractLit(exp).isDefined
 
-  def isNullLit(lit: Literal): Boolean = {
-    lit.value == null
-  }
-
-  private def isAstNullLiteral(exp: Expression): Boolean = {
-    extractLit(exp).exists(isNullLit)
-  }
-
-  private def isSimpleAstNullifyValue(exp: Expression): Boolean = exp match {
+  private def isSimpleAstIfValue(exp: Expression): Boolean = exp match {
     case _: AttributeReference | _: Literal => true
-    case a: Alias => isSimpleAstNullifyValue(a.child)
+    case a: Alias => isSimpleAstIfValue(a.child)
     case _ => false
   }
 
-  private def isAstNullifyIfPattern(exp: If): Boolean = {
-    (isAstNullLiteral(exp.trueValue) && isSimpleAstNullifyValue(exp.falseValue)) ||
-      (isAstNullLiteral(exp.falseValue) && isSimpleAstNullifyValue(exp.trueValue))
+  private def isSimpleAstIfPattern(exp: If): Boolean = {
+    isSimpleAstIfValue(exp.trueValue) && isSimpleAstIfValue(exp.falseValue)
   }
 
   def isSupportedStringReplacePattern(strLit: String): Boolean = {
@@ -2211,11 +2202,11 @@ object GpuOverrides extends Logging {
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
         override def tagSelfForAst(): Unit = {
           if (!conf.isProjectAstAnsiArithmeticEnabled) {
-            willNotWorkInAst("AST IF nullification requires row IR JIT support.")
+            willNotWorkInAst("AST IF requires row IR JIT support.")
           }
-          if (!isAstNullifyIfPattern(a)) {
+          if (!isSimpleAstIfPattern(a)) {
             willNotWorkInAst(
-              "AST IF currently supports only nullifying a simple value branch.")
+              "AST IF currently supports only simple value branches.")
           }
         }
 

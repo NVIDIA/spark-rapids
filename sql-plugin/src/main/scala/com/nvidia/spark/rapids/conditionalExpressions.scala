@@ -201,14 +201,16 @@ case class GpuIf(
     val predicateAst = new ast.JitOperation(ast.JitOperator.PREDICATE,
       predicateExpr.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
 
-    def nullifyIf(valueExpr: Expression, condition: ast.AstExpression): ast.AstExpression = {
+    def valueToAst(valueExpr: Expression): ast.AstExpression = {
       val gpuValueExpr = valueExpr.asInstanceOf[GpuExpression]
       if (gpuValueExpr.hasSideEffects) {
-        throw new IllegalStateException("GpuIf AST nullify branch must not have side effects")
+        throw new IllegalStateException("GpuIf AST branches must not have side effects")
       }
-      new ast.JitOperation(ast.JitOperator.NULLIFY_IF,
-        gpuValueExpr.convertToAst(numFirstTableColumns),
-        condition)
+      gpuValueExpr.convertToAst(numFirstTableColumns)
+    }
+
+    def nullifyIf(valueExpr: Expression, condition: ast.AstExpression): ast.AstExpression = {
+      new ast.JitOperation(ast.JitOperator.NULLIFY_IF, valueToAst(valueExpr), condition)
     }
 
     (trueExpr, falseExpr) match {
@@ -217,8 +219,10 @@ case class GpuIf(
       case (value, GpuLiteral(null, _)) =>
         nullifyIf(value, new ast.UnaryOperation(ast.UnaryOperator.NOT, predicateAst))
       case _ =>
-        throw new IllegalStateException(
-          "GpuIf AST only supports conditional nullification")
+        new ast.JitOperation(ast.JitOperator.IF_ELSE,
+          valueToAst(trueExpr),
+          valueToAst(falseExpr),
+          predicateAst)
     }
   }
 

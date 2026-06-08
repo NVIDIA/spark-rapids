@@ -394,6 +394,19 @@ def test_jit_if_nullify(data_descr):
             'if(cast(null as BOOLEAN), cast(null as {}), b)'.format(data_type)),
         conf=_ansi_jit_ast_enabled_conf)
 
+_ast_if_else_descrs = _ast_coalesce_descrs
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_if_else_descrs, ids=idfn)
+def test_jit_if_else(data_descr):
+    data_gen, is_supported = data_descr
+    assert_gpu_ast(is_supported,
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            'if(isnull(a), b, a)',
+            'if(isnotnull(a), a, b)',
+            'if(cast(null as BOOLEAN), a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
 _ast_nullif_descrs = [
     (boolean_gen, True),
     (byte_gen, True),
