@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# Copyright (c) 2022-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -336,6 +336,69 @@ def test_aqe_join_executor_broadcast_enforce_single_batch():
         exist_classes="GpuShuffleExchangeExec,GpuBroadcastHashJoinExec",
         non_exist_classes="GpuBroadcastExchangeExec",
         conf=conf)
+
+
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_databricks_runtime(),
+    reason="Executor side broadcast only supported on Databricks")
+def test_aqe_bhj_executor_broadcast_shuffle_coalesce_with_residual_condition(spark_tmp_path):
+    from datetime import datetime
+    from decimal import Decimal
+
+    conf = copy_and_update(_adaptive_conf, {
+        "spark.rapids.sql.exec.BroadcastHashJoinExec": "true",
+        "spark.sql.shuffle.partitions": "32",
+        "spark.sql.autoBroadcastJoinThreshold": str(10 * 1024 * 1024),
+        "spark.sql.adaptive.autoBroadcastJoinThreshold": str(10 * 1024 * 1024),
+    })
+    left_path = spark_tmp_path + '/left'
+    right_path = spark_tmp_path + '/right'
+
+    # Keep each composite join key duplicated with different ids. Self-matches
+    # are removed by the residual id predicate, while cross-pair matches remain.
+    rows = [
+        (1, True, 99.99, Decimal("150.50"), datetime(2024, 1, 15, 10, 30, 0)),
+        (2, True, 99.99, Decimal("150.50"), datetime(2024, 1, 15, 10, 30, 0)),
+        (3, False, 199.99, Decimal("250.75"), datetime(2024, 2, 20, 14, 45, 30)),
+        (5, False, 199.99, Decimal("250.75"), datetime(2024, 2, 20, 14, 45, 30)),
+        (8, True, 299.99, Decimal("350.25"), datetime(2024, 3, 10, 9, 15, 45)),
+        (13, True, 299.99, Decimal("350.25"), datetime(2024, 3, 10, 9, 15, 45)),
+    ]
+    schema = StructType([
+        StructField("id", IntegerType(), True),
+        StructField("is_active", BooleanType(), True),
+        StructField("price", DoubleType(), True),
+        StructField("amount", DecimalType(10, 2), True),
+        StructField("created_at", TimestampType(), True),
+    ])
+
+    def prep(spark):
+        df = spark.createDataFrame(rows, schema)
+        df.write.mode("overwrite").parquet(left_path)
+        df.write.mode("overwrite").parquet(right_path)
+
+    with_cpu_session(prep)
+
+    def do_it(spark):
+        spark.read.parquet(left_path).createOrReplaceTempView("C_TABLE")
+        spark.read.parquet(right_path).createOrReplaceTempView("G_TABLE")
+        return spark.sql("""
+            SELECT C_TABLE.*, G_TABLE.*
+            FROM C_TABLE
+            INNER JOIN G_TABLE
+              ON C_TABLE.is_active  = G_TABLE.is_active
+             AND C_TABLE.price      = G_TABLE.price
+             AND C_TABLE.amount     = G_TABLE.amount
+             AND C_TABLE.created_at = G_TABLE.created_at
+            WHERE ABS(IFNULL(C_TABLE.id, 10) - IFNULL(G_TABLE.id, 10)) > 1e-09
+        """)
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_it,
+        exist_classes="GpuBroadcastHashJoinExec,GpuShuffleCoalesceExec",
+        non_exist_classes="GpuBroadcastExchangeExec",
+        conf=conf,
+        require_non_empty=True)
 
 # This test relies on the join not being on the GPU because a join on an array is not
 # currently supported. This causes the join to fall back to the CPU, and with AQE the
