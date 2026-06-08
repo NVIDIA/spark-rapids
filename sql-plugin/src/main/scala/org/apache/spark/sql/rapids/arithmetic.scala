@@ -166,6 +166,9 @@ object GpuAnsi {
   def shouldUseAnsiArithmeticAst(failOnError: Boolean, dt: DataType): Boolean =
     failOnError && supportsAnsiArithmeticAst(dt)
 
+  def shouldUseAnsiDivModAst(failOnError: Boolean, lhs: DataType, rhs: DataType): Boolean =
+    failOnError && lhs == rhs && supportsAnsiArithmeticAst(lhs)
+
   def minValueScalar(dt: DataType): Scalar = dt match {
     case ByteType => Scalar.fromByte(Byte.MinValue)
     case ShortType => Scalar.fromShort(Short.MinValue)
@@ -1214,6 +1217,16 @@ abstract class GpuIntegralDivideParent(
   override def binaryOp: BinaryOp = BinaryOp.DIV
 
   override def sqlOperator: String = "div"
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    if (GpuAnsi.shouldUseAnsiDivModAst(failOnError, left.dataType, right.dataType)) {
+      new ast.JitOperation(ast.JitOperator.ANSI_DIV,
+        left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+        right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+    } else {
+      super.convertToAst(numFirstTableColumns)
+    }
+  }
 }
 
 abstract class GpuRemainderBase(left: Expression, right: Expression)
@@ -1223,6 +1236,16 @@ abstract class GpuRemainderBase(left: Expression, right: Expression)
   override def symbol: String = "%"
 
   override def binaryOp: BinaryOp = BinaryOp.MOD
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    if (GpuAnsi.shouldUseAnsiDivModAst(failOnError, left.dataType, right.dataType)) {
+      new ast.JitOperation(ast.JitOperator.ANSI_MOD,
+        left.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
+        right.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+    } else {
+      super.convertToAst(numFirstTableColumns)
+    }
+  }
 }
 
 abstract class GpuPmodBase(left: Expression, right: Expression)

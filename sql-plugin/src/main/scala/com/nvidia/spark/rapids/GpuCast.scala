@@ -301,6 +301,12 @@ object GpuCast {
     scaleDelta >= 0 && !(scaleDelta > 0 && needsPrecisionCheck)
   }
 
+  def canCastToAst(from: DataType, to: DataType): Boolean = (from, to) match {
+    case (fromDec: DecimalType, toDec: DecimalType) => canDecimalCastToAst(fromDec, toDec)
+    case (IntegerType, LongType) => true
+    case _ => false
+  }
+
   private def decimalStorageWidth(dt: DecimalType): Int = {
     if (DecimalType.is32BitDecimalType(dt)) {
       32
@@ -1807,13 +1813,12 @@ case class GpuCast(
   }
 
   override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    val childAst = child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns)
     (child.dataType, dataType) match {
       case (from: DecimalType, to: DecimalType) if canDecimalCastToAst(from, to) =>
-        decimalCastToAst(
-          child.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns),
-          from,
-          to,
-          ansiMode)
+        decimalCastToAst(childAst, from, to, ansiMode)
+      case (IntegerType, LongType) =>
+        new ast.JitOperation(ast.JitOperator.CAST_TO_I64, childAst)
       case _ =>
         throw new IllegalStateException(
           s"Cast from ${child.dataType} to $dataType is not supported by AST")

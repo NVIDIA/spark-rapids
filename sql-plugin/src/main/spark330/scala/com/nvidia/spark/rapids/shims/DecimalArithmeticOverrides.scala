@@ -205,25 +205,43 @@ object DecimalArithmeticOverrides {
       }),
     expr[IntegralDivide](
       "Division with a integer result",
-      ExprChecks.binaryProject(
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.LONG,
         TypeSig.LONG, TypeSig.LONG,
         ("lhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128),
         ("rhs", TypeSig.LONG + TypeSig.DECIMAL_128, TypeSig.LONG + TypeSig.DECIMAL_128)),
-      (a, conf, p, r) => new BinaryExprMeta[IntegralDivide](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[IntegralDivide](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          super.tagSelfForAst()
+          if (!SQLConf.get.ansiEnabled || !conf.isProjectAstAnsiArithmeticEnabled ||
+              !GpuAnsi.supportsAnsiArithmeticAst(a.dataType)) {
+            willNotWorkInAst("AST integral divide requires ANSI row IR JIT support.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuIntegralDivide(lhs, rhs)(a.origin)
       }),
     expr[Remainder](
       "Remainder or modulo",
-      ExprChecks.binaryProject(
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.INT + TypeSig.LONG,
         TypeSig.gpuNumeric, TypeSig.cpuNumeric,
         ("lhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric),
         ("rhs", TypeSig.gpuNumeric, TypeSig.cpuNumeric)),
-      (a, conf, p, r) => new BinaryExprMeta[Remainder](a, conf, p, r) {
+      (a, conf, p, r) => new BinaryAstExprMeta[Remainder](a, conf, p, r) {
         override def tagExprForGpu(): Unit = {
           // Check if this Remainder expression is in TRY mode context
           if (TryModeShim.isTryMode(a)) {
             willNotWorkOnGpu("try_mod is not supported on GPU")
+          }
+        }
+
+        override def tagSelfForAst(): Unit = {
+          super.tagSelfForAst()
+          if (!SQLConf.get.ansiEnabled || !conf.isProjectAstAnsiArithmeticEnabled ||
+              !GpuAnsi.supportsAnsiArithmeticAst(a.dataType)) {
+            willNotWorkInAst("AST remainder requires ANSI row IR JIT support.")
           }
         }
 

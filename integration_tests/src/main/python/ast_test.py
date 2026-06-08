@@ -16,12 +16,15 @@ import os
 
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
+from asserts import (
+    assert_cpu_and_gpu_are_equal_collect_with_capture,
+    assert_gpu_and_cpu_are_equal_collect,
+    assert_gpu_and_cpu_error)
 from data_gen import *
 from marks import approximate_float, datagen_overrides, ignore_order, disable_ansi_mode
 from spark_session import with_cpu_session, is_before_spark_330
 import pyspark.sql.functions as f
-from pyspark.sql.types import DecimalType
+from pyspark.sql.types import DecimalType, IntegerType, LongType
 
 # Each descriptor contains a list of data generators and a corresponding boolean
 # indicating whether that data type is supported by the AST
@@ -552,6 +555,69 @@ def test_ansi_jit_unary_arithmetic_for_integer_ansi_on(data_desc):
     assert_unary_ast(data_desc,
                      lambda df: df.select(-f.col('a'), f.abs(f.col('a'))),
                      conf=_ansi_jit_ast_enabled_conf)
+
+_ast_div_mod_desc_list_for_ansi_jit_on = [
+    (IntegerGen(min_val=-1000, max_val=1000, special_cases=[]),
+        SetValuesGen(IntegerType(), [-13, -7, -3, -1, 1, 3, 7, 13, None])),
+    (LongGen(min_val=-1000000, max_val=1000000, special_cases=[]),
+        SetValuesGen(LongType(), [-13, -7, -3, -1, 1, 3, 7, 13, None]))]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_desc', _ast_div_mod_desc_list_for_ansi_jit_on, ids=idfn)
+def test_ansi_jit_integral_div_mod_for_integer_ansi_on(data_desc):
+    lhs_gen, rhs_gen = data_desc
+    assert_gpu_ast(True,
+                   lambda spark: two_col_df(spark, lhs_gen, rhs_gen).selectExpr(
+                       'a DIV b',
+                       'a % b'),
+                   conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_ansi_jit_integral_mod_sign_for_integer_ansi_on():
+    assert_gpu_ast(True,
+                   lambda spark: spark.createDataFrame(
+                       spark.sparkContext.parallelize(
+                           [(-5, 3), (5, -3), (-5, -3), (5, 3), (None, 3), (5, None)] * 8,
+                           1),
+                       'a INT, b INT').selectExpr('a % b'),
+                   conf=_ansi_jit_ast_enabled_conf)
+
+def _collect_with_retry_oom_disabled(spark, df_fun):
+    spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "false")
+    return df_fun(spark).collect()
+
+@_requires_libcudf_jit
+def test_ansi_jit_integral_div_by_zero_errors():
+    ast_conf = copy_and_update(
+        _ansi_jit_ast_enabled_conf,
+        _project_ast_enabled_conf,
+        {"spark.rapids.sql.test.injectRetryOOM": "false"})
+    assert_gpu_and_cpu_error(
+        lambda spark: _collect_with_retry_oom_disabled(
+            spark,
+            lambda spark: two_col_df(
+                spark,
+                LongGen(nullable=False, min_val=-100, max_val=100, special_cases=[]),
+                SetValuesGen(LongType(), [0]),
+                length=8,
+                num_slices=1).selectExpr('a DIV b')),
+        ast_conf,
+        'Division by zero')
+
+@_requires_libcudf_jit
+def test_ansi_jit_integral_div_overflow_errors():
+    ast_conf = copy_and_update(
+        _ansi_jit_ast_enabled_conf,
+        _project_ast_enabled_conf,
+        {"spark.rapids.sql.test.injectRetryOOM": "false"})
+    assert_gpu_and_cpu_error(
+        lambda spark: _collect_with_retry_oom_disabled(
+            spark,
+            lambda spark: spark.createDataFrame(
+                spark.sparkContext.parallelize([(LONG_MIN, -1)] * 8, 1),
+                'a LONG, b LONG').selectExpr('a DIV b')),
+        ast_conf,
+        'Overflow')
 
 @approximate_float
 def test_scalar_pow():
