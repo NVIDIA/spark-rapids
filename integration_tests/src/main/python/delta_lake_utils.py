@@ -376,3 +376,22 @@ def assert_rapids_delta_write(do_test, conf):
         return result
     finally:
         jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.endCapture()
+
+def assert_rapids_gpu_delete_ran(do_test, conf):
+    """
+    Runs a Delta DELETE on the GPU and asserts the GpuDeleteCommand actually executed
+    (i.e. the command did not fall back to CPU). Unlike assert_rapids_delta_write, this
+    does not require a write plan, so it works for metadata-only/whole-table deletes that
+    remove files via Delta metadata without writing any data files.
+    """
+    jvm = spark_jvm()
+    callback = jvm.org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    callback.startCapture()
+    try:
+        result = with_gpu_session(do_test, conf=conf)
+        captured_plans = callback.getResultsWithTimeout(10000)
+        assert any(callback.contains(plan, "GpuDeleteCommand") for plan in captured_plans), \
+            "GpuDeleteCommand not found in any captured plan; DELETE may have fallen back to CPU"
+        return result
+    finally:
+        callback.endCapture()
