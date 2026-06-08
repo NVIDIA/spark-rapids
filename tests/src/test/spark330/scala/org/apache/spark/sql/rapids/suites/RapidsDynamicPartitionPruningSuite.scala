@@ -213,6 +213,7 @@ trait RapidsDynamicPartitionPruningSuiteBase extends DynamicPartitionPruningSuit
         val allFilesNum = scan1.metrics("numFiles").value
         val allFilesSize = scan1.metrics("filesSize").value
         assert(scan1.metrics("numPartitions").value === numPartitions)
+        assert(scan1.metrics("pruningTime").value === 0)
 
         val df2 = sql("SELECT sum(f1) FROM fact WHERE fid = 5")
         df2.collect()
@@ -224,6 +225,7 @@ trait RapidsDynamicPartitionPruningSuiteBase extends DynamicPartitionPruningSuit
         assert(0 < partFilesNum && partFilesNum < allFilesNum)
         assert(0 < partFilesSize && partFilesSize < allFilesSize)
         assert(scan2.metrics("numPartitions").value === 1)
+        assert(scan2.metrics("pruningTime").value === 0)
 
         val df3 = sql("SELECT sum(f1) FROM fact, dim WHERE fid = did AND d1 = 6")
         df3.collect()
@@ -233,6 +235,7 @@ trait RapidsDynamicPartitionPruningSuiteBase extends DynamicPartitionPruningSuit
         assert(scan3.metrics("numFiles").value == partFilesNum)
         assert(scan3.metrics("filesSize").value == partFilesSize)
         assert(scan3.metrics("numPartitions").value === 1)
+        assert(scan3.metrics("pruningTime").value !== -1)
       }
     }
   }
