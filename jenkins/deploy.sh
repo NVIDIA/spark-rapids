@@ -110,12 +110,10 @@ echo "Deploy CMD: $DEPLOY_CMD"
 
 ###### Deploy the parent pom file(s) ######
 PARENT_POM=${PARENT_POM:-"./pom.xml"}
-if [[ -n "$PARENT_POM" ]]; then
-    IFS=',' read -ra parent_arr <<< "$PARENT_POM"
-    for parent in "${parent_arr[@]}"; do
-        $DEPLOY_CMD -Dfile="$parent" -DpomFile="$parent"
-    done
-fi
+IFS=',' read -ra parent_arr <<< "$PARENT_POM"
+for parent in "${parent_arr[@]}"; do
+    $DEPLOY_CMD -Dfile="$parent" -DpomFile="$parent"
+done
 
 ###### Deploy the artifact jar(s) ######
 $DEPLOY_CMD -DpomFile=$POM_FILE \
