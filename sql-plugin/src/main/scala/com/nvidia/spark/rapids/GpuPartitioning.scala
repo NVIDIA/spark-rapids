@@ -42,6 +42,9 @@ trait GpuPartitioning extends Partitioning {
       GpuShuffleEnv.useMultiThreadedShuffle(rapidsConf))
   }
 
+  // Lift once GPU shuffle supports long (64-bit) serialized-slice offsets.
+  private val maxGpuSerializedSliceBytes: Long = Int.MaxValue
+
   final def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     throw new IllegalStateException(
       "Partitioners do not support columnarEval, only columnarEvalAny")
@@ -211,6 +214,10 @@ trait GpuPartitioning extends Partitioning {
           partitionIndexes.tail: _*)) { dmbs =>
           val data = dmbs(0)
           val offsets = dmbs(1)
+          require(data.getLength <= maxGpuSerializedSliceBytes,
+            s"GPU-serialized shuffle batch is ${data.getLength} bytes, exceeding the " +
+            s"$maxGpuSerializedSliceBytes-byte (2GB) limit addressable by the Int serialized-slice offsets; " +
+            s"reduce spark.rapids.sql.batchSizeBytes")
           closeOnExcept(Seq(HostMemoryBuffer.allocate(data.getLength),
             HostMemoryBuffer.allocate(offsets.getLength))) { seq =>
             val dataHost = seq(0)
@@ -229,10 +236,6 @@ trait GpuPartitioning extends Partitioning {
 
     NvtxRegistry.GPU_KUDO_SLICE_BUFFERS {
       withResource(Seq(dataHost, offsetsHost)) { _ =>
-        require(dataHost.getLength <= Int.MaxValue,
-          s"GPU-serialized shuffle batch is ${dataHost.getLength} bytes, exceeding the " +
-          s"${Int.MaxValue}-byte (2GB) limit addressable by the Int serialized-slice offsets; " +
-          s"reduce spark.rapids.sql.batchSizeBytes")
         val numSlices = numPartitions + 1
         val elemSize = offsetsHost.getLength / numSlices
 
