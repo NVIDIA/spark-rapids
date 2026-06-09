@@ -14,7 +14,7 @@
 
 from iceberg import get_full_table_name, iceberg_write_enabled_conf, \
     iceberg_unsupported_mark, _BASE_TBLPROPS_SQL
-from marks import iceberg
+from marks import allow_non_gpu, iceberg
 from spark_session import with_gpu_session
 
 pytestmark = iceberg_unsupported_mark
@@ -28,6 +28,11 @@ def _is_write_node(name):
     return any(m in name for m in _WRITE_MARKERS)
 
 
+# CREATE TABLE ... USING ICEBERG is a CPU-only catalog op (CreateTableExec) that is
+# not (and need not be) on the GPU. In GPU test mode the plugin asserts the full plan
+# is columnar unless the CPU node is allowed, so allow it here; the INSERT below is the
+# write execution we actually assert on.
+@allow_non_gpu('CreateTableExec')
 @iceberg
 def test_v2_write_sql_ui_shows_gpu_child_operators(spark_tmp_table_factory):
     """Regression test: the SQL UI / History Server must show the GPU child
