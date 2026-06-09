@@ -21,7 +21,6 @@ from pyspark.sql.types import *
 from spark_session import (is_before_spark_320, is_databricks_runtime, spark_version,
                            supports_delta_lake_deletion_vectors, is_before_spark_353,
                            is_spark_400_or_later, is_databricks143,
-                           is_databricks143_or_later,
                            is_databricks173_or_later)
 
 delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
@@ -109,21 +108,21 @@ def test_delta_merge_not_matched_by_source_fallback(spark_tmp_path, spark_tmp_ta
                          merge_sql=merge_sql,
                          check_func=checker)
 
-@allow_non_gpu("ExecutedCommandExec,BroadcastHashJoinExec,ColumnarToRowExec,"
-               "BroadcastExchangeExec,DataWritingCommandExec,UnionExec,UnionWithLocalDataExec,"
-               "RangeExec",
+@allow_non_gpu("BroadcastHashJoinExec,ColumnarToRowExec,BroadcastExchangeExec,"
+               "UnionExec,UnionWithLocalDataExec,RangeExec",
                delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not is_databricks143(),
-                    reason="DBR 14.3 local-source union materialization is required")
+                    reason="The shimmed UnionWithLocalDataExec fallback is DBR 14.3-specific")
 def test_delta_merge_not_matched_by_source_union_source_fallback(
         spark_tmp_path, spark_tmp_table_factory):
     materialize_conf = copy_and_update(delta_merge_enabled_conf, {
         "spark.databricks.delta.merge.materializeSource": "all"})
 
     def checker(data_path, do_merge):
-        assert_gpu_fallback_write(do_merge, read_delta_path, data_path, "ExecutedCommandExec",
+        assert_gpu_fallback_write(do_merge, read_delta_path, data_path,
+                                  ["ExecutedCommandExec", "UnionExec"],
                                   conf=materialize_conf)
 
     def create_test_data(spark, num=120):
