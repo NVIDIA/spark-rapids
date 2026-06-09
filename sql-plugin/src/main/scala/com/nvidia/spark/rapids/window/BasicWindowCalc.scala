@@ -192,7 +192,8 @@ object GroupedAggregations {
               if (preceding.isEmpty) {
                 windowOptionBuilder.unboundedPreceding()
               } else {
-                if (orderType == DType.STRING) { // Bounded STRING bounds can only mean "CURRENT ROW".
+                // Bounded STRING bounds can only mean "CURRENT ROW".
+                if (orderType == DType.STRING) {
                   windowOptionBuilder.currentRowPreceding()
                 } else {
                   windowOptionBuilder.preceding(preceding.get)
@@ -202,7 +203,8 @@ object GroupedAggregations {
               if (following.isEmpty) {
                 windowOptionBuilder.unboundedFollowing()
               } else {
-                if (orderType == DType.STRING) { // Bounded STRING bounds can only mean "CURRENT ROW".
+                // Bounded STRING bounds can only mean "CURRENT ROW".
+                if (orderType == DType.STRING) {
                   windowOptionBuilder.currentRowFollowing()
                 } else {
                   windowOptionBuilder.following(following.get)
