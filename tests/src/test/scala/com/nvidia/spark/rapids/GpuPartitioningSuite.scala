@@ -177,6 +177,32 @@ class GpuPartitioningSuite extends AnyFunSuite with BeforeAndAfterEach {
     }
   }
 
+  test("GPU kudo partitioning rejects oversized serialized batch") {
+    TrampolineUtil.cleanupAnyExistingSession()
+    val conf = new SparkConf()
+        .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, "none")
+        .set(RapidsConf.SHUFFLE_KUDO_WRITE_MODE.key, "GPU")
+    TestUtils.withGpuSparkSession(conf) { _ =>
+      GpuShuffleEnv.init(new RapidsConf(conf))
+      val partitionIndices = Array(0, 2, 2)
+      val gp = new GpuPartitioning {
+        override val numPartitions: Int = partitionIndices.length
+        // Force the >2GB guard to trip on a small batch (no real 2GB allocation).
+        override protected[rapids] def maxGpuSerializedSliceBytes: Long = 10L
+      }
+      withResource(buildBatch()) { batch =>
+        GpuColumnVector.incRefCounts(batch)
+        val columns = GpuColumnVector.extractColumns(batch)
+        val numRows = batch.numRows
+        val ex = intercept[IllegalArgumentException] {
+          gp.sliceInternalGpuOrCpuAndClose(numRows, partitionIndices, columns)
+        }
+        assert(ex.getMessage.contains("exceeding the"))
+        assert(ex.getMessage.contains("reduce spark.rapids.sql.batchSizeBytes"))
+      }
+    }
+  }
+
   private def testGpuPartitionWithCompression(codecName: String): Unit = {
     val conf = new SparkConf()
         .set(RapidsConf.SHUFFLE_COMPRESSION_CODEC.key, codecName)

@@ -43,7 +43,8 @@ trait GpuPartitioning extends Partitioning {
   }
 
   // Lift once GPU shuffle supports long (64-bit) serialized-slice offsets.
-  private val maxGpuSerializedSliceBytes: Long = Int.MaxValue
+  // protected[rapids] so tests can override it to exercise the guard below.
+  protected[rapids] def maxGpuSerializedSliceBytes: Long = Int.MaxValue
 
   final def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     throw new IllegalStateException(
@@ -214,10 +215,13 @@ trait GpuPartitioning extends Partitioning {
           partitionIndexes.tail: _*)) { dmbs =>
           val data = dmbs(0)
           val offsets = dmbs(1)
+          // This bound keeps the later Long->Int narrowings lossless:
+          // offsetsHost.getLong(..).toInt and dataHost.getLength.toInt
+          // (dataHost is sized to data.getLength).
           require(data.getLength <= maxGpuSerializedSliceBytes,
             s"GPU-serialized shuffle batch is ${data.getLength} bytes, exceeding the " +
-            s"$maxGpuSerializedSliceBytes-byte (2GB) limit addressable by the Int serialized-slice offsets; " +
-            s"reduce spark.rapids.sql.batchSizeBytes")
+            s"$maxGpuSerializedSliceBytes-byte (2GB) limit addressable by the Int " +
+            s"serialized-slice offsets; reduce spark.rapids.sql.batchSizeBytes")
           closeOnExcept(Seq(HostMemoryBuffer.allocate(data.getLength),
             HostMemoryBuffer.allocate(offsets.getLength))) { seq =>
             val dataHost = seq(0)
