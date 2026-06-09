@@ -1337,6 +1337,16 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
     .booleanConf
     .createWithDefault(true)
 
+  val ACCELERATED_COLUMNAR_TO_ROW_ENABLED =
+    conf("spark.rapids.sql.acceleratedColumnarToRow.enabled")
+      .doc("When set to true (default) the GPU columnar-to-row transition uses the GPU " +
+        "transpose kernel (AcceleratedColumnarToRowIterator) for wide fixed-width / STRING " +
+        "schemas. Setting it to false forces the slower per-row CPU iterator " +
+        "(ColumnarToRowIterator). Mainly useful for troubleshooting and performance " +
+        "comparisons; production workloads should leave this on.")
+      .booleanConf
+      .createWithDefault(true)
+
   val ENABLE_PARQUET_INT96_WRITE = conf("spark.rapids.sql.format.parquet.writer.int96.enabled")
     .doc("When set to false, disables accelerated parquet write if the " +
       "spark.sql.parquet.outputTimestampType is set to INT96")
@@ -1974,16 +1984,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       "run on the CPU instead.")
     .booleanConf
     .createWithDefault(true)
-
-  val REGEXP_MAX_STATE_MEMORY_BYTES = conf("spark.rapids.sql.regexp.maxStateMemoryBytes")
-    .doc("Specifies the maximum memory on GPU to be used for regular expressions." +
-      "The memory usage is an estimate based on an upper-bound approximation on the " +
-      "complexity of the regular expression. Note that the actual memory usage may " +
-      "still be higher than this estimate depending on the number of rows in the data" +
-      "column and the input strings themselves. It is recommended to not set this to " +
-      s"more than 3 times ${GPU_BATCH_SIZE_BYTES.key}")
-    .bytesConf(ByteUnit.BYTE)
-    .createWithDefault(Integer.MAX_VALUE)
 
   // INTERNAL TEST AND DEBUG CONFIGS
 
@@ -2738,6 +2738,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .booleanConf
       .createWithDefault(true)
 
+  val ENABLE_NON_AQE_BROADCAST_REUSE_FIXUP =
+    conf("spark.rapids.sql.nonAqeBroadcastReuseFixup.enable")
+      .doc("Option to turn on the fixup of broadcast exchange reuse for DPP " +
+          "subqueries when AQE is disabled. The DPP-side GpuBroadcastExchange is built " +
+          "during GpuOverrides and bypasses GpuTransitionOverrides, so it does not match " +
+          "the join-side broadcast canonically. This fixup builds a per-query signature map " +
+          "of join-side GpuBroadcastExchangeExec nodes in the main plan and rewrites a " +
+          "matching DPP-side broadcast to ReusedExchangeExec.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val CHUNKED_PACK_POOL_SIZE = conf("spark.rapids.sql.chunkedPack.poolSize")
       .doc("Amount of GPU memory (in bytes) to set aside at startup for the chunked pack " +
            "scratch space, needed during spill from GPU to host memory. As a rule of thumb, each " +
@@ -3318,6 +3330,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val asyncProfilerStageEpochInterval: Int = get(ASYNC_PROFILER_STAGE_EPOCH_INTERVAL)
 
   lazy val isSqlEnabled: Boolean = get(SQL_ENABLED)
+
+  lazy val isAcceleratedColumnarToRowEnabled: Boolean = get(ACCELERATED_COLUMNAR_TO_ROW_ENABLED)
 
   lazy val isSqlExecuteOnGPU: Boolean = get(SQL_MODE).equals("executeongpu")
 
@@ -3974,16 +3988,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isRegExpEnabled: Boolean = get(ENABLE_REGEXP)
 
-  lazy val maxRegExpStateMemory: Long =  {
-    val size = get(REGEXP_MAX_STATE_MEMORY_BYTES)
-    if (size > 3 * gpuTargetBatchSizeBytes) {
-      logWarning(s"${REGEXP_MAX_STATE_MEMORY_BYTES.key} is more than 3 times " +
-        s"${GPU_BATCH_SIZE_BYTES.key}. This may cause regular expression operations to " +
-        s"encounter GPU out of memory errors.")
-    }
-    size
-  }
-
   lazy val getSparkGpuResourceName: String = get(SPARK_GPU_RESOURCE_NAME)
 
   lazy val isCpuBasedUDFEnabled: Boolean = get(ENABLE_CPU_BASED_UDF)
@@ -3999,6 +4003,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val concurrentWriterPartitionFlushSize: Long = get(CONCURRENT_WRITER_PARTITION_FLUSH_SIZE)
 
   lazy val isAqeExchangeReuseFixupEnabled: Boolean = get(ENABLE_AQE_EXCHANGE_REUSE_FIXUP)
+
+  lazy val isNonAqeBroadcastReuseFixupEnabled: Boolean =
+    get(ENABLE_NON_AQE_BROADCAST_REUSE_FIXUP)
 
   lazy val chunkedPackPoolSize: Long = get(CHUNKED_PACK_POOL_SIZE)
 

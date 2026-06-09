@@ -31,7 +31,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.List;
 import java.util.OptionalLong;
 
@@ -40,8 +39,7 @@ import java.util.OptionalLong;
  * {@link IcebergS3RangeCopier}. The supplied {@link FileIO} is only used for
  * its property map and any per-prefix storage-credential overlays.
  *
- * <p>This class lives in {@code org.apache.iceberg.aws.s3} for the package-private
- * {@link BaseS3File} access used to extract the bucket/key URI.
+ * <p>The package-private S3 file access is isolated in {@link IcebergS3InputFileAccess}.
  */
 public final class IcebergS3InputFile implements RapidsInputFile {
   private static final Logger LOG = LoggerFactory.getLogger(IcebergS3InputFile.class);
@@ -60,21 +58,12 @@ public final class IcebergS3InputFile implements RapidsInputFile {
   public static RapidsInputFile maybeCreate(InputFile inputFile, FileIO fileIO) {
     // When the gating conf is off (or the file is not an S3 file), return the
     // default IcebergInputFile so the standard Iceberg SeekableInputStream path is used.
-    if (!RapidsInputFiles.isS3PerfEnabled() || !(inputFile instanceof BaseS3File)) {
+    if (!RapidsInputFiles.isS3PerfEnabled()) {
       return new IcebergInputFile(inputFile);
     }
-    BaseS3File s3File = (BaseS3File) inputFile;
-    S3URI uri = s3File.uri();
-    // Use the 4-arg URI constructor so the (raw, un-percent-encoded) bucket and
-    // key are encoded per-component. URI.create / new URI(String) would treat the
-    // input as an already-encoded URI string and throw on partition values that
-    // contain spaces, '#', or other reserved characters (e.g. partition=hello world).
-    URI s3Uri;
-    try {
-      s3Uri = new URI("s3", uri.bucket(), "/" + uri.key(), null);
-    } catch (URISyntaxException e) {
-      throw new IllegalArgumentException(
-          "Invalid S3 URI for bucket=" + uri.bucket() + " key=" + uri.key(), e);
+    URI s3Uri = IcebergS3InputFileAccess.s3Uri(inputFile);
+    if (s3Uri == null) {
+      return new IcebergInputFile(inputFile);
     }
     // Iceberg < 1.7 does not have SupportsStorageCredentials; ShimUtils returns
     // the per-prefix credential overlays (or an empty map on 1.6).

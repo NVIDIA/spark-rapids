@@ -879,12 +879,21 @@ def test_parquet_input_meta_fallback(spark_tmp_path, v1_enabled_list, reader_con
                         'input_file_block_length()'),
             conf=all_confs)
 
+# More buckets reduce per-task CPU sort pressure. Both sides must use the same
+# bucket count so Spark can still use the bucketed join path.
+_BUCKET_TEST_NUM_BUCKETS = 8
+_BUCKET_TEST_LEFT_ROWS = 100_000
+_BUCKET_TEST_RIGHT_ROWS = 1_000_000
+
 def createBucketedTableAndJoin(spark, tbl_1, tbl_2):
-    spark.range(10e4).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable(tbl_1)
-    spark.range(10e6).write.bucketBy(4, "id").sortBy("id").mode('overwrite').saveAsTable(tbl_2)
-    bucketed_4_10e4 = spark.table(tbl_1)
-    bucketed_4_10e6 = spark.table(tbl_2)
-    return bucketed_4_10e4.join(bucketed_4_10e6, "id")
+    # Keep this large enough to exercise bucketed joins, while reducing CPU-side sort pressure.
+    (spark.range(_BUCKET_TEST_LEFT_ROWS).write.bucketBy(_BUCKET_TEST_NUM_BUCKETS, "id")
+        .sortBy("id").mode('overwrite').saveAsTable(tbl_1))
+    (spark.range(_BUCKET_TEST_RIGHT_ROWS).write.bucketBy(_BUCKET_TEST_NUM_BUCKETS, "id")
+        .sortBy("id").mode('overwrite').saveAsTable(tbl_2))
+    bucketed_left = spark.table(tbl_1)
+    bucketed_right = spark.table(tbl_2)
+    return bucketed_left.join(bucketed_right, "id")
 
 @ignore_order
 @allow_non_gpu('DataWritingCommandExec,ExecutedCommandExec,WriteFilesExec')
