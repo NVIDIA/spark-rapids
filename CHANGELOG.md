@@ -1,17 +1,18 @@
 # Change log
-Generated on 2026-06-03
+Generated on 2026-06-09
 
 ## Release 26.06
 
 ### Features
 |||
 |:---|:---|
-|[#14601](https://github.com/NVIDIA/spark-rapids/issues/14601)|[FEA]  Delta Lake DB-17.3: Enable Delta Lake tests in CI|
+|[#14601](https://github.com/NVIDIA/spark-rapids/issues/14601)|[FEA] Delta Lake DB-17.3: Enable Delta Lake tests in CI|
 |[#14598](https://github.com/NVIDIA/spark-rapids/issues/14598)|[FEA] Delta Lake DB-17.3: Enable GPU MERGE INTO|
-|[#14597](https://github.com/NVIDIA/spark-rapids/issues/14597)|Delta Lake DB-17.3: Enable GPU DELETE + UPDATE|
+|[#14054](https://github.com/NVIDIA/spark-rapids/issues/14054)|[FEA] splitTargetSizeInHalfGpu should split the sequence by elements if splitting by byte size is not possible|
+|[#14597](https://github.com/NVIDIA/spark-rapids/issues/14597)|[FEA] Delta Lake DB-17.3: Enable GPU DELETE + UPDATE|
 |[#14600](https://github.com/NVIDIA/spark-rapids/issues/14600)|[FEA] Enable GPU-accelerated Deletion Vector (DV) reads for Delta Lake on Databricks 17.3.|
 |[#14561](https://github.com/NVIDIA/spark-rapids/issues/14561)|[FEA] Support `replace( strCol, searchCol, replCol )`|
-|[#14596](https://github.com/NVIDIA/spark-rapids/issues/14596)|[FEA]  Delta Lake DB-17.3: Build system setup and write path|
+|[#14596](https://github.com/NVIDIA/spark-rapids/issues/14596)|[FEA] Delta Lake DB-17.3: Build system setup and write path|
 |[#14461](https://github.com/NVIDIA/spark-rapids/issues/14461)|[FEA] Add support for Delta Lake 4.1.x|
 |[#14539](https://github.com/NVIDIA/spark-rapids/issues/14539)|[FEA] Support `contains( strCol, expr )`|
 |[#14613](https://github.com/NVIDIA/spark-rapids/issues/14613)|[FEA] Support binary type in higher-order functions|
@@ -29,16 +30,20 @@ Generated on 2026-06-03
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#14986](https://github.com/NVIDIA/spark-rapids/issues/14986)|[BUG] Delta DELETE on Databricks 14.3 returns num_affected_rows = -1 for metadata-only (partition/whole-table) deletes|
+|[#14976](https://github.com/NVIDIA/spark-rapids/issues/14976)|[BUG] Delta DV predicate pushdown crashes when DV predicate filter remains CPU FilterExec|
+|[#14949](https://github.com/NVIDIA/spark-rapids/issues/14949)|[BUG] Delta DV zero-column PERFILE scans ignore deleted rows and return incorrect counts|
+|[#14944](https://github.com/NVIDIA/spark-rapids/issues/14944)|[BUG] [v26.06.0-SNAPSHOT][DB 17.3] Delta OPTIMIZE DV fallback fails with NPE in GpuOverrides.isDeltaLakeMetadataQuery|
+|[#14807](https://github.com/NVIDIA/spark-rapids/issues/14807)|[BUG] Iceberg _pos is task-local on split data files, causing silent data corruption on MoR reads with positional deletes|
 |[#14726](https://github.com/NVIDIA/spark-rapids/issues/14726)|[BUG] Iceberg 1.10.1 SparkWrite class loader issue when jars in $SPARK_HOME/jars|
 |[#14895](https://github.com/NVIDIA/spark-rapids/issues/14895)|[BUG] DBR 17.3 Delta no-DV read fails with DELTA_SKIP_ROW_COLUMN_NOT_FILLED on GPU|
-|[#14861](https://github.com/NVIDIA/spark-rapids/issues/14861)|[BUG] [BUG] test_comprehensive_from_utc_timestamp fails on Databricks 14.3 for timezone SystemV/EST5EDT (1-hour GPU/CPU diff) intermittently|
+|[#14861](https://github.com/NVIDIA/spark-rapids/issues/14861)|[BUG] test_comprehensive_from_utc_timestamp fails on Databricks 14.3 for timezone SystemV/EST5EDT (1-hour GPU/CPU diff) intermittently|
 |[#14813](https://github.com/NVIDIA/spark-rapids/issues/14813)|GpuJsonToStructs fails with token count assertion on multiple malformed open-brace rows|
-|[#14689](https://github.com/NVIDIA/spark-rapids/issues/14689)|[FEA] Replace cuDF regex chain in GpuToTimestamp with a fused JNI kernel|
+|[#14689](https://github.com/NVIDIA/spark-rapids/issues/14689)|[BUG] Replace cuDF regex chain in GpuToTimestamp with a fused JNI kernel|
 |[#14815](https://github.com/NVIDIA/spark-rapids/issues/14815)|[BUG] Dataproc Serverless 2.2 IT: string_test.py Spark job exceeded 3600s timeout, batch FAILED|
 |[#14831](https://github.com/NVIDIA/spark-rapids/issues/14831)|[BUG] Parquet COALESCING reader can return invalid results from partitioned tables|
 |[#11653](https://github.com/NVIDIA/spark-rapids/issues/11653)|[BUG] Spark UT framework: select explode of nested field of array of struct: Encountered an exception applying GPU overrides|
 |[#14790](https://github.com/NVIDIA/spark-rapids/issues/14790)|[BUG] MetricsEventLogValidationSuite parquet write operator time ratio test fails near 10% threshold on Spark 4.1.1 / Scala 2.13|
-|[#14054](https://github.com/NVIDIA/spark-rapids/issues/14054)|[FEA] splitTargetSizeInHalfGpu should split the sequence by elements if splitting by byte size is not possible|
 |[#14696](https://github.com/NVIDIA/spark-rapids/issues/14696)|[BUG] Queries against Delta tables with deletion vectors may not reuse plan parts that should be reusable|
 |[#14800](https://github.com/NVIDIA/spark-rapids/issues/14800)|[BUG] iceberg parquet shim class-name collision in dist jar: cache-aware 1.10.x shim silently dropped|
 |[#14763](https://github.com/NVIDIA/spark-rapids/issues/14763)|[BUG] [CI] Spark Connect smoke test fails to start server on 127.0.0.1:15002 for multiple jobs|
@@ -240,7 +245,7 @@ Generated on 2026-06-03
 |[#14682](https://github.com/NVIDIA/spark-rapids/issues/14682)|[BUG] [DB-17.3 IT agaist v26.04.0] NoSuchMethodError on CatalogTable.copy in GpuCreateDataSourceTableAsSelectCommand|
 |[#14607](https://github.com/NVIDIA/spark-rapids/issues/14607)|[BUG] Unity Catalog table scan fails with "Path must be absolute" on Databricks 17.3|
 |[#14564](https://github.com/NVIDIA/spark-rapids/issues/14564)|[BUG] cuDF-based Delta DV reader returns incorrect results when NATIVE footer reader is used with split Parquet files|
-|[#14168](https://github.com/NVIDIA/spark-rapids/issues/14168)|[BUG]  `.agg(F.first()` brings inconsistency when using the CPU and GPU engines|
+|[#14168](https://github.com/NVIDIA/spark-rapids/issues/14168)|[BUG] `.agg(F.first()` brings inconsistency when using the CPU and GPU engines|
 |[#14395](https://github.com/NVIDIA/spark-rapids/issues/14395)|[BUG] IllegalArgumentException: EmptyRelationExec not columnar in LeftAnti broadcast nested loop join with AQE|
 |[#14511](https://github.com/NVIDIA/spark-rapids/issues/14511)|[BUG] test_delta_scan_split_with_DV_enabled_with_DVs failed assert 2 == 1|
 |[#14368](https://github.com/NVIDIA/spark-rapids/issues/14368)|[BUG] Per-row retry in GpuRowToColumnarExec (#13842) may introduce noticeable overhead|
