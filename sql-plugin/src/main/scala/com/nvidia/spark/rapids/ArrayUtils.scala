@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import org.apache.spark.sql.catalyst.expressions.{ArrayDistinct, Expression}
 import org.apache.spark.sql.rapids.GpuArrayDistinct
 
-case class GpuArrayDistinctMeta(
+class GpuArrayDistinctMeta(
   expr: ArrayDistinct,
   override val conf: RapidsConf,
   parentMetaOpt: Option[RapidsMeta[_, _, _]],

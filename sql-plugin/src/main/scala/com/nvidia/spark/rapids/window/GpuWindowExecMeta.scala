@@ -221,11 +221,12 @@ class GpuWindowExecMeta(windowExec: WindowExec,
   override def getResultColumnsOnly: Boolean = resultColumnsOnly
 }
 
-case class BatchedOps(running: Seq[NamedExpression],
-    unboundedAgg: Seq[NamedExpression],
-    unboundedDoublePass: Seq[NamedExpression],
-    bounded: Seq[NamedExpression],
-    passThrough: Seq[NamedExpression]) {
+class BatchedOps(
+    val running: Seq[NamedExpression],
+    val unboundedAgg: Seq[NamedExpression],
+    val unboundedDoublePass: Seq[NamedExpression],
+    val bounded: Seq[NamedExpression],
+    val passThrough: Seq[NamedExpression]) {
 
   private def dedupeByExprId[T <: NamedExpression](exprs: Seq[T]): Seq[T] = {
     val seen = mutable.HashSet.empty[ExprId]
@@ -614,7 +615,7 @@ object GpuWindowExecMeta {
         throw new IllegalArgumentException(
           s"Found unexpected expression $other in window exec ${other.getClass}")
     }
-    BatchedOps(running.toSeq,
+    new BatchedOps(running.toSeq,
                unboundedToUnboundedAgg.toSeq,
                doublePass.toSeq,
                batchedBounded.toSeq,

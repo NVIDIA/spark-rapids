@@ -21,7 +21,6 @@ import scala.collection.immutable.TreeMap
 import com.nvidia.spark.rapids.metrics.GpuBubbleTimerManager
 
 import org.apache.spark.{SparkContext, TaskContext}
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
@@ -86,7 +85,7 @@ class GpuMetricFactory(metricsConf: MetricsLevel, context: SparkContext) {
     createInternal(level, SQLMetrics.createTimingMetric(context, name))
 }
 
-object GpuMetric extends Logging {
+object GpuMetric {
   // Metric names.
   val BUFFER_TIME = "bufferTime"
   val BUFFER_TIME_BUBBLE = "bufferTimeBubble"

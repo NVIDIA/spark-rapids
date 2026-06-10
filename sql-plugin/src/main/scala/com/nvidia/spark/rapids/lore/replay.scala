@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -94,8 +94,8 @@ class GpuLoreReplayRDD(sc: SparkContext, rootPathStr: String,
   }
 
   override protected def getPartitions: Array[Partition] = {
-    (0 until loreRDDMeta.numPartitions).map(LoreReplayPartition).toArray
+    (0 until loreRDDMeta.numPartitions).map(new LoreReplayPartition(_)).toArray
   }
 }
 
-case class LoreReplayPartition(override val index: Int) extends Partition
+class LoreReplayPartition(override val index: Int) extends Partition

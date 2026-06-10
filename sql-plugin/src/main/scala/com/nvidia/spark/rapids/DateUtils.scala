@@ -16,13 +16,12 @@
 
 package com.nvidia.spark.rapids
 
-import java.time.LocalDate
+import java.time.{Instant, LocalDate}
 
 import scala.collection.mutable.ListBuffer
 
 import ai.rapids.cudf.{DType, Scalar}
 import com.nvidia.spark.rapids.VersionUtils.isSpark320OrLater
-import com.nvidia.spark.rapids.shims.DateTimeUtilsShims
 
 import org.apache.spark.sql.catalyst.util.DateTimeUtils.localDateToDays
 import org.apache.spark.sql.internal.SQLConf
@@ -53,6 +52,11 @@ object DateUtils {
 
   val ONE_SECOND_MICROSECONDS = 1000000
 
+  private def currentTimestampMicros: Long = {
+    val instant = Instant.now()
+    instant.getEpochSecond * ONE_SECOND_MICROSECONDS + instant.getNano / 1000
+  }
+
   val ONE_DAY_SECONDS = 86400L
 
   val ONE_DAY_MICROSECONDS = 86400000000L
@@ -80,7 +84,7 @@ object DateUtils {
     Map.empty
   } else {
     val today = currentDate()
-    val now = DateTimeUtilsShims.currentTimestamp
+    val now = currentTimestampMicros
     Map(
       EPOCH -> 0,
       NOW -> now / 1000000L,
@@ -94,7 +98,7 @@ object DateUtils {
     Map.empty
   } else {
     val today = currentDate()
-    val now = DateTimeUtilsShims.currentTimestamp
+    val now = currentTimestampMicros
     Map(
       EPOCH -> 0,
       NOW -> now,
