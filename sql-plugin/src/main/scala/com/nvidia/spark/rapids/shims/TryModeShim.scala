@@ -14,24 +14,36 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "333"}
-{"spark": "334"}
-spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
+
+import java.lang.reflect.InvocationTargetException
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 
 object TryModeShim {
-  /**
-   * Expression is wrapped under TryEval during query planning which is not supported on GPU.
-   * Example: for try_add(col1, col2) it would be <TryEval> tryeval((col1#0 + col2#1))
-   * So the return value from this function does not matter.
-   */
+  private val TryModeName = "TRY"
+
   def isTryMode(expr: Expression): Boolean = {
-    false
+    evalMode(expr).exists(mode => String.valueOf(mode) == TryModeName)
+  }
+
+  private def evalMode(expr: Expression): Option[AnyRef] = {
+    invokeNoArg(expr, "evalMode").orElse {
+      invokeNoArg(expr, "evalContext").flatMap(invokeNoArg(_, "evalMode"))
+    }
+  }
+
+  private def invokeNoArg(target: AnyRef, methodName: String): Option[AnyRef] = {
+    try {
+      val method = target.getClass.getMethod(methodName)
+      Option(method.invoke(target).asInstanceOf[AnyRef])
+    } catch {
+      case _: NoSuchMethodException =>
+        None
+      case e: InvocationTargetException if e.getCause != null =>
+        throw e.getCause
+      case _: IllegalAccessException =>
+        None
+    }
   }
 }
