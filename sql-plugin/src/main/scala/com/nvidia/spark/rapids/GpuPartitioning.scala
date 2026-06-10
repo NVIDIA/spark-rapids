@@ -327,7 +327,8 @@ trait GpuPartitioning extends Partitioning {
           val numCompressedToAdd = emptyOutputIndex - outputIndex
           (0 until numCompressedToAdd).foreach { _ =>
             val compressedTable = compressedTables(compressedTableIndex)
-            outputBatches.append(GpuCompressedColumnVector.from(compressedTable))
+            outputBatches.append(
+              GpuCompressedColumnVector.from(compressedTable.buffer, compressedTable.meta))
             compressedTableIndex += 1
           }
           outputBatches.append(emptyBatch)
@@ -337,7 +338,7 @@ trait GpuPartitioning extends Partitioning {
         // add any compressed batches that remain after the last empty batch
         (compressedTableIndex until compressedTables.length).foreach { i =>
           val ct = compressedTables(i)
-          outputBatches.append(GpuCompressedColumnVector.from(ct))
+          outputBatches.append(GpuCompressedColumnVector.from(ct.buffer, ct.meta))
         }
       }
     }
