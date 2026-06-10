@@ -21,7 +21,6 @@ import scala.annotation.nowarn
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.exec
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.{InternalRow, TableIdentifier}
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.aggregate.Average
@@ -51,7 +50,7 @@ import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
  * Shim base class that can be compiled with every supported 3.2.0+
  */
 trait Spark320PlusShims extends SparkShims with RebaseShims
-    with WindowInPandasShims with Logging {
+    with WindowInPandasShims {
 
 
   override final def aqeShuffleReaderExec: ExecRule[_ <: SparkPlan] = exec[AQEShuffleReadExec](
