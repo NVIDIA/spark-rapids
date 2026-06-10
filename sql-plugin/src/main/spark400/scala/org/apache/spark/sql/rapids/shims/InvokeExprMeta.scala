@@ -35,7 +35,7 @@ import org.apache.spark.sql.catalyst.expressions.url.ParseUrlEvaluator
 import org.apache.spark.sql.rapids.{GpuParseUrl, GpuStructsToJson}
 import org.apache.spark.sql.types._
 
-case class InvokeExprMeta(
+class InvokeExprMeta(
     invoke: Invoke,
     override val conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],

@@ -42,4 +42,9 @@ final class CudfUnsafeRow(
   }
 }
 
+// Keep companion line metadata aligned with pre-Spark-4 shims for binary-dedupe.
+
+
+
+
 object CudfUnsafeRow extends CudfUnsafeRowTrait

@@ -23,6 +23,26 @@ package org.apache.spark.sql.rapids.execution.python.shims
 
 import org.apache.spark.sql.execution.python.ArrowWindowPythonExec
 
+// Keep executable line numbers aligned with pre-Spark-4 shims for binary-dedupe.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /**
  * WindowInPandasExec was renamed to ArrowWindowPythonExec in Spark 4.1.0.
  * Use the new class name as the type alias.
