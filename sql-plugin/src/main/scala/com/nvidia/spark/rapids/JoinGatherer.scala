@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -155,7 +155,7 @@ object JoinGatherer {
       outOfBoundsPolicyRight: OutOfBoundsPolicy): JoinGatherer = {
     val left = JoinGatherer(leftMap, leftData, outOfBoundsPolicyLeft)
     val right = JoinGatherer(rightMap, rightData, outOfBoundsPolicyRight)
-    MultiJoinGather(left, right)
+    new MultiJoinGather(left, right)
   }
 
   def getRowsInNextBatch(gatherer: JoinGatherer, targetSize: Long,
@@ -227,7 +227,7 @@ object LazySpillableColumnarBatch {
 
   def spillOnly(wrapped: LazySpillableColumnarBatch): LazySpillableColumnarBatch = wrapped match {
     case alreadyGood: AllowSpillOnlyLazySpillableColumnarBatchImpl => alreadyGood
-    case anythingElse => AllowSpillOnlyLazySpillableColumnarBatchImpl(anythingElse)
+    case anythingElse => new AllowSpillOnlyLazySpillableColumnarBatchImpl(anythingElse)
   }
 }
 
@@ -236,7 +236,7 @@ object LazySpillableColumnarBatch {
  * batch it is only spilled. This is used for cases, like with a streaming hash join
  * where the data itself needs to out live the JoinGatherer it is handed off to.
  */
-case class AllowSpillOnlyLazySpillableColumnarBatchImpl(wrapped: LazySpillableColumnarBatch)
+class AllowSpillOnlyLazySpillableColumnarBatchImpl(val wrapped: LazySpillableColumnarBatch)
     extends LazySpillableColumnarBatch {
   override def getBatch: ColumnarBatch =
     wrapped.getBatch
@@ -749,7 +749,8 @@ class JoinGathererSameTable(
 /**
  * Join Gatherer for a left table and a right table
  */
-case class MultiJoinGather(left: JoinGatherer, right: JoinGatherer) extends JoinGatherer {
+class MultiJoinGather(val left: JoinGatherer, val right: JoinGatherer)
+    extends JoinGatherer with Serializable {
   assert(left.numRowsLeft == right.numRowsLeft,
     "all gatherers much have the same number of rows to gather")
 

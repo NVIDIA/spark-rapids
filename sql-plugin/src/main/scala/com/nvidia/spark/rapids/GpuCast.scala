@@ -204,6 +204,9 @@ object CastOptions {
 
     override val useHexFormatForBinary: Boolean = true
   }
+
+  private def defaultNullifyOverflows: Boolean =
+    CastTimeToIntShim.ifNullifyOverflows
 }
 
 /**
@@ -223,7 +226,7 @@ class CastOptions(
     legacyCastComplexTypesToString: Boolean,
     ansiMode: Boolean,
     stringToDateAnsiMode: Boolean,
-    val nullifyOverflows: Boolean = CastTimeToIntShim.ifNullifyOverflows,
+    val nullifyOverflows: Boolean = CastOptions.defaultNullifyOverflows,
     val castToJsonString: Boolean = false,
     val ignoreNullFieldsInStructs: Boolean = true,
     val timeZoneId: Option[String] = Option.empty[String]) extends Serializable {

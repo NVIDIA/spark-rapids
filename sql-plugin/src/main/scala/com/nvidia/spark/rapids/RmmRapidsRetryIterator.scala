@@ -31,9 +31,9 @@ import com.nvidia.spark.rapids.jni.{CpuRetryOOM, CpuSplitAndRetryOOM, GpuRetryOO
 import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 
-object RmmRapidsRetryIterator extends Logging {
+object RmmRapidsRetryIterator {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
 
   /**
    * withRetry for Iterator[T]. This helper calls a function `fn` as it takes
@@ -100,7 +100,7 @@ object RmmRapidsRetryIterator extends Logging {
       splitPolicy: T => Seq[T])
       (fn: T => K): Iterator[K] = {
     val attemptIter = new AutoCloseableAttemptSpliterator(
-      SingleItemAutoCloseableIteratorInternal(input), fn, splitPolicy)
+      new SingleItemAutoCloseableIteratorInternal(input), fn, splitPolicy)
     new RmmRapidsRetryAutoCloseableIterator(attemptIter)
   }
 
@@ -130,7 +130,7 @@ object RmmRapidsRetryIterator extends Logging {
       input: T)
       (fn: T => K): K = {
     val attemptIter = new AutoCloseableAttemptSpliterator(
-      SingleItemAutoCloseableIteratorInternal(input), fn)
+      new SingleItemAutoCloseableIteratorInternal(input), fn)
     drainSingleWithVerification(
       new RmmRapidsRetryAutoCloseableIterator(attemptIter))
   }
@@ -160,9 +160,9 @@ object RmmRapidsRetryIterator extends Logging {
   def withRetryNoSplit[T <: AutoCloseable, K](
       input: Seq[T])
       (fn: Seq[T] => K): K = {
-    val wrapped = AutoCloseableSeqInternal(input)
+    val wrapped = new AutoCloseableSeqInternal(input)
     val attemptIter = new AutoCloseableAttemptSpliterator(
-      SingleItemAutoCloseableIteratorInternal(wrapped), fn)
+      new SingleItemAutoCloseableIteratorInternal(wrapped), fn)
     drainSingleWithVerification(
       new RmmRapidsRetryAutoCloseableIterator(attemptIter))
   }
@@ -346,7 +346,7 @@ object RmmRapidsRetryIterator extends Logging {
    * @param ts the Seq to wrap
    * @tparam T the type of the items in `ts`
    */
-  private case class AutoCloseableSeqInternal[T <: AutoCloseable](ts: Seq[T])
+  private class AutoCloseableSeqInternal[T <: AutoCloseable](ts: Seq[T])
       extends Seq[T] with AutoCloseable {
     override def close(): Unit = {
       ts.foreach(_.safeClose())
@@ -375,7 +375,7 @@ object RmmRapidsRetryIterator extends Logging {
    * @param ts the AutoCloseable item to close if this iterator hasn't been drained
    * @tparam T the type of `ts`, must be AutoCloseable
    */
-  private case class SingleItemAutoCloseableIteratorInternal[T <: AutoCloseable](ts: T)
+  private class SingleItemAutoCloseableIteratorInternal[T <: AutoCloseable](ts: T)
       extends Iterator[T] with AutoCloseable {
 
     private var wasCalledSuccessfully = false
@@ -754,7 +754,7 @@ object RmmRapidsRetryIterator extends Logging {
               } else {
                 splitReason = SplitReason.CPU_OOM
               }
-              logInfo("splitReason is set " +
+              log.info("splitReason is set " +
                 s"to ${splitReason} after checking isRetryOrSplitAndRetry, related exception:",
                 ex)
             }
@@ -773,7 +773,7 @@ object RmmRapidsRetryIterator extends Logging {
                   }
                 }
                 if (splitReason == SplitReason.GPU_OOM || splitReason == SplitReason.CPU_OOM) {
-                  logInfo(s"splitReason is set to ${splitReason} after checking " +
+                  log.info(s"splitReason is set to ${splitReason} after checking " +
                     s"causedByRetryOrSplit, related exception:", ex)
                 }
               }
@@ -791,7 +791,7 @@ object RmmRapidsRetryIterator extends Logging {
               if (isOrCausedByColumnSizeOverflow(ex)) {
                 // CUDF column size overflow? Attempt split-retry.
                 splitReason = SplitReason.CUDF_OVERFLOW
-                logInfo(s"splitReason is set to ${splitReason} after checking " +
+                log.info(s"splitReason is set to ${splitReason} after checking " +
                   s"isOrCausedByColumnSizeOverflow, related exception:", ex)
               } else {
                 // we want to throw early here, since we got an exception
@@ -879,7 +879,7 @@ object RmmRapidsRetryIterator extends Logging {
                 s" minimum: ${target.minSize}")
         }
       }
-      Seq(AutoCloseableTargetSize(newTarget, target.minSize, target.dataSize))
+      Seq(new AutoCloseableTargetSize(newTarget, target.minSize, target.dataSize))
     }
   }
 
@@ -937,8 +937,8 @@ object RmmRapidsRetryIterator extends Logging {
 
   private def logSpillFrameworkSummary(): Unit = {
     // print spillable status
-    logInfo(SpillFramework.getHostStoreSpillableSummary)
-    logInfo(SpillFramework.getDeviceStoreSpillableSummary)
+    log.info(SpillFramework.getHostStoreSpillableSummary)
+    log.info(SpillFramework.getDeviceStoreSpillableSummary)
   }
 
   // For GPU/CPU SplitAndRetryOOM, we are very interested what each task is doing when one
@@ -956,12 +956,12 @@ object RmmRapidsRetryIterator extends Logging {
       }
       sb.append("\n\n")
     })
-    logInfo(sb.toString())
+    log.info(sb.toString())
   }
 
   private def logMemoryBookkeeping(): Unit = { // use synchronized to keep neat
     // print host memory bookkeeping
-    logInfo(HostAlloc.getHostAllocBookkeepSummary())
+    log.info(HostAlloc.getHostAllocBookkeepSummary())
 
     // print device memory bookkeeping
     // TODO: uncomment this once we have device memory bookkeeping in spark-rapids-jni
@@ -976,12 +976,6 @@ object RmmRapidsRetryIterator extends Logging {
  * `CpuSplitAndRetryOOM`, a split policy like `splitTargetSizeInHalfGpu` or
  * `splitTargetSizeInHalfCpu` can be used to retry the block with a smaller target size.
  */
-case class AutoCloseableTargetSize(targetSize: Long, minSize: Long,
-    dataSize: Long = 0) extends AutoCloseable {
-  def this(targetSize: Long, minSize: Long) = this(targetSize, minSize, 0)
-  override def close(): Unit = ()
-}
-
 /**
  * This leverages a ThreadLocal of boolean to track if a task thread is currently
  * executing a retry. And the boolean state will be used by all the

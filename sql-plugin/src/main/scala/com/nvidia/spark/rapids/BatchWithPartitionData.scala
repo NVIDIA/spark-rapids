@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,28 +29,6 @@ import org.apache.spark.sql.types.{StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * Wrapper class that specifies how many rows to replicate
- * the partition value.
- */
-case class PartitionRowData(rowValue: InternalRow, rowNum: Int)
-
-object PartitionRowData {
-  def from(rowValues: Array[InternalRow], rowNums: Array[Int]): Array[PartitionRowData] = {
-    rowValues.zip(rowNums).map {
-      case (rowValue, rowNum) => PartitionRowData(rowValue, rowNum)
-    }
-  }
-
-  def from(rowValues: Array[InternalRow], rowNums: Array[Long]): Array[PartitionRowData] = {
-    rowValues.zip(rowNums).map {
-      case (rowValue, rowNum) =>
-        require(rowNum <= Integer.MAX_VALUE, s"Row number $rowNum exceeds max value of an integer.")
-        PartitionRowData(rowValue, rowNum.toInt)
-    }
-  }
-}
-
-/**
  * Class to wrap columnar batch and partition rows data and utility functions to merge them.
  *
  * @param inputBatch           Input ColumnarBatch.
@@ -59,10 +37,10 @@ object PartitionRowData {
  *                             rows to replicate the partition value.
  * @param partitionSchema      Schema of the partitioned data.
  */
-case class BatchWithPartitionData(
-    inputBatch: SpillableColumnarBatch,
-    partitionedRowsData: Array[PartitionRowData],
-    partitionSchema: StructType) extends AutoCloseable {
+class BatchWithPartitionData(
+    val inputBatch: SpillableColumnarBatch,
+    val partitionedRowsData: Array[PartitionRowData],
+    val partitionSchema: StructType) extends AutoCloseable {
 
   /**
    * Merges the partitioned data with the input ColumnarBatch.
@@ -98,7 +76,9 @@ case class BatchWithPartitionData(
         val dataType = field.dataType
         // Create an array to hold the individual columns for each partition.
         val singlePartCols = partitionedRowsData.safeMap {
-          case PartitionRowData(valueRow, rowNum) =>
+          partitionRowData =>
+            val valueRow = partitionRowData.rowValue
+            val rowNum = partitionRowData.rowNum
             val singleValue = valueRow.get(colIndex, dataType)
             withResource(GpuScalar.from(singleValue, dataType)) { singleScalar =>
               // Create a column vector from the GPU scalar, associated with the row number.
@@ -272,14 +252,14 @@ object BatchWithPartitionDataUtils {
       // Splitting occurs if for any column, maximum rows we can fit is less than rows in partition.
       splitOccurred = maxRows < rowsInPartition
       if (splitOccurred) {
-        currentBatch.append(PartitionRowData(valuesInPartition, maxRows))
+        currentBatch.append(new PartitionRowData(valuesInPartition, maxRows))
         resultBatches.append(currentBatch.toArray)
         currentBatch.clear()
         java.util.Arrays.fill(sizeOfBatch, 0)
         rowsInPartition -= maxRows
       } else {
         // If there was no split, all rows can fit in current batch.
-        currentBatch.append(PartitionRowData(valuesInPartition, rowsInPartition))
+        currentBatch.append(new PartitionRowData(valuesInPartition, rowsInPartition))
         val partitionSizes = calculatePartitionSizes(rowsInPartition, valuesInPartition, partSchema)
         sizeOfBatch.indices.foreach(i => sizeOfBatch(i) += partitionSizes(i))
       }
@@ -364,7 +344,7 @@ object BatchWithPartitionDataUtils {
       // Combine the split GPU ColumnVectors with partition ColumnVectors.
       splitColumnarBatches.zip(listOfPartitionedRowsData).map {
         case (spillableBatch, partitionedRowsData) =>
-          BatchWithPartitionData(spillableBatch, partitionedRowsData, partitionSchema)
+          new BatchWithPartitionData(spillableBatch, partitionedRowsData, partitionSchema)
       }
     }
   }
@@ -397,9 +377,7 @@ object BatchWithPartitionDataUtils {
       listOfPartitionedRowsData: Array[Array[PartitionRowData]]): Seq[Int] = {
     // Calculate the row counts for each batch
     val rowCountsForEachBatch = listOfPartitionedRowsData.map(partitionData =>
-      partitionData.map {
-        case PartitionRowData(_, rowNum) => rowNum
-      }.sum
+      partitionData.map(_.rowNum).sum
     )
     // Calculate split indices using cumulative sum
     rowCountsForEachBatch.scanLeft(0)(_ + _).drop(1).dropRight(1)
@@ -479,13 +457,13 @@ object BatchWithPartitionDataUtils {
         if (remainingRows > 0) {
           // Add rows to the left partition, up to the remaining rows available
           val rowsToAddToLeft = Math.min(partitionRow.rowNum, remainingRows)
-          leftHalf += partitionRow.copy(rowNum = rowsToAddToLeft)
+          leftHalf += new PartitionRowData(partitionRow.rowValue, rowsToAddToLeft)
           rowsAddedToLeft += rowsToAddToLeft
           remainingRows -= rowsToAddToLeft
           if (remainingRows <= 0) {
             // Add remaining rows to the right partition
             val rowsToAddToRight = partitionRow.rowNum - rowsToAddToLeft
-            rightHalf += partitionRow.copy(rowNum = rowsToAddToRight)
+            rightHalf += new PartitionRowData(partitionRow.rowValue, rowsToAddToRight)
             rowsAddedToRight += rowsToAddToRight
           }
         } else {
