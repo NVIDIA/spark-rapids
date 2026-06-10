@@ -71,6 +71,10 @@ public final class IcebergS3InputFile implements RapidsInputFile {
         s3Uri.toString(),
         fileIO.properties(),
         ShimUtils.storageCredentialOverlays(fileIO));
+    if (icebergS3Client == null) {
+      LOG.debug("IcebergS3RangeCopier path disabled for {}", s3Uri);
+      return new IcebergInputFile(inputFile);
+    }
     LOG.debug("IcebergS3RangeCopier path active for {}", s3Uri);
     return new IcebergS3InputFile(new IcebergInputFile(inputFile), s3Uri, icebergS3Client);
   }
