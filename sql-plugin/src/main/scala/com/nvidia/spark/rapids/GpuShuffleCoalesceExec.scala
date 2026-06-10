@@ -38,7 +38,6 @@ import com.nvidia.spark.rapids.shims.ShimUnaryExecNode
 import org.apache.hadoop.conf.Configuration
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -113,7 +112,13 @@ case class CoalesceReadOption private(
     kudoEnabled: Boolean, kudoMode: RapidsConf.ShuffleKudoMode.Value, kudoDebugMode: DumpOption,
     kudoDebugDumpPrefix: Option[String], useAsync: Boolean)
 
-object CoalesceReadOption extends Logging {
+object CoalesceReadOption {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
 
   private def resolveUseAsync(kudoMode: RapidsConf.ShuffleKudoMode.Value,
       useAsync: Boolean): Boolean = {
@@ -190,10 +195,10 @@ object GpuShuffleCoalesceUtils {
       val secondHalfSize = newTargetSize.dataSize - firstHalfSize
 
       Seq(
-        CloseableTableSeqWithTargetSize(firstHalfTables,
-          AutoCloseableTargetSize(targetByteSize, newTargetSize.minSize, firstHalfSize)),
-        CloseableTableSeqWithTargetSize(secondHalfTables,
-          AutoCloseableTargetSize(targetByteSize, newTargetSize.minSize, secondHalfSize))
+        new CloseableTableSeqWithTargetSize(firstHalfTables,
+          new AutoCloseableTargetSize(targetByteSize, newTargetSize.minSize, firstHalfSize)),
+        new CloseableTableSeqWithTargetSize(secondHalfTables,
+          new AutoCloseableTargetSize(targetByteSize, newTargetSize.minSize, secondHalfSize))
       )
     }
   }
@@ -339,7 +344,7 @@ class JCudfTableOperator
   }
 }
 
-case class RowCountOnlyMergeResult(rowCount: Int) extends CoalescedHostResult {
+class RowCountOnlyMergeResult(val rowCount: Int) extends CoalescedHostResult {
   override def toGpuBatch(dataTypes: Array[DataType]): ColumnarBatch = {
     new ColumnarBatch(Array.empty, rowCount)
   }
@@ -367,8 +372,8 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
     val dumpPrefix = readOption.kudoDebugDumpPrefix
     if (dumpOption != DumpOption.Never && dumpPrefix.isDefined) {
       val updatedPrefix = s"${dumpPrefix.get}_${taskIdentifier}"
-      lazy val (out, path) = createTempFile(new Configuration(), updatedPrefix, ".bin")
-      new MergeOptions(dumpOption, () => out, path.toString)
+      lazy val tempFile = createTempFile(new Configuration(), updatedPrefix, ".bin")
+      new MergeOptions(dumpOption, () => tempFile.getOutputStream, tempFile.getPath.toString)
     } else {
       new MergeOptions(dumpOption, null, null)
     }
@@ -379,7 +384,7 @@ class KudoTableOperator(kudo: Option[KudoSerializer], readOption: CoalesceReadOp
     val numCols = columns.head.spillableKudoTable.header.getNumColumns
     if (numCols == 0) {
       val totalRowsNum = columns.map(getNumRows).sum
-      RowCountOnlyMergeResult(totalRowsNum)
+      new RowCountOnlyMergeResult(totalRowsNum)
     } else {
       // "lock" all input tables in memory before merge
       withResource(columns.safeMap(_.spillableKudoTable.makeKudoTable)) { kudoTables =>
@@ -455,9 +460,9 @@ class KudoGpuTableOperator(dataTypes: Array[DataType])
  * splitting based on byte size when OOM occurs. Extends Seq[T] so it can be
  * used directly as a sequence.
  */
-case class CloseableTableSeqWithTargetSize[T <: AutoCloseable](
-    tables: Seq[T],
-    targetSize: AutoCloseableTargetSize) extends Seq[T] with AutoCloseable {
+class CloseableTableSeqWithTargetSize[T <: AutoCloseable](
+    val tables: Seq[T],
+    val targetSize: AutoCloseableTargetSize) extends Seq[T] with AutoCloseable with Serializable {
   override def close(): Unit = {
     tables.foreach(_.safeClose())
     targetSize.close()
@@ -548,9 +553,9 @@ abstract class CoalesceIteratorBase[T <: AutoCloseable : ClassTag, R <: AutoClos
       splitPolicy match {
         case Some(policy) =>
           val dataSize = tablesSeq.map(tableOperator.getDataLen).sum
-          val targetSizeWrapper = AutoCloseableTargetSize(targetBatchByteSize,
+          val targetSizeWrapper = new AutoCloseableTargetSize(targetBatchByteSize,
             minSplitSizeForRetry, dataSize)
-          val wrapper = CloseableTableSeqWithTargetSize(tablesSeq, targetSizeWrapper)
+          val wrapper = new CloseableTableSeqWithTargetSize(tablesSeq, targetSizeWrapper)
           val wrapperIter = Iterator(wrapper)
           inputIter = Some(wrapperIter)
           val resultIter = withRetry(wrapperIter, policy) { wrappedSeq =>
