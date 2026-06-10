@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ import org.apache.spark.sql.catalyst.plans.physical.{Distribution, OrderedDistri
 import org.apache.spark.sql.execution.{SortExec, SparkPlan}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuWriteJobStatsTracker, GpuWriteTaskStatsTracker}
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 sealed trait SortExecType extends Serializable
@@ -141,12 +141,12 @@ case class GpuSortExec(
         tcs.map(_.newTaskInstance().asInstanceOf[GpuWriteTaskStatsTracker])
       }
       val finalIter = if (outOfCore) {
-        val iter = GpuOutOfCoreSortIterator(cbIter, sorter,
+        val iter = new GpuOutOfCoreSortIterator(cbIter, sorter,
           targetSize, opTime, sortTime, outputBatch, outputRows)
         onTaskCompletion(iter.close())
         iter
       } else {
-        GpuSortEachBatchIterator(cbIter, sorter, singleBatch,
+        new GpuSortEachBatchIterator(cbIter, sorter, singleBatch,
           opTime, sortTime, outputBatch, outputRows)
       }
       if (taskTrackers.exists(_.nonEmpty)) {
@@ -165,14 +165,14 @@ case class GpuSortExec(
   }
 }
 
-case class GpuSortEachBatchIterator(
-    iter: Iterator[ColumnarBatch],
-    sorter: GpuSorter,
-    singleBatch: Boolean,
-    opTime: GpuMetric = NoopMetric,
-    sortTime: GpuMetric = NoopMetric,
-    outputBatches: GpuMetric = NoopMetric,
-    outputRows: GpuMetric = NoopMetric) extends Iterator[ColumnarBatch] {
+class GpuSortEachBatchIterator(
+    val iter: Iterator[ColumnarBatch],
+    val sorter: GpuSorter,
+    val singleBatch: Boolean,
+    val opTime: GpuMetric,
+    val sortTime: GpuMetric,
+    val outputBatches: GpuMetric,
+    val outputRows: GpuMetric) extends Iterator[ColumnarBatch] with Serializable {
   override def hasNext: Boolean = iter.hasNext
 
   override def next(): ColumnarBatch = {
@@ -238,8 +238,8 @@ object GpuSpillableProjectedSortEachBatchIterator {
  * Holds data for the out of core sort. It includes the batch of data and the first row in that
  * batch so we can sort the batches.
  */
-case class OutOfCoreBatch(buffer: SpillableColumnarBatch,
-    firstRow: UnsafeRow) extends AutoCloseable {
+class OutOfCoreBatch(val buffer: SpillableColumnarBatch,
+    val firstRow: UnsafeRow) extends AutoCloseable {
   override def close(): Unit = buffer.close()
 }
 
@@ -295,15 +295,15 @@ class Pending(cpuOrd: LazilyGeneratedOrdering) extends AutoCloseable {
  * the merged data is split and put back into a pending queue.  The process repeats until we have
  * enough data to output.
  */
-case class GpuOutOfCoreSortIterator(
-    iter: Iterator[ColumnarBatch],
-    sorter: GpuSorter,
-    targetSize: Long,
-    opTime: GpuMetric,
-    sortTime: GpuMetric,
-    outputBatches: GpuMetric,
-    outputRows: GpuMetric) extends Iterator[ColumnarBatch]
-    with AutoCloseable {
+class GpuOutOfCoreSortIterator(
+    val iter: Iterator[ColumnarBatch],
+    val sorter: GpuSorter,
+    val targetSize: Long,
+    val opTime: GpuMetric,
+    val sortTime: GpuMetric,
+    val outputBatches: GpuMetric,
+    val outputRows: GpuMetric) extends Iterator[ColumnarBatch]
+    with AutoCloseable with Serializable {
 
   /**
    * This has already sorted the data, and it still has the projected columns in it that need to
@@ -328,7 +328,7 @@ case class GpuOutOfCoreSortIterator(
   // Used for converting between rows and columns when we have to put a cuttoff on the GPU
   // to know how much of the data after a merge sort is fully sorted.
   private lazy val converters = new GpuRowToColumnConverter(
-    TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))
+    DataTypeUtilsShim.fromAttributes(sorter.projectedBatchSchema))
 
   /**
    * Convert the boundaries (first rows for each batch) into unsafe rows for use later on.
@@ -434,7 +434,7 @@ case class GpuOutOfCoreSortIterator(
                 if (ct.getRowCount > 0) {
                   val sp = SpillableColumnarBatch(ct, sorter.projectedBatchTypes,
                     SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-                  pendingObs += OutOfCoreBatch(sp, lower)
+                  pendingObs += new OutOfCoreBatch(sp, lower)
                 } else {
                   ct.close()
                 }
@@ -517,7 +517,7 @@ case class GpuOutOfCoreSortIterator(
           val cutoff = pending.peek().firstRow
           val result = RmmRapidsRetryIterator.withRetryNoSplit[ColumnVector] {
             withResource(converters.convertBatch(Array(cutoff),
-              TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { cutoffCb =>
+              DataTypeUtilsShim.fromAttributes(sorter.projectedBatchSchema))) { cutoffCb =>
               withResource(mergedSpillBatch.getColumnarBatch()) { mergedBatch =>
                 sorter.upperBound(mergedBatch, cutoffCb)
               }

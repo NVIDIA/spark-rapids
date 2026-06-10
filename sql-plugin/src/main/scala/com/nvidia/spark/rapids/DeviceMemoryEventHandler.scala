@@ -24,7 +24,6 @@ import ai.rapids.cudf.{Cuda, Rmm, RmmEventHandler}
 import com.nvidia.spark.rapids.spill.SpillableDeviceStore
 import com.sun.management.HotSpotDiagnosticMXBean
 
-import org.apache.spark.internal.Logging
 
 /**
  * RMM event handler to trigger spilling from the device memory store.
@@ -36,7 +35,23 @@ import org.apache.spark.internal.Logging
 class DeviceMemoryEventHandler(
     store: SpillableDeviceStore,
     oomDumpDir: Option[String],
-    maxFailedOOMRetries: Int) extends RmmEventHandler with Logging {
+    maxFailedOOMRetries: Int) extends RmmEventHandler {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
+  private def logError(msg: => String, throwable: Throwable): Unit = {
+    log.error(msg, throwable)
+  }
+
 
   // Flag that ensures we dump stack traces once and not for every allocation
   // failure. The assumption is that unhandled allocations will be fatal

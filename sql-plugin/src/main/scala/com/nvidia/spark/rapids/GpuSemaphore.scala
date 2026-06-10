@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@ import com.nvidia.spark.rapids.jni.{RmmSpark, TaskPriority}
 import com.nvidia.spark.rapids.metrics.GpuBubbleTimerManager
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 
@@ -49,18 +48,13 @@ case object SemaphoreAcquired extends TryAcquireResult
  * @param numWaitingTasks the number of tasks waiting at the time the request was made.
  *                        Note that this can change very quickly.
  */
-case class AcquireFailed(numWaitingTasks: Int) extends TryAcquireResult
-
-private object GpuTaskMemoryEstimator {
-  private val TIME_WINDOW: Double = TimeUnit.MILLISECONDS.toNanos(100).toDouble
-}
+class AcquireFailed(val numWaitingTasks: Int) extends TryAcquireResult with Serializable
 
 class GpuTaskMemoryEstimator(val stageId: Int,
                              val taskId: Long,
                              val defaultEstimate: Long,
                              val allowDynamicUpdate: Boolean) {
-  import GpuTaskMemoryEstimator._
-
+  private val TIME_WINDOW: Double = TimeUnit.MILLISECONDS.toNanos(100).toDouble
   private val startTimeNanos: Long = System.nanoTime()
   private var totalTimeLost: Long = 0
   private var maxMemory: Long = 0
@@ -318,7 +312,7 @@ object GpuSemaphore {
  */
 private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
                                       memoryEstimator: GpuStageMemoryEstimator,
-                                      bubbleTimerMgr: GpuBubbleTimerManager) extends Logging {
+                                      bubbleTimerMgr: GpuBubbleTimerManager) {
   /**
    * This holds threads that are not on the GPU yet. Most of the time they are
    * blocked waiting for the semaphore to let them on, but it may hold one
@@ -509,7 +503,23 @@ private final class SemaphoreTaskInfo(val stageId: Int, val taskAttemptId: Long,
   }
 }
 
-private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Logging {
+private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    log.warn(msg, throwable)
+  }
+
 
   import GpuSemaphore._
 
@@ -572,7 +582,7 @@ private final class GpuSemaphore(val maxConcurrentGpuTasksLimit: Int) extends Lo
           numWaiting += 1
         }
       }
-      AcquireFailed(numWaiting)
+      new AcquireFailed(numWaiting)
     }
   }
 

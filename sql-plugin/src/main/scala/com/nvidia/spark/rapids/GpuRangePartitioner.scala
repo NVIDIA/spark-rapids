@@ -27,7 +27,7 @@ import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.codegen.LazilyGeneratedOrdering
-import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -173,7 +173,7 @@ case class GpuRangePartitioner(
     sorter: GpuSorter) extends GpuExpression with ShimExpression with GpuPartitioning {
 
   private lazy val converters = new GpuRowToColumnConverter(
-    TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))
+    DataTypeUtilsShim.fromAttributes(sorter.projectedBatchSchema))
 
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
@@ -189,7 +189,7 @@ case class GpuRangePartitioner(
     // Don't make this retry-block avoiding nested try-blocks
     // from computeBoundsAndCloseWithRetry
     withResource(converters.convertBatch(rangeBounds,
-      TrampolineUtil.fromAttributes(sorter.projectedBatchSchema))) { ranges =>
+      DataTypeUtilsShim.fromAttributes(sorter.projectedBatchSchema))) { ranges =>
       withResource(sorter.appendProjectedColumns(cb)) { withExtraColumns =>
         sorter.lowerBound(ranges, withExtraColumns)
       }

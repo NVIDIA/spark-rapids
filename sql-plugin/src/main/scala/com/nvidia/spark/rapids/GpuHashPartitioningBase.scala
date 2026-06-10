@@ -20,7 +20,6 @@ import ai.rapids.cudf.{DType, PartitionedTable}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.ShimExpression
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{Expression, HiveHash, Murmur3Hash}
 import org.apache.spark.sql.catalyst.plans.physical.HashPartitioning
 import org.apache.spark.sql.rapids.{GpuHashExpression, GpuHiveHash, GpuMurmur3Hash, GpuPmod}
@@ -95,7 +94,16 @@ abstract class GpuHashPartitioningBase(expressions: Seq[Expression], numPartitio
   def partitionIdExpression: GpuExpression = GpuPmod(hashFunc, GpuLiteral(numPartitions))
 }
 
-object GpuHashPartitioningBase extends Logging {
+object GpuHashPartitioningBase {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(GpuHashPartitioningBase.getClass)
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
 
   val DEFAULT_HASH_SEED: Int = 42
 
@@ -117,7 +125,7 @@ object GpuHashPartitioningBase extends Logging {
         hashMode = hashModeMethod.invoke(cpuHp) match {
           case m if m == classOf[Murmur3Hash] => Murmur3Mode
           case h if h == classOf[HiveHash] => HiveMode
-          case o => UnsupportedMode(o.asInstanceOf[Class[_]].getSimpleName)
+          case o => new UnsupportedMode(o.asInstanceOf[Class[_]].getSimpleName)
         }
         logDebug(s"Found hash function '$hashMode' from CPU hash partitioning.")
       } catch {
@@ -134,6 +142,6 @@ sealed trait HashMode extends Serializable
 
 case object Murmur3Mode extends HashMode
 case object HiveMode extends HashMode
-case class UnsupportedMode(modeName: String) extends HashMode {
+class UnsupportedMode(val modeName: String) extends HashMode {
   override def toString: String = modeName
 }
