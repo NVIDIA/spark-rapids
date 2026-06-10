@@ -3010,7 +3010,7 @@ object GpuOverrides {
         TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
         TypeSig.ARRAY.nested(TypeSig.all),
         Seq(
-          ParamCheck("array",
+          new ParamCheck("array",
             TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
             TypeSig.ARRAY.nested(TypeSig.all)))),
       (in, conf, p, r) => new ExprMeta[ArraySort](in, conf, p, r) {

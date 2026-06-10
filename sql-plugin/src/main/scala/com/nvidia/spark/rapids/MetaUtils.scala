@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.nio.{ByteBuffer, ByteOrder}
+import java.nio.{Buffer, ByteBuffer, ByteOrder}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -25,7 +25,6 @@ import com.google.flatbuffers.FlatBufferBuilder
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format._
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.ShuffleBlockBatchId
@@ -117,9 +116,9 @@ object MetaUtils {
       packedMeta: ByteBuffer,
       numRows: Long): TableMeta = {
     val vectorBuffer = fbb.createUnintializedVector(1, packedMeta.remaining(), 1)
-    packedMeta.mark()
+    packedMeta.asInstanceOf[Buffer].mark()
     vectorBuffer.put(packedMeta)
-    packedMeta.reset()
+    packedMeta.asInstanceOf[Buffer].reset()
     val packedMetaOffset = fbb.endVector()
 
     TableMeta.startTableMeta(fbb)
@@ -262,7 +261,7 @@ class DirectByteBufferFactory extends FlatBufferBuilder.ByteBufferFactory {
   }
 }
 
-object ShuffleMetadata extends Logging{
+object ShuffleMetadata {
 
   val bbFactory = new DirectByteBufferFactory
 

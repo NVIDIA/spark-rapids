@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,8 @@ import org.apache.spark.sql.catalyst.rules.Rule
  * phase by `SparkSessionExtensions.injectPostHocResolutionRule`. As its name suggests, it will
  * be applied after the logical plan has been resolved.
  */
-case class GpuPostHocResolutionOverrides(spark: SparkSession) extends Rule[LogicalPlan] {
+class GpuPostHocResolutionOverrides(val spark: SparkSession)
+    extends Rule[LogicalPlan] with Serializable {
 
   @transient private val rapidsConf = new RapidsConf(spark.sessionState.conf)
 

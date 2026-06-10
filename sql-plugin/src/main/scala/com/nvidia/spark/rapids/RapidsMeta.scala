@@ -22,7 +22,7 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.GpuTypedImperativeSupportedAggregateExecMeta.{preRowToColProjection, readBufferConverter}
 import com.nvidia.spark.rapids.RapidsMeta.noNeedToReplaceReason
-import com.nvidia.spark.rapids.shims.{AggregateInPandasExecShims, DistributionUtil, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{DistributionUtil, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, BinaryExpression, BoundReference, Cast, ComplexTypeMergingExpression, Expression, Literal, QuaternaryExpression, RuntimeReplaceable, String2TrimExpression, TernaryExpression, TimeZoneAwareExpression, UnaryExpression, UTCTimestamp, WindowExpression, WindowFunction}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{AggregateExpression, AggregateFunction, ImperativeAggregate, TypedImperativeAggregate}
@@ -1029,15 +1029,49 @@ object ExpressionContext {
       case _ => None
     }
 
+  @transient private[this] lazy val sparkShimImplModule = {
+    Class.forName("com.nvidia.spark.rapids.shims.SparkShimImpl" + "$")
+      .getField("MODULE" + "$")
+      .get(null)
+  }
+
+  @transient private[this] lazy val isWindowFunctionExecMethod =
+    sparkShimImplModule.getClass.getMethod("isWindowFunctionExec", classOf[SparkPlan])
+
+  @transient private[this] lazy val aggregateInPandasExecShimsModule = {
+    Class.forName("com.nvidia.spark.rapids.shims.AggregateInPandasExecShims" + "$")
+      .getField("MODULE" + "$")
+      .get(null)
+  }
+
+  @transient private[this] lazy val isAggregateInPandasExecMethod =
+    aggregateInPandasExecShimsModule.getClass.getMethod("isAggregateInPandasExec",
+      classOf[SparkPlan])
+
+  @transient private[this] lazy val aggregateInPandasGroupingExpressionsMethod =
+    aggregateInPandasExecShimsModule.getClass.getMethod("getGroupingExpressions",
+      classOf[SparkPlan])
+
+  private def isWindowFunctionExec(plan: SparkPlan): Boolean =
+    isWindowFunctionExecMethod.invoke(sparkShimImplModule, plan).asInstanceOf[Boolean]
+
+  private def isAggregateInPandasExec(plan: SparkPlan): Boolean =
+    isAggregateInPandasExecMethod.invoke(aggregateInPandasExecShimsModule, plan)
+      .asInstanceOf[Boolean]
+
+  private def aggregateInPandasGroupingExpressions(plan: SparkPlan): Seq[_] =
+    aggregateInPandasGroupingExpressionsMethod.invoke(aggregateInPandasExecShimsModule, plan)
+      .asInstanceOf[Seq[_]]
+
   def getAggregateFunctionContext(meta: BaseExprMeta[_]): ExpressionContext = {
     val parent = findParentPlanMeta(meta)
     assert(parent.isDefined, "It is expected that an aggregate function is a child of a SparkPlan")
     parent.get.wrapped match {
-      case agg: SparkPlan if SparkShimImpl.isWindowFunctionExec(agg) =>
+      case agg: SparkPlan if isWindowFunctionExec(agg) =>
         WindowAggExprContext
       // AggregateInPandasExec renamed to ArrowAggregatePythonExec in Spark 4.1.0
-      case agg: SparkPlan if AggregateInPandasExecShims.isAggregateInPandasExec(agg) =>
-        if (AggregateInPandasExecShims.getGroupingExpressions(agg).isEmpty) {
+      case agg: SparkPlan if isAggregateInPandasExec(agg) =>
+        if (aggregateInPandasGroupingExpressions(agg).isEmpty) {
           ReductionAggExprContext
         } else {
           GroupByAggExprContext
@@ -1437,7 +1471,7 @@ abstract class BaseExprMeta[INPUT <: Expression](
     val inputMapping = scala.collection.mutable.Map[Int, Int]()
 
     gpuInputsWithIndex.foreach { case (gpuExpr, originalIndex) =>
-      val exprWrapper = GpuExpressionEquals(gpuExpr)
+      val exprWrapper = new GpuExpressionEquals(gpuExpr)
       seenExpressions.get(exprWrapper) match {
         case Some(existingIndex) =>
           // This expression is a duplicate - map to existing index

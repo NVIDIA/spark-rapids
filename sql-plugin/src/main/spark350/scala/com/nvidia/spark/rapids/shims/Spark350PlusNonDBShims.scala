@@ -132,7 +132,7 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
           // plugin is also an union of all the types of Pandas UDF.
           (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested() + TypeSig.STRUCT,
           TypeSig.unionOfPandasUdfOut,
-          repeatingParamCheck = Some(RepeatingParamCheck(
+          repeatingParamCheck = Some(new RepeatingParamCheck(
             "param",
             (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all))),
@@ -152,8 +152,8 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
         ExprChecks.projectOnly(
           TypeSig.all,
           TypeSig.all,
-          Seq(ParamCheck("condition", TypeSig.all, TypeSig.all)),
-          Some(RepeatingParamCheck("outputs", TypeSig.all, TypeSig.all))
+          Seq(new ParamCheck("condition", TypeSig.all, TypeSig.all)),
+          Some(new RepeatingParamCheck("outputs", TypeSig.all, TypeSig.all))
         ),
         (keep, conf, p, r) => new GpuKeepInstructionMeta(keep, conf, p, r)),
       GpuOverrides.expr[Discard](
@@ -161,15 +161,15 @@ trait Spark350PlusNonDBShims extends Spark340PlusNonDBShims {
         ExprChecks.projectOnly(
           TypeSig.all,
           TypeSig.all,
-          Seq(ParamCheck("condition", TypeSig.all, TypeSig.all))),
+          Seq(new ParamCheck("condition", TypeSig.all, TypeSig.all))),
         (discard, conf, p, r) => new GpuDiscardInstructionMeta(discard, conf, p, r)),
       GpuOverrides.expr[Split](
         "Split instruction for MERGE operations - splits rows into multiple outputs",
         ExprChecks.projectOnly(
           TypeSig.all,
           TypeSig.all,
-          Seq(ParamCheck("condition", TypeSig.all, TypeSig.all)),
-          Some(RepeatingParamCheck("outputs", TypeSig.all, TypeSig.all))),
+          Seq(new ParamCheck("condition", TypeSig.all, TypeSig.all)),
+          Some(new RepeatingParamCheck("outputs", TypeSig.all, TypeSig.all))),
         (split, conf, p, r) => new GpuSplitInstructionMeta(split, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs

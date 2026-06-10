@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * This file was derived from CheckDeltaInvariant.scala in the
  * Delta Lake project at https://github.com/delta-io/delta.
@@ -132,8 +132,8 @@ object GpuCheckDeltaInvariant extends Logging {
     ExprChecks.projectOnly(
       TypeSig.all,
       TypeSig.all,
-      paramCheck = Seq(ParamCheck("input", TypeSig.all, TypeSig.all)),
-      repeatingParamCheck = Some(RepeatingParamCheck("extra", TypeSig.all, TypeSig.all))
+      paramCheck = Seq(new ParamCheck("input", TypeSig.all, TypeSig.all)),
+      repeatingParamCheck = Some(new RepeatingParamCheck("extra", TypeSig.all, TypeSig.all))
     ),
     (c, conf, p, r) => new GpuCheckDeltaInvariantMeta(c, conf, p, r))
 
