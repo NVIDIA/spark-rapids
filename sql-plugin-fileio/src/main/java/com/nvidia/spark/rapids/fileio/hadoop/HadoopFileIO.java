@@ -16,12 +16,10 @@
 
 package com.nvidia.spark.rapids.fileio.hadoop;
 
-import com.nvidia.spark.rapids.fileio.RapidsInputFiles;
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import com.nvidia.spark.rapids.jni.fileio.RapidsOutputFile;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.spark.util.SerializableConfiguration;
 
@@ -34,9 +32,18 @@ import java.util.Objects;
  */
 public class HadoopFileIO implements RapidsFileIO {
     private final SerializableConfiguration hadoopConf;
+    private final HadoopInputFileFactory inputFileFactory;
 
     public HadoopFileIO(Configuration hadoopConf) {
         Objects.requireNonNull(hadoopConf, "hadoopConf can't be null");
+        this.inputFileFactory = null;
+        this.hadoopConf = new SerializableConfiguration(hadoopConf);
+    }
+
+    public HadoopFileIO(Configuration hadoopConf, HadoopInputFileFactory inputFileFactory) {
+        Objects.requireNonNull(hadoopConf, "hadoopConf can't be null");
+        this.inputFileFactory = Objects.requireNonNull(
+                inputFileFactory, "inputFileFactory can't be null");
         this.hadoopConf = new SerializableConfiguration(hadoopConf);
     }
 
@@ -47,9 +54,9 @@ public class HadoopFileIO implements RapidsFileIO {
 
     @Override
     public RapidsInputFile newInputFile(Path path) throws IOException {
-        String scheme = path.toUri().getScheme();
-        if (scheme != null && scheme.startsWith("s3") && RapidsInputFiles.isS3PerfEnabled()) {
-            return S3InputFile.create(path, hadoopConf.value());
+        Objects.requireNonNull(path, "path can't be null");
+        if (inputFileFactory != null) {
+            return inputFileFactory.create(path, hadoopConf.value());
         }
         return HadoopInputFile.create(path, hadoopConf.value());
     }
