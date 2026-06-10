@@ -22,7 +22,6 @@ import java.util.concurrent.{ConcurrentHashMap, Executors, ScheduledExecutorServ
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.SparkContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 /**
@@ -89,7 +88,33 @@ class ShuffleCleanupManager(
     sc: SparkContext,
     staleEntryMaxAgeMs: Long = 300000,  // 5 minutes
     cleanupIntervalMs: Long = 60000     // 1 minute
-) extends Logging {
+) {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[ShuffleCleanupManager])
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg, throwable)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
 
   /**
    * Shuffles pending cleanup. Maps shuffleId -> timestamp when unregister was called.
@@ -192,8 +217,13 @@ class ShuffleCleanupManager(
 
         try {
           TrampolineUtil.postEvent(sc,
-            SparkRapidsShuffleDiskSavingsEvent(shuffleId, stat.bytesFromMemory, stat.bytesFromDisk,
-              stat.numExpansions, stat.numSpills, stat.numForcedFileOnly))
+            new SparkRapidsShuffleDiskSavingsEvent(
+              shuffleId,
+              stat.bytesFromMemory,
+              stat.bytesFromDisk,
+              stat.numExpansions,
+              stat.numSpills,
+              stat.numForcedFileOnly))
         } catch {
           case e: Exception =>
             logWarning(s"Failed to post shuffle disk savings event for shuffle $shuffleId", e)
