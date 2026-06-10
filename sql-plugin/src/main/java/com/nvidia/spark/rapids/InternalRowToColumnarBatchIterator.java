@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -228,7 +228,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
     try {
       hBuf = HostAlloc$.MODULE$.alloc((dataBytes + offsetBytes),true);
       SpillableHostBuffer sBuf = SpillableHostBuffer$.MODULE$.apply(hBuf, hBuf.getLength(),
-          SpillPriorities$.MODULE$.ACTIVE_ON_DECK_PRIORITY());
+          SpillPriorities.ACTIVE_ON_DECK_PRIORITY);
       hBuf = null;  // taken over by spillable host buffer
       return Tuple2.apply(sBuf, numRowsWrapper);
     } finally {
@@ -258,7 +258,7 @@ public abstract class InternalRowToColumnarBatchIterator implements Iterator<Col
         new ColumnarBatch(
             new org.apache.spark.sql.vectorized.ColumnVector[]{gpuCV},
             (int)gpuCV.getRowCount()),
-        SpillPriorities.ACTIVE_ON_DECK_PRIORITY());
+        SpillPriorities.ACTIVE_ON_DECK_PRIORITY);
   }
 
   /**
