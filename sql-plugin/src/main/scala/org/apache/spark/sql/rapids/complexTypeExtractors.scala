@@ -123,9 +123,10 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
                 hasNegativeIndicesCV, array)
             withResource(hasValidEntryCV) { _ =>
               if (isAnyValidTrue(hasValidEntryCV)) {
-                val (index, numElem) = firstIndexAndNumElementUnchecked(hasValidEntryCV,
+                val indexAndNumElement = firstIndexAndNumElementUnchecked(hasValidEntryCV,
                   indices, numElements)
-                throw RapidsErrorUtils.invalidArrayIndexError(index, numElem)
+                throw RapidsErrorUtils.invalidArrayIndexError(
+                  indexAndNumElement.getIndex, indexAndNumElement.getNumElements)
               }
             }
             // Then check if any index is larger than its array size
@@ -133,9 +134,10 @@ case class GpuGetArrayItem(child: Expression, ordinal: Expression, failOnError: 
               // No need to check the validity of array column here, since the validity info
               // is included in this `hasLargerIndicesCV`.
               if (isAnyValidTrue(hasLargerIndicesCV)) {
-                val (index, numElem) = firstIndexAndNumElementUnchecked(hasLargerIndicesCV,
+                val indexAndNumElement = firstIndexAndNumElementUnchecked(hasLargerIndicesCV,
                   indices, numElements)
-                throw RapidsErrorUtils.invalidArrayIndexError(index, numElem)
+                throw RapidsErrorUtils.invalidArrayIndexError(
+                  indexAndNumElement.getIndex, indexAndNumElement.getNumElements)
               }
             }
           }
