@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import com.nvidia.spark.rapids.jni.fileio.SeekableInputStream;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
+import org.apache.spark.sql.rapids.GpuTaskMetrics$;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,6 +73,7 @@ public final class IcebergS3InputFile implements RapidsInputFile {
         fileIO.properties(),
         ShimUtils.storageCredentialOverlays(fileIO));
     if (icebergS3Client == null) {
+      GpuTaskMetrics$.MODULE$.get().recordPerfioS3IcebergFallback();
       LOG.debug("IcebergS3RangeCopier path disabled for {}", s3Uri);
       return new IcebergInputFile(inputFile);
     }
