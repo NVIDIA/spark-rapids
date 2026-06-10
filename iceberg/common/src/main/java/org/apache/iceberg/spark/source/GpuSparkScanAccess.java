@@ -85,7 +85,10 @@ public final class GpuSparkScanAccess {
       f.setAccessible(true);
       Object v = f.get(target);
       return v == null ? null : v.toString();
-    } catch (IllegalAccessException e) {
+    } catch (IllegalAccessException | RuntimeException e) {
+      // RuntimeException also covers InaccessibleObjectException (Java 9+ module
+      // encapsulation) and SecurityException, so any access failure degrades to
+      // null per the contract above rather than escaping from this display-only path.
       return null;
     }
   }
