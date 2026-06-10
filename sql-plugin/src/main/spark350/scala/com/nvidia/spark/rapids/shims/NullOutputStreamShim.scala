@@ -33,8 +33,11 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.commons.io.output.NullOutputStream
+import java.io.OutputStream
 
 object NullOutputStreamShim {
-  def INSTANCE = NullOutputStream.INSTANCE
+  val INSTANCE: OutputStream = new OutputStream {
+    override def write(b: Int): Unit = {}
+    override def write(b: Array[Byte], off: Int, len: Int): Unit = {}
+  }
 }

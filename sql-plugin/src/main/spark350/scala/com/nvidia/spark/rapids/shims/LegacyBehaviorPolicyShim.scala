@@ -33,13 +33,13 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.internal.{LegacyBehaviorPolicy, SQLConf}
+import org.apache.spark.sql.internal.SQLConf
 
 object LegacyBehaviorPolicyShim {
-  val CORRECTED_STR: String = LegacyBehaviorPolicy.CORRECTED.toString
-  val EXCEPTION_STR: String = LegacyBehaviorPolicy.EXCEPTION.toString
+  val CORRECTED_STR: String = "CORRECTED"
+  val EXCEPTION_STR: String = "EXCEPTION"
 
   def isLegacyTimeParserPolicy(): Boolean = {
-    SQLConf.get.legacyTimeParserPolicy == LegacyBehaviorPolicy.LEGACY
+    SQLConf.get.legacyTimeParserPolicy.toString == "LEGACY"
   }
 }
