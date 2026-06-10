@@ -168,7 +168,9 @@ run_iceberg_version_detect_tests() {
     fi
 
     # Supported Iceberg versions per Spark version — must stay in sync with
-    # run_iceberg_tests() in spark-tests.sh.
+    # run_iceberg_tests() in spark-tests.sh. Note: the Spark 4.1 -> 1.11.0 row is
+    # version-detection only here; the matching 4.1 entry in run_iceberg_tests()
+    # (the full integration suite) is added in the stacked follow-up PR.
     local iceberg_versions
     if [[ "$iceberg_spark_ver" == "4.1" ]]; then
         iceberg_versions="1.11.0"
