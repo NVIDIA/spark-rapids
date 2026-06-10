@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,11 +33,11 @@ class PrioritySemaphore[T](val maxPermits: Long, val maxConcurrentGpuTasksLimit:
   private var occupiedSlots: Long = 0
   private var currentConcurrentGpuTasksNum: Long = 0
 
-  private case class ThreadInfo(priority: T,
-                                condition: Condition,
-                                computeNumPermits: () => Long,
-                                wasOnGpuBefore: () => Boolean,
-                                taskId: Long) {
+  private class ThreadInfo(val priority: T,
+                           val condition: Condition,
+                           val computeNumPermits: () => Long,
+                           val wasOnGpuBefore: () => Boolean,
+                           val taskId: Long) {
     var signaled: Boolean = false
     var permitsUsed: Long = 0
   }
@@ -60,7 +60,7 @@ class PrioritySemaphore[T](val maxPermits: Long, val maxConcurrentGpuTasksLimit:
       if (waitingQueue.size() > 0 &&
         priorityComp.compare(
           waitingQueue.peek(),
-          ThreadInfo(priority, null, () => numPermits, wasOnGpuBefore, taskAttemptId)
+          new ThreadInfo(priority, null, () => numPermits, wasOnGpuBefore, taskAttemptId)
         ) < 0) {
         false
       } else if (!canAcquire(numPermits)) {
@@ -81,7 +81,8 @@ class PrioritySemaphore[T](val maxPermits: Long, val maxConcurrentGpuTasksLimit:
       val numPermitsNow = computePermits()
       if (!tryAcquire(numPermitsNow, priority, wasOnGpuBefore, taskAttemptId)) {
         val condition = lock.newCondition()
-        val info = ThreadInfo(priority, condition, computePermits, wasOnGpuBefore, taskAttemptId)
+        val info = new ThreadInfo(
+          priority, condition, computePermits, wasOnGpuBefore, taskAttemptId)
         try {
           waitingQueue.add(info)
           // only count tasks that had held semaphore before,

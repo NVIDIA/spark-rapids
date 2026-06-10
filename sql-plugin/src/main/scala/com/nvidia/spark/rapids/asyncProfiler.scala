@@ -30,7 +30,6 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.TaskContext
 import org.apache.spark.api.plugin.PluginContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.util.SerializableConfiguration
 
 /**
@@ -55,7 +54,9 @@ import org.apache.spark.util.SerializableConfiguration
  *
  */
 
-object AsyncProfilerOnExecutor extends Logging {
+object AsyncProfilerOnExecutor {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(AsyncProfilerOnExecutor.getClass)
 
   private var asyncProfilerPrefix: Option[String] = None
   private var asyncProfiler: Option[AsyncProfiler] = None
@@ -347,7 +348,7 @@ object AsyncProfilerOnExecutor extends Logging {
               val outPath = new Path(asyncProfilerPrefix.get, 
                 if (jfrCompressionEnabled) baseFileName + ".gz" else baseFileName)
               
-              val hadoopConf = pluginCtx.ask(ProfileInitMsg(executorId, outPath.toString))
+              val hadoopConf = pluginCtx.ask(new ProfileInitMsg(executorId, outPath.toString))
                 .asInstanceOf[SerializableConfiguration].value
               val fs = outPath.getFileSystem(hadoopConf)
 

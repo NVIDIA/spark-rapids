@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.{Partition, SparkContext, TaskContext}
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -37,16 +36,16 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 
-case class LoreDumpRDDInfo(
-    idxInParent: Int,
-    loreOutputInfo: LoreOutputInfo,
-    attrs: Seq[Attribute],
-    hadoopConf: Broadcast[SerializableConfiguration],
-    useOriginalSchemaNames: Boolean = false,
-    nonStrictMode: Boolean = false)
+class LoreDumpRDDInfo(
+    val idxInParent: Int,
+    val loreOutputInfo: LoreOutputInfo,
+    val attrs: Seq[Attribute],
+    val hadoopConf: Broadcast[SerializableConfiguration],
+    val useOriginalSchemaNames: Boolean,
+    val nonStrictMode: Boolean) extends Serializable
 
 class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
-  extends RDD[ColumnarBatch](input) with GpuLoreRDD with Logging {
+  extends RDD[ColumnarBatch](input) with GpuLoreRDD {
   override def rootPath: Path = pathOfChild(info.loreOutputInfo.path, info.idxInParent)
   private val factDataTypes = info.attrs.map(_.dataType)
   lazy val kudoSerializer: KudoSerializer = new KudoSerializer(
@@ -54,7 +53,8 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
 
   def saveMeta(): Unit = {
     try {
-      val meta = LoreRDDMeta(input.getNumPartitions, this.getPartitions.map(_.index), info.attrs)
+      val meta = new LoreRDDMeta(input.getNumPartitions, this.getPartitions.map(_.index),
+        info.attrs)
       GpuLore.dumpObject(meta, pathOfMeta, this.context.hadoopConfiguration)
     } catch {
       case NonFatal(e) if (info.nonStrictMode) =>
@@ -87,9 +87,9 @@ class GpuLoreDumpRDD(info: LoreDumpRDDInfo, input: RDD[ColumnarBatch])
                   .isInstanceOf[KudoSerializedTableColumn])
               val partitionMeta = if (isFromShuffle) {
                 // get the array of dataType from the info.attrs
-                LoreRDDPartitionMeta(batchIdx, factDataTypes)
+                new LoreRDDPartitionMeta(batchIdx, factDataTypes)
               } else {
-                LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret))
+                new LoreRDDPartitionMeta(batchIdx, GpuColumnVector.extractTypes(ret))
               }
               GpuLore.dumpObject(partitionMeta, pathOfPartitionMeta(split.index),
                 info.hadoopConf.value.value)
@@ -161,7 +161,7 @@ class SimpleRDD(_sc: SparkContext, data: Broadcast[Any], schema: StructType) ext
 case class GpuLoreDumpExec(
     child: GpuExec,
     loreDumpInfo: LoreDumpRDDInfo)
-    extends ShimUnaryExecNode with GpuExec with Logging {
+    extends ShimUnaryExecNode with GpuExec {
 
   override def output: Seq[Attribute] = child.output
 

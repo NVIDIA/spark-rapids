@@ -24,7 +24,6 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression, SortOrder}
 import org.apache.spark.sql.execution.SparkPlan
@@ -41,7 +40,7 @@ class GpuBatchedBoundedWindowIterator(
   maxFollowing: Int,
   numOutputBatches: GpuMetric,
   numOutputRows: GpuMetric,
-  opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc with Logging {
+  opTime: GpuMetric) extends Iterator[ColumnarBatch] with BasicWindowCalc with RapidsLocalLog {
 
   override def isRunningBatched: Boolean = false  // Not "Running Window" optimized.
                                                   // This is strictly for batching.

@@ -21,9 +21,9 @@ import scala.collection.mutable
 import ai.rapids.cudf.{ast, BinaryOp, ColumnVector, ColumnView, DType, Scalar}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.ShimExpression
+import com.nvidia.spark.rapids.shims.{ShimExpression, ShimPredicate}
 
-import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression, Predicate}
+import org.apache.spark.sql.catalyst.expressions.{ComplexTypeMergingExpression, Expression}
 import org.apache.spark.sql.types.{DataType, DoubleType, FloatType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -126,7 +126,7 @@ case class GpuCoalesce(children: Seq[Expression]) extends GpuExpression
  * UnaryOp
  */
 
-case class GpuIsNull(child: Expression) extends GpuUnaryExpression with Predicate {
+case class GpuIsNull(child: Expression) extends GpuUnaryExpression with ShimPredicate {
   override def nullable: Boolean = false
 
   override def sql: String = s"(${child.sql} IS NULL)"
@@ -140,7 +140,7 @@ case class GpuIsNull(child: Expression) extends GpuUnaryExpression with Predicat
   }
 }
 
-case class GpuIsNotNull(child: Expression) extends GpuUnaryExpression with Predicate {
+case class GpuIsNotNull(child: Expression) extends GpuUnaryExpression with ShimPredicate {
   override def nullable: Boolean = false
 
   override def sql: String = s"(${child.sql} IS NOT NULL)"
@@ -155,7 +155,7 @@ case class GpuIsNotNull(child: Expression) extends GpuUnaryExpression with Predi
   }
 }
 
-case class GpuIsNan(child: Expression) extends GpuUnaryExpression with Predicate {
+case class GpuIsNan(child: Expression) extends GpuUnaryExpression with ShimPredicate {
   override def nullable: Boolean = false
 
   override def sql: String = s"(${child.sql} IS NAN)"
@@ -192,7 +192,7 @@ case class GpuAtLeastNNonNulls(
     n: Int,
     exprs: Seq[Expression])
   extends GpuExpression with ShimExpression
-  with Predicate {
+  with ShimPredicate {
   override def nullable: Boolean = false
   override def foldable: Boolean = exprs.forall(_.foldable)
   override def toString: String = s"GpuAtLeastNNulls(n, ${children.mkString(",")})"

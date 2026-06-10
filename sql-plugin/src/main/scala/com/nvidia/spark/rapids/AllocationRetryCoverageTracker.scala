@@ -23,7 +23,6 @@ import java.util.regex.Pattern
 
 import com.nvidia.spark.rapids.Arm.withResource
 
-import org.apache.spark.internal.Logging
 
 /**
  * Memory allocation kind for retry coverage tracking.
@@ -62,7 +61,17 @@ object AllocationKind extends Enumeration {
  * 
  * See: https://github.com/NVIDIA/spark-rapids/issues/13672
  */
-object AllocationRetryCoverageTracker extends Logging {
+object AllocationRetryCoverageTracker {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
+  private def logError(msg: => String, throwable: Throwable): Unit = {
+    log.error(msg, throwable)
+  }
+
   import AllocationKind._
 
   // Environment variable to enable retry coverage tracking (debug-only).
