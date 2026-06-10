@@ -13,23 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-
-/*** spark-rapids-shim-json-lines
-{"spark": "350"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-{"spark": "357"}
-{"spark": "358"}
-{"spark": "400"}
-{"spark": "401"}
-{"spark": "402"}
-{"spark": "411"}
-spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.catalyst
 
 import com.nvidia.spark.rapids.Arm.closeOnExcept
@@ -43,9 +26,9 @@ case class GpuProjectingColumnarBatch(schema: StructType, colOrdinals: Seq[Int])
 
   /**
    * Project a subset of columns from a `ColumnarBatch` onto a new batch
-   * based on the specified column ordinals and output schema. 
+   * based on the specified column ordinals and output schema.
    *
-   * @param batch The input batch to project. It's caller's responsibility to close batch.
+   * @param batch The input batch to project. It is the caller's responsibility to close batch.
    * @return The projected batch.
    */
   def project(batch: ColumnarBatch): ColumnarBatch = {
@@ -60,7 +43,13 @@ case class GpuProjectingColumnarBatch(schema: StructType, colOrdinals: Seq[Int])
 }
 
 object GpuProjectingColumnarBatch {
-  def apply(cpu: ProjectingInternalRow): GpuProjectingColumnarBatch = {
-    GpuProjectingColumnarBatch(cpu.schema, cpu.colOrdinals)
+  def apply(cpu: AnyRef): GpuProjectingColumnarBatch = {
+    GpuProjectingColumnarBatch(
+      invokeNoArg(cpu, "schema").asInstanceOf[StructType],
+      invokeNoArg(cpu, "colOrdinals").asInstanceOf[Seq[Int]])
+  }
+
+  private def invokeNoArg(target: AnyRef, methodName: String): AnyRef = {
+    target.getClass.getMethod(methodName).invoke(target)
   }
 }
