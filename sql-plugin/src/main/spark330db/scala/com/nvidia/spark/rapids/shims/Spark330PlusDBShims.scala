@@ -30,29 +30,16 @@ import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{ColumnarToRowTransition, SparkPlan}
 import org.apache.spark.sql.execution.adaptive.ShuffleQueryStageExec
 import org.apache.spark.sql.execution.exchange.{EXECUTOR_BROADCAST, ShuffleExchangeExec, ShuffleExchangeLike}
-import org.apache.spark.sql.rapids.{GpuCheckOverflowInTableInsert, GpuElementAtMeta}
+import org.apache.spark.sql.rapids.GpuElementAtMeta
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
 
 trait Spark330PlusDBShims extends Spark321PlusDBShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      GpuOverrides.expr[CheckOverflowInTableInsert](
-        "Casting a numeric value as another numeric type in store assignment",
-        ExprChecks.unaryProjectInputMatchesOutput(
-          TypeSig.all,
-          TypeSig.all),
-        (t, conf, p, r) => new UnaryExprMeta[CheckOverflowInTableInsert](t, conf, p, r) {
-          override def convertToGpu(child: Expression): GpuExpression = {
-            child match {
-              case c: GpuCast => GpuCheckOverflowInTableInsert(c, t.columnName)
-              case _ =>
-                throw new IllegalStateException("Expression child is not of Type GpuCast")
-            }
-          }
-        }),
       GpuElementAtMeta.elementAtRule(true)
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ shimExprs ++ DayTimeIntervalShims.exprs ++ RoundingShims.exprs
+    super.getExprs ++ CheckOverflowInTableInsertShims.exprs ++ shimExprs ++
+        DayTimeIntervalShims.exprs ++ RoundingShims.exprs
   }
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =

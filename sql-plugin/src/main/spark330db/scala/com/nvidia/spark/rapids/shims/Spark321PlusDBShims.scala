@@ -124,7 +124,7 @@ trait Spark321PlusDBShims extends SparkShims
           TypeSig.all,
           Map("partitionSpec" ->
               new InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
-                TypeSig.all, Nil))),
+                TypeSig.all, List.empty))),
         (runningWindowFunctionExec, conf, p, r) =>
           new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
       )
