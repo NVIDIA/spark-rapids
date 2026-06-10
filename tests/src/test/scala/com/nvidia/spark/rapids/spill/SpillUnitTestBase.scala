@@ -200,7 +200,8 @@ trait SpillUnitTestBase extends FunSuiteWithTempDir with MockitoSugar {
     withResource(codec.createBatchCompressor(0, Cuda.DEFAULT_STREAM)) { compressor =>
       compressor.addTableToCompress(buildContiguousTable(start, numRows))
       withResource(compressor.finish()) { compressed =>
-        GpuCompressedColumnVector.from(compressed.head)
+        val compressedTable = compressed.head
+        GpuCompressedColumnVector.from(compressedTable.buffer, compressedTable.meta)
       }
     }
   }

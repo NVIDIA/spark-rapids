@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,96 +16,10 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.{EOFException, InputStream, IOException, OutputStream}
+import java.io.{InputStream, IOException}
 import java.nio.ByteBuffer
-import java.nio.channels.ReadableByteChannel
 
 import ai.rapids.cudf.HostMemoryBuffer
-
-/**
- * An implementation of OutputStream that writes to a HostMemoryBuffer.
- *
- * NOTE: Closing this output stream does NOT close the buffer!
- *
- * @param buffer the buffer to receive written data
- */
-class HostMemoryOutputStream(val buffer: HostMemoryBuffer) extends OutputStream {
-  protected var pos: Long = 0
-
-  override def write(i: Int): Unit = {
-    buffer.setByte(pos, i.toByte)
-    pos += 1
-  }
-
-  override def write(bytes: Array[Byte]): Unit = {
-    buffer.setBytes(pos, bytes, 0, bytes.length)
-    pos += bytes.length
-  }
-
-  override def write(bytes: Array[Byte], offset: Int, len: Int): Unit = {
-    buffer.setBytes(pos, bytes, offset, len)
-    pos += len
-  }
-
-  def write(data: ByteBuffer): Unit = {
-    val numBytes = data.remaining()
-    val outBuffer = buffer.asByteBuffer(pos, numBytes)
-    outBuffer.put(data)
-    pos += numBytes
-  }
-
-  def writeAsByteBuffer(length: Int): ByteBuffer = {
-    val bb = buffer.asByteBuffer(pos, length)
-    pos += length
-    bb
-  }
-
-  def getPos: Long = pos
-
-  def seek(newPos: Long): Unit = {
-    pos = newPos
-  }
-
-  def copyFromChannel(channel: ReadableByteChannel, length: Long): Unit = {
-    val endPos = pos + length
-    assert(endPos <= buffer.getLength)
-    while (pos != endPos) {
-      val bytesToCopy = (endPos - pos).min(Integer.MAX_VALUE).toInt
-      val bytebuf = buffer.asByteBuffer(pos, bytesToCopy)
-      while (bytebuf.hasRemaining) {
-        val channelReadBytes = channel.read(bytebuf)
-        if (channelReadBytes < 0) {
-          throw new EOFException("Unexpected EOF while reading from byte channel")
-        }
-      }
-      pos += bytesToCopy
-    }
-  }
-}
-
-/** A HostMemoryOutputStream only counts the written bytes, nothing is actually written. */
-final class NullHostMemoryOutputStream extends HostMemoryOutputStream(null) {
-  override def write(i: Int): Unit = {
-    pos += 1
-  }
-
-  override def write(bytes: Array[Byte]): Unit = {
-    pos += bytes.length
-  }
-
-  override def write(bytes: Array[Byte], offset: Int, len: Int): Unit = {
-    pos += len
-  }
-
-  override def copyFromChannel(channel: ReadableByteChannel, length: Long): Unit = {
-    val endPos = pos + length
-    while (pos != endPos) {
-      val bytesToCopy = (endPos - pos).min(Integer.MAX_VALUE)
-      pos += bytesToCopy
-    }
-  }
-
-}
 
 trait HostMemoryInputStreamMixIn extends InputStream {
   protected val hmb: HostMemoryBuffer
@@ -166,17 +80,4 @@ trait HostMemoryInputStreamMixIn extends InputStream {
   override def markSupported(): Boolean = true
 
   def getPos: Long = pos
-}
-
-/**
- * An implementation of InputStream that reads from a HostMemoryBuffer.
- *
- * NOTE: Closing this input stream does NOT close the buffer!
- *
- * @param hmb the buffer from which to read data
- * @param hmbLength the amount of data available in the buffer
- */
-class HostMemoryInputStream(
-    val hmb: HostMemoryBuffer,
-    val hmbLength: Long) extends HostMemoryInputStreamMixIn {
 }
