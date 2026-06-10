@@ -250,7 +250,7 @@ class WithRetrySuite
     val numSplits = 2
     var doThrow = numSplits
     var lastSplitSize = 0L
-    val myTarget = AutoCloseableTargetSize(initialValue, minValue)
+    val myTarget = new AutoCloseableTargetSize(initialValue, minValue)
     try {
       withRetry(myTarget, splitTargetSizeInHalfGpu) { attempt =>
         lastSplitSize = attempt.targetSize
@@ -274,7 +274,7 @@ class WithRetrySuite
     val dataSize = 200L  // less than targetSize/2=500, so halving targetSize is a no-op
     var doThrow = true
     var splitTargetUsed = 0L
-    val myTarget = AutoCloseableTargetSize(targetSize, minSize, dataSize)
+    val myTarget = new AutoCloseableTargetSize(targetSize, minSize, dataSize)
     try {
       withRetry(myTarget, splitTargetSizeInHalfGpu) { attempt =>
         splitTargetUsed = attempt.targetSize
@@ -300,7 +300,7 @@ class WithRetrySuite
     val childDataSize = 2L  // actual bytes in the smaller child; less than targetSize/2=50
     var doThrow = true
     var splitTargetUsed = 0L
-    val myTarget = AutoCloseableTargetSize(targetSize, minSize, childDataSize)
+    val myTarget = new AutoCloseableTargetSize(targetSize, minSize, childDataSize)
     try {
       withRetry(myTarget, splitTargetSizeInHalfGpu) { attempt =>
         splitTargetUsed = attempt.targetSize
@@ -321,7 +321,7 @@ class WithRetrySuite
     val numSplits = 3
     var doThrow = numSplits
     var lastSplitSize = 0L
-    val myTarget = AutoCloseableTargetSize(initialValue, minValue)
+    val myTarget = new AutoCloseableTargetSize(initialValue, minValue)
     try {
       assertThrows[GpuSplitAndRetryOOM] {
         withRetry(myTarget, splitTargetSizeInHalfGpu) { attempt =>
