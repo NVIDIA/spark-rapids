@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids.{HostAlloc, RapidsConf}
 import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
 
 import org.apache.spark.SparkConf
-import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.IndexShuffleBlockResolver
 import org.apache.spark.shuffle.api.{ShuffleMapOutputWriter, ShufflePartitionWriter, WritableByteChannelWrapper}
 import org.apache.spark.shuffle.api.metadata.MapOutputCommitMessage
@@ -42,7 +41,17 @@ class RapidsLocalDiskShuffleMapOutputWriter(
     numPartitions: Int,
     blockResolver: IndexShuffleBlockResolver,
     sparkConf: SparkConf)
-  extends ShuffleMapOutputWriter with Logging {
+  extends ShuffleMapOutputWriter {
+  @transient private lazy val log = org.slf4j.LoggerFactory.getLogger(
+    classOf[RapidsLocalDiskShuffleMapOutputWriter])
+
+  private def logDebug(msg: => String): Unit = if (log.isDebugEnabled) log.debug(msg)
+
+  private def logWarning(msg: => String): Unit = if (log.isWarnEnabled) log.warn(msg)
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    if (log.isWarnEnabled) log.warn(msg, throwable)
+  }
 
   private val partitionLengths = new Array[Long](numPartitions)
   private var lastPartitionId = -1

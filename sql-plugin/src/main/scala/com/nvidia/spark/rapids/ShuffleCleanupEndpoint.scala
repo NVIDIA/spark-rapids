@@ -23,7 +23,6 @@ import scala.collection.mutable.ArrayBuffer
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.api.plugin.PluginContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 
 /**
@@ -38,7 +37,40 @@ import org.apache.spark.sql.rapids.GpuShuffleEnv
  */
 class ShuffleCleanupEndpoint(
     pluginContext: PluginContext,
-    pollIntervalMs: Long = 1000) extends Logging with AutoCloseable {
+    pollIntervalMs: Long = 1000) extends AutoCloseable {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[ShuffleCleanupEndpoint])
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg, throwable)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logTrace(msg: => String): Unit = {
+    if (log.isTraceEnabled) {
+      log.trace(msg)
+    }
+  }
+
 
   private val executorId: String = pluginContext.executorID()
 

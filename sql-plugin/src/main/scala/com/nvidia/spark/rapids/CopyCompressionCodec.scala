@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,7 +51,7 @@ class BatchedCopyCompressor(maxBatchMemory: Long, stream: Cuda.Stream)
           ct,
           CodecType.COPY,
           outBuffer.getLength)
-        CompressedTable(outBuffer.getLength, meta, outBuffer)
+        new CompressedTable(outBuffer.getLength, meta, outBuffer)
       }
     }
     closeOnExcept(result) { _ => stream.sync() }
