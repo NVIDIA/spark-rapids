@@ -40,7 +40,6 @@ import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
 import org.apache.spark.sql.execution.QueryExecutionException
@@ -185,7 +184,19 @@ trait MultiFileReaderFunctions {
 
 // Singleton thread pool used across all tasks for multifile reading.
 // Please note that the TaskContext is not set in these threads and should not be used.
-object MultiFileReaderThreadPool extends Logging {
+object MultiFileReaderThreadPool {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
   @volatile
   private var threadPool: Option[ThreadPoolExecutor] = None
 
@@ -296,7 +307,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
     @transient sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
     @transient rapidsConf: RapidsConf)
-  extends PartitionReaderFactory with Logging {
+  extends PartitionReaderFactory with RapidsLocalLog {
 
   protected val maxReadBatchSizeRows: Int = rapidsConf.maxReadBatchSizeRows
   protected val maxReadBatchSizeBytes: Long = rapidsConf.maxReadBatchSizeBytes
@@ -388,7 +399,7 @@ abstract class MultiFilePartitionReaderFactoryBase(
  * @param execMetrics metrics
  */
 abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[String, GpuMetric])
-    extends PartitionReader[ColumnarBatch] with Logging with ScanWithMetrics {
+    extends PartitionReader[ColumnarBatch] with RapidsLocalLog with ScanWithMetrics {
 
   metrics = execMetrics
 
@@ -405,42 +416,25 @@ abstract class FilePartitionReaderBase(conf: Configuration, execMetrics: Map[Str
   }
 }
 
-case class CombineConf(
-    combineThresholdSize: Long, // The size to combine to when combining small files
-    combineWaitTime: Int) // The amount of time to wait for other files ready for combination.
-
-// TODO: Refactor thread pool components into a common utility, since it is not specific to
-//  multi-file reading.
-trait ThreadPoolConf {
-  /**
-   * The maximum number of threads used by the thread pool, not necessarily the final number
-   */
-  def maxThreadNumber: Int
-
-  /**
-   * Whether to create pools for each Spark stage, only for testing for now
-   */
-  def stageLevelPool: Boolean
-}
-
-case class DefaultThreadPoolConf(
-    maxThreadNumber: Int,
-    stageLevelPool: Boolean) extends ThreadPoolConf
-
-case class MemoryBoundedPoolConf(
-    maxThreadNumber: Int,
-    stageLevelPool: Boolean,
-    memoryCapacity: Long, // The maximum host memory being used in bytes, must be > 0
-    waitMemTimeoutMs: Long // The timeout for acquiring host memory in milliseconds
-) extends ThreadPoolConf
-
 class ThreadPoolConfBuilder(
     private val maxThreadNumber: Int,
     private val isMemoryBounded: Boolean,
     private val memoryCapacityFromDriver: Long,
     private val timeoutMs: Long,
     private val stageLevelPool: Boolean
-) extends Logging with Serializable {
+) extends Serializable {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
 
   // Finalize the ThreadPoolConf, which mainly determines the memory capacity of the
   // ResourceBoundedThreadExecutor if isMemoryBounded is true.
@@ -452,7 +446,7 @@ class ThreadPoolConfBuilder(
   // 3. if still not set, use the default value `DEFAULT_MEMORY_CAPACITY`.
   def build(): ThreadPoolConf = {
     if (!isMemoryBounded) {
-      DefaultThreadPoolConf(maxThreadNumber, stageLevelPool)
+      new DefaultThreadPoolConf(maxThreadNumber, stageLevelPool)
     } else {
       val memCap: Long = if (memoryCapacityFromDriver > 0) {
         memoryCapacityFromDriver
@@ -468,11 +462,7 @@ class ThreadPoolConfBuilder(
         }
       }
       logDebug(s"Setting memory capacity for ResourcePoolConf to ${memCap >> 20}MB")
-      MemoryBoundedPoolConf(
-        maxThreadNumber = maxThreadNumber,
-        stageLevelPool = stageLevelPool,
-        memoryCapacity = memCap,
-        waitMemTimeoutMs = timeoutMs)
+      new MemoryBoundedPoolConf(maxThreadNumber, stageLevelPool, memCap, timeoutMs)
     }
   }
 }
@@ -523,7 +513,7 @@ abstract class MultiFileCloudPartitionReaderBase(
     maxReadBatchSizeBytes: Long,
     ignoreCorruptFiles: Boolean = false,
     keepReadsInOrder: Boolean = true,
-    combineConf: CombineConf = CombineConf(-1, -1))
+    combineConf: CombineConf = new CombineConf(-1, -1))
   extends FilePartitionReaderBase(conf, execMetrics) {
 
   protected type BufferInfo = HostMemoryBuffersWithMetaDataBase
@@ -1142,13 +1132,21 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     }
   }
 
-  protected case class CurrentChunkMeta(
-    clippedSchema: SchemaBase,
-    readSchema: StructType,
-    currentChunk: FileMajorBlockChunk,
-    extraInfo: ExtraInfo) {
+  protected class CurrentChunkMeta(
+    val clippedSchema: SchemaBase,
+    val readSchema: StructType,
+    val currentChunk: FileMajorBlockChunk,
+    val extraInfo: ExtraInfo) {
     def rowsPerPartition: Array[Long] = currentChunk.rowsPerPartition
     def allPartValues: Array[InternalRow] = currentChunk.allPartValues
+
+    def copy(
+        clippedSchema: SchemaBase = this.clippedSchema,
+        readSchema: StructType = this.readSchema,
+        currentChunk: FileMajorBlockChunk = this.currentChunk,
+        extraInfo: ExtraInfo = this.extraInfo): CurrentChunkMeta = {
+      new CurrentChunkMeta(clippedSchema, readSchema, currentChunk, extraInfo)
+    }
   }
 
   /**
@@ -1609,6 +1607,6 @@ abstract class MultiFileCoalescingPartitionReaderBase(
     logDebug(s"Loaded $numRows rows from ${getFileFormatShortName}. " +
       s"${getFileFormatShortName} bytes read: $numChunkBytes. Estimated GPU bytes: $numBytes. " +
       s"Number of partition entries: ${fileMajorChunk.allPartValues.length}")
-    CurrentChunkMeta(currentClippedSchema, currentReadSchema, fileMajorChunk, extraInfo)
+    new CurrentChunkMeta(currentClippedSchema, currentReadSchema, fileMajorChunk, extraInfo)
   }
 }

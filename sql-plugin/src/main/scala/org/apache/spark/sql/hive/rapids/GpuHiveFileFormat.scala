@@ -27,7 +27,6 @@ import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.shims.BucketingUtilsShim
 import org.apache.hadoop.mapreduce.{Job, TaskAttemptContext}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.execution.datasources.parquet.ParquetOptions
 import org.apache.spark.sql.hive.rapids.shims.GpuInsertIntoHiveTableMeta
@@ -36,7 +35,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{DataType, Decimal, DecimalType, StringType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object GpuHiveFileFormat extends Logging {
+object GpuHiveFileFormat {
   private val parquetOutputFormatClass =
     "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
   private val parquetSerdeClass =
@@ -199,7 +198,7 @@ object GpuHiveFileFormat extends Logging {
 }
 
 class GpuHiveParquetFileFormat(compType: CompressionType) extends ColumnarFileFormat
-    with Logging with Serializable {
+    with Serializable with RapidsLocalLog {
 
   override def prepareWrite(sparkSession: SparkSession, job: Job,
       options: Map[String, String], dataSchema: StructType): ColumnarOutputWriterFactory = {
@@ -278,7 +277,7 @@ class GpuHiveParquetWriter(override val path: String, dataSchema: StructType,
 
 }
 
-class GpuHiveTextFileFormat extends ColumnarFileFormat with Logging with Serializable {
+class GpuHiveTextFileFormat extends ColumnarFileFormat with Serializable {
 
   override def supportDataType(dataType: DataType): Boolean =
     GpuHiveTextFileUtils.isSupportedType(dataType)

@@ -16,7 +16,7 @@
 package com.nvidia.spark.rapids.shims
 
 import java.io.EOFException
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.channels.SeekableByteChannel
 
 import ai.rapids.cudf.HostMemoryBuffer
@@ -43,8 +43,8 @@ abstract class GpuOrcDataReader320Plus(
       val offset = current.getOffset
       while (current ne last.next) {
         val buffer = if (current eq last) data else data.duplicate()
-        buffer.position((current.getOffset - offset).toInt)
-        buffer.limit((current.getEnd - offset).toInt)
+        buffer.asInstanceOf[Buffer].position((current.getOffset - offset).toInt)
+        buffer.asInstanceOf[Buffer].limit((current.getEnd - offset).toInt)
         current.asInstanceOf[BufferChunk].setChunk(buffer)
         // see if the filecache wants any of this data
         val cacheToken = FileCache.get.startDataRangeCache(inputFile,
@@ -75,7 +75,7 @@ abstract class GpuOrcDataReader320Plus(
           throw new EOFException(s"Unexpected EOF while reading cached block for $filePathString")
         }
       }
-      buffer.flip()
+      buffer.asInstanceOf[Buffer].flip()
       chunk.asInstanceOf[BufferChunk].setChunk(buffer)
       chunk
     }
