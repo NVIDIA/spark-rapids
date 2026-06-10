@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,8 @@ import org.apache.spark.sql.execution.metric.{SQLMetric, SQLShuffleReadMetricsRe
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class ShuffledBatchRDDPartition(index: Int, spec: ShufflePartitionSpec) extends Partition
+class ShuffledBatchRDDPartition(override val index: Int, val spec: ShufflePartitionSpec)
+  extends Partition
 
 /**
  * A dummy partitioner for use with records whose partition ids have been pre-computed (i.e. for
@@ -135,7 +136,7 @@ class ShuffledBatchRDD(
 
   override def getPartitions: Array[Partition] = {
     Array.tabulate[Partition](partitionSpecs.length) { i =>
-      ShuffledBatchRDDPartition(i, partitionSpecs(i))
+      new ShuffledBatchRDDPartition(i, partitionSpecs(i))
     }
   }
 

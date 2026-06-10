@@ -96,6 +96,6 @@ trait RapidsQueryErrorUtils {
   }
 
   def dynamicPartitionParentError: Throwable = {
-    throw new RapidsAnalysisException(ErrorMsg.PARTITION_DYN_STA_ORDER.getMsg)
+    throw RapidsAnalysisException(ErrorMsg.PARTITION_DYN_STA_ORDER.getMsg)
   }
 }

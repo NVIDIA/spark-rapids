@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.{MapPartitionsRDD, RDD}
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -102,22 +101,22 @@ private object GpuExternalRowToColumnConverter {
       // NOT SUPPORTED YET
       // case CalendarIntervalType => CalendarConverter
       case (at: ArrayType, true) =>
-        ArrayConverter(getConverterForType(at.elementType, at.containsNull))
+        new ArrayConverter(getConverterForType(at.elementType, at.containsNull))
       case (at: ArrayType, false) =>
-        NotNullArrayConverter(getConverterForType(at.elementType, at.containsNull))
+        new NotNullArrayConverter(getConverterForType(at.elementType, at.containsNull))
       case (st: StructType, true) =>
-        StructConverter(st.fields.map(getConverterFor))
+        new StructConverter(st.fields.map(getConverterFor))
       case (st: StructType, false) =>
-        NotNullStructConverter(st.fields.map(getConverterFor))
+        new NotNullStructConverter(st.fields.map(getConverterFor))
       case (dt: DecimalType, true) =>
         new DecimalConverter(dt.precision, dt.scale)
       case (dt: DecimalType, false) =>
         new NotNullDecimalConverter(dt.precision, dt.scale)
       case (MapType(k, v, vcn), true) =>
-        MapConverter(getConverterForType(k, nullable = false),
+        new MapConverter(getConverterForType(k, nullable = false),
           getConverterForType(v, vcn))
       case (MapType(k, v, vcn), false) =>
-        NotNullMapConverter(getConverterForType(k, nullable = false),
+        new NotNullMapConverter(getConverterForType(k, nullable = false),
           getConverterForType(v, vcn))
       case (NullType, true) =>
         NullConverter
@@ -394,7 +393,7 @@ private object GpuExternalRowToColumnConverter {
     ret + OFFSET
   }
 
-  private case class MapConverter(
+  private class MapConverter(
     keyConverter: TypeConverter,
     valueConverter: TypeConverter) extends TypeConverter {
     override def append(row: Row,
@@ -410,7 +409,7 @@ private object GpuExternalRowToColumnConverter {
     override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 
-  private case class NotNullMapConverter(
+  private class NotNullMapConverter(
     keyConverter: TypeConverter,
     valueConverter: TypeConverter) extends TypeConverter {
     override def append(row: Row,
@@ -453,7 +452,7 @@ private object GpuExternalRowToColumnConverter {
     ret + OFFSET
   }
 
-  private case class ArrayConverter(childConverter: TypeConverter)
+  private class ArrayConverter(childConverter: TypeConverter)
     extends TypeConverter {
     override def append(row: Row,
       column: Int, builder: RapidsHostColumnBuilder): Double = {
@@ -468,7 +467,7 @@ private object GpuExternalRowToColumnConverter {
     override def getNullSize: Double = VALIDITY_N_OFFSET
   }
 
-  private case class NotNullArrayConverter(childConverter: TypeConverter)
+  private class NotNullArrayConverter(childConverter: TypeConverter)
     extends TypeConverter {
     override def append(row: Row,
       column: Int, builder: RapidsHostColumnBuilder): Double = {
@@ -492,7 +491,7 @@ private object GpuExternalRowToColumnConverter {
     ret
   }
 
-  private case class StructConverter(
+  private class StructConverter(
     childConverters: Array[TypeConverter]) extends TypeConverter {
     override def append(row: Row,
       column: Int,
@@ -509,7 +508,7 @@ private object GpuExternalRowToColumnConverter {
     override def getNullSize: Double = childConverters.map(_.getNullSize).sum + VALIDITY
   }
 
-  private case class NotNullStructConverter(
+  private class NotNullStructConverter(
     childConverters: Array[TypeConverter]) extends TypeConverter {
     override def append(row: Row,
       column: Int,
@@ -645,7 +644,11 @@ private class ExternalRowToColumnarIterator(
  * of GPU memory.  By convention it is the responsibility of the one consuming the data to close it
  * when they no longer need it.
  */
-object InternalColumnarRddConverter extends Logging {
+object InternalColumnarRddConverter {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = if (log.isDebugEnabled) log.debug(msg)
+
   def apply(df: DataFrame): RDD[Table] = {
     convert(df)
   }

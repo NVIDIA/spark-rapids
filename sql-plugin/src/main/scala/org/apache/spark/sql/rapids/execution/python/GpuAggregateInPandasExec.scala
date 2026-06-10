@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,6 +116,9 @@ case class GpuAggregateInPandasExec(
     // Filter child output attributes down to only those that are UDF inputs.
     // Also eliminate duplicate UDF inputs.
     val udfArgs = PythonArgumentUtils.flatten(inputs)
+    val udfFlattenedArgs = udfArgs.flattenedArgs
+    val udfArgOffsets = udfArgs.argOffsets
+    val udfArgNames = udfArgs.argNames
 
     // Schema of input rows to the python runner
     val aggInputSchema = StructType(udfArgs.flattenedTypes.zipWithIndex.map { case (dt, i) =>
@@ -136,7 +139,7 @@ case class GpuAggregateInPandasExec(
       // Doing this can reduce the data size to be split, probably getting a better performance.
       val groupingRefs = GpuBindReferences.bindGpuReferences(gpuGroupingExpressions,
         childOutput, allMetrics)
-      val pyInputRefs = GpuBindReferences.bindGpuReferences(udfArgs.flattenedArgs,
+      val pyInputRefs = GpuBindReferences.bindGpuReferences(udfFlattenedArgs,
         childOutput, allMetrics)
       val miniIter = inputIter.map { batch =>
         mNumInputBatches += 1
@@ -148,7 +151,7 @@ case class GpuAggregateInPandasExec(
 
       // Second splits into separate group batches.
       val miniAttrs =
-        (gpuGroupingExpressions ++ udfArgs.flattenedArgs).asInstanceOf[Seq[Attribute]]
+        (gpuGroupingExpressions ++ udfFlattenedArgs).asInstanceOf[Seq[Attribute]]
       val keyConverter = (groupedBatch: ColumnarBatch) => {
         // No `safeMap` because here does not increase the ref count.
         // (`Seq.indices.map()` is NOT lazy, so it is safe to be used to slice the columns.)
@@ -191,9 +194,9 @@ case class GpuAggregateInPandasExec(
         }
       }
 
-      val runnerFactory = GpuGroupedPythonRunnerFactory(conf, pyFuncs, udfArgs.argOffsets,
+      val runnerFactory = new GpuGroupedPythonRunnerFactory(conf, pyFuncs, udfArgOffsets,
         aggInputSchema, DataTypeUtilsShim.fromAttributes(pyOutAttributes),
-        PythonEvalType.SQL_GROUPED_AGG_PANDAS_UDF, udfArgs.argNames)
+        PythonEvalType.SQL_GROUPED_AGG_PANDAS_UDF, udfArgNames)
 
       // Third, sends to Python to execute the aggregate and returns the result.
       if (pyInputIter.hasNext) {
