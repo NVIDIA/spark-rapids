@@ -24,6 +24,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.BindReferences.bindReferences
 import org.apache.spark.sql.catalyst.expressions.codegen._
+import org.apache.spark.sql.execution.ExecSubqueryExpression
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
@@ -183,8 +184,42 @@ object BridgeHostColumnProjection
   private def cloneFunction(function: AnyRef): AnyRef =
     org.apache.spark.util.Utils.clone[AnyRef](function, bridgeSerializer)
 
+  private def containsSubquery(arg: Any): Boolean = arg match {
+    case _: ExecSubqueryExpression => true
+    case e: Expression => e.productIterator.exists(containsSubquery)
+    case Some(value) => containsSubquery(value)
+    case _: DataType => false
+    case s: Stream[_] => s.exists(containsSubquery)
+    case s: Seq[_] => s.exists(containsSubquery)
+    case m: Map[_, _] => m.exists { case (key, value) =>
+      containsSubquery(key) || containsSubquery(value)
+    }
+    case (left, right) => containsSubquery(left) || containsSubquery(right)
+    case _ => false
+  }
+
+  private def cloneExpressionPreservingSubqueries(expr: Expression): Expression = expr match {
+    case subquery: ExecSubqueryExpression => subquery
+    case _ if !containsSubquery(expr) => expr.clone()
+    case _ =>
+      def cloneAny(arg: Any): Any = arg match {
+        case subquery: ExecSubqueryExpression => subquery
+        case e: Expression => cloneExpressionPreservingSubqueries(e)
+        case dt: DataType => dt
+        case Some(value) => Some(cloneAny(value))
+        case s: Stream[_] => s.map(cloneAny).force
+        case s: Seq[_] => s.map(cloneAny)
+        case m: Map[_, _] => m.map { case (key, value) => cloneAny(key) -> cloneAny(value) }
+        case (left, right) => (cloneAny(left), cloneAny(right))
+        case other => other
+      }
+
+      val copiedArgs = expr.productIterator.map(arg => cloneAny(arg).asInstanceOf[AnyRef]).toArray
+      expr.makeCopy(copiedArgs)
+  }
+
   private def cloneForBridge(expr: Expression): Expression = {
-    expr.clone().transformUp {
+    cloneExpressionPreservingSubqueries(expr).transformUp {
       case udf: ScalaUDF => udf.copy(function = cloneFunction(udf.function))
     }
   }

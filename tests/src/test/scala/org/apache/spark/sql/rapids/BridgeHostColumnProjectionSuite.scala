@@ -24,9 +24,11 @@ import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, LeafExpression, Literal, ScalaUDF}
+import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, ExprId, LeafExpression, Literal, ScalaUDF}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
+import org.apache.spark.sql.catalyst.trees.LeafLike
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, GenericArrayData}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, ExecSubqueryExpression}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 
@@ -52,6 +54,37 @@ private class IdentityTrackingUDF extends (Any => Any) with Serializable {
   }
 }
 
+private case class PreparedSubqueryExpression(
+    override val exprId: ExprId,
+    value: Int,
+    override val plan: BaseSubqueryExec = null)
+    extends ExecSubqueryExpression with LeafLike[Expression] with CodegenFallback {
+  @volatile private var updated = false
+
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+
+  override def updateResult(): Unit = updated = true
+
+  override def eval(input: InternalRow): Any = {
+    require(updated, s"$this has not finished")
+    value
+  }
+
+  override def withNewPlan(query: BaseSubqueryExec): PreparedSubqueryExpression =
+    copy(plan = query)
+
+  override def toString: String = s"prepared-subquery#$exprId"
+}
+
+private case class ConstructorSubqueryExpression(subquery: ExecSubqueryExpression)
+    extends LeafExpression with CodegenFallback {
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+
+  override def eval(input: InternalRow): Any = subquery.eval(input)
+}
+
 /**
  * Test suite for BridgeHostColumnProjection to verify it correctly writes
  * various data types directly to RapidsHostColumnBuilder.
@@ -74,6 +107,34 @@ class BridgeHostColumnProjectionSuite extends AnyFunSuite {
 
     assert(seenIds.size() == 1)
     assert(seenIds.peek() != originalId)
+  }
+
+  test("projection preserves prepared subquery state") {
+    val subquery = PreparedSubqueryExpression(ExprId(1), 9)
+    subquery.updateResult()
+    val projection = BridgeHostColumnProjection.create(Seq(subquery))
+
+    val resultType = GpuColumnVector.convertFrom(IntegerType, false)
+    withResource(new RapidsHostColumnBuilder(resultType, 1)) { builder =>
+      projection.apply(Iterator(InternalRow.empty), Array(builder))
+      withResource(builder.build()) { result =>
+        assert(result.getInt(0) == 9)
+      }
+    }
+  }
+
+  test("projection preserves prepared subqueries in constructor fields") {
+    val subquery = PreparedSubqueryExpression(ExprId(1), 9)
+    subquery.updateResult()
+    val projection = BridgeHostColumnProjection.create(Seq(ConstructorSubqueryExpression(subquery)))
+
+    val resultType = GpuColumnVector.convertFrom(IntegerType, false)
+    withResource(new RapidsHostColumnBuilder(resultType, 1)) { builder =>
+      projection.apply(Iterator(InternalRow.empty), Array(builder))
+      withResource(builder.build()) { result =>
+        assert(result.getInt(0) == 9)
+      }
+    }
   }
 
   test("projection owns a cloned ScalaUDF function") {
