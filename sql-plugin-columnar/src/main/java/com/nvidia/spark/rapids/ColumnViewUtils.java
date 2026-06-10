@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,22 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.nvidia.spark.rapids
 
-import ai.rapids.cudf.ColumnView
-import com.nvidia.spark.rapids.Arm.withResource
+package com.nvidia.spark.rapids;
 
-object ColumnViewUtils {
+import ai.rapids.cudf.ColumnView;
+import ai.rapids.cudf.Scalar;
+
+public final class ColumnViewUtils {
+  private ColumnViewUtils() {}
+
   /**
-   * Get the `toString` on the scalar element at the specified row index in a column view.
+   * Get the {@code toString} on the scalar element at the specified row index in a column view.
    * E.g., returns: Scalar{type=INT32 value=-1250858453} (ID: 143 7149580cdd60)
    */
-  def getElementStringFromColumnView(cv: ColumnView, rowIndex: Int): String = {
-    withResource(cv.getScalarElement(rowIndex)) { scalar =>
-      if (scalar.isValid) {
-        scalar.toString
+  public static String getElementStringFromColumnView(ColumnView cv, int rowIndex) {
+    try (Scalar scalar = cv.getScalarElement(rowIndex)) {
+      if (scalar.isValid()) {
+        return scalar.toString();
       } else {
-        "null"
+        return "null";
       }
     }
   }
