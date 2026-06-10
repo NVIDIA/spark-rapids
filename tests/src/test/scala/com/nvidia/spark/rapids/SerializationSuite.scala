@@ -331,16 +331,19 @@ class SerializationSuite extends AnyFunSuite
     // buildBatch() makes a fresh batch each call; GpuSerializableBatch.writeObject consumes
     // (closes) the batch it wraps, so wrap an independent copy and compare against `expected`.
     withResource(buildBatch()) { expected =>
-      val serializable = new org.apache.spark.sql.rapids.GpuSerializableBatch(buildBatch())
       val baos = new ByteArrayOutputStream()
-      withResource(new ObjectOutputStream(baos)) { oos =>
-        oos.writeObject(serializable)
+      withResource(new org.apache.spark.sql.rapids.GpuSerializableBatch(buildBatch())) {
+        serializable =>
+          withResource(new ObjectOutputStream(baos)) { oos =>
+            oos.writeObject(serializable)
+          }
       }
-      val ois = new ObjectInputStream(new ByteArrayInputStream(baos.toByteArray))
-      val deserialized =
-        ois.readObject().asInstanceOf[org.apache.spark.sql.rapids.GpuSerializableBatch]
-      withResource(deserialized) { d =>
-        TestUtils.compareBatches(expected, d.getBatch)
+      withResource(new ObjectInputStream(new ByteArrayInputStream(baos.toByteArray))) { ois =>
+        val deserialized =
+          ois.readObject().asInstanceOf[org.apache.spark.sql.rapids.GpuSerializableBatch]
+        withResource(deserialized) { d =>
+          TestUtils.compareBatches(expected, d.getBatch)
+        }
       }
     }
   }
