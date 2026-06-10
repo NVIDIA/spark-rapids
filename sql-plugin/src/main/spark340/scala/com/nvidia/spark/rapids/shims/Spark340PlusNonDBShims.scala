@@ -40,7 +40,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.GpuOverrides.{exec, pluginSupportedOrderableSig}
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
-import org.apache.spark.sql.catalyst.expressions.{Empty2Null, Expression, KnownNullable, NamedExpression, SortOrder}
+import org.apache.spark.sql.catalyst.expressions.{Empty2Null, Expression, KnownNullable, NamedExpression, ScalaUDF, SortOrder}
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
 import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
@@ -50,6 +50,11 @@ import org.apache.spark.sql.rapids.GpuElementAtMeta
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
 
 trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
+  override def isExpressionStateful(expr: Expression): Boolean = {
+    // ScalaUDF marks stateful because it carries mutable encoder/interpreter scratch state. The
+    // CPU bridge clones the UDF expression and function per worker projection, so keep it eligible.
+    expr.stateful && !expr.isInstanceOf[ScalaUDF]
+  }
 
   private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
     GpuOverrides.exec[GlobalLimitExec](

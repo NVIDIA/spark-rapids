@@ -190,6 +190,8 @@ case class GpuCpuBridgeExpression(
           NoopMetric,
           NoopMetric,
           nullSafe = false,
+          // The bridge remains inside the owning GPU task/operator while rows are materialized
+          // on CPU, so semaphore ownership stays with the caller.
           releaseSemaphore = false
         )
       }
@@ -211,9 +213,11 @@ case class GpuCpuBridgeExpression(
     logDebug(s"Processing $numRows rows in $subBatchCount parallel sub-batches " +
       s"AVG ${numRows.toDouble/subBatchCount}")
 
-    // This bends the retry framework's contract: on rollback all data should be spillable, but
-    // the input batch's lifecycle is owned by the caller and is not. Accepted as good enough --
-    // a rollback may leave some data unspillable.
+    // Retry is still owned by the operator evaluating this expression. The bridge makes the
+    // derived GPU input columns spillable before worker submission, but the caller-owned input
+    // batch is outside this expression's ownership and cannot be made spillable here. Retryable
+    // worker failures are unwrapped below so the owning task's retry boundary sees the original
+    // exception.
 
     // Evaluate GPU input expressions once
     val gpuInputColumns = gpuInputs.safeMap(_.columnarEval(batch))
@@ -332,6 +336,8 @@ case class GpuCpuBridgeExpression(
             NoopMetric,
             NoopMetric,
             nullSafe = false,
+            // The bridge remains inside the owning GPU task/operator while rows are materialized
+            // on CPU, so semaphore ownership stays with the caller.
             releaseSemaphore = false
           )
         }

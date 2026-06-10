@@ -50,6 +50,8 @@ trait SparkShims {
   def int96ParquetRebaseWriteKey: String
   def isCastingStringToNegDecimalScaleSupported: Boolean = true
 
+  def isExpressionStateful(expr: Expression): Boolean = false
+
   def getParquetFilters(
     schema: MessageType,
     pushDownDate: Boolean,

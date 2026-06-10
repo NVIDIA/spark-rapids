@@ -18,6 +18,8 @@ package org.apache.spark.sql.rapids
 
 import com.nvidia.spark.rapids.RapidsHostColumnBuilder
 
+import org.apache.spark.{SparkConf, SparkEnv}
+import org.apache.spark.serializer.JavaSerializer
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.BindReferences.bindReferences
@@ -174,11 +176,27 @@ object BridgeHostColumnProjection
     create(fields.zipWithIndex.map(x => BoundReference(x._2, x._1, true)))
   }
 
+  private def bridgeSerializer = Option(SparkEnv.get)
+      .map(_.closureSerializer.newInstance())
+      .getOrElse(new JavaSerializer(new SparkConf()).newInstance())
+
+  private def cloneFunction(function: AnyRef): AnyRef =
+    org.apache.spark.util.Utils.clone[AnyRef](function, bridgeSerializer)
+
+  private def cloneForBridge(expr: Expression): Expression = {
+    expr.clone().transformUp {
+      case udf: ScalaUDF => udf.copy(function = cloneFunction(udf.function))
+    }
+  }
+
   /**
    * Returns a projection for the given sequence of bound Expressions.
    */
   def create(exprs: Seq[Expression]): BridgeHostColumnProjection = {
-    createObject(exprs)
+    // Each projection instance owns its expression tree. Some Spark expressions keep transient
+    // interpreter caches even when they are not marked stateful, and ScalaUDF carries a user
+    // function object that must not be shared by worker-thread-local projections.
+    createObject(exprs.map(cloneForBridge))
   }
 
   def create(expr: Expression): BridgeHostColumnProjection = create(Seq(expr))

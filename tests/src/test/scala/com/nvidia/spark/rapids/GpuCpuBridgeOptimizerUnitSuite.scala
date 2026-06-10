@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.expressions.{Add, And, AttributeReference, CaseWhen,
-  GreaterThan, Literal, Multiply, XxHash64}
+  GreaterThan, Literal, MonotonicallyIncreasingID, Multiply, ScalaUDF, XxHash64}
 import org.apache.spark.sql.types.LongType
 
 class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
@@ -93,6 +93,25 @@ class GpuCpuBridgeOptimizerUnitSuite extends AnyFunSuite {
     val mulMeta = wrap(mul)
     GpuCpuBridgeOptimizer.optimizeByMinimizingMovement(mulMeta)
     assert(!mulMeta.willUseGpuCpuBridge)
+  }
+
+  test("MonotonicallyIncreasingID is not CPU bridge compatible (unit)") {
+    val meta = wrap(MonotonicallyIncreasingID())
+    meta.willNotWorkOnGpu("disabled for test")
+
+    assert(!meta.canMoveToCpuBridge)
+    GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(Seq(meta))
+    assert(!meta.willUseGpuCpuBridge)
+  }
+
+  test("ScalaUDF can use CPU bridge (unit)") {
+    val udf = ScalaUDF((value: Long) => value, LongType, Seq(Literal(1L)))
+    val meta = wrap(udf)
+    meta.willNotWorkOnGpu("disabled for test")
+
+    assert(meta.canMoveToCpuBridge)
+    GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(Seq(meta))
+    assert(meta.willUseGpuCpuBridge)
   }
 
   test("CPU child tie prefers GPU (unit)") {

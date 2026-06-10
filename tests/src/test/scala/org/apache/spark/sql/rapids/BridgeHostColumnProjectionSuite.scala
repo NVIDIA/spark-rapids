@@ -16,22 +16,84 @@
 
 package org.apache.spark.sql.rapids
 
+import java.util.concurrent.ConcurrentLinkedQueue
+
 import ai.rapids.cudf.{DType, HostColumnVector}
 import com.nvidia.spark.rapids.{GpuColumnVector, RapidsHostColumnBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, Literal}
+import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, LeafExpression, Literal, ScalaUDF}
+import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, GenericArrayData}
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
+
+private case class IdentityTrackingExpression(seenIds: ConcurrentLinkedQueue[Int])
+    extends LeafExpression with CodegenFallback {
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+
+  override def eval(input: InternalRow): Any = {
+    seenIds.add(System.identityHashCode(this))
+    7
+  }
+}
+
+private object ScalaUDFCloneTracker {
+  val seenIds = new ConcurrentLinkedQueue[Int]()
+}
+
+private class IdentityTrackingUDF extends (Any => Any) with Serializable {
+  override def apply(value: Any): Any = {
+    ScalaUDFCloneTracker.seenIds.add(System.identityHashCode(this))
+    value.asInstanceOf[Long] + 1L
+  }
+}
 
 /**
  * Test suite for BridgeHostColumnProjection to verify it correctly writes
  * various data types directly to RapidsHostColumnBuilder.
  */
 class BridgeHostColumnProjectionSuite extends AnyFunSuite {
+
+  test("projection owns a cloned expression tree") {
+    val seenIds = new ConcurrentLinkedQueue[Int]()
+    val expr = IdentityTrackingExpression(seenIds)
+    val originalId = System.identityHashCode(expr)
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
+
+    val resultType = GpuColumnVector.convertFrom(IntegerType, false)
+    withResource(new RapidsHostColumnBuilder(resultType, 1)) { builder =>
+      projection.apply(Iterator(InternalRow.empty), Array(builder))
+      withResource(builder.build()) { result =>
+        assert(result.getInt(0) == 7)
+      }
+    }
+
+    assert(seenIds.size() == 1)
+    assert(seenIds.peek() != originalId)
+  }
+
+  test("projection owns a cloned ScalaUDF function") {
+    ScalaUDFCloneTracker.seenIds.clear()
+    val function = new IdentityTrackingUDF()
+    val originalId = System.identityHashCode(function)
+    val expr = ScalaUDF(function, LongType, Seq(Literal(1L)))
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
+
+    val resultType = GpuColumnVector.convertFrom(LongType, true)
+    withResource(new RapidsHostColumnBuilder(resultType, 1)) { builder =>
+      projection.apply(Iterator(InternalRow.empty), Array(builder))
+      withResource(builder.build()) { result =>
+        assert(result.getLong(0) == 2L)
+      }
+    }
+
+    assert(ScalaUDFCloneTracker.seenIds.size() == 1)
+    assert(ScalaUDFCloneTracker.seenIds.peek() != originalId)
+  }
 
   /**
    * Helper function to create test data and verify projection results.

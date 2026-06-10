@@ -1401,13 +1401,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .checkValues(ParquetFooterReaderType.values.map(_.toString))
       .createWithDefault(ParquetFooterReaderType.AUTO.toString)
 
-  // This is an experimental feature now. And eventually, should be enabled or disabled depending
-  // on something that we don't know yet but would try to figure out.
+  // Deprecated legacy row-based UDF path. CPU bridge is the preferred replacement when it can
+  // bridge the expression safely.
   val ENABLE_CPU_BASED_UDF = conf("spark.rapids.sql.rowBasedUDF.enabled")
-    .doc("When set to true, optimizes a row-based UDF in a GPU operation by transferring " +
-      "only the data it needs between GPU and CPU inside a query operation, instead of falling " +
-      "this operation back to CPU. This is an experimental feature, and this config might be " +
-      "removed in the future.")
+    .doc("Deprecated. When set to true, enables the legacy row-based UDF path in a GPU " +
+      "operation by transferring only the data it needs between GPU and CPU inside a query " +
+      "operation, instead of falling this operation back to CPU. CPU bridge is the preferred " +
+      "replacement when it can safely bridge the expression, and this config might be removed " +
+      "in the future.")
     .booleanConf
     .createWithDefault(false)
 

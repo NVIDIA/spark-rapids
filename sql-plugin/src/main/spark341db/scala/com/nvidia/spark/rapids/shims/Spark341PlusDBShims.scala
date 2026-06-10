@@ -37,6 +37,11 @@ import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.StringType
 
 trait Spark341PlusDBShims extends Spark332PlusDBShims {
+  override def isExpressionStateful(expr: Expression): Boolean = {
+    // ScalaUDF marks stateful because it carries mutable encoder/interpreter scratch state. The
+    // CPU bridge clones the UDF expression and function per worker projection, so keep it eligible.
+    expr.stateful && !expr.isInstanceOf[ScalaUDF]
+  }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     val shimExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(

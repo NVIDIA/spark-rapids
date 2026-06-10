@@ -1509,6 +1509,11 @@ abstract class BaseExprMeta[INPUT <: Expression](
       return false
     }
     
+    // Some expressions carry task/partition-local state whose values cannot be preserved if the
+    // bridge splits a batch across worker threads. The shim predicate filters out those correctness
+    // blockers while allowing expressions whose mutable state is only cloned worker-local scratch.
+    if (SparkShimImpl.isExpressionStateful(expr)) return false
+
     // Exclude nondeterministic expressions for correctness
     if (!expr.deterministic) return false
     
