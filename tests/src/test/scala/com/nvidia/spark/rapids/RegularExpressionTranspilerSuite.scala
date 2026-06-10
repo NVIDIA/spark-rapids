@@ -466,7 +466,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
         .replaceAll("\\.", "[^\n\r\u0085\u2028\u2029]")
-        .replaceAll("\\\\Z", "(?:\r\n)?\\$"))
+        .replaceAll("\\\\Z", "\\$"))
   }
 
   test("transpile \\A repetitions") {
@@ -480,11 +480,11 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
   }
 
   test("transpile $") {
-    doTranspileTest("a$", "a(?:\r\n)?$")
+    doTranspileTest("a$", "a$")
   }
 
   test("transpile \\Z") {
-    val expected = "a(?:\r\n)?$"
+    val expected = "a$"
     doTranspileTest("a\\Z", expected)
     doTranspileTest("a\\Z+", expected)
     doTranspileTest("a\\Z{1}", expected)

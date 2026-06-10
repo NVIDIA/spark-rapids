@@ -853,20 +853,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   private val lineTerminatorChars = Seq('\n', '\r', '\u0085', '\u2028', '\u2029')
 
-  // from Java 8 documention: a line terminator is a 1 to 2 character sequence that marks
-  // the end of a line of an input character sequence.
-  // this method produces a RegexAST which outputs a regular expression to match any possible
-  // combination of line terminators.
-  // Cudf added support to identify \n, \r, \u0085, \u2028, \u2029 as line break characters
-  // when EXT_NEWLINE flag is set. See issue: https://github.com/NVIDIA/spark-rapids/issues/11554
-  private def lineTerminatorMatcher(excludeCRLF: Boolean, capture: Boolean): RegexAST = {
-    if (excludeCRLF) {
-      RegexEmpty()
-    } else {
-      RegexGroup(capture = capture, RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n'))),
-          None)
-    }
-  }
 
   private def negateCharacterClass(
       components: ListBuffer[RegexCharacterClassComponent]): RegexAST = {
@@ -1098,17 +1084,9 @@ class CudfRegexTranspiler(mode: RegexMode) {
               throw new RegexUnsupportedException(
                       "Regex sequences with \\b or \\B not supported around $", regex.position)
             case _ =>
-              // otherwise by default we can match any or none the full set of line terminators
-              if (mode == RegexReplaceMode) {
-                replacement match {
-                  case Some(rr) => rr.appendBackref(rr.numCaptureGroups + 1)
-                  case _ =>
-                }
-              }
-              RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(excludeCRLF = false,
-                    capture = mode == RegexReplaceMode), SimpleQuantifier('?')),
-                RegexChar('$')))
+              // LAYER2 PROBE (cudf #22763): cuDF now treats \r\n as one line terminator under
+              // EXT_NEWLINE, so emit the anchor directly instead of the (\r\n)? synthetic group.
+              RegexChar('$')
           }
         case '^' if mode == RegexSplitMode =>
           RegexEscaped('A')
