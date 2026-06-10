@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import ai.rapids.cudf._
 import ai.rapids.cudf.ast.BinaryOperator
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.NullIntolerantShim
+import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimPredicate}
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions._
@@ -30,7 +30,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 
 case class GpuNot(child: Expression) extends CudfUnaryExpression
-    with Predicate with ImplicitCastInputTypes with NullIntolerantShim {
+    with ShimPredicate with ImplicitCastInputTypes with NullIntolerantShim {
   override def toString: String = s"NOT $child"
 
   override def inputTypes: Seq[DataType] = Seq(BooleanType)
@@ -51,7 +51,7 @@ case class GpuNot(child: Expression) extends CudfUnaryExpression
   }
 }
 
-abstract class CudfBinaryPredicateWithSideEffect extends CudfBinaryOperator with Predicate {
+abstract class CudfBinaryPredicateWithSideEffect extends CudfBinaryOperator with ShimPredicate {
 
   override def inputType: AbstractDataType = BooleanType
 
@@ -152,7 +152,7 @@ case class GpuOr(left: Expression, right: Expression) extends CudfBinaryPredicat
     GpuExpressionWithSideEffectUtils.boolInverted(col)
 }
 
-abstract class CudfBinaryComparison extends CudfBinaryOperator with Predicate {
+abstract class CudfBinaryComparison extends CudfBinaryOperator with ShimPredicate {
   // Note that we need to give a superset of allowable input types since orderable types are not
   // finitely enumerable. The allowable types are checked below by checkInputDataTypes.
   override def inputType: AbstractDataType = AnyDataType

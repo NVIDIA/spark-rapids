@@ -100,7 +100,7 @@ case class GpuRand(child: Expression, doContextCheck: Boolean) extends ShimUnary
   private lazy val seed: Long = child match {
     case GpuLiteral(s, IntegerType) => s.asInstanceOf[Int]
     case GpuLiteral(s, LongType) => s.asInstanceOf[Long]
-    case _ => throw new RapidsAnalysisException(
+    case _ => throw RapidsAnalysisException(
       s"Input argument to $prettyName must be an integer, long or null literal.")
   }
 

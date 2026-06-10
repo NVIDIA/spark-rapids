@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -138,10 +138,14 @@ case class GpuFlatMapCoGroupsInPandasExec(
       StructField("out_struct", DataTypeUtilsShim.fromAttributes(output)) :: Nil)
 
     // Resolve the argument offsets and related attributes.
-    val GroupArgs(leftDedupAttrs, leftArgOffsets, leftGroupingOffsets) =
-      resolveArgOffsets(left, leftGroup)
-    val GroupArgs(rightDedupAttrs, rightArgOffsets, rightGroupingOffsets) =
-      resolveArgOffsets(right, rightGroup)
+    val leftGroupArgs = resolveArgOffsets(left, leftGroup)
+    val leftDedupAttrs = leftGroupArgs.dedupAttrs
+    val leftArgOffsets = leftGroupArgs.argOffsets
+    val leftGroupingOffsets = leftGroupArgs.groupingOffsets
+    val rightGroupArgs = resolveArgOffsets(right, rightGroup)
+    val rightDedupAttrs = rightGroupArgs.dedupAttrs
+    val rightArgOffsets = rightGroupArgs.argOffsets
+    val rightGroupingOffsets = rightGroupArgs.groupingOffsets
 
     left.executeColumnar().zipPartitions(right.executeColumnar())  { (leftIter, rightIter) =>
       if (isPythonOnGpuEnabled) {

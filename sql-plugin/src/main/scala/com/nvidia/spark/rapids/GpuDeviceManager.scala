@@ -27,7 +27,6 @@ import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
-import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.ByteUnit
 import org.apache.spark.resource.ResourceInformation
 import org.apache.spark.sql.internal.SQLConf
@@ -38,7 +37,29 @@ private case object Initialized extends MemoryState
 private case object Uninitialized extends MemoryState
 private case object Errored extends MemoryState
 
-object GpuDeviceManager extends Logging {
+object GpuDeviceManager {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
+  private def logError(msg: => String): Unit = {
+    log.error(msg)
+  }
+
   // This config controls whether RMM/Pinned memory are initialized from the task
   // or from the executor side plugin. The default is to initialize from the
   // executor plugin.

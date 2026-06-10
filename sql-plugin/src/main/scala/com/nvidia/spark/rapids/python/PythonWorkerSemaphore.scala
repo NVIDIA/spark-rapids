@@ -26,7 +26,6 @@ import com.nvidia.spark.rapids.python.PythonConfEntries.CONCURRENT_PYTHON_WORKER
 import org.apache.commons.lang3.mutable.MutableInt
 
 import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.internal.Logging
 
 /*
  * PythonWorkerSemaphore is used to limit the number of Python workers(processes) to be started
@@ -41,7 +40,15 @@ import org.apache.spark.internal.Logging
  * the inner semaphore when no longer needed.
  *
  */
-object PythonWorkerSemaphore extends Logging {
+object PythonWorkerSemaphore {
+  private val log = org.slf4j.LoggerFactory.getLogger(
+    "com.nvidia.spark.rapids.python.PythonWorkerSemaphore")
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
 
   private lazy val rapidsConf = new RapidsConf(SparkEnv.get.conf)
   private lazy val workersPerGpu = rapidsConf.get(CONCURRENT_PYTHON_WORKERS)
@@ -97,7 +104,15 @@ object PythonWorkerSemaphore extends Logging {
   }
 }
 
-private final class PythonWorkerSemaphore(tasksPerGpu: Int) extends Logging {
+private final class PythonWorkerSemaphore(tasksPerGpu: Int) {
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[PythonWorkerSemaphore])
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
   private val semaphore = new Semaphore(tasksPerGpu)
   // Map to track which tasks have acquired the semaphore.
   private val activeTasks = new ConcurrentHashMap[Long, MutableInt]

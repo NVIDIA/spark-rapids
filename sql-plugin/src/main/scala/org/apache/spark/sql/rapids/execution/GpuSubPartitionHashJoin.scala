@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,13 @@ package org.apache.spark.sql.rapids.execution
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{GpuBatchUtils, GpuColumnVector, GpuExpression, GpuHashPartitioner, GpuMetric, NvtxRegistry, RmmRapidsRetryIterator, SpillableColumnarBatch, SpillPriorities, TaskAutoCloseableResource}
+import com.nvidia.spark.rapids.{GpuBatchUtils, GpuColumnVector, GpuExpression, GpuHashPartitioner,
+  GpuMetric, NvtxRegistry, RapidsLocalLog, RmmRapidsRetryIterator, SpillableColumnarBatch,
+  SpillPriorities, TaskAutoCloseableResource}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.plans.InnerLike
 import org.apache.spark.sql.rapids.{GpuHashExpression, GpuMurmur3Hash}
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
@@ -89,7 +90,7 @@ class GpuBatchSubPartitioner(
     numPartitions: Int,
     hashSeed: Int,
     name: String = "GpuBatchSubPartitioner") extends GpuHashPartitioner
-  with AutoCloseable with Logging {
+  with AutoCloseable with RapidsLocalLog {
 
   private var isNotInited = true
   private var numCurBatches = 0
@@ -228,7 +229,7 @@ class GpuBatchSubPartitioner(
 class GpuBatchSubPartitionIterator(
     batchSubPartitioner: GpuBatchSubPartitioner,
     targetBatchSize: Long)
-  extends Iterator[(Seq[Int], Seq[SpillableColumnarBatch])] with Logging {
+  extends Iterator[(Seq[Int], Seq[SpillableColumnarBatch])] with RapidsLocalLog {
 
   // The partitions to be read. Initially it is all the partitions.
   private val remainingPartIds: ArrayBuffer[Int] =
@@ -558,7 +559,7 @@ abstract class BaseSubHashJoinIterator(
   protected def setupJoinIterator(pair: PartitionPair): Option[Iterator[ColumnarBatch]]
 }
 
-trait GpuSubPartitionHashJoin extends Logging { self: GpuHashJoin =>
+trait GpuSubPartitionHashJoin { self: GpuHashJoin =>
 
   protected lazy val buildSchema: StructType = DataTypeUtilsShim.fromAttributes(buildPlan.output)
 
