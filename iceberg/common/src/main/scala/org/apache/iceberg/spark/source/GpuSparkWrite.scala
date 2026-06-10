@@ -16,6 +16,8 @@
 
 package org.apache.iceberg.spark.source
 
+import java.util.Locale
+
 import scala.collection.JavaConverters._
 import scala.util.{Failure, Success}
 
@@ -129,7 +131,7 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
     val outputWriterFactory = new GpuParquetFileFormat().prepareWrite(
       SparkSession.active,
       job,
-      writeProps.asScala.toMap,
+      GpuSparkWrite.translateIcebergWriteProperties(writeProps.asScala.toMap),
       dsSchema
     )
 
@@ -157,6 +159,56 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
 object GpuSparkWrite {
   def supports(cpuClass: Class[_ <: Write]): Boolean = {
     GpuSparkWriteAccess.supports(cpuClass)
+  }
+
+  // Iceberg already resolved the Parquet codec via its own precedence chain (write option
+  // > spark.sql.iceberg.compression-codec > table property > zstd) and stored the result
+  // under `write.parquet.compression-codec`. Spark's ParquetOptions only recognizes
+  // `compression` / `parquet.compression`, so without translation it falls through to
+  // `spark.sql.parquet.compression.codec` and silently overrides Iceberg's choice.
+  private[source] def translateIcebergWriteProperties(
+      writeProps: Map[String, String]): Map[String, String] = {
+    writeProps.get(TableProperties.PARQUET_COMPRESSION) match {
+      case Some(codec) if !writeProps.contains("compression") =>
+        writeProps + ("compression" -> codec)
+      case _ => writeProps
+    }
+  }
+
+  /**
+   * Fall back to the CPU when the Iceberg-resolved Parquet codec cannot be reproduced on
+   * the GPU. cuDF's Parquet writer only supports a subset of Iceberg's codecs (uncompressed,
+   * snappy, zstd). Before [[translateIcebergWriteProperties]] forwarded the codec, an
+   * unsupported value was silently masked by `spark.sql.parquet.compression.codec`; now that
+   * the resolved codec reaches `prepareWrite`, an unsupported value would fail at execution
+   * instead of falling back, so it must be rejected at planning time.
+   *
+   * A single `ColumnarOutputWriterFactory` is shared by the data and position-delete writers,
+   * so the GPU path can only honor one codec. When Iceberg resolves a delete codec
+   * (`write.delete.parquet.compression-codec`) that differs from the data codec, fall back
+   * rather than silently writing delete files with the data codec.
+   */
+  private[source] def tagParquetCompressionForGpu(
+      writeProps: java.util.Map[String, String],
+      hasDeleteFiles: Boolean,
+      meta: SparkPlanMeta[_]): Unit = {
+    def gpuSupports(codec: String): Boolean =
+      GpuParquetFileFormat.parseCompressionType(codec.toUpperCase(Locale.ROOT)).isDefined
+
+    Option(writeProps.get(TableProperties.PARQUET_COMPRESSION)).foreach { dataCodec =>
+      if (!gpuSupports(dataCodec)) {
+        meta.willNotWorkOnGpu(s"Iceberg Parquet compression codec '$dataCodec' is not " +
+          "supported by the GPU writer")
+      }
+      if (hasDeleteFiles) {
+        val deleteCodec = Option(writeProps.get(TableProperties.DELETE_PARQUET_COMPRESSION))
+          .getOrElse(dataCodec)
+        if (!deleteCodec.equalsIgnoreCase(dataCodec)) {
+          meta.willNotWorkOnGpu(s"Iceberg delete-file compression codec '$deleteCodec' differs " +
+            s"from the data-file codec '$dataCodec'; the GPU writer uses a single codec for both")
+        }
+      }
+    }
   }
 
   /**
@@ -228,6 +280,10 @@ object GpuSparkWrite {
 
     tagForGpuWrite(Some(dataFileFormat), Some(dsSchema), Some(writeSchema),
       None, partitionSpec, meta)
+
+    // Append / copy-on-write only writes data files, so no delete codec to consider.
+    tagParquetCompressionForGpu(GpuSparkWriteAccess.writeProperties(cpuWrite),
+      hasDeleteFiles = false, meta)
   }
 
   /**

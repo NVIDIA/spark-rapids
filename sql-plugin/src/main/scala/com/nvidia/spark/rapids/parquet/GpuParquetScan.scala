@@ -59,7 +59,7 @@ import org.apache.parquet.hadoop.{ParquetFileReader, ParquetInputFormat}
 import org.apache.parquet.hadoop.ParquetFileWriter.MAGIC
 import org.apache.parquet.hadoop.metadata._
 import org.apache.parquet.io.{InputFile, SeekableInputStream => ParquetSeekableInputStream}
-import org.apache.parquet.schema.{DecimalMetadata, GroupType, LogicalTypeAnnotation, MessageType, PrimitiveType, Type}
+import org.apache.parquet.schema.{DecimalMetadata, GroupType, LogicalTypeAnnotation, MessageType, OriginalType, PrimitiveType, Type}
 import org.apache.parquet.schema.LogicalTypeAnnotation.{DateLogicalTypeAnnotation, IntLogicalTypeAnnotation, TimestampLogicalTypeAnnotation}
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 import org.xerial.snappy.Snappy
@@ -873,13 +873,18 @@ protected case class GpuParquetFileFilterHandler(
           }
         } else {
           val fileGroupType = fileType.asGroupType()
-          if (fileGroupType.isRepetition(Type.Repetition.REPEATED)) {
+          if (fileGroupType.isRepetition(Type.Repetition.REPEATED) &&
+              fileGroupType.getOriginalType != OriginalType.LIST &&
+              fileGroupType.getOriginalType != OriginalType.MAP) {
             // Unannotated 1-level legacy list: the REPEATED group itself is the element,
             // regardless of how many fields it has. Without this branch, a single-field
             // repeated group (e.g. `repeated group g { optional int32 someId; }`) is
             // mis-interpreted as a 2/3-level LIST wrapper and its primitive child is
             // treated as a group, producing ClassCastException. The cuDF reader handles
             // the actual decoding (see rapidsai/cudf#22541 for the matching cuDF-side fix).
+            // A LIST/MAP-annotated REPEATED group is the inner level of a legacy 2-level
+            // nested list and is excluded here so it falls through to isElementType below
+            // (#11589, #11592).
             checkSchemaCompat(fileGroupType, array.elementType, errorCallback, isCaseSensitive,
               useFieldId, rootFileType, rootReadType)
           } else {
@@ -3569,7 +3574,8 @@ abstract class AbstractParquetPartitionReader(
         maxReadBatchSizeRows, maxReadBatchSizeBytes, readDataSchema)
       if (clippedParquetSchema.getFieldCount == 0) {
         // not reading any data, so return a degenerate ColumnarBatch with the row count
-        val numRows = currentChunkedBlocks.map(_.getRowCount).sum.toInt
+        val numRows = computeNumRowsAlive(
+          currentChunkedBlocks.map(_.getRowCount).sum, currentChunkedBlocks)
         if (numRows == 0) {
           EmptyGpuColumnarBatchIterator
         } else {
@@ -3610,6 +3616,16 @@ abstract class AbstractParquetPartitionReader(
       chunkedBlocks: Seq[BlockMetaData],
       dataBuffer: SpillableHostBuffer
   ): Iterator[ColumnarBatch]
+
+  /**
+   * Computes the number of rows alive in the output table. This is normally the same as
+   * totalNumRows, but formats with row-level deletes can override it for zero-column reads.
+   */
+  protected def computeNumRowsAlive(
+      totalNumRows: Long,
+      chunkedBlocks: Seq[BlockMetaData]): Int = {
+    Math.toIntExact(totalNumRows)
+  }
 }
 
 class ParquetPartitionReader(

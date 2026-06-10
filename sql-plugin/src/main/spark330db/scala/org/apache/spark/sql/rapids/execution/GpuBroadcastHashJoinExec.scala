@@ -134,6 +134,8 @@ case class GpuBroadcastHashJoinExec(
       // support in #9702); mirror it here.
       case GpuShuffleCoalesceExec(sqse: ShuffleQueryStageExec, _) => from(sqse)
       case GpuCustomShuffleReaderExec(sqse: ShuffleQueryStageExec, _) => from(sqse)
+      case other => throw new IllegalStateException(
+        s"cannot locate GPU shuffle exchange in build plan: $other")
     }
   }
 
