@@ -59,7 +59,6 @@ object TrampolineUtil {
     DataTypeUtilsShim.toAttributes(structType)
 
   private[this] lazy val dataTypeJsonValue = classOf[DataType].getMethod("jsonValue")
-
   def jsonValue(dataType: DataType): AnyRef = dataTypeJsonValue.invoke(dataType)
 
   private[this] lazy val trampolineConnectShims = Class
@@ -75,8 +74,6 @@ object TrampolineUtil {
 
   def createSchemaParser(): Schema.Parser =
     createSchemaParserMethod.invoke(trampolineConnectShims).asInstanceOf[Schema.Parser]
-
-  def createSchemaParser(): Schema.Parser = TrampolineConnectShims.createSchemaParser()
 
   /** Get a human-readable string, e.g.: "4.0 MiB", for a value in bytes. */
   def bytesToString(size: Long): String = Utils.bytesToString(size)
