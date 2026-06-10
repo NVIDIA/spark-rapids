@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,14 +25,14 @@ import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuGroupedPythonRunnerFactory(
+class GpuGroupedPythonRunnerFactory(
   conf: org.apache.spark.sql.internal.SQLConf,
   chainedFunc: Seq[(ChainedPythonFunctions, Long)],
   argOffsets: Array[Array[Int]],
   dedupAttrs: StructType,
   pythonOutputSchema: StructType,
   evalType: Int,
-  argNames: Option[Array[Array[Option[String]]]] = None) {
+  argNames: Option[Array[Array[Option[String]]]]) extends Serializable {
   // Configs from DB runtime
   val maxBytes = conf.pandasZeroConfConversionGroupbyApplyMaxBytesPerSlice
   val zeroConfEnabled = conf.pandasZeroConfConversionGroupbyApplyEnabled
