@@ -34,7 +34,6 @@ import org.apache.parquet.hadoop.ParquetOutputFormat.JobSummaryLevel
 import org.apache.parquet.hadoop.codec.CodecConfig
 import org.apache.parquet.hadoop.util.ContextUtil
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.datasources.DataSourceUtils
 import org.apache.spark.sql.execution.datasources.parquet.{ParquetOptions, ParquetWriteSupport}
@@ -192,7 +191,21 @@ object GpuParquetFileFormat {
   }
 }
 
-class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
+class GpuParquetFileFormat extends ColumnarFileFormat {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
   /**
    * Prepares a write job and returns an [[ColumnarOutputWriterFactory]].  Client side job
    * preparation can be put here.  For example, user defined output committer can be configured
