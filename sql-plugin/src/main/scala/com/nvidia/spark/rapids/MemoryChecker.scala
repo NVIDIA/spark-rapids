@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import scala.util.{Failure, Success, Try}
 import com.nvidia.spark.rapids.Arm.withResource
 
 import org.apache.spark.SparkConf
-import org.apache.spark.internal.Logging
 
 trait MemoryChecker {
   def getAvailableMemoryBytes(rapidsConf: RapidsConf): Option[Long]
@@ -38,7 +37,19 @@ trait MemoryChecker {
  * on which it checks corresponding files, env variables, etc. for memory usage
  * and limits.
  */
-object MemoryCheckerImpl extends MemoryChecker with Logging {
+object MemoryCheckerImpl extends MemoryChecker {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
   def main(args: Array[String]): Unit = {
     val conf = new RapidsConf(new SparkConf())
     println(s"Available memory: ${getAvailableMemoryBytes(conf)} bytes")

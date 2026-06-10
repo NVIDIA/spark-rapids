@@ -24,9 +24,9 @@ import com.nvidia.spark.rapids.shims.parquet.GpuParquetUtilsShims
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData, ColumnPath}
 import org.apache.parquet.schema.MessageType
 
-import org.apache.spark.internal.Logging
 
-object GpuParquetUtils extends Logging {
+object GpuParquetUtils {
+
   /**
    * Trim block metadata to contain only the column chunks that occur in the specified schema.
    * The column chunks that are returned are preserved verbatim

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ case class OutputLoreId(loreId: LoreId, partitionIds: Set[Int]) {
     partitionIds.contains(partitionId)
 }
 
-case class LoreOutputInfo(outputLoreId: OutputLoreId, pathStr: String) {
+class LoreOutputInfo(val outputLoreId: OutputLoreId, val pathStr: String) extends Serializable {
   def path: Path = new Path(pathStr)
 }
 
