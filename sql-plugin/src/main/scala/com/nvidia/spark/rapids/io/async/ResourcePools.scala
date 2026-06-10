@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import java.util.concurrent.locks.ReentrantLock
 
 import scala.collection.mutable
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.execution.TrampolineUtil.bytesToString
 
 // Being thrown when a task requests resources that are not valid or exceed the limits
@@ -32,13 +31,13 @@ class InvalidResourceRequest(msg: String) extends RuntimeException(
 // Represents the status of acquiring resources for a task
 sealed trait AcquireStatus
 
-case class AcquireSuccessful(elapsedTime: Long) extends AcquireStatus
+class AcquireSuccessful(val elapsedTime: Long) extends AcquireStatus with Serializable
 
 // AcquireFailed indicates that the task could not be scheduled due to resource constraints
 case object AcquireFailed extends AcquireStatus
 
 // AcquireExcepted indicates that an exception occurred while trying to acquire resources
-case class AcquireExcepted(exception: Throwable) extends AcquireStatus
+class AcquireExcepted(val exception: Throwable) extends AcquireStatus with Serializable
 
 /**
  * ResourceManager interface to be implemented for AsyncRunners requiring different kinds of
@@ -68,7 +67,13 @@ trait ResourcePool {
  * The implementation uses condition variables to efficiently block and wake up waiting
  * tasks when resources become available through task completion and resource release.
  */
-class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Logging {
+class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[HostMemoryPool])
+
+  private def logWarning(msg: => String): Unit = if (log.isWarnEnabled) log.warn(msg)
+
+  private def logDebug(msg: => String): Unit = if (log.isDebugEnabled) log.debug(msg)
 
   private val lock = new ReentrantLock()
 
@@ -94,7 +99,7 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
     // step 2: try to acquire the resource with blocking and timeout
     // 2.1 If no resource needed, acquire immediately
     if (memoryRequire == 0L) {
-      AcquireSuccessful(elapsedTime = 0L)
+      new AcquireSuccessful(elapsedTime = 0L)
     }
     // 2.2 The main path for acquiring resource with blocking and timeout
     else {
@@ -160,10 +165,10 @@ class HostMemoryPool(val maxHostMemoryBytes: Long) extends ResourcePool with Log
               s"Over-committed HostMemoryPool: exceeded_amount=${bytesToString(-remaining)}, " +
                   s"AsyncRunners=$numRunnerInPool, SparkTasks=${tasksInPool.size}")
           }
-          AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
+          new AcquireSuccessful(elapsedTime = timeoutNs - waitTimeNs)
         }
       } catch {
-        case ex: Throwable => AcquireExcepted(ex)
+        case ex: Throwable => new AcquireExcepted(ex)
       } finally {
         lock.unlock()
       }

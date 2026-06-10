@@ -27,7 +27,6 @@ import org.roaringbitmap.RoaringBitmap
 
 import org.apache.spark.MapOutputTracker
 import org.apache.spark.MapOutputTracker.SHUFFLE_PUSH_MAP_ID
-import org.apache.spark.internal.Logging
 import org.apache.spark.network.shuffle.{BlockStoreClient, MergedBlockMeta, MergedBlocksMetaListener}
 import org.apache.spark.storage.BlockManagerId.SHUFFLE_MERGER_IDENTIFIER
 import org.apache.spark.storage.RapidsShuffleBlockFetcherIterator._
@@ -52,7 +51,39 @@ private class RapidsPushBasedFetchHelper(
    private val iterator: RapidsShuffleBlockFetcherIterator,
    private val shuffleClient: BlockStoreClient,
    private val blockManager: BlockManager,
-   private val mapOutputTracker: MapOutputTracker) extends Logging {
+   private val mapOutputTracker: MapOutputTracker) {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[RapidsPushBasedFetchHelper])
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg, throwable)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logError(msg: => String, throwable: Throwable): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg, throwable)
+    }
+  }
 
   private[this] val startTimeNs = System.nanoTime()
 

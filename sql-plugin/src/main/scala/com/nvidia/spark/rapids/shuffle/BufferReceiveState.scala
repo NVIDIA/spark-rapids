@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,12 +26,11 @@ import com.nvidia.spark.rapids.NvtxRegistry
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.jni.RmmSpark
 
-import org.apache.spark.internal.Logging
 
-case class ConsumedBatchFromBounceBuffer(
-    contigBuffer: DeviceMemoryBuffer,
-    meta: TableMeta,
-    handler: RapidsShuffleFetchHandler)
+class ConsumedBatchFromBounceBuffer(
+    val contigBuffer: DeviceMemoryBuffer,
+    val meta: TableMeta,
+    val handler: RapidsShuffleFetchHandler) extends Serializable
 
 /**
  * A helper case class to maintain the state associated with a transfer request to a peer.
@@ -59,7 +58,21 @@ class BufferReceiveState(
     requests: Seq[PendingTransferRequest],
     transportOnClose: () => Unit,
     stream: Cuda.Stream = Cuda.DEFAULT_STREAM)
-    extends AutoCloseable with Logging {
+    extends AutoCloseable {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[BufferReceiveState])
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
 
   val transportBuffer = new CudfTransportBuffer(bounceBuffer.buffer)
   // we use this to keep a list (should be depth 1) of "requests for receives"
@@ -223,7 +236,7 @@ class BufferReceiveState(
           }
 
           if (contigBuffer != null) {
-            Some(ConsumedBatchFromBounceBuffer(
+            Some(new ConsumedBatchFromBounceBuffer(
               contigBuffer, pendingTransferRequest.tableMeta, pendingTransferRequest.handler))
           } else {
             None

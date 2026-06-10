@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ sealed trait AsyncRunResource
 /**
  * HostResource represents host memory resource requirement for CPU-bound tasks.
  */
-case class HostResource(hostMemoryBytes: Long) extends AsyncRunResource
+class HostResource(val hostMemoryBytes: Long) extends AsyncRunResource with Serializable
 
 /**
  * DeviceResource is a marker object for GPU resources, no additional fields needed.
@@ -44,7 +44,7 @@ object DeviceResource extends AsyncRunResource
 
 object AsyncRunResource {
   def newCpuResource(hostMemoryBytes: Long): AsyncRunResource = {
-    HostResource(hostMemoryBytes)
+    new HostResource(hostMemoryBytes)
   }
 
   def newGpuResource(): AsyncRunResource = DeviceResource
@@ -76,8 +76,6 @@ trait AsyncResult[T] extends AutoCloseable {
   }
 }
 
-case class AsyncMetrics(scheduleTimeMs: Long, executionTimeMs: Long)
-
 class AsyncMetricsBuilder {
   private var scheduleTimeMs: Long = 0L
   private var executionTimeMs: Long = 0L
@@ -93,7 +91,7 @@ class AsyncMetricsBuilder {
   }
 
   def build(): AsyncMetrics = {
-    AsyncMetrics(scheduleTimeMs, executionTimeMs)
+    new AsyncMetrics(scheduleTimeMs, executionTimeMs)
   }
 }
 
@@ -136,19 +134,19 @@ class DecayReleaseResult[T](override val data: T,
  */
 sealed trait AsyncRunnerState
 
-case class Init(firstTime: Boolean) extends AsyncRunnerState
+class Init(val firstTime: Boolean) extends AsyncRunnerState with Serializable
 
 case object Pending extends AsyncRunnerState
 
-case class ScheduleFailed(exception: Throwable) extends AsyncRunnerState
+class ScheduleFailed(val exception: Throwable) extends AsyncRunnerState with Serializable
 
 case object Running extends AsyncRunnerState
 
 case object Completed extends AsyncRunnerState
 
-case class ExecFailed(exception: Throwable) extends AsyncRunnerState
+class ExecFailed(val exception: Throwable) extends AsyncRunnerState with Serializable
 
-case class Closed(exception: Option[Throwable]) extends AsyncRunnerState
+class Closed(val exception: Option[Throwable]) extends AsyncRunnerState with Serializable
 
 case object Cancelled extends AsyncRunnerState
 
@@ -271,7 +269,7 @@ trait AsyncRunner[T] extends Callable[AsyncResult[T]] {
     }
   }
 
-  @volatile private var state: AsyncRunnerState = Init(firstTime = true)
+  @volatile private var state: AsyncRunnerState = new Init(firstTime = true)
 
   def isHoldingStateLock: Boolean = stateLock.isHeldByCurrentThread
 
