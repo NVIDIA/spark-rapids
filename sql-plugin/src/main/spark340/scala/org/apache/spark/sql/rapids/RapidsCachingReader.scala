@@ -46,7 +46,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shuffle.{RapidsShuffleIterator, RapidsShuffleTransport}
 
 import org.apache.spark.{InterruptibleIterator, TaskContext}
-import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.{ShuffleReader, ShuffleReadMetricsReporter}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -79,7 +78,21 @@ class RapidsCachingReader[K, C](
     transport: Option[RapidsShuffleTransport],
     catalog: ShuffleBufferCatalog,
     sparkTypes: Array[DataType])
-  extends ShuffleReader[K, C] with Logging {
+  extends ShuffleReader[K, C] {
+  private[this] val log = org.slf4j.LoggerFactory.getLogger(getClass)
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
 
   override def read(): Iterator[Product2[K, C]] = {
     NvtxRegistry.RAPIDS_CACHING_READER_READ.push()

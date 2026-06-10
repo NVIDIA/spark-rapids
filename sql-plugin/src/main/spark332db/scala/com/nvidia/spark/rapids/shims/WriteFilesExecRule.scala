@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,25 +38,25 @@
 {"spark": "402"}
 {"spark": "411"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.shims
+package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.SparkUpgradeException
+import com.nvidia.spark.rapids.{ExecChecks, ExecRule, GpuOverrides, TypeSig}
 
-object SparkUpgradeExceptionShims {
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.datasources.GpuWriteFilesMeta
 
-  def newSparkUpgradeException(
-      version: String,
-      message: String,
-      cause: Throwable): SparkUpgradeException = {
-    new SparkUpgradeException(
-      "INCONSISTENT_BEHAVIOR_CROSS_VERSION",
-      Map(version -> message),
-      cause)
-  }
-
-  // Used in tests to compare the class seen in an exception to
-  // `SparkUpgradeException` which is private in Spark
-  def getSparkUpgradeExceptionClass: Class[_] = {
-    classOf[SparkUpgradeException]
+object WriteFilesExecRule {
+  val execs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = {
+    Seq(
+      GpuOverrides.execFromShim(
+        WriteFilesExecShims.exec,
+        // WriteFilesExec always has patterns:
+        //   InsertIntoHadoopFsRelationCommand(WriteFilesExec) or
+        //   InsertIntoHiveTable(WriteFilesExec)
+        // The parent node of `WriteFilesExec` will check the types, here just let type check pass.
+        ExecChecks(TypeSig.all, TypeSig.all),
+        (write, conf, p, r) => new GpuWriteFilesMeta(write, conf, p, r)
+      )
+    ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
   }
 }

@@ -45,9 +45,15 @@ import scala.util.control.NonFatal
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.internal.Logging
+object HiveFileUtil {
+  private val log = org.slf4j.LoggerFactory.getLogger(HiveFileUtil.getClass)
 
-object HiveFileUtil extends Logging {
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
 
   // prior to Spark 3.4.0, this method was accessible via the SaveAsHiveFile trait, but
   // was removed in https://github.com/apache/spark/pull/39277

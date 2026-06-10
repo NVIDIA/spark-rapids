@@ -36,6 +36,22 @@ import org.apache.spark.sql.rapids.execution.python.{GpuArrowWriter, GpuPythonRu
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+// Keep executable line numbers aligned with pre-Spark-4 shims for binary-dedupe.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /**
  * Python UDF Runner for cogrouped UDFs, designed for `GpuFlatMapCoGroupsInPandasExec` only.
  *

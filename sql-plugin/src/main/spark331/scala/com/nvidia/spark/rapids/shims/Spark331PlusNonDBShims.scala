@@ -40,31 +40,12 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.{ExprChecks, ExprRule, GpuCast, GpuExpression, GpuOverrides, TypeSig, UnaryExprMeta}
+import com.nvidia.spark.rapids.ExprRule
 
-import org.apache.spark.sql.catalyst.expressions.{CheckOverflowInTableInsert, Expression}
-import org.apache.spark.sql.rapids.GpuCheckOverflowInTableInsert
+import org.apache.spark.sql.catalyst.expressions.Expression
 
 trait Spark331PlusNonDBShims extends Spark330PlusNonDBShims {
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val map: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = Seq(
-      // Add expression CheckOverflowInTableInsert starting Spark-3.3.1+
-      // Accepts all types as input as the child Cast does the type checking and the calculations.
-      GpuOverrides.expr[CheckOverflowInTableInsert](
-        "Casting a numeric value as another numeric type in store assignment",
-        ExprChecks.unaryProjectInputMatchesOutput(
-          TypeSig.all,
-          TypeSig.all),
-        (t, conf, p, r) => new UnaryExprMeta[CheckOverflowInTableInsert](t, conf, p, r) {
-          override def convertToGpu(child: Expression): GpuExpression = {
-            child match {
-              case c: GpuCast => GpuCheckOverflowInTableInsert(c, t.columnName)
-              case _ =>
-                throw new IllegalStateException("Expression child is not of Type GpuCast")
-            }
-          }
-        })
-    ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
-    super.getExprs ++ map
+    super.getExprs ++ CheckOverflowInTableInsertShims.exprs
   }
 }
