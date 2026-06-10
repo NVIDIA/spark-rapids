@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ trait DFUDF {
   def apply(input: Array[Column]): Column
 }
 
-case class DFUDF0(f: Function0[Column])
+class DFUDF0(val f: Function0[Column])
   extends UDF0[Any] with DFUDF {
   override def call(): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -38,7 +38,7 @@ case class DFUDF0(f: Function0[Column])
   }
 }
 
-case class DFUDF1(f: Function1[Column, Column])
+class DFUDF1(val f: Function1[Column, Column])
   extends UDF1[Any, Any] with DFUDF {
   override def call(t1: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -50,7 +50,7 @@ case class DFUDF1(f: Function1[Column, Column])
   }
 }
 
-case class DFUDF2(f: Function2[Column, Column, Column])
+class DFUDF2(val f: Function2[Column, Column, Column])
   extends UDF2[Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -62,7 +62,7 @@ case class DFUDF2(f: Function2[Column, Column, Column])
   }
 }
 
-case class DFUDF3(f: Function3[Column, Column, Column, Column])
+class DFUDF3(val f: Function3[Column, Column, Column, Column])
   extends UDF3[Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -74,7 +74,7 @@ case class DFUDF3(f: Function3[Column, Column, Column, Column])
   }
 }
 
-case class DFUDF4(f: Function4[Column, Column, Column, Column, Column])
+class DFUDF4(val f: Function4[Column, Column, Column, Column, Column])
   extends UDF4[Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -86,7 +86,7 @@ case class DFUDF4(f: Function4[Column, Column, Column, Column, Column])
   }
 }
 
-case class DFUDF5(f: Function5[Column, Column, Column, Column, Column, Column])
+class DFUDF5(val f: Function5[Column, Column, Column, Column, Column, Column])
   extends UDF5[Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -98,7 +98,7 @@ case class DFUDF5(f: Function5[Column, Column, Column, Column, Column, Column])
   }
 }
 
-case class DFUDF6(f: Function6[Column, Column, Column, Column, Column, Column, Column])
+class DFUDF6(val f: Function6[Column, Column, Column, Column, Column, Column, Column])
   extends UDF6[Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -110,7 +110,7 @@ case class DFUDF6(f: Function6[Column, Column, Column, Column, Column, Column, C
   }
 }
 
-case class DFUDF7(f: Function7[Column, Column, Column, Column, Column, Column, Column, Column])
+class DFUDF7(val f: Function7[Column, Column, Column, Column, Column, Column, Column, Column])
   extends UDF7[Any, Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any, t7: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -122,7 +122,7 @@ case class DFUDF7(f: Function7[Column, Column, Column, Column, Column, Column, C
   }
 }
 
-case class DFUDF8(f: Function8[Column, Column, Column, Column, Column, Column, Column, Column,
+class DFUDF8(val f: Function8[Column, Column, Column, Column, Column, Column, Column, Column,
   Column])
   extends UDF8[Any, Any, Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any, t7: Any, t8: Any): Any = {
@@ -135,7 +135,7 @@ case class DFUDF8(f: Function8[Column, Column, Column, Column, Column, Column, C
   }
 }
 
-case class DFUDF9(f: Function9[Column, Column, Column, Column, Column, Column, Column, Column,
+class DFUDF9(val f: Function9[Column, Column, Column, Column, Column, Column, Column, Column,
   Column, Column])
   extends UDF9[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any, t7: Any, t8: Any,
@@ -149,7 +149,7 @@ case class DFUDF9(f: Function9[Column, Column, Column, Column, Column, Column, C
   }
 }
 
-case class DFUDF10(f: Function10[Column, Column, Column, Column, Column, Column, Column, Column,
+class DFUDF10(val f: Function10[Column, Column, Column, Column, Column, Column, Column, Column,
   Column, Column, Column])
   extends UDF10[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any, t7: Any, t8: Any,
@@ -164,7 +164,7 @@ case class DFUDF10(f: Function10[Column, Column, Column, Column, Column, Column,
   }
 }
 
-case class JDFUDF0(f: UDF0[Column])
+class JDFUDF0(val f: UDF0[Column])
   extends UDF0[Any] with DFUDF {
   override def call(): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -176,7 +176,7 @@ case class JDFUDF0(f: UDF0[Column])
   }
 }
 
-case class JDFUDF1(f: UDF1[Column, Column])
+class JDFUDF1(val f: UDF1[Column, Column])
   extends UDF1[Any, Any] with DFUDF {
   override def call(t1: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -188,7 +188,7 @@ case class JDFUDF1(f: UDF1[Column, Column])
   }
 }
 
-case class JDFUDF2(f: UDF2[Column, Column, Column])
+class JDFUDF2(val f: UDF2[Column, Column, Column])
   extends UDF2[Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -200,7 +200,7 @@ case class JDFUDF2(f: UDF2[Column, Column, Column])
   }
 }
 
-case class JDFUDF3(f: UDF3[Column, Column, Column, Column])
+class JDFUDF3(val f: UDF3[Column, Column, Column, Column])
   extends UDF3[Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -212,7 +212,7 @@ case class JDFUDF3(f: UDF3[Column, Column, Column, Column])
   }
 }
 
-case class JDFUDF4(f: UDF4[Column, Column, Column, Column, Column])
+class JDFUDF4(val f: UDF4[Column, Column, Column, Column, Column])
   extends UDF4[Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -224,7 +224,7 @@ case class JDFUDF4(f: UDF4[Column, Column, Column, Column, Column])
   }
 }
 
-case class JDFUDF5(f: UDF5[Column, Column, Column, Column, Column, Column])
+class JDFUDF5(val f: UDF5[Column, Column, Column, Column, Column, Column])
   extends UDF5[Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -236,7 +236,7 @@ case class JDFUDF5(f: UDF5[Column, Column, Column, Column, Column, Column])
   }
 }
 
-case class JDFUDF6(f: UDF6[Column, Column, Column, Column, Column, Column, Column])
+class JDFUDF6(val f: UDF6[Column, Column, Column, Column, Column, Column, Column])
   extends UDF6[Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -248,7 +248,7 @@ case class JDFUDF6(f: UDF6[Column, Column, Column, Column, Column, Column, Colum
   }
 }
 
-case class JDFUDF7(f: UDF7[Column, Column, Column, Column, Column, Column, Column, Column])
+class JDFUDF7(val f: UDF7[Column, Column, Column, Column, Column, Column, Column, Column])
   extends UDF7[Any, Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any, t7: Any): Any = {
     throw new IllegalStateException("TODO better error message. This should have been replaced")
@@ -260,7 +260,7 @@ case class JDFUDF7(f: UDF7[Column, Column, Column, Column, Column, Column, Colum
   }
 }
 
-case class JDFUDF8(f: UDF8[Column, Column, Column, Column, Column, Column, Column, Column,
+class JDFUDF8(val f: UDF8[Column, Column, Column, Column, Column, Column, Column, Column,
   Column])
   extends UDF8[Any, Any, Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any, t7: Any, t8: Any): Any = {
@@ -273,7 +273,7 @@ case class JDFUDF8(f: UDF8[Column, Column, Column, Column, Column, Column, Colum
   }
 }
 
-case class JDFUDF9(f: UDF9[Column, Column, Column, Column, Column, Column, Column, Column,
+class JDFUDF9(val f: UDF9[Column, Column, Column, Column, Column, Column, Column, Column,
   Column, Column])
   extends UDF9[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any, t7: Any, t8: Any,
@@ -287,7 +287,7 @@ case class JDFUDF9(f: UDF9[Column, Column, Column, Column, Column, Column, Colum
   }
 }
 
-case class JDFUDF10(f: UDF10[Column, Column, Column, Column, Column, Column, Column, Column,
+class JDFUDF10(val f: UDF10[Column, Column, Column, Column, Column, Column, Column, Column,
   Column, Column, Column])
   extends UDF10[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any] with DFUDF {
   override def call(t1: Any, t2: Any, t3: Any, t4: Any, t5: Any, t6: Any, t7: Any, t8: Any,

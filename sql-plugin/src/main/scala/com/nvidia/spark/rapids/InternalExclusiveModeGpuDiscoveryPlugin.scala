@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import ai.rapids.cudf.Cuda
 
 import org.apache.spark.SparkConf
 import org.apache.spark.api.resource.ResourceDiscoveryPlugin
-import org.apache.spark.internal.Logging
 import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
 
 /**
@@ -32,7 +31,23 @@ import org.apache.spark.resource.{ResourceInformation, ResourceRequest}
  * It should be loaded by reflection using ShimLoader.newInstanceOf, see ./docs/dev/shims.md
  */
 protected class InternalExclusiveModeGpuDiscoveryPlugin
-  extends ResourceDiscoveryPlugin with Logging {
+  extends ResourceDiscoveryPlugin {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(
+    classOf[InternalExclusiveModeGpuDiscoveryPlugin])
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
   override def discoverResource(
     request: ResourceRequest,
     sparkconf: SparkConf

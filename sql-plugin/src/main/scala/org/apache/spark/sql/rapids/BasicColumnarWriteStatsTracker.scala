@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 
 import org.apache.spark.{SparkContext, TaskContext}
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.datasources.WriteTaskStats
@@ -37,26 +36,26 @@ import org.apache.spark.util.SerializableConfiguration
 
 /**
  * Simple metrics collected during an instance of [[GpuFileFormatDataWriter]].
- * These were first introduced in https://github.com/apache/spark/pull/18159 (SPARK-20703).
- */
-case class BasicColumnarWriteTaskStats(
-    partitions: Seq[InternalRow],
-    numFiles: Int,
-    numWriters: Int,
-    numBytes: Long,
-    numRows: Long)
-    extends WriteTaskStats
-
-
-/**
- * Simple metrics collected during an instance of [[GpuFileFormatDataWriter]].
  * This is the columnar version of
  * `org.apache.spark.sql.execution.datasources.BasicWriteTaskStatsTracker`.
  */
 class BasicColumnarWriteTaskStatsTracker(
     hadoopConf: Configuration,
     taskCommitTimeMetric: Option[GpuMetric])
-    extends ColumnarWriteTaskStatsTracker with Logging {
+    extends ColumnarWriteTaskStatsTracker {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[BasicColumnarWriteTaskStatsTracker])
+
+  private def logInfo(msg: => String): Unit = if (log.isInfoEnabled) log.info(msg)
+
+  private def logWarning(msg: => String): Unit = if (log.isWarnEnabled) log.warn(msg)
+
+  private def logDebug(msg: => String): Unit = if (log.isDebugEnabled) log.debug(msg)
+
+  private def logDebug(msg: => String, throwable: Throwable): Unit = {
+    if (log.isDebugEnabled) log.debug(msg, throwable)
+  }
+
   private[this] val partitions: mutable.ArrayBuffer[InternalRow] = mutable.ArrayBuffer.empty
   private[this] var numFiles: Int = 0
   private[this] var numSubmittedFiles: Int = 0
@@ -186,7 +185,7 @@ class BasicColumnarWriteTaskStatsTracker(
         "or files being not immediately visible in the filesystem.")
     }
     taskCommitTimeMetric.foreach(_ += taskCommitTime)
-    BasicColumnarWriteTaskStats(partitions.toSeq, numFiles, maxNumWriters, numBytes, numRows)
+    new BasicColumnarWriteTaskStats(partitions.toSeq, numFiles, maxNumWriters, numBytes, numRows)
   }
 }
 

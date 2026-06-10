@@ -18,56 +18,17 @@ package org.apache.spark.sql.rapids
 
 import java.{lang => jl}
 import java.io.ObjectInputStream
-import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{NvtxId, NvtxRegistry, PerfIO}
+import com.nvidia.spark.rapids.{NvtxId, NvtxRegistry}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.{SparkContext, TaskContext}
-import org.apache.spark.internal.Logging
 import org.apache.spark.util.{AccumulatorV2, LongAccumulator, Utils}
-
-case class NanoTime(value: java.lang.Long) {
-  override def toString: String = {
-    val hours = TimeUnit.NANOSECONDS.toHours(value)
-    var remaining = value - TimeUnit.HOURS.toNanos(hours)
-    val minutes = TimeUnit.NANOSECONDS.toMinutes(remaining)
-    remaining = remaining - TimeUnit.MINUTES.toNanos(minutes)
-    val seconds = remaining.toDouble / TimeUnit.SECONDS.toNanos(1)
-    val locale = Locale.US
-    "%02d:%02d:%06.3f".formatLocal(locale, hours, minutes, seconds)
-  }
-}
-
-// Format example:
-//  10.74GB (11534336000 bytes)
-//  1.23MB (1289750 bytes)
-//  1020.10KB (1044585 bytes)
-case class SizeInBytes(value: jl.Long) {
-  override def toString: String = {
-    var unitVal = value
-    var remainVal = 0L
-    var unitIndex = 0
-    while (unitIndex < SizeInBytes.SizeUnitNames.length && unitVal >= 1024) {
-      val nextUnitVal = unitVal >> 10
-      remainVal = unitVal - (nextUnitVal << 10)
-      unitVal = nextUnitVal
-      unitIndex += 1
-    }
-    val finalVal = "%.2f".format(unitVal + (remainVal.toDouble / 1024))
-    s"$finalVal${SizeInBytes.SizeUnitNames(unitIndex)} ($value bytes)"
-  }
-}
-
-private object SizeInBytes {
-  private val SizeUnitNames: Array[String] = Array("B", "KB", "MB", "GB", "TB", "PB", "EB")
-}
 
 class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
   private var _sum = 0L
@@ -100,7 +61,7 @@ class NanoSecondAccumulator extends AccumulatorV2[jl.Long, NanoTime] {
         s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
   }
 
-  override def value: NanoTime = NanoTime(_sum)
+  override def value: NanoTime = new NanoTime(_sum)
 }
 
 /**
@@ -133,7 +94,7 @@ class SizeInBytesAccumulator extends AccumulatorV2[jl.Long, SizeInBytes] {
         s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
   }
 
-  override def value: SizeInBytes = SizeInBytes(_sum)
+  override def value: SizeInBytes = new SizeInBytes(_sum)
 
   private[spark] def setValue(newValue: Long): Unit = _sum = newValue
 }
@@ -164,7 +125,7 @@ class HighWatermarkAccumulator extends AccumulatorV2[jl.Long, SizeInBytes] {
         s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
   }
 
-  override def value: SizeInBytes = SizeInBytes(_value)
+  override def value: SizeInBytes = new SizeInBytes(_value)
 }
 
 class MaxLongAccumulator extends AccumulatorV2[jl.Long, jl.Long] {
@@ -242,7 +203,7 @@ class AvgLongAccumulator extends AccumulatorV2[jl.Long, jl.Double] {
   } else 0;
 }
 
-class GpuTaskMetrics extends Serializable with Logging {
+class GpuTaskMetrics extends Serializable {
   private val semaphoreHoldingTime = new NanoSecondAccumulator
   private val semWaitTimeNs = new NanoSecondAccumulator
   private val retryCount = new LongAccumulator
@@ -467,7 +428,8 @@ class GpuTaskMetrics extends Serializable with Logging {
       // allocations lives in the JNI. Therefore, we can stick the convention here of calling the
       // add method instead of adding a dedicated max method to the accumulator.
       if (maxDeviceMemoryBytes.value.value > 0) {
-        logError(s"updateMaxMemory called twice for task $taskAttemptId with maxMem $maxMem")
+        GpuTaskMetrics.log.error(s"updateMaxMemory called twice for task $taskAttemptId " +
+          s"with maxMem $maxMem")
       }
       maxDeviceMemoryBytes.add(maxMem)
     }
@@ -515,13 +477,13 @@ class GpuTaskMetrics extends Serializable with Logging {
    * to prevent double-counting — each new stage creates fresh accumulators with new IDs.
    */
   def recordPerfioS3BackendOnce(): Unit = {
-    val acc = PerfIO.s3BackendName match {
+    val acc = GpuTaskMetrics.perfIOS3BackendName match {
       case "netty" => perfioS3NettyExecutors
       case "crt"   => perfioS3CrtExecutors
       case _       => perfioS3S3aExecutors
     }
     try {
-      if (PerfIO.reportedBackendAccIds.add(acc.id)) {
+      if (GpuTaskMetrics.perfIOReportedBackendAccIds.add(acc.id)) {
         acc.add(1L)
       }
     } catch {
@@ -537,7 +499,26 @@ class GpuTaskMetrics extends Serializable with Logging {
 /**
  * Provides task level metrics
  */
-object GpuTaskMetrics extends Logging {
+object GpuTaskMetrics {
+  @transient private[this] lazy val perfIOModule = {
+    Class.forName("com.nvidia.spark.rapids.PerfIO" + "$")
+      .getField("MODULE" + "$")
+      .get(null)
+  }
+
+  @transient private[this] lazy val perfIOS3BackendNameMethod =
+    perfIOModule.getClass.getMethod("s3BackendName")
+  @transient private[this] lazy val perfIOReportedBackendAccIdsMethod =
+    perfIOModule.getClass.getMethod("reportedBackendAccIds")
+
+  private def perfIOS3BackendName: String =
+    perfIOS3BackendNameMethod.invoke(perfIOModule).asInstanceOf[String]
+
+  private def perfIOReportedBackendAccIds: java.util.Set[java.lang.Long] =
+    perfIOReportedBackendAccIdsMethod.invoke(perfIOModule)
+      .asInstanceOf[java.util.Set[java.lang.Long]]
+
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
   private val taskLevelMetrics = new ConcurrentHashMap[Long, GpuTaskMetrics]()
 
   private val hostBytesAllocated = new AtomicLong(0)

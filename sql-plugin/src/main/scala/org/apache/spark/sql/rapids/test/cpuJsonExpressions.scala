@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,8 @@ import org.apache.spark.sql.catalyst.expressions.{GetJsonObject, Literal}
 import org.apache.spark.sql.types.StringType
 import org.apache.spark.unsafe.types.UTF8String
 
-case class CsvWriterWrapper(filePath: String, conf: Configuration) extends AutoCloseable {
+class CsvWriterWrapper(val filePath: String, val conf: Configuration) extends AutoCloseable
+    with Serializable {
 
   // This is implemented as a method to make it easier to subclass
   // ColumnarOutputWriter in the tests, and override this behavior.
@@ -262,7 +263,7 @@ object CpuGetJsonObject {
         val date = DateTimeFormatter.ofPattern("yyyyMMdd").format(LocalDate.now())
         val uuid = UUID.randomUUID()
         val savePath = s"$savePathForVerify/${date}_${tcId}_${uuid}.csv"
-        withResource(CsvWriterWrapper(savePath, conf)) { csvWriter =>
+        withResource(new CsvWriterWrapper(savePath, conf)) { csvWriter =>
           val pathStr = if (path == null) "null" else path.toString
           var currRow = 0
           var diffRowsNum = 0
