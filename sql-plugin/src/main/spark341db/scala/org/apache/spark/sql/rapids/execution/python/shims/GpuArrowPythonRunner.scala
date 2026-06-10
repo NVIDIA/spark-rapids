@@ -37,6 +37,23 @@ import org.apache.spark.sql.rapids.shims.ArrowUtilsShim
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
+// Keep executable line numbers aligned with pre-Spark-4 shims for binary-dedupe.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /**
  * Similar to `PythonUDFRunner`, but exchange data with Python worker via Arrow stream.
  */

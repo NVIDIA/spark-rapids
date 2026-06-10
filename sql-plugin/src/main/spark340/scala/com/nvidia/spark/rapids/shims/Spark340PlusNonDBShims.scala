@@ -47,8 +47,7 @@ import org.apache.spark.sql.catalyst.expressions.{Empty2Null, Expression, KnownN
 import org.apache.spark.sql.catalyst.expressions.objects.{ExternalMapToCatalyst, InvokeLike}
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution.{CollectLimitExec, GlobalLimitExec, SparkPlan, TakeOrderedAndProjectExec}
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
-import org.apache.spark.sql.execution.datasources.{GpuWriteFilesMeta, WriteFilesExec}
+import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 import org.apache.spark.sql.execution.exchange.ENSURE_REQUIREMENTS
 import org.apache.spark.sql.rapids.GpuElementAtMeta
 import org.apache.spark.sql.rapids.GpuV1WriteUtils.GpuEmpty2Null
@@ -129,19 +128,11 @@ trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
       }
     ).disabledByDefault("Collect Limit replacement can be slower on the GPU, if huge number " +
         "of rows in a batch it could help by limiting the number of rows transferred from " +
-        "GPU to CPU"),
-    GpuOverrides.exec[WriteFilesExec](
-      "v1 write files",
-      // WriteFilesExec always has patterns:
-      //   InsertIntoHadoopFsRelationCommand(WriteFilesExec) or InsertIntoHiveTable(WriteFilesExec)
-      // The parent node of `WriteFilesExec` will check the types, here just let type check pass
-      ExecChecks(TypeSig.all, TypeSig.all),
-      (write, conf, p, r) => new GpuWriteFilesMeta(write, conf, p, r)
-    )
+        "GPU to CPU")
   ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
 
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    super.getExecs ++ shimExecs
+    super.getExecs ++ shimExecs ++ WriteFilesExecRule.execs
 
   // AnsiCast is removed from Spark3.4.0
   override def ansiCastRule: ExprRule[_ <: Expression] = null
@@ -181,8 +172,8 @@ trait Spark340PlusNonDBShims extends Spark331PlusNonDBShims {
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
       RunnableCommandRule[_ <: RunnableCommand]] = {
     Seq(
-      GpuOverrides.runnableCmd[CreateDataSourceTableAsSelectCommand](
-        "Write to a data source",
+      GpuOverrides.runnableCmdFromShim(
+        CreateDataSourceTableAsSelectRules.runnableCmd,
         (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }

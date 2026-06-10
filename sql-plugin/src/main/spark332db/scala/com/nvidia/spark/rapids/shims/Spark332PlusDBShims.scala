@@ -26,8 +26,7 @@ import com.nvidia.spark.rapids._
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.execution.SparkPlan
-import org.apache.spark.sql.execution.command.{CreateDataSourceTableAsSelectCommand, DataWritingCommand, RunnableCommand}
-import org.apache.spark.sql.execution.datasources._
+import org.apache.spark.sql.execution.command.{DataWritingCommand, RunnableCommand}
 
 trait Spark332PlusDBShims extends Spark330PlusDBShims {
   // AnsiCast is removed from Spark3.4.0
@@ -47,19 +46,8 @@ trait Spark332PlusDBShims extends Spark330PlusDBShims {
     super.getExprs ++ shimExprs
   }
 
-  private val shimExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] = Seq(
-    GpuOverrides.exec[WriteFilesExec](
-      "v1 write files",
-      // WriteFilesExec always has patterns:
-      //   InsertIntoHadoopFsRelationCommand(WriteFilesExec) or InsertIntoHiveTable(WriteFilesExec)
-      // The parent node of `WriteFilesExec` will check the types, here just let type check pass
-      ExecChecks(TypeSig.all, TypeSig.all),
-      (write, conf, p, r) => new GpuWriteFilesMeta(write, conf, p, r)
-    )
-  ).map(r => (r.getClassFor.asSubclass(classOf[SparkPlan]), r)).toMap
-
   override def getExecs: Map[Class[_ <: SparkPlan], ExecRule[_ <: SparkPlan]] =
-    super.getExecs ++ shimExecs
+    super.getExecs ++ WriteFilesExecRule.execs
 
   override def getDataWriteCmds: Map[Class[_ <: DataWritingCommand],
     DataWritingCommandRule[_ <: DataWritingCommand]] = {
@@ -71,8 +59,8 @@ trait Spark332PlusDBShims extends Spark330PlusDBShims {
   override def getRunnableCmds: Map[Class[_ <: RunnableCommand],
     RunnableCommandRule[_ <: RunnableCommand]] = {
     Seq(
-      GpuOverrides.runnableCmd[CreateDataSourceTableAsSelectCommand](
-        "Write to a data source",
+      GpuOverrides.runnableCmdFromShim(
+        CreateDataSourceTableAsSelectRules.runnableCmd,
         (a, conf, p, r) => new CreateDataSourceTableAsSelectCommandMeta(a, conf, p, r))
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
