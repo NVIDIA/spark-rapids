@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -120,7 +120,7 @@ class DumpUtilsSuite extends AnyFunSuite with BeforeAndAfterAll {
         val header = headerOptional.get()
         val buffer = HostMemoryBuffer.allocate(header.getTotalDataLen())
         buffer.copyFromStream(0, din, header.getTotalDataLen())
-        val spillableKudoTable = SpillableKudoTable(header, buffer)
+        val spillableKudoTable = SpillableKudoTable.from(header, buffer)
         withResource(new KudoSerializedTableColumn(spillableKudoTable)) { column =>
           val batch = new ColumnarBatch(Array(column.asInstanceOf[GpuColumnVectorBase]),
             spillableKudoTable.header.getNumRows)
