@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.delta.DeltaProvider
 import com.nvidia.spark.rapids.iceberg.IcebergProvider
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.StaticInvoke
 import org.apache.spark.sql.connector.catalog.SupportsWrite
@@ -40,7 +39,11 @@ import org.apache.spark.util.Utils
  * spark-avro classes because `class not found` exception may throw if spark-avro does not
  * exist at runtime. Details see: https://github.com/NVIDIA/spark-rapids/issues/5648
  */
-trait ExternalSourceBase extends Logging {
+trait ExternalSourceBase {
+  @transient private lazy val log = org.slf4j.LoggerFactory.getLogger(classOf[ExternalSourceBase])
+
+  private def logWarning(msg: => String): Unit = if (log.isWarnEnabled) log.warn(msg)
+
   val avroScanClassName = "org.apache.spark.sql.v2.avro.AvroScan"
   lazy val hasSparkAvroJar = {
     /** spark-avro is an optional package for Spark, so the RAPIDS Accelerator

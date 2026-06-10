@@ -268,7 +268,7 @@ case class GpuJsonScan(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
-    GpuJsonPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+    new GpuJsonPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
       maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap)
   }
@@ -276,7 +276,7 @@ case class GpuJsonScan(
   override def withInputFile(): GpuScan = this
 }
 
-case class GpuJsonPartitionReaderFactory(
+class GpuJsonPartitionReaderFactory(
     sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
     dataSchema: StructType,
@@ -288,7 +288,8 @@ case class GpuJsonPartitionReaderFactory(
     maxReaderBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
     metrics: Map[String, GpuMetric],
-    @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
+    @transient params: Map[String, String])
+  extends ShimFilePartitionReaderFactory(params) with Serializable {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")

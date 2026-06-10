@@ -20,7 +20,6 @@ import java.util.concurrent.{ExecutorService, ScheduledExecutorService, ThreadPo
 
 import org.apache.avro.Schema
 import org.apache.hadoop.conf.Configuration
-import org.json4s.JsonAST
 
 import org.apache.spark.{SparkConf, SparkContext, SparkEnv, SparkMasterRegex, SparkUpgradeException, TaskContext}
 import org.apache.spark.broadcast.Broadcast
@@ -41,7 +40,6 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.rapids.shims.DataTypeUtilsShim
 import org.apache.spark.sql.rapids.shims.SparkUpgradeExceptionShims
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.types.{DataType, StructType}
 import org.apache.spark.storage.BlockManagerId
 import org.apache.spark.util.{ShutdownHookManager, ThreadUtils, Utils}
@@ -60,9 +58,23 @@ object TrampolineUtil {
   def toAttributes(structType: StructType): Seq[Attribute] =
     DataTypeUtilsShim.toAttributes(structType)
 
-  def jsonValue(dataType: DataType): JsonAST.JValue = dataType.jsonValue
+  private[this] lazy val dataTypeJsonValue = classOf[DataType].getMethod("jsonValue")
 
-  def createSchemaParser(): Schema.Parser = TrampolineConnectShims.createSchemaParser()
+  def jsonValue(dataType: DataType): AnyRef = dataTypeJsonValue.invoke(dataType)
+
+  private[this] lazy val trampolineConnectShims = Class
+    .forName("org.apache.spark.sql.rapids.shims.TrampolineConnectShims$")
+    .getField("MODULE$")
+    .get(null)
+
+  private[this] lazy val cleanupAnyExistingSessionMethod =
+    trampolineConnectShims.getClass.getMethod("cleanupAnyExistingSession")
+
+  private[this] lazy val createSchemaParserMethod =
+    trampolineConnectShims.getClass.getMethod("createSchemaParser")
+
+  def createSchemaParser(): Schema.Parser =
+    createSchemaParserMethod.invoke(trampolineConnectShims).asInstanceOf[Schema.Parser]
 
   /** Get a human-readable string, e.g.: "4.0 MiB", for a value in bytes. */
   def bytesToString(size: Long): String = Utils.bytesToString(size)
@@ -106,7 +118,8 @@ object TrampolineUtil {
   }
 
   /** Shuts down and cleans up any existing Spark session */
-  def cleanupAnyExistingSession(): Unit = TrampolineConnectShims.cleanupAnyExistingSession()
+  def cleanupAnyExistingSession(): Unit =
+    cleanupAnyExistingSessionMethod.invoke(trampolineConnectShims)
 
   def asNullable(dt: DataType): DataType = dt.asNullable
 
@@ -266,9 +279,72 @@ object TrampolineUtil {
 }
 
 /**
- * This class is to only be used to throw errors specific to the
- * RAPIDS Accelerator or errors mirroring Spark where a raw
- * AnalysisException is thrown directly rather than via an error
- * utility class (this should be rare).
+ * Factory for raw-message AnalysisExceptions where Spark has no error utility.
  */
-class RapidsAnalysisException(msg: String) extends AnalysisException(msg)
+object RapidsAnalysisException {
+  private type CtorAndArgs = (java.lang.reflect.Constructor[AnyRef], Array[AnyRef])
+
+  private val none = None
+  private val emptyMessageParameters = Map.empty[String, String]
+  private val emptyStringArray = Array.empty[String]
+
+  def apply(msg: String): AnalysisException = {
+    val maybeCtorAndArgs = rawMessageCtor7(msg)
+      .orElse(rawMessageCtor8(msg))
+      .orElse(rawMessageCtorWithStringParameters(msg))
+
+    val (ctor, args) = maybeCtorAndArgs.getOrElse {
+      throw new IllegalStateException("Unsupported AnalysisException constructor shape")
+    }
+    ctor.newInstance(args: _*).asInstanceOf[AnalysisException]
+  }
+
+  private def rawMessageCtor7(msg: String): Option[CtorAndArgs] = {
+    classOf[AnalysisException].getConstructors.find { ctor =>
+      val params = ctor.getParameterTypes
+      params.length == 7 &&
+        params(0) == classOf[String] &&
+        params(5).getName == "scala.collection.immutable.Map" &&
+        isQueryContextArray(params(6))
+    }.map { ctor =>
+      val typedCtor = ctor.asInstanceOf[java.lang.reflect.Constructor[AnyRef]]
+      typedCtor -> Array[AnyRef](msg, none, none, none, none,
+        emptyMessageParameters, emptyQueryContextArray)
+    }
+  }
+
+  private def rawMessageCtor8(msg: String): Option[CtorAndArgs] = {
+    classOf[AnalysisException].getConstructors.find { ctor =>
+      val params = ctor.getParameterTypes
+      params.length == 8 &&
+        params(0) == classOf[String] &&
+        params(6).getName == "scala.collection.immutable.Map" &&
+        isQueryContextArray(params(7))
+    }.map { ctor =>
+      val typedCtor = ctor.asInstanceOf[java.lang.reflect.Constructor[AnyRef]]
+      typedCtor -> Array[AnyRef](msg, none, none, none, none, none,
+        emptyMessageParameters, emptyQueryContextArray)
+    }
+  }
+
+  private def rawMessageCtorWithStringParameters(msg: String): Option[CtorAndArgs] = {
+    classOf[AnalysisException].getConstructors.find { ctor =>
+      val params = ctor.getParameterTypes
+      params.length == 7 &&
+        params(0) == classOf[String] &&
+        params(6).isArray &&
+        params(6).getComponentType == classOf[String]
+    }.map { ctor =>
+      val typedCtor = ctor.asInstanceOf[java.lang.reflect.Constructor[AnyRef]]
+      typedCtor -> Array[AnyRef](msg, none, none, none, none, none, emptyStringArray)
+    }
+  }
+
+  private def isQueryContextArray(cls: Class[_]): Boolean = {
+    cls.isArray && cls.getComponentType.getName == "org.apache.spark.QueryContext"
+  }
+
+  private def emptyQueryContextArray: AnyRef = {
+    java.lang.reflect.Array.newInstance(Class.forName("org.apache.spark.QueryContext"), 0)
+  }
+}

@@ -26,7 +26,7 @@ import scala.util.{Failure, Success, Try}
 
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, AttributeSeq, Expression, UnsafeProjection}
-import org.apache.spark.sql.rapids.BridgeHostColumnProjection
+import org.apache.spark.sql.rapids.BridgeUnsafeProjection
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -131,13 +131,13 @@ case class GpuCpuBridgeExpression(
   // avoid internal memory reuse conflicts, and the cached projection is scoped to the current
   // Spark task attempt so long-lived bridge worker threads do not reuse stale projections.
   @transient private lazy val threadLocalProjection:
-      ThreadLocal[(Long, BridgeHostColumnProjection)] =
-    new ThreadLocal[(Long, BridgeHostColumnProjection)]()
+      ThreadLocal[(Long, BridgeUnsafeProjection)] =
+    new ThreadLocal[(Long, BridgeUnsafeProjection)]()
 
   private def currentTaskAttemptId: Long =
     Option(org.apache.spark.TaskContext.get()).map(_.taskAttemptId()).getOrElse(Long.MinValue)
 
-  private def getThreadLocalProjection(): BridgeHostColumnProjection = {
+  private def getThreadLocalProjection(): BridgeUnsafeProjection = {
     val taskAttemptId = currentTaskAttemptId
     val cached = threadLocalProjection.get()
     if (cached == null || cached._1 != taskAttemptId) {
@@ -519,7 +519,7 @@ case class GpuCpuBridgeExpression(
    * GpuColumnVector result.
    * 
    * Uses code generation by default. If codegen fails, Spark's CodeGeneratorWithInterpretedFallback
-   * will automatically create an InterpretedBridgeHostColumnProjection instead.
+   * will automatically create an InterpretedBridgeUnsafeProjection instead.
    */
   private def createEvaluationFunction(): (Iterator[InternalRow], Int) => GpuColumnVector = {
     (rowIterator: Iterator[InternalRow], numRows: Int) => {
@@ -544,6 +544,6 @@ case class GpuCpuBridgeExpression(
    * modified version of Spark's code generation.
    * This provides much better performance than interpreted evaluation.
    */
-  private def createCodeGeneratedProjection(): BridgeHostColumnProjection =
-    BridgeHostColumnProjection.create(Seq(cpuExpression))
+  private def createCodeGeneratedProjection(): BridgeUnsafeProjection =
+    BridgeUnsafeProjection.create(Seq(cpuExpression))
 }

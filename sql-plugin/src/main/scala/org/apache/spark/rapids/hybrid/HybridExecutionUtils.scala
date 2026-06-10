@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import java.util.Locale
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.{RapidsConf, VersionUtils}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnresolvedHint}
 import org.apache.spark.sql.catalyst.trees.TreePattern
@@ -33,7 +32,6 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
 object HybridExecutionUtils extends PredicateHelper {
-  
   private val HYBRID_JAR_PLUGIN_CLASS_NAME = "com.nvidia.spark.rapids.hybrid.HybridPluginWrapper"
 
   /**
@@ -434,7 +432,7 @@ object HybridExecutionUtils extends PredicateHelper {
   }
 }
 
-object HybridExecOverrides extends Logging {
+object HybridExecOverrides {
   // The SQL hint enables HybridScan for specific tables even if HYBRID_PARQUET_READER is disabled
   val HYBRID_SCAN_HINT = "HYBRID_SCAN"
 

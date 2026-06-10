@@ -36,7 +36,6 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
     extends ShimUnaryExpression
     with GpuExpression
-    with ShimGetStructField
     with NullIntolerantShim {
 
   lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]

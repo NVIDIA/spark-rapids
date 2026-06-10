@@ -50,7 +50,7 @@ class GpuEquivalentExpressions {
   private def addExprToMap(
       expr: Expression, map: mutable.HashMap[GpuExpressionEquals, GpuExpressionStats]): Boolean = {
     if (expr.deterministic) {
-      val wrapper = GpuExpressionEquals(expr)
+      val wrapper = new GpuExpressionEquals(expr)
       map.get(wrapper) match {
         case Some(stats) =>
           stats.useCount += 1
@@ -245,7 +245,7 @@ class GpuEquivalentExpressions {
    * Exposed for testing.
    */
   private[sql] def getExprState(e: Expression): Option[GpuExpressionStats] = {
-    equivalenceMap.get(GpuExpressionEquals(e))
+    equivalenceMap.get(new GpuExpressionEquals(e))
   }
 
   // Exposed for testing.
@@ -284,7 +284,7 @@ object GpuEquivalentExpressions {
     expr match {
       case e: AttributeReference => e
       case _ =>
-        substitutionMap.get(GpuExpressionEquals(expr)) match {
+        substitutionMap.get(new GpuExpressionEquals(expr)) match {
           case Some(attr) => attr
           case None => expr.mapChildren(replaceWithSemanticCommonRef(_, substitutionMap))
         }
@@ -513,7 +513,7 @@ trait GpuCombinable extends GpuExpression {
 /**
  * Wrapper around an Expression that provides semantic equality.
  */
-case class GpuExpressionEquals(e: Expression) {
+class GpuExpressionEquals(val e: Expression) {
   override def equals(o: Any): Boolean = o match {
     case other: GpuExpressionEquals => e.semanticEquals(other.e)
     case _ => false

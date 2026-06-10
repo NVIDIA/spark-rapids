@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,12 +22,26 @@ import com.nvidia.spark.rapids.python.PythonConfEntries._
 
 import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.api.python.ChainedPythonFunctions
-import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config.{CPUS_PER_TASK, EXECUTOR_CORES}
 import org.apache.spark.internal.config.Python._
 import org.apache.spark.sql.internal.SQLConf
 
-object GpuPythonHelper extends Logging {
+object GpuPythonHelper {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(GpuPythonHelper.getClass)
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
 
   private val sparkConf = SparkEnv.get.conf
   private lazy val rapidsConf = new RapidsConf(sparkConf)

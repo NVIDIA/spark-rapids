@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,11 +27,11 @@ import org.apache.spark.sql.types.DataType
  * @param argOffsets The offsets of the original arguments in "flattenedArgs"
  * @param argNames The optional argument names
  */
-case class GpuPythonArguments(
-    flattenedArgs: Seq[Expression],
-    flattenedTypes: Seq[DataType],
-    argOffsets: Array[Array[Int]],
-    argNames: Option[Array[Array[Option[String]]]])
+class GpuPythonArguments(
+    val flattenedArgs: Seq[Expression],
+    val flattenedTypes: Seq[DataType],
+    val argOffsets: Array[Array[Int]],
+    val argNames: Option[Array[Array[Option[String]]]])
 
 /** Gpu version of ArgumentMetadata */
-case class GpuArgumentMeta(offset: Int, name: Option[String])
+class GpuArgumentMeta(val offset: Int, val name: Option[String])
