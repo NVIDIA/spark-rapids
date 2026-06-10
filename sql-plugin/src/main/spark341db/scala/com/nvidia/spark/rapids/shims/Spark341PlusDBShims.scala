@@ -79,7 +79,7 @@ trait Spark341PlusDBShims extends Spark332PlusDBShims {
           // plugin is also an union of all the types of Pandas UDF.
           (TypeSig.commonCudfTypes + TypeSig.ARRAY).nested() + TypeSig.STRUCT,
           TypeSig.unionOfPandasUdfOut,
-          repeatingParamCheck = Some(RepeatingParamCheck(
+          repeatingParamCheck = Some(new RepeatingParamCheck(
             "param",
             (TypeSig.commonCudfTypes + TypeSig.ARRAY + TypeSig.STRUCT).nested(),
             TypeSig.all))),

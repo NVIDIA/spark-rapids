@@ -123,8 +123,8 @@ trait Spark321PlusDBShims extends SparkShims
               TypeSig.STRUCT + TypeSig.ARRAY + TypeSig.MAP).nested(),
           TypeSig.all,
           Map("partitionSpec" ->
-              InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
-                TypeSig.all))),
+              new InputCheck(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128,
+                TypeSig.all, Nil))),
         (runningWindowFunctionExec, conf, p, r) =>
           new GpuRunningWindowExecMeta(runningWindowFunctionExec, conf, p, r)
       )
@@ -139,9 +139,9 @@ trait Spark321PlusDBShims extends SparkShims
       GpuOverrides.expr[EphemeralSubstring](
         "Ephemeral version of substring operator",
         ExprChecks.projectOnly(TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY,
-          Seq(ParamCheck("str", TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
-            ParamCheck("pos", TypeSig.INT, TypeSig.INT),
-            ParamCheck("len", TypeSig.INT, TypeSig.INT))),
+          Seq(new ParamCheck("str", TypeSig.STRING, TypeSig.STRING + TypeSig.BINARY),
+            new ParamCheck("pos", TypeSig.INT, TypeSig.INT),
+            new ParamCheck("len", TypeSig.INT, TypeSig.INT))),
         (in, conf, p, r) => new TernaryExprMeta[EphemeralSubstring](in, conf, p, r) {
           override def convertToGpu(
               column: Expression,

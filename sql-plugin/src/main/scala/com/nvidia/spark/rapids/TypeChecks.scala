@@ -746,30 +746,33 @@ abstract class TypeChecks[RET] {
 /**
  * Checks a set of named inputs to an SparkPlan node against a TypeSig
  */
-case class InputCheck(cudf: TypeSig, spark: TypeSig, notes: List[String] = List.empty)
+class InputCheck(val cudf: TypeSig, val spark: TypeSig, val notes: List[String])
+    extends Serializable
 
 /**
  * Checks a single parameter by position against a TypeSig
  */
-case class ParamCheck(name: String, cudf: TypeSig, spark: TypeSig)
+class ParamCheck(val name: String, val cudf: TypeSig, val spark: TypeSig)
+    extends Serializable
 
 /**
  * Checks the type signature for a parameter that repeats (Can only be used at the end of a list
  * of position parameters)
  */
-case class RepeatingParamCheck(name: String, cudf: TypeSig, spark: TypeSig)
+class RepeatingParamCheck(val name: String, val cudf: TypeSig, val spark: TypeSig)
+    extends Serializable
 
 /**
  * Checks an expression that have input parameters and a single output.  This is intended to be
  * given for a specific ExpressionContext. If your expression does not meet this pattern you may
  * need to create a custom ExprChecks instance.
  */
-case class ContextChecks(
-    outputCheck: TypeSig,
-    sparkOutputSig: TypeSig,
-    paramCheck: Seq[ParamCheck] = Seq.empty,
-    repeatingParamCheck: Option[RepeatingParamCheck] = None)
-    extends TypeChecks[Map[String, SupportLevel]] {
+class ContextChecks(
+    val outputCheck: TypeSig,
+    val sparkOutputSig: TypeSig,
+    val paramCheck: Seq[ParamCheck],
+    val repeatingParamCheck: Option[RepeatingParamCheck])
+    extends TypeChecks[Map[String, SupportLevel]] with Serializable {
 
   def tagAst(exprMeta: BaseExprMeta[_]): Unit = {
     tagBase(exprMeta, exprMeta.willNotWorkInAst)
@@ -965,10 +968,10 @@ object ExecChecks {
  */
 abstract class PartChecks extends TypeChecks[Map[String, SupportLevel]]
 
-case class PartChecksImpl(
-    paramCheck: Seq[ParamCheck] = Seq.empty,
-    repeatingParamCheck: Option[RepeatingParamCheck] = None)
-    extends PartChecks {
+class PartChecksImpl(
+    val paramCheck: Seq[ParamCheck],
+    val repeatingParamCheck: Option[RepeatingParamCheck])
+    extends PartChecks with Serializable {
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val part = meta.wrapped
@@ -1005,9 +1008,9 @@ case class PartChecksImpl(
 
 object PartChecks {
   def apply(repeatingParamCheck: RepeatingParamCheck): PartChecks =
-    PartChecksImpl(Seq.empty, Some(repeatingParamCheck))
+    new PartChecksImpl(Seq.empty, Some(repeatingParamCheck))
 
-  def apply(): PartChecks = PartChecksImpl()
+  def apply(): PartChecks = new PartChecksImpl(Seq.empty, None)
 }
 
 /**
@@ -1020,7 +1023,7 @@ abstract class ExprChecks extends TypeChecks[Map[ExpressionContext, Map[String, 
   def tagAst(meta: BaseExprMeta[_]): Unit
 }
 
-case class ExprChecksImpl(contexts: Map[ExpressionContext, ContextChecks])
+class ExprChecksImpl(val contexts: Map[ExpressionContext, ContextChecks])
     extends ExprChecks {
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {
     val exprMeta = meta.asInstanceOf[BaseExprMeta[_]]
@@ -1499,9 +1502,9 @@ object ExprChecks {
       sparkOutputSig: TypeSig,
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks =
-    ExprChecksImpl(Map(
+    new ExprChecksImpl(Map(
       (ProjectExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
   /**
    * A check for an expression that supports project and as much of AST as it can.
@@ -1514,16 +1517,16 @@ object ExprChecks {
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
     val astOutputCheck = outputCheck.intersect(allowedAstTypes)
     val astParamCheck = paramCheck.map { pc =>
-      ParamCheck(pc.name, pc.cudf.intersect(allowedAstTypes), pc.spark)
+      new ParamCheck(pc.name, pc.cudf.intersect(allowedAstTypes), pc.spark)
     }
     val astRepeatingParamCheck = repeatingParamCheck.map { rpc =>
-      RepeatingParamCheck(rpc.name, rpc.cudf.intersect(allowedAstTypes), rpc.spark)
+      new RepeatingParamCheck(rpc.name, rpc.cudf.intersect(allowedAstTypes), rpc.spark)
     }
-    ExprChecksImpl(Map(
+    new ExprChecksImpl(Map(
       ProjectExprContext ->
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck),
       AstExprContext ->
-          ContextChecks(astOutputCheck, sparkOutputSig, astParamCheck, astRepeatingParamCheck)
+          new ContextChecks(astOutputCheck, sparkOutputSig, astParamCheck, astRepeatingParamCheck)
     ))
   }
 
@@ -1536,7 +1539,7 @@ object ExprChecks {
       inputCheck: TypeSig,
       sparkInputSig: TypeSig): ExprChecks =
     projectOnly(outputCheck, sparkOutputSig,
-      Seq(ParamCheck("input", inputCheck, sparkInputSig)))
+      Seq(new ParamCheck("input", inputCheck, sparkInputSig)))
 
   /**
    * A check for a unary expression that supports project and as much AST as it can.
@@ -1548,7 +1551,7 @@ object ExprChecks {
       inputCheck: TypeSig,
       sparkInputSig: TypeSig): ExprChecks =
     projectAndAst(allowedAstTypes, outputCheck, sparkOutputSig,
-      Seq(ParamCheck("input", inputCheck, sparkInputSig)))
+      Seq(new ParamCheck("input", inputCheck, sparkInputSig)))
 
   /**
    * Unary expression checks for project where the input matches the output.
@@ -1587,8 +1590,8 @@ object ExprChecks {
       param1: (String, TypeSig, TypeSig),
       param2: (String, TypeSig, TypeSig)): ExprChecks =
     projectOnly(outputCheck, sparkOutputSig,
-      Seq(ParamCheck(param1._1, param1._2, param1._3),
-        ParamCheck(param2._1, param2._2, param2._3)))
+      Seq(new ParamCheck(param1._1, param1._2, param1._3),
+        new ParamCheck(param2._1, param2._2, param2._3)))
 
   /**
    * Helper function for a binary expression where the plugin supports project and AST.
@@ -1600,8 +1603,8 @@ object ExprChecks {
       param1: (String, TypeSig, TypeSig),
       param2: (String, TypeSig, TypeSig)): ExprChecks =
     projectAndAst(allowedAstTypes, outputCheck, sparkOutputSig,
-      Seq(ParamCheck(param1._1, param1._2, param1._3),
-        ParamCheck(param2._1, param2._2, param2._3)))
+      Seq(new ParamCheck(param1._1, param1._2, param1._3),
+        new ParamCheck(param2._1, param2._2, param2._3)))
 
   /**
    * Aggregate operation where only group by agg and reduction is supported in the plugin and in
@@ -1612,11 +1615,11 @@ object ExprChecks {
       sparkOutputSig: TypeSig,
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks =
-    ExprChecksImpl(Map(
+    new ExprChecksImpl(Map(
       (GroupByAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (ReductionAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
   /**
    * Aggregate operation where window, reduction, and group by agg are all supported the same.
@@ -1626,13 +1629,13 @@ object ExprChecks {
       sparkOutputSig: TypeSig,
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks =
-    ExprChecksImpl(Map(
+    new ExprChecksImpl(Map(
       (GroupByAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (ReductionAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (WindowAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
   /**
    * For a generic expression that can work as both an aggregation and in the project context.
@@ -1643,15 +1646,15 @@ object ExprChecks {
       sparkOutputSig: TypeSig,
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks =
-    ExprChecksImpl(Map(
+    new ExprChecksImpl(Map(
       (GroupByAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (ReductionAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (WindowAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (ProjectExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
   /**
    * An aggregation check where group by and reduction are supported by the plugin, but Spark
@@ -1663,18 +1666,18 @@ object ExprChecks {
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
     val windowParamCheck = paramCheck.map { pc =>
-      ParamCheck(pc.name, TypeSig.none, pc.spark)
+      new ParamCheck(pc.name, TypeSig.none, pc.spark)
     }
     val windowRepeat = repeatingParamCheck.map { pc =>
-      RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
+      new RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
     }
-    ExprChecksImpl(Map(
+    new ExprChecksImpl(Map(
       (GroupByAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (ReductionAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (WindowAggExprContext,
-          ContextChecks(TypeSig.none, sparkOutputSig, windowParamCheck, windowRepeat))))
+          new ContextChecks(TypeSig.none, sparkOutputSig, windowParamCheck, windowRepeat))))
   }
 
   /**
@@ -1686,9 +1689,9 @@ object ExprChecks {
       sparkOutputSig: TypeSig,
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks =
-    ExprChecksImpl(Map(
+    new ExprChecksImpl(Map(
       (WindowAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
 
 
   /**
@@ -1701,18 +1704,18 @@ object ExprChecks {
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
     val noneParamCheck = paramCheck.map { pc =>
-      ParamCheck(pc.name, TypeSig.none, pc.spark)
+      new ParamCheck(pc.name, TypeSig.none, pc.spark)
     }
     val noneRepeatCheck = repeatingParamCheck.map { pc =>
-      RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
+      new RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
     }
-    ExprChecksImpl(Map(
+    new ExprChecksImpl(Map(
       (ReductionAggExprContext,
-        ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck)),
+        new ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck)),
       (GroupByAggExprContext,
-        ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+        new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (WindowAggExprContext,
-        ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck))))
+        new ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck))))
   }
 
   /**
@@ -1725,18 +1728,18 @@ object ExprChecks {
       paramCheck: Seq[ParamCheck] = Seq.empty,
       repeatingParamCheck: Option[RepeatingParamCheck] = None): ExprChecks = {
     val noneParamCheck = paramCheck.map { pc =>
-      ParamCheck(pc.name, TypeSig.none, pc.spark)
+      new ParamCheck(pc.name, TypeSig.none, pc.spark)
     }
     val noneRepeatCheck = repeatingParamCheck.map { pc =>
-      RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
+      new RepeatingParamCheck(pc.name, TypeSig.none, pc.spark)
     }
-    ExprChecksImpl(Map(
+    new ExprChecksImpl(Map(
       (ReductionAggExprContext,
-          ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck)),
+          new ContextChecks(TypeSig.none, sparkOutputSig, noneParamCheck, noneRepeatCheck)),
       (GroupByAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck)),
       (WindowAggExprContext,
-          ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
+          new ContextChecks(outputCheck, sparkOutputSig, paramCheck, repeatingParamCheck))))
   }
 }
 
