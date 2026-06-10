@@ -502,7 +502,7 @@ class GpuDeltaParquetFileFormatBase2(
       queryUsesInputFile: Boolean)
     extends AbstractGpuParquetMultiFilePartitionReaderFactory(sqlConf, broadcastedConf,
       dataSchema, readDataSchema, partitionSchema, filters, rapidsConf, poolConfBuilder,
-      metrics, queryUsesInputFile) with Logging {
+      metrics, queryUsesInputFile) {
 
     logDebug("Using GpuDeltaParquetMultiFilePartitionReaderFactory for multi-threaded Parquet " +
       "reading with deletion vectors")
@@ -584,11 +584,11 @@ class GpuDeltaParquetFileFormatBase2(
             val (rowGroupOffsets, rowGroupNumRows) =
               RapidsDeletionVectors.getRowGroupMetadata(singleFileInfo.blocks)
             clippedBlocks ++= singleFileInfo.blocks.zipWithIndex.map { case (block, i) =>
-              ParquetSingleDataBlockMeta(
+              new ParquetSingleDataBlockMeta(
                 singleFileInfo.filePath,
-                ParquetDataBlock(block, compressCfg),
+                new ParquetDataBlock(block, compressCfg),
                 metaAndFile.file.partitionValues,
-                ParquetSchemaWrapper(singleFileInfo.schema),
+                new ParquetSchemaWrapper(singleFileInfo.schema),
                 singleFileInfo.readSchema,
                 new DeltaParquetExtraInfo(
                   singleFileInfo.dateRebaseMode,
