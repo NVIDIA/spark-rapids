@@ -31,8 +31,13 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.commons.io.output.NullOutputStream
+import java.io.OutputStream
+
+// Keep executable line numbers aligned with newer shims for binary-dedupe.
 
 object NullOutputStreamShim {
-  def INSTANCE = NullOutputStream.NULL_OUTPUT_STREAM
+  val INSTANCE: OutputStream = new OutputStream {
+    override def write(b: Int): Unit = {}
+    override def write(b: Array[Byte], off: Int, len: Int): Unit = {}
+  }
 }

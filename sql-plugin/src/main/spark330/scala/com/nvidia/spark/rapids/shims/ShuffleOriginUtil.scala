@@ -25,6 +25,19 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.execution.exchange.{ENSURE_REQUIREMENTS, REBALANCE_PARTITIONS_BY_COL, REBALANCE_PARTITIONS_BY_NONE, REPARTITION_BY_COL, REPARTITION_BY_NUM, ShuffleOrigin}
 
+// Keep executable line numbers aligned with newer shims for binary-dedupe.
+
+
+
+
+
+
+
+
+
+
+
+
 object ShuffleOriginUtil {
   private val knownOrigins: Set[ShuffleOrigin] = Set(ENSURE_REQUIREMENTS,
     REPARTITION_BY_COL, REPARTITION_BY_NUM, REBALANCE_PARTITIONS_BY_NONE,
