@@ -95,6 +95,43 @@ class GpuOpTimeTrackingRDD[T: scala.reflect.ClassTag](
     firstParent[T].preferredLocations(split)
 }
 
+trait RapidsLocalLog {
+  @transient private lazy val rapidsLocalLog = org.slf4j.LoggerFactory.getLogger(
+    getClass.getName.stripSuffix("$"))
+
+  protected def logTrace(msg: => String): Unit = {
+    if (rapidsLocalLog.isTraceEnabled) rapidsLocalLog.trace(msg)
+  }
+
+  protected def logDebug(msg: => String): Unit = {
+    if (rapidsLocalLog.isDebugEnabled) rapidsLocalLog.debug(msg)
+  }
+
+  protected def logDebug(msg: => String, throwable: Throwable): Unit = {
+    if (rapidsLocalLog.isDebugEnabled) rapidsLocalLog.debug(msg, throwable)
+  }
+
+  protected def logInfo(msg: => String): Unit = {
+    if (rapidsLocalLog.isInfoEnabled) rapidsLocalLog.info(msg)
+  }
+
+  protected def logWarning(msg: => String): Unit = {
+    if (rapidsLocalLog.isWarnEnabled) rapidsLocalLog.warn(msg)
+  }
+
+  protected def logWarning(msg: => String, throwable: Throwable): Unit = {
+    if (rapidsLocalLog.isWarnEnabled) rapidsLocalLog.warn(msg, throwable)
+  }
+
+  protected def logError(msg: => String): Unit = {
+    if (rapidsLocalLog.isErrorEnabled) rapidsLocalLog.error(msg)
+  }
+
+  protected def logError(msg: => String, throwable: Throwable): Unit = {
+    if (rapidsLocalLog.isErrorEnabled) rapidsLocalLog.error(msg, throwable)
+  }
+}
+
 object GpuExec {
   def outputBatching(sp: SparkPlan): CoalesceGoal = sp match {
     case gpu: GpuExec => gpu.outputBatching

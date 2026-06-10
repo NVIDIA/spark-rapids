@@ -18,6 +18,7 @@ package org.apache.spark.sql.rapids.execution
 
 import java.util.concurrent.{ExecutorService, ScheduledExecutorService, ThreadPoolExecutor}
 
+import org.apache.avro.Schema
 import org.apache.hadoop.conf.Configuration
 import org.json4s.JsonAST
 
@@ -60,6 +61,8 @@ object TrampolineUtil {
     DataTypeUtilsShim.toAttributes(structType)
 
   def jsonValue(dataType: DataType): JsonAST.JValue = dataType.jsonValue
+
+  def createSchemaParser(): Schema.Parser = TrampolineConnectShims.createSchemaParser()
 
   /** Get a human-readable string, e.g.: "4.0 MiB", for a value in bytes. */
   def bytesToString(size: Long): String = Utils.bytesToString(size)

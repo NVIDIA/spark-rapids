@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import org.apache.orc.OrcConf
 import org.apache.orc.OrcConf._
 import org.apache.orc.mapred.OrcStruct
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.FileFormat
@@ -37,7 +36,11 @@ import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
-object GpuOrcFileFormat extends Logging {
+object GpuOrcFileFormat {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = if (log.isInfoEnabled) log.info(msg)
+
   // The classname used when Spark is configured to use the Hive implementation for ORC.
   // Spark is not always compiled with Hive support so we cannot import from Spark jars directly.
   private val HIVE_IMPL_CLASS = "org.apache.spark.sql.hive.orc.OrcFileFormat"
@@ -162,7 +165,7 @@ object GpuOrcFileFormat extends Logging {
   }
 }
 
-class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
+class GpuOrcFileFormat extends ColumnarFileFormat {
   /**
    * Prepares a write job and returns an `ColumnarOutputWriterFactory`.  Client side job
    * preparation can be put here.  For example, user defined output committer can be configured here

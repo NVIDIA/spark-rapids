@@ -31,7 +31,6 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.{CSVOptions, GpuCsvUtils}
@@ -54,7 +53,15 @@ trait ScanWithMetrics {
   var metrics : Map[String, GpuMetric] = Map.empty
 }
 
-object GpuCSVScan extends Logging {
+object GpuCSVScan {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
   private def tryLoadCharset(name: String): Option[Charset] = {
     try {
       Some(Charset.forName(name))
@@ -320,7 +327,7 @@ case class GpuCSVScan(
     val broadcastedConf = sparkSession.sparkContext.broadcast(
       new SerializableConfiguration(hadoopConf))
 
-    GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
+    new GpuCSVPartitionReaderFactory(sparkSession.sessionState.conf, broadcastedConf,
       dataSchema, readDataSchema, readPartitionSchema, parsedOptions, maxReaderBatchSizeRows,
       maxReaderBatchSizeBytes, maxGpuColumnSizeBytes, metrics, options.asScala.toMap)
   }
@@ -344,7 +351,7 @@ case class GpuCSVScan(
   override def hashCode(): Int = super.hashCode()
 }
 
-case class GpuCSVPartitionReaderFactory(
+class GpuCSVPartitionReaderFactory(
     sqlConf: SQLConf,
     broadcastedConf: Broadcast[SerializableConfiguration],
     dataSchema: StructType,
@@ -356,7 +363,8 @@ case class GpuCSVPartitionReaderFactory(
     maxReaderBatchSizeBytes: Long,
     maxGpuColumnSizeBytes: Long,
     metrics: Map[String, GpuMetric],
-    @transient params: Map[String, String]) extends ShimFilePartitionReaderFactory(params) {
+    @transient params: Map[String, String])
+  extends ShimFilePartitionReaderFactory(params) with Serializable {
 
   override def buildReader(partitionedFile: PartitionedFile): PartitionReader[InternalRow] = {
     throw new IllegalStateException("ROW BASED PARSING IS NOT SUPPORTED ON THE GPU...")
