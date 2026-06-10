@@ -156,14 +156,14 @@ object GpuShuffledSizedHashJoinExec {
   }
 
   /** Utility class to track information related to a join. */
-  case class JoinInfo(
-      joinType: JoinType,
-      buildSide: GpuBuildSide,
-      buildIter: Iterator[ColumnarBatch],
-      buildSize: Long,
-      buildStats: Option[JoinBuildSideStats],
-      streamIter: Iterator[ColumnarBatch],
-      exprs: BoundJoinExprs)
+  class JoinInfo(
+      val joinType: JoinType,
+      val buildSide: GpuBuildSide,
+      val buildIter: Iterator[ColumnarBatch],
+      val buildSize: Long,
+      val buildStats: Option[JoinBuildSideStats],
+      val streamIter: Iterator[ColumnarBatch],
+      val exprs: BoundJoinExprs)
 
   /**
    * Trait to house common code for determining the ideal build/stream
@@ -750,7 +750,7 @@ object GpuShuffledSymmetricHashJoinExec {
           val streamIter = new CollectTimeIterator(NvtxRegistry.FETCH_JOIN_STREAM,
             setupForJoin(streamQueue, rawStreamIter, exprs.streamTypes, gpuBatchSizeBytes, metrics),
             streamTime)
-          JoinInfo(joinType, buildSide, buildIter, buildSize, None, streamIter, exprs)
+          new JoinInfo(joinType, buildSide, buildIter, buildSize, None, streamIter, exprs)
         }
       }
     }
@@ -889,12 +889,12 @@ object GpuShuffledAsymmetricHashJoinExec {
         if (streamRows <= Int.MaxValue && streamSize <= gpuBatchSizeBytes) {
           metrics(BUILD_DATA_SIZE).set(streamSize)
           val flippedSide = flipped(buildSide)
-          JoinInfo(joinType, flippedSide, streamIter, streamSize, None, baseBuildIter,
+          new JoinInfo(joinType, flippedSide, streamIter, streamSize, None, baseBuildIter,
             exprs.flipped(joinType, flippedSide, condition, leftOutput, rightOutput, metrics))
         } else {
           val buildIter = addNullFilterIfNecessary(baseBuildIter, exprs.boundBuildKeys,
             exprs.buildSideNeedsNullFilter, metrics)
-          JoinInfo(joinType, buildSide, buildIter, buildSize, None, streamIter, exprs)
+          new JoinInfo(joinType, buildSide, buildIter, buildSize, None, streamIter, exprs)
         }
       }
     }
@@ -923,14 +923,14 @@ object GpuShuffledAsymmetricHashJoinExec {
         metrics(BUILD_DATA_SIZE).set(buildSize)
         val buildIter = addNullFilterIfNecessary(baseBuildIter, exprs.boundBuildKeys,
           exprs.buildSideNeedsNullFilter, metrics)
-        JoinInfo(joinType, buildSide, buildIter, buildSize, None, streamIter, exprs)
+        new JoinInfo(joinType, buildSide, buildIter, buildSize, None, streamIter, exprs)
       } else {
         val buildBatch = getAsSingleBuildBatch(baseBuildIter, exprs, metrics)
         val buildIter = new SingleGpuColumnarBatchIterator(buildBatch)
         val buildStats = JoinBuildSideStats.fromBatch(buildBatch, exprs.boundBuildKeys)
         if (buildStats.streamMagnificationFactor < magnificationThreshold) {
           metrics(BUILD_DATA_SIZE).set(buildSize)
-          JoinInfo(joinType, buildSide, buildIter, buildSize, Some(buildStats), streamIter,
+          new JoinInfo(joinType, buildSide, buildIter, buildSize, Some(buildStats), streamIter,
             exprs)
         } else {
           // The natural build side is explosive, so check the natural stream side to see
@@ -962,25 +962,26 @@ object GpuShuffledAsymmetricHashJoinExec {
                 if (buildStats.streamMagnificationFactor <
                     streamStats.streamMagnificationFactor) {
                   metrics(BUILD_DATA_SIZE).set(buildSize)
-                  JoinInfo(joinType, buildSide, buildIter, buildSize, Some(buildStats),
+                  new JoinInfo(joinType, buildSide, buildIter, buildSize, Some(buildStats),
                     singleStreamIter, exprs)
                 } else {
                   metrics(BUILD_DATA_SIZE).set(streamSize)
                   val flippedSide = flipped(buildSide)
-                  JoinInfo(joinType, flippedSide, singleStreamIter, streamSize, Some(streamStats),
+                  new JoinInfo(
+                    joinType, flippedSide, singleStreamIter, streamSize, Some(streamStats),
                     buildIter, exprs.flipped(joinType, flippedSide, condition,
                       leftOutput, rightOutput, metrics))
                 }
               } else {
                 metrics(BUILD_DATA_SIZE).set(streamSize)
                 val flippedSide = flipped(buildSide)
-                JoinInfo(joinType, flippedSide, streamBatchIter, streamSize, None,
+                new JoinInfo(joinType, flippedSide, streamBatchIter, streamSize, None,
                   buildIter, exprs.flipped(joinType, flippedSide, condition,
                     leftOutput, rightOutput, metrics))
               }
             } else {
               metrics(BUILD_DATA_SIZE).set(buildSize)
-              JoinInfo(joinType, buildSide, buildIter, buildSize, Some(buildStats),
+              new JoinInfo(joinType, buildSide, buildIter, buildSize, Some(buildStats),
                 new SpillableColumnarBatchQueueIterator(streamQueue, streamIter), exprs)
             }
           }

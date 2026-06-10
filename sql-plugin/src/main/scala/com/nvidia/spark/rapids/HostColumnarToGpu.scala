@@ -28,7 +28,6 @@ import org.apache.arrow.memory.{ArrowBuf, ReferenceManager}
 import org.apache.arrow.vector.ValueVector
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
@@ -38,7 +37,7 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch, ColumnVector}
 import org.apache.spark.sql.vectorized.rapids.AccessibleArrowColumnVector
 
-object HostColumnarToGpu extends Logging {
+object HostColumnarToGpu {
 
   // use reflection to get access to a private field in a class
   private def getClassFieldAccessible(className: String, fieldName: String) = {

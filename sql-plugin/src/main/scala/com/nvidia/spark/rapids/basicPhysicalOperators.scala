@@ -33,7 +33,6 @@ import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 import com.nvidia.spark.rapids.shims._
 
 import org.apache.spark.{InterruptibleIterator, Partition, SparkContext, TaskContext}
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
@@ -53,7 +52,7 @@ class GpuProjectExecMeta(
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r)
-    with Logging {
+    with RapidsLocalLog {
   override def convertToGpu(): GpuExec = {
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
     val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
@@ -1012,7 +1011,7 @@ case class GpuProjectAstExec(
  *   Input columns for tier 3: a, c, e, f, ref2, ref3
  *   Tier 3: (ref2 * e), (ref3 * f), (a + e), (c + f)
  */
- case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) {
+ class GpuTieredProject(val exprTiers: Seq[Seq[GpuExpression]]) extends Serializable {
 
   /**
    * Inject metrics into all expressions across all tiers.
@@ -1319,7 +1318,7 @@ object GpuFilter {
   }
 }
 
-case class GpuFilterExecMeta(
+class GpuFilterExecMeta(
   filter: FilterExec,
   override val conf: RapidsConf,
   parentMetaOpt: Option[RapidsMeta[_, _, _]],
@@ -1400,7 +1399,7 @@ class GpuSampleExecMeta(
     conf: RapidsConf,
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends SparkPlanMeta[SampleExec](sample, conf, p, r)
-    with Logging {
+    with RapidsLocalLog {
   override def convertToGpu(): GpuExec = {
     val gpuChild = childPlans.head.convertIfNeeded()
     if (conf.isFastSampleEnabled) {
@@ -1569,7 +1568,7 @@ private[rapids] class GpuRangeIterator(
     step: Long,
     maxRowCountPerBatch: Long,
     taskContext: TaskContext,
-    opTime: GpuMetric) extends Iterator[ColumnarBatch] with Logging {
+    opTime: GpuMetric) extends Iterator[ColumnarBatch] with RapidsLocalLog {
 
   // This iterator is designed for GpuRangeExec, so it has the requirement for the inputs.
   assert((partitionEnd - partitionStart) % step == 0)
@@ -1609,7 +1608,7 @@ private[rapids] class GpuRangeIterator(
       val remainingRows = (safePartitionEnd - start) / step
       // Start is inclusive so we need to produce at least one row
       val rowsExpected = Math.max(1, Math.min(remainingRows, maxRowCountPerBatch))
-      val iter = withRetry(AutoCloseableLong(rowsExpected), reduceRowsNumberByHalf) { rows =>
+      val iter = withRetry(new AutoCloseableLong(rowsExpected), reduceRowsNumberByHalf) { rows =>
         withResource(Scalar.fromLong(start)) { startScalar =>
           withResource(Scalar.fromLong(step)) { stepScalar =>
             withResource(
@@ -1658,12 +1657,12 @@ private[rapids] class GpuRangeIterator(
           throw new GpuSplitAndRetryOOM(s"GPU OutOfMemory: the number of rows generated is" +
             s" too small to be split ${rowsNumber.value}!")
         }
-        Seq(AutoCloseableLong(rowsNumber.value / 2))
+        Seq(new AutoCloseableLong(rowsNumber.value / 2))
       }
     }
 
   /** A bridge class between Long and AutoCloseable for retry */
-  case class AutoCloseableLong(value: Long) extends AutoCloseable {
+  class AutoCloseableLong(val value: Long) extends AutoCloseable {
     override def close(): Unit = { /* Nothing to be closed */ }
   }
 }

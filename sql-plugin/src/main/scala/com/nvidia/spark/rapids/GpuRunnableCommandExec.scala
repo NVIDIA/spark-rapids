@@ -112,7 +112,7 @@ case class GpuRunnableCommandExec(cmd: GpuRunnableCommand, child: SparkPlan)
   override lazy val allMetrics: Map[String, GpuMetric] = GpuMetric.wrap(cmd.metrics)
 
   private lazy val sideEffectResult: Seq[ColumnarBatch] =
-    cmd.runColumnar(sparkSession, child)
+    cmd.runColumnar(sparkSession.asInstanceOf[GpuSparkSession], child)
 
   override def output: Seq[Attribute] = cmd.output
 
