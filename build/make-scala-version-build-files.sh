@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Copyright (c) 2023-2025, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2023-2026, NVIDIA CORPORATION. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -106,6 +106,16 @@ sed_i '/<spark\-rapids\-jni\.version>/,/<scala\.binary\.version>[0-9]*\.[0-9]*</
 
 # Update <scala.version> in parent POM
 # Match any scala version to ensure idempotency
-SCALA_VERSION=$(mvn help:evaluate -Pscala-${TO_VERSION} -Dexpression=scala.version -q -DforceStdout)
+SCALA_VERSION=$(awk -v profile="scala-${TO_VERSION}" '
+  /<profile>/ { in_profile = 1; found = 0 }
+  in_profile && $0 ~ "<id>" profile "</id>" { found = 1 }
+  found && /<scala[.]version>/ {
+    gsub(/.*<scala[.]version>|<\/scala[.]version>.*/, "")
+    print
+    exit
+  }
+  /<\/profile>/ { in_profile = 0; found = 0 }
+' "$BASEDIR/pom.xml")
+
 sed_i '/<spark\-rapids\-jni\.version>/,/<scala.version>[0-9]*\.[0-9]*\.[0-9]*</s/<scala\.version>[0-9]*\.[0-9]*\.[0-9]*</<scala.version>'$SCALA_VERSION'</' \
   "$TO_DIR/pom.xml"
