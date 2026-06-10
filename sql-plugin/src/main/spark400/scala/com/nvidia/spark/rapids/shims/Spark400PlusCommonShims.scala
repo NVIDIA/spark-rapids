@@ -40,7 +40,7 @@ trait Spark400PlusCommonShims extends Spark350PlusNonDBShims {
           "And(GreaterThanOrEqual(ref, lower), LessThanOrEqual(ref, upper);  StructToJson is " +
           "replaced by Invoke(Literal(StructsToJsonEvaluator), evaluate, string_type, arguments)",
         InvokeCheck,
-        InvokeExprMeta)
+        (invoke, conf, p, r) => new InvokeExprMeta(invoke, conf, p, r))
         .note("The supported types are not deterministic since it's a dynamic expression")
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs

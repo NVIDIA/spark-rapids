@@ -34,14 +34,14 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  *   - Create new Arrow stream for each batch
  *   - Send 0 to indicate end of data
  */
-case class GpuGroupedPythonRunnerFactory(
+class GpuGroupedPythonRunnerFactory(
     conf: org.apache.spark.sql.internal.SQLConf,
     chainedFunc: Seq[(ChainedPythonFunctions, Long)],
     argOffsets: Array[Array[Int]],
     dedupAttrs: StructType,
     pythonOutputSchema: StructType,
     evalType: Int,
-    argNames: Option[Array[Array[Option[String]]]] = None) {
+    argNames: Option[Array[Array[Option[String]]]]) extends Serializable {
   val sessionLocalTimeZone = conf.sessionLocalTimeZone
   val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
 
