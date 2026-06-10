@@ -108,7 +108,7 @@ sed_i '/<spark\-rapids\-jni\.version>/,/<scala\.binary\.version>[0-9]*\.[0-9]*</
 # Match any scala version to ensure idempotency
 SCALA_VERSION=$(awk -v profile="scala-${TO_VERSION}" '
   /<profile>/ { in_profile = 1; found = 0 }
-  in_profile && $0 ~ "<id>" profile "</id>" { found = 1 }
+  in_profile && index($0, "<id>" profile "</id>") { found = 1 }
   found && /<scala[.]version>/ {
     gsub(/.*<scala[.]version>|<\/scala[.]version>.*/, "")
     print
@@ -116,6 +116,10 @@ SCALA_VERSION=$(awk -v profile="scala-${TO_VERSION}" '
   }
   /<\/profile>/ { in_profile = 0; found = 0 }
 ' "$BASEDIR/pom.xml")
+if [[ -z "$SCALA_VERSION" ]]; then
+  echo "Could not find scala.version for profile scala-${TO_VERSION}" >&2
+  exit 1
+fi
 
 sed_i '/<spark\-rapids\-jni\.version>/,/<scala.version>[0-9]*\.[0-9]*\.[0-9]*</s/<scala\.version>[0-9]*\.[0-9]*\.[0-9]*</<scala.version>'$SCALA_VERSION'</' \
   "$TO_DIR/pom.xml"
