@@ -169,8 +169,9 @@ run_iceberg_version_detect_tests() {
 
     # Supported Iceberg versions per Spark version — must stay in sync with
     # run_iceberg_tests() in spark-tests.sh. Note: the Spark 4.1 -> 1.11.0 row is
-    # version-detection only here; the matching 4.1 entry in run_iceberg_tests()
-    # (the full integration suite) is added in the stacked follow-up PR.
+    # listed here, but ci_scala213() currently uses SPARK_VER=4.0.1 so the 4.1 branch
+    # is not exercised in pre-merge CI. The full 4.1 integration suite is added in the
+    # stacked follow-up PR; until then, the 1.11.0 commit-ID mapping is nightly-only.
     local iceberg_versions
     if [[ "$iceberg_spark_ver" == "4.1" ]]; then
         iceberg_versions="1.11.0"
