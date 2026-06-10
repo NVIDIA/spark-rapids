@@ -14,32 +14,9 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "330"}
-{"spark": "330db"}
-{"spark": "331"}
-{"spark": "332"}
-{"spark": "332db"}
-{"spark": "333"}
-{"spark": "334"}
-{"spark": "340"}
-{"spark": "341"}
-{"spark": "341db"}
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "344"}
-{"spark": "350"}
-{"spark": "350db143"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-{"spark": "357"}
-{"spark": "358"}
-spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
+
+import com.nvidia.spark.rapids.VersionUtils
 
 object GetJsonObjectShim {
   /**
@@ -53,5 +30,11 @@ object GetJsonObjectShim {
    * "[^\\'\\?]+" : One or more chars which are not: ' or ?
    * "[^\\']+"    : One or more chars which are not: '
    */
-  def partRegexpInNamed: String = "[^\\'\\?]+"
+  def partRegexpInNamed: String = {
+    if (VersionUtils.cmpSparkVersion(4, 0, 0) >= 0) {
+      "[^\\']+"
+    } else {
+      "[^\\'\\?]+"
+    }
+  }
 }

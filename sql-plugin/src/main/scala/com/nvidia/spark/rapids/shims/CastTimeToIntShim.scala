@@ -13,18 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*** spark-rapids-shim-json-lines
-{"spark": "350db143"}
-{"spark": "400"}
-{"spark": "400db173"}
-{"spark": "401"}
-{"spark": "402"}
-{"spark": "411"}
-spark-rapids-shim-json-lines ***/
+
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids.VersionUtils
+
 object CastTimeToIntShim {
-  // From 400, rows overflow will be set to nulls when casting timestamps to integrals,
+  // Whether to set overflow rows to nulls when casting timestamps to integrals,
   // when ANSI is disabled.
-  def ifNullifyOverflows: Boolean = true
+  def ifNullifyOverflows: Boolean = {
+    VersionUtils.cmpSparkVersion(4, 0, 0) >= 0 ||
+      (VersionUtils.isDataBricks && VersionUtils.cmpSparkVersion(3, 5, 0) == 0)
+  }
 }

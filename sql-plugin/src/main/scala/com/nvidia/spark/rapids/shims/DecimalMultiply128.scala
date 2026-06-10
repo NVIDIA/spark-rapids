@@ -14,38 +14,26 @@
  * limitations under the License.
  */
 
-/*** spark-rapids-shim-json-lines
-{"spark": "342"}
-{"spark": "343"}
-{"spark": "344"}
-{"spark": "350db143"}
-{"spark": "351"}
-{"spark": "352"}
-{"spark": "353"}
-{"spark": "354"}
-{"spark": "355"}
-{"spark": "356"}
-{"spark": "357"}
-{"spark": "358"}
-{"spark": "400"}
-{"spark": "400db173"}
-{"spark": "401"}
-{"spark": "402"}
-{"spark": "411"}
-spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnView, Table}
+import com.nvidia.spark.rapids.VersionUtils
 import com.nvidia.spark.rapids.jni.DecimalUtils._
 
-object DecimalMultiply128{
+object DecimalMultiply128 {
+  private def useFinalPrecisionScaleMultiply: Boolean = {
+    VersionUtils.cmpSparkVersion(4, 0, 0) >= 0 ||
+      VersionUtils.cmpSparkVersion(3, 5, 1) >= 0 ||
+      (VersionUtils.cmpSparkVersion(3, 4, 2) >= 0 &&
+        VersionUtils.cmpSparkVersion(3, 5, 0) < 0) ||
+      (VersionUtils.isDataBricks && VersionUtils.cmpSparkVersion(3, 5, 0) == 0)
+  }
+
   def apply(castLhs: ColumnView, castRhs: ColumnView, scale: Int): Table = {
-    /**
-     * Calling the version of multiplying 128-bit decimal numbers that casts the result only once
-     * to the final precision and scale.
-     * This version of multiplying 128-bit decimal numbers should only be used with Spark versions
-     * greater than or equal to 3.4.2, 4.0.0, 3.5.1
-     */
-    multiply128(castLhs, castRhs, scale, false)
+    if (useFinalPrecisionScaleMultiply) {
+      multiply128(castLhs, castRhs, scale, false)
+    } else {
+      multiply128(castLhs, castRhs, scale)
+    }
   }
 }
