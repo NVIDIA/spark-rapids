@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -180,10 +180,10 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
       val hostBuffer = tryAcquireBounceBuffers(hostSendBuffMgr, numBuffs)
       if (hostBuffer.nonEmpty) {
         deviceBuffer.zip(hostBuffer).map { case (d, h) =>
-          SendBounceBuffers(d, Some(h))
+          new SendBounceBuffers(d, Some(h))
         }
       } else {
-        deviceBuffer.map(d => SendBounceBuffers(d, None))
+        deviceBuffer.map(d => new SendBounceBuffers(d, None))
       }
     } else {
       Seq.empty
@@ -377,8 +377,8 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     }
   }
 
-  private case class ClientAndBufferReceiveState(client: RapidsShuffleClient,
-                                                 brs: BufferReceiveState)
+  private class ClientAndBufferReceiveState(val client: RapidsShuffleClient,
+                                                 val brs: BufferReceiveState)
   private val pendingBrs = new ConcurrentHashMap[Long, ClientAndBufferReceiveState]()
 
   def handleBufferReceive(size: Long, header: Long,
@@ -498,7 +498,7 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
                 perClientRequests.bounceBuffer,
                 perClientRequests.transferRequests.toSeq,
                 () => bufferReceiveStateComplete(brsId))
-              pendingBrs.put(brs.id, ClientAndBufferReceiveState(client, brs))
+              pendingBrs.put(brs.id, new ClientAndBufferReceiveState(client, brs))
               client.issueBufferReceives(brs)
             }
           } else if (!hasBounceBuffers) {
