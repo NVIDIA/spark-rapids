@@ -24,7 +24,6 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, ShimBinaryExecNode}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
@@ -302,7 +301,12 @@ case class GpuShuffledHashJoinExec(
   }
 }
 
-object GpuShuffledHashJoinExec extends Logging {
+object GpuShuffledHashJoinExec {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(GpuShuffledHashJoinExec.getClass)
+
+  private def logDebug(msg: => String): Unit = if (log.isDebugEnabled) log.debug(msg)
+
   /**
    * Return the build data as a single ColumnarBatch when sub-partitioning is not enabled,
    * while as an iterator of ColumnarBatch when sub-partitioning is enabled.

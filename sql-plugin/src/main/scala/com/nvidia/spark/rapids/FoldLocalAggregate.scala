@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +15,7 @@
  */
 package com.nvidia.spark.rapids
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.aggregate._
-import org.apache.spark.sql.catalyst.rules.Rule
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.aggregate._
 
@@ -28,8 +26,16 @@ import org.apache.spark.sql.execution.aggregate._
  * redistribute data before final aggregate. The Local Aggregate may emerge under certain
  * circumstance, such as the BucketScan Spec fully matches the groupBy keys.
  */
-object FoldLocalAggregate extends Rule[SparkPlan] {
-  override def apply(plan: SparkPlan): SparkPlan = {
+object FoldLocalAggregate {
+  private val log = org.slf4j.LoggerFactory.getLogger(FoldLocalAggregate.getClass)
+
+  private def logError(msg: => String): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg)
+    }
+  }
+
+  def apply(plan: SparkPlan): SparkPlan = {
     plan.transform {
       case p@LocalAggregatePattern(finalAgg: BaseAggregateExec, partAgg: BaseAggregateExec) =>
         // Spark eliminates the filter for the aggExpressions in Final mode. So, we need to copy
@@ -84,7 +90,16 @@ object FoldLocalAggregate extends Rule[SparkPlan] {
  * The LocalAggregate can be emerged regardless HashAggregateExec, SortAggregateExec or
  * ObjectHashAggregateExec.
  */
-object LocalAggregatePattern extends Logging {
+object LocalAggregatePattern {
+  private val log = org.slf4j.LoggerFactory.getLogger(LocalAggregatePattern.getClass)
+
+  private def logError(msg: => String): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg)
+    }
+  }
+
+
   def unapply(plan: SparkPlan): Option[(BaseAggregateExec, BaseAggregateExec)] = {
     plan match {
       case hashAgg: HashAggregateExec

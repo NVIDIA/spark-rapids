@@ -24,7 +24,7 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{ArrayType, StructType}
 
 /** Base meta for Murmur3-hash-like expressions. */
-case class Murmur3HashExprMeta[HEINT <: HashExpression[Int]](
+class Murmur3HashExprMeta[HEINT <: HashExpression[Int]](
     expr: HEINT,
     override val conf: RapidsConf,
     override val parent: Option[RapidsMeta[_, _, _]],
@@ -47,7 +47,7 @@ case class Murmur3HashExprMeta[HEINT <: HashExpression[Int]](
 }
 
 /** Base meta for xxhash64-like expressions. */
-case class XxHash64ExprMeta[HE <: HashExpression[Long]](
+class XxHash64ExprMeta[HE <: HashExpression[Long]](
     expr: HE,
     override val conf: RapidsConf,
     override val parent: Option[RapidsMeta[_, _, _]],

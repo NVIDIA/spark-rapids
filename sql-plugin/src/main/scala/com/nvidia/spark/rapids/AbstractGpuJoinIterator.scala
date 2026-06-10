@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitTargetSizeInHalfGpu,
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, RightOuter}
 import org.apache.spark.sql.rapids.execution.GatherMapsResult
@@ -148,7 +147,7 @@ abstract class AbstractGpuJoinIterator(
         // less from the gatherer, but because the gatherer tracks how much is used, the
         // next call to this function will start in the right place.
         val estimatedDataSize = (gather.numRowsLeft * gather.realCheapPerRowSizeEstimate).toLong
-        val targetSizeWrapper = AutoCloseableTargetSize(targetSize, minTargetSize,
+        val targetSizeWrapper = new AutoCloseableTargetSize(targetSize, minTargetSize,
           estimatedDataSize)
         gather.checkpoint()
         withRetry(targetSizeWrapper, splitTargetSizeInHalfGpu) { attempt =>
@@ -199,7 +198,7 @@ abstract class SplittableJoinIterator(
       targetSize,
       sizeEstimateThreshold,
       opTime = opTime,
-      joinTime = joinTime) with Logging {
+      joinTime = joinTime) with RapidsLocalLog {
   // For some join types even if there is no stream data we might output something
   private var isInitialJoin = true
   // If the join explodes this holds batches from the stream side split into smaller pieces.
@@ -364,7 +363,7 @@ abstract class SplittableJoinIterator(
         case None if joinType == RightOuter && rightData.numCols > 0 =>
           // Distinct right outer joins only produce a single gather map since right table rows
           // are not rearranged by the join.
-          MultiJoinGather(leftGatherer, new JoinGathererSameTable(rightData))
+          new MultiJoinGather(leftGatherer, new JoinGathererSameTable(rightData))
         case None =>
           // When there isn't a `rightMap` we are in either LeftSemi or LeftAnti joins.
           // In these cases, the map and the table are both the left side, and everything in the map
@@ -383,7 +382,7 @@ abstract class SplittableJoinIterator(
           }
           val lazyRightMap = LazySpillableGatherMap(right, "right_map")
           val rightGatherer = JoinGatherer(lazyRightMap, rightData, rightOutOfBoundsPolicy)
-          MultiJoinGather(leftGatherer, rightGatherer)
+          new MultiJoinGather(leftGatherer, rightGatherer)
       }
       if (gatherer.isDone) {
         // Nothing matched...

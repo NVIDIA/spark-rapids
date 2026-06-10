@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ package com.nvidia.spark.rapids
 import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.shims.ShimExpression
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, AttributeSeq, Expression, ExprId, NamedExpression}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.catalyst.expressions.GpuEquivalentExpressions
@@ -40,7 +39,8 @@ trait GpuBind {
   def bind(input: AttributeSeq): GpuExpression
 }
 
-object GpuBindReferences extends Logging {
+object GpuBindReferences {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
 
   /**
    * An alternative to `Expression.transformDown`, but when a result is returned by `rule` it is
@@ -161,8 +161,9 @@ object GpuBindReferences extends Logging {
         case (es: Seq[Expression], is: AttributeSeq) =>
           es.map(GpuBindReferences.bindGpuReferenceNoMetrics(_, is)).toList
       }
-      logTrace {
-        "INPUT:\n" +
+      if (log.isTraceEnabled) {
+        log.trace(
+          "INPUT:\n" +
           expressions.zipWithIndex.map {
             case (expr, idx) =>
               s"\t$idx:\t$expr"
@@ -175,11 +176,11 @@ object GpuBindReferences extends Logging {
                   case (expr, idx) =>
                     s"\t\t$idx:\t$expr"
                 }.mkString("\n")
-          }.mkString("\n")
+          }.mkString("\n"))
       }
-      GpuTieredProject(tiered)
+      new GpuTieredProject(tiered)
     } else {
-      GpuTieredProject(Seq(GpuBindReferences.bindGpuReferencesNoMetrics(expressions, input)))
+      new GpuTieredProject(Seq(GpuBindReferences.bindGpuReferencesNoMetrics(expressions, input)))
     }
   }
 
