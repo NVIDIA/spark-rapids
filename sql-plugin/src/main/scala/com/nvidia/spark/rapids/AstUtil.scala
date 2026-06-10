@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -110,7 +110,7 @@ object AstUtil {
       val gpuExpr = expr.convertToGpu()
       
       // Check if we've already processed this expression (for deduplication)
-      processed.get(GpuExpressionEquals(gpuExpr)) match {
+      processed.get(new GpuExpressionEquals(gpuExpr)) match {
         case Some(replacement) => 
           replacement
         case None =>
@@ -135,7 +135,7 @@ object AstUtil {
           // Create an AttributeReference explicitly to avoid issues with unresolved aliases
           val attributeRef = AttributeReference(alias.name, gpuExpr.dataType, 
             gpuExpr.nullable, alias.metadata)(alias.exprId, alias.qualifier)
-          processed.put(GpuExpressionEquals(gpuExpr), attributeRef)
+          processed.put(new GpuExpressionEquals(gpuExpr), attributeRef)
           attributeRef
       }
     } else {

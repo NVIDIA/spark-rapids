@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -97,7 +97,7 @@ object ZOrderRules {
           TypeSig.BINARY,
           TypeSig.BINARY,
           repeatingParamCheck =
-            Some(RepeatingParamCheck("input",
+            Some(new RepeatingParamCheck("input",
               TypeSig.INT,
               TypeSig.INT))),
         (a, conf, p, r) => new ExprMeta[Expression](a, conf, p, r) {
@@ -129,7 +129,7 @@ object ZOrderRules {
           TypeSig.LONG,
           TypeSig.LONG,
           repeatingParamCheck =
-            Some(RepeatingParamCheck("input",
+            Some(new RepeatingParamCheck("input",
               TypeSig.INT,
               TypeSig.INT))),
         (a, conf, p, r) => new ExprMeta[Expression](a, conf, p, r) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.SparkException
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{GenericInternalRow, UserDefinedExpression}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
@@ -91,7 +90,13 @@ object GpuUserDefinedFunction {
  * and do the processing on CPU.
  */
 trait GpuRowBasedUserDefinedFunction extends GpuExpression
-    with ShimExpression with UserDefinedExpression with Serializable with Logging {
+    with ShimExpression with UserDefinedExpression with Serializable {
+
+  @transient private lazy val log = org.slf4j.LoggerFactory.getLogger(
+    classOf[GpuRowBasedUserDefinedFunction])
+
+  private def logDebug(msg: => String): Unit = if (log.isDebugEnabled) log.debug(msg)
+
   /** name of the UDF function */
   val name: String
 
