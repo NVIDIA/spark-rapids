@@ -76,6 +76,8 @@ object TrampolineUtil {
   def createSchemaParser(): Schema.Parser =
     createSchemaParserMethod.invoke(trampolineConnectShims).asInstanceOf[Schema.Parser]
 
+  def createSchemaParser(): Schema.Parser = TrampolineConnectShims.createSchemaParser()
+
   /** Get a human-readable string, e.g.: "4.0 MiB", for a value in bytes. */
   def bytesToString(size: Long): String = Utils.bytesToString(size)
 
