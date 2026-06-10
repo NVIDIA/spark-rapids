@@ -522,9 +522,10 @@ case class GpuElementAt(left: Expression, right: Expression, failOnError: Boolea
               }
               withResource(hasLargerIndices) { _ =>
                 if (BoolUtils.isAnyValidTrue(hasLargerIndices)) {
-                  val (index, numElem) = firstIndexAndNumElementUnchecked(hasLargerIndices,
+                  val indexAndNumElement = firstIndexAndNumElementUnchecked(hasLargerIndices,
                     indices, numElements)
-                  throw RapidsErrorUtils.invalidArrayIndexError(index, numElem, true)
+                  throw RapidsErrorUtils.invalidArrayIndexError(
+                    indexAndNumElement.getIndex, indexAndNumElement.getNumElements, true)
                 }
               }
             }
