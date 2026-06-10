@@ -21,7 +21,6 @@ import java.util.{Map => JMap, Optional}
 import com.google.common.annotations.VisibleForTesting
 
 import org.apache.spark.{SparkConf, SparkEnv}
-import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.IndexShuffleBlockResolver
 import org.apache.spark.shuffle.api.{ShuffleExecutorComponents, ShuffleMapOutputWriter, SingleSpillShuffleMapOutputWriter}
 import org.apache.spark.storage.BlockManager
@@ -31,7 +30,7 @@ import org.apache.spark.storage.BlockManager
  * instances with host memory buffer support.
  */
 class RapidsLocalDiskShuffleExecutorComponents(sparkConf: SparkConf)
-  extends ShuffleExecutorComponents with Logging {
+  extends ShuffleExecutorComponents {
 
   private var blockManager: BlockManager = null
   private var blockResolver: IndexShuffleBlockResolver = null

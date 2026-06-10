@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,15 +20,6 @@ import java.util.concurrent.{Callable, ExecutorService, Future, TimeUnit}
 
 import org.apache.spark.sql.rapids.{ColumnarWriteTaskStatsTracker, GpuWriteTaskStatsTracker}
 
-
-/**
- * Stats related classes used by ThrottlingExecutor
- */
-case class ThrottlingExecutorStats (
-    var numTasksScheduled: Int,
-    var accumulatedThrottleTimeNs: Long,
-    var minThrottleTimeNs: Long,
-    var maxThrottleTimeNs: Long)
 
 /**
  * Only for GpuWriteTaskStatsTracker cases
@@ -53,7 +44,7 @@ class StatsUpdaterForWriteFunc(val statsTrackers: Seq[ColumnarWriteTaskStatsTrac
 class ThrottlingExecutor(executor: ExecutorService, throttler: TrafficController,
     updateStats : ThrottlingExecutorStats => Unit) {
 
-  val stats: ThrottlingExecutorStats = ThrottlingExecutorStats(0, 0L, Long.MaxValue, 0L)
+  val stats: ThrottlingExecutorStats = new ThrottlingExecutorStats(0, 0L, Long.MaxValue, 0L)
 
   private def blockUntilTaskRunnable(task: Task[_]): Unit = {
     val blockStart = System.nanoTime()

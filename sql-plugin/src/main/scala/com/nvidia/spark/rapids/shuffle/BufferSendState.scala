@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, BufferTransferRequest}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException
 
 /**
@@ -56,7 +55,21 @@ class BufferSendState(
     sendBounceBuffers: SendBounceBuffers,
     requestHandler: RapidsShuffleRequestHandler,
     serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM)
-    extends AutoCloseable with Logging {
+    extends AutoCloseable {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[BufferSendState])
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
 
   class SendBlock(val bufferHandle: RapidsShuffleHandle) extends BlockWithSize {
     // we assume that the size of the buffer won't change as it goes to host/disk
@@ -148,8 +161,8 @@ class BufferSendState(
     }
   }
 
-  case class RangeBuffer(
-      range: BlockRange[SendBlock], rapidsBuffer: MemoryBuffer)
+  private class RangeBuffer(
+      val range: BlockRange[SendBlock], val rapidsBuffer: MemoryBuffer)
       extends AutoCloseable {
     override def close(): Unit = {
       rapidsBuffer.close()
@@ -189,7 +202,7 @@ class BufferSendState(
               case _ =>
                 hostBuffs += blockRange.rangeSize()
             }
-            RangeBuffer(blockRange, buff)
+            new RangeBuffer(blockRange, buff)
           }
 
           logDebug(s"Occupancy for bounce buffer is " +
@@ -201,7 +214,9 @@ class BufferSendState(
             hostBounceBuffer.buffer
           }
 
-          acquiredBuffs.foreach { case RangeBuffer(blockRange, memoryBuffer) =>
+          acquiredBuffs.foreach { rangeBuffer =>
+            val blockRange = rangeBuffer.range
+            val memoryBuffer = rangeBuffer.rapidsBuffer
             needsCleanup = true
             require(blockRange.rangeSize() <= bounceBuffToUse.getLength - buffOffset)
             bounceBuffToUse.copyFromMemoryBufferAsync(
