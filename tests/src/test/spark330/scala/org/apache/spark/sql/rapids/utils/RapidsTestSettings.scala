@@ -32,6 +32,13 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-32908: maximum target error in percentile_approx", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14635"))
   enableSuite[RapidsDataFrameJoinSuite]
     .exclude("SPARK-24690 enables star schema detection even if CBO disabled", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14653"))
+  enableSuite[RapidsDynamicPartitionPruningV1SuiteAEOff]
+    .exclude("Make sure dynamic pruning works on uncorrelated queries", ADJUST_UT("Replaced by testRapids version that checks GpuSubqueryBroadcastExec"))
+    .exclude("static scan metrics", ADJUST_UT("Replaced by testRapids version that checks GpuFileSourceScanExec metrics"))
+    .exclude("SPARK-32659: Fix the data issue when pruning DPP on non-atomic type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14836"))
+  enableSuite[RapidsDynamicPartitionPruningV1SuiteAEOn]
+    .exclude("Make sure dynamic pruning works on uncorrelated queries", ADJUST_UT("Replaced by testRapids version that checks GpuSubqueryBroadcastExec"))
+    .exclude("SPARK-32659: Fix the data issue when pruning DPP on non-atomic type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14836"))
   enableSuite[RapidsDataFrameSelfJoinSuite]
   enableSuite[RapidsDataFrameWindowFramesSuite]
   enableSuite[RapidsDataFrameTimeWindowingSuite]
