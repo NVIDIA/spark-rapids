@@ -42,6 +42,7 @@
 {"spark": "401"}
 {"spark": "402"}
 {"spark": "411"}
+{"spark": "412"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.storage
 
