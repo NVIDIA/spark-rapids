@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryCommand}
-import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
