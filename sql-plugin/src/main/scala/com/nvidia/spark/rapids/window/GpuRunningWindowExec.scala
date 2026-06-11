@@ -242,10 +242,10 @@ case class GpuRunningWindowExec(
     }
     if (gpuPartitionSpec.isEmpty) {
       // If unpartitioned, batch on the order-by column.
-      BatchedByKey(gpuOrderSpec)(cpuOrderSpec)
+      new BatchedByKey(gpuOrderSpec)(cpuOrderSpec)
     } else {
       // If partitioned, batch on partition-columns + order-by columns.
-      BatchedByKey(gpuPartitionOrdering ++ gpuOrderSpec)(cpuPartitionOrdering ++ cpuOrderSpec)
+      new BatchedByKey(gpuPartitionOrdering ++ gpuOrderSpec)(cpuPartitionOrdering ++ cpuOrderSpec)
     }
   }
 

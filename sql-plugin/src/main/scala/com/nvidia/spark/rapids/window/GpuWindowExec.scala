@@ -157,7 +157,7 @@ case class GpuWindowExec(
   override def outputBatching: CoalesceGoal = if (gpuPartitionSpec.isEmpty) {
     RequireSingleBatch
   } else {
-    BatchedByKey(gpuPartitionOrdering)(cpuPartitionOrdering)
+    new BatchedByKey(gpuPartitionOrdering)(cpuPartitionOrdering)
   }
 
   override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
