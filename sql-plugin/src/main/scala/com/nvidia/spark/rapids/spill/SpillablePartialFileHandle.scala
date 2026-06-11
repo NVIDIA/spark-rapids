@@ -731,58 +731,72 @@ class SpillablePartialFileHandle private (
    * throughout the entire lifecycle (write phase + read phase), we count it as saved.
    */
   override private[spill] def doClose(): Unit = {
-    // Collect resources to close under lock, then close them outside lock
-    val (bos, fos, bis, fis, fc, raf) = synchronized {
-      // Wait for any in-progress spill to complete before closing buffer
-      while (spillInProgress) {
-        wait()
+    var interrupted = false
+    try {
+      // Collect resources to close under lock, then close them outside lock
+      val (bos, fos, bis, fis, fc, raf) = synchronized {
+        // Wait for any in-progress spill to complete before closing buffer.
+        // close() has already committed this handle's closed state, so cleanup must finish even
+        // if this thread is interrupted while waiting. Restore the interrupt flag after cleanup.
+        while (spillInProgress) {
+          try {
+            wait()
+          } catch {
+            case _: InterruptedException =>
+              interrupted = true
+          }
+        }
+
+        // Record disk write savings for ESS + multi-batch merge scenario.
+        // When ESS is enabled with multiple batches, partial files are merged into
+        // a final file. If a partial file stayed in memory (not spilled), it avoided
+        // an intermediate disk write. The task is still running during merge, so
+        // GpuTaskMetrics.get is valid.
+        if (storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL &&
+          !spilledToDisk && totalBytesWritten > 0 && !diskWriteSavingsRecorded) {
+          GpuTaskMetrics.get.addDiskWriteSaved(totalBytesWritten)
+          diskWriteSavingsRecorded = true
+          logDebug(s"Recorded disk write savings in doClose: $totalBytesWritten bytes")
+        }
+
+        // Collect streams/channels to close
+        val result = (bufferedOutputStream, fileOutputStream,
+          bufferedInputStream, fileInputStream, fileChannel, randomAccessFile)
+
+        // Clear references
+        bufferedOutputStream = None
+        fileOutputStream = None
+        bufferedInputStream = None
+        fileInputStream = None
+        fileChannel = None
+        randomAccessFile = None
+
+        // Release host buffer (removes from SpillFramework tracking and closes buffer)
+        releaseHostResource()
+
+        result
       }
 
-      // Record disk write savings for ESS + multi-batch merge scenario.
-      // When ESS is enabled with multiple batches, partial files are merged into
-      // a final file. If a partial file stayed in memory (not spilled), it avoided
-      // an intermediate disk write. The task is still running during merge, so
-      // GpuTaskMetrics.get is valid.
-      if (storageMode == PartialFileStorageMode.MEMORY_WITH_SPILL &&
-        !spilledToDisk && totalBytesWritten > 0 && !diskWriteSavingsRecorded) {
-        GpuTaskMetrics.get.addDiskWriteSaved(totalBytesWritten)
-        diskWriteSavingsRecorded = true
-        logDebug(s"Recorded disk write savings in doClose: $totalBytesWritten bytes")
+      // Close streams outside lock (IO operations can be slow)
+      tryClose(bos, "bufferedOutputStream")
+      tryClose(fos, "fileOutputStream")
+      tryClose(bis, "bufferedInputStream")
+      tryClose(fis, "fileInputStream")
+      tryClose(fc, "fileChannel")
+      tryClose(raf, "randomAccessFile")
+
+      // Delete file if it exists
+      if (file != null && file.exists()) {
+        try {
+          file.delete()
+        } catch {
+          case e: Exception =>
+            logWarning(s"Failed to delete file ${file.getAbsolutePath}", e)
+        }
       }
-
-      // Collect streams/channels to close
-      val result = (bufferedOutputStream, fileOutputStream,
-        bufferedInputStream, fileInputStream, fileChannel, randomAccessFile)
-
-      // Clear references
-      bufferedOutputStream = None
-      fileOutputStream = None
-      bufferedInputStream = None
-      fileInputStream = None
-      fileChannel = None
-      randomAccessFile = None
-
-      // Release host buffer (removes from SpillFramework tracking and closes buffer)
-      releaseHostResource()
-
-      result
-    }
-
-    // Close streams outside lock (IO operations can be slow)
-    tryClose(bos, "bufferedOutputStream")
-    tryClose(fos, "fileOutputStream")
-    tryClose(bis, "bufferedInputStream")
-    tryClose(fis, "fileInputStream")
-    tryClose(fc, "fileChannel")
-    tryClose(raf, "randomAccessFile")
-
-    // Delete file if it exists
-    if (file != null && file.exists()) {
-      try {
-        file.delete()
-      } catch {
-        case e: Exception =>
-          logWarning(s"Failed to delete file ${file.getAbsolutePath}", e)
+    } finally {
+      if (interrupted) {
+        Thread.currentThread().interrupt()
       }
     }
   }
@@ -860,4 +874,3 @@ object SpillablePartialFileHandle extends Logging {
       capacityHintProvider = capacityHintProvider)
   }
 }
-

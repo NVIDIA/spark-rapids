@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.spill
 
 import java.io.File
 import java.util.Arrays
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsConf
@@ -28,6 +29,11 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
 
   // Use 1GB max buffer size for tests to avoid memory issues on test machines
   private val testMaxBufferSize = 1L * 1024 * 1024 * 1024
+  private val spillInProgressField = {
+    val field = classOf[SpillablePartialFileHandle].getDeclaredField("spillInProgress")
+    field.setAccessible(true)
+    field
+  }
 
   override def beforeEach(): Unit = {
     super.beforeEach()
@@ -40,6 +46,18 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
   override def afterEach(): Unit = {
     SpillFramework.shutdown()
     super.afterEach()
+  }
+
+  private def setSpillInProgress(handle: SpillablePartialFileHandle, value: Boolean): Unit = {
+    spillInProgressField.setBoolean(handle, value)
+  }
+
+  private def waitUntil(condition: => Boolean, clue: String): Unit = {
+    val deadline = System.currentTimeMillis() + 5000
+    while (!condition && System.currentTimeMillis() < deadline) {
+      Thread.sleep(10)
+    }
+    assert(condition, clue)
   }
 
   test("FILE_ONLY mode: write and read") {
@@ -219,6 +237,68 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
       
       assert(bytesRead == testData.length)
       assert(readBuffer.sameElements(testData))
+    }
+  }
+
+  test("MEMORY_WITH_SPILL mode: interrupted close still completes cleanup") {
+    val tempFile = File.createTempFile("test-interrupted-close-", ".tmp")
+    val handle = SpillablePartialFileHandle.createMemoryWithSpill(
+      initialCapacity = 1024,
+      maxBufferSize = testMaxBufferSize,
+      memoryThreshold = 0.5,
+      spillFile = tempFile)
+    var closeThread: Thread = null
+
+    try {
+      val testData = "data retained until close".getBytes("UTF-8")
+      handle.write(testData, 0, testData.length)
+      handle.finishWrite()
+      assert(handle.host.nonEmpty)
+      assert(tempFile.exists())
+
+      handle.synchronized {
+        setSpillInProgress(handle, true)
+      }
+
+      val closeReturnedWithInterrupt = new AtomicBoolean(false)
+      val closeError = new AtomicReference[Throwable]()
+      closeThread = new Thread("test-interrupted-partial-file-close") {
+        override def run(): Unit = {
+          try {
+            handle.close()
+            closeReturnedWithInterrupt.set(Thread.currentThread().isInterrupted)
+          } catch {
+            case t: Throwable => closeError.set(t)
+          }
+        }
+      }
+
+      closeThread.start()
+      waitUntil(closeThread.getState == Thread.State.WAITING,
+        "close thread did not wait for spillInProgress")
+      closeThread.interrupt()
+
+      handle.synchronized {
+        setSpillInProgress(handle, false)
+        handle.notifyAll()
+      }
+      closeThread.join(5000)
+
+      assert(!closeThread.isAlive)
+      assert(closeError.get() == null)
+      assert(closeReturnedWithInterrupt.get())
+      assert(handle.host.isEmpty)
+      assert(!tempFile.exists())
+    } finally {
+      handle.synchronized {
+        setSpillInProgress(handle, false)
+        handle.notifyAll()
+      }
+      if (closeThread != null && closeThread.isAlive) {
+        closeThread.join(5000)
+      }
+      handle.close()
+      tempFile.delete()
     }
   }
 
@@ -573,4 +653,3 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     }
   }
 }
-
