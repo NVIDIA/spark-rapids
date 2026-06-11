@@ -1084,8 +1084,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
               throw new RegexUnsupportedException(
                       "Regex sequences with \\b or \\B not supported around $", regex.position)
             case _ =>
-              // LAYER2 PROBE (cudf #22763): cuDF now treats \r\n as one line terminator under
-              // EXT_NEWLINE, so emit the anchor directly instead of the (\r\n)? synthetic group.
+              // cuDF #22763 makes EXT_NEWLINE treat \r\n as one line terminator for $, so emit
+              // the anchor directly instead of the (\r\n)? synthetic group it needed before.
               RegexChar('$')
           }
         case '^' if mode == RegexSplitMode =>
