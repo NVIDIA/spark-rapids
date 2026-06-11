@@ -722,14 +722,16 @@ def test_array_filter(data_gen):
 
 
 @disable_ansi_mode
-def test_array_elementwise_hof_mixed_project():
+def test_array_heterogeneous_elementwise_hof_mixed_project():
     data_gen = ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=8)
     def do_it(spark):
-        return unary_op_df(spark, data_gen).selectExpr(
+        return two_col_df(spark, data_gen, IntegerGen(min_val=-5, max_val=5)).selectExpr(
             'a',
-            'transform(a, item -> item + 1) as plus_one',
-            'filter(a, item -> item is not null and item >= 0) as non_negative',
-            'exists(a, item -> item is not null and item < 0) as has_negative')
+            'b',
+            'transform(a, item -> item + b) as plus_b',
+            'transform(a, item -> item is not null and item >= b) as at_least_b',
+            'filter(a, item -> item is not null and item >= b) as filtered_at_least_b',
+            'exists(a, item -> item is not null and item < b) as has_less_than_b')
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
