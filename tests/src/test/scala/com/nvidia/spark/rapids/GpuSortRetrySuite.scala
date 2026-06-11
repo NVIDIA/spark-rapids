@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -176,10 +176,14 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
   }
 
   test("GPU each batch sort with GpuRetryOOM") {
-    val eachBatchIter = GpuSortEachBatchIterator(
+    val eachBatchIter = new GpuSortEachBatchIterator(
       batchIter(2),
       gpuSorter,
-      singleBatch = false)
+      false,
+      NoopMetric,
+      NoopMetric,
+      NoopMetric,
+      NoopMetric)
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 2,
       RmmSpark.OomInjectionType.GPU.ordinal, 0)
     while (eachBatchIter.hasNext) {
@@ -201,10 +205,14 @@ class GpuSortRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
   test("GPU each batch sort throws GpuSplitAndRetryOOM") {
     val inputIter = batchIter(2)
     try {
-      val eachBatchIter = GpuSortEachBatchIterator(
+      val eachBatchIter = new GpuSortEachBatchIterator(
         inputIter,
         gpuSorter,
-        singleBatch = false)
+        false,
+        NoopMetric,
+        NoopMetric,
+        NoopMetric,
+        NoopMetric)
       RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
         RmmSpark.OomInjectionType.GPU.ordinal, 0)
       assertThrows[GpuSplitAndRetryOOM] {
