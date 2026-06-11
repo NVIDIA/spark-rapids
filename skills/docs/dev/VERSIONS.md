@@ -1,0 +1,53 @@
+# Version Update Guide
+
+## Files To Update
+
+### Java udf-gen-test Maven template
+
+File: `skills/udf-gen-test/templates/java/pom.xml`
+
+Update these properties together:
+
+- `<scala.binary.version>`
+- `<spark.version>`
+- `<rapids4spark.version>`
+- `<cuda.version>` if the RAPIDS artifact classifier changes
+- `<cudf.git.branch>`
+- `<rapids.cmake.branch>`
+
+### Scala udf-gen-test Maven template
+
+File: `skills/udf-gen-test/templates/scala/pom.xml`
+
+Update these properties together:
+
+- `<scala.binary.version>`
+- `<scala.version>`
+- `<spark.version>`
+- `<rapids4spark.version>`
+- `<cuda.version>` if the RAPIDS artifact classifier changes
+- `<cudf.git.branch>`
+- `<rapids.cmake.branch>`
+
+### Native CUDA dependency extraction
+
+File: `skills/udf-convert-to-cuda/templates/cuda/native/scripts/extract-cudf-libs.sh`
+
+Update these default values:
+
+- `SCALA_VERSION`
+- `RAPIDS4SPARK_VERSION`
+- `CUDA_VERSION` if the RAPIDS artifact classifier changes
+- `CUDF_BRANCH`
+
+### Native CUDA CMake template
+
+File: `skills/udf-convert-to-cuda/templates/cuda/native/src/main/cpp/CMakeLists.txt`
+
+Update these values:
+
+- `RAPIDS_CMAKE_BRANCH`
+- `project(RAPIDSUDFJNI VERSION ...)`
+- `rapids_cpm_find(cudf ...)`
+
+`RAPIDS_CMAKE_BRANCH` should generally match the RAPIDS/cuDF branch or tag used by the Maven templates and `extract-cudf-libs.sh`. The `rapids_cpm_find(cudf...)` version should use the RAPIDS major/minor CPM version, for example `26.04.00` for `26.04.0`.
