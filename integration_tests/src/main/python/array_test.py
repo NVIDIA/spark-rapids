@@ -721,6 +721,19 @@ def test_array_filter(data_gen):
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
+@disable_ansi_mode
+def test_array_elementwise_hof_mixed_project():
+    data_gen = ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=8)
+    def do_it(spark):
+        return unary_op_df(spark, data_gen).selectExpr(
+            'a',
+            'transform(a, item -> item + 1) as plus_one',
+            'filter(a, item -> item is not null and item >= 0) as non_negative',
+            'exists(a, item -> item is not null and item < 0) as has_negative')
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
 array_zips_gen = array_gens_sample + [ArrayGen(map_string_string_gen[0], max_length=5),
                                       ArrayGen(BinaryGen(max_length=5), max_length=5)]
 

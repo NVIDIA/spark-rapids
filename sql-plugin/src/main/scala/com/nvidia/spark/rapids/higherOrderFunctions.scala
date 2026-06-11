@@ -323,8 +323,8 @@ trait GpuArrayElementWiseTransform extends GpuArrayTransformBase {
   }
 }
 
-private[rapids] object GpuArrayTransformFusion {
-  private case class TransformInProject(index: Int, transform: GpuArrayTransform)
+private[rapids] object GpuArrayElementWiseFusion {
+  private case class TransformInProject(index: Int, transform: GpuArrayElementWiseTransform)
 
   def project(
       batch: ColumnarBatch,
@@ -352,13 +352,14 @@ private[rapids] object GpuArrayTransformFusion {
     groups.filter(_.length > 1).map(_.toSeq).filter(canReorderAcross(boundExprs, _)).toSeq
   }
 
-  private def extractTransform(expr: Expression): Option[GpuArrayTransform] = expr match {
-    case GpuAlias(transform: GpuArrayTransform, _) => Some(transform)
-    case transform: GpuArrayTransform => Some(transform)
+  private def extractTransform(
+      expr: Expression): Option[GpuArrayElementWiseTransform] = expr match {
+    case GpuAlias(transform: GpuArrayElementWiseTransform, _) => Some(transform)
+    case transform: GpuArrayElementWiseTransform => Some(transform)
     case _ => None
   }
 
-  private def canFuse(transform: GpuArrayTransform): Boolean = {
+  private def canFuse(transform: GpuArrayElementWiseTransform): Boolean = {
     transform.isBound &&
       transform.deterministic &&
       !transform.hasSideEffects &&
@@ -367,7 +368,9 @@ private[rapids] object GpuArrayTransformFusion {
       (transform.lambdaArgumentCount == 1 || transform.lambdaArgumentCount == 2)
   }
 
-  private def canShareExplode(left: GpuArrayTransform, right: GpuArrayTransform): Boolean = {
+  private def canShareExplode(
+      left: GpuArrayElementWiseTransform,
+      right: GpuArrayElementWiseTransform): Boolean = {
     left.lambdaArgumentCount == right.lambdaArgumentCount &&
       left.argument.semanticEquals(right.argument)
   }
@@ -422,7 +425,7 @@ private[rapids] object GpuArrayTransformFusion {
 
   private def evaluateFusedGroup(
       batch: ColumnarBatch,
-      transforms: Seq[GpuArrayTransform]): Seq[GpuColumnVector] = {
+      transforms: Seq[GpuArrayElementWiseTransform]): Seq[GpuColumnVector] = {
     val first = transforms.head
     val unionIntermediate = collectUnionIntermediate(transforms)
     withResource(first.argument.columnarEval(batch)) { arg =>
@@ -449,7 +452,7 @@ private[rapids] object GpuArrayTransformFusion {
   }
 
   private def collectUnionIntermediate(
-      transforms: Seq[GpuArrayTransform]): Seq[GpuExpression] = {
+      transforms: Seq[GpuArrayElementWiseTransform]): Seq[GpuExpression] = {
     val unionIntermediate = mutable.ArrayBuffer[GpuExpression]()
     transforms.foreach { transform =>
       transform.boundIntermediate.foreach { expr =>
@@ -465,7 +468,7 @@ private[rapids] object GpuArrayTransformFusion {
       inputBatch: ColumnarBatch,
       argColumn: GpuColumnVector,
       unionIntermediate: Seq[GpuExpression],
-      firstTransform: GpuArrayTransform): ColumnarBatch = {
+      firstTransform: GpuArrayElementWiseTransform): ColumnarBatch = {
     assert(argColumn.getBase.getType.equals(DType.LIST))
 
     def projectAndExplode(explodeOp: Table => Table): Table = {
@@ -513,7 +516,7 @@ private[rapids] object GpuArrayTransformFusion {
   private def makeTransformLambdaBatch(
       sharedBatch: ColumnarBatch,
       unionIntermediate: Seq[GpuExpression],
-      transform: GpuArrayTransform): ColumnarBatch = {
+      transform: GpuArrayElementWiseTransform): ColumnarBatch = {
     val lambdaArgStart = unionIntermediate.length
     val intermediateIndexes = transform.boundIntermediate.map { expr =>
       val index = unionIntermediate.indexWhere(_.semanticEquals(expr))
