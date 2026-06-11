@@ -88,7 +88,10 @@ def test_v2_write_sql_ui_shows_gpu_child_operators(spark_tmp_table_factory):
                 names = node_names(exec_id)
                 if any(_is_write_node(n) for n in names):
                     write_execs.append((exec_id, names))
-        return min(write_execs)[1] if write_execs else []
+        assert write_execs, \
+            f"No write execution found after baseline_exec_id={baseline_exec_id}; " \
+            f"the INSERT may not have registered with the SQL status store."
+        return min(write_execs)[1]
 
     names = with_gpu_session(run, conf=iceberg_write_enabled_conf)
 
