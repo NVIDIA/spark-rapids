@@ -156,7 +156,7 @@ class GpuFileFormatDataWriterSuite extends AnyFunSuite with BeforeAndAfterEach {
         dataSpec = allCols
       }
       if (numBuckets != 0) {
-        bucketSpec = Some(GpuWriterBucketSpec(
+        bucketSpec = Some(new GpuWriterBucketSpec(
           GpuPmod(GpuMurmur3Hash(Seq(allCols.last), 42), GpuLiteral(Math.abs(numBuckets))),
           _ => ""))
       }
