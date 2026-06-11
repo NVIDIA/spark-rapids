@@ -148,7 +148,8 @@ BENCH_GPU_CUDA = """\
 BENCH_GPU_SQL = """\
   def executeGpu(spark: SparkSession, df: DataFrame): DataFrame = {
     df.createOrReplaceTempView("bench_table")
-    val sqlContent = scala.io.Source.fromFile("src/main/resources/integer_multiply_by_2.sql").mkString
+    val sqlSource = scala.io.Source.fromFile("src/main/resources/integer_multiply_by_2.sql")
+    val sqlContent = try sqlSource.mkString finally sqlSource.close()
     val benchSql = sqlContent.replace("test_table", "bench_table")
     spark.sql(benchSql)
   }"""

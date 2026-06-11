@@ -57,7 +57,11 @@ object Arm {
    */
   def closeAll[T <: AutoCloseable](resources: Array[T]): Unit = {
     if (resources != null) {
-      resources.foreach(r => if (r != null) r.close())
+      resources.foreach { r =>
+        if (r != null) {
+          try { r.close() } catch { case _: Exception => }
+        }
+      }
     } 
   }
 }
