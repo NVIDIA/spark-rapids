@@ -219,10 +219,10 @@ case class GpuIf(
       case (value, GpuLiteral(null, _)) =>
         nullifyIf(value, new ast.UnaryOperation(ast.UnaryOperator.NOT, predicateAst))
       case _ =>
-        new ast.JitOperation(ast.JitOperator.IF_ELSE,
-          valueToAst(trueExpr),
-          valueToAst(falseExpr),
-          predicateAst)
+        val trueValue =
+          nullifyIf(trueExpr, new ast.UnaryOperation(ast.UnaryOperator.NOT, predicateAst))
+        val falseValue = nullifyIf(falseExpr, predicateAst)
+        new ast.JitOperation(ast.JitOperator.COALESCE, trueValue, falseValue)
     }
   }
 

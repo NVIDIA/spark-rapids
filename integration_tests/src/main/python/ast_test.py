@@ -23,6 +23,7 @@ from asserts import (
 from data_gen import *
 from marks import approximate_float, datagen_overrides, ignore_order, disable_ansi_mode
 from spark_session import with_cpu_session, is_before_spark_330
+from conftest import is_libcudf_jit_available, get_libcudf_jit_unavailable_reason
 import pyspark.sql.functions as f
 from pyspark.sql.types import DecimalType, IntegerType, LongType
 
@@ -71,10 +72,13 @@ _project_ast_enabled_conf = {"spark.rapids.sql.projectAstEnabled": "true"}
 _jit_ast_enabled_conf = {
     "spark.rapids.sql.projectAstAnsiArithmeticEnabled": "true",
     "spark.executorEnv.LIBCUDF_JIT_ENABLED": "1"}
+if "LD_LIBRARY_PATH" in os.environ:
+    _jit_ast_enabled_conf["spark.executorEnv.LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
 _ansi_jit_ast_enabled_conf = copy_and_update(ansi_enabled_conf, _jit_ast_enabled_conf)
 _requires_libcudf_jit = pytest.mark.skipif(
-    os.environ.get("LIBCUDF_JIT_ENABLED") != "1",
-    reason="ANSI JIT AST requires LIBCUDF_JIT_ENABLED=1 before libcudf initialization")
+    not is_libcudf_jit_available(),
+    reason="ANSI JIT AST requires libcudf JIT runtime: " +
+           get_libcudf_jit_unavailable_reason())
 
 def assert_gpu_ast(is_supported, func, conf={}):
     exist = "GpuProjectAstExec"

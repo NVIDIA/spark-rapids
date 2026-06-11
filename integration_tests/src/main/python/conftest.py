@@ -17,6 +17,7 @@ import os
 import pytest
 import random
 import warnings
+import ctypes
 
 # TODO redo _spark stuff using fixtures
 #
@@ -87,9 +88,49 @@ def get_validate_execs_in_gpu_plan():
     return _validate_execs_in_gpu_plan
 
 _runtime_env = "apache"
+_libcudf_jit_mode = "auto"
+_libcudf_jit_available = None
+_libcudf_jit_unavailable_reason = None
 
 def runtime_env():
     return _runtime_env.lower()
+
+def get_libcudf_jit_mode():
+    return _libcudf_jit_mode
+
+def _load_library(library_name):
+    try:
+        ctypes.CDLL(library_name)
+        return None
+    except OSError as e:
+        return str(e)
+
+def _probe_libcudf_jit():
+    if get_libcudf_jit_mode() == "disabled":
+        return False, "libcudf JIT tests are disabled"
+    if os.environ.get("LIBCUDF_JIT_ENABLED") != "1":
+        return False, "LIBCUDF_JIT_ENABLED=1 is not set before libcudf initialization"
+
+    missing = []
+    for library_name in ["libcuda.so", "libnvrtc.so", "libnvJitLink.so.12"]:
+        error = _load_library(library_name)
+        if error is not None:
+            missing.append("%s: %s" % (library_name, error))
+    if missing:
+        return False, "; ".join(missing)
+    return True, ""
+
+def is_libcudf_jit_available():
+    global _libcudf_jit_available
+    global _libcudf_jit_unavailable_reason
+    if _libcudf_jit_available is None:
+        _libcudf_jit_available, _libcudf_jit_unavailable_reason = _probe_libcudf_jit()
+    return _libcudf_jit_available
+
+def get_libcudf_jit_unavailable_reason():
+    if not is_libcudf_jit_available():
+        return _libcudf_jit_unavailable_reason
+    return ""
 
 def is_apache_runtime():
     return runtime_env() == "apache"
@@ -370,6 +411,20 @@ def pytest_runtest_setup(item):
 def pytest_configure(config):
     global _runtime_env
     _runtime_env = config.getoption('runtime_env')
+    global _libcudf_jit_mode
+    _libcudf_jit_mode = config.getoption('libcudf_jit_mode').lower()
+    if _libcudf_jit_mode not in ["auto", "required", "disabled"]:
+        raise pytest.UsageError(
+            "unsupported libcudf JIT mode {}".format(_libcudf_jit_mode))
+    os.environ["SPARK_RAPIDS_TEST_LIBCUDF_JIT_MODE"] = _libcudf_jit_mode
+    global _libcudf_jit_available
+    global _libcudf_jit_unavailable_reason
+    _libcudf_jit_available = None
+    _libcudf_jit_unavailable_reason = None
+    if _libcudf_jit_mode == "required" and not is_libcudf_jit_available():
+        raise pytest.UsageError(
+            "libcudf JIT runtime is required but unavailable: {}".format(
+                get_libcudf_jit_unavailable_reason()))
     global _std_input_path
     _std_input_path = config.getoption("std_input_path")
     global _is_nightly_run

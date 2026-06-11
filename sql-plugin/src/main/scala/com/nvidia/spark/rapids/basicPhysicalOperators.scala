@@ -59,9 +59,10 @@ class GpuProjectExecMeta(
     val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
     val gpuChild = childPlans.head.convertIfNeeded()
     if (conf.isProjectAstEnabled) {
+      val canUseAnsiJitAst = !conf.isProjectAstAnsiArithmeticEnabled || conf.isLibcudfJitEnabled
       // cuDF requires return column is fixed width
       val allReturnTypesFixedWidth = gpuExprs.forall(e => GpuBatchUtils.isFixedWidth(e.dataType))
-      if (allReturnTypesFixedWidth && childExprs.forall(_.canThisBeAst)) {
+      if (canUseAnsiJitAst && allReturnTypesFixedWidth && childExprs.forall(_.canThisBeAst)) {
         return GpuProjectAstExec(gpuExprs, gpuChild)
       }
       // explain AST because this is optional and it is sometimes hard to debug
@@ -70,6 +71,10 @@ class GpuProjectExecMeta(
             .filter(_.nonEmpty)
         if (explain.nonEmpty) {
           logWarning(s"AST PROJECT\n$explain")
+        }
+        if (!canUseAnsiJitAst) {
+          logWarning("AST PROJECT\n  ANSI AST JIT requires LIBCUDF_JIT_ENABLED=1 " +
+            "before executor libcudf initialization")
         }
         if (!allReturnTypesFixedWidth) {
           logWarning(s"AST PROJECT\n  have non fixed return column, " +
@@ -929,13 +934,8 @@ case class GpuProjectAstExec(
     val outputTypes = output.map(_.dataType).toArray
     new GpuColumnarBatchIterator(true) {
       private[this] var maybeSplittedItr: Iterator[ColumnarBatch] = Iterator.empty
-      private[this] var compiledAstExprs =
-        NvtxIdWithMetrics(NvtxRegistry.COMPILE_ASTS, opTime) {
-          boundProjectList.safeMap { expr =>
-            // Use intmax for the left table column count since there's only one input table here.
-            expr.convertToAst(Int.MaxValue).compile()
-          }
-        }
+      private[this] val compiledAstExprs =
+        new RetryableCompiledAstExpressions(boundProjectList, opTime)
 
       override def hasNext: Boolean = maybeSplittedItr.hasNext || {
         if (input.hasNext) {
@@ -950,14 +950,13 @@ case class GpuProjectAstExec(
         if (!maybeSplittedItr.hasNext) {
           val spillable = SpillableColumnarBatch(
             input.next(), SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
-          // AST currently doesn't support non-deterministic expressions so it's not needed
-          // to check whether compiled expressions are retryable.
-          maybeSplittedItr = withRetry(spillable, splitSpillableInHalfByRows) { spillable =>
-            NvtxIdWithMetrics(NvtxRegistry.PROJECT_AST, opTime) {
-              withResource(spillable.getColumnarBatch()) { cb =>
+          // JIT can initialize native state lazily during computeColumn, so rebuild compiled
+          // expressions after retry instead of reusing state from a failed attempt.
+          maybeSplittedItr = Iterator(GpuProjectExec.runWithSplitRetry(
+            spillable, Seq(compiledAstExprs), { cb =>
+              NvtxIdWithMetrics(NvtxRegistry.PROJECT_AST, opTime) {
                 val projectedTable = withResource(tableFromBatch(cb)) { table =>
-                  withResource(
-                    compiledAstExprs.safeMap(_.computeColumn(table))) { projectedColumns =>
+                  withResource(compiledAstExprs.computeColumns(table)) { projectedColumns =>
                     new Table(projectedColumns: _*)
                   }
                 }
@@ -965,8 +964,7 @@ case class GpuProjectAstExec(
                   GpuColumnVector.from(projectedTable, outputTypes)
                 }
               }
-            }
-          }
+            }))
         }
 
         val ret = maybeSplittedItr.next()
@@ -977,7 +975,6 @@ case class GpuProjectAstExec(
 
       override def doClose(): Unit = {
         compiledAstExprs.safeClose()
-        compiledAstExprs = Nil
       }
 
       private def tableFromBatch(cb: ColumnarBatch): Table = {
@@ -994,6 +991,38 @@ case class GpuProjectAstExec(
         }
       }
     }
+  }
+
+  private class RetryableCompiledAstExpressions(
+      boundProjectList: Seq[GpuExpression],
+      opTime: GpuMetric) extends Retryable with AutoCloseable {
+    private[this] var compiledAstExprs: Seq[cudf.ast.CompiledExpression] = compile()
+
+    override def checkpoint(): Unit = {}
+
+    override def restore(): Unit = {
+      val oldCompiledAstExprs = compiledAstExprs
+      compiledAstExprs = Nil
+      oldCompiledAstExprs.safeClose()
+      compiledAstExprs = compile()
+    }
+
+    def computeColumns(table: Table): Seq[cudf.ColumnVector] =
+      compiledAstExprs.safeMap(_.computeColumn(table))
+
+    override def close(): Unit = {
+      val oldCompiledAstExprs = compiledAstExprs
+      compiledAstExprs = Nil
+      oldCompiledAstExprs.safeClose()
+    }
+
+    private def compile(): Seq[cudf.ast.CompiledExpression] =
+      NvtxIdWithMetrics(NvtxRegistry.COMPILE_ASTS, opTime) {
+        boundProjectList.safeMap { expr =>
+          // Use intmax for the left table column count since there's only one input table here.
+          expr.convertToAst(Int.MaxValue).compile()
+        }
+      }
   }
 }
 

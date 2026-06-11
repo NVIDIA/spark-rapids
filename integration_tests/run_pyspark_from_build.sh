@@ -65,6 +65,117 @@ cd "$SCRIPTPATH"
 # https://github.com/NVIDIA/spark-rapids/issues/12043
 export CI=${CI:-true}
 
+_prepend_ld_library_path() {
+  local dir="$1"
+  [[ -d "$dir" ]] || return 0
+  case ":${LD_LIBRARY_PATH:-}:" in
+    *":$dir:"*) ;;
+    *) export LD_LIBRARY_PATH="$dir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+  esac
+}
+
+_can_load_library() {
+  python - "$1" <<'PY'
+import ctypes
+import sys
+
+try:
+    ctypes.CDLL(sys.argv[1])
+    sys.exit(0)
+except OSError:
+    sys.exit(1)
+PY
+}
+
+_find_real_libcuda() {
+  local path
+  path=$(ldconfig -p 2>/dev/null | awk '/libcuda\.so\.1 / {print $NF; exit}')
+  if [[ -n "$path" && -f "$path" ]]; then
+    echo "$path"
+    return 0
+  fi
+
+  for path in /lib/x86_64-linux-gnu/libcuda.so.1 /usr/lib/x86_64-linux-gnu/libcuda.so.1; do
+    if [[ -f "$path" ]]; then
+      echo "$path"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+_prepend_cuda_jit_runtime_dirs() {
+  local root dir
+  for root in /usr/local/cuda /usr/local/cuda-*; do
+    [[ -e "$root" ]] || continue
+    while IFS= read -r dir; do
+      [[ "$dir" == *"/stubs" ]] && continue
+      _prepend_ld_library_path "$dir"
+    done < <(find "$root" -type f \( -name 'libnvrtc.so*' -o -name 'libnvJitLink.so*' \) \
+        -printf '%h\n' 2>/dev/null | sort -uV)
+  done
+
+  for dir in /tmp/cuda*-runtime-libs; do
+    [[ -d "$dir" ]] || continue
+    _prepend_ld_library_path "$dir"
+  done
+}
+
+_parse_libcudf_jit_mode() {
+  local args=("$@")
+  local i
+  LIBCUDF_JIT_MODE="${LIBCUDF_JIT_MODE:-auto}"
+  for ((i=0; i<${#args[@]}; i++)); do
+    case "${args[$i]}" in
+      --libcudf_jit_mode=*)
+        LIBCUDF_JIT_MODE="${args[$i]#*=}"
+        ;;
+      --libcudf_jit_mode)
+        if ((i + 1 < ${#args[@]})); then
+          LIBCUDF_JIT_MODE="${args[$((i + 1))]}"
+        fi
+        ;;
+    esac
+  done
+
+  LIBCUDF_JIT_MODE=$(echo "$LIBCUDF_JIT_MODE" | tr '[:upper:]' '[:lower:]')
+  case "$LIBCUDF_JIT_MODE" in
+    auto|required|disabled) ;;
+    *)
+      >&2 echo "Invalid LIBCUDF_JIT_MODE: $LIBCUDF_JIT_MODE. Expected auto, required, or disabled."
+      exit 1
+      ;;
+  esac
+  export SPARK_RAPIDS_TEST_LIBCUDF_JIT_MODE="$LIBCUDF_JIT_MODE"
+}
+
+_setup_libcudf_jit_runtime() {
+  _parse_libcudf_jit_mode "$@"
+
+  if [[ "$LIBCUDF_JIT_MODE" == "disabled" ]]; then
+    return 0
+  fi
+
+  export LIBCUDF_JIT_ENABLED="${LIBCUDF_JIT_ENABLED:-1}"
+  _prepend_cuda_jit_runtime_dirs
+
+  if ! _can_load_library libcuda.so; then
+    local libcuda_path jit_lib_dir
+    if libcuda_path=$(_find_real_libcuda); then
+      jit_lib_dir="$RUN_DIR/libcudf-jit-libs"
+      mkdir -p "$jit_lib_dir"
+      ln -sf "$libcuda_path" "$jit_lib_dir/libcuda.so"
+      _prepend_ld_library_path "$jit_lib_dir"
+    fi
+  fi
+
+  export PYSP_TEST_spark_executorEnv_LIBCUDF_JIT_ENABLED="$LIBCUDF_JIT_ENABLED"
+  if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+    export PYSP_TEST_spark_executorEnv_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+  fi
+}
+
 if [[ $( echo ${SKIP_TESTS} | tr '[:upper:]' '[:lower:]' ) == "true" ]];
 then
     echo "PYTHON INTEGRATION TESTS SKIPPED..."
@@ -250,6 +361,8 @@ else
     RUN_DIR=${RUN_DIR-"${temp_rundir}"}
     mkdir -p "$RUN_DIR"
     cd "$RUN_DIR"
+
+    _setup_libcudf_jit_runtime "$@"
 
     ## Under cloud environment, overwrite the '--rootdir' param to point to the working directory of each excutor
     LOCAL_ROOTDIR=${LOCAL_ROOTDIR:-"$SCRIPTPATH"}
