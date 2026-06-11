@@ -323,8 +323,8 @@ trait GpuArrayElementWiseTransform extends GpuArrayTransformBase {
   }
 }
 
-private[rapids] object GpuArrayElementWiseFusion {
-  private case class TransformInProject(index: Int, transform: GpuArrayElementWiseTransform)
+private[rapids] object GpuArrayTransformFusion {
+  private case class TransformInProject(index: Int, transform: GpuArrayTransformBase)
 
   def project(
       batch: ColumnarBatch,
@@ -353,13 +353,13 @@ private[rapids] object GpuArrayElementWiseFusion {
   }
 
   private def extractTransform(
-      expr: Expression): Option[GpuArrayElementWiseTransform] = expr match {
-    case GpuAlias(transform: GpuArrayElementWiseTransform, _) => Some(transform)
-    case transform: GpuArrayElementWiseTransform => Some(transform)
+      expr: Expression): Option[GpuArrayTransformBase] = expr match {
+    case GpuAlias(transform: GpuArrayTransformBase, _) => Some(transform)
+    case transform: GpuArrayTransformBase => Some(transform)
     case _ => None
   }
 
-  private def canFuse(transform: GpuArrayElementWiseTransform): Boolean = {
+  private def canFuse(transform: GpuArrayTransformBase): Boolean = {
     transform.isBound &&
       transform.deterministic &&
       !transform.hasSideEffects &&
@@ -369,8 +369,8 @@ private[rapids] object GpuArrayElementWiseFusion {
   }
 
   private def canShareExplode(
-      left: GpuArrayElementWiseTransform,
-      right: GpuArrayElementWiseTransform): Boolean = {
+      left: GpuArrayTransformBase,
+      right: GpuArrayTransformBase): Boolean = {
     left.lambdaArgumentCount == right.lambdaArgumentCount &&
       left.argument.semanticEquals(right.argument)
   }
@@ -425,7 +425,7 @@ private[rapids] object GpuArrayElementWiseFusion {
 
   private def evaluateFusedGroup(
       batch: ColumnarBatch,
-      transforms: Seq[GpuArrayElementWiseTransform]): Seq[GpuColumnVector] = {
+      transforms: Seq[GpuArrayTransformBase]): Seq[GpuColumnVector] = {
     val first = transforms.head
     val unionIntermediate = collectUnionIntermediate(transforms)
     withResource(first.argument.columnarEval(batch)) { arg =>
@@ -438,7 +438,7 @@ private[rapids] object GpuArrayElementWiseFusion {
               transform.function.columnarEval(lambdaBatch)
             }
             withResource(dataCol) { _ =>
-              output += transform.transformElementResults(dataCol, arg)
+              output += consumeElementResults(batch, transform, dataCol, arg)
             }
           }
           output.toSeq
@@ -451,8 +451,19 @@ private[rapids] object GpuArrayElementWiseFusion {
     }
   }
 
+  private def consumeElementResults(
+      batch: ColumnarBatch,
+      transform: GpuArrayTransformBase,
+      dataCol: GpuColumnVector,
+      arg: GpuColumnVector): GpuColumnVector = transform match {
+    case elementWise: GpuArrayElementWiseTransform =>
+      elementWise.transformElementResults(dataCol, arg)
+    case aggregate: GpuArrayAggregate =>
+      aggregate.aggregateElementResults(batch, dataCol, arg)
+  }
+
   private def collectUnionIntermediate(
-      transforms: Seq[GpuArrayElementWiseTransform]): Seq[GpuExpression] = {
+      transforms: Seq[GpuArrayTransformBase]): Seq[GpuExpression] = {
     val unionIntermediate = mutable.ArrayBuffer[GpuExpression]()
     transforms.foreach { transform =>
       transform.boundIntermediate.foreach { expr =>
@@ -468,7 +479,7 @@ private[rapids] object GpuArrayElementWiseFusion {
       inputBatch: ColumnarBatch,
       argColumn: GpuColumnVector,
       unionIntermediate: Seq[GpuExpression],
-      firstTransform: GpuArrayElementWiseTransform): ColumnarBatch = {
+      firstTransform: GpuArrayTransformBase): ColumnarBatch = {
     assert(argColumn.getBase.getType.equals(DType.LIST))
 
     def projectAndExplode(explodeOp: Table => Table): Table = {
@@ -516,7 +527,7 @@ private[rapids] object GpuArrayElementWiseFusion {
   private def makeTransformLambdaBatch(
       sharedBatch: ColumnarBatch,
       unionIntermediate: Seq[GpuExpression],
-      transform: GpuArrayElementWiseTransform): ColumnarBatch = {
+      transform: GpuArrayTransformBase): ColumnarBatch = {
     val lambdaArgStart = unionIntermediate.length
     val intermediateIndexes = transform.boundIntermediate.map { expr =>
       val index = unionIntermediate.indexWhere(_.semanticEquals(expr))
@@ -1608,61 +1619,67 @@ case class GpuArrayAggregate(
     }
   }
 
-  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+  private[rapids] def aggregateElementResults(
+      batch: ColumnarBatch,
+      transformedData: GpuColumnVector,
+      arg: GpuColumnVector): GpuColumnVector = {
     val outDType = GpuColumnVector.getNonNestedRapidsType(dataType)
-    withResource(argument.asInstanceOf[GpuExpression].columnarEval(batch)) { arg =>
-      // Step 1: g(x) over children + segmented reduce.
-      val reduced: cudf.ColumnVector =
-        withResource(makeElementProjectBatch(batch, arg)) { cb =>
-          withResource(function.asInstanceOf[GpuExpression].columnarEval(cb)) {
-            transformedData =>
-              withResource(GpuListUtils.replaceListDataColumnAsView(
-                  arg.getBase, transformedData.getBase)) { listOfGView =>
-                listOfGView.listReduce(op.cudfAgg, op.nullPolicy, outDType)
-              }
-          }
-        }
+    // Step 1: g(x) over children + segmented reduce.
+    val reduced: cudf.ColumnVector = withResource(GpuListUtils.replaceListDataColumnAsView(
+        arg.getBase, transformedData.getBase)) { listOfGView =>
+      listOfGView.listReduce(op.cudfAgg, op.nullPolicy, outDType)
+    }
 
-      // Step 2: substitute op's identity where needed.
-      val adjusted: cudf.ColumnVector = withResource(reduced) { reduced =>
-        if (op.nullPolicy == cudf.NullPolicy.EXCLUDE) {
-          // MAX/MIN should keep no-contribution rows as null until combineWithZero.
-          // NULL_MAX/NULL_MIN then return zero when it is non-null, and preserve a null zero.
-          reduced.incRefCount()
-        } else {
-          withResource(emptyIncludeListMask(arg.getBase)) { mask =>
-            withResource(op.identityScalar(dataType)) { idScalar =>
-              mask.ifElse(idScalar, reduced)
-            }
-          }
-        }
-      }
-
-      // Step 3: combine with zero. When `zero` is a Literal (the common 4-arg
-      // `aggregate(arr, 0, ...)` shape) skip the per-batch column broadcast and pass a
-      // cudf.Scalar instead — `add/mul/and/or/binaryOp` all accept BinaryOperable.
-      val combined: cudf.ColumnVector = withResource(adjusted) { adjusted =>
-        zero match {
-          case lit: GpuLiteral =>
-            withResource(GpuScalar.from(lit.value, lit.dataType)) { zeroScalar =>
-              op.combineWithZero(adjusted, zeroScalar, outDType)
-            }
-          case _ =>
-            withResource(zero.asInstanceOf[GpuExpression].columnarEval(batch)) { zeroCv =>
-              op.combineWithZero(adjusted, zeroCv.getBase, outDType)
-            }
-        }
-      }
-
-      // Step 4: restore null on rows where the input list itself was null. cuDF NULL_MAX /
-      // NULL_MIN / LOGICAL_AND / LOGICAL_OR don't propagate null the way Spark's 3VL would,
-      // so the combine step alone can't preserve it. Skip outright when the list has no nulls.
-      if (arg.getBase.getNullCount > 0) {
-        withResource(combined) { combined =>
-          GpuColumnVector.from(NullUtilities.mergeNulls(combined, arg.getBase), dataType)
-        }
+    // Step 2: substitute op's identity where needed.
+    val adjusted: cudf.ColumnVector = withResource(reduced) { reduced =>
+      if (op.nullPolicy == cudf.NullPolicy.EXCLUDE) {
+        // MAX/MIN should keep no-contribution rows as null until combineWithZero.
+        // NULL_MAX/NULL_MIN then return zero when it is non-null, and preserve a null zero.
+        reduced.incRefCount()
       } else {
-        GpuColumnVector.from(combined, dataType)
+        withResource(emptyIncludeListMask(arg.getBase)) { mask =>
+          withResource(op.identityScalar(dataType)) { idScalar =>
+            mask.ifElse(idScalar, reduced)
+          }
+        }
+      }
+    }
+
+    // Step 3: combine with zero. When `zero` is a Literal (the common 4-arg
+    // `aggregate(arr, 0, ...)` shape) skip the per-batch column broadcast and pass a
+    // cudf.Scalar instead — `add/mul/and/or/binaryOp` all accept BinaryOperable.
+    val combined: cudf.ColumnVector = withResource(adjusted) { adjusted =>
+      zero match {
+        case lit: GpuLiteral =>
+          withResource(GpuScalar.from(lit.value, lit.dataType)) { zeroScalar =>
+            op.combineWithZero(adjusted, zeroScalar, outDType)
+          }
+        case _ =>
+          withResource(zero.asInstanceOf[GpuExpression].columnarEval(batch)) { zeroCv =>
+            op.combineWithZero(adjusted, zeroCv.getBase, outDType)
+          }
+      }
+    }
+
+    // Step 4: restore null on rows where the input list itself was null. cuDF NULL_MAX /
+    // NULL_MIN / LOGICAL_AND / LOGICAL_OR don't propagate null the way Spark's 3VL would,
+    // so the combine step alone can't preserve it. Skip outright when the list has no nulls.
+    if (arg.getBase.getNullCount > 0) {
+      withResource(combined) { combined =>
+        GpuColumnVector.from(NullUtilities.mergeNulls(combined, arg.getBase), dataType)
+      }
+    } else {
+      GpuColumnVector.from(combined, dataType)
+    }
+  }
+
+  override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
+    withResource(argument.asInstanceOf[GpuExpression].columnarEval(batch)) { arg =>
+      val transformedData = withResource(makeElementProjectBatch(batch, arg)) { cb =>
+        function.asInstanceOf[GpuExpression].columnarEval(cb)
+      }
+      withResource(transformedData) { _ =>
+        aggregateElementResults(batch, transformedData, arg)
       }
     }
   }
