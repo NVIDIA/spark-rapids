@@ -29,6 +29,14 @@ Update these properties together:
 - `<cudf.git.branch>`
 - `<rapids.cmake.branch>`
 
+### Native CUDA build image
+
+File: `skills/convert-to-cuda/templates/cuda/Dockerfile`
+
+Update this default value:
+
+- `CUDA_VERSION` must match the CUDA toolkit version spark-rapids is built against (the same version the native build uses on the host).
+
 ### Native CUDA dependency extraction
 
 File: `skills/udf-convert-to-cuda/templates/cuda/native/scripts/extract-cudf-libs.sh`

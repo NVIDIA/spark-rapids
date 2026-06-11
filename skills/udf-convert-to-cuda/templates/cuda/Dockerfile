@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Reproducible build image for native CUDA RapidsUDF code.
-ARG CUDA_VERSION=12.8.0
+ARG CUDA_VERSION=12.9.1
 ARG LINUX_VERSION=rockylinux8
 
 FROM nvidia/cuda:${CUDA_VERSION}-devel-${LINUX_VERSION}
