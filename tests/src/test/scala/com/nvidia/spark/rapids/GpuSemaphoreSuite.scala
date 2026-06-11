@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -86,15 +86,17 @@ class GpuSemaphoreSuite extends AnyFunSuite
 
   def assertAcquired(result: TryAcquireResult): Unit = result match {
     case SemaphoreAcquired => // NOOP
-    case AcquireFailed(_) =>
+    case _: AcquireFailed =>
       fail("The Semaphore was not acquired")
   }
 
   def assertNotAcquired(numExpectedWaiting: Int, result: TryAcquireResult): Unit = result match {
     case SemaphoreAcquired =>
       fail("The Semaphore was acquired when we didn't expect it")
-    case AcquireFailed(numWaiting) =>
-      assert(numWaiting == numExpectedWaiting, "The number of waiting tasks didn't match")
+    case failed: AcquireFailed =>
+      assert(
+        failed.numWaitingTasks == numExpectedWaiting,
+        "The number of waiting tasks didn't match")
   }
 
   test("multi tryAcquire") {
