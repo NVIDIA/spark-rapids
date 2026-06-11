@@ -1706,6 +1706,7 @@ This will force full Scala code rebuild in downstream modules.
                                     <dirset dir="${spark.rapids.source.basedir}">
                                         <include name="**/src/main"/>
                                         <include name="**/src/test"/>
+                                        <exclude name="skills/**"/>
                                         <exclude name="**/target/*/generated/src/**"/>
                                     </dirset>
                                 </pathconvert>
