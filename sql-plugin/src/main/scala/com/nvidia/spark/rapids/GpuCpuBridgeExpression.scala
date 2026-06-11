@@ -60,6 +60,16 @@ case class GpuCpuBridgeExpression(
     }
   }
 
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logError(msg: => String, t: Throwable): Unit = {
+    log.error(msg, t)
+  }
+
 
   override def children: Seq[Expression] = gpuInputs ++ Seq(cpuExpression)
 
