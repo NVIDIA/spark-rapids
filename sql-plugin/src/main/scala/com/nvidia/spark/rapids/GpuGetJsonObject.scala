@@ -280,7 +280,7 @@ class GetJsonObjectCombiner(private val exp: GpuGetJsonObject) extends GpuExpres
   override def addExpression(e: Expression): Unit = {
     val localOutputLocation = outputLocation
     outputLocation += 1
-    val key = GpuExpressionEquals(e)
+    val key = new GpuExpressionEquals(e)
     if (!toCombine.contains(key)) {
       toCombine.put(key, localOutputLocation)
     }
@@ -329,7 +329,7 @@ class GetJsonObjectCombiner(private val exp: GpuGetJsonObject) extends GpuExpres
   }
 
   override def getReplacementExpression(e: Expression): Option[Expression] = {
-    toCombine.get(GpuExpressionEquals(e)).map { localId =>
+    toCombine.get(new GpuExpressionEquals(e)).map { localId =>
       GpuGetStructField(multiGet, localId, Some(fieldName(localId)))
     }
   }

@@ -43,7 +43,7 @@ object BucketingUtilsShim {
         // table and a normal one.
         val bucketIdExpression = GpuHashPartitioning(bucketColumns, spec.numBuckets)
           .partitionIdExpression
-        GpuWriterBucketSpec(bucketIdExpression, (_: Int) => "")
+        new GpuWriterBucketSpec(bucketIdExpression, (_: Int) => "")
       }
     }
   }

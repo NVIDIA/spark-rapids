@@ -535,7 +535,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
   private def verifySchema(format: ColumnarFileFormat, schema: StructType): Unit = {
     schema.foreach { field =>
       if (!format.supportDataType(field.dataType)) {
-        throw new RapidsAnalysisException(
+        throw RapidsAnalysisException(
           s"$format data source does not support ${field.dataType.catalogString} data type.")
       }
     }
