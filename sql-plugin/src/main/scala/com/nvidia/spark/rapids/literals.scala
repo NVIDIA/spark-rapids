@@ -16,7 +16,8 @@
 
 package com.nvidia.spark.rapids
 
-import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat, Long => JLong, Short => JShort}
+import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat,
+  Long => JLong, Short => JShort}
 import java.math.BigInteger
 import java.time.{LocalDate, OffsetDateTime}
 import java.util
@@ -685,7 +686,8 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       case (l: Long, TimestampType) => JString(DateTimeUtils.toJavaTimestamp(l).toString)
       case (other, _) => JString(other.toString)
     }
-    ("value" -> jsonValue) :: ("dataType" -> TrampolineUtil.jsonValue(dataType).asInstanceOf[JValue]) :: Nil
+    ("value" -> jsonValue) ::
+      ("dataType" -> TrampolineUtil.jsonValue(dataType).asInstanceOf[JValue]) :: Nil
   }
 
   override def sql: String = (value, dataType) match {
