@@ -78,6 +78,11 @@ for f in $(git ls-files '**pom.xml'); do
     echo "Skipping $f"
     continue
   fi
+  # Skills package their own pom.xml templates. Ignore those.
+  if [[ $f == skills/* ]]; then
+    echo "Skipping $f"
+    continue
+  fi
   echo $f
   tof="$TO_DIR/$f"
   mkdir -p $(dirname $tof)
