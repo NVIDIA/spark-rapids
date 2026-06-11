@@ -133,7 +133,8 @@ object DecimalArithmeticOverrides {
           override def tagSelfForAst(): Unit = {
             super.tagSelfForAst()
             if (!SQLConf.get.ansiEnabled || !conf.isProjectAstAnsiArithmeticEnabled ||
-                !GpuAnsi.supportsAnsiArithmeticAst(a.dataType)) {
+                !GpuAnsi.shouldUseAnsiDivModAst(SQLConf.get.ansiEnabled,
+                  a.left.dataType, a.right.dataType)) {
               willNotWorkInAst("AST integral divide requires ANSI row IR JIT support.")
             }
           }

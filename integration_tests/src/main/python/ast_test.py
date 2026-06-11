@@ -119,6 +119,15 @@ def test_null_literal(spark_tmp_path, data_gen):
     assert_gpu_ast(is_supported=True,
                    func=lambda spark: spark.read.parquet(data_path).select(f.lit(None).cast(data_type)))
 
+@_requires_libcudf_jit
+def test_decimal_literal_falls_back_from_ast(spark_tmp_path):
+    data_path = spark_tmp_path + '/AST_TEST_DATA'
+    with_cpu_session(lambda spark: gen_df(spark, [("a", IntegerGen())]).write.parquet(data_path))
+    assert_gpu_ast(is_supported=False,
+                   func=lambda spark: spark.read.parquet(data_path).selectExpr(
+                       'cast(12.34 as DECIMAL(7, 2))'),
+                   conf=_ansi_jit_ast_enabled_conf)
+
 @pytest.mark.parametrize('data_descr', ast_descrs, ids=idfn)
 def test_isnull(data_descr):
     assert_unary_ast(data_descr, lambda df: df.selectExpr('isnull(a)'))
@@ -411,6 +420,17 @@ def test_jit_if_else(data_descr):
             'if(cast(null as BOOLEAN), a, b)'),
         conf=_ansi_jit_ast_enabled_conf)
 
+@_requires_libcudf_jit
+def test_jit_if_else_boolean_condition():
+    gen = StructGen([
+        ('a', boolean_gen),
+        ('b', boolean_gen),
+        ('c', boolean_gen)],
+        nullable=False)
+    assert_gpu_ast(True,
+        lambda spark: gen_df(spark, gen).selectExpr('if(c, a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
 _ast_nullif_descrs = [
     (boolean_gen, True),
     (byte_gen, True),
@@ -587,6 +607,17 @@ def test_ansi_jit_integral_div_mod_for_integer_ansi_on(data_desc):
                    lambda spark: two_col_df(spark, lhs_gen, rhs_gen).selectExpr(
                        'a DIV b',
                        'a % b'),
+                   conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_ansi_jit_decimal_integral_div_falls_back():
+    data_gen = SetValuesGen(DecimalType(7, 2),
+        [Decimal('-12.34'), Decimal('1.25'), Decimal('56.78'), None])
+    rhs_gen = SetValuesGen(DecimalType(7, 2),
+        [Decimal('-3.00'), Decimal('-1.50'), Decimal('2.00'), Decimal('4.00'), None])
+    assert_gpu_ast(False,
+                   lambda spark: two_col_df(spark, data_gen, rhs_gen).selectExpr(
+                       'a DIV b'),
                    conf=_ansi_jit_ast_enabled_conf)
 
 @_requires_libcudf_jit

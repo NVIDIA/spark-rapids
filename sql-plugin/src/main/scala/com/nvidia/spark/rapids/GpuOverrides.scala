@@ -946,7 +946,13 @@ object GpuOverrides extends Logging {
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
-      (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
+      (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (lit.dataType.isInstanceOf[DecimalType]) {
+            willNotWorkInAst("AST decimal literals are not supported.")
+          }
+        }
+      }),
     expr[Signum](
       "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
       ExprChecks.mathUnary,
