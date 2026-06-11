@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, Predicate, TernaryExpression, UnaryExpression}
+import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryCommand}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
 import org.apache.spark.sql.execution.command.DataWritingCommand
@@ -47,10 +47,6 @@ trait ShimTernaryExpression extends TernaryExpression {
   ): Expression = {
     legacyWithNewChildren(Seq(newFirst, newSecond, newThird))
   }
-}
-
-trait ShimPredicate extends Predicate {
-  def contextIndependentFoldable: Boolean = children.forall(_.foldable)
 }
 
 trait ShimSparkPlan extends SparkPlan {
