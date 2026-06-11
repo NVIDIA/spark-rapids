@@ -10,15 +10,23 @@ Aether Agent is a set of skills to convert Apache Spark User-Defined Functions (
 <details open>
 <summary><strong>Table of Contents</strong></summary>
 
+- [Installation](#installation)
 - [Supported Formats](#supported-formats)
 - [Prerequisites](#prerequisites)
 - [Selecting an LLM](#selecting-an-llm)
 - [Quick Start](#quick-start)
-  - [Installing Skills](#installing-skills)
   - [Using Skills](#using-skills)
-  - [Quick Start](#quick-start-1)
+  - [Try the Workflow](#try-the-workflow)
 
 </details>
+
+## Installation
+
+Install via the [skills CLI](https://github.com/vercel-labs/skills). Installing all skills is recommended, as they are designed to work together.
+
+```bash
+npx skills add NVIDIA/spark-rapids --skill '*' [--agent <agent>]
+```
 
 ## Supported Formats
 
@@ -46,28 +54,6 @@ For best results, we recommend the latest reasoning models from OpenAI, Anthropi
 ## Quick Start
 
 Skills require any IDE or LLM that supports the [agent skills spec](https://skill.md/) (e.g., Cursor, Codex, Claude Code).
-
-### Installing Skills
-
-Copy the skills from this repo into your project:
-
-```bash
-# Claude Code
-mkdir -p /path/to/your/project/.claude/skills/
-cp -r skills/* /path/to/your/project/.claude/skills/
-
-# Codex
-mkdir -p /path/to/your/project/.agents/skills/
-cp -r skills/* /path/to/your/project/.agents/skills/
-
-# Cursor
-mkdir -p /path/to/your/project/.cursor/skills/
-cp -r skills/* /path/to/your/project/.cursor/skills/
-
-# Kiro
-mkdir -p /path/to/your/project/.kiro/skills/
-cp -r skills/* /path/to/your/project/.kiro/skills/
-```
 
 ### Using Skills
 
@@ -97,7 +83,7 @@ You can invoke multiple steps in a single prompt:
 ❯ Generate a unit test for @FormatPhoneUDF.java, then convert it to cuDF, native CUDA, or SQL and benchmark
 ```
 
-### Quick Start
+### Try the Workflow
 
 Once you've installed the skills, try the workflow with one of the provided example UDFs:
 - Java: [FormatPhoneUDF.java](examples/FormatPhoneUDF.java)
