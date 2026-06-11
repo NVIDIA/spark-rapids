@@ -419,7 +419,11 @@ object GpuShuffleExchangeExecBase {
       }.toArray.toSeq
       val sorter = new GpuSorter(boundReferences, outputAttributes, metrics)
       rdd.mapPartitions { cbIter =>
-        GpuSortEachBatchIterator(cbIter, sorter, false)
+        new GpuSortEachBatchIterator(cbIter, sorter, false,
+          opTime = NoopMetric,
+          sortTime = NoopMetric,
+          outputBatches = NoopMetric,
+          outputRows = NoopMetric)
       }
     } else {
       rdd
