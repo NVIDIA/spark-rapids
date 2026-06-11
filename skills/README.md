@@ -53,7 +53,7 @@ For best results, we recommend the latest reasoning models from OpenAI, Anthropi
 
 ## Quick Start
 
-Skills require any IDE or LLM that supports the [agent skills spec](https://skill.md/) (e.g., Cursor, Codex, Claude Code).
+Skills require any IDE or LLM that supports the [agent skills spec](https://agentskills.io) (e.g., Cursor, Codex, Claude Code).
 
 ### Using Skills
 
