@@ -685,7 +685,8 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLiteralShim {
       case (l: Long, TimestampType) => JString(DateTimeUtils.toJavaTimestamp(l).toString)
       case (other, _) => JString(other.toString)
     }
-    ("value" -> jsonValue) :: ("dataType" -> TrampolineUtil.jsonValue(dataType).asInstanceOf[JValue]) :: Nil
+    ("value" -> jsonValue) ::
+      ("dataType" -> TrampolineUtil.jsonValue(dataType).asInstanceOf[JValue]) :: Nil
   }
 
   override def sql: String = (value, dataType) match {
