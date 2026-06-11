@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingArray
 import com.nvidia.spark.rapids.shims.{GpuTypeShims, SparkShimImpl}
 import org.apache.commons.codec.binary.{Hex => ApacheHex}
-import org.json4s.JsonAST.{JField, JNull, JString}
+import org.json4s.JsonAST.{JField, JNull, JString, JValue}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.InternalRow
@@ -685,7 +685,7 @@ case class GpuLiteral (value: Any, dataType: DataType) extends GpuLeafExpression
       case (l: Long, TimestampType) => JString(DateTimeUtils.toJavaTimestamp(l).toString)
       case (other, _) => JString(other.toString)
     }
-    ("value" -> jsonValue) :: ("dataType" -> TrampolineUtil.jsonValue(dataType)) :: Nil
+    ("value" -> jsonValue) :: ("dataType" -> TrampolineUtil.jsonValue(dataType).asInstanceOf[JValue]) :: Nil
   }
 
   override def sql: String = (value, dataType) match {

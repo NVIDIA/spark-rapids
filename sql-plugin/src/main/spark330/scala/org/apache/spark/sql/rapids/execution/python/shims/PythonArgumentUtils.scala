@@ -64,6 +64,6 @@ object PythonArgumentUtils {
         }
       }.toArray
     }.toArray
-    GpuPythonArguments(allInputs.toSeq, dataTypes.toSeq, argOffsets, None)
+    new GpuPythonArguments(allInputs.toSeq, dataTypes.toSeq, argOffsets, None)
   }
 }
