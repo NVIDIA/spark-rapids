@@ -530,11 +530,7 @@ class GpuTaskMetrics extends Serializable with Logging {
   }
 
   def recordPerfioS3IcebergFallback(): Unit = {
-    try {
-      perfioS3IcebergFallbacks.add(1L)
-    } catch {
-      case _: IllegalArgumentException => // accumulator not yet registered; no-op
-    }
+    perfioS3IcebergFallbacks.add(1L)
   }
 }
 
