@@ -302,7 +302,6 @@ Subtract,4
 Sum,4
 Tan,4
 Tanh,4
-TimestampAddInterval,4
 ToDegrees,4
 ToRadians,4
 ToUTCTimestamp,4
