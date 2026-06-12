@@ -360,12 +360,18 @@ private[rapids] object GpuArrayTransformFusion {
   }
 
   private def canFuse(transform: GpuArrayTransformBase): Boolean = {
-    transform.isBound &&
+    isSupportedTransform(transform) &&
+      transform.isBound &&
       transform.deterministic &&
       !transform.hasSideEffects &&
       transform.argument.deterministic &&
       transform.boundIntermediate.forall(_.deterministic) &&
       (transform.lambdaArgumentCount == 1 || transform.lambdaArgumentCount == 2)
+  }
+
+  private def isSupportedTransform(transform: GpuArrayTransformBase): Boolean = transform match {
+    case _: GpuArrayElementWiseTransform | _: GpuArrayAggregate => true
+    case _ => false
   }
 
   private def canShareExplode(
@@ -460,6 +466,9 @@ private[rapids] object GpuArrayTransformFusion {
       elementWise.transformElementResults(dataCol, arg)
     case aggregate: GpuArrayAggregate =>
       aggregate.aggregateElementResults(batch, dataCol, arg)
+    case other =>
+      throw new IllegalStateException(
+        s"Unsupported array transform fusion expression: ${other.getClass.getName}")
   }
 
   private def collectUnionIntermediate(
