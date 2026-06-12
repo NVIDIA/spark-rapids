@@ -70,6 +70,11 @@ def test_v2_write_sql_ui_shows_gpu_child_operators(spark_tmp_table_factory):
         # first write execution" globally can otherwise latch onto an unrelated CPU
         # write from a prior test and spuriously fail. Record a baseline (this also
         # excludes the CREATE TABLE above) so we only look at higher execution ids.
+        # Drain the listener bus first: the status store can lag the shared Spark
+        # session, so a prior-test CPU write whose execution event has not yet
+        # reached the store would make the baseline too low and could then be picked
+        # up (with id > baseline) by the post-INSERT scan below.
+        spark.sparkContext._jsc.sc().listenerBus().waitUntilEmpty(30000)
         baseline_exec_id = max_execution_id()
         # GROUP BY -> shuffle -> AQE re-plans; the INSERT is the V2 write execution.
         spark.sql(f"INSERT INTO {table_name} "
