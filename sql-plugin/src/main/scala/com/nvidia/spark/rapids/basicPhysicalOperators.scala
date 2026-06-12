@@ -903,6 +903,11 @@ case class GpuProjectExec(
 }
 
 /** Use cudf AST expressions to project columnar batches */
+object GpuProjectAstExec {
+  val COMPILE_ASTS_TIME = "compileAstsTime"
+  val COMPUTE_ASTS_TIME = "computeAstsTime"
+}
+
 case class GpuProjectAstExec(
     // NOTE for Scala 2.12.x and below we enforce usage of (eager) List to prevent running
     // into a deep recursion during serde of lazy lists. See
@@ -915,6 +920,13 @@ case class GpuProjectAstExec(
     projectList: List[Expression],
     child: SparkPlan
 ) extends GpuProjectExecLike {
+
+  override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
+    OP_TIME_LEGACY -> createNanoTimingMetric(DEBUG_LEVEL, DESCRIPTION_OP_TIME_LEGACY),
+    GpuProjectAstExec.COMPILE_ASTS_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      "compile ASTs time"),
+    GpuProjectAstExec.COMPUTE_ASTS_TIME -> createNanoTimingMetric(DEBUG_LEVEL,
+      "compute ASTs time"))
 
   override def output: Seq[Attribute] = {
     projectList.collect { case ne: NamedExpression => ne.toAttribute }
@@ -929,13 +941,16 @@ case class GpuProjectAstExec(
     val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
     val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
     val opTime = gpuLongMetric(OP_TIME_LEGACY)
+    val compileAstsTime = gpuLongMetric(GpuProjectAstExec.COMPILE_ASTS_TIME)
+    val computeAstsTime = gpuLongMetric(GpuProjectAstExec.COMPUTE_ASTS_TIME)
     val boundProjectList = GpuBindReferences.bindGpuReferences(projectList, child.output,
       allMetrics)
     val outputTypes = output.map(_.dataType).toArray
     new GpuColumnarBatchIterator(true) {
       private[this] var maybeSplittedItr: Iterator[ColumnarBatch] = Iterator.empty
       private[this] val compiledAstExprs =
-        new RetryableCompiledAstExpressions(boundProjectList, opTime)
+        new RetryableCompiledAstExpressions(boundProjectList, opTime, compileAstsTime,
+          computeAstsTime)
 
       override def hasNext: Boolean = maybeSplittedItr.hasNext || {
         if (input.hasNext) {
@@ -995,7 +1010,9 @@ case class GpuProjectAstExec(
 
   private class RetryableCompiledAstExpressions(
       boundProjectList: Seq[GpuExpression],
-      opTime: GpuMetric) extends Retryable with AutoCloseable {
+      opTime: GpuMetric,
+      compileAstsTime: GpuMetric,
+      computeAstsTime: GpuMetric) extends Retryable with AutoCloseable {
     private[this] var compiledAstExprs: Seq[cudf.ast.CompiledExpression] = compile()
 
     override def checkpoint(): Unit = {}
@@ -1008,7 +1025,9 @@ case class GpuProjectAstExec(
     }
 
     def computeColumns(table: Table): Seq[cudf.ColumnVector] =
-      compiledAstExprs.safeMap(_.computeColumn(table))
+      NvtxIdWithMetrics(NvtxRegistry.COMPUTE_ASTS, computeAstsTime) {
+        compiledAstExprs.safeMap(_.computeColumn(table))
+      }
 
     override def close(): Unit = {
       val oldCompiledAstExprs = compiledAstExprs
@@ -1017,7 +1036,7 @@ case class GpuProjectAstExec(
     }
 
     private def compile(): Seq[cudf.ast.CompiledExpression] =
-      NvtxIdWithMetrics(NvtxRegistry.COMPILE_ASTS, opTime) {
+      NvtxIdWithMetrics(NvtxRegistry.COMPILE_ASTS, opTime, compileAstsTime) {
         boundProjectList.safeMap { expr =>
           // Use intmax for the left table column count since there's only one input table here.
           expr.convertToAst(Int.MaxValue).compile()

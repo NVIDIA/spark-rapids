@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -326,6 +326,9 @@ object NvtxRegistry {
 
   val COMPILE_ASTS: NvtxId = NvtxId("Compile ASTs", NvtxColor.ORANGE,
     "Compiling abstract syntax trees for expression evaluation")
+
+  val COMPUTE_ASTS: NvtxId = NvtxId("Compute ASTs", NvtxColor.ORANGE,
+    "Computing abstract syntax tree expressions for projection")
 
   // Aggregate operations
   val COMPUTE_AGGREGATE: NvtxId = NvtxId("computeAggregate", NvtxColor.CYAN,
@@ -759,6 +762,7 @@ object NvtxRegistry {
     register(PROJECT_EXEC)
     register(PROJECT_AST)
     register(COMPILE_ASTS)
+    register(COMPUTE_ASTS)
     register(COMPUTE_AGGREGATE)
     register(FINALIZE_AGG)
     register(POST_PROCESS_AGG)
