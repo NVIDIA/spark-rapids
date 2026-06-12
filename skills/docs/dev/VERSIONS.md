@@ -31,7 +31,7 @@ Update these properties together:
 
 ### Native CUDA build image
 
-File: `skills/convert-to-cuda/templates/cuda/Dockerfile`
+File: `skills/udf-convert-to-cuda/templates/cuda/Dockerfile`
 
 Update this default value:
 
