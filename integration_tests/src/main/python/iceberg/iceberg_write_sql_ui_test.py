@@ -181,10 +181,10 @@ def test_v2_write_sql_ui_gpu_child_operator_metrics_are_visible(spark_tmp_table_
     gpu_op_time = with_gpu_session(run, conf=iceberg_write_enabled_conf)
     assert gpu_op_time, \
         "No GPU child 'op time' metrics found under the V2 write."
-    present = [n for (n, ok) in gpu_op_time if ok]
+    missing = [n for (n, ok) in gpu_op_time if not ok]
     # With the bug the SQL listener drops every GPU task accumulator update, so none
     # of the GPU child op-time ids appear in the metric-value map.
-    assert present, \
-        f"SQL UI shows no op-time values on the V2 write's GPU child operators " \
-        f"(task accumulator updates were not joined to the plan); GPU op-time " \
-        f"metrics seen on: {[n for (n, _) in gpu_op_time]}"
+    assert not missing, \
+        f"SQL UI shows blank op-time values on some of the V2 write's GPU child " \
+        f"operators (task accumulator updates were not joined to the plan for): " \
+        f"{missing}; all GPU op-time metrics: {[n for (n, _) in gpu_op_time]}"
