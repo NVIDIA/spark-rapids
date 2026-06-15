@@ -700,6 +700,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
         s"${extraExecutorPlugins.map(_.getClass.getName).mkString(",")}")
       extraExecutorPlugins.foreach(_.init(pluginContext, extraConf))
       GpuSemaphore.initialize(conf.maxConcurrentGpuTasks)
+      PressureMonitor.initialize(conf)
       FileCache.init(pluginContext)
       TrafficController.initialize(conf)
     } catch {
