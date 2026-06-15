@@ -83,6 +83,20 @@ class PressureMonitorSuite extends AnyFunSuite {
     assertClose(f, 1.0)
   }
 
+  test("scaleLimit divides the host budget by the factor, with a floor of 1") {
+    // factor == 1.0 (or below) is a pass-through.
+    assert(PressureMonitor.scaleLimit(128L * 1024 * 1024, 1.0) == 128L * 1024 * 1024)
+    // factor > 1 shrinks the budget proportionally.
+    assert(PressureMonitor.scaleLimit(128L * 1024 * 1024, 2.0) == 64L * 1024 * 1024)
+    assert(PressureMonitor.scaleLimit(128L * 1024 * 1024, 8.0) == 16L * 1024 * 1024)
+    // never reaches zero.
+    assert(PressureMonitor.scaleLimit(4L, 8.0) == 1L)
+  }
+
+  test("scaleHostLimit is a pass-through when the feature is disabled") {
+    assert(PressureMonitor.scaleHostLimit(128L * 1024 * 1024) == 128L * 1024 * 1024)
+  }
+
   test("RapidsConf wires the adaptive back-pressure defaults") {
     val conf = new RapidsConf(Map.empty[String, String])
     assert(!conf.adaptiveBackpressureEnabled)

@@ -123,6 +123,26 @@ object PressureMonitor extends Logging {
    */
   def factor(): Double = if (enabled) currentFactor else 1.0
 
+  /**
+   * Scale a host-side in-flight byte budget down by the current back-pressure factor. When
+   * back-pressure is active (factor > 1) the effective budget shrinks, so host-side work
+   * (shuffle serialization, async IO) blocks at its existing in-flight gate sooner. This
+   * throttles the off-GPU host/pinned memory that the GPU semaphore cannot see -- the actual
+   * driver of GC-overhead executor loss under an over-subscribed `executor.cores`. Returns the
+   * base unchanged when the feature is disabled or the factor is 1.0. The caller's gate is
+   * expected to always admit at least one in-flight item, so this can never deadlock even if
+   * the scaled budget falls below a single item's size.
+   */
+  def scaleHostLimit(base: Long): Long = scaleLimit(base, factor())
+
+  /**
+   * Pure host-budget scaling: divide `base` by the back-pressure factor when `f > 1`, with a
+   * floor of 1 so the budget never reaches zero. Side-effect free for unit testing.
+   */
+  private[rapids] def scaleLimit(base: Long, f: Double): Long = {
+    if (f > 1.0) math.max(1L, (base / f).toLong) else base
+  }
+
   /** For tests: stop the sampler and reset state. */
   def shutdown(): Unit = synchronized {
     if (sampler != null) {
