@@ -57,9 +57,7 @@ class GCSInputFile private (
     val ranges = copyRanges.asScala.map { r =>
       IntRangeWithOffset(r.getInputOffset, r.getLength, r.getOutputOffset)
     }.toSeq
-    require(
-      PerfIO.readToHostMemory(hadoopConf, output, fileUri, ranges).isDefined,
-      "expected to use PerfIO to read")
+    readWithPerfIO(output, ranges)
   }
 
   /**
@@ -69,16 +67,18 @@ class GCSInputFile private (
    */
   @throws[IOException]
   override def readTail(length: Long, output: HostMemoryBuffer): Unit = {
-    if (length == 0) {
-      return
+    require(length >= 0, s"length must be non-negative, actual: $length")
+    if (length > 0) {
+      val ranges = Seq[RangeWithOffset](SuffixRangeWithOffset(length, /*destOffset*/ 0L))
+      readWithPerfIO(output, ranges)
     }
-    if (length < 0) {
-      throw new IllegalArgumentException("length must be non-negative")
+  }
+
+  @throws[IOException]
+  private def readWithPerfIO(output: HostMemoryBuffer, ranges: Seq[RangeWithOffset]): Unit = {
+    if (PerfIO.readToHostMemory(hadoopConf, output, fileUri, ranges).isEmpty) {
+      throw new IOException(s"expected PerfIO to read GCS file ${fileUri.toString}")
     }
-    val ranges = Seq[RangeWithOffset](SuffixRangeWithOffset(length, /*destOffset*/ 0L))
-    require(
-      PerfIO.readToHostMemory(hadoopConf, output, fileUri, ranges).isDefined,
-      "expected to use PerfIO to read")
   }
 }
 
