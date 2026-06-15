@@ -318,9 +318,9 @@ object GpuCast {
   }
 
   private def decimalCastStorageOp(width: Int): ast.JitOperator = width match {
-    case 32 => ast.JitOperator.CAST_TO_DEC32
-    case 64 => ast.JitOperator.CAST_TO_DEC64
-    case 128 => ast.JitOperator.CAST_TO_DEC128
+    case 32 => ast.JitOperator.CAST_TO_DECIMAL32
+    case 64 => ast.JitOperator.CAST_TO_DECIMAL64
+    case 128 => ast.JitOperator.CAST_TO_DECIMAL128
     case _ => throw new IllegalArgumentException(s"Unexpected decimal width $width")
   }
 
@@ -328,12 +328,15 @@ object GpuCast {
       childAst: ast.AstExpression,
       precision: Int,
       ansiMode: Boolean): ast.AstExpression = {
-    val op = if (ansiMode) {
-      ast.JitOperator.ANSI_PRECISION_CHECK
+    val mode = if (ansiMode) {
+      ast.JitComplianceMode.ANSI
     } else {
-      ast.JitOperator.ANSI_TRY_PRECISION_CHECK
+      ast.JitComplianceMode.ANSI_TRY
     }
-    new ast.JitOperation(op, childAst, ast.Literal.ofInt(precision))
+    new ast.JitOperation(ast.JitOperator.PRECISION_CHECK,
+      mode,
+      childAst,
+      ast.Literal.ofInt(precision))
   }
 
   def decimalCastToAst(
@@ -1818,7 +1821,7 @@ case class GpuCast(
       case (from: DecimalType, to: DecimalType) if canDecimalCastToAst(from, to) =>
         decimalCastToAst(childAst, from, to, ansiMode)
       case (IntegerType, LongType) =>
-        new ast.JitOperation(ast.JitOperator.CAST_TO_I64, childAst)
+        new ast.JitOperation(ast.JitOperator.CAST_TO_INT64, childAst)
       case _ =>
         throw new IllegalStateException(
           s"Cast from ${child.dataType} to $dataType is not supported by AST")

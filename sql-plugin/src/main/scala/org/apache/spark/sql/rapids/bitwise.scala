@@ -125,7 +125,7 @@ case class GpuShiftLeft(left: Expression, right: Expression) extends GpuShiftBas
     Seq(TypeCollection(IntegerType, LongType), IntegerType)
 
   override def shiftOp: BinaryOp = BinaryOp.SHIFT_LEFT
-  override def astShiftOp: Option[ast.JitOperator] = Some(ast.JitOperator.BIT_SHIFT_LEFT)
+  override def astShiftOp: Option[ast.JitOperator] = Some(ast.JitOperator.BITWISE_SHIFT_LEFT)
 
   override def dataType: DataType = left.dataType
 }
@@ -135,7 +135,7 @@ case class GpuShiftRight(left: Expression, right: Expression) extends GpuShiftBa
     Seq(TypeCollection(IntegerType, LongType), IntegerType)
 
   override def shiftOp: BinaryOp = BinaryOp.SHIFT_RIGHT
-  override def astShiftOp: Option[ast.JitOperator] = Some(ast.JitOperator.BIT_SHIFT_RIGHT)
+  override def astShiftOp: Option[ast.JitOperator] = Some(ast.JitOperator.BITWISE_SHIFT_RIGHT)
 
   override def dataType: DataType = left.dataType
 

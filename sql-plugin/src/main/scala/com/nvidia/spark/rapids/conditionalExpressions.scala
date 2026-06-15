@@ -209,21 +209,10 @@ case class GpuIf(
       gpuValueExpr.convertToAst(numFirstTableColumns)
     }
 
-    def nullifyIf(valueExpr: Expression, condition: ast.AstExpression): ast.AstExpression = {
-      new ast.JitOperation(ast.JitOperator.NULLIFY_IF, valueToAst(valueExpr), condition)
-    }
-
-    (trueExpr, falseExpr) match {
-      case (GpuLiteral(null, _), value) =>
-        nullifyIf(value, predicateAst)
-      case (value, GpuLiteral(null, _)) =>
-        nullifyIf(value, new ast.UnaryOperation(ast.UnaryOperator.NOT, predicateAst))
-      case _ =>
-        val trueValue =
-          nullifyIf(trueExpr, new ast.UnaryOperation(ast.UnaryOperator.NOT, predicateAst))
-        val falseValue = nullifyIf(falseExpr, predicateAst)
-        new ast.JitOperation(ast.JitOperator.COALESCE, trueValue, falseValue)
-    }
+    new ast.JitOperation(ast.JitOperator.IF_ELSE,
+      valueToAst(trueExpr),
+      valueToAst(falseExpr),
+      predicateAst)
   }
 
   override def checkInputDataTypes(): TypeCheckResult = {
