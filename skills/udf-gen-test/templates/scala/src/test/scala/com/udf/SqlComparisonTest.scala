@@ -16,7 +16,7 @@ class SqlComparisonTest extends AnyFunSuite with BeforeAndAfterAll {
   override def beforeAll(): Unit = {
     spark = SparkSession.builder()
       .appName("UDF vs. SQL Comparison Test")
-      .master("local[*]")
+      .master("local[4]")
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.rapids.skipGpuArchitectureCheck", "true")
       .config("spark.rapids.sql.mode", "explainOnly")

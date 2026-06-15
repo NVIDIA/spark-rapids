@@ -31,7 +31,7 @@ The native build compiles against the prebuilt libcudf in the spark-rapids jar, 
 
 ```bash
 curl -fsSL https://nvidia.github.io/spark-rapids/docs/download.html \
-  | perl -0777 -ne 'while (/built against CUDA\s+(\d+\.\d+)(?:\s+or\s+CUDA\s+(\d+\.\d+))?/g) { print "$1\n"; print "$2\n" if defined $2 }'
+  | grep -Eo '[^<>]*built against CUDA[^<>]*'
 ```
 
 2. Check the active toolkit (`nvcc --version`). CMake uses `$CUDACXX`, else `nvcc` on `PATH`, else `$CUDAToolkit_ROOT/bin/nvcc` — the default `PATH` `nvcc` may not be the one you want.

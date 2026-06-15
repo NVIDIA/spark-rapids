@@ -237,14 +237,14 @@ public class MicroBenchRunner {
                 totalRows += tables[i].getRowCount();
                 if (maxRows > 0 && totalRows >= maxRows) break;
             }
-            Table combined = (count == 1) ? tables[0] : Table.concatenate(Arrays.copyOf(tables, count));
-            try (Table src = combined) {
-                return limitTable(src, maxRows);
+            if (count == 1) {
+                return limitTable(tables[0], maxRows);
+            }
+            try (Table combined = Table.concatenate(Arrays.copyOf(tables, count))) {
+                return limitTable(combined, maxRows);
             }
         } finally {
-            if (count > 1) {
-                closeAll(tables);
-            }
+            closeAll(tables);
         }
     }
 
@@ -276,10 +276,15 @@ public class MicroBenchRunner {
     /** Copy all device columns to host memory. */
     private static HostColumnVector[] copyAllToHost(Table table) {
         HostColumnVector[] hostCols = new HostColumnVector[table.getNumberOfColumns()];
-        for (int i = 0; i < hostCols.length; i++) {
-            hostCols[i] = table.getColumn(i).copyToHost();
+        try {
+            for (int i = 0; i < hostCols.length; i++) {
+                hostCols[i] = table.getColumn(i).copyToHost();
+            }
+            return hostCols;
+        } catch (Exception e) {
+            closeAll(hostCols);
+            throw e;
         }
-        return hostCols;
     }
 
     /** Close all resources in an array. */

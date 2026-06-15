@@ -39,8 +39,7 @@ if [ -z "$ROWS" ]; then
 fi
 
 SPARK_CONFS=(
-    --spark-conf spark.master="local[*]"
-    --spark-conf spark.driver.memory="16g"
+    --spark-conf spark.master="local[8]"
     --spark-conf spark.rapids.sql.enabled="true"
     --spark-conf spark.plugins="com.nvidia.spark.SQLPlugin"
     --spark-conf spark.locality.wait="0s"

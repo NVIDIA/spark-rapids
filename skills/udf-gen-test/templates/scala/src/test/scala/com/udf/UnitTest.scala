@@ -73,7 +73,7 @@ class UnitTest extends AnyFunSuite with BeforeAndAfterAll {
   override def beforeAll(): Unit = {
     spark = SparkSession.builder()
       .appName("UDF Unit Test")
-      .master("local[*]")
+      .master("local[4]")
       .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
       .config("spark.rapids.skipGpuArchitectureCheck", "true")
       .config("spark.rapids.sql.mode", "explainOnly")

@@ -22,7 +22,7 @@ public class CudfComparisonTest {
         origContextClassLoader = TestUtils.installMutableClassLoader();
         spark = SparkSession.builder()
             .appName("UDF vs. RapidsUDF Comparison Test")
-            .master("local[*]")
+            .master("local[4]")
             .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
             .config("spark.rapids.memory.gpu.pool", "NONE")
             .config("spark.rapids.sql.explain", "NONE")

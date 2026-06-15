@@ -224,11 +224,15 @@ object MicroBenchRunner {
         tables += t
         totalRows += t.getRowCount
       }
-      val combined = if (tables.length == 1) tables(0)
-        else Table.concatenate(tables.toArray: _*)
-      withResource(combined) { src => limitTable(src, maxRows) }
+      if (tables.length == 1) {
+        limitTable(tables(0), maxRows)
+      } else {
+        withResource(Table.concatenate(tables.toArray: _*)) { combined =>
+          limitTable(combined, maxRows)
+        }
+      }
     } finally {
-      if (tables.length > 1) closeAll(tables.toArray)
+      closeAll(tables.toArray)
     }
   }
 
@@ -256,7 +260,17 @@ object MicroBenchRunner {
 
   /** Copy all device columns to host memory. */
   private def copyAllToHost(table: Table): Array[HostColumnVector] = {
-    Array.tabulate(table.getNumberOfColumns)(i => table.getColumn(i).copyToHost())
+    val hostCols = new Array[HostColumnVector](table.getNumberOfColumns)
+    try {
+      for (i <- hostCols.indices) {
+        hostCols(i) = table.getColumn(i).copyToHost()
+      }
+      hostCols
+    } catch {
+      case e: Throwable =>
+        closeAll(hostCols)
+        throw e
+    }
   }
 
   /** Parse CLI arguments. */
