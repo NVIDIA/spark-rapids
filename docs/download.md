@@ -65,6 +65,9 @@ The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Ho
 		Spark runtime 2.3 LTS
 		Spark runtime 3.0
 
+See the [Databricks support matrix](./databricks-support.md) for runtime-specific Spark, Scala,
+CUDA, and Delta Lake feature support details.
+
 *Some hardware may have a minimum driver version greater than R470. Check the GPU spec sheet
 for your hardware's minimum driver version.
 
