@@ -49,6 +49,8 @@ If validation fails, analyze the error and fix the BenchUtils implementation.
 
 ## Step 3: Generate Data and Run Benchmarks
 
+The scripts set the default heap size to 16g in `.mvn/jvm.config`; adjust depending on data size.
+
 ### Generate benchmark data (10M rows):
 ```bash
 ./run_gen_data.sh --rows 10000000
