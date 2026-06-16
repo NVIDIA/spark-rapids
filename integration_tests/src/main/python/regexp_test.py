@@ -449,6 +449,59 @@ def test_regexp_replace():
                 'regexp_replace(a, "a|b|c", "A")'),
         conf=_regexp_conf)
 
+
+# https://github.com/NVIDIA/spark-rapids/issues/14742
+# Replacement-string parser must match java.util.regex.Matcher#appendReplacement.
+# Use the DataFrame API rather than selectExpr because Spark SQL variable substitution
+# expands ${...} inside SQL string literals before regexp_replace sees it.
+def test_regexp_replace_subbug1_backslash_digit_is_literal_14742():
+    from pyspark.sql.functions import regexp_replace, col
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame([("abc",)], ["a"]).select(
+            regexp_replace(col("a"), "(a)", "\\1")),
+        conf=_regexp_conf)
+
+
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_subbug2_trailing_backslash_throws_14742():
+    from pyspark.sql.functions import regexp_replace, col
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
+            regexp_replace(col("a"), "a", "\\")).collect(),
+        conf=_regexp_conf,
+        error_message="character to be escaped is missing")
+
+
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_subbug3_dollar_non_digit_throws_14742():
+    from pyspark.sql.functions import regexp_replace, col
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
+            regexp_replace(col("a"), "a", "$x")).collect(),
+        conf=_regexp_conf,
+        error_message="Illegal group reference")
+
+
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_subbug4_digit_leading_named_group_throws_14742():
+    from pyspark.sql.functions import regexp_replace, col
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
+            regexp_replace(col("a"), "(a)", "${1}")).collect(),
+        conf=_regexp_conf,
+        error_message="capturing group name {1} starts with digit character")
+
+
+@allow_non_gpu('ProjectExec', 'RegExpReplace')
+def test_regexp_replace_subbug5_unknown_named_group_throws_14742():
+    from pyspark.sql.functions import regexp_replace, col
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
+            regexp_replace(col("a"), "(a)", "${name}")).collect(),
+        conf=_regexp_conf,
+        error_message="No group with name")
+
+
 @pytest.mark.skipif(is_before_spark_320(), reason='regexp is synonym for RLike starting in Spark 3.2.0')
 def test_regexp():
     gen = mk_str_gen('[abcd]{1,3}')

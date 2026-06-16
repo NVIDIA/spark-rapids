@@ -283,15 +283,97 @@ class RegularExpressionParserSuite extends AnyFunSuite {
     RegexChar('$'))))
   }
   
-  test("replacement: numeric braced backref rejected (Java spec)") {
-    val brace = "$" + "{"
-    val cases = Seq(s"[${brace}2}]", s"${brace}1}", s"${brace}12}",
-        s"a${brace}3}b", s"${brace}0}")
-    for (rep <- cases) {
+  test("issue-14742-subbug1: \\N in replacement is the literal character N, not a backref") {
+    val repl = new RegexParser("\\1").parseReplacement(numCaptureGroups = 1)
+    assert(repl.parts.toList === List(RegexChar('\\'), RegexChar('1')))
+  }
+
+  test("issue-14742-subbug1: \\a in replacement is the literal character a") {
+    val repl = new RegexParser("\\a").parseReplacement(numCaptureGroups = 0)
+    assert(repl.parts.toList === List(RegexChar('\\'), RegexChar('a')))
+  }
+
+  test("issue-14742-subbug2: trailing \\ in replacement throws") {
+    val ex = intercept[RegexUnsupportedException] {
+      new RegexParser("\\").parseReplacement(numCaptureGroups = 0)
+    }
+    assert(ex.getMessage.contains("character to be escaped is missing"))
+  }
+
+  test("issue-14742-subbug3: bare $X for non-digit X throws") {
+    val ex = intercept[RegexUnsupportedException] {
+      new RegexParser("$x").parseReplacement(numCaptureGroups = 0)
+    }
+    assert(ex.getMessage.contains("Illegal group reference"))
+  }
+
+  test("issue-14742-subbug3: trailing bare $ throws") {
+    val ex = intercept[RegexUnsupportedException] {
+      new RegexParser("$").parseReplacement(numCaptureGroups = 0)
+    }
+    assert(ex.getMessage.contains("Illegal group reference"))
+  }
+
+  test("issue-14742-subbug4: dollar-brace-digit-brace throws") {
+    val ex = intercept[RegexUnsupportedException] {
+      new RegexParser("$" + "{1}").parseReplacement(numCaptureGroups = 1)
+    }
+    assert(ex.getMessage.contains("Illegal group reference"))
+    assert(ex.getMessage.contains("digit"))
+  }
+
+  test("issue-14742-subbug5: dollar-brace-name-brace for named group is not supported on GPU") {
+    val ex = intercept[RegexUnsupportedException] {
+      new RegexParser("$" + "{name}").parseReplacement(numCaptureGroups = 1)
+    }
+    assert(ex.getMessage.contains("named-group reference"))
+  }
+
+  test("issue-14742-subbug5: dollar-brace-name with missing closing brace throws") {
+    val ex = intercept[RegexUnsupportedException] {
+      new RegexParser("$" + "{name").parseReplacement(numCaptureGroups = 0)
+    }
+    assert(ex.getMessage.contains("Illegal group reference"))
+  }
+
+  test("issue-14742: dollar-brace with empty body throws") {
+    val ex = intercept[RegexUnsupportedException] {
+      new RegexParser("$" + "{}").parseReplacement(numCaptureGroups = 0)
+    }
+    assert(ex.getMessage.contains("Illegal group reference"))
+  }
+
+  test("issue-14742: numbered backref $0 still works") {
+    val repl = new RegexParser("$0").parseReplacement(numCaptureGroups = 0)
+    assert(repl.parts.toList === List(RegexBackref(0)))
+  }
+
+  test("issue-14742: numbered backref $1 still works") {
+    val repl = new RegexParser("$1").parseReplacement(numCaptureGroups = 1)
+    assert(repl.parts.toList === List(RegexBackref(1)))
+  }
+
+  test("issue-14742: numbered backref $12 still consumes max digits") {
+    val repl = new RegexParser("$12").parseReplacement(numCaptureGroups = 12)
+    assert(repl.parts.toList === List(RegexBackref(12)))
+  }
+
+  test("issue-14742: escaped metachar \\$ in replacement keeps the \\ pair") {
+    val repl = new RegexParser("\\$").parseReplacement(numCaptureGroups = 0)
+    assert(repl.parts.toList === List(RegexChar('\\'), RegexChar('$')))
+  }
+
+  test("issue-14742: escaped backslash \\\\ in replacement keeps the \\ pair") {
+    val repl = new RegexParser("\\\\").parseReplacement(numCaptureGroups = 0)
+    assert(repl.parts.toList === List(RegexChar('\\'), RegexChar('\\')))
+  }
+
+  test("issue-14742: non-ASCII Unicode digit after `$` triggers GPU fallback") {
+    for (rep <- Seq("$٢", "$१", "$۱")) {
       val e = intercept[RegexUnsupportedException] {
-        new RegexParser(rep).parseReplacement(4)
+        new RegexParser(rep).parseReplacement(numCaptureGroups = 4)
       }
-      assert(e.getMessage.contains("backref in replacement string is not supported"),
+      assert(e.getMessage.startsWith("Illegal group reference"),
         s"unexpected message for replacement '$rep': ${e.getMessage}")
     }
   }

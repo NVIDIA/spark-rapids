@@ -1073,13 +1073,12 @@ object GpuRegExpUtils {
   }
 
   /**
-   * Convert symbols of back-references if input string contains any.
-   * In spark's regex rule, there are two patterns of back-references:
-   * \group_index and \$group_index
-   * This method transforms above two patterns into cuDF pattern \${group_index}, except they are
-   * preceded by escape character.
+   * Convert numbered `$group_index` back-reference symbols into cuDF's `${group_index}` form.
+   * Java `Matcher#appendReplacement` treats `\digit` as the literal digit character, not as a
+   * back-reference. Escaped pairs are kept verbatim here and are later normalized by
+   * `unescapeReplaceString`.
    *
-   * Java's `Matcher.appendReplacement` reads the digits after `$` or `\` one at a time and
+   * Java's `Matcher.appendReplacement` reads the digits after `$` one at a time and
    * stops as soon as adding the next digit would make the running group index exceed the
    * actual capture-group count; any further digits are treated as literal characters
    * (greedy-with-backoff). When `numCaptureGroups` is negative the caller is opting out of the
@@ -1114,8 +1113,7 @@ object GpuRegExpUtils {
           b.append(rep.charAt(i))
           i += 1
         }
-      } else if (Seq('$', '\\').contains(rep.charAt(i))
-        && i + 1 < rep.length && rep.charAt(i + 1).isDigit) {
+      } else if (rep.charAt(i) == '$' && i + 1 < rep.length && rep.charAt(i + 1).isDigit) {
 
         // Consume digits one at a time. If the running group index would exceed the actual
         // capture-group count, stop and leave the remaining digits as literals. When no digit
@@ -1153,8 +1151,7 @@ object GpuRegExpUtils {
           i = k
         }
       } else if (rep.charAt(i) == '\\' && i + 1 < rep.length) {
-        // skip potential escape sequences like `\$` or `\\`; `\digit` is handled by the
-        // greedy-with-backoff branch above.
+        // Keep `\X` pairs verbatim; `unescapeReplaceString` strips the leading backslash.
         b.append('\\').append(rep.charAt(i + 1))
         i += 2
       } else {

@@ -364,55 +364,56 @@ class RegexParser(pattern: String) {
   }
 
   private def parseBackrefOrEscaped(): RegexAST = {
-    val start = pos
-
-    consumeInt match {
-      case Some(refNum) =>
-        RegexBackref(refNum)
+    peek() match {
       case None =>
-        pos = start
-        RegexChar('\\')
+        throw new RegexUnsupportedException(
+          "character to be escaped is missing", Some(pos))
+      case Some(_) =>
+        RegexSequence(ListBuffer(RegexChar('\\'), RegexChar(consume())))
     }
   }
 
   private def parseBackrefOrLiteralDollar(): RegexAST = {
-    val start = pos
-
-    def treatAsLiteralDollar() = {
-      pos = start
-      RegexChar('$')
-    }
-
     peek() match {
       case Some('{') =>
         consumeExpected('{')
-        val num = consumeInt()
-        if (peek().contains('}')) {
-          consumeExpected('}')
-          num match {
-            case Some(_) =>
+        peek() match {
+          case Some(ch) if isAsciiDigit(ch) =>
+            throw new RegexUnsupportedException(
+              "Illegal group reference: group name starts with digit character",
+              Some(pos))
+          case Some(ch) if isLetter(ch) =>
+            val nameStart = pos
+            while (!eof() && peek().exists(c => isLetter(c) || isAsciiDigit(c))) {
+              skip()
+            }
+            val name = pattern.substring(nameStart, pos)
+            if (!peek().contains('}')) {
               throw new RegexUnsupportedException(
-                "Numeric `${N}` backref in replacement string is not supported on GPU " +
-                  "(Java's Matcher.appendReplacement rejects this syntax)",
-                Some(start))
-            case _ =>
-              treatAsLiteralDollar()
-          }
-        } else {
-          treatAsLiteralDollar()
-        }
-      case Some(ch) if ch >= '1' && ch <= '9' =>
-        val num = consumeInt()
-        num match {
-          case Some(n) =>
-            RegexBackref(n)
+                "Illegal group reference: malformed " + "$" + "{name} reference",
+                Some(pos))
+            }
+            consumeExpected('}')
+            throw new RegexUnsupportedException(
+              s"named-group reference $${$name} is not supported on the GPU",
+              Some(pos))
           case _ =>
-            treatAsLiteralDollar()
+            throw new RegexUnsupportedException(
+              "Illegal group reference: empty or malformed " + "$" + "{name}",
+              Some(pos))
         }
+      case Some(ch) if isAsciiDigit(ch) =>
+        RegexBackref(consumeInt().get)
       case _ =>
-        treatAsLiteralDollar()
+        throw new RegexUnsupportedException(
+          "Illegal group reference", Some(pos))
     }
   }
+
+  private def isLetter(ch: Char): Boolean =
+    (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')
+
+  private def isAsciiDigit(ch: Char): Boolean = ch >= '0' && ch <= '9'
 
   private def parseEscapedCharacter(): RegexAST = {
     peek() match {
@@ -620,7 +621,8 @@ class RegexParser(pattern: String) {
 
   private def consumeInt(): Option[Int] = {
     val start = pos
-    while (!eof() && peek().exists(_.isDigit)) {
+    // ASCII only: `substring.toInt` rejects Unicode digit codepoints.
+    while (!eof() && peek().exists(isAsciiDigit)) {
       skip()
     }
     if (start == pos) {
