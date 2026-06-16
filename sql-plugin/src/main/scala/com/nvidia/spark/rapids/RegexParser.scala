@@ -403,7 +403,11 @@ class RegexParser(pattern: String) {
               Some(pos))
         }
       case Some(ch) if isAsciiDigit(ch) =>
-        RegexBackref(consumeInt().get)
+        val parts = ListBuffer[RegexAST](RegexChar('$'))
+        while (!eof() && peek().exists(isAsciiDigit)) {
+          parts += RegexChar(consume())
+        }
+        RegexSequence(parts)
       case _ =>
         throw new RegexUnsupportedException(
           "Illegal group reference", Some(pos))
@@ -1955,9 +1959,8 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
   }
   override def children(): Seq[RegexAST] = Seq.empty
   // Internally-generated backrefs (e.g. from line-anchor rewriting) are emitted in braced
-  // `${N}` form so `backrefConversion` can tell them apart from user-authored `$N` tokens
-  // and pass them through verbatim. User-authored backrefs keep the raw `$N` form so the
-  // greedy-with-backoff parser in `backrefConversion` honors the user's pattern group count.
+  // `${N}` form so `backrefConversion` can tell them apart from user-authored raw `$N` tokens
+  // and pass them through verbatim.
   override def toRegexString: String = if (isNew) s"$${$num}" else s"$$$num"
 }
 

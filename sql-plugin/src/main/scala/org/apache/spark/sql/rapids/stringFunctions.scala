@@ -1135,7 +1135,7 @@ object GpuRegExpUtils {
           }
         }
         if (consumed.nonEmpty) {
-          b.append("${").append(consumed).append("}")
+          b.append("${").append(n).append("}")
           i = j
         } else {
           // Legacy path: greedily swallow every digit so cuDF errors on the out-of-range

@@ -345,17 +345,22 @@ class RegularExpressionParserSuite extends AnyFunSuite {
 
   test("issue-14742: numbered backref $0 still works") {
     val repl = new RegexParser("$0").parseReplacement(numCaptureGroups = 0)
-    assert(repl.parts.toList === List(RegexBackref(0)))
+    assert(repl.parts.toList === List(RegexChar('$'), RegexChar('0')))
   }
 
   test("issue-14742: numbered backref $1 still works") {
     val repl = new RegexParser("$1").parseReplacement(numCaptureGroups = 1)
-    assert(repl.parts.toList === List(RegexBackref(1)))
+    assert(repl.parts.toList === List(RegexChar('$'), RegexChar('1')))
   }
 
-  test("issue-14742: numbered backref $12 still consumes max digits") {
+  test("issue-14742: numbered backref $12 preserves raw digits for conversion") {
     val repl = new RegexParser("$12").parseReplacement(numCaptureGroups = 12)
-    assert(repl.parts.toList === List(RegexBackref(12)))
+    assert(repl.parts.toList === List(RegexChar('$'), RegexChar('1'), RegexChar('2')))
+  }
+
+  test("issue-14742: numbered backref with leading zero preserves raw digits for conversion") {
+    val repl = new RegexParser("$09").parseReplacement(numCaptureGroups = 1)
+    assert(repl.parts.toList === List(RegexChar('$'), RegexChar('0'), RegexChar('9')))
   }
 
   test("issue-14742: escaped metachar \\$ in replacement keeps the \\ pair") {

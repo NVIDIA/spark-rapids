@@ -245,6 +245,10 @@ class RegExpUtilsSuite extends AnyFunSuite {
       (2, "$a", false, "$a"),
       // `$0` is the whole-match backref and is always valid (cuDF supports group 0).
       (2, "$0", true, open + "0}"),
+      // Leading zeroes participate in the Java greedy-with-backoff parse.
+      (1, "$09", true, open + "0}9"),
+      (0, "$01", true, open + "0}1"),
+      (2, "$001", true, open + "1}"),
       // Numbers in the middle: "x$12y" with 2 groups -> "x${1}2y".
       (2, "x$12y", true, "x" + open + "1}2y"),
       // First digit alone would already exceed the count: fall back to the legacy
