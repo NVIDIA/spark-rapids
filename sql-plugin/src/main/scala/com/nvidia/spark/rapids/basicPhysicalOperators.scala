@@ -60,12 +60,10 @@ class GpuProjectExecMeta(
     val gpuChild = childPlans.head.convertIfNeeded()
     if (conf.isProjectAstEnabled) {
       val canUseAnsiJitAst = !conf.isProjectAstAnsiArithmeticEnabled || conf.isLibcudfJitEnabled
-      val canUseAstLto = !conf.isProjectAstLtoEnabled || conf.isLibcudfJitEnabled
       // cuDF requires return column is fixed width
       val allReturnTypesFixedWidth = gpuExprs.forall(e => GpuBatchUtils.isFixedWidth(e.dataType))
-      if (canUseAnsiJitAst && canUseAstLto && allReturnTypesFixedWidth &&
-          childExprs.forall(_.canThisBeAst)) {
-        return GpuProjectAstExec(gpuExprs, gpuChild, conf.isProjectAstLtoEnabled)
+      if (canUseAnsiJitAst && allReturnTypesFixedWidth && childExprs.forall(_.canThisBeAst)) {
+        return GpuProjectAstExec(gpuExprs, gpuChild)
       }
       // explain AST because this is optional and it is sometimes hard to debug
       if (conf.shouldExplain) {
@@ -76,10 +74,6 @@ class GpuProjectExecMeta(
         }
         if (!canUseAnsiJitAst) {
           logWarning("AST PROJECT\n  ANSI AST JIT requires LIBCUDF_JIT_ENABLED=1 " +
-            "before executor libcudf initialization")
-        }
-        if (!canUseAstLto) {
-          logWarning("AST PROJECT\n  AST LTO requires LIBCUDF_JIT_ENABLED=1 " +
             "before executor libcudf initialization")
         }
         if (!allReturnTypesFixedWidth) {
@@ -924,8 +918,7 @@ case class GpuProjectAstExec(
     // serde: https://github.com/scala/scala/blob/2.12.x/src/library/scala/collection/
     //   immutable/List.scala#L516
     projectList: List[Expression],
-    child: SparkPlan,
-    useLto: Boolean = false
+    child: SparkPlan
 ) extends GpuProjectExecLike {
 
   override lazy val additionalMetrics: Map[String, GpuMetric] = Map(
@@ -1033,11 +1026,7 @@ case class GpuProjectAstExec(
 
     def computeColumns(table: Table): Seq[cudf.ColumnVector] =
       NvtxIdWithMetrics(NvtxRegistry.COMPUTE_ASTS, computeAstsTime) {
-        if (useLto) {
-          compiledAstExprs.safeMap(_.computeColumnLto(table))
-        } else {
-          compiledAstExprs.safeMap(_.computeColumn(table))
-        }
+        compiledAstExprs.safeMap(_.computeColumn(table))
       }
 
     override def close(): Unit = {
