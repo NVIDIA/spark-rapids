@@ -21,7 +21,7 @@ import java.util
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{HashMap, ListBuffer}
 
-import ai.rapids.cudf.Cuda
+import ai.rapids.cudf.{Cuda, ParquetWriterOptions}
 import com.nvidia.spark.rapids.jni.RmmSpark.OomInjectionType
 import com.nvidia.spark.rapids.jni.kudo.DumpOption
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
@@ -1364,6 +1364,20 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
         "The Parquet writer row group size bytes must be at least 1024.")
       .createOptional
 
+  val PARQUET_WRITER_DICTIONARY_POLICY =
+    conf("spark.rapids.sql.format.parquet.writer.dictionaryPolicy")
+      .doc("Dictionary policy for the GPU Parquet writer. NEVER disables dictionary " +
+        "encoding for every column. ADAPTIVE (cuDF default) uses dictionary encoding " +
+        "unless the per-column-chunk dictionary would exceed " +
+        "spark.rapids.sql.format.parquet.writer.maxDictionarySize. ALWAYS forces " +
+        "dictionary encoding even when it would prevent compression of a column chunk. " +
+        "If not set, the cuDF writer default (ADAPTIVE) is used.")
+      .internal()
+      .stringConf
+      .transform(_.toUpperCase(java.util.Locale.ROOT))
+      .checkValues(ParquetWriterOptions.DictionaryPolicy.values.map(_.toString).toSet)
+      .createOptional
+
   val PARQUET_WRITER_MAX_DICTIONARY_SIZE =
     conf("spark.rapids.sql.format.parquet.writer.maxDictionarySize")
       .doc("Maximum size in bytes of a per-column-chunk dictionary in a Parquet row " +
@@ -1378,20 +1392,6 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .checkValue(v => v >= 0L && v <= Integer.MAX_VALUE.toLong,
         s"The Parquet writer max dictionary size must be in [0, ${Integer.MAX_VALUE}] " +
           "(cuDF requires the dictionary size to fit in an int32).")
-      .createOptional
-
-  val PARQUET_WRITER_DICTIONARY_POLICY =
-    conf("spark.rapids.sql.format.parquet.writer.dictionaryPolicy")
-      .doc("Dictionary policy for the GPU Parquet writer. NEVER disables dictionary " +
-        "encoding for every column. ADAPTIVE (cuDF default) uses dictionary encoding " +
-        "unless the per-column-chunk dictionary would exceed " +
-        "spark.rapids.sql.format.parquet.writer.maxDictionarySize. ALWAYS forces " +
-        "dictionary encoding even when it would prevent compression of a column chunk. " +
-        "If not set, the cuDF writer default (ADAPTIVE) is used.")
-      .internal()
-      .stringConf
-      .transform(_.toUpperCase(java.util.Locale.ROOT))
-      .checkValues(Set("NEVER", "ADAPTIVE", "ALWAYS"))
       .createOptional
 
   object ParquetFooterReaderType extends Enumeration {

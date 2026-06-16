@@ -205,6 +205,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   test("parquet writer dictionary policy ALWAYS overrides max dictionary size cap") {
     // Use a wide high-cardinality payload that ADAPTIVE would bail on under a tiny
     // dictionary cap; ALWAYS must keep dictionary encoding regardless of the cap.
+    // Lowercase policy value verifies case-insensitive config parsing.
     val conf = new SparkConf()
       .set(RapidsConf.PARQUET_WRITER_DICTIONARY_POLICY.key, "always")
       .set(RapidsConf.PARQUET_WRITER_MAX_DICTIONARY_SIZE.key, "1024")
