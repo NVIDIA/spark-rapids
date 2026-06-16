@@ -1369,7 +1369,7 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .doc("Dictionary policy for the GPU Parquet writer. NEVER disables dictionary " +
         "encoding for every column. ADAPTIVE (cuDF default) uses dictionary encoding " +
         "unless the per-column-chunk dictionary would exceed " +
-        "spark.rapids.sql.format.parquet.writer.maxDictionarySize. ALWAYS forces " +
+        "spark.rapids.sql.format.parquet.writer.maxDictionarySize. ALWAYS allows " +
         "dictionary encoding even when it would prevent compression of a column chunk. " +
         "If not set, the cuDF writer default (ADAPTIVE) is used.")
       .internal()

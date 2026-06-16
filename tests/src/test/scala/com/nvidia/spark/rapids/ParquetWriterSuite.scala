@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids
 import java.io.File
 import java.nio.charset.StandardCharsets
 
+import scala.collection.JavaConverters._
+
 import ai.rapids.cudf.CompressionType
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.conf.Configuration
@@ -203,8 +205,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
   }
 
   test("parquet writer dictionary policy ALWAYS overrides max dictionary size cap") {
-    // Use a wide high-cardinality payload that ADAPTIVE would bail on under a tiny
-    // dictionary cap; ALWAYS must keep dictionary encoding regardless of the cap.
+    // Use a repeated wide payload whose dictionary is useful but exceeds the tiny cap.
     // Lowercase policy value verifies case-insensitive config parsing.
     val conf = new SparkConf()
       .set(RapidsConf.PARQUET_WRITER_DICTIONARY_POLICY.key, "always")
@@ -212,7 +213,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     withGpuSparkSession(spark => {
       withTempPath { writePath =>
         spark.range(0, 5000, 1, 1)
-          .selectExpr("concat(cast(id as string), repeat('x', 64)) as s")
+          .selectExpr("concat(cast(id % 100 as string), repeat('x', 64)) as s")
           .write.mode("overwrite")
           .parquet(writePath.getAbsolutePath)
 
@@ -228,11 +229,11 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     val baseConf = new SparkConf()
       .set(RapidsConf.PARQUET_WRITER_DICTIONARY_POLICY.key, "ADAPTIVE")
 
-    // A column wide enough to make the dictionary payload trip a 1 KiB cap while
-    // staying small enough to fit comfortably under a 1 MiB cap.
+    // Repeated values keep dictionary encoding useful while the wide payload makes the
+    // dictionary trip a 1 KiB cap and still fit comfortably under a 1 MiB cap.
     def writeWidePayload(spark: SparkSession, path: File): Unit = {
       spark.range(0, 5000, 1, 1)
-        .selectExpr("concat(cast(id as string), repeat('x', 64)) as s")
+        .selectExpr("concat(cast(id % 100 as string), repeat('x', 64)) as s")
         .write.mode("overwrite")
         .parquet(path.getAbsolutePath)
     }
@@ -341,21 +342,10 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
     val footer = ParquetFileReader.readFooters(spark.sparkContext.hadoopConfiguration,
       new Path(parquetFiles.head.getAbsolutePath)).get(0)
-    val blocks = footer.getParquetMetadata.getBlocks
-    val result = scala.collection.mutable.ArrayBuffer[Set[Encoding]]()
-    val blockIter = blocks.iterator()
-    while (blockIter.hasNext) {
-      val columnIter = blockIter.next().getColumns.iterator()
-      while (columnIter.hasNext) {
-        val encodings = columnIter.next().getEncodings.iterator()
-        val s = scala.collection.mutable.Set[Encoding]()
-        while (encodings.hasNext) {
-          s += encodings.next()
-        }
-        result += s.toSet
-      }
-    }
-    result.toSeq
+    footer.getParquetMetadata.getBlocks.asScala
+      .flatMap(_.getColumns.asScala)
+      .map(_.getEncodings.asScala.toSet)
+      .toSeq
   }
 
   @scala.annotation.nowarn("cat=deprecation")
