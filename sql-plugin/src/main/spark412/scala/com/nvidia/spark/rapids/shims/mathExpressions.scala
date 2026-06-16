@@ -42,8 +42,8 @@ import org.apache.spark.sql.rapids.GpuUnaryMathExpression
 object HyperbolicMathExpressions {
   private val LOG_2 = StrictMath.log(2.0)
 
-  private val LARGE_ACOSH: Double = Math.sqrt(Double.MaxValue)
-  private val LARGE_ASINH: Double = Math.sqrt(Double.MaxValue) - 1.0
+  private[shims] val LARGE_ACOSH: Double = Math.sqrt(Double.MaxValue)
+  private[shims] val LARGE_ASINH: Double = Math.sqrt(Double.MaxValue) - 1.0
 
   /**
    * Holds both the large-input predicate and the value for asinh's large branch. They need to stay
