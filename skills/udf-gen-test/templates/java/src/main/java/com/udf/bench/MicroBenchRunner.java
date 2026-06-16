@@ -164,6 +164,7 @@ public class MicroBenchRunner {
                 } catch (Exception e) {
                     System.err.printf("CPU benchmark failed: %s%n", e.getMessage());
                     e.printStackTrace(System.err);
+                    System.exit(1);
                 } finally {
                     closeAll(hostColumns);
                 }
@@ -182,6 +183,7 @@ public class MicroBenchRunner {
                 } catch (Exception e) {
                     System.err.printf("GPU benchmark failed: %s%n", e.getMessage());
                     e.printStackTrace(System.err);
+                    System.exit(1);
                 }
             }
 

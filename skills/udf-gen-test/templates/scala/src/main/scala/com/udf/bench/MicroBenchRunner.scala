@@ -155,6 +155,7 @@ object MicroBenchRunner {
           case e: Exception =>
             System.err.println(s"CPU benchmark failed: ${e.getMessage}")
             e.printStackTrace(System.err)
+            System.exit(1)
         } finally {
           closeAll(hostColumns)
         }
@@ -175,6 +176,7 @@ object MicroBenchRunner {
           case e: Exception =>
             System.err.println(s"GPU benchmark failed: ${e.getMessage}")
             e.printStackTrace(System.err)
+            System.exit(1)
         }
       }
 
