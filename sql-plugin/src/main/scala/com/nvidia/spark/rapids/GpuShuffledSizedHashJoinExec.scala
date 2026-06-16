@@ -414,13 +414,8 @@ abstract class GpuShuffledSizedHashJoinExec[HOST_BATCH_TYPE <: AutoCloseable] ex
       GpuHashPartitioning.getDistribution(cpuRightKeys))
 
   override def output: Seq[Attribute] = joinType match {
-    case _: InnerLike => left.output ++ right.output
-    case LeftOuter =>
-      left.output ++ right.output.map(_.withNullability(true))
-    case RightOuter =>
-      left.output.map(_.withNullability(true)) ++ right.output
-    case FullOuter =>
-      left.output.map(_.withNullability(true)) ++ right.output.map(_.withNullability(true))
+    case _: InnerLike | LeftOuter | RightOuter | FullOuter =>
+      GpuHashJoin.output(joinType, left.output, right.output)
     case x =>
       throw new IllegalArgumentException(s"unsupported join type: $x")
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -109,12 +109,12 @@ trait ExternalSourceBase extends Logging {
    * Get a read file format for the input format.
    * Better to check if the format is supported first by calling 'isSupportedFormat'
    */
-  def getReadFileFormat(relation: HadoopFsRelation): FileFormat = {
+  def getReadFileFormat(relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat = {
     val format = relation.fileFormat
     if (hasSparkAvroJar && avroProvider.isSupportedFormat(format.getClass)) {
       avroProvider.getReadFileFormat(format)
     } else if (deltaProvider.isSupportedFormat(format.getClass)) {
-      deltaProvider.getReadFileFormat(relation)
+      deltaProvider.getReadFileFormat(relation, rapidsConf)
     } else {
       throw new IllegalArgumentException(s"${format.getClass.getCanonicalName} is not supported")
     }

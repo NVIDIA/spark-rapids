@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1481,7 +1481,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
             if (needsBasicOverflowCheck) {
               withResource(nullsReplaced.binaryOp(BinaryOp.ADD, prev, prev.getType)) { updated =>
                 closeOnExcept(mask.ifElse(updated, windowedColumnOutput)) { ret =>
-                  AddOverflowChecks.basicOpOverflowCheck(updated, prev, ret, Some(mask))
+                  AddOverflowChecks.basicOpOverflowCheck(updated, prev, ret, mask = Some(mask))
                   ret
                 }
               }
@@ -1603,7 +1603,7 @@ class SumBinaryFixer(toType: DataType, isAnsi: Boolean)
         }
       }
       withResource(outOfBounds) { _ =>
-        closeOnExcept(GpuCast.fixDecimalBounds(ret, outOfBounds, isAnsi)) { replaced =>
+        closeOnExcept(GpuCast.fixDecimalBounds(ret, outOfBounds, dt, isAnsi)) { replaced =>
           updateState(replaced, Some(outOfBounds))
           replaced
         }
@@ -2145,9 +2145,9 @@ case class GpuPercentRank(children: Seq[Expression]) extends GpuReplaceWindowFun
       fullUnboundedFrame)
     val count = GpuWindowExpression(GpuCount(Seq(GpuLiteral(1))), fullUnboundedSpec)
     val rank = GpuWindowExpression(GpuRank(children), spec)
-    val rankMinusOne = GpuCast(GpuSubtract(rank, GpuLiteral(1), isAnsi), DoubleType, isAnsi)
-    val countMinusOne = GpuCast(GpuSubtract(count, GpuLiteral(1L), isAnsi), DoubleType, isAnsi)
-    val divided = GpuDivide(rankMinusOne, countMinusOne, failOnError = isAnsi)
+    val rankMinusOne = GpuCast(GpuSubtract(rank, GpuLiteral(1), isAnsi)(), DoubleType, isAnsi)()
+    val countMinusOne = GpuCast(GpuSubtract(count, GpuLiteral(1L), isAnsi)(), DoubleType, isAnsi)()
+    val divided = GpuDivide(rankMinusOne, countMinusOne, isAnsi)()
     GpuCoalesce(Seq(divided, GpuLiteral(0.0)))
   }
 }

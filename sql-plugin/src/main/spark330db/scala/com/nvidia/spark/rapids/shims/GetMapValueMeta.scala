@@ -34,6 +34,7 @@
 {"spark": "357"}
 {"spark": "358"}
 {"spark": "400"}
+{"spark": "400db173"}
 {"spark": "401"}
 {"spark": "402"}
 {"spark": "411"}
@@ -58,5 +59,5 @@ abstract class GetMapValueMeta (
   extends BinaryExprMeta[GetMapValue](expr, conf, parent, rule) {
 
     override def convertToGpu(map: Expression, key: Expression): GpuExpression =
-        GpuGetMapValue(map, key, false)
+        GpuGetMapValue(map, key, false)(expr.origin)
 }

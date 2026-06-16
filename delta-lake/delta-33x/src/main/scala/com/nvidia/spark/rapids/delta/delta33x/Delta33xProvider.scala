@@ -27,7 +27,6 @@ import org.apache.spark.sql.delta.commands.{DeleteCommand, MergeIntoCommand, Opt
 import org.apache.spark.sql.execution.command.RunnableCommand
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.AppendDataExecV1
-import org.apache.spark.sql.internal.SQLConf
 
 object Delta33xProvider extends DeltaProviderBase with Logging {
 
@@ -74,9 +73,9 @@ object Delta33xProvider extends DeltaProviderBase with Logging {
     ).map(r => (r.getClassFor.asSubclass(classOf[RunnableCommand]), r)).toMap
   }
 
-  override protected def toGpuParquetFileFormat(conf: SQLConf, fmt: DeltaParquetFileFormat)
+  override protected def toGpuParquetFileFormat(conf: RapidsConf, fmt: DeltaParquetFileFormat)
   : FileFormat = {
-    if (canPushDVPredicateDownToScan(conf)) {
+    if (isPushDVPredicateDownEnabled(conf)) {
       // Pushing down deletion vector predicates is currently only supported
       // when the metadata row index is enabled.
       GpuDelta33xParquetFileFormat2(fmt.protocol, fmt.metadata, fmt.nullableRowTrackingFields,

@@ -127,15 +127,15 @@ mvn -pl dist -PnoSnapshots package -DskipTests
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.08.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar spark330.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar(/spark330/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark330.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.08.0-SNAPSHOT-cuda12.jar spark330.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-26.08.0-SNAPSHOT-cuda12.jar(/spark330/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark330.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -177,16 +177,16 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.04.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-26.08.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
 
-### Building and Testing with JDK9+
+### Building and Testing
 
-We support JDK8 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
+We support JDK17 as our main JDK version, and test JDK8, JDK11 and JDK17. It is possible to build and run
 with more modern JDK versions, however these are untested. The first step is to set `JAVA_HOME` in
-the environment to your JDK root directory. NOTE: for JDK17, we only support build against spark 3.3.0+
+the environment to your JDK root directory.
 If you need to build with a JDK version that we do not test internally add
 `-Denforcer.skipRules=requireJavaVersion` to the Maven invocation.
 
@@ -252,12 +252,12 @@ The following acronyms may appear in directory names:
 
 |Acronym|Definition  |Example|Example Explanation                           |
 |-------|------------|-------|----------------------------------------------|
-|db     |Databricks  |332db  |Databricks Spark based on Spark 3.3.2         |
+|db     |Databricks  |341db  |Databricks Spark based on Spark 3.4.1         |
 |cdh    |Cloudera CDH|(removed)|Cloudera CDH shims have been removed         |
 
 The version-specific directory names have one of the following forms / use cases:
 
-* `src/main/spark${buildver}`, example: `src/main/spark332db`
+* `src/main/spark${buildver}`, example: `src/main/spark341db`
 * `src/test/spark${buildver}`, example: `src/test/spark340`
 
 with a special shim descriptor as a Scala/Java comment. See [shimplify.md][1]
@@ -383,11 +383,6 @@ You can now open the spark-rapids as a
 
 Read on for VS Code Scala Metals instructions.
 
-##### JDK 11 Requirement
-
-It is known that Bloop's SemanticDB generation with JDK 8 is broken for spark-rapids. Please use JDK
-11 or later for Bloop builds.
-
 #### Bloop, Scala Metals, and Visual Studio Code
 
 _Last tested with 1.63.0-insider (Universal) Commit: bedf867b5b02c1c800fbaf4d6ce09cefba_
@@ -437,7 +432,7 @@ jps -l
 Metals background compilation process status appears to be resetting to 0% after reaching 99%
 and you see a peculiar error message [`java.lang.RuntimeException: boom`][1]. This is a known issue
 when running Metals/Bloop on Java 8. To work around it, ensure Metals and Bloop are both running on
-Java 11+.
+Java 17 (minimum Java version for our project):
 
 1. The `-DbloopInstall` profile will enforce Java 11+ compliance.
 
@@ -640,6 +635,12 @@ find the uploaded log.
 Options:
 1. Skip tests run by adding `[skip ci]` to title, this should only be used for doc-only change
 2. Run build and tests in databricks runtimes by adding `[databricks]` to title, this would add around 30-40 minutes
+
+
+### Code Review Guidelines
+
+We have [code review guidelines](CODE_REVIEW_GUIDELINES.md) that outline how we collaborate during code review. Please read them before opening or reviewing a pull request.
+
 
 ## Attribution
 Portions adopted from https://github.com/rapidsai/cudf/blob/main/CONTRIBUTING.md, https://github.com/NVIDIA/nvidia-docker/blob/master/CONTRIBUTING.md, and https://github.com/NVIDIA/DALI/blob/main/CONTRIBUTING.md

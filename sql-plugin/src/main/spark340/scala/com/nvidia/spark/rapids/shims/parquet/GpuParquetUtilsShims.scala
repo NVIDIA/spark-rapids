@@ -30,7 +30,9 @@
 {"spark": "355"}
 {"spark": "356"}
 {"spark": "357"}
+{"spark": "358"}
 {"spark": "400"}
+{"spark": "400db173"}
 {"spark": "401"}
 {"spark": "402"}
 {"spark": "411"}
@@ -40,6 +42,18 @@ package com.nvidia.spark.rapids.shims.parquet
 import org.apache.parquet.hadoop.metadata.{BlockMetaData, ColumnChunkMetaData}
 
 object GpuParquetUtilsShims {
+
+  /**
+   * Sets the given row index offset on the BlockMetaData.
+   */
+  def setRowIndexOffset(block: BlockMetaData, offset: Long): Unit = {
+    block.setRowIndexOffset(offset)
+  }
+
+  /**
+   * Gets the row index offset from the BlockMetaData.
+   */
+  def getRowIndexOffset(block: BlockMetaData): Long = block.getRowIndexOffset
 
   /**
    * Build a new BlockMetaData from an existing one, but with a new set of column chunks metadata.

@@ -59,6 +59,7 @@ AggregateExpression,4
 Alias,4
 And,4
 ApproximatePercentile,4
+ArrayAggregate,4
 ArrayContains,4
 ArrayDistinct,4
 ArrayExcept,4
@@ -153,6 +154,7 @@ GetTimestamp,4
 GreaterThan,4
 GreaterThanOrEqual,4
 Greatest,4
+Hex,4
 HiveGenericUDF,4
 HiveHash,4
 HiveSimpleUDF,4

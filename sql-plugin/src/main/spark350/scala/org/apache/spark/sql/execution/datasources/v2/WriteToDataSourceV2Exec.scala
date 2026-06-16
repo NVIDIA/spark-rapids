@@ -36,13 +36,14 @@ import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar => CudfScalar}
 import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuColumnVector, GpuDeltaWrite, GpuExec, GpuMetric, GpuWrite}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
+import com.nvidia.spark.rapids.shims.DeltaInsertFilter
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.{GpuProjectingColumnarBatch, InternalRow}
 import org.apache.spark.sql.catalyst.expressions.Attribute
-import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, INSERT_OPERATION, UPDATE_OPERATION}
+import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, UPDATE_OPERATION}
 import org.apache.spark.sql.catalyst.util.WriteDeltaProjections
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, DeltaWriter, PhysicalWriteInfoImpl, Write, WriterCommitMessage}
 import org.apache.spark.sql.errors.QueryExecutionErrors
@@ -88,8 +89,32 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
   override def child: SparkPlan = query
   override def output: Seq[Attribute] = Seq.empty
 
+  // Root cause of "SQL op times / task metrics missing on GPU plan nodes in the SQL UI /
+  // History Server" for V2 writes under AQE:
+  //
+  // The previous code executed a *detached copy* of the query's AQE
+  // (`aqe.copy(supportsColumnar = true)`). Spark's AQE posts its per-query-stage UI updates by
+  // serializing `context.qe.executedPlan`, which (for this write command) walks `query` — the
+  // ORIGINAL, never-executed AQE, frozen at its pre-GPU (CPU) plan. The GPU operators the tasks
+  // actually update live in the *copy*, with different metric IDs, so Spark's SQL listener
+  // filters out every task accumulator update and op times render blank on every node.
+  //
+  // Fix: execute the ORIGINAL `query` AQE itself (the instance `context.qe.executedPlan`
+  // references) via `finalPhysicalPlan`, which materializes its query stages and drives Spark's
+  // own per-stage `onUpdatePlan` — so the SQL UI sees the GPU plan (node names AND the GPU
+  // metric IDs) before each stage's job starts, exactly as it already does for pure reads. The
+  // GPU writer consumes `ColumnarBatch`es, so we then feed it the columnar source beneath the
+  // AQE's row-output transition (the AQE wrapper is `supportsColumnar = false`, so its settled
+  // plan tops out in a `GpuColumnarToRowExec`). This is Spark-version-agnostic — it touches no
+  // fork-specific constructor flags.
   private lazy val finalQuery: SparkPlan = query match {
-      case aqe: AdaptiveSparkPlanExec => aqe.copy(supportsColumnar = true)
+      case aqe: AdaptiveSparkPlanExec =>
+        // Drives AQE on `aqe` (posts per-stage GPU plan updates for the UI) and settles it.
+        val settledPlan = aqe.finalPhysicalPlan
+        settledPlan match {
+          case GpuColumnarToRowExec(inner, _) => inner
+          case other => other
+        }
       case GpuColumnarToRowExec(inner, _) => inner
       case p => p
   }
@@ -228,31 +253,6 @@ case class GpuOverwriteByExpressionExec(
   }
 
   override protected def withNewChildInternal(newChild: SparkPlan): GpuOverwriteByExpressionExec = {
-    copy(inner = newChild)
-  }
-}
-
-/**
- * Physical plan node for replacing data in a v2 table.
- *
- * Used by copy-on-write operations like DELETE to replace rows in the table.
- * Rows are read, filtered, and rewritten.
- */
-case class GpuReplaceDataExec(
-                               inner: SparkPlan,
-                               refreshCache: () => Unit,
-                               write: GpuWrite) extends GpuV2ExistingTableWriteExec {
-
-  override def supportsColumnar: Boolean = false
-
-  override def query: SparkPlan = inner
-
-  override protected def internalDoExecuteColumnar(): RDD[ColumnarBatch] = {
-    throw new IllegalStateException(
-      "GpuReplaceDataExec does not support columnar execution")
-  }
-
-  override protected def withNewChildInternal(newChild: SparkPlan): GpuReplaceDataExec = {
     copy(inner = newChild)
   }
 }
@@ -421,7 +421,7 @@ case class GpuDeltaWritingSparkTask(
           }
         }
 
-        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        val insertFilter = DeltaInsertFilter.filterInsertRows(batch)
         withResource(insertFilter) { _ =>
           withResource(rowProjection.project(batch)) { rows =>
             val filteredRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)
@@ -512,7 +512,7 @@ case class GpuDeltaWithMetadataWritingSparkTask(
       }
 
       if (rowProjection != null) {
-        val insertFilter = filterByOperation(batch, INSERT_OPERATION)
+        val insertFilter = DeltaInsertFilter.filterInsertRows(batch)
         withResource(insertFilter) { _ =>
           withResource(rowProjection.project(batch)) { rows =>
             val filterRows = GpuColumnVector.filter(rows, rowDataTypes, insertFilter)

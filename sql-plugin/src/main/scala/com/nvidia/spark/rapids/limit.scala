@@ -193,13 +193,42 @@ class GpuCollectLimitMeta(
   override val childParts: scala.Seq[PartMeta[_]] =
     Seq(GpuOverrides.wrapPart(collectLimit.outputPartitioning, conf, Some(this)))
 
-  override def convertToGpu(): GpuExec =
+  override def tagPlanForGpu(): Unit = {
+    // Use full class name to avoid compile errors on Spark versions
+    // where CommandResultExec (added in 3.2) does not exist.
+    val childClass = collectLimit.child.getClass.getName
+    if (childClass.endsWith(
+          ".execution.CommandResultExec") ||
+        childClass.endsWith(
+          ".execution.command.ExecutedCommandExec")) {
+      willNotWorkOnGpu(
+        s"child ${collectLimit.child.getClass.getSimpleName}" +
+        " already provides pre-computed results; replacing" +
+        " CollectLimit would trigger an unnecessary Spark job")
+    }
+    // When the child cannot run on GPU, fall back the entire
+    // CollectLimit to CPU. CPU CollectLimitExec.doExecute() applies
+    // per-partition .take(limit) that stops upstream iterators early,
+    // which is strictly better than row-to-columnar conversion
+    // followed by GPU limiting.
+    if (!childPlans.head.canThisBeReplaced) {
+      willNotWorkOnGpu(
+        "child cannot run on GPU; falling back entire" +
+        " CollectLimit to CPU to preserve per-partition" +
+        " row-level .take(limit) optimization")
+    }
+  }
+
+  protected def buildCollectLimitGpu(offset: Int): GpuExec = {
     GpuGlobalLimitExec(collectLimit.limit,
       GpuShuffleExchangeExec(
         GpuSinglePartitioning,
         GpuLocalLimitExec(collectLimit.limit, childPlans.head.convertIfNeeded()),
         ENSURE_REQUIREMENTS
-      )(SinglePartition), 0)
+      )(SinglePartition), offset)
+  }
+
+  override def convertToGpu(): GpuExec = buildCollectLimitGpu(0)
 }
 
 object GpuTopN {

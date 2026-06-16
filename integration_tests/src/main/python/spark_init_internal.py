@@ -51,6 +51,9 @@ spark_jars_env = {
     _SPARK_JARS,
     _SPARK_JARS_PACKAGES
 }
+# Initialized in pytest_sessionstart; declared here so pytest_sessionfinish
+# does not raise NameError if session startup fails before assignment.
+_spark = None
 
 def findspark_init():
     import findspark
@@ -294,4 +297,24 @@ def set_spark_job_timeout(request):
     yield
     # after the test
     _set_job_timeout_and_crash_when_failed(spark_timeout, dump_threads)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_sessionfinish(session, exitstatus):
+    # Shut down SparkSession after all tests and report generation complete.
+    # On Spark 4.0+ / Databricks 17.3+, SparkConnectPlugin starts gRPC/Netty
+    # threads that keep the JVM alive even after Python exits.  An explicit
+    # spark.stop() triggers the plugin shutdown hook which cleans up those threads.
+    if running_with_xdist(session, is_worker=False):
+        logging.info("Skipping SparkSession stop on xdist coordinator")
+        return
+    global _spark
+    if _spark is not None:
+        logging.info("Stopping SparkSession at end of test session")
+        try:
+            _spark.stop()
+        except Exception as e:
+            logging.warning(f"Exception while stopping SparkSession: {e}")
+        finally:
+            _spark = None
 
