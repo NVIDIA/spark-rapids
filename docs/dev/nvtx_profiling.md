@@ -4,11 +4,11 @@ title: NVTX Profiling
 nav_order: 4
 parent: Developer Overview
 ---
-# Using NVTX Ranges with the RAPIDS Plugin for Spark
+# Using NVTX Ranges with cuDF for Spark
 NVTX ranges are typically used to profile applications that use the GPU. Such NVTX profiles,
 once captured can be visually analyzed using
 [NVIDIA NSight Systems](https://developer.nvidia.com/nsight-systems).
-This document is specific to the RAPIDS Spark Plugin profiling.
+This document is specific to cuDF for Spark plugin profiling.
 
 ### STEPS:
 

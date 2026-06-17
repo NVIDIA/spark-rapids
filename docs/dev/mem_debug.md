@@ -184,16 +184,16 @@ We are still missing some functionality that would be helpful with debugging iss
 tracking [Scalar](https://github.com/rapidsai/cudf/issues/8227) and 
 [Table](https://github.com/rapidsai/cudf/issues/14677) values. 
 
-We don't have any [host memory logging](https://github.com/NVIDIA/spark-rapids/issues/10102) like 
+We don't have any [host memory logging](https://github.com/NVIDIA/cudf-spark/issues/10102) like 
 we do for RMM. This might change when/if we go to RMM for host memory allocation too, but for now
 if you need this you probably are going to have to write something yourself.
 
-We don't have a good way to [track spill](https://github.com/NVIDIA/spark-rapids/issues/8752)/log 
+We don't have a good way to [track spill](https://github.com/NVIDIA/cudf-spark/issues/8752)/log 
 what is or is not spillable. The spill framework typically will use reference counting to know
 when it is the only one holding a reference to memory and then make the data spillable at that
 point.  This means that if we don't get the reference counting right we end up never spilling
 
 We also don't have a way to 
-[log exactly what was spilled](https://github.com/NVIDIA/spark-rapids/issues/10103)
+[log exactly what was spilled](https://github.com/NVIDIA/cudf-spark/issues/10103)
 and what was read back. We can probably guess that this is happening from other logs, but it
 would be really nice to have a way to actually capture it.
