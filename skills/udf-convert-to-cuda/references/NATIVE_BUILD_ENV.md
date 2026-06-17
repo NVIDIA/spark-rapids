@@ -30,7 +30,7 @@ The native build compiles against the prebuilt libcudf in the spark-rapids jar, 
 1. Get the CUDA version(s) spark-rapids is built against:
 
 ```bash
-curl -fsSL https://nvidia.github.io/spark-rapids/docs/download.html \
+curl -fsSL https://nvidia.github.io/cudf-spark/docs/download.html \
   | grep -Eo '[^<>]*built against CUDA[^<>]*'
 ```
 
