@@ -19,8 +19,9 @@ package com.nvidia.spark.rapids
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.{DateType, IntegerType, LongType, StringType, StructField, StructType}
@@ -107,12 +108,17 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
           new Path(basePath, "second").toString,
           thirdPath.toString,
           new Path(basePath, "fourth").toString)
-
+        val hasGpuScan = df.queryExecution.executedPlan.collect {
+          case scan: GpuFileSourceScanExec =>
+            scan.selectedPartitions
+            true
+          case scan: FileSourceScanExec =>
+            scan.selectedPartitions
+            false
+        }
+        assert(hasGpuScan.nonEmpty, "ORC read does not have a file source scan")
         if (checkGpu) {
-          val gpuScans = df.queryExecution.executedPlan.collect {
-            case _: GpuFileSourceScanExec => true
-          }
-          assert(gpuScans.nonEmpty, "ORC read is not running on GPU")
+          assert(hasGpuScan.contains(true), "ORC read is not running on GPU")
         }
 
         filesToDelete.foreach(file => fs.delete(file, false))
