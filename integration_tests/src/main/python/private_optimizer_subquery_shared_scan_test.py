@@ -22,13 +22,19 @@ from private_optimizer_common import (
 from spark_session import with_cpu_session
 
 
+_NATIVE_SUBQUERY_SHARED_SCAN_RULES = ",".join([
+    "com.databricks.sql.optimizer.OptimizeSubquerySharedScanRule",
+    "org.apache.spark.sql.catalyst.optimizer.MergeScalarSubqueries",
+])
+
+
 @pytest.mark.private_optimizer
 @require_private_optimizer
 def test_optimize_subquery_shared_scan(spark_tmp_path):
     """OptimizeSubquerySharedScanRule merges scalar subqueries that aggregate
     (no grouping, single agg fn) over the same LogicalRelation into one shared
     scan. Conf is default-on, so the OFF baseline sets it false explicitly.
-    Marker: the combined 'generated_agg_list' named struct."""
+    Marker: the combined named struct with generated c_0/c_1/c_2 fields."""
     data_path = spark_tmp_path + "/subquery_shared_scan"
     with_cpu_session(lambda s: s.range(1000).selectExpr("id", "id % 100 AS g")
                      .write.mode("overwrite").parquet(data_path))
@@ -44,9 +50,14 @@ def test_optimize_subquery_shared_scan(spark_tmp_path):
         return spark.sql(sql_text)
 
     # AQE off so the rule runs in the logical optimizer rather than AQE re-opt.
-    base = {"spark.sql.adaptive.enabled": "false"}
+    # Databricks and Spark native optimizer rules can produce the same shared-scan
+    # shape, so exclude them to make the marker discriminate only the RAPIDS rule.
+    base = {
+        "spark.sql.adaptive.enabled": "false",
+        "spark.sql.optimizer.excludedRules": _NATIVE_SUBQUERY_SHARED_SCAN_RULES,
+    }
     on = private_optimizer_conf(
         {"spark.rapids.sql.optimizer.optimizeScalarSubquery": "true"}, extra_conf=base)
     off = private_optimizer_conf(
         {"spark.rapids.sql.optimizer.optimizeScalarSubquery": "false"}, extra_conf=base)
-    assert_rule_fires(fn, on, off, marker="generated_agg_list")
+    assert_rule_fires(fn, on, off, marker="named_struct(c_0,")
