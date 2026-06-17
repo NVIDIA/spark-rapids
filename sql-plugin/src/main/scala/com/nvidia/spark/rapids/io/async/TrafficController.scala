@@ -20,7 +20,7 @@ import java.util.concurrent.Callable
 import java.util.concurrent.locks.ReentrantLock
 import javax.annotation.concurrent.GuardedBy
 
-import com.nvidia.spark.rapids.RapidsConf
+import com.nvidia.spark.rapids.{RapidsConf, TaskRegistryTracker}
 
 /**
  * Simple wrapper around a [[Callable]] that also keeps track of the host memory bytes used by
@@ -102,7 +102,9 @@ class TrafficController protected[rapids] (@GuardedBy("lock") throttle: Throttle
     lock.lockInterruptibly()
     try {
       while (numTasks > 0 && !throttle.canAccept(task)) {
-        canBeScheduled.await()
+        TaskRegistryTracker.withRmmPoolWait {
+          canBeScheduled.await()
+        }
       }
       numTasks += 1
       throttle.taskScheduled(task)
