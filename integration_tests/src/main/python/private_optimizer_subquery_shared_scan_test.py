@@ -19,7 +19,7 @@ from private_optimizer_common import (
     private_optimizer_conf,
     require_private_optimizer,
 )
-from spark_session import is_databricks_runtime, with_cpu_session
+from spark_session import with_cpu_session
 
 
 @pytest.mark.private_optimizer
@@ -28,7 +28,7 @@ def test_optimize_subquery_shared_scan(spark_tmp_path):
     """OptimizeSubquerySharedScanRule merges scalar subqueries that aggregate
     (no grouping, single agg fn) over the same LogicalRelation into one shared
     scan. Conf is default-on, so the OFF baseline sets it false explicitly.
-    Marker: the combined named struct alias; Databricks normalizes the alias differently."""
+    Marker: the combined 'generated_agg_list' named struct."""
     data_path = spark_tmp_path + "/subquery_shared_scan"
     with_cpu_session(lambda s: s.range(1000).selectExpr("id", "id % 100 AS g")
                      .write.mode("overwrite").parquet(data_path))
@@ -49,7 +49,4 @@ def test_optimize_subquery_shared_scan(spark_tmp_path):
         {"spark.rapids.sql.optimizer.optimizeScalarSubquery": "true"}, extra_conf=base)
     off = private_optimizer_conf(
         {"spark.rapids.sql.optimizer.optimizeScalarSubquery": "false"}, extra_conf=base)
-    # Databricks normalizes the combined aggregate alias to "generated_aggs" in the
-    # optimized plan, while Apache Spark preserves the rule's "generated_agg_list" alias.
-    marker = "generated_aggs" if is_databricks_runtime() else "generated_agg_list"
-    assert_rule_fires(fn, on, off, marker=marker)
+    assert_rule_fires(fn, on, off, marker="generated_agg_list")
