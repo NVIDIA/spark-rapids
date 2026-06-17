@@ -219,6 +219,14 @@ def is_spark_350_or_351():
 def is_before_spark_400():
     return spark_version() < "4.0.0"
 
+def is_spark_testing_enabled():
+    # True when Spark testing mode is on (-Dspark.testing or the SPARK_TESTING env var), mirroring
+    # org.apache.spark.util.Utils.isTesting. NVIDIA/spark-rapids#15022 enables it for the nightly,
+    # which disables WholeStageCodegenExec's fallback from a codegen CompileException to interpreted
+    # execution, so latent Spark codegen bugs become hard failures instead of being swallowed.
+    return (_spark.sparkContext._jvm.System.getProperty("spark.testing") is not None
+            or _spark.sparkContext._jvm.System.getenv("SPARK_TESTING") is not None)
+
 def is_spark_320_or_later():
     return spark_version() >= "3.2.0"
 
