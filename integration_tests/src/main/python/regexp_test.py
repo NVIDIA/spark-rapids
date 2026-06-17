@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect, \
@@ -31,6 +33,10 @@ _regexp_conf = { 'spark.rapids.sql.regexp.enabled': True }
 
 def mk_str_gen(pattern):
     return StringGen(pattern).with_special_case('').with_special_pattern('.{0,10}')
+
+def _regexp_replace_error_message(java_message):
+    return re.compile(
+        re.escape(java_message) + r'|\[INVALID_REGEXP_REPLACE\] Could not perform regexp_replace')
 
 def test_split_re_negative_limit():
     data_gen = mk_str_gen('([bf]o{0,2}:){1,7}') \
@@ -469,7 +475,7 @@ def test_regexp_replace_subbug2_trailing_backslash_throws_14742():
         lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
             regexp_replace(col("a"), "a", "\\")).collect(),
         conf=_regexp_conf,
-        error_message="character to be escaped is missing")
+        error_message=_regexp_replace_error_message("character to be escaped is missing"))
 
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
@@ -479,7 +485,7 @@ def test_regexp_replace_subbug3_dollar_non_digit_throws_14742():
         lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
             regexp_replace(col("a"), "a", "$x")).collect(),
         conf=_regexp_conf,
-        error_message="Illegal group reference")
+        error_message=_regexp_replace_error_message("Illegal group reference"))
 
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
@@ -489,7 +495,8 @@ def test_regexp_replace_subbug4_digit_leading_named_group_throws_14742():
         lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
             regexp_replace(col("a"), "(a)", "${1}")).collect(),
         conf=_regexp_conf,
-        error_message="capturing group name {1} starts with digit character")
+        error_message=_regexp_replace_error_message(
+            "capturing group name {1} starts with digit character"))
 
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
@@ -499,7 +506,7 @@ def test_regexp_replace_subbug5_unknown_named_group_throws_14742():
         lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
             regexp_replace(col("a"), "(a)", "${name}")).collect(),
         conf=_regexp_conf,
-        error_message="No group with name")
+        error_message=_regexp_replace_error_message("No group with name"))
 
 
 @pytest.mark.skipif(is_before_spark_320(), reason='regexp is synonym for RLike starting in Spark 3.2.0')
