@@ -23,10 +23,10 @@ import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{FQSuiteName, GpuColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.{GpuAcosh, GpuAsinh, HyperbolicMathExpressions}
+import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.types.DoubleType
-import org.scalatest.funsuite.AnyFunSuite
 
 class MathExpressionsSuite extends AnyFunSuite with FQSuiteName {
   import HyperbolicMathExpressions._
