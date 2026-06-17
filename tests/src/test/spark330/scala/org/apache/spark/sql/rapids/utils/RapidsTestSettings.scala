@@ -126,6 +126,22 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsDataFrameSetOperationsSuite]
     .exclude("SPARK-37371: UnionExec should support columnar if all children support columnar", ADJUST_UT("CPU test uses CPU-specific node checks (InMemoryTableScanExec, UnionExec); GPU version implemented as testRapids() in RapidsDataFrameSetOperationsSuite"))
   enableSuite[RapidsDataFrameRangeSuite]
+  enableSuite[RapidsFileBasedDataSourceSuite]
+    .exclude("Enabling/disabling ignoreMissingFiles using orc", KNOWN_ISSUE("https://github.com/NVIDIA/cudf-spark/issues/15100"))
+    .exclude("SPARK-25237 compute correct input metrics in FileScanRDD", ADJUST_UT("Replaced by testRapids version that checks GpuFileSourceScanExec file metrics and populated Spark input metrics."))
+    .exclude("Option recursiveFileLookup: disable partition inferring", ADJUST_UT("Replaced by testRapids version that uses testFile() to expand Spark test resources from the tests jar before reading with binaryFile."))
+    .exclude("SPARK-22790,SPARK-27668: spark.sql.sources.compressionFactor takes effect", ADJUST_UT("Replaced by testRapids version that checks file-compression statistics with GpuBroadcastHashJoinExec and GpuShuffledSymmetricHashJoinExec."))
+    .exclude("File source v2: support partition pruning", ADJUST_UT("Replaced by testRapids version that checks GpuBatchScanExec file filters and selected partitions."))
+    .exclude("File source v2: support passing data filters to FileScan without partitionFilters", ADJUST_UT("Replaced by testRapids version that checks GpuBatchScanExec file filters and selected partitions."))
+  enableSuite[RapidsCachedTableSuite]
+    .exclude("InMemoryRelation statistics", ADJUST_UT("Replaced by testRapids version that checks cache statistics with RAPIDS cache serializer and GpuInMemoryTableScanExec."))
+    .exclude("SPARK-19993 subquery with cached underlying relation", ADJUST_UT("Replaced by testRapids version that checks cached subquery reuse with recursive GpuInMemoryTableScanExec nodes."))
+    .exclude("SPARK-36120: Support cache/uncache table with TimestampNTZ type", ADJUST_UT("Replaced by testRapids version that checks TimestampNTZ cache correctness with RAPIDS cache stats."))
+  enableSuite[RapidsDatasetCacheSuite]
+    .exclude("SPARK-24613 Cache with UDF could not be matched with subsequent dependent caches", ADJUST_UT("Replaced by testRapids version that checks dependent cache matching with RAPIDS cache scans."))
+    .exclude("SPARK-24596 Non-cascading Cache Invalidation - verify cached data reuse", ADJUST_UT("Replaced by testRapids version that checks non-cascading cache invalidation reuses loaded cached data without re-evaluating the UDF."))
+    .exclude("SPARK-26708 Cache data and cached plan should stay consistent", ADJUST_UT("Replaced by testRapids version that checks loaded and unloaded dependent caches keep consistent cached plans under RAPIDS."))
+  enableSuite[RapidsDatasetPrimitiveSuite]
   enableSuite[RapidsDataFrameWindowFunctionsSuite]
     .exclude("Window spill with more than the inMemoryThreshold and spillThreshold", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
     .exclude("SPARK-21258: complex object in combination with spilling", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
