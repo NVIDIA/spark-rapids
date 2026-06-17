@@ -187,7 +187,7 @@ class GpuPartitioningSuite extends AnyFunSuite with BeforeAndAfterEach {
       val partitionIndices = Array(0, 2, 2)
       val gp = new GpuPartitioning {
         override val numPartitions: Int = partitionIndices.length
-        // Force the >2GB guard to trip on a small batch (no real 2GB allocation).
+        // Force the oversized-batch guard to trip with a 10-byte limit.
         override protected[rapids] def maxGpuSerializedSliceBytes: Long = 10L
       }
       withResource(buildBatch()) { batch =>
