@@ -421,7 +421,17 @@ a few differences with it.
 
 The main difference is that `from_json` supports parsing Maps and Arrays directly from a JSON column, whereas
 JSON Scan only supports parsing top level structs. The GPU implementation of `from_json` has support for parsing
-a `MAP<STRING,STRING>` as a top level schema, but does not currently support arrays at the top level.
+a `MAP<STRING,STRING>` or `MAP<STRING,ARRAY<STRING>>` as a top level schema, but does not currently support
+arrays at the top level.
+
+For map schemas the values (and, for `MAP<STRING,ARRAY<STRING>>`, the array elements) are extracted as raw JSON
+text. Two cases can therefore differ from Spark: (1) escape sequences are not normalized or unescaped (see the
+JSON Normalization section above), and (2) array elements that are JSON objects or nested arrays are returned as
+their raw JSON substring rather than Spark's re-serialized form. Scalar number/boolean array elements do match
+Spark, because the raw text equals Spark's string coercion (e.g. `1` becomes `"1"`). For `MAP<STRING,ARRAY<STRING>>`
+a map value that is neither a JSON array nor the JSON `null` literal (i.e. a scalar or object) makes the entire row
+null, matching Spark's PERMISSIVE bad-record handling. Duplicate keys are kept in document order, which matches
+Spark 3.5.x `from_json`; later Spark versions may de-duplicate per `spark.sql.mapKeyDedupPolicy`.
 
 ### `to_json` Function
 

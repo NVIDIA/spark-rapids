@@ -683,6 +683,19 @@ def test_from_json_map():
         conf=_enable_all_types_conf)
 
 @allow_non_gpu(*non_utc_allow)
+def test_from_json_map_with_arrays():
+    # Same dense-vs-sparse key workaround as test_from_json_map: the GPU emits dense keys while the
+    # CPU emits sparse keys, so the key set is kept deterministic ("a" always, "b" optional). The
+    # values are JSON arrays of strings whose length varies (including empty []) to exercise the
+    # inner list. Literal [ ] are escaped as \[ \] per this repo's StringGen regex convention.
+    json_string_gen = StringGen(
+        r'{"a": (\[\]|\["[0-9]{0,5}"(, "[0-9]{0,3}"){0,2}\])(, "b": \["[A-Z]{0,5}"\])?}')
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json(f.col('a'), 'MAP<STRING,ARRAY<STRING>>')),
+        conf=_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow)
 def test_from_json_map_with_invalid():
     # The test here is working around some inconsistencies in how the keys are parsed for maps
     # on the GPU the keys are dense, but on the CPU they are sparse
@@ -738,6 +751,124 @@ def test_from_json_map_fallback():
         lambda spark : unary_op_df(spark, json_string_gen) \
             .select(f.from_json(f.col('a'), 'MAP<STRING,INT>')),
         'JsonToStructs',
+        conf=_enable_all_types_conf)
+
+@allow_non_gpu('ProjectExec', 'JsonToStructs')
+def test_from_json_map_array_fallback():
+    # MAP<STRING,ARRAY<STRING>> runs on the GPU, but array element value types other than string are
+    # still unsupported, so MAP<STRING,ARRAY<INT>> must fall back to CPU. Literal [ ] are escaped as
+    # \[ \]; the array values are bare (unquoted) JSON integers.
+    json_string_gen = StringGen(r'{"a": \[\d\d, \d\d\]}')
+    assert_gpu_fallback_collect(
+        lambda spark : unary_op_df(spark, json_string_gen) \
+            .select(f.from_json(f.col('a'), 'MAP<STRING,ARRAY<INT>>')),
+        'JsonToStructs',
+        conf=_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow)
+def test_from_json_map_with_arrays_corner_cases():
+    # Fixed literal inputs (not randomly generated) covering malformed and edge JSON for the
+    # MAP<STRING,ARRAY<STRING>> path, asserting GPU == Spark CPU. The map is compared as
+    # map_entries(...) -- an array of <key,value> structs -- because the map-equality path in
+    # asserts.py only checks row-level null-ness, not the keys/values. Entry order is JSON document
+    # order on both engines (matching test_map_entries in map_test.py), so no sort is needed. Keys
+    # within a row are kept distinct; duplicate-key, escape, and non-string-element divergences live
+    # in the *_xfail probes below. All cases here are expected to match Spark CPU exactly.
+    schema = StructType([StructField("a", StringType())])
+    many_keys = '{' + ', '.join('"k{}": ["v{}"]'.format(i, i) for i in range(10)) + '}'
+    wide_inner = '{"a": [' + ', '.join('"e{}"'.format(i) for i in range(50)) + ']}'
+    data = [
+        # malformed / non-object root -> null map row
+        [None],
+        [''],
+        ['   '],
+        ['[1, 2, 3]'],
+        ['"x"'],
+        ['123'],
+        ['true'],
+        ['null'],
+        ['{"a": ["x"]'],                 # unbalanced (missing closing brace)
+        ['{"a": '],                      # truncated
+        ['{'],
+        ['}'],
+        ['{"a"'],                        # key only
+        ['{"a": ["x"]}junk'],            # trailing junk
+        ['{"a": ["x"]}{"b": ["y"]}'],    # two objects on one line
+        ['{a: ["x"]}'],                  # unquoted key
+        # well-formed structural edges
+        ['{}'],                          # empty map (non-null, 0 pairs)
+        ['{"a": []}'],                   # empty inner list (non-null)
+        ['{"a": null}'],                 # JSON null value -> row KEPT, inner list null
+        # hard value type mismatch (non-array, non-null) -> WHOLE ROW null (Spark bad-record)
+        ['{"a": "s"}'],                  # scalar string value
+        ['{"a": 9}'],                    # scalar number value
+        ['{"a": {"x": "y"}}'],           # object value
+        ['{"a": ["x"], "b": "s"}'],      # mismatch in one of several keys -> whole row null
+        ['{"a": ["x"], "b": null}'],     # JSON null in one key -> row KEPT (b -> null list)
+        # valid arrays
+        ['{"a": ["x", "y", "z"]}'],      # basic multi-element
+        ['{"a": [null, "x"]}'],          # literal-null element + non-null sibling
+        ['{"a": [""]}'],                 # empty-string element
+        ['{"a": [1, 22, 333, true, false]}'],   # scalar number/bool elements: raw text == Spark string coercion (verified xpass)
+        ['{"a": ["é", "日本"]}'],  # literal UTF-8 elements (no escape sequences)
+        ['{ "a" : [ "x" , "y" ] }'],     # surrounding whitespace
+        ['{"": ["x"]}'],                 # empty key
+        ['{"a": ["x"], "b": [], "c": null}'],   # mixed kinds, distinct keys, one row
+        [many_keys],                     # many keys in one row
+        [wide_inner],                    # wide inner list
+    ]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, schema=schema) \
+            .select(f.map_entries(f.from_json(f.col('a'), 'MAP<STRING,ARRAY<STRING>>'))),
+        conf=_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(reason="GPU from_json extracts map array elements as raw JSON text and does not "
+                          "normalize/unescape escape sequences, while Spark unescapes them. Known "
+                          "limitation: docs/compatibility.md 'JSON Normalization (String Types)'.",
+                   strict=False)
+def test_from_json_map_with_arrays_escaped_xfail():
+    # Escaped quote/backslash and \\u escape sequences inside string elements: GPU keeps them
+    # verbatim, Spark unescapes -> documented divergence.
+    schema = StructType([StructField("a", StringType())])
+    data = [
+        ['{"a": ["x\\"y", "p\\\\q"]}'],
+        ['{"a": ["\\u00e9"]}'],
+    ]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, schema=schema) \
+            .select(f.map_entries(f.from_json(f.col('a'), 'MAP<STRING,ARRAY<STRING>>'))),
+        conf=_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(reason="Duplicate map keys: GPU keeps every occurrence (dense). On Spark 3.5.x "
+                          "from_json also keeps duplicates so this currently XPASSES under map_entries, "
+                          "but the behavior is mapKeyDedupPolicy/version-sensitive (later Spark may "
+                          "last-wins or raise), so it is left as a non-strict probe rather than a hard "
+                          "assertion. docs/compatibility.md duplicate-key note.",
+                   strict=False)
+def test_from_json_map_with_arrays_duplicate_keys_xfail():
+    schema = StructType([StructField("a", StringType())])
+    data = [['{"a": ["1"], "a": ["2", "3"]}']]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, schema=schema) \
+            .select(f.map_entries(f.from_json(f.col('a'), 'MAP<STRING,ARRAY<STRING>>'))),
+        conf=_enable_all_types_conf)
+
+@allow_non_gpu(*non_utc_allow)
+@pytest.mark.xfail(reason="Nested object/array array elements: GPU returns the raw JSON substring of "
+                          "each element, which can differ from Spark's re-serialization (whitespace / "
+                          "key formatting). Confirmed divergence (xfail).",
+                   strict=False)
+def test_from_json_map_with_arrays_nested_elements_xfail():
+    schema = StructType([StructField("a", StringType())])
+    data = [
+        ['{"a": [{"x": 1}]}'],
+        ['{"a": [[1, 2]]}'],
+    ]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : spark.createDataFrame(data, schema=schema) \
+            .select(f.map_entries(f.from_json(f.col('a'), 'MAP<STRING,ARRAY<STRING>>'))),
         conf=_enable_all_types_conf)
 
 @pytest.mark.parametrize('schema', [
