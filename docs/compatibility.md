@@ -374,7 +374,7 @@ in a quoted string. If it is in a quoted string the local of the JVM is used to 
 If the local is not for the `US`, which is the default we will fall back to the CPU because we do not currently
 parse those numbers correctly. The `US` format removes all commas ',' from the quoted string.
 As a part of this, though, non-arabic numbers are also supported. We do not support parsing these numbers
-see (issue 10532)[https://github.com/NVIDIA/spark-rapids/issues/10532].
+see [issue 10532](https://github.com/NVIDIA/spark-rapids/issues/10532).
 
 ### JSON Date/Timestamp Types 
 
