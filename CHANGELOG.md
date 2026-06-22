@@ -1,5 +1,5 @@
 # Change log
-Generated on 2026-06-09
+Generated on 2026-06-14
 
 ## Release 26.06
 
@@ -30,6 +30,8 @@ Generated on 2026-06-09
 ### Bugs Fixed
 |||
 |:---|:---|
+|[#14864](https://github.com/NVIDIA/spark-rapids/issues/14864)|[BUG] test_parquet_interleaved_file_splits_partition_value_alignment fails on Dataproc Serverless: os.walk cannot see GCS-backed spark_tmp_path|
+|[#14981](https://github.com/NVIDIA/spark-rapids/issues/14981)|[BUG] DBR 14.3 CPU fallback MERGE with NOT MATCHED BY SOURCE can fail with GpuUnionExec|
 |[#14986](https://github.com/NVIDIA/spark-rapids/issues/14986)|[BUG] Delta DELETE on Databricks 14.3 returns num_affected_rows = -1 for metadata-only (partition/whole-table) deletes|
 |[#14976](https://github.com/NVIDIA/spark-rapids/issues/14976)|[BUG] Delta DV predicate pushdown crashes when DV predicate filter remains CPU FilterExec|
 |[#14949](https://github.com/NVIDIA/spark-rapids/issues/14949)|[BUG] Delta DV zero-column PERFILE scans ignore deleted rows and return incorrect counts|
@@ -73,6 +75,19 @@ Generated on 2026-06-09
 ### PRs
 |||
 |:---|:---|
+|[#15079](https://github.com/NVIDIA/spark-rapids/pull/15079)|Update dependency version private to 26.06.1|
+|[#15024](https://github.com/NVIDIA/spark-rapids/pull/15024)|Fall back when Iceberg S3 PerfIO is unsupported|
+|[#15066](https://github.com/NVIDIA/spark-rapids/pull/15066)|Use current repository name in GitHub workflows [skip ci]|
+|[#14943](https://github.com/NVIDIA/spark-rapids/pull/14943)|Update changelog for the v26.06.0 release|
+|[#14941](https://github.com/NVIDIA/spark-rapids/pull/14941)|Update dependency version JNI, private, hybrid to 26.06.0|
+|[#14998](https://github.com/NVIDIA/spark-rapids/pull/14998)|Add the missing case for GpuShuffleCoalesceExec for the broadcast hash join on DBR 14.3 [Databricks]|
+|[#14990](https://github.com/NVIDIA/spark-rapids/pull/14990)|[BUG] Keep DBR 14.3 local union source on CPU|
+|[#14987](https://github.com/NVIDIA/spark-rapids/pull/14987)|Fix Delta DELETE num_affected_rows on DBR 13.3 and 14.3 for metadata-only deletes|
+|[#14988](https://github.com/NVIDIA/spark-rapids/pull/14988)|Fix Delta DV predicate pushdown with CPU FilterExec|
+|[#14952](https://github.com/NVIDIA/spark-rapids/pull/14952)|Fix Delta DV zero-column scan row counts|
+|[#14945](https://github.com/NVIDIA/spark-rapids/pull/14945)|Fix Delta OPTIMIZE DV fallback NPE on DBR 17.3|
+|[#14808](https://github.com/NVIDIA/spark-rapids/pull/14808)|Fix Iceberg _pos to be file-global instead of task-local on split files|
+|[#14937](https://github.com/NVIDIA/spark-rapids/pull/14937)|Iceberg integration tests: trim redundant coverage matrices|
 |[#14922](https://github.com/NVIDIA/spark-rapids/pull/14922)|[DOC] update download page for 26.06 release [skip ci]|
 |[#14920](https://github.com/NVIDIA/spark-rapids/pull/14920)|Add regression tests for to_timestamp bug fixes|
 |[#14866](https://github.com/NVIDIA/spark-rapids/pull/14866)|Fix Iceberg package-private access after shim isolation|
@@ -308,6 +323,9 @@ Generated on 2026-06-09
 ### PRs
 |||
 |:---|:---|
+|[#14649](https://github.com/NVIDIA/spark-rapids/pull/14649)|[DOC] add missing release notes to 26.04 download page [skip ci]|
+|[#14768](https://github.com/NVIDIA/spark-rapids/pull/14768)|Update changelog for the v26.04.2 release [skip ci]|
+|[#14769](https://github.com/NVIDIA/spark-rapids/pull/14769)|[DOC] update download page for 26.04.2 [skip ci]|
 |[#14714](https://github.com/NVIDIA/spark-rapids/pull/14714)|Shuffle bytes double count metric fix + tests to cover shuffle removal at unregister|
 |[#14697](https://github.com/NVIDIA/spark-rapids/pull/14697)|Update changelog for the v26.04.1 release [skip ci]|
 |[#14686](https://github.com/NVIDIA/spark-rapids/pull/14686)|[BUG] Fix unregister/remove path for wrapped shuffle resolver|

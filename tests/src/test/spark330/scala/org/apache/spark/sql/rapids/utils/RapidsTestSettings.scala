@@ -52,6 +52,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsBloomFilterAggregateQuerySuite]
   enableSuite[RapidsComplexTypeSuite]
   enableSuite[RapidsConditionalExpressionSuite]
+  enableSuite[RapidsCountMinSketchAggQuerySuite]
   enableSuite[RapidsHashExpressionsSuite]
   enableSuite[RapidsIntervalExpressionsSuite]
   enableSuite[RapidsNullExpressionsSuite]
@@ -77,6 +78,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("input_file_name, input_file_block_start, input_file_block_length - NewHadoopRDD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14153"))
   enableSuite[RapidsDataFrameFunctionsSuite]
     .exclude("array_intersect functions", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
+  enableSuite[RapidsDataFrameAsOfJoinSuite]
   enableSuite[RapidsJoinSuite]
     .exclude("test SortMergeJoin (with spill)", WONT_FIX_ISSUE("The case is to test spill in SortMergeJoin, which is not applicable for GPU."))
     .exclude("SPARK-32649: Optimize BHJ/SHJ inner/semi join with empty hashed relation", WONT_FIX_ISSUE("The case is to test the codegen behavior for BHJ/SHJ inner/semi join, which is not applicable for GPU."))
@@ -123,6 +125,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsDataFramePivotSuite]
   enableSuite[RapidsDataFrameSetOperationsSuite]
     .exclude("SPARK-37371: UnionExec should support columnar if all children support columnar", ADJUST_UT("CPU test uses CPU-specific node checks (InMemoryTableScanExec, UnionExec); GPU version implemented as testRapids() in RapidsDataFrameSetOperationsSuite"))
+  enableSuite[RapidsDataFrameRangeSuite]
   enableSuite[RapidsDataFrameWindowFunctionsSuite]
     .exclude("Window spill with more than the inMemoryThreshold and spillThreshold", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
     .exclude("SPARK-21258: complex object in combination with spilling", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
@@ -182,7 +185,10 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsRandomSuite]
     .exclude("random", ADJUST_UT("Replaced by testRapids version that considers partitionIndex offset"))
     .exclude("SPARK-9127 codegen with long seed", ADJUST_UT("Replaced by testRapids version that considers partitionIndex offset"))
+  enableSuite[RapidsReplaceNullWithFalseInPredicateEndToEndSuite]
   enableSuite[RapidsRegexpExpressionsSuite]
+  enableSuite[RapidsSQLWindowFunctionSuite]
+    .exclude("test with low buffer spill threshold", WONT_FIX_ISSUE("GPU window implementation doesn't respect Spark WindowExec spill thresholds."))
   enableSuite[RapidsStringExpressionsSuite]
     .exclude("SPARK-22550: Elt should not generate codes beyond 64KB", WONT_FIX_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22603: FormatString should not generate codes beyond 64KB", WONT_FIX_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))

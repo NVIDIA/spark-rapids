@@ -157,6 +157,11 @@ export PYSP_TEST_spark_driver_extraJavaOptions=-Duser.timezone=UTC
 export PYSP_TEST_spark_executor_extraJavaOptions=-Duser.timezone=UTC
 export PYSP_TEST_spark_sql_session_timeZone=UTC
 
+# Run the nightly integration tests with Spark testing mode so that Spark enforces its internal
+# contract guards (e.g. DSv2 computeStats-before-pushdown) that are silent in production.
+# See NVIDIA/spark-rapids#14950. Export SPARK_TESTING_ENABLED=0 on a job to opt out.
+export SPARK_TESTING_ENABLED=${SPARK_TESTING_ENABLED:-1}
+
 # PARALLEL or non-PARALLEL specific configs
 if [[ $PARALLEL_TEST == "true" ]]; then
   export PYSP_TEST_spark_cores_max=1
