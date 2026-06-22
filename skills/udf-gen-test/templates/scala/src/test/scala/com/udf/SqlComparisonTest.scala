@@ -21,6 +21,7 @@ class SqlComparisonTest extends AnyFunSuite with BeforeAndAfterAll {
       .config("spark.rapids.skipGpuArchitectureCheck", "true")
       .config("spark.rapids.sql.mode", "explainOnly")
       .config("spark.sql.adaptive.enabled", "false")
+      .enableHiveSupport()
       .getOrCreate()
   }
 
