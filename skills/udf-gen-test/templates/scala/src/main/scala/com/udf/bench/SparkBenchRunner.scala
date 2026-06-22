@@ -47,7 +47,7 @@ object SparkBenchRunner {
     }
 
     // Build Spark session
-    val builder = SparkSession.builder()
+    val builder = SparkSession.builder().enableHiveSupport()
     SparkUtils.applySparkConfs(builder, sparkConfs)
     val spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel(sparkLogLevel)
