@@ -44,7 +44,12 @@ def test_optimize_subquery_shared_scan(spark_tmp_path):
         return spark.sql(sql_text)
 
     # AQE off so the rule runs in the logical optimizer rather than AQE re-opt.
-    base = {"spark.sql.adaptive.enabled": "false"}
+    # Databricks has an overlapping scalar-subquery shared-scan optimizer, so
+    # disable it here to keep the ON/OFF marker specific to the RAPIDS rule.
+    base = {
+        "spark.sql.adaptive.enabled": "false",
+        "spark.databricks.optimizer.subquerySharedScan.enabled": "false",
+    }
     on = private_optimizer_conf(
         {"spark.rapids.sql.optimizer.optimizeScalarSubquery": "true"}, extra_conf=base)
     off = private_optimizer_conf(
