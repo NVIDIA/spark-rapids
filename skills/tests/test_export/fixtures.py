@@ -3,115 +3,32 @@
 
 """
 Source fixtures for the JVM template integration tests.
-These are filled into the templates, serving as a stand in
-for what an agent would generate.
 """
+
+from pathlib import Path
+
+
+def _read_resource(name: str) -> str:
+    return (Path(__file__).parent / "resources" / name).read_text()
+
 
 # ---------------------------------------------------------------------------
 # UDF source code
 # ---------------------------------------------------------------------------
 
 CPU_UDF_NAME = "IntegerMultiplyBy2UDF"
-
-SCALA_UDF_SOURCE = """\
-package com.udf
-
-class IntegerMultiplyBy2UDF extends Function1[Integer, Integer] with Serializable {
-  override def apply(value: Integer): Integer = {
-    if (value == null) null else value * 2
-  }
-}
-"""
-
-JAVA_UDF_SOURCE = """\
-package com.udf;
-
-import org.apache.spark.sql.api.java.UDF1;
-
-public class IntegerMultiplyBy2UDF implements UDF1<Integer, Integer> {
-  @Override
-  public Integer call(Integer value) {
-    return value == null ? null : value * 2;
-  }
-}
-"""
-
 RAPIDS_UDF_NAME = "IntegerMultiplyBy2RapidsUDF"
-
-SCALA_RAPIDS_UDF_SOURCE = """\
-package com.udf
-
-import ai.rapids.cudf._
-import com.nvidia.spark.RapidsUDF
-import Arm.withResource
-
-class IntegerMultiplyBy2RapidsUDF extends Function1[Integer, Integer] with Serializable with RapidsUDF {
-  override def apply(value: Integer): Integer = {
-    if (value == null) null else value * 2
-  }
-
-  override def evaluateColumnar(numRows: Int, args: ColumnVector*): ColumnVector = {
-    withResource(Scalar.fromInt(2)) { two =>
-      args.head.mul(two)
-    }
-  }
-}
-"""
-
-JAVA_RAPIDS_UDF_SOURCE = """\
-package com.udf;
-
-import org.apache.spark.sql.api.java.UDF1;
-import ai.rapids.cudf.*;
-import com.nvidia.spark.RapidsUDF;
-
-public class IntegerMultiplyBy2RapidsUDF implements UDF1<Integer, Integer>, RapidsUDF {
-  @Override
-  public Integer call(Integer value) {
-    return value == null ? null : value * 2;
-  }
-
-  @Override
-  public ColumnVector evaluateColumnar(int numRows, ColumnVector... args) {
-    try (Scalar two = Scalar.fromInt(2)) {
-      return args[0].mul(two);
-    }
-  }
-}
-"""
-
 NATIVE_UDF_NAME = "IntegerMultiplyBy2NativeRapidsUDF"
 
-NATIVE_RAPIDS_UDF_SOURCE = """\
-package com.udf;
-
-import ai.rapids.cudf.ColumnVector;
-import com.nvidia.spark.RapidsUDF;
-import org.apache.hadoop.hive.ql.exec.UDF;
-import org.apache.spark.sql.api.java.UDF1;
-
-public class IntegerMultiplyBy2NativeRapidsUDF extends UDF
-        implements UDF1<Integer, Integer>, RapidsUDF {
-    @Override
-    public Integer call(Integer value) {
-        return value == null ? null : value * 2;
-    }
-
-    @Override
-    public ColumnVector evaluateColumnar(int numRows, ColumnVector... args) {
-        NativeUDFLoader.ensureLoaded();
-        return new ColumnVector(integerMultiplyBy2(args[0].getNativeView()));
-    }
-
-    private static native long integerMultiplyBy2(long inputView);
-}
-"""
-
-SQL_SOURCE = """\
-SELECT *,
-  value * 2 AS result
-FROM test_table
-"""
+SCALA_UDF_SOURCE = _read_resource(f"{CPU_UDF_NAME}.scala")
+JAVA_UDF_SOURCE = _read_resource(f"{CPU_UDF_NAME}.java")
+SCALA_RAPIDS_UDF_SOURCE = _read_resource(f"{RAPIDS_UDF_NAME}.scala")
+JAVA_RAPIDS_UDF_SOURCE = _read_resource(f"{RAPIDS_UDF_NAME}.java")
+NATIVE_RAPIDS_UDF_SOURCE = _read_resource(f"{NATIVE_UDF_NAME}.java")
+SQL_SOURCE = _read_resource("integer_multiply_by_2.sql")
+JNI_SOURCE = _read_resource("IntegerMultiplyBy2Jni.cpp")
+CUDA_SOURCE = _read_resource("integer_multiply_by_2.cu")
+HEADER_SOURCE = _read_resource("integer_multiply_by_2.hpp")
 
 # ---------------------------------------------------------------------------
 # Unit test methods
@@ -281,3 +198,27 @@ _MICRO_EXECUTE_GPU_METHOD = """\
 
 MICRO_EXECUTE_CUDF = _MICRO_EXECUTE_GPU_METHOD.format(cls=RAPIDS_UDF_NAME)
 MICRO_EXECUTE_CUDA = _MICRO_EXECUTE_GPU_METHOD.format(cls=NATIVE_UDF_NAME)
+
+# ---------------------------------------------------------------------------
+# Native source paths
+# ---------------------------------------------------------------------------
+
+CMAKE_SOURCE_FILES = """\
+set(SOURCE_FILES
+  "src/IntegerMultiplyBy2Jni.cpp"
+  "src/integer_multiply_by_2.cu"
+)
+"""
+
+NATIVE_PLACEHOLDER_FILES = (
+    "src/main/java/com/udf/PlaceholderUDFNameNativeRapidsUDF.java",
+    "native/src/main/cpp/src/PlaceholderUDFNameJni.cpp",
+    "native/src/main/cpp/src/placeholder_udf_name.cu",
+    "native/src/main/cpp/src/placeholder_udf_name.hpp",
+)
+
+NATIVE_SOURCE_FILES = {
+    "native/src/main/cpp/src/IntegerMultiplyBy2Jni.cpp": JNI_SOURCE,
+    "native/src/main/cpp/src/integer_multiply_by_2.cu": CUDA_SOURCE,
+    "native/src/main/cpp/src/integer_multiply_by_2.hpp": HEADER_SOURCE,
+}

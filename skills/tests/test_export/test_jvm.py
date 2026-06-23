@@ -13,8 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from . import cuda_fixtures as cf
-from . import jvm_fixtures as jf
+from . import fixtures as fx
 from .utils import replace_scala_todo_method, run_mvn, run_script
 
 pytestmark = pytest.mark.slow
@@ -35,55 +34,55 @@ LANG_TARGETS = [(lang, target) for lang in LANGS for target in TARGETS]
 
 def _unit_test_methods(lang: str) -> dict[str, str]:
     return {
-        "createTestData": jf.CREATE_TEST_DATA,
+        "createTestData": fx.CREATE_TEST_DATA,
         "registerUDF": (
-            jf.SCALA_REGISTER_UDF if lang == "scala" else jf.JAVA_REGISTER_UDF
+            fx.SCALA_REGISTER_UDF if lang == "scala" else fx.JAVA_REGISTER_UDF
         ),
-        "executeUDF": jf.EXECUTE_UDF,
-        "verifyUDFResults": jf.VERIFY_UDF_RESULTS,
+        "executeUDF": fx.EXECUTE_UDF,
+        "verifyUDFResults": fx.VERIFY_UDF_RESULTS,
     }
 
 
 def _comparison_test_methods(lang: str, target: str) -> dict[str, str]:
     match (lang, target):
         case ("scala", "cudf"):
-            return {"registerRapidsUDF": jf.SCALA_REGISTER_RAPIDS_UDF}
+            return {"registerRapidsUDF": fx.SCALA_REGISTER_RAPIDS_UDF}
         case ("java", "cudf"):
-            return {"registerRapidsUDF": jf.JAVA_REGISTER_RAPIDS_UDF}
+            return {"registerRapidsUDF": fx.JAVA_REGISTER_RAPIDS_UDF}
         case (_, "cuda"):
-            return {"registerRapidsUDF": jf.NATIVE_REGISTER_RAPIDS_UDF}
+            return {"registerRapidsUDF": fx.NATIVE_REGISTER_RAPIDS_UDF}
         case _:  # sql (no additional method)
             return {}
 
 
 def _bench_utils_methods(lang: str, target: str) -> dict[str, str]:
     methods = {
-        "generateSyntheticData": jf.BENCH_GENERATE,
+        "generateSyntheticData": fx.BENCH_GENERATE,
         "executeCpu": (
-            jf.BENCH_EXECUTE_SCALA_CPU if lang == "scala" else jf.BENCH_EXECUTE_JAVA_CPU
+            fx.BENCH_EXECUTE_SCALA_CPU if lang == "scala" else fx.BENCH_EXECUTE_JAVA_CPU
         ),
     }
     match (lang, target):
         case ("scala", "cudf"):
-            methods["executeGpu"] = jf.BENCH_EXECUTE_SCALA_CUDF
+            methods["executeGpu"] = fx.BENCH_EXECUTE_SCALA_CUDF
         case ("java", "cudf"):
-            methods["executeGpu"] = jf.BENCH_EXECUTE_JAVA_CUDF
+            methods["executeGpu"] = fx.BENCH_EXECUTE_JAVA_CUDF
         case (_, "cuda"):
-            methods["executeGpu"] = jf.BENCH_EXECUTE_CUDA
+            methods["executeGpu"] = fx.BENCH_EXECUTE_CUDA
         case _:  # sql
-            methods["executeGpu"] = jf.BENCH_EXECUTE_SQL
+            methods["executeGpu"] = fx.BENCH_EXECUTE_SQL
     return methods
 
 
 def _micro_bench_methods(lang: str, target: str) -> dict[str, str]:
     return {
-        "prepareCpuData": jf.MICRO_PREPARE_CPU,
+        "prepareCpuData": fx.MICRO_PREPARE_CPU,
         "executeCpu": (
-            jf.MICRO_EXECUTE_SCALA_CPU if lang == "scala" else jf.MICRO_EXECUTE_JAVA_CPU
+            fx.MICRO_EXECUTE_SCALA_CPU if lang == "scala" else fx.MICRO_EXECUTE_JAVA_CPU
         ),
         # microbenchmarks are not applicable to sql
         "executeGpu": (
-            jf.MICRO_EXECUTE_CUDA if target == "cuda" else jf.MICRO_EXECUTE_CUDF
+            fx.MICRO_EXECUTE_CUDA if target == "cuda" else fx.MICRO_EXECUTE_CUDF
         ),
     }
 
@@ -106,10 +105,10 @@ def _copy_cuda_templates(project_dir: str):
     )
 
     project_path = Path(project_dir)
-    for rel_path in cf.PLACEHOLDER_FILES:
+    for rel_path in fx.NATIVE_PLACEHOLDER_FILES:
         (project_path / rel_path).unlink(missing_ok=True)
 
-    for rel_path, source in cf.NATIVE_SOURCE_FILES.items():
+    for rel_path, source in fx.NATIVE_SOURCE_FILES.items():
         path = project_path / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source)
@@ -121,10 +120,10 @@ def _copy_cuda_templates(project_dir: str):
         / "java"
         / "com"
         / "udf"
-        / f"{jf.NATIVE_UDF_NAME}.java"
+        / f"{fx.NATIVE_UDF_NAME}.java"
     )
     wrapper.parent.mkdir(parents=True, exist_ok=True)
-    wrapper.write_text(jf.NATIVE_RAPIDS_UDF_SOURCE)
+    wrapper.write_text(fx.NATIVE_RAPIDS_UDF_SOURCE)
 
     cmake_path = project_path / "native" / "src" / "main" / "cpp" / "CMakeLists.txt"
     cmake = cmake_path.read_text()
@@ -135,7 +134,7 @@ set(SOURCE_FILES
   "src/placeholder_udf_name.cu"
 )
 """,
-        cf.CMAKE_SOURCE_FILES,
+        fx.CMAKE_SOURCE_FILES,
     )
     cmake_path.write_text(cmake)
 
@@ -154,12 +153,12 @@ def _fill_stubs(project_dir: str, lang: str, target: str):
     """Write UDF sources and fill in all TODO stubs for the (language, target)."""
     if lang == "scala":
         ext = ".scala"
-        udf_source = jf.SCALA_UDF_SOURCE
-        rapids_udf_source = jf.SCALA_RAPIDS_UDF_SOURCE
+        udf_source = fx.SCALA_UDF_SOURCE
+        rapids_udf_source = fx.SCALA_RAPIDS_UDF_SOURCE
     else:
         ext = ".java"
-        udf_source = jf.JAVA_UDF_SOURCE
-        rapids_udf_source = jf.JAVA_RAPIDS_UDF_SOURCE
+        udf_source = fx.JAVA_UDF_SOURCE
+        rapids_udf_source = fx.JAVA_RAPIDS_UDF_SOURCE
 
     udf_dir = os.path.join(project_dir, "src", "main", lang, "com", "udf")
     bench_dir = os.path.join(project_dir, "src", "main", "scala", "com", "udf", "bench")
@@ -206,7 +205,7 @@ def _fill_stubs(project_dir: str, lang: str, target: str):
         resources_dir = os.path.join(project_dir, "src", "main", "resources")
         os.makedirs(resources_dir, exist_ok=True)
         with open(os.path.join(resources_dir, "integer_multiply_by_2.sql"), "w") as f:
-            f.write(jf.SQL_SOURCE)
+            f.write(fx.SQL_SOURCE)
 
         # Point the comparison test at the SQL file / registered name
         sql_test_path = os.path.join(test_dir, "SqlComparisonTest.scala")
