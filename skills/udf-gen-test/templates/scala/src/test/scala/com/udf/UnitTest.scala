@@ -34,9 +34,11 @@ object UnitTest extends Assertions {
   /**
    * TODO: Register the UDF with Spark.
    *
-   * Example:
+   * Examples:
    * {{{
-   *   spark.udf.register(udfName, new CalculateRiskUDF())
+   *   spark.udf.register(udfName, new CalculateRiskUDF())   // Scala UDF
+   *   spark.udf.register(udfName, new FormatPhoneUDF(), StringType)   // Java UDF
+   *   spark.sql(s"CREATE TEMPORARY FUNCTION $udfName AS 'com.udf.IntegerMultiplyBy2UDF'")   // Hive UDF
    * }}}
    */
   def registerUDF(spark: SparkSession, udfName: String): Unit = ???
@@ -78,6 +80,7 @@ class UnitTest extends AnyFunSuite with BeforeAndAfterAll {
       .config("spark.rapids.skipGpuArchitectureCheck", "true")
       .config("spark.rapids.sql.mode", "explainOnly")
       .config("spark.sql.adaptive.enabled", "false")
+      .enableHiveSupport()
       .getOrCreate()
   }
 

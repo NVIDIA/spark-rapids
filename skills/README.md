@@ -43,7 +43,7 @@ npx skills add NVIDIA/spark-rapids --skill '*' [--agent <agent>]
 
 - **[Maven](https://maven.apache.org/install.html)** is required to build/compile UDFs.
 - **[JDK](https://docs.oracle.com/en/java/javase/index.html)** must be installed on the system.
-- **Local GPU** with [CUDA toolkit](https://developer.nvidia.com/cuda/toolkit) is required (see [Spark RAPIDS compatibility](https://nvidia.github.io/spark-rapids/docs/download.html) for version requirements).
+- **Local GPU** with [CUDA toolkit](https://developer.nvidia.com/cuda/toolkit) is required (see [Spark RAPIDS compatibility](https://nvidia.github.io/cudf-spark/docs/download.html) for version requirements).
 
 If a local GPU is not available, another option is to run Aether Agent from a cloud instance, such as AWS EC2.
 
@@ -110,7 +110,7 @@ Once you've installed the skills, try the workflow with one of the provided exam
       Results
 
       - Project directory: FormatPhoneUDF/
-      - Unit test: FormatPhoneUDF/src/test/java/com/udf/UnitTest.java
+      - Unit test: FormatPhoneUDF/src/test/scala/com/udf/UnitTest.scala
       - Status: All tests passing
       - Test coverage: 12 cases
    ```

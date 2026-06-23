@@ -2,20 +2,7 @@
 
 ## Files To Update
 
-### Java udf-gen-test Maven template
-
-File: `skills/udf-gen-test/templates/java/pom.xml`
-
-Update these properties together:
-
-- `<scala.binary.version>`
-- `<spark.version>`
-- `<rapids4spark.version>`
-- `<cuda.version>` if the RAPIDS artifact classifier changes
-- `<cudf.git.branch>`
-- `<rapids.cmake.branch>`
-
-### Scala udf-gen-test Maven template
+### udf-gen-test Maven template
 
 File: `skills/udf-gen-test/templates/scala/pom.xml`
 

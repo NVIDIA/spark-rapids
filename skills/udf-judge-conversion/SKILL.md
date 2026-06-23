@@ -18,8 +18,8 @@ Your job is to review whether the GPU/SQL implementation is a properly validated
 
 Review the files that exist in the generated project:
 - CPU UDF source under `src/main/<java|scala>/com/udf/`
-- `src/test/<java|scala>/com/udf/UnitTest.<java|scala>`
-- `src/test/<java|scala>/com/udf/CudfComparisonTest.<java|scala>` or `SqlComparisonTest.<java|scala>`
+- `src/test/scala/com/udf/UnitTest.scala`
+- `src/test/scala/com/udf/CudfComparisonTest.scala` or `SqlComparisonTest.scala`
 - GPU/SQL implementation files
 - coverage reports, test output, or comments documenting accepted discrepancies if present
 
