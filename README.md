@@ -2,7 +2,7 @@
 NOTE: For the latest stable [README.md](https://github.com/nvidia/spark-rapids/blob/main/README.md) ensure you are on the main branch.
 
 The cuDF for Apache Spark provides a set of plugins for
-[Apache Spark](https://spark.apache.org) that leverage GPUs to accelerate processing 
+[Apache Spark](https://spark.apache.org) that leverage GPUs to accelerate processing
 via the [cuDF](https://rapids.ai) (CUDA DataFrame) libraries.
 
 Documentation on the current release can be found [here](https://nvidia.github.io/cudf-spark/).
@@ -11,8 +11,8 @@ To get started and try the plugin out use the [getting started guide](https://do
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/NVIDIA/cudf-spark)
 
-Note: cuDF for Spark was formerly known as the RAPIDS Accelerator for Apache Spark.  Going forward, 
-the project name is cuDF for Spark.  The RAPIDS name will be sunset over time.  Github links from 
+Note: cuDF for Spark was formerly known as the RAPIDS Accelerator for Apache Spark.  Going forward,
+the project name is cuDF for Spark.  The RAPIDS name will be sunset over time.  Github links from
 `spark-rapids` will redirect to `cudf-spark`.  Artifact names will remain the same for now.
 
 ## Compatibility

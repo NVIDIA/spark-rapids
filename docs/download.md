@@ -19,8 +19,8 @@ classpath on all nodes or submitted with each job that uses cuDF for Spark. See 
 guide](https://docs.nvidia.com/spark-rapids/user-guide/latest/getting-started/overview.html) for
 more details.
 
-Note: cuDF for Spark was formerly known as the RAPIDS Accelerator for Apache Spark.  Going forward, 
-the project name is cuDF for Spark.  The RAPIDS name will be sunset over time.  Github links from 
+Note: cuDF for Spark was formerly known as the RAPIDS Accelerator for Apache Spark.  Going forward,
+the project name is cuDF for Spark.  The RAPIDS name will be sunset over time.  Github links from
 `spark-rapids` will redirect to `cudf-spark`.  Artifact names will remain the same for now.
 
 
@@ -33,16 +33,16 @@ The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Ho
 
 ### Software Requirements:
 
-    OS: cuDF for Spark is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018. 
+    OS: cuDF for Spark is compatible with any Linux distribution with glibc >= 2.28 (Please check ldd --version output).  glibc 2.28 was released August 1, 2018.
     Tested on Ubuntu 22.04, Ubuntu 24.04, Rocky Linux 8 and Rocky Linux 9
 
 	NVIDIA Driver*: R525+
 
-	Runtime: 
+	Runtime:
 		Scala 2.12, 2.13
-		Python, Java Virtual Machine (JVM) compatible with your spark-version. 
+		Python, Java Virtual Machine (JVM) compatible with your spark-version.
 
-		* Check the Spark documentation for Python and Java version compatibility with your specific 
+		* Check the Spark documentation for Python and Java version compatibility with your specific
 		Spark version. For instance, visit `https://spark.apache.org/docs/3.4.1` for Spark 3.4.1.
 
 	Supported Spark versions:
@@ -53,12 +53,12 @@ The plugin is designed to work on NVIDIA Volta, Turing, Ampere, Ada Lovelace, Ho
 		Apache Spark 4.1.1
 		Scala 2.12: Spark 3.3.0 through 3.5.8
 		Scala 2.13: Spark 3.5.0 through 3.5.8, and Spark 4.0.0, 4.0.1, 4.0.2, and 4.1.1
-	
+
 	Supported Databricks runtime versions for Azure and AWS:
 		Databricks 13.3 ML LTS (GPU, Scala 2.12, Spark 3.4.1)
 		Databricks 14.3 ML LTS (GPU, Scala 2.12, Spark 3.5.0)
 		Databricks 17.3 ML LTS (GPU, Scala 2.13, Spark 4.0.0)
-	
+
 	Supported Dataproc versions (Debian/Ubuntu/Rocky):
 		GCP Dataproc 2.1
 		GCP Dataproc 2.2
@@ -125,7 +125,7 @@ v26.06.0 includes the following updates:
 * Fixed several query correctness and compatibility issues, including join conditions with casts, non-deterministic expression preservation, JSON/CSV path decoding, and row transitions for final AQE exchanges ([#14793](https://github.com/NVIDIA/spark-rapids/pull/14793), [#14792](https://github.com/NVIDIA/spark-rapids/pull/14792), [#14778](https://github.com/NVIDIA/spark-rapids/pull/14778), [#14914](https://github.com/NVIDIA/spark-rapids/pull/14914))
 
 For a detailed list of changes, please refer to the
-[CHANGELOG](https://github.com/NVIDIA/cudf-Spark/blob/main/CHANGELOG.md).
+[CHANGELOG](https://github.com/NVIDIA/cudf-spark/blob/main/CHANGELOG.md).
 
 ## Archived releases
 

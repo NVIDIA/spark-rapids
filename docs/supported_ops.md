@@ -17,8 +17,8 @@ to document what operations are supported and what data types each operation sup
 
 # General limitations
 ## `Decimal`
-The `Decimal` type in Spark supports a precision up to 38 digits (128-bits). 
-cuDF for Spark supports 128-bit starting from version 21.12 and decimals are 
+The `Decimal` type in Spark supports a precision up to 38 digits (128-bits).
+cuDF for Spark supports 128-bit starting from version 21.12 and decimals are
 enabled by default.
 Please check [Decimal Support](compatibility.md#decimal-support) for more details.
 

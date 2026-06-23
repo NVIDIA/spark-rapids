@@ -18,10 +18,10 @@
 remote_theme: pmarsceill/just-the-docs
 
 aux_links:
-  "RAPIDS Accelerator for Apache Spark User Guide":
-    - "//docs.nvidia.com/spark-rapids/user-guide/latest/index.html"
-  "RAPIDS Accelerator for Apache Spark Plugin on Github":
-    - "//github.com/nvidia/spark-rapids"
+  "cuDF for Apache Spark User Guide":
+    - "//docs.nvidia.com/cudf-spark/user-guide/latest/index.html"
+  "cuDF for Apache Spark Plugin on Github":
+    - "//github.com/nvidia/cudf-spark"
 
 plugins:
   - jekyll-optional-front-matter # GitHub Pages
