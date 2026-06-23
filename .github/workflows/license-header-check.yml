@@ -46,6 +46,7 @@ jobs:
             *.xml,
             *.properties,
             *.scala,
+            skills/udf-*/*.md,
             *.py,
             build/*,
             *.cpp,
@@ -58,4 +59,3 @@ jobs:
             *target/*,
             thirdparty/*,
             sql-plugin/src/main/java/com/nvidia/spark/rapids/format/*
- 
