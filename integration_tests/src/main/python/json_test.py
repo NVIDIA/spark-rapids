@@ -1227,6 +1227,25 @@ def test_maps_to_json(spark_tmp_path, data_gen, ignore_null_fields, timezone):
         lambda spark : struct_to_json(spark),
         conf=conf)
 
+@pytest.mark.parametrize('data_type', [FloatType(), DoubleType()], ids=idfn)
+def test_to_json_non_finite_floating_point(data_type):
+    schema = StructType([StructField('value', data_type)])
+    data = [(float('nan'),), (float('inf'),), (float('-inf'),), (1.5,), (None,)]
+
+    def to_json(spark):
+        df = spark.createDataFrame(data, schema)
+        return df.select(
+            f.to_json(f.struct(f.col('value'))).alias('struct_json'),
+            f.to_json(f.array(f.col('value'))).alias('array_json'),
+            f.to_json(f.create_map(f.lit('value'), f.col('value'))).alias('map_json'))
+
+    conf = copy_and_update(_enable_all_types_conf,
+        { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : to_json(spark),
+        conf=conf)
+
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @pytest.mark.parametrize('timestamp_format', [
     'yyyy-MM-dd\'T\'HH:mm:ss[.SSS][XXX]'
