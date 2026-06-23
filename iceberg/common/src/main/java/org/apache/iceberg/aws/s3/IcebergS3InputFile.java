@@ -26,6 +26,8 @@ import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import com.nvidia.spark.rapids.jni.fileio.SeekableInputStream;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.InputFile;
+import org.apache.spark.TaskContext;
+import org.apache.spark.sql.rapids.GpuTaskMetrics$;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -58,12 +60,13 @@ public final class IcebergS3InputFile implements RapidsInputFile {
   public static RapidsInputFile maybeCreate(InputFile inputFile, FileIO fileIO) {
     // When the gating conf is off (or the file is not an S3 file), return the
     // default IcebergInputFile so the standard Iceberg SeekableInputStream path is used.
+    IcebergInputFile delegate = new IcebergInputFile(inputFile);
     if (!RapidsInputFiles.isS3PerfEnabled()) {
-      return new IcebergInputFile(inputFile);
+      return delegate;
     }
     URI s3Uri = IcebergS3InputFileAccess.s3Uri(inputFile);
     if (s3Uri == null) {
-      return new IcebergInputFile(inputFile);
+      return delegate;
     }
     // Iceberg < 1.7 does not have SupportsStorageCredentials; ShimUtils returns
     // the per-prefix credential overlays (or an empty map on 1.6).
@@ -71,8 +74,15 @@ public final class IcebergS3InputFile implements RapidsInputFile {
         s3Uri.toString(),
         fileIO.properties(),
         ShimUtils.storageCredentialOverlays(fileIO));
+    if (icebergS3Client == null) {
+      if (TaskContext.get() != null) {
+        GpuTaskMetrics$.MODULE$.get().recordPerfioS3IcebergFallback();
+      }
+      LOG.debug("IcebergS3RangeCopier path disabled for {}", s3Uri);
+      return delegate;
+    }
     LOG.debug("IcebergS3RangeCopier path active for {}", s3Uri);
-    return new IcebergS3InputFile(new IcebergInputFile(inputFile), s3Uri, icebergS3Client);
+    return new IcebergS3InputFile(delegate, s3Uri, icebergS3Client);
   }
 
   @Override

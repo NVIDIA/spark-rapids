@@ -20,6 +20,7 @@ import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.iceberg.ShimUtils
 import org.apache.iceberg.ScanTaskGroup
 import org.apache.iceberg.spark.GpuSparkReadConf
 import org.apache.iceberg.types.Types
@@ -81,7 +82,7 @@ object GpuSparkScan {
       if (GpuSparkScanAccess.isBatchQueryScan(cpuScan)) {
         new GpuSparkBatchQueryScan(cpuScan, rapidsConf, false)
       } else if (GpuSparkScanAccess.isCopyOnWriteScan(cpuScan)) {
-        new GpuSparkCopyOnWriteScan(cpuScan, rapidsConf, false)
+        ShimUtils.newCopyOnWriteScan(cpuScan, rapidsConf, false)
       } else {
         throw new IllegalArgumentException(
           s"Currently iceberg support only supports batch query scan and copy-on-write scan, " +

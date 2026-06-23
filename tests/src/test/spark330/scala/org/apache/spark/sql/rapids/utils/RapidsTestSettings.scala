@@ -32,6 +32,13 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-32908: maximum target error in percentile_approx", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14635"))
   enableSuite[RapidsDataFrameJoinSuite]
     .exclude("SPARK-24690 enables star schema detection even if CBO disabled", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14653"))
+  enableSuite[RapidsDynamicPartitionPruningV1SuiteAEOff]
+    .exclude("Make sure dynamic pruning works on uncorrelated queries", ADJUST_UT("Replaced by testRapids version that checks GpuSubqueryBroadcastExec"))
+    .exclude("static scan metrics", ADJUST_UT("Replaced by testRapids version that checks GpuFileSourceScanExec metrics"))
+    .exclude("SPARK-32659: Fix the data issue when pruning DPP on non-atomic type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14836"))
+  enableSuite[RapidsDynamicPartitionPruningV1SuiteAEOn]
+    .exclude("Make sure dynamic pruning works on uncorrelated queries", ADJUST_UT("Replaced by testRapids version that checks GpuSubqueryBroadcastExec"))
+    .exclude("SPARK-32659: Fix the data issue when pruning DPP on non-atomic type", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14836"))
   enableSuite[RapidsDataFrameSelfJoinSuite]
   enableSuite[RapidsDataFrameWindowFramesSuite]
   enableSuite[RapidsDataFrameTimeWindowingSuite]
@@ -45,6 +52,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsBloomFilterAggregateQuerySuite]
   enableSuite[RapidsComplexTypeSuite]
   enableSuite[RapidsConditionalExpressionSuite]
+  enableSuite[RapidsCountMinSketchAggQuerySuite]
   enableSuite[RapidsHashExpressionsSuite]
   enableSuite[RapidsIntervalExpressionsSuite]
   enableSuite[RapidsNullExpressionsSuite]
@@ -60,6 +68,8 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("SPARK-32828: cast from a derived user-defined type to a base type", WONT_FIX_ISSUE("User-defined types are not supported"))
     .exclude("cast string to timestamp", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/blob/main/docs/compatibility.md#string-to-timestamp"))
     .exclude("cast string to date", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10771"))
+  enableSuite[RapidsUnwrapCastInComparisonEndToEndSuite]
+    .exclude("cases when literal is max", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/15004"))
   enableSuite[RapidsCollectionExpressionsSuite]
     .exclude("Array Intersect", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
     .exclude("Shuffle", ADJUST_UT("Replaced by testRapids version that adjusts the expected results to match the running by --master local[2]."))
@@ -68,6 +78,7 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("input_file_name, input_file_block_start, input_file_block_length - NewHadoopRDD", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/14153"))
   enableSuite[RapidsDataFrameFunctionsSuite]
     .exclude("array_intersect functions", ADJUST_UT("Replaced by testRapids version that doesn't check the order of the elements in the result array. See https://github.com/NVIDIA/spark-rapids/issues/13696 for more details."))
+  enableSuite[RapidsDataFrameAsOfJoinSuite]
   enableSuite[RapidsJoinSuite]
     .exclude("test SortMergeJoin (with spill)", WONT_FIX_ISSUE("The case is to test spill in SortMergeJoin, which is not applicable for GPU."))
     .exclude("SPARK-32649: Optimize BHJ/SHJ inner/semi join with empty hashed relation", WONT_FIX_ISSUE("The case is to test the codegen behavior for BHJ/SHJ inner/semi join, which is not applicable for GPU."))
@@ -114,6 +125,7 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsDataFramePivotSuite]
   enableSuite[RapidsDataFrameSetOperationsSuite]
     .exclude("SPARK-37371: UnionExec should support columnar if all children support columnar", ADJUST_UT("CPU test uses CPU-specific node checks (InMemoryTableScanExec, UnionExec); GPU version implemented as testRapids() in RapidsDataFrameSetOperationsSuite"))
+  enableSuite[RapidsDataFrameRangeSuite]
   enableSuite[RapidsDataFrameWindowFunctionsSuite]
     .exclude("Window spill with more than the inMemoryThreshold and spillThreshold", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
     .exclude("SPARK-21258: complex object in combination with spilling", WONT_FIX_ISSUE("GPU implementation doesn't respect the inMemoryThreshold and spillThreshold"))
@@ -136,7 +148,6 @@ class RapidsTestSettings extends BackendTestSettings {
   enableSuite[RapidsMathFunctionsSuite]
   enableSuite[RapidsMiscFunctionsSuite]
   enableSuite[RapidsParquetAvroCompatibilitySuite]
-    .exclude("SPARK-10136 array of primitive array", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11592"))
   enableSuite[RapidsParquetColumnIndexSuite]
   enableSuite[RapidsParquetCompressionCodecPrecedenceSuite]
     .exclude("Create parquet table with compression", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11416"))
@@ -170,12 +181,14 @@ class RapidsTestSettings extends BackendTestSettings {
     .exclude("schema mismatch failure error message for parquet reader", WONT_FIX_ISSUE("GPU uses a unified parquet reader path; the non-vectorized CPU error variant rooted in ParquetDecodingException is not reachable by design. See https://github.com/NVIDIA/spark-rapids/issues/11434"))
   enableSuite[RapidsParquetThriftCompatibilitySuite]
     .exclude("Read Parquet file generated by parquet-thrift", ADJUST_UT("https://github.com/NVIDIA/spark-rapids/pull/11591"))
-    .exclude("SPARK-10136 list of primitive list", KNOWN_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/11589"))
   enableSuite[RapidsParquetVectorizedSuite]
   enableSuite[RapidsRandomSuite]
     .exclude("random", ADJUST_UT("Replaced by testRapids version that considers partitionIndex offset"))
     .exclude("SPARK-9127 codegen with long seed", ADJUST_UT("Replaced by testRapids version that considers partitionIndex offset"))
+  enableSuite[RapidsReplaceNullWithFalseInPredicateEndToEndSuite]
   enableSuite[RapidsRegexpExpressionsSuite]
+  enableSuite[RapidsSQLWindowFunctionSuite]
+    .exclude("test with low buffer spill threshold", WONT_FIX_ISSUE("GPU window implementation doesn't respect Spark WindowExec spill thresholds."))
   enableSuite[RapidsStringExpressionsSuite]
     .exclude("SPARK-22550: Elt should not generate codes beyond 64KB", WONT_FIX_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
     .exclude("SPARK-22603: FormatString should not generate codes beyond 64KB", WONT_FIX_ISSUE("https://github.com/NVIDIA/spark-rapids/issues/10775"))
