@@ -25,7 +25,7 @@ object UnitTest extends Assertions {
    *   val testData = Seq(
    *     Row(1, 800),
    *     Row(2, 550),
-   *     Row(3, null)
+   *     Row(3, null),
    *     // ...
    *   )
    *   spark.createDataFrame(spark.sparkContext.parallelize(testData), schema)
