@@ -280,8 +280,11 @@ class ThrottlingExecutorRmmSuite extends RmmSparkRetrySuiteBase with TimeLimits 
       }
     } finally {
       releasePoolWait.set(true)
-      TaskRegistryTracker.clearRegistry()
-      if (task1Done.getCount == 0 && task2Done.getCount == 0) {
+      try {
+        task1.join(TimeUnit.SECONDS.toMillis(5))
+        task2.join(TimeUnit.SECONDS.toMillis(5))
+      } finally {
+        TaskRegistryTracker.clearRegistry()
         restoreDefaultRmm()
       }
     }
