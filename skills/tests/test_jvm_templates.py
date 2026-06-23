@@ -18,7 +18,7 @@ from .utils import replace_scala_todo_method, run_mvn, run_script
 
 pytestmark = pytest.mark.slow
 
-SKILLS_DIR = Path(__file__).resolve().parents[2]
+SKILLS_DIR = Path(__file__).resolve().parents[1]
 TEMPLATES_DIR = SKILLS_DIR / "udf-gen-test" / "templates" / "scala"
 CUDA_TEMPLATES_DIR = SKILLS_DIR / "udf-convert-to-cuda" / "templates" / "cuda"
 

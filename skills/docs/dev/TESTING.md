@@ -27,7 +27,7 @@ These are generally lightweight skill validation tests, such as verifying skill 
 Run the integration tests:
 
 ```bash
-pytest -m slow -s tests/test_export
+pytest -m slow -s
 ```
 
 These tests deterministically fill in the template project from `skills/udf-gen-test/templates/` with fixture implementations, then actually compile and run Spark tests and benchmark scripts locally.
