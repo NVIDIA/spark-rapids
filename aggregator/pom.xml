@@ -141,9 +141,23 @@
                             <shadedPattern>META-INF/versions/$1/${rapids.shade.package.path}/org/roaringbitmap</shadedPattern>
                             <rawString>true</rawString>
                         </relocation>
+                        <!--
+                            Relocate bundled Google libraries. Dataproc ships its own GCS
+                            connector and Google client libraries, so the plugin-owned GCS SDK
+                            stack must stay isolated from the cluster classpath. This also covers
+                            com.google.flatbuffers with the same shaded path used historically.
+                        -->
                         <relocation>
-                            <pattern>com.google.flatbuffers</pattern>
-                            <shadedPattern>${rapids.shade.package}.com.google.flatbuffers</shadedPattern>
+                            <pattern>com.google</pattern>
+                            <shadedPattern>${rapids.shade.package}.com.google</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>io.grpc</pattern>
+                            <shadedPattern>${rapids.shade.package}.io.grpc</shadedPattern>
+                        </relocation>
+                        <relocation>
+                            <pattern>io.opencensus</pattern>
+                            <shadedPattern>${rapids.shade.package}.io.opencensus</shadedPattern>
                         </relocation>
                         <relocation>
                             <pattern>org.roaringbitmap</pattern>
