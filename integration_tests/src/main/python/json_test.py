@@ -1232,7 +1232,7 @@ def test_to_json_non_finite_floating_point(data_type):
     schema = StructType([StructField('value', data_type)])
     data = [(float('nan'),), (float('inf'),), (float('-inf'),), (1.5,), (None,)]
 
-    def to_json(spark):
+    def struct_to_json(spark):
         df = spark.createDataFrame(data, schema)
         return df.select(
             f.to_json(f.struct(f.col('value'))).alias('struct_json'),
@@ -1243,7 +1243,7 @@ def test_to_json_non_finite_floating_point(data_type):
         { 'spark.rapids.sql.expression.StructsToJson': True })
 
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : to_json(spark),
+        lambda spark : struct_to_json(spark),
         conf=conf)
 
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
