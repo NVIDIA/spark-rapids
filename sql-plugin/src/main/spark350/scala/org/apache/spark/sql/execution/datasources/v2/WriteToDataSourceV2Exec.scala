@@ -32,6 +32,8 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.execution.datasources.v2
 
+import scala.util.control.NonFatal
+
 import ai.rapids.cudf.{ColumnVector => CudfColumnVector, Scalar => CudfScalar}
 import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuColumnVector, GpuDeltaWrite, GpuExec, GpuMetric, GpuWrite}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -47,10 +49,13 @@ import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, UPDAT
 import org.apache.spark.sql.catalyst.util.WriteDeltaProjections
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, DeltaWriter, PhysicalWriteInfoImpl, Write, WriterCommitMessage}
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.execution.{SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.{SparkPlan, SparkPlanInfo}
+import org.apache.spark.sql.execution.{SQLExecution, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.datasources.v2.GpuDelteWritingSparkTask.filterByOperation
 import org.apache.spark.sql.execution.metric.{CustomMetrics, SQLMetric, SQLMetrics}
+import org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.{LongAccumulator, Utils}
 
@@ -89,34 +94,68 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
   override def child: SparkPlan = query
   override def output: Seq[Attribute] = Seq.empty
 
-  // Root cause of "SQL op times / task metrics missing on GPU plan nodes in the SQL UI /
-  // History Server" for V2 writes under AQE:
-  //
-  // The previous code executed a *detached copy* of the query's AQE
-  // (`aqe.copy(supportsColumnar = true)`). Spark's AQE posts its per-query-stage UI updates by
-  // serializing `context.qe.executedPlan`, which (for this write command) walks `query` — the
-  // ORIGINAL, never-executed AQE, frozen at its pre-GPU (CPU) plan. The GPU operators the tasks
-  // actually update live in the *copy*, with different metric IDs, so Spark's SQL listener
-  // filters out every task accumulator update and op times render blank on every node.
-  //
-  // Fix: execute the ORIGINAL `query` AQE itself (the instance `context.qe.executedPlan`
-  // references) via `finalPhysicalPlan`, which materializes its query stages and drives Spark's
-  // own per-stage `onUpdatePlan` — so the SQL UI sees the GPU plan (node names AND the GPU
-  // metric IDs) before each stage's job starts, exactly as it already does for pure reads. The
-  // GPU writer consumes `ColumnarBatch`es, so we then feed it the columnar source beneath the
-  // AQE's row-output transition (the AQE wrapper is `supportsColumnar = false`, so its settled
-  // plan tops out in a `GpuColumnarToRowExec`). This is Spark-version-agnostic — it touches no
-  // fork-specific constructor flags.
-  private lazy val finalQuery: SparkPlan = query match {
-      case aqe: AdaptiveSparkPlanExec =>
-        // Drives AQE on `aqe` (posts per-stage GPU plan updates for the UI) and settles it.
-        val settledPlan = aqe.finalPhysicalPlan
-        settledPlan match {
-          case GpuColumnarToRowExec(inner, _) => inner
-          case other => other
+  // V2 writes consume columnar batches even though the write command itself is a row-based command
+  // node. Execute a columnar AQE copy, but make that copy use Spark's metric-only AQE update path:
+  // full AQE UI updates serialize context.qe.executedPlan, which still contains this write node's
+  // original query and therefore the wrong SQLMetric ids for the copy being executed. A
+  // non-matching QueryExecution makes AdaptiveSparkPlanExec.shouldUpdatePlan false, so Spark posts
+  // SparkListenerSQLAdaptiveSQLMetricUpdates for the copy before each stage job starts; the final
+  // full graph is posted by postFinalPlanUpdateToSqlUi after execution.
+  private def columnarWriteQuery(plan: SparkPlan): SparkPlan = plan match {
+    case aqe: AdaptiveSparkPlanExec =>
+      aqe.copy(
+        // Intentionally fail AQE's QueryExecution identity check so it posts metric-only
+        // updates for this copied plan instead of full updates for the original executedPlan.
+        context = aqe.context.copy(qe = null),
+        supportsColumnar = true)
+    case GpuColumnarToRowExec(inner, _) => columnarWriteQuery(inner)
+    case p => p
+  }
+
+  private lazy val finalQuery: SparkPlan = columnarWriteQuery(query)
+
+  /**
+   * Re-post the final, post-AQE plan to the SQL UI so the GPU nodes show up.
+   *
+   * An Iceberg (V2) write can wrap its query in an `AdaptiveSparkPlanExec`. The columnar copy
+   * executed by this node posts metric-only AQE updates before each stage starts, so the SQL UI
+   * can track task accumulator updates for the actual GPU plan. Once the write has executed (the
+   * AQE `executedPlan` is settled) we re-post a `SparkListenerSQLAdaptiveExecutionUpdate` for this
+   * execution with every `AdaptiveSparkPlanExec` replaced by its `executedPlan`, ensuring the final
+   * graph under the write node is visible for the SQL UI / History Server.
+   *
+   * Uses `transformDown` (not a shallow match on the root) so nested
+   * `AdaptiveSparkPlanExec` - e.g. wrapped under a `ProjectExec` - are also unwrapped,
+   * keeping the unwrap symmetric with the deep AQE that produced the plan.
+   */
+  protected def postFinalPlanUpdateToSqlUi(): Unit = {
+    val executionIdStr = sparkContext.getLocalProperty(SQLExecution.EXECUTION_ID_KEY)
+    if (executionIdStr != null) {
+      // This is a purely observational UI refresh and is called inside the write's
+      // try/catch that aborts the write on any Throwable. A failure here (e.g. building
+      // SparkPlanInfo for an unusual plan node, or posting while the SparkContext is
+      // stopping) must never abort a write whose tasks have already committed, so log
+      // and swallow non-fatal errors instead of letting them propagate.
+      try {
+        val finalChildPlan = finalQuery.transformDown {
+          case aqe: AdaptiveSparkPlanExec => aqe.executedPlan
         }
-      case GpuColumnarToRowExec(inner, _) => inner
-      case p => p
+        val planForUi = this.withNewChildren(Seq(finalChildPlan))
+        // Redact the plan description with the configured pattern, mirroring Spark's
+        // explain / AQE update path, so sensitive strings (e.g. credentials in options)
+        // are not written to the SQL UI / History Server event log.
+        val planDescription = Utils.redact(conf.stringRedactionPattern, planForUi.toString)
+        TrampolineUtil.postEvent(sparkContext,
+          SparkListenerSQLAdaptiveExecutionUpdate(
+            executionIdStr.toLong,
+            planDescription,
+            SparkPlanInfo.fromSparkPlan(planForUi)))
+      } catch {
+        case NonFatal(e) =>
+          logWarning("Failed to post the final GPU plan to the SQL UI for this V2 " +
+            "write; the write itself is unaffected.", e)
+      }
+    }
   }
 
   protected def writeWithV2(batchWrite: BatchWrite): Seq[InternalRow] = {
@@ -157,6 +196,11 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
           batchWrite.onDataWriterCommit(commitMessage)
         }
       )
+
+      // The write has executed and the AQE plan is settled; refresh the SQL UI so the
+      // GPU plan is visible for this V2 write. Done before commit so the UI reflects the
+      // executed plan even if the commit later fails.
+      postFinalPlanUpdateToSqlUi()
 
       logInfo(s"Data source write support $batchWrite is committing.")
       batchWrite.commit(messages)
