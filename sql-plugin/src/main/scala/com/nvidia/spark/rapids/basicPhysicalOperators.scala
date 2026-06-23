@@ -38,11 +38,13 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.plans.physical.{Partitioning, PartitioningCollection, RangePartitioning, SinglePartition, UnknownPartitioning}
+import org.apache.spark.sql.catalyst.trees.CurrentOrigin
 import org.apache.spark.sql.catalyst.util.{ArrayData, MapData}
 import org.apache.spark.sql.execution.{FilterExec, ProjectExec, SampleExec, SparkPlan}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuCreateArray, GpuCreateMap, GpuCreateNamedStruct, GpuPartitionwiseSampledRDD, GpuPoissonSampler}
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
+import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.unsafe.types.UTF8String
@@ -906,6 +908,17 @@ case class GpuProjectExec(
 object GpuProjectAstExec {
   val COMPILE_ASTS_TIME = "compileAstsTime"
   val COMPUTE_ASTS_TIME = "computeAstsTime"
+
+  private def translateAstJitError(error: CudfException): Throwable = {
+    val message = Option(error.getMessage).getOrElse("")
+    if (message.contains("DIVISION_BY_ZERO")) {
+      RapidsErrorUtils.divByZeroError(CurrentOrigin.get)
+    } else if (message.contains("OVERFLOW")) {
+      RapidsErrorUtils.divOverflowError(CurrentOrigin.get)
+    } else {
+      error
+    }
+  }
 }
 
 case class GpuProjectAstExec(
@@ -1026,7 +1039,13 @@ case class GpuProjectAstExec(
 
     def computeColumns(table: Table): Seq[cudf.ColumnVector] =
       NvtxIdWithMetrics(NvtxRegistry.COMPUTE_ASTS, computeAstsTime) {
-        compiledAstExprs.safeMap(_.computeColumn(table))
+        compiledAstExprs.safeMap { expr =>
+          try {
+            expr.computeColumn(table)
+          } catch {
+            case e: CudfException => throw GpuProjectAstExec.translateAstJitError(e)
+          }
+        }
       }
 
     override def close(): Unit = {
