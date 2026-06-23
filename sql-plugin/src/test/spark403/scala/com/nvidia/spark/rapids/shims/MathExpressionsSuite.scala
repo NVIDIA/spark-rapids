@@ -15,14 +15,14 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "403"}
 {"spark": "412"}
 spark-rapids-shim-json-lines ***/
-package com.nvidia.spark.rapids.shims.spark412
+package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.ColumnVector
 import com.nvidia.spark.rapids.{FQSuiteName, GpuColumnVector}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.{GpuAcosh, GpuAsinh, HyperbolicMathExpressions}
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.expressions.Literal
