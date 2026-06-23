@@ -1140,6 +1140,40 @@ def test_structs_to_json_without_timestamp_non_utc_timezone(spark_tmp_path, data
         lambda spark : struct_to_json(spark),
         conf=conf)
 
+def test_structs_to_json_non_finite_floating_point():
+    schema = StructType([
+        StructField('d_nan', DoubleType()),
+        StructField('d_pos_inf', DoubleType()),
+        StructField('d_neg_inf', DoubleType()),
+        StructField('f_nan', FloatType()),
+        StructField('f_pos_inf', FloatType()),
+        StructField('f_neg_inf', FloatType()),
+        StructField('s_nan', StringType()),
+    ])
+
+    def struct_to_json(spark):
+        df = spark.createDataFrame([
+            (float('nan'), float('inf'), float('-inf'),
+             float('nan'), float('inf'), float('-inf'), 'NaN')
+        ], schema)
+        return df.select(
+            f.to_json(f.struct(f.col('d_nan').alias('value'))).alias('struct_double_nan'),
+            f.to_json(f.struct(f.col('d_pos_inf').alias('value'))).alias('struct_double_pos_inf'),
+            f.to_json(f.struct(f.col('d_neg_inf').alias('value'))).alias('struct_double_neg_inf'),
+            f.to_json(f.struct(f.col('f_nan').alias('value'))).alias('struct_float_nan'),
+            f.to_json(f.struct(f.col('f_pos_inf').alias('value'))).alias('struct_float_pos_inf'),
+            f.to_json(f.struct(f.col('f_neg_inf').alias('value'))).alias('struct_float_neg_inf'),
+            f.to_json(f.struct(f.col('s_nan').alias('value'))).alias('struct_string_nan'),
+            f.to_json(f.create_map(f.lit('value'), f.col('d_nan'))).alias('map_double_nan'),
+            f.to_json(f.create_map(f.lit('value'), f.col('f_nan'))).alias('map_float_nan'))
+
+    conf = copy_and_update(_enable_all_types_conf,
+        { 'spark.rapids.sql.expression.StructsToJson': True })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark : struct_to_json(spark),
+        conf=conf)
+
 @pytest.mark.parametrize('data_gen', _to_json_datagens, ids=idfn)
 @pytest.mark.parametrize('ignore_null_fields', [True, False])
 @pytest.mark.parametrize('timezone', [

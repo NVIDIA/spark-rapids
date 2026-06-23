@@ -755,6 +755,7 @@ object GpuCast {
     case DateType => input.asStrings("%Y-%m-%d")
     case TimestampType if options.castToJsonString => castTimestampToJson(input)
     case TimestampType => castTimestampToString(input)
+    case FloatType | DoubleType if options.castToJsonString => castFloatToJson(input)
     case FloatType | DoubleType => CastStrings.fromFloat(input)
     case BinaryType => castBinToString(input, options)
     case _: DecimalType => GpuCastShims.CastDecimalToString(input, options.useDecimalPlainString)
@@ -812,6 +813,32 @@ object GpuCast {
     // We also need to quote and escape the result.
     withResource(input.asStrings("%Y-%m-%dT%H:%M:%S.%3fZ")) { tmp =>
       escapeAndQuoteJsonString(tmp)
+    }
+  }
+
+  private def castFloatToJson(input: ColumnView): ColumnVector = {
+    withResource(CastStrings.fromFloat(input)) { asString =>
+      withResource(escapeAndQuoteJsonString(asString)) { quotedString =>
+        withResource(input.isNan) { isNan =>
+          withResource(FloatUtils.getPositiveInfinityScalar(input.getType)) { posInf =>
+            withResource(input.equalTo(posInf)) { isPosInf =>
+              withResource(FloatUtils.getNegativeInfinityScalar(input.getType)) { negInf =>
+                withResource(input.equalTo(negInf)) { isNegInf =>
+                  withResource(isNan.or(isPosInf)) { isNanOrPosInf =>
+                    withResource(isNanOrPosInf.or(isNegInf)) { isNonFinite =>
+                      withResource(input.isNotNull) { isNotNull =>
+                        withResource(isNonFinite.and(isNotNull)) { shouldQuote =>
+                          shouldQuote.ifElse(quotedString, asString)
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 
