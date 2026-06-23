@@ -321,7 +321,6 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
 
     if(!isQualifiedForVectorizedParams(origExpr)) {
       logInfo(s"$origExpr is being evaluated with Scalar Parameter")
-      println(s"$origExpr is being evaluated with Scalar Parameter")
       expression = origExpr.transformUp {
         case BoundReference(ordinal, dataType, _) =>
           Literal(inputRow.asInstanceOf[GenericInternalRow].get(ordinal, dataType), dataType)
@@ -338,7 +337,6 @@ trait RapidsTestsTrait extends RapidsTestsCommonTrait {
       }
     } else {
       logInfo(s"$expression is being evaluated with Vectorized Parameter")
-      println(s"$expression is being evaluated with Vectorized Parameter")
       val typeHintForOrdinal : Map[Int, DataType] = expression.collect {
         // In spark UT testing expressions, they typically use `val s = 's.string.at(0)`
         // to define a bound reference with type string.
