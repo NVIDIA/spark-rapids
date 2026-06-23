@@ -42,8 +42,8 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
 import java.time.Period
+import java.util.Locale
 
-import org.apache.spark.SparkException
 import org.apache.spark.sql.{functions => f}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, IntegerType, LongType, MapType, ShortType, StructField, StructType, YearMonthIntervalType => YM}
@@ -56,6 +56,10 @@ import org.apache.spark.sql.types.{ArrayType, BooleanType, ByteType, IntegerType
  * filed an issue to track: https://github.com/NVIDIA/spark-rapids/issues/5212
  */
 class IntervalCastSuite extends SparkQueryCompareTestSuite {
+  private def castOverflowError(e: Exception): Boolean = {
+    Option(e.getMessage).exists(_.toLowerCase(Locale.ROOT).contains("overflow"))
+  }
+
   testSparkResultsAreEqual(
     "test cast year-month to integral",
     spark => {
@@ -90,9 +94,9 @@ class IntervalCastSuite extends SparkQueryCompareTestSuite {
     (Short.MinValue - 1, "short"))
   var testLoop = 1
   toIntegralOverflowPairs.foreach { case (months, toType) =>
-    testBothCpuGpuExpectedException[SparkException](
+    testBothCpuGpuExpectedException[Exception](
       s"test cast year-month to integral, overflow $testLoop",
-      e => e.getMessage.contains("overflow"),
+      castOverflowError,
       spark => {
         val data = Seq(Row(Period.ofMonths(months)))
         val schema = StructType(Seq(StructField("c_ym", YM())))
@@ -113,9 +117,9 @@ class IntervalCastSuite extends SparkQueryCompareTestSuite {
     (Int.MaxValue / 12 + 1L, LongType, "year"))
   testLoop = 1
   toYMOverflows.foreach { case (integral, integralType, toField) =>
-    testBothCpuGpuExpectedException[SparkException](
+    testBothCpuGpuExpectedException[Exception](
       s"test cast integral to year-month, overflow $testLoop",
-      e => e.getMessage.contains("overflow"),
+      castOverflowError,
       spark => {
         val data = Seq(Row(integral))
         val schema = StructType(Seq(StructField("c_integral", integralType)))

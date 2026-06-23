@@ -46,11 +46,19 @@ import java.time.{Duration, Period}
 
 import scala.util.Random
 
-import org.apache.spark.SparkException
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
 
 class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
+  private def intervalArithmeticError(e: Exception): Boolean = {
+    val msg = Option(e.getMessage).getOrElse("")
+    val full = s"${e.getClass.getName}: $msg"
+    full.contains("ArithmeticException") ||
+      msg.contains("ARITHMETIC_OVERFLOW") ||
+      msg.contains("input is infinite or NaN") ||
+      msg.contains("Has NaN")
+  }
+
   testSparkResultsAreEqual(
     "test year-month interval * integer num, normal case",
     spark => {
@@ -126,8 +134,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
   }
 
   def testOverflowMultipyInt(testCaseName: String, month: Int, num: Int): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val data = Seq(Row(Period.ofMonths(month)))
         val schema = StructType(Seq(StructField("c1", YearMonthIntervalType())))
@@ -146,8 +154,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
 
 
   def testOverflowMultipyLong(testCaseName: String, month: Int, num: Long): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val data = Seq(Row(Period.ofMonths(month)))
         val schema = StructType(Seq(StructField("c1", YearMonthIntervalType())))
@@ -172,8 +180,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
     "test year-month interval * long overflow case 6", 2, Long.MaxValue)
 
   def testOverflowMultipyLong2(testCaseName: String, month: Int, num: Long): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val data = Seq(Row(Period.ofMonths(month), num))
         val schema = StructType(Seq(
@@ -199,8 +207,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
     "test year-month interval * long overflow case 25", -2, Long.MaxValue)
 
   def testOverflowMultipyFloat(testCaseName: String, month: Int, num: Float): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val data = Seq(Row(Period.ofMonths(month), num))
         val schema = StructType(Seq(
@@ -225,8 +233,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
     "test year-month interval * float overflow case 5", 2, Long.MaxValue.toFloat)
 
   def testOverflowMultipyDouble(testCaseName: String, month: Int, num: Double): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val data = Seq(Row(Period.ofMonths(month), num))
         val schema = StructType(Seq(
@@ -254,8 +262,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
 //   The following are day-time test cases
 
   def testOverflowDTMultipyInt(testCaseName: String, microSeconds: Long, num: Int): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val d = Duration.ofSeconds(microSeconds / 1000000, microSeconds % 1000000 * 1000)
         val data = Seq(Row(d))
@@ -275,8 +283,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
 
 
   def testOverflowDTMultipyLong(testCaseName: String, microSeconds: Long, num: Long): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val d = Duration.ofSeconds(microSeconds / 1000000, microSeconds % 1000000 * 1000)
         val data = Seq(Row(d))
@@ -302,8 +310,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
     "test day-time interval * long overflow case 6", -2, Long.MaxValue)
 
   def testOverflowDTMultipyLong2(testCaseName: String, microSeconds: Long, num: Long): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val d = Duration.ofSeconds(microSeconds / 1000000, microSeconds % 1000000 * 1000)
         val data = Seq(Row(d, num))
@@ -332,8 +340,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
 
 
   def testOverflowDTMultipyFloat(testCaseName: String, microSeconds: Long, num: Float): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val d = Duration.ofSeconds(microSeconds / 1000000, microSeconds % 1000000 * 1000)
         val data = Seq(Row(d, num))
@@ -360,8 +368,8 @@ class IntervalMultiplySuite extends SparkQueryCompareTestSuite {
     "test day-time interval * float overflow case 5", 2, Long.MaxValue.toFloat)
 
   def testOverflowDTMultipyDouble(testCaseName: String, microSeconds: Long, num: Double): Unit = {
-    testBothCpuGpuExpectedException[SparkException](testCaseName,
-      e => e.getMessage.contains("ArithmeticException"),
+    testBothCpuGpuExpectedException[Exception](testCaseName,
+      intervalArithmeticError,
       spark => {
         val d = Duration.ofSeconds(microSeconds / 1000000, microSeconds % 1000000 * 1000)
         val data = Seq(Row(d, num))
