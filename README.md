@@ -1,7 +1,7 @@
-# cuDF for Apache Spark
+# NVIDIA cuDF for Apache Spark
 NOTE: For the latest stable [README.md](https://github.com/nvidia/spark-rapids/blob/main/README.md) ensure you are on the main branch.
 
-The cuDF for Apache Spark provides a set of plugins for
+NVIDIA cuDF for Apache Spark provides a set of plugins for
 [Apache Spark](https://spark.apache.org) that leverage GPUs to accelerate processing
 via the [cuDF](https://rapids.ai) (CUDA DataFrame) libraries.
 
@@ -50,7 +50,7 @@ See the [build instructions in the contributing guide](CONTRIBUTING.md#building-
 Tests are described [here](tests/README.md).
 
 ## Integration
-The cuDF for Apache Spark does provide some APIs for doing zero copy data
+cuDF for Apache Spark provides some APIs for doing zero copy data
 transfer into other GPU enabled applications.  It is described
 [here](https://docs.nvidia.com/spark-rapids/user-guide/latest/additional-functionality/ml-integration.html).
 
