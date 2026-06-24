@@ -1,6 +1,6 @@
 # Testing
 
-The commands assume you are in this directory.
+The commands assume you are in the `skills/` directory.
 
 ## Setup
 
