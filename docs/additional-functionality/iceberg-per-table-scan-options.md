@@ -25,7 +25,7 @@ tables you do not explicitly tune.
 
 Use this when you want to:
 
-- override Iceberg scan options for a specific table without modifying the
+- Override Iceberg scan options for a specific table without modifying the
   table itself or recompiling the application; or
 - A/B test split-size / lookback tunings across runs by toggling a session
   conf instead of rewriting tables.
