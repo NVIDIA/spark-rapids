@@ -85,8 +85,8 @@ The suffix names mirror the iceberg `TableProperties` keys (the token after
 path remains unambiguous.
 
 `<catalog>` is the Spark catalog name, `<namespace>` is the Iceberg namespace
-(`default` for hadoop catalogs that have not been organized into namespaces),
-and `<table>` is the iceberg table name.
+(`default` for Hadoop catalogs that have not been organized into namespaces),
+and `<table>` is the Iceberg table name.
 
 ### Example
 
