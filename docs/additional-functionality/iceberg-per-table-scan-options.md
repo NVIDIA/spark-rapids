@@ -130,7 +130,7 @@ spark.read.format("iceberg")
 ```
 
 Tables for which no `spark.rapids.iceberg.<…>.*` conf is set at any scope and
-no matching `TBLPROPERTIES` is configured behave exactly as if the rapids
+no matching `TBLPROPERTIES` is configured behave exactly as if the RAPIDS
 catalog wrapper were not in use.
 
 ## Caveats
