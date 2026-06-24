@@ -32,4 +32,4 @@ pytest -m slow -s
 
 These tests deterministically fill in the template project from `skills/udf-gen-test/templates/` with fixture implementations, then actually compile and run Spark tests and benchmark scripts locally.
 
-Thus they require JDK, Maven and Maven repository access, and a GPU environment.
+Thus they require JDK, Maven and Maven repository access, a GPU environment, and (for `cuda` tests) CMake and CUDA toolkit.
