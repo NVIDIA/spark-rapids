@@ -402,7 +402,7 @@ private[rapids] object GpuArrayTransformFusion {
       fusedGroups: Seq[Seq[TransformInProject]]): ColumnarBatch = {
     val outputColumns = new Array[ColumnVector](boundExprs.length)
     val groupsByStartIndex = fusedGroups.map(group => group.head.index -> group).toMap
-    try {
+    closeOnExcept(outputColumns) { _ =>
       boundExprs.indices.foreach { index =>
         if (outputColumns(index) == null) {
           groupsByStartIndex.get(index) match {
@@ -418,14 +418,6 @@ private[rapids] object GpuArrayTransformFusion {
         }
       }
       new ColumnarBatch(outputColumns, batch.numRows())
-    } catch {
-      case t: Throwable =>
-        outputColumns.foreach { col =>
-          if (col != null) {
-            col.close()
-          }
-        }
-        throw t
     }
   }
 
@@ -437,7 +429,7 @@ private[rapids] object GpuArrayTransformFusion {
     withResource(first.argument.columnarEval(batch)) { arg =>
       withResource(makeSharedElementBatch(batch, arg, unionIntermediate, first)) { sharedBatch =>
         val output = mutable.ArrayBuffer[GpuColumnVector]()
-        try {
+        closeOnExcept(output) { _ =>
           transforms.foreach { transform =>
             val dataCol = withResource(makeTransformLambdaBatch(sharedBatch, unionIntermediate,
                 transform)) { lambdaBatch =>
@@ -448,10 +440,6 @@ private[rapids] object GpuArrayTransformFusion {
             }
           }
           output.toSeq
-        } catch {
-          case t: Throwable =>
-            output.foreach(_.close())
-            throw t
         }
       }
     }
@@ -493,8 +481,8 @@ private[rapids] object GpuArrayTransformFusion {
 
     def projectAndExplode(explodeOp: Table => Table): Table = {
       withResource(GpuProjectExec.project(inputBatch, unionIntermediate)) { intermediateBatch =>
-        withResource(GpuColumnVector.appendColumns(intermediateBatch, argColumn)) {
-            projectedBatch =>
+        withResource(GpuColumnVector.appendColumns(
+            intermediateBatch, argColumn)) { projectedBatch =>
           withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
             explodeOp(projectedTable)
           }
