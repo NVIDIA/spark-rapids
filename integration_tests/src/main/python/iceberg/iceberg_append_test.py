@@ -105,9 +105,10 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
 
 @iceberg
 @ignore_order(local=True)
-@allow_non_gpu('AppendDataExec', 'LocalTableScanExec', 'ProjectExec')
+@allow_non_gpu('AppendDataExec', 'LocalTableScanExec', 'ProjectExec', 'ShuffleExchangeExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-def test_insert_into_unpartitioned_table_values_aqe(spark_tmp_table_factory):
+@pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
+def test_insert_into_table_values_aqe(spark_tmp_table_factory, partition_table):
     """Regression test for GPU V2 writes with AQE and a CPU VALUES input plan."""
     base_table_name = get_full_table_name(spark_tmp_table_factory)
     cpu_table_name = f"{base_table_name}_cpu"
@@ -116,8 +117,11 @@ def test_insert_into_unpartitioned_table_values_aqe(spark_tmp_table_factory):
     def create_table(spark, table_name: str):
         props = _build_tblprops({"format-version": "2"})
         props_sql = ", ".join(f"'{k}' = '{v}'" for k, v in props.items())
-        spark.sql(f"CREATE TABLE {table_name} (id int, name string) USING ICEBERG "
-                  f"TBLPROPERTIES ({props_sql})")
+        sql = f"CREATE TABLE {table_name} (id int, name string) USING ICEBERG "
+        if partition_table:
+            sql += "PARTITIONED BY (bucket(8, id)) "
+        sql += f"TBLPROPERTIES ({props_sql})"
+        spark.sql(sql)
 
     with_cpu_session(lambda spark: create_table(spark, cpu_table_name))
     with_cpu_session(lambda spark: create_table(spark, gpu_table_name))

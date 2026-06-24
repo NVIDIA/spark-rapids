@@ -49,7 +49,7 @@ import org.apache.spark.sql.catalyst.util.RowDeltaUtils.{DELETE_OPERATION, UPDAT
 import org.apache.spark.sql.catalyst.util.WriteDeltaProjections
 import org.apache.spark.sql.connector.write.{BatchWrite, DataWriter, DataWriterFactory, DeltaWriter, PhysicalWriteInfoImpl, Write, WriterCommitMessage}
 import org.apache.spark.sql.errors.QueryExecutionErrors
-import org.apache.spark.sql.execution.{SparkPlan, SparkPlanInfo}
+import org.apache.spark.sql.execution.{ExplainMode, QueryExecution, SparkPlan, SparkPlanInfo}
 import org.apache.spark.sql.execution.{SQLExecution, UnaryExecNode}
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
 import org.apache.spark.sql.execution.datasources.v2.GpuDelteWritingSparkTask.filterByOperation
@@ -95,19 +95,24 @@ trait GpuV2TableWriteExec extends V2CommandExec with UnaryExecNode with GpuExec 
   override def output: Seq[Attribute] = Seq.empty
 
   // V2 writes consume columnar batches even though the write command itself is a row-based command
-  // node. Execute a columnar AQE copy, but make that copy use Spark's metric-only AQE update path:
-  // full AQE UI updates serialize context.qe.executedPlan, which still contains this write node's
-  // original query and therefore the wrong SQLMetric ids for the copy being executed. A
-  // non-matching QueryExecution makes AdaptiveSparkPlanExec.shouldUpdatePlan false, so Spark posts
-  // SparkListenerSQLAdaptiveSQLMetricUpdates for the copy before each stage job starts; the final
-  // full graph is posted by postFinalPlanUpdateToSqlUi after execution.
+  // node. Execute a columnar AQE copy, but keep that copy's SQL UI updates tied to the copied
+  // columnar plan rather than the original row-wrapper plan.
   private def columnarWriteQuery(plan: SparkPlan): SparkPlan = plan match {
     case aqe: AdaptiveSparkPlanExec =>
-      aqe.copy(
-        // Intentionally fail AQE's QueryExecution identity check so it posts metric-only
-        // updates for this copied plan instead of full updates for the original executedPlan.
-        context = aqe.context.copy(qe = null),
+      // Keep context.qe non-null because some Spark shims dereference it during AQE UI updates.
+      lazy val copiedAqe: AdaptiveSparkPlanExec = aqe.copy(
+        context = aqe.context.copy(qe = uiQueryExecution),
         supportsColumnar = true)
+      lazy val uiQueryExecution: QueryExecution = new QueryExecution(
+        aqe.context.session,
+        aqe.context.qe.logical,
+        aqe.context.qe.tracker,
+        aqe.context.qe.mode) {
+        override lazy val executedPlan: SparkPlan = copiedAqe
+        override def explainString(mode: ExplainMode): String =
+          Utils.redact(aqe.conf.stringRedactionPattern, copiedAqe.toString)
+      }
+      copiedAqe
     case GpuColumnarToRowExec(inner, _) => columnarWriteQuery(inner)
     case p => p
   }
