@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+###
+#
+# Pre-merge CI image for UDF skills templates.
+#
+# This image builds on top of the CUDA build image provided with the skill:
+# `skills/udf-convert-to-cuda/templates/cuda/Dockerfile`
+#
+# This assumes that the template Dockerfile has already been *built and published* to
+# the registry as ${BASE_IMAGE}.
+#
+###
+
+ARG BASE_IMAGE=artifactory.nvidia.com/sw-spark-docker/spark-rapids-cuda-build:rocky8-cuda12.9.1-toolset14
+FROM ${BASE_IMAGE}
+
+# Install python to run integration tests.
+RUN dnf install -y python3.11 python3.11-pip && \
+    alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    alternatives --install /usr/bin/python python /usr/bin/python3.11 1 && \
+    dnf clean all

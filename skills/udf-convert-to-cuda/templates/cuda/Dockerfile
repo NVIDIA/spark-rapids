@@ -24,13 +24,11 @@ RUN dnf --enablerepo=powertools install -y \
   maven \
   ninja-build \
   patch \
-  python39 \
   scl-utils \
   tar \
   unzip \
   wget \
-  zlib-devel \
-  && alternatives --set python /usr/bin/python3
+  zlib-devel
 
 RUN cd /usr/local && \
   wget --quiet https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz && \
