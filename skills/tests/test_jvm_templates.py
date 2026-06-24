@@ -230,8 +230,10 @@ def _fill_stubs(project_dir: str, lang: str, target: str):
 def project_dir():
     """Clean copy of the export template with resolved pom.xml (stubs not filled)."""
     tmp_dir, proj = _build_project_dir()
-    yield proj
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+    try:
+        yield proj
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @pytest.fixture(
@@ -241,9 +243,11 @@ def project_with_fixtures(request):
     """Clean copy with all stubs filled in, per (language, target)."""
     lang, target = request.param
     tmp_dir, proj = _build_project_dir()
-    _fill_stubs(proj, lang, target)
-    yield (proj, lang, target)
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+    try:
+        _fill_stubs(proj, lang, target)
+        yield (proj, lang, target)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="class", params=TARGETS, ids=lambda t: t)
@@ -252,7 +256,6 @@ def project_with_broken_gpu(request):
     target = request.param
     lang = "scala"
     tmp_dir, proj = _build_project_dir()
-    _fill_stubs(proj, lang, target)
 
     def _break_gpu_source(source: str) -> str:
         # Change multiplier from 2 to 3
@@ -266,55 +269,61 @@ def project_with_broken_gpu(request):
             source[: brace + 1] + '\nScalar.fromString("LEAKED");' + source[brace + 1 :]
         )
 
-    ext = ".scala" if lang == "scala" else ".java"
-    if target == "cudf":
-        path = os.path.join(
-            proj,
-            "src",
-            "main",
-            lang,
-            "com",
-            "udf",
-            f"IntegerMultiplyBy2RapidsUDF{ext}",
-        )
-    elif target == "cuda":
-        path = os.path.join(
-            proj, "native", "src", "main", "cpp", "src", "integer_multiply_by_2.cu"
-        )
-    else:
-        path = os.path.join(
-            proj, "src", "main", "resources", "integer_multiply_by_2.sql"
-        )
+    try:
+        _fill_stubs(proj, lang, target)
 
-    with open(path, "r") as f:
-        content = f.read()
-    broken = _break_gpu_source(content)
-    if target == "cudf":
-        broken = _insert_memory_leak(broken)
-    with open(path, "w") as f:
-        f.write(broken)
+        ext = ".scala" if lang == "scala" else ".java"
+        if target == "cudf":
+            path = os.path.join(
+                proj,
+                "src",
+                "main",
+                lang,
+                "com",
+                "udf",
+                f"IntegerMultiplyBy2RapidsUDF{ext}",
+            )
+        elif target == "cuda":
+            path = os.path.join(
+                proj, "native", "src", "main", "cpp", "src", "integer_multiply_by_2.cu"
+            )
+        else:
+            path = os.path.join(
+                proj, "src", "main", "resources", "integer_multiply_by_2.sql"
+            )
 
-    yield (proj, target)
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+        with open(path, "r") as f:
+            content = f.read()
+        broken = _break_gpu_source(content)
+        if target == "cudf":
+            broken = _insert_memory_leak(broken)
+        with open(path, "w") as f:
+            f.write(broken)
+
+        yield (proj, target)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="class")
 def project_with_broken_schema():
     """Project with wrong column name in generateSyntheticData."""
     tmp_dir, proj = _build_project_dir()
-    _fill_stubs(proj, "scala", "cudf")
-    bench_path = os.path.join(
-        proj, "src", "main", "scala", "com", "udf", "bench", "BenchUtils.scala"
-    )
+    try:
+        _fill_stubs(proj, "scala", "cudf")
+        bench_path = os.path.join(
+            proj, "src", "main", "scala", "com", "udf", "bench", "BenchUtils.scala"
+        )
 
-    # Overwrite with broken source
-    with open(bench_path, "r") as f:
-        source = f.read()
-    with open(bench_path, "w") as f:
-        f.write(source.replace('.alias("value")', '.alias("wrong_column")'))
+        # Overwrite with broken source
+        with open(bench_path, "r") as f:
+            source = f.read()
+        with open(bench_path, "w") as f:
+            f.write(source.replace('.alias("value")', '.alias("wrong_column")'))
 
-    yield proj
-    shutil.rmtree(tmp_dir, ignore_errors=True)
+        yield proj
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
