@@ -46,7 +46,7 @@ catalog (`spark_catalog`):
 ```
 
 The `io-impl=org.apache.iceberg.aws.s3.S3FileIO` line is required when the
-warehouse lives on S3 — without it, iceberg falls back to the hadoop
+warehouse lives on S3 — without it, Iceberg falls back to the Hadoop
 `FileSystem` API and you have to deal with `s3a://` URI rewrites yourself.
 Drop the line for non-S3 warehouses.
 
