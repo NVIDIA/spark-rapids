@@ -153,7 +153,7 @@ catalog wrapper were not in use.
   picking the wrong override; in that case, either rename the identifier,
   switch to a catalog- or global-scoped conf, or set the iceberg
   `read.split.*` table property directly.
-- The wrapper applies to scans only. Writes go through the underlying iceberg
+- The wrapper applies to scans only. Writes go through the underlying Iceberg
   `SparkTable.newWriteBuilder` unchanged.
 - The session-conf lookup happens once per `newScanBuilder(options)` call (a
   single `SparkSession.conf` read per option key) and is cheap; setting many
