@@ -481,6 +481,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
 
   test("transpile \\Z") {
     val expected = "a$"
+    doTranspileTest("a$", expected)
     doTranspileTest("a\\Z", expected)
     doTranspileTest("a\\Z+", expected)
     doTranspileTest("a\\Z{1}", expected)
