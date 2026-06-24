@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 def _read_resource(name: str) -> str:
-    return (Path(__file__).parent / "resources" / name).read_text()
+    return (Path(__file__).parent / "resources" / name).read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
