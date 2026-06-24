@@ -4031,9 +4031,10 @@ object GpuOverrides extends Logging {
           a.schema match {
             // from_json to a MAP is a "raw" extraction: values (and, for ARRAY<STRING>, array
             // elements) are raw JSON text. Verified vs Spark 3.5.5, it diverges on only two cases:
-            // escapes are not unescaped, and object/nested-array elements stay as raw JSON substrings.
-            // Scalar elements, whole-row null on a non-array value, and document-order duplicate keys
-            // all match Spark. See docs/compatibility.md and GpuJsonToStructs.
+            // escapes are not unescaped, and object/nested-array elements stay as raw JSON
+            // substrings. Scalar elements, whole-row null on a non-array value, and
+            // document-order duplicate keys all match Spark. See docs/compatibility.md and
+            // GpuJsonToStructs.
             case MapType(StringType, StringType, _) => ()
             case MapType(StringType, ArrayType(StringType, _), _) => ()
             case st: StructType =>

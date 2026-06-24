@@ -37,13 +37,15 @@ import org.apache.spark.sql.types._
  * "raw" map: keys, values and array elements are raw JSON byte ranges (surrounding quotes stripped
  * but NOT JSON-unescaped). Verified against Spark 3.5.5, the output diverges from Spark CPU on only
  * two documented corner cases (see docs/compatibility.md):
- *  - escape sequences (e.g. `\"`, `\\`, `\\uXXXX`) are kept verbatim rather than unescaped/normalized;
+ *  - escape sequences (e.g. `\"`, `\\`, `\\uXXXX`) are kept verbatim rather than
+ *    unescaped/normalized;
  *  - for `ARRAY<STRING>`, object / nested-array elements are returned as their raw JSON substring
  *    rather than Spark's re-serialized form.
- * The following MATCH Spark and are NOT divergences: scalar (number/boolean) array elements (raw text
- * equals Spark's string coercion, e.g. `1` -> `"1"`); a map value that is not a JSON array and not the
- * JSON `null` literal nulls the whole row (PERMISSIVE bad-record); duplicate keys kept in document
- * order (matches Spark 3.5.x; later Spark may de-dup per `spark.sql.mapKeyDedupPolicy`).
+ * The following MATCH Spark and are NOT divergences: scalar (number/boolean) array elements
+ * (raw text equals Spark's string coercion, e.g. `1` -> `"1"`); a map value that is not a
+ * JSON array and not the JSON `null` literal nulls the whole row (PERMISSIVE bad-record);
+ * duplicate keys kept in document order (matches Spark 3.5.x; later Spark may de-dup per
+ * `spark.sql.mapKeyDedupPolicy`).
  */
 case class GpuJsonToStructs(
     schema: DataType,
@@ -69,9 +71,15 @@ case class GpuJsonToStructs(
         case MapType(StringType, ArrayType(StringType, _), _) =>
           JSONUtils.extractRawMapFromJsonString(input.getBase, cudfOptions,
             JSONUtils.MapValueType.ARRAY_OF_STRING)
-        case _: MapType =>
+        case MapType(StringType, StringType, _) =>
           JSONUtils.extractRawMapFromJsonString(input.getBase, cudfOptions,
             JSONUtils.MapValueType.STRING)
+        // Defensive: GpuOverrides.tagExprForGpu gates the allowed map shapes, so any other map
+        // value type is unreachable today. Fail loudly if that gating is ever widened without
+        // teaching this dispatch the new MapValueType, instead of silently extracting as STRING.
+        case MapType(_, valueType, _) =>
+          throw new IllegalArgumentException(
+            s"GpuJsonToStructs does not support map value type $valueType (schema $schema).")
         case struct: StructType =>
           val parsedStructs = JSONUtils.fromJSONToStructs(input.getBase, makeSchema(struct),
             cudfOptions, parsedOptions.locale == Locale.US)

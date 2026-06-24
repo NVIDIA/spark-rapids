@@ -692,7 +692,7 @@ def test_from_json_map_with_arrays():
         r'{"a": (\[\]|\["[0-9]{0,5}"(, "[0-9]{0,3}"){0,2}\])(, "b": \["[A-Z]{0,5}"\])?}')
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
-            .select(f.from_json(f.col('a'), 'MAP<STRING,ARRAY<STRING>>')),
+            .select(f.map_entries(f.from_json(f.col('a'), 'MAP<STRING,ARRAY<STRING>>'))),
         conf=_enable_all_types_conf)
 
 @allow_non_gpu(*non_utc_allow)
@@ -754,14 +754,15 @@ def test_from_json_map_fallback():
         conf=_enable_all_types_conf)
 
 @allow_non_gpu('ProjectExec', 'JsonToStructs')
-def test_from_json_map_array_fallback():
+@pytest.mark.parametrize('schema', ['MAP<STRING,ARRAY<INT>>', 'MAP<STRING,ARRAY<DOUBLE>>'])
+def test_from_json_map_array_fallback(schema):
     # MAP<STRING,ARRAY<STRING>> runs on the GPU, but array element value types other than string are
-    # still unsupported, so MAP<STRING,ARRAY<INT>> must fall back to CPU. Literal [ ] are escaped as
-    # \[ \]; the array values are bare (unquoted) JSON integers.
+    # still unsupported, so non-string array element types must fall back to CPU. Literal [ ] are
+    # escaped as \[ \]; the array values are bare (unquoted) JSON numbers.
     json_string_gen = StringGen(r'{"a": \[\d\d, \d\d\]}')
     assert_gpu_fallback_collect(
         lambda spark : unary_op_df(spark, json_string_gen) \
-            .select(f.from_json(f.col('a'), 'MAP<STRING,ARRAY<INT>>')),
+            .select(f.from_json(f.col('a'), schema)),
         'JsonToStructs',
         conf=_enable_all_types_conf)
 
