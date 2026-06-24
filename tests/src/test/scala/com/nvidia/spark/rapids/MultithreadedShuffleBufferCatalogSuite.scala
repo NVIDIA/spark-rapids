@@ -244,24 +244,38 @@ class MultithreadedShuffleBufferCatalogSuite
     }
   }
 
-  test("convertToNetty release closes retained handle once") {
+  test("convertToNetty release closes retained handle exactly once") {
+    // The handle owns the close deferral, so a mock can't reproduce it: use a real FILE_ONLY
+    // handle and observe the physical close via `isPhysicallyClosed`.
     val catalog = new MultithreadedShuffleBufferCatalog()
-    val handle = createMockHandle()
+    val backingFile = File.createTempFile("skipmerge-region-", ".data")
+    val handle = SpillablePartialFileHandle.createFileOnly(backingFile)
+    handle.write(Array.fill[Byte](100)(7.toByte), 0, 100)
+    handle.finishWrite()
+    try {
+      catalog.registerShuffle(1)
+      catalog.addPartition(1, 0L, 0, handle, 0, 100)
 
-    catalog.registerShuffle(1)
-    catalog.addPartition(1, 0L, 0, handle, 0, 100)
+      val buffer = catalog.getMergedBuffer(ShuffleBlockId(1, 0L, 0))
+      val region = buffer.convertToNetty().asInstanceOf[FileRegion]
 
-    val buffer = catalog.getMergedBuffer(ShuffleBlockId(1, 0L, 0))
-    val region = buffer.convertToNetty().asInstanceOf[FileRegion]
+      // Cleanup requests close, but the file region still holds a read lease: close is deferred.
+      catalog.unregisterShuffle(1)
+      assert(!handle.isPhysicallyClosed,
+        "handle must stay open while the file region holds a lease")
 
-    catalog.unregisterShuffle(1)
-    verify(handle, never()).close()
+      // Releasing the region drops the last lease and runs the deferred physical close.
+      assert(region.release())
+      assert(handle.isPhysicallyClosed, "handle must close once the file region releases its lease")
 
-    assert(region.release())
-    verify(handle, times(1)).close()
-
-    buffer.release()
-    verify(handle, times(1)).close()
+      // No retained buffer lease here, so releasing the buffer is a no-op and must not re-close.
+      buffer.release()
+      assert(handle.isPhysicallyClosed)
+    } finally {
+      if (backingFile.exists()) {
+        backingFile.delete()
+      }
+    }
   }
 
   private def createMockHandle(): SpillablePartialFileHandle = {

@@ -60,6 +60,26 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
     assert(condition, clue)
   }
 
+  /**
+   * Runs `body` against a finished FILE_ONLY handle backed by a fresh temp file, then closes the
+   * handle and deletes the file. The temp file is exposed so tests can assert on its deletion.
+   */
+  private def withFinishedFileOnlyHandle(data: Array[Byte] = "lease".getBytes("UTF-8"))(
+      body: (SpillablePartialFileHandle, File) => Unit): Unit = {
+    val tempFile = File.createTempFile("test-lease-", ".tmp")
+    val handle = SpillablePartialFileHandle.createFileOnly(tempFile)
+    try {
+      handle.write(data, 0, data.length)
+      handle.finishWrite()
+      body(handle, tempFile)
+    } finally {
+      handle.close()
+      if (tempFile.exists()) {
+        tempFile.delete()
+      }
+    }
+  }
+
   test("FILE_ONLY mode: write and read") {
     val tempFile = File.createTempFile("test-file-only-", ".tmp")
 
@@ -650,6 +670,73 @@ class SpillablePartialFileHandleSuite extends AnyFunSuite with BeforeAndAfterEac
       // Verify state
       assert(handle.getTotalBytesWritten == largeData.length)
       assert(handle.isSpilled)
+    }
+  }
+
+  // ----- Shuffle read-lease lifecycle: acquireRead / releaseRead / deferred close --------------
+
+  test("read lease: close defers until the last lease is released") {
+    withFinishedFileOnlyHandle() { (handle, tempFile) =>
+      handle.acquireRead()
+      handle.acquireRead()
+
+      // Close requested while two leases are held: must defer.
+      handle.close()
+      assert(!handle.isPhysicallyClosed, "handle must stay open while leases are held")
+      assert(tempFile.exists(), "backing file must not be deleted while leases are held")
+
+      handle.releaseRead()
+      assert(!handle.isPhysicallyClosed, "handle must stay open while one lease remains")
+
+      handle.releaseRead()
+      assert(handle.isPhysicallyClosed, "handle must close once the last lease is released")
+      assert(!tempFile.exists(), "FILE_ONLY close must delete the backing file")
+    }
+  }
+
+  test("read lease: repeated close() while a lease is held stays deferred") {
+    withFinishedFileOnlyHandle() { (handle, tempFile) =>
+      handle.acquireRead()
+
+      // Multiple owners can request close while a reader is active: the catalog's
+      // unregisterShuffle and the spill store's shutdown both call handle.close(). close() is a
+      // close-request, not a refcount decrement, so repeated calls stay idempotent and must not
+      // free the handle while the lease is outstanding.
+      handle.close()
+      handle.close()
+      assert(!handle.isPhysicallyClosed,
+        "repeated close() must not free the handle while a lease is held")
+      assert(tempFile.exists(), "backing file must survive repeated close() while a lease is held")
+
+      handle.releaseRead()
+      assert(handle.isPhysicallyClosed, "handle closes once the lease is released")
+      assert(!tempFile.exists(), "FILE_ONLY close must delete the backing file")
+    }
+  }
+
+  test("read lease: close with no active leases closes immediately") {
+    withFinishedFileOnlyHandle() { (handle, tempFile) =>
+      handle.close()
+      assert(handle.isPhysicallyClosed, "close with no leases must close immediately")
+      assert(!tempFile.exists())
+    }
+  }
+
+  test("read lease: acquireRead after close throws") {
+    withFinishedFileOnlyHandle() { (handle, _) =>
+      handle.close()
+      assert(handle.isPhysicallyClosed)
+      assertThrows[IllegalStateException] {
+        handle.acquireRead()
+      }
+    }
+  }
+
+  test("read lease: releaseRead without acquireRead throws") {
+    withFinishedFileOnlyHandle() { (handle, _) =>
+      assertThrows[IllegalStateException] {
+        handle.releaseRead()
+      }
     }
   }
 }

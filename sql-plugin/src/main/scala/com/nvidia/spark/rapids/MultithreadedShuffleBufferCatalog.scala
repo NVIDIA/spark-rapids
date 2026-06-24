@@ -40,110 +40,44 @@ import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
  * @param handle the partial file handle containing the data
  * @param offset starting offset within the handle
  * @param length number of bytes in this segment
- * @param handleRef lifecycle reference for the partial file handle
  */
 case class PartitionSegment(
     handle: SpillablePartialFileHandle,
     offset: Long,
-    length: Long,
-    handleRef: ShuffleHandleReference)
+    length: Long)
 
 /**
- * Reference-counted lifecycle wrapper for a partial shuffle file handle.
+ * Owns a temporary read lease on one or more partial shuffle file handles.
  *
- * Shuffle cleanup can request a close while retained buffers, streams, or file regions are still
- * reading the handle. The physical close is deferred until all active leases release, allowing
- * catalog metadata to be removed without closing data under active consumers.
+ * A lease is held while a buffer, stream, or file region may still read the handles. Closing the
+ * lease releases every handle exactly once; each handle defers its physical close until its last
+ * lease is released (see `SpillablePartialFileHandle.acquireRead`/`releaseRead`).
  */
-private[rapids] final class ShuffleHandleReference(handle: SpillablePartialFileHandle)
-    extends Logging {
-
-  private var refCount: Int = 0
-  private var closeRequested: Boolean = false
-  private var closed: Boolean = false
-  private var closeShuffleId: Int = -1
-
-  def retain(): Unit = synchronized {
-    if (closed) {
-      throw new IllegalStateException("Cannot retain a closed shuffle handle")
-    }
-    refCount += 1
-  }
-
-  def release(): Unit = {
-    val shuffleIdToClose = synchronized {
-      if (refCount <= 0) {
-        throw new IllegalStateException("release() without matching retain()")
-      }
-      refCount -= 1
-      closeShuffleIdIfReady()
-    }
-    shuffleIdToClose.foreach(closeHandle)
-  }
-
-  def requestClose(shuffleId: Int): Unit = {
-    val shuffleIdToClose = synchronized {
-      if (!closeRequested) {
-        closeRequested = true
-        closeShuffleId = shuffleId
-      }
-      closeShuffleIdIfReady()
-    }
-    shuffleIdToClose.foreach(closeHandle)
-  }
-
-  private def closeShuffleIdIfReady(): Option[Int] = {
-    if (closeRequested && refCount == 0 && !closed) {
-      closed = true
-      Some(closeShuffleId)
-    } else {
-      None
-    }
-  }
-
-  private def closeHandle(shuffleId: Int): Unit = {
-    try {
-      handle.close()
-    } catch {
-      case e: InterruptedException =>
-        Thread.currentThread().interrupt()
-        logError(s"Interrupted while closing handle for shuffle $shuffleId", e)
-      case NonFatal(e) =>
-        logError(s"Failed to close handle for shuffle $shuffleId", e)
-    }
-  }
-}
-
-/**
- * Owns a temporary retain on one or more partial shuffle file handles.
- *
- * A lease is used while a buffer, stream, or file region may still read the handles. Closing the
- * lease releases all retained handles exactly once.
- */
-private[rapids] final class ShuffleHandleLease(handleRefs: Seq[ShuffleHandleReference])
+private[rapids] final class ShuffleHandleLease(handles: Seq[SpillablePartialFileHandle])
     extends AutoCloseable {
   private var released: Boolean = false
 
   override def close(): Unit = {
-    val refsToRelease = synchronized {
+    val handlesToRelease = synchronized {
       if (released) {
         Seq.empty
       } else {
         released = true
-        handleRefs
+        handles
       }
     }
-    ShuffleHandleLease.releaseAll(refsToRelease.reverseIterator)
+    ShuffleHandleLease.releaseAll(handlesToRelease.reverseIterator)
   }
 }
 
 private[rapids] object ShuffleHandleLease {
-  def acquire(handleRefs: Seq[ShuffleHandleReference]): ShuffleHandleLease = {
-    val retained = new ArrayBuffer[ShuffleHandleReference](handleRefs.size)
+  /** Acquire a read lease on every handle, rolling back the partial set if any acquire fails. */
+  def acquire(handles: Seq[SpillablePartialFileHandle]): ShuffleHandleLease = {
+    val retained = new ArrayBuffer[SpillablePartialFileHandle](handles.size)
     try {
-      handleRefs.foreach { ref =>
-        ref.retain()
-        retained += ref
+      handles.foreach { handle =>
+        handle.acquireRead()
+        retained += handle
       }
       new ShuffleHandleLease(retained.toSeq)
     } catch {
@@ -158,11 +92,11 @@ private[rapids] object ShuffleHandleLease {
     }
   }
 
-  private def releaseAll(handleRefs: Iterator[ShuffleHandleReference]): Unit = {
+  private def releaseAll(handles: Iterator[SpillablePartialFileHandle]): Unit = {
     var firstFailure: Throwable = null
-    handleRefs.foreach { ref =>
+    handles.foreach { handle =>
       try {
-        ref.release()
+        handle.releaseRead()
       } catch {
         case t: Throwable =>
           if (firstFailure == null) {
@@ -202,10 +136,6 @@ class MultithreadedShuffleBufferCatalog extends Logging {
   /** Track active shuffles for cleanup */
   private val activeShuffles = new ConcurrentHashMap[Int, JBoolean]()
 
-  /** Track each unique partial file handle so cleanup can be deferred while readers are active. */
-  private val handleRefs =
-    new ConcurrentHashMap[SpillablePartialFileHandle, ShuffleHandleReference]()
-
   /**
    * Register a shuffle as active.
    * Must be called before adding any partitions for this shuffle.
@@ -236,8 +166,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
     }
 
     val blockId = ShuffleBlockId(shuffleId, mapId, partitionId)
-    val handleRef = handleRefs.computeIfAbsent(handle, h => new ShuffleHandleReference(h))
-    val segment = PartitionSegment(handle, offset, length, handleRef)
+    val segment = PartitionSegment(handle, offset, length)
 
     partitionSegments.compute(blockId, (_, existing) => {
       val segments = if (existing == null) new ArrayBuffer[PartitionSegment]() else existing
@@ -355,9 +284,16 @@ class MultithreadedShuffleBufferCatalog extends Logging {
               numForcedFileOnly += 1
             }
 
-            // Drop catalog ownership; retained buffers/streams keep the reference alive.
-            handleRefs.remove(handle, segment.handleRef)
-            segment.handleRef.requestClose(shuffleId)
+            // Drop catalog ownership; retained buffers, streams, and file regions keep the handle
+            // alive through their read leases, so the physical close is deferred until the last
+            // lease is released. close() propagates failures, so catch here so one bad handle
+            // does not abort cleanup of the rest.
+            try {
+              handle.close()
+            } catch {
+              case NonFatal(e) =>
+                logWarning(s"Failed to request close of handle for shuffle $shuffleId", e)
+            }
           }
         }
       }
@@ -387,7 +323,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
  */
 class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBuffer {
 
-  private val handleRefs: Seq[ShuffleHandleReference] = segments.map(_.handleRef).distinct
+  private val handles: Seq[SpillablePartialFileHandle] = segments.map(_.handle).distinct
 
   /** Guards bufferLeases while retain()/release() can be called from different threads. */
   private val retainLock = new Object
@@ -398,7 +334,7 @@ class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBu
   override def size(): Long = segments.map(_.length).sum
 
   override def nioByteBuffer(): ByteBuffer = {
-    val lease = ShuffleHandleLease.acquire(handleRefs)
+    val lease = ShuffleHandleLease.acquire(handles)
     try {
       // This method loads all data into memory. It's required by the ManagedBuffer interface
       // but is NOT used in the network transfer path - Spark's network layer uses
@@ -433,11 +369,11 @@ class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBu
   }
 
   override def createInputStream(): InputStream = {
-    new MultiSegmentInputStream(segments, handleRefs)
+    new MultiSegmentInputStream(segments, handles)
   }
 
   override def retain(): ManagedBuffer = {
-    val lease = ShuffleHandleLease.acquire(handleRefs)
+    val lease = ShuffleHandleLease.acquire(handles)
     retainLock.synchronized {
       bufferLeases += lease
     }
@@ -459,7 +395,7 @@ class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBu
   override def convertToNetty(): AnyRef = {
     // Return a custom FileRegion that streams data in chunks, avoiding loading all
     // data into memory at once. This addresses concerns about large shuffle blocks.
-    new MultiSegmentFileRegion(segments, handleRefs)
+    new MultiSegmentFileRegion(segments, handles)
   }
 
   // Spark 4.0+ adds convertToNettyForSsl() abstract method.
@@ -484,13 +420,13 @@ class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBu
  */
 class MultiSegmentInputStream(
     segments: Seq[PartitionSegment],
-    handleRefs: Seq[ShuffleHandleReference]) extends InputStream {
+    handles: Seq[SpillablePartialFileHandle]) extends InputStream {
 
   private var currentSegmentIndex: Int = 0
   private var currentPosition: Long = if (segments.nonEmpty) segments.head.offset else 0
   private var bytesReadInCurrentSegment: Long = 0
   // Keeps the partial shuffle file handles open until this stream is closed.
-  private val lease = ShuffleHandleLease.acquire(handleRefs)
+  private val lease = ShuffleHandleLease.acquire(handles)
   private var closed: Boolean = false
 
   override def read(): Int = {
@@ -571,7 +507,7 @@ class MultiSegmentInputStream(
  */
 class MultiSegmentFileRegion(
     segments: Seq[PartitionSegment],
-    handleRefs: Seq[ShuffleHandleReference]) extends AbstractFileRegion {
+    handles: Seq[SpillablePartialFileHandle]) extends AbstractFileRegion {
 
   private val totalSize: Long = segments.map(_.length).sum
   private var totalTransferred: Long = 0
@@ -586,7 +522,7 @@ class MultiSegmentFileRegion(
   private var currentSegmentIndex: Int = 0
   private var bytesTransferredInCurrentSegment: Long = 0
   // Keeps the partial shuffle file handles open until this file region is deallocated.
-  private val lease = ShuffleHandleLease.acquire(handleRefs)
+  private val lease = ShuffleHandleLease.acquire(handles)
 
   override def count(): Long = totalSize
 

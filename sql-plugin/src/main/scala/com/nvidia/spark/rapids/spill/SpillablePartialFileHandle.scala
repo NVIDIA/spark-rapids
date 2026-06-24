@@ -20,6 +20,8 @@ import java.io.{BufferedInputStream, BufferedOutputStream, File, FileInputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 
+import scala.util.control.NonFatal
+
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.HostAlloc
@@ -94,6 +96,12 @@ class SpillablePartialFileHandle private (
   // Behavior counters for statistics reporting
   @volatile private var expansionCount: Int = 0
   @volatile private var spillCount: Int = 0
+
+  // Shuffle read-lease reference counting. Active consumers (retained buffers, input streams,
+  // Netty file regions) hold leases so the physical close can be deferred until they finish.
+  // Guarded by this handle's monitor; `closed` (from StoreHandle) marks the physical close.
+  private var readRefCount: Int = 0
+  private var closeRequested: Boolean = false
 
   // Write state
   private var writePosition: Long = 0L
@@ -722,6 +730,97 @@ class SpillablePartialFileHandle private (
       }
       fileInputStream = Some(fis)
       bufferedInputStream = Some(new BufferedInputStream(fis, 64 * 1024))
+    }
+  }
+
+  // ----- Shuffle read-lease lifecycle ----------------------------------------------------------
+  // Shuffle cleanup (`MultithreadedShuffleBufferCatalog.unregisterShuffle`) can request a close
+  // while retained buffers, input streams, or Netty file regions are still reading this handle.
+  // `acquireRead`/`releaseRead` reference-count those active consumers, and `close()` requests the
+  // physical close but defers it until the last lease is released. The physical close is
+  // `doClose()`, which coordinates with an in-progress spill via `spillInProgress` (this handle
+  // does not use the base `spilling` flag).
+
+  /**
+   * Acquire a read lease. Throws if the handle has already been physically closed.
+   */
+  private[rapids] def acquireRead(): Unit = synchronized {
+    if (closed) {
+      throw new IllegalStateException(
+        "Cannot acquire a read lease on a closed partial file handle")
+    }
+    readRefCount += 1
+  }
+
+  /**
+   * Release a read lease, performing the deferred physical close if this was the last one. This
+   * runs on consumer cleanup paths (Netty file-region deallocation, stream close, finally blocks),
+   * so a close failure is logged and swallowed rather than propagated.
+   */
+  private[rapids] def releaseRead(): Unit = {
+    val performClose = synchronized {
+      if (readRefCount <= 0) {
+        throw new IllegalStateException("releaseRead() without a matching acquireRead()")
+      }
+      readRefCount -= 1
+      markCloseIfReady()
+    }
+    if (performClose) {
+      closeQuietly()
+    }
+  }
+
+  /**
+   * True once the handle has been physically closed (distinct from a pending close request).
+   */
+  private[rapids] def isPhysicallyClosed: Boolean = synchronized { closed }
+
+  /**
+   * Request close of this handle. If no read leases are active it closes immediately; otherwise
+   * the physical close is deferred until the last `releaseRead()`. A close failure here
+   * propagates to the caller, per the normal `AutoCloseable` convention (the catalog and
+   * writer/merge call sites wrap it). The quiet path is `releaseRead()`, used on consumer cleanup.
+   */
+  override def close(): Unit = {
+    val performClose = synchronized {
+      closeRequested = true
+      markCloseIfReady()
+    }
+    if (performClose) {
+      doClose()
+    }
+  }
+
+  /**
+   * Decide, under the handle monitor, whether the physical close should run now, setting `closed`
+   * atomically with the decision so a concurrent `acquireRead` cannot slip in after we commit to
+   * closing. Returns true iff the caller should run the physical close outside the lock.
+   */
+  private def markCloseIfReady(): Boolean = {
+    if (closeRequested && readRefCount == 0 && !closed) {
+      closed = true
+      true
+    } else {
+      false
+    }
+  }
+
+  /**
+   * Runs the physical close, swallowing failures so a failed close cannot break a consumer's
+   * release path (Netty file-region deallocation, stream close, finally blocks). Used by
+   * `releaseRead()`; `close()` propagates instead.
+   */
+  private def closeQuietly(): Unit = {
+    try {
+      doClose()
+    } catch {
+      case e: InterruptedException =>
+        // Log while the interrupt flag is clear, then restore it as the last action so the
+        // logging framework's own (possibly interruptible) work isn't disrupted.
+        logError("Interrupted while closing partial file handle", e)
+        Thread.currentThread().interrupt()
+      case NonFatal(e) =>
+        logError("Failed to close partial file handle", e)
     }
   }
 
