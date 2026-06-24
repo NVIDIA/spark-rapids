@@ -104,6 +104,7 @@ object TestUtils {
         .mkString("{", ",", "}")
     case s: scala.collection.Seq[_] => s.map(alignKey).mkString("[", ",", "]")
     case a: Array[_] => a.map(alignKey).mkString("[", ",", "]")
+    case str: String => "s" + str.length + ":" + str  // prefix prevents string contents from coincidentally matching other types
     case x => x.toString
   }
 }
