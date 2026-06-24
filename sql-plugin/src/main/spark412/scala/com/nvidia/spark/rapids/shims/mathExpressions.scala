@@ -95,39 +95,39 @@ object HyperbolicMathExpressions {
   }
 
   def acosh(x: ColumnVector): ColumnVector = {
-    // The large and basic results must both be live for ifElse, but intermediates within each
-    // result are released as soon as they produce the next column.
-    val largeResult = logPlusLog2(x)
-    withResource(largeResult) { largeResult =>
-      val xSquaredMinusOne = withResource(x.mul(x)) { xSquared =>
-        withResource(Scalar.fromDouble(1.0)) { one =>
-          xSquared.sub(one)
-        }
+    // The large and basic results must both be live for ifElse, but compute the large branch as
+    // late as possible so it is not held while building the basic formula.
+    val xSquaredMinusOne = withResource(x.mul(x)) { xSquared =>
+      withResource(Scalar.fromDouble(1.0)) { one =>
+        xSquared.sub(one)
       }
-      val sqrt = withResource(xSquaredMinusOne) { xSquaredMinusOne =>
-        xSquaredMinusOne.sqrt()
+    }
+    val sqrt = withResource(xSquaredMinusOne) { xSquaredMinusOne =>
+      xSquaredMinusOne.sqrt()
+    }
+    val basicResult = withResource(sqrt) { sqrt =>
+      withResource(x.add(sqrt)) { logInput =>
+        logInput.log()
       }
-      val basicResult = withResource(sqrt) { sqrt =>
-        withResource(x.add(sqrt)) { logInput =>
-          logInput.log()
-        }
+    }
+    withResource(basicResult) { basicResult =>
+      val isLarge = withResource(Scalar.fromDouble(LARGE_ACOSH)) { large =>
+        x.greaterOrEqualTo(large)
       }
-      withResource(basicResult) { basicResult =>
-        val isLarge = withResource(Scalar.fromDouble(LARGE_ACOSH)) { large =>
-          x.greaterOrEqualTo(large)
-        }
-        val largeOrBasic = withResource(isLarge) { isLarge =>
-          isLarge.ifElse(largeResult, basicResult)
-        }
-        withResource(largeOrBasic) { largeOrBasic =>
-          // Spark returns NaN for values outside acosh's domain. Apply this after the
-          // large/basic selection so invalid negative inputs cannot leak through as +/-Inf.
-          val isInvalid = withResource(Scalar.fromDouble(1.0)) { one =>
-            x.lessThan(one)
-          }
-          withResource(isInvalid) { isInvalid =>
-            withResource(Scalar.fromDouble(Double.NaN)) { nan =>
-              isInvalid.ifElse(nan, largeOrBasic)
+      withResource(isLarge) { isLarge =>
+        val largeResult = logPlusLog2(x)
+        withResource(largeResult) { largeResult =>
+          val largeOrBasic = isLarge.ifElse(largeResult, basicResult)
+          withResource(largeOrBasic) { largeOrBasic =>
+            // Spark returns NaN for values outside acosh's domain. Apply this after the
+            // large/basic selection so invalid negative inputs cannot leak through as +/-Inf.
+            val isInvalid = withResource(Scalar.fromDouble(1.0)) { one =>
+              x.lessThan(one)
+            }
+            withResource(isInvalid) { isInvalid =>
+              withResource(Scalar.fromDouble(Double.NaN)) { nan =>
+                isInvalid.ifElse(nan, largeOrBasic)
+              }
             }
           }
         }
