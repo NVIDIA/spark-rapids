@@ -141,6 +141,19 @@ def test_array_hof_mixed_project_with_aggregate():
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
 
+@disable_ansi_mode
+def test_array_hof_mixed_project_with_indexed_lambdas():
+    data_gen = ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=8)
+    outer_gen = IntegerGen(min_val=-3, max_val=3, nullable=False)
+    def do_it(spark):
+        return two_col_df(spark, data_gen, outer_gen).selectExpr(
+            'transform(a, (x, i) -> coalesce(x, 0) + i + b) as indexed_add',
+            'filter(a, (x, i) -> x is not null and x + i + b >= 0) as indexed_filter',
+            'transform(a, (x, i) -> i - coalesce(x, 0)) as index_minus_value')
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
 # `if(cond, acc + t, acc)` shape — branches lifted via op identity. Same count-if
 # pattern as above but written naturally instead of using `CASE WHEN ... THEN 1 ELSE 0`.
 @disable_ansi_mode
