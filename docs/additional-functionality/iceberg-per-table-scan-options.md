@@ -120,7 +120,7 @@ to lowest:
 4. **Table itself** — iceberg `TBLPROPERTIES`
    (e.g. `read.split.target-size`, set via `ALTER TABLE … SET TBLPROPERTIES`)
 
-If none of the four is set, iceberg's built-in default applies. An explicit
+If none of the four is set, Iceberg's built-in default applies. An explicit
 DataFrame `.option(...)` call wins over all four priorities:
 
 ```scala
