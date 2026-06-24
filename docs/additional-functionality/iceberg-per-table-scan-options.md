@@ -30,7 +30,7 @@ Use this when you want to:
 - A/B test split-size / lookback tunings across runs by toggling a session
   conf instead of rewriting tables.
 
-If you are happy with the iceberg defaults, or you set scan options at the
+If you are happy with the Iceberg defaults, or you set scan options at the
 DataFrame level via `.option(...)`, you do not need this feature.
 
 ## Enabling
