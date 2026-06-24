@@ -35,7 +35,7 @@ DataFrame level via `.option(...)`, you do not need this feature.
 
 ## Enabling
 
-Replace Iceberg's session catalog with the rapids drop-in. For the default
+Replace Iceberg's session catalog with the RAPIDS drop-in. For the default
 catalog (`spark_catalog`):
 
 ```
