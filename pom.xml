@@ -26,7 +26,7 @@
     <version>26.08.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <url>https://nvidia.github.io/spark-rapids/</url>
+    <url>https://nvidia.github.io/cudf-spark/</url>
     <licenses>
         <license>
             <name>Apache License, Version 2.0</name>
@@ -1693,6 +1693,8 @@ This will force full Scala code rebuild in downstream modules.
                         <exclude>**/target/**/*</exclude>
                         <exclude>**/cufile.log</exclude>
                         <exclude>**/cudf_log.txt</exclude>
+                        <!-- Agent skills package has its own mixed Apache-2.0/CC-BY-4.0 licensing. -->
+                        <exclude>skills/**</exclude>
                         <exclude>thirdparty/parquet-testing/**</exclude>
                     </excludes>
                 </configuration>
@@ -1743,6 +1745,7 @@ This will force full Scala code rebuild in downstream modules.
                                     <dirset dir="${spark.rapids.source.basedir}">
                                         <include name="**/src/main"/>
                                         <include name="**/src/test"/>
+                                        <exclude name="skills/**"/>
                                         <exclude name="**/target/*/generated/src/**"/>
                                     </dirset>
                                 </pathconvert>
