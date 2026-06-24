@@ -84,7 +84,7 @@ The suffix names mirror the iceberg `TableProperties` keys (the token after
 `read.split.`) with `-` instead of `.`, so the dot-separated session-conf
 path remains unambiguous.
 
-`<catalog>` is the Spark catalog name, `<namespace>` is the iceberg namespace
+`<catalog>` is the Spark catalog name, `<namespace>` is the Iceberg namespace
 (`default` for hadoop catalogs that have not been organized into namespaces),
 and `<table>` is the iceberg table name.
 
