@@ -1925,9 +1925,9 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
     this.position = Some(position)
   }
   override def children(): Seq[RegexAST] = Seq.empty
-  // Internally-generated backrefs (e.g. from line-anchor rewriting) are emitted in braced
-  // `${N}` form so `backrefConversion` can tell them apart from user-authored `$N` tokens
-  // and pass them through verbatim. User-authored backrefs keep the raw `$N` form so the
+  // Backrefs marked as internally generated are emitted in braced `${N}` form so
+  // `backrefConversion` can tell them apart from user-authored `$N` tokens and pass them
+  // through verbatim. User-authored backrefs keep the raw `$N` form so the
   // greedy-with-backoff parser in `backrefConversion` honors the user's pattern group count.
   override def toRegexString: String = if (isNew) s"$${$num}" else s"$$$num"
 }

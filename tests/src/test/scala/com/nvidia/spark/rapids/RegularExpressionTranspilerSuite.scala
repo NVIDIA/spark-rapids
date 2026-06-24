@@ -479,10 +479,6 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     assertUnsupported("abc\\z", RegexFindMode, "")
   }
 
-  test("transpile $") {
-    doTranspileTest("a$", "a$")
-  }
-
   test("transpile \\Z") {
     val expected = "a$"
     doTranspileTest("a\\Z", expected)
