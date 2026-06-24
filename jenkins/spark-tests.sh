@@ -245,10 +245,13 @@ run_delta_lake_tests() {
     for v in $DELTA_LAKE_VERSIONS; do
       echo "Running Delta Lake tests for Delta Lake version $v"
       if [[ "$v" == "3.3.0" || "$v" == "4.0.0" ]]; then
-        DELTA_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
-      else 
-        DELTA_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
-      fi 
+        DELTA_MAIN_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
+      else
+        DELTA_MAIN_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
+      fi
+      # Delta Lake 1.2+ moved LogStore implementations into delta-storage.
+      # All versions tested here are 2.0+, so include it explicitly.
+      DELTA_JAR="${DELTA_MAIN_JAR},io.delta:delta-storage:$v"
       HOST_NAME=$PROJECT_REPO_HOST \
         PYSP_TEST_spark_jars_packages=${DELTA_JAR} \
         PYSP_TEST_spark_jars_ivySettings="${WORKSPACE}/jenkins/ivysettings.xml" \
