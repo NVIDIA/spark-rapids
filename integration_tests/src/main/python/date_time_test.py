@@ -996,6 +996,30 @@ def test_from_unixtime_legacy_millisecond_format():
         conf)
 
 
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('expr,cpu_fallback_class', [
+    ("date_format(timestamp_millis(a), 'yyyy-MM-dd HH:mm:ss.SSS')", "DateFormatClass"),
+    ("from_unixtime(a, 'yyyy-MM-dd HH:mm:ss.SSS')", "FromUnixTime")
+], ids=idfn)
+@pytest.mark.parametrize('conf', [
+    {
+        "spark.sql.legacy.timeParserPolicy": "LEGACY",
+        "spark.sql.ansi.enabled": "false"
+    },
+    {
+        "spark.sql.legacy.timeParserPolicy": "LEGACY",
+        "spark.sql.ansi.enabled": "true",
+        "spark.rapids.sql.incompatibleDateFormats.enabled": "true"
+    }
+], ids=idfn)
+def test_legacy_millisecond_format_fallback_gates(expr, cpu_fallback_class, conf):
+    gen = SetValuesGen(LongType(), [0])
+    assert_gpu_fallback_collect(
+        lambda spark: unary_op_df(spark, gen, length=1).selectExpr(expr),
+        cpu_fallback_class,
+        conf)
+
+
 @disable_ansi_mode
 @allow_non_gpu('ProjectExec')
 def test_to_timestamp_legacy_millisecond_format_still_fallback():

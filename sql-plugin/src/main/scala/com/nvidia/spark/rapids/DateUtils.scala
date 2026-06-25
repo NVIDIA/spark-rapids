@@ -222,7 +222,8 @@ object DateUtils {
       parseString: Boolean,
       inputFormat: Option[String] = None,
       legacyCompatibleFormats: Set[String] = GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS,
-      correctedCompatibleFormats: Set[String] = GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS): String = {
+      correctedCompatibleFormats: Set[String] =
+        GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS): String = {
     val formatToConvert = inputFormat.getOrElse(sparkFormat)
     var strfFormat: String = null
     if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
