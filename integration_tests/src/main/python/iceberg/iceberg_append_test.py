@@ -105,7 +105,7 @@ def test_insert_into_unpartitioned_table_values(spark_tmp_table_factory,
 
 @iceberg
 @ignore_order(local=True)
-@allow_non_gpu('AppendDataExec', 'LocalTableScanExec', 'ProjectExec', 'ShuffleExchangeExec')
+@allow_non_gpu('LocalTableScanExec', 'ShuffleExchangeExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
 def test_insert_into_table_values_aqe(spark_tmp_table_factory, partition_table):
