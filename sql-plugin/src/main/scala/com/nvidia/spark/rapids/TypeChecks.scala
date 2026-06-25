@@ -1413,8 +1413,20 @@ class CastChecks extends ExprChecks {
   }
 
   override def tagAst(meta: BaseExprMeta[_]): Unit = {
-    meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
-    // when this supports AST tagBase(meta, meta.willNotWorkInAst)
+    val cast = meta.wrapped.asInstanceOf[UnaryExpression]
+    (cast.child.dataType, cast.dataType) match {
+      case (from, to)
+          if meta.conf.isProjectAstAnsiArithmeticEnabled &&
+              GpuCast.canCastToAst(from, to) =>
+        tagBase(meta, meta.willNotWorkInAst)
+      case (_: DecimalType, _: DecimalType) if !meta.conf.isProjectAstAnsiArithmeticEnabled =>
+        meta.willNotWorkInAst("AST decimal cast requires row IR JIT support.")
+      case (_: DecimalType, _: DecimalType) =>
+        meta.willNotWorkInAst(
+          "AST decimal cast does not support scale reduction or scale-up precision checks.")
+      case _ =>
+        meta.willNotWorkInAst(AstExprContext.notSupportedMsg)
+    }
   }
 
   override def tag(meta: RapidsMeta[_, _, _]): Unit = {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.util.function.Consumer
 
-import ai.rapids.cudf._
+import ai.rapids.cudf.{ast, _}
 import com.nvidia.spark.rapids.Arm._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.CaseWhen
@@ -196,6 +196,24 @@ case class GpuIf(
 
   override def children: Seq[Expression] = predicateExpr :: trueExpr :: falseExpr :: Nil
   override def nullable: Boolean = trueExpr.nullable || falseExpr.nullable
+
+  override def convertToAst(numFirstTableColumns: Int): ast.AstExpression = {
+    val predicateAst = new ast.JitOperation(ast.JitOperator.PREDICATE,
+      predicateExpr.asInstanceOf[GpuExpression].convertToAst(numFirstTableColumns))
+
+    def valueToAst(valueExpr: Expression): ast.AstExpression = {
+      val gpuValueExpr = valueExpr.asInstanceOf[GpuExpression]
+      if (gpuValueExpr.hasSideEffects) {
+        throw new IllegalStateException("GpuIf AST branches must not have side effects")
+      }
+      gpuValueExpr.convertToAst(numFirstTableColumns)
+    }
+
+    new ast.JitOperation(ast.JitOperator.IF_ELSE,
+      valueToAst(trueExpr),
+      valueToAst(falseExpr),
+      predicateAst)
+  }
 
   override def checkInputDataTypes(): TypeCheckResult = {
     if (predicateExpr.dataType != BooleanType) {

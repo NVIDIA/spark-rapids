@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 def pytest_addoption(parser):
     """Pytest hook to define command line options for pytest"""
     parser.addoption(
@@ -51,6 +53,11 @@ def pytest_addoption(parser):
     parser.addoption(
         "--test_oom_injection_mode", action='store', default="random",
         help="in what way, if any, should the tests inject OOMs at test time. Valid options are: random, always, or never"
+    )
+    parser.addoption(
+        "--libcudf_jit_mode", action='store',
+        default=os.environ.get("SPARK_RAPIDS_TEST_LIBCUDF_JIT_MODE", "auto"),
+        help="libcudf JIT test mode. Valid options are: auto, required, or disabled"
     )
     parser.addoption(
         "--force_parquet_testing_tests", action="store_true", default=False,

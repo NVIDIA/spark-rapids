@@ -149,27 +149,20 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       withResource(sb) { sb =>
         withResource(ast.buildRetryableAstIterator(Seq(sb.getColumnarBatch).iterator)) { result =>
           withResource(result.next()) { cb =>
-            assertResult(2)(cb.numRows)
+            assertResult(4)(cb.numRows)
             assertResult(1)(cb.numCols)
             val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
             withResource(gcv.getBase.copyToHost()) { hcv =>
               assert(!hcv.isNull(0))
               assertResult(11L)(hcv.getLong(0))
               assert(hcv.isNull(1))
+              assert(!hcv.isNull(2))
+              assertResult(11L)(hcv.getLong(2))
+              assert(!hcv.isNull(3))
+              assertResult(10L)(hcv.getLong(3))
             }
           }
-
-          withResource(result.next()) { cb =>
-            assertResult(2)(cb.numRows)
-            assertResult(1)(cb.numCols)
-            val gcv = cb.column(0).asInstanceOf[GpuColumnVector]
-            withResource(gcv.getBase.copyToHost()) { hcv =>
-              assert(!hcv.isNull(0))
-              assertResult(11L)(hcv.getLong(0))
-              assert(!hcv.isNull(1))
-              assertResult(10L)(hcv.getLong(1))
-            }
-          }
+          assert(!result.hasNext)
         }
       }
     } finally {

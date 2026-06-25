@@ -610,8 +610,14 @@ object GpuOverrides extends Logging {
 
   def isLit(exp: Expression): Boolean = extractLit(exp).isDefined
 
-  def isNullLit(lit: Literal): Boolean = {
-    lit.value == null
+  private def isSimpleAstIfValue(exp: Expression): Boolean = exp match {
+    case _: AttributeReference | _: Literal => true
+    case a: Alias => isSimpleAstIfValue(a.child)
+    case _ => false
+  }
+
+  private def isSimpleAstIfPattern(exp: If): Boolean = {
+    isSimpleAstIfValue(exp.trueValue) && isSimpleAstIfValue(exp.falseValue)
   }
 
   def isSupportedStringReplacePattern(strLit: String): Boolean = {
@@ -940,7 +946,13 @@ object GpuOverrides extends Logging {
           .nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             TypeSig.ARRAY + TypeSig.MAP + TypeSig.STRUCT),
         TypeSig.all),
-      (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r)),
+      (lit, conf, p, r) => new LiteralExprMeta(lit, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (lit.dataType.isInstanceOf[DecimalType]) {
+            willNotWorkInAst("AST decimal literals are not supported.")
+          }
+        }
+      }),
     expr[Signum](
       "Returns -1.0, 0.0 or 1.0 as expr is negative, 0 or positive",
       ExprChecks.mathUnary,
@@ -950,24 +962,39 @@ object GpuOverrides extends Logging {
     expr[Alias](
       "Gives a column a name",
       ExprChecks.unaryProjectAndAstInputMatchesOutput(
-        TypeSig.astTypes + GpuTypeShims.additionalCommonOperatorSupportedTypes,
+        TypeSig.astTypes + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalCommonOperatorSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT
             + TypeSig.DECIMAL_128 + TypeSig.BINARY
             + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (a, conf, p, r) => new UnaryAstExprMeta[Alias](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (a.dataType.isInstanceOf[DecimalType] && !conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST decimal references require row IR JIT support.")
+          }
+        }
+
         override def convertToGpu(child: Expression): GpuExpression =
           GpuAlias(child, a.name)(a.exprId, a.qualifier, a.explicitMetadata)
       }),
     expr[BoundReference](
       "Reference to a bound variable",
       ExprChecks.projectAndAst(
-        TypeSig.astTypes + GpuTypeShims.additionalCommonOperatorSupportedTypes,
+        TypeSig.astTypes + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalCommonOperatorSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY + TypeSig.STRUCT +
           TypeSig.DECIMAL_128 + TypeSig.BINARY +
           GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all),
       (currentRow, conf, p, r) => new ExprMeta[BoundReference](currentRow, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (currentRow.dataType.isInstanceOf[DecimalType] &&
+              !conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST decimal references require row IR JIT support.")
+          }
+        }
+
         override def convertToGpuImpl(): GpuExpression = GpuBoundReference(
           currentRow.ordinal, currentRow.dataType, currentRow.nullable)(
           NamedExpression.newExprId, "")
@@ -975,12 +1002,20 @@ object GpuOverrides extends Logging {
     expr[AttributeReference](
       "References an input column",
       ExprChecks.projectAndAst(
-        TypeSig.astTypes + GpuTypeShims.additionalArithmeticSupportedTypes,
+        TypeSig.astTypes + TypeSig.DECIMAL_128 +
+            GpuTypeShims.additionalArithmeticSupportedTypes,
         (TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.MAP + TypeSig.ARRAY +
             TypeSig.STRUCT + TypeSig.DECIMAL_128 + TypeSig.BINARY +
             GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all),
         (att, conf, p, r) => new BaseExprMeta[AttributeReference](att, conf, p, r) {
+          override def tagSelfForAst(): Unit = {
+            if (att.dataType.isInstanceOf[DecimalType] &&
+                !conf.isProjectAstAnsiArithmeticEnabled) {
+              willNotWorkInAst("AST decimal references require row IR JIT support.")
+            }
+          }
+
           // This is the only NOOP operator.  It goes away when things are bound
           override def convertToGpuImpl(): Expression = att
 
@@ -1181,7 +1216,9 @@ object GpuOverrides extends Logging {
         val ansiEnabled = SQLConf.get.ansiEnabled
 
         override def tagSelfForAst(): Unit = {
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType) &&
+              (!conf.isProjectAstAnsiArithmeticEnabled ||
+                  !GpuAnsi.supportsAnsiArithmeticAst(a.dataType))) {
             willNotWorkInAst("AST unary minus does not support ANSI mode.")
           }
         }
@@ -1450,19 +1487,35 @@ object GpuOverrides extends Logging {
       }),
     expr[ShiftLeft](
       "Bitwise shift left (<<)",
-      ExprChecks.binaryProject(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.INT + TypeSig.LONG,
+        TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
         ("value", TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG),
         ("amount", TypeSig.INT, TypeSig.INT)),
       (a, conf, p, r) => new BinaryExprMeta[ShiftLeft](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (!conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST shift requires row IR JIT support.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuShiftLeft(lhs, rhs)
       }),
     expr[ShiftRight](
       "Bitwise shift right (>>)",
-      ExprChecks.binaryProject(TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
+      ExprChecks.binaryProjectAndAst(
+        TypeSig.INT + TypeSig.LONG,
+        TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG,
         ("value", TypeSig.INT + TypeSig.LONG, TypeSig.INT + TypeSig.LONG),
         ("amount", TypeSig.INT, TypeSig.INT)),
       (a, conf, p, r) => new BinaryExprMeta[ShiftRight](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (!conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST shift requires row IR JIT support.")
+          }
+        }
+
         override def convertToGpu(lhs: Expression, rhs: Expression): GpuExpression =
           GpuShiftRight(lhs, rhs)
       }),
@@ -1555,7 +1608,8 @@ object GpuOverrides extends Logging {
       }),
     expr[Coalesce] (
       "Returns the first non-null argument if exists. Otherwise, null",
-      ExprChecks.projectOnly(
+      ExprChecks.projectAndAst(
+        TypeSig.astTypes - TypeSig.STRING,
         (gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.BINARY +
           TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
         TypeSig.all,
@@ -1564,6 +1618,12 @@ object GpuOverrides extends Logging {
             TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (!conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST coalesce requires row IR JIT support.")
+          }
+        }
+
         override def convertToGpuImpl(): GpuExpression =
           GpuCoalesce(childExprs.map(_.convertToGpu()))
       }),
@@ -1944,7 +2004,9 @@ object GpuOverrides extends Logging {
         }
 
         override def tagSelfForAst(): Unit = {
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType) &&
+              (!conf.isProjectAstAnsiArithmeticEnabled ||
+                  !GpuAnsi.supportsAnsiArithmeticAst(a.dataType))) {
             willNotWorkInAst("AST Addition does not support ANSI mode.")
           }
         }
@@ -1973,7 +2035,9 @@ object GpuOverrides extends Logging {
         }
 
         override def tagSelfForAst(): Unit = {
-          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType)) {
+          if (ansiEnabled && GpuAnsi.needBasicOpOverflowCheck(a.dataType) &&
+              (!conf.isProjectAstAnsiArithmeticEnabled ||
+                  !GpuAnsi.supportsAnsiArithmeticAst(a.dataType))) {
             willNotWorkInAst("AST Subtraction does not support ANSI mode.")
           }
         }
@@ -2127,7 +2191,8 @@ object GpuOverrides extends Logging {
       }),
     expr[If](
       "IF expression",
-      ExprChecks.projectOnly(
+      ExprChecks.projectAndAst(
+        TypeSig.astTypes - TypeSig.STRING,
         (gpuCommonTypes + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP +
             TypeSig.BINARY + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
         TypeSig.all,
@@ -2141,6 +2206,16 @@ object GpuOverrides extends Logging {
                 TypeSig.BINARY + GpuTypeShims.additionalCommonOperatorSupportedTypes).nested(),
             TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[If](a, conf, p, r) {
+        override def tagSelfForAst(): Unit = {
+          if (!conf.isProjectAstAnsiArithmeticEnabled) {
+            willNotWorkInAst("AST IF requires row IR JIT support.")
+          }
+          if (!isSimpleAstIfPattern(a)) {
+            willNotWorkInAst(
+              "AST IF currently supports only simple value branches.")
+          }
+        }
+
         override def convertToGpuImpl(): GpuExpression = {
           val Seq(boolExpr, trueExpr, falseExpr) = childExprs.map(_.convertToGpu())
           GpuIf(boolExpr, trueExpr, falseExpr)

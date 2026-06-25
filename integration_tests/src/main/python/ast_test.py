@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2025, NVIDIA CORPORATION.
+# Copyright (c) 2021-2026, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import pytest
 
-from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, assert_gpu_and_cpu_are_equal_collect
+from asserts import (
+    assert_cpu_and_gpu_are_equal_collect_with_capture,
+    assert_gpu_and_cpu_are_equal_collect,
+    assert_gpu_and_cpu_error)
 from data_gen import *
 from marks import approximate_float, datagen_overrides, ignore_order, disable_ansi_mode
 from spark_session import with_cpu_session, is_before_spark_330
+from conftest import is_libcudf_jit_available, get_libcudf_jit_unavailable_reason
 import pyspark.sql.functions as f
+from pyspark.sql.types import DecimalType, IntegerType, LongType
 
 # Each descriptor contains a list of data generators and a corresponding boolean
 # indicating whether that data type is supported by the AST
@@ -62,6 +69,16 @@ ast_boolean_descr = [(boolean_gen, True)]
 ast_double_descr = [(double_gen, True)]
 
 _project_ast_enabled_conf = {"spark.rapids.sql.projectAstEnabled": "true"}
+_jit_ast_enabled_conf = {
+    "spark.rapids.sql.projectAstAnsiArithmeticEnabled": "true",
+    "spark.executorEnv.LIBCUDF_JIT_ENABLED": "1"}
+if "LD_LIBRARY_PATH" in os.environ:
+    _jit_ast_enabled_conf["spark.executorEnv.LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
+_ansi_jit_ast_enabled_conf = copy_and_update(ansi_enabled_conf, _jit_ast_enabled_conf)
+_requires_libcudf_jit = pytest.mark.skipif(
+    not is_libcudf_jit_available(),
+    reason="ANSI JIT AST requires libcudf JIT runtime: " +
+           get_libcudf_jit_unavailable_reason())
 
 def assert_gpu_ast(is_supported, func, conf={}):
     exist = "GpuProjectAstExec"
@@ -101,6 +118,15 @@ def test_null_literal(spark_tmp_path, data_gen):
     data_type = data_gen.data_type
     assert_gpu_ast(is_supported=True,
                    func=lambda spark: spark.read.parquet(data_path).select(f.lit(None).cast(data_type)))
+
+@_requires_libcudf_jit
+def test_decimal_literal_falls_back_from_ast(spark_tmp_path):
+    data_path = spark_tmp_path + '/AST_TEST_DATA'
+    with_cpu_session(lambda spark: gen_df(spark, [("a", IntegerGen())]).write.parquet(data_path))
+    assert_gpu_ast(is_supported=False,
+                   func=lambda spark: spark.read.parquet(data_path).selectExpr(
+                       'cast(12.34 as DECIMAL(7, 2))'),
+                   conf=_ansi_jit_ast_enabled_conf)
 
 @pytest.mark.parametrize('data_descr', ast_descrs, ids=idfn)
 def test_isnull(data_descr):
@@ -337,6 +363,168 @@ def test_bitwise_xor(data_descr):
             f.lit(-12).cast(data_type).bitwiseXOR(f.col('b')),
             f.col('a').bitwiseXOR(f.col('b'))))
 
+_ast_coalesce_descrs = [
+    (boolean_gen, True),
+    (byte_gen, True),
+    (short_gen, True),
+    (int_gen, True),
+    (long_gen, True),
+    (float_gen, True),
+    (double_gen, True),
+    (timestamp_gen, True),
+    (date_gen, True),
+    (string_gen, False)
+]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_coalesce_descrs, ids=idfn)
+def test_jit_coalesce(data_descr):
+    data_gen, is_supported = data_descr
+    scalar = with_cpu_session(
+        lambda spark: gen_scalar(data_gen, force_no_nulls=True))
+    gen = StructGen([
+        ('a', data_gen.copy_special_case(None, weight=1000.0)),
+        ('b', data_gen.copy_special_case(None, weight=1000.0)),
+        ('c', data_gen.copy_special_case(None, weight=1000.0))],
+        nullable=False)
+    assert_gpu_ast(is_supported,
+        lambda spark: gen_df(spark, gen).select(
+            f.coalesce(f.col('a'), f.col('b')),
+            f.coalesce(f.col('a'), f.col('b'), f.col('c'), scalar)),
+        conf=_ansi_jit_ast_enabled_conf)
+
+_ast_nullify_if_descrs = _ast_coalesce_descrs
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_nullify_if_descrs, ids=idfn)
+def test_jit_if_nullify(data_descr):
+    data_gen, is_supported = data_descr
+    data_type = to_cast_string(data_gen.data_type)
+    assert_gpu_ast(is_supported,
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            'if(isnull(a), cast(null as {}), b)'.format(data_type),
+            'if(isnotnull(a), b, cast(null as {}))'.format(data_type),
+            'if(cast(null as BOOLEAN), cast(null as {}), b)'.format(data_type)),
+        conf=_ansi_jit_ast_enabled_conf)
+
+_ast_if_else_descrs = _ast_coalesce_descrs
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_if_else_descrs, ids=idfn)
+def test_jit_if_else(data_descr):
+    data_gen, is_supported = data_descr
+    assert_gpu_ast(is_supported,
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            'if(isnull(a), b, a)',
+            'if(isnotnull(a), a, b)',
+            'if(cast(null as BOOLEAN), a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_jit_if_else_boolean_condition():
+    gen = StructGen([
+        ('a', boolean_gen),
+        ('b', boolean_gen),
+        ('c', boolean_gen)],
+        nullable=False)
+    assert_gpu_ast(True,
+        lambda spark: gen_df(spark, gen).selectExpr('if(c, a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
+_ast_nullif_descrs = [
+    (boolean_gen, True),
+    (byte_gen, True),
+    (short_gen, True),
+    (int_gen, True),
+    (long_gen, True),
+    (timestamp_gen, True),
+    (date_gen, True),
+    (string_gen, False)
+]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_nullif_descrs, ids=idfn)
+def test_jit_nullif(data_descr):
+    data_gen, is_supported = data_descr
+    assert_gpu_ast(is_supported,
+        lambda spark: binary_op_df(spark, data_gen).selectExpr('nullif(a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_jit_if_nullify_complex_branch_falls_back():
+    data_gen = IntegerGen(min_val=-100, max_val=100, special_cases=[])
+    assert_gpu_ast(False,
+        lambda spark: binary_op_df(spark, data_gen).selectExpr(
+            'if(isnull(a), cast(null as INT), a + cast(1 as INT))'),
+        conf=_ansi_jit_ast_enabled_conf)
+
+_ast_decimal_cast_descrs = [
+    (DecimalGen(7, 2, special_cases=[]), DecimalType(9, 4), True),
+    (DecimalGen(7, 2, special_cases=[]), DecimalType(18, 4), True),
+    (DecimalGen(18, 2, special_cases=[]), DecimalType(30, 4), True),
+    (DecimalGen(7, 4, special_cases=[]), DecimalType(9, 2), False)
+]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_decimal_cast_descrs, ids=idfn)
+def test_jit_decimal_cast(data_descr):
+    data_gen, to_type, is_supported = data_descr
+    assert_gpu_ast(is_supported,
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast(to_type)),
+        conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_jit_decimal_cast_precision_check_ansi_disabled():
+    data_gen = DecimalGen(18, 2)
+    assert_gpu_ast(True,
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast(DecimalType(9, 2))),
+        conf=_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_jit_decimal_cast_scale_up_precision_check_ansi_disabled():
+    data_gen = DecimalGen(18, 0)
+    assert_gpu_ast(False,
+        lambda spark: unary_op_df(spark, data_gen).select(f.col('a').cast(DecimalType(18, 2))),
+        conf=_jit_ast_enabled_conf)
+
+_ast_shift_descrs = [(int_gen, True), (long_gen, True)]
+_ast_shift_amount_gen = IntegerGen(
+    min_val=-80,
+    max_val=80,
+    special_cases=[-65, -64, -63, -33, -32, -31, -1, 0, 1, 31, 32, 33, 63, 64, 65])
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_shift_descrs, ids=idfn)
+def test_jit_shift_left(data_descr):
+    data_gen, is_supported = data_descr
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_ast(is_supported,
+        lambda spark: two_col_df(spark, data_gen, _ast_shift_amount_gen).selectExpr(
+            'shiftleft(a, cast(12 as INT))',
+            'shiftleft(a, cast(40 as INT))',
+            'shiftleft(a, cast(-1 as INT))',
+            'shiftleft(cast(-12 as {}), b)'.format(string_type),
+            'shiftleft(cast(null as {}), b)'.format(string_type),
+            'shiftleft(a, cast(null as INT))',
+            'shiftleft(a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_descr', _ast_shift_descrs, ids=idfn)
+def test_jit_shift_right(data_descr):
+    data_gen, is_supported = data_descr
+    string_type = to_cast_string(data_gen.data_type)
+    assert_gpu_ast(is_supported,
+        lambda spark: two_col_df(spark, data_gen, _ast_shift_amount_gen).selectExpr(
+            'shiftright(a, cast(12 as INT))',
+            'shiftright(a, cast(40 as INT))',
+            'shiftright(a, cast(-1 as INT))',
+            'shiftright(cast(-12 as {}), b)'.format(string_type),
+            'shiftright(cast(null as {}), b)'.format(string_type),
+            'shiftright(a, cast(null as INT))',
+            'shiftright(a, b)'),
+        conf=_ansi_jit_ast_enabled_conf)
+
 @pytest.mark.parametrize('data_descr', ast_arithmetic_descrs, ids=idfn)
 @disable_ansi_mode
 def test_addition(data_descr):
@@ -381,6 +569,103 @@ def test_multiplication_for_integer_ansi_on(data_desc):
     assert_binary_ast(data_desc,
                       lambda df: df.select(f.col('a') * f.col('b')),
                       conf=ansi_enabled_conf)
+
+_ast_integral_desc_list_for_ansi_jit_on = [
+    (ByteGen(min_val=-11, max_val=11, special_cases=[]), False),
+    (ShortGen(min_val=-181, max_val=181, special_cases=[]), False),
+    (IntegerGen(min_val=-46340, max_val=46340, special_cases=[]), True),
+    (LongGen(min_val=-3037000499, max_val=3037000499, special_cases=[]), True)]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_desc', _ast_integral_desc_list_for_ansi_jit_on, ids=idfn)
+def test_ansi_jit_arithmetic_for_integer_ansi_on(data_desc):
+    assert_binary_ast(data_desc,
+                      lambda df: df.select(
+                          f.col('a') + f.col('b'),
+                          f.col('a') - f.col('b'),
+                          f.col('a') * f.col('b')),
+                      conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_desc', _ast_integral_desc_list_for_ansi_jit_on, ids=idfn)
+def test_ansi_jit_unary_arithmetic_for_integer_ansi_on(data_desc):
+    assert_unary_ast(data_desc,
+                     lambda df: df.select(-f.col('a'), f.abs(f.col('a'))),
+                     conf=_ansi_jit_ast_enabled_conf)
+
+_ast_div_mod_desc_list_for_ansi_jit_on = [
+    (IntegerGen(min_val=-1000, max_val=1000, special_cases=[]),
+        SetValuesGen(IntegerType(), [-13, -7, -3, -1, 1, 3, 7, 13, None])),
+    (LongGen(min_val=-1000000, max_val=1000000, special_cases=[]),
+        SetValuesGen(LongType(), [-13, -7, -3, -1, 1, 3, 7, 13, None]))]
+
+@_requires_libcudf_jit
+@pytest.mark.parametrize('data_desc', _ast_div_mod_desc_list_for_ansi_jit_on, ids=idfn)
+def test_ansi_jit_integral_div_mod_for_integer_ansi_on(data_desc):
+    lhs_gen, rhs_gen = data_desc
+    assert_gpu_ast(True,
+                   lambda spark: two_col_df(spark, lhs_gen, rhs_gen).selectExpr(
+                       'a DIV b',
+                       'a % b'),
+                   conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_ansi_jit_decimal_integral_div_falls_back():
+    data_gen = SetValuesGen(DecimalType(7, 2),
+        [Decimal('-12.34'), Decimal('1.25'), Decimal('56.78'), None])
+    rhs_gen = SetValuesGen(DecimalType(7, 2),
+        [Decimal('-3.00'), Decimal('-1.50'), Decimal('2.00'), Decimal('4.00'), None])
+    assert_gpu_ast(False,
+                   lambda spark: two_col_df(spark, data_gen, rhs_gen).selectExpr(
+                       'a DIV b'),
+                   conf=_ansi_jit_ast_enabled_conf)
+
+@_requires_libcudf_jit
+def test_ansi_jit_integral_mod_sign_for_integer_ansi_on():
+    assert_gpu_ast(True,
+                   lambda spark: spark.createDataFrame(
+                       spark.sparkContext.parallelize(
+                           [(-5, 3), (5, -3), (-5, -3), (5, 3), (None, 3), (5, None)] * 8,
+                           1),
+                       'a INT, b INT').selectExpr('a % b'),
+                   conf=_ansi_jit_ast_enabled_conf)
+
+def _collect_with_retry_oom_disabled(spark, df_fun):
+    spark.conf.set("spark.rapids.sql.test.injectRetryOOM", "false")
+    return df_fun(spark).collect()
+
+@_requires_libcudf_jit
+def test_ansi_jit_integral_div_by_zero_errors():
+    ast_conf = copy_and_update(
+        _ansi_jit_ast_enabled_conf,
+        _project_ast_enabled_conf,
+        {"spark.rapids.sql.test.injectRetryOOM": "false"})
+    assert_gpu_and_cpu_error(
+        lambda spark: _collect_with_retry_oom_disabled(
+            spark,
+            lambda spark: two_col_df(
+                spark,
+                LongGen(nullable=False, min_val=-100, max_val=100, special_cases=[]),
+                SetValuesGen(LongType(), [0]),
+                length=8,
+                num_slices=1).selectExpr('a DIV b')),
+        ast_conf,
+        'Division by zero')
+
+@_requires_libcudf_jit
+def test_ansi_jit_integral_div_overflow_errors():
+    ast_conf = copy_and_update(
+        _ansi_jit_ast_enabled_conf,
+        _project_ast_enabled_conf,
+        {"spark.rapids.sql.test.injectRetryOOM": "false"})
+    assert_gpu_and_cpu_error(
+        lambda spark: _collect_with_retry_oom_disabled(
+            spark,
+            lambda spark: spark.createDataFrame(
+                spark.sparkContext.parallelize([(LONG_MIN, -1)] * 8, 1),
+                'a LONG, b LONG').selectExpr('a DIV b')),
+        ast_conf,
+        'Overflow')
 
 @approximate_float
 def test_scalar_pow():

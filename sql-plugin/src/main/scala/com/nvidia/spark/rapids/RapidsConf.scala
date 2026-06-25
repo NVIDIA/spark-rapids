@@ -1238,6 +1238,14 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
       .booleanConf
       .createWithDefault(false)
 
+  val ENABLE_PROJECT_AST_ANSI_ARITHMETIC = conf("spark.rapids.sql.projectAstAnsiArithmeticEnabled")
+      .doc("Enable project AST support for row IR JIT operations, including ANSI integral " +
+        "arithmetic and conditional nullification. This requires LIBCUDF_JIT_ENABLED=1 " +
+        "for executor processes.")
+      .internal()
+      .booleanConf
+      .createWithDefault(false)
+
   val ENABLE_TIERED_PROJECT = conf("spark.rapids.sql.tiered.project.enabled")
       .doc("Enable tiered projections.")
       .internal()
@@ -2834,7 +2842,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .createOptional
 
   val PROJECT_SPLIT_RETRY_ENABLED = conf("spark.rapids.sql.projectExec.splitRetry.enabled")
-      .doc("When true, GpuProjectExec uses split-and-retry on GPU OOM for retryable " +
+      .doc("When true, project execs use split-and-retry on GPU OOM for retryable " +
           "projections: the input batch is halved by rows and the projection is re-run on " +
           "each half. Projections that include non-retryable expressions fall back to the " +
           "existing withRetryNoSplit path because those expressions cannot be safely " +
@@ -3628,6 +3636,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val isCastFloatToIntegralTypesEnabled: Boolean = get(ENABLE_CAST_FLOAT_TO_INTEGRAL_TYPES)
 
   lazy val isProjectAstEnabled: Boolean = get(ENABLE_PROJECT_AST)
+
+  lazy val isProjectAstAnsiArithmeticEnabled: Boolean = get(ENABLE_PROJECT_AST_ANSI_ARITHMETIC)
+
+  lazy val isLibcudfJitEnabled: Boolean =
+    sys.env.get("LIBCUDF_JIT_ENABLED").contains("1") ||
+      getStr("spark.executorEnv.LIBCUDF_JIT_ENABLED").contains("1")
 
   lazy val isTieredProjectEnabled: Boolean = get(ENABLE_TIERED_PROJECT)
 
