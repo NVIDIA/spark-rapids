@@ -1564,6 +1564,9 @@ object GpuOverrides extends Logging {
             TypeSig.MAP + GpuTypeShims.additionalArithmeticSupportedTypes).nested(),
           TypeSig.all))),
       (a, conf, p, r) => new ExprMeta[Coalesce](a, conf, p, r) {
+        // Allow foldable non-literal Coalesce (e.g. coalesce(cast(null as bigint), -1001)):
+        // AQE can regenerate these after ConstantFolding ran; GpuCoalesce evaluates them on GPU.
+        override val isFoldableNonLitAllowed: Boolean = true
         override def convertToGpuImpl(): GpuExpression =
           GpuCoalesce(childExprs.map(_.convertToGpu()))
       }),
