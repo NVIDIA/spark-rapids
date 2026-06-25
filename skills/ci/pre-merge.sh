@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Activate the gcc-toolset for the native CUDA build.
+# shellcheck disable=SC1090
 source "/opt/rh/gcc-toolset-${TOOLSET_VERSION:-14}/enable"
 
 print_section() {
