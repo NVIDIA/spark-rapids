@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import pytest
+import pyarrow as pa
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
 from data_gen import *
@@ -115,9 +116,11 @@ _common_rebase_conf = {
     'spark.sql.parquet.datetimeRebaseModeInWrite': 'CORRECTED',
     'spark.sql.parquet.datetimeRebaseModeInRead': 'CORRECTED',
 
-    # Disable timestampNTZ inference for timezone-less PyArrow timestamps on Spark 3.4+.
+    # Disable timestampNTZ inference for timezone-less PyArrow timestamps on
+    # Spark 3.4+.
     # Spark 3.3.4 can also infer those as TimestampNTZType in testing mode, so
-    # pyarrow_utils writes normal TimestampGen values as UTC-adjusted timestamps.
+    # pyarrow_utils writes normal TimestampGen values as UTC-adjusted
+    # timestamps.
     # Refer to Spark link: https://github.com/apache/spark/blob/v3.5.0/sql/catalyst/src/main/scala/org/apache/spark/sql/internal/SQLConf.scala#L1163
     'spark.sql.parquet.inferTimestampNTZ.enabled': 'false'
 }

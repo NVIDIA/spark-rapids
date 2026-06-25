@@ -76,7 +76,8 @@ def get_pyarrow_type(data_gen):
         return pa.date32()
     elif isinstance(data_gen, TimestampGen):
         # use us, because Spark does not support ns
-        # Use UTC-adjusted timestamps for Spark TimestampType to avoid TimestampNTZ inference.
+        # Use UTC-adjusted timestamps for Spark TimestampType to avoid
+        # TimestampNTZ inference.
         if data_gen._tzinfo is None:
             return pa.timestamp('us')
         return pa.timestamp('us', tz='UTC')
