@@ -323,8 +323,8 @@ trait GpuArrayElementWiseTransform extends GpuArrayTransformBase {
   }
 }
 
-private[rapids] object GpuArrayTransformFusion {
-  private case class TransformInProject(index: Int, transform: GpuArrayTransformBase)
+private[rapids] object GpuArrayHofFusion {
+  private case class HofInProject(index: Int, hof: GpuArrayTransformBase)
 
   def project(
       batch: ColumnarBatch,
@@ -337,22 +337,38 @@ private[rapids] object GpuArrayTransformFusion {
     }
   }
 
+  private[rapids] def findFusedGroupIndexes(
+      boundExprs: Seq[Expression]): Seq[Seq[Int]] =
+    findFusedGroups(boundExprs).map(_.map(_.index))
+
   private def findFusedGroups(
-      boundExprs: Seq[Expression]): Seq[Seq[TransformInProject]] = {
-    val groups = mutable.ArrayBuffer[mutable.ArrayBuffer[TransformInProject]]()
+      boundExprs: Seq[Expression]): Seq[Seq[HofInProject]] = {
+    val fusedGroups = mutable.ArrayBuffer[Seq[HofInProject]]()
+    val groups = mutable.ArrayBuffer[mutable.ArrayBuffer[HofInProject]]()
+
+    def flushGroups(): Unit = {
+      fusedGroups ++= groups.filter(_.length > 1).map(_.toSeq)
+      groups.clear()
+    }
+
     boundExprs.zipWithIndex.foreach {
       case (expr, index) =>
-        extractTransform(expr).filter(canFuse).foreach { transform =>
-          groups.find(g => canShareExplode(g.head.transform, transform)) match {
-            case Some(group) => group += TransformInProject(index, transform)
-            case None => groups += mutable.ArrayBuffer(TransformInProject(index, transform))
-          }
+        extractHof(expr).filter(canFuse) match {
+          case Some(hof) =>
+            groups.find(g => canShareExplode(g.head.hof, hof)) match {
+              case Some(group) => group += HofInProject(index, hof)
+              case None => groups += mutable.ArrayBuffer(HofInProject(index, hof))
+            }
+          case None if !canReorderExpression(expr) =>
+            flushGroups()
+          case None =>
         }
     }
-    groups.filter(_.length > 1).map(_.toSeq).filter(canReorderAcross(boundExprs, _)).toSeq
+    flushGroups()
+    fusedGroups.toSeq
   }
 
-  private def extractTransform(
+  private def extractHof(
       expr: Expression): Option[GpuArrayTransformBase] = expr match {
     case GpuAlias(transform: GpuArrayTransformBase, _) => Some(transform)
     case transform: GpuArrayTransformBase => Some(transform)
@@ -381,25 +397,16 @@ private[rapids] object GpuArrayTransformFusion {
       left.argument.semanticEquals(right.argument)
   }
 
-  private def canReorderAcross(
-      boundExprs: Seq[Expression],
-      group: Seq[TransformInProject]): Boolean = {
-    val groupIndexes = group.map(_.index).toSet
-    (group.head.index to group.last.index).forall { index =>
-      groupIndexes.contains(index) ||
-        (boundExprs(index).deterministic && hasNoSideEffects(boundExprs(index)))
-    }
-  }
-
-  private def hasNoSideEffects(expr: Expression): Boolean = expr match {
-    case gpuExpr: GpuExpression => !gpuExpr.hasSideEffects
-    case _ => false
-  }
+  private def canReorderExpression(expr: Expression): Boolean =
+    expr.deterministic && (expr match {
+      case gpuExpr: GpuExpression => !gpuExpr.hasSideEffects
+      case _ => false
+    })
 
   private def projectWithFusedGroups(
       batch: ColumnarBatch,
       boundExprs: Seq[Expression],
-      fusedGroups: Seq[Seq[TransformInProject]]): ColumnarBatch = {
+      fusedGroups: Seq[Seq[HofInProject]]): ColumnarBatch = {
     val outputColumns = new Array[ColumnVector](boundExprs.length)
     val groupsByStartIndex = fusedGroups.map(group => group.head.index -> group).toMap
     closeOnExcept(outputColumns) { _ =>
@@ -407,9 +414,9 @@ private[rapids] object GpuArrayTransformFusion {
         if (outputColumns(index) == null) {
           groupsByStartIndex.get(index) match {
             case Some(group) =>
-              val transformed = evaluateFusedGroup(batch, group.map(_.transform))
+              val transformed = evaluateFusedGroup(batch, group.map(_.hof))
               group.zip(transformed).foreach {
-                case (TransformInProject(outputIndex, _), column) =>
+                case (HofInProject(outputIndex, _), column) =>
                   outputColumns(outputIndex) = column
               }
             case None =>

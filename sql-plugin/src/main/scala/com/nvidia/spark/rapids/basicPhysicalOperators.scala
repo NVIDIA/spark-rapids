@@ -131,7 +131,7 @@ object GpuProjectExec {
         // different vector length, thus not able to reuse cached vectors.
         GpuExpressionsUtils.cachedNullVectors.get.clear()
 
-        GpuArrayTransformFusion.project(cb, boundExprs).getOrElse {
+        GpuArrayHofFusion.project(cb, boundExprs).getOrElse {
           val newColumns = boundExprs.safeMap(_.columnarEval(cb)).toArray[ColumnVector]
           new ColumnarBatch(newColumns, cb.numRows())
         }
