@@ -252,8 +252,11 @@ def is_spark_35x():
 def is_spark_40x():
     return "4.0.0" <= spark_version() < "4.1.0"
 
+def is_spark_41x():
+    return "4.1.0" <= spark_version() < "4.2.0"
+
 def is_iceberg_supported_spark():
-    return is_spark_35x() or is_spark_40x()
+    return is_spark_35x() or is_spark_40x() or is_spark_41x()
 
 def is_spark_400_or_later():
     return spark_version() >= "4.0.0"
@@ -334,6 +337,14 @@ def supports_delta_lake_deletion_vectors():
 def is_support_default_values_in_schema():
     # Spark 340 + and Databricks 330 + support
     return is_spark_340_or_later() or is_databricks113_or_later()
+
+def is_spark_testing_enabled():
+    # True when Spark testing mode is on (-Dspark.testing or the SPARK_TESTING env var), mirroring
+    # org.apache.spark.util.Utils.isTesting. NVIDIA/spark-rapids#15022 enables it for the nightly,
+    # which disables WholeStageCodegenExec's fallback from a codegen CompileException to interpreted
+    # execution, so latent Spark codegen bugs become hard failures instead of being swallowed.
+    return (_spark.sparkContext._jvm.System.getProperty("spark.testing") is not None
+            or _spark.sparkContext._jvm.System.getenv("SPARK_TESTING") is not None)
 
 def get_java_major_version():
     ver = _spark.sparkContext._jvm.System.getProperty("java.version")
