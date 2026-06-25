@@ -7,6 +7,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Activate the gcc-toolset for the native CUDA build.
+source "/opt/rh/gcc-toolset-${TOOLSET_VERSION:-14}/enable"
+
 print_section() {
     echo ""
     echo "=================================================="
@@ -24,7 +27,7 @@ handle_error() {
 
 setup_python() {
     print_section "Setting up Python environment"
-    python3.11 -m venv "${SKILLS_DIR}/.venv"
+    python3 -m venv "${SKILLS_DIR}/.venv"
     source "${SKILLS_DIR}/.venv/bin/activate"
     pip install --upgrade pip
     pip install -e "${SKILLS_DIR}[dev]"
