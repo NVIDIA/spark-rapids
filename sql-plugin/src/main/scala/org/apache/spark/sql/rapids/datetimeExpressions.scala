@@ -401,6 +401,12 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
 
   var sparkFormat: String = _
   var strfFormat: String = _
+
+  protected def legacyCompatibleFormats: Set[String] = GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS
+
+  protected def correctedCompatibleFormats: Set[String] =
+    GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS
+
   override def tagExprForGpu(): Unit = {
     // Date and Timestamp work too
     if (expr.right.dataType == StringType) {
@@ -408,7 +414,10 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
         case Some(rightLit) =>
           sparkFormat = rightLit
           strfFormat = DateUtils.tagAndGetCudfFormat(this,
-            sparkFormat, expr.left.dataType == DataTypes.StringType)
+            sparkFormat,
+            expr.left.dataType == DataTypes.StringType,
+            legacyCompatibleFormats = legacyCompatibleFormats,
+            correctedCompatibleFormats = correctedCompatibleFormats)
         case None =>
           willNotWorkOnGpu("format has to be a string literal")
       }
@@ -626,6 +635,10 @@ object GpuToTimestamp {
     "yyyyMMdd HH:mm:ss",
     "yyyyMMdd",
     "yyyymmdd"
+  )
+
+  val LEGACY_FORMATTING_COMPATIBLE_FORMATS = LEGACY_COMPATIBLE_FORMATS ++ Set(
+    "yyyy-MM-dd HH:mm:ss.SSS"
   )
 
   def daysEqual(col: ColumnVector, name: String): ColumnVector = {
@@ -905,6 +918,9 @@ class FromUnixTimeMeta(a: FromUnixTime,
 
   private var colConverter: Option[FmtConverter] = None
 
+  override protected def legacyCompatibleFormats: Set[String] =
+    GpuToTimestamp.LEGACY_FORMATTING_COMPATIBLE_FORMATS
+
   /**
    * More supported formats by post conversions. The idea is
    *  1) Map the unsupported target format to a supported format as
@@ -937,7 +953,10 @@ class FromUnixTimeMeta(a: FromUnixTime,
             inputFormat = Some(tempFormat)
         }
         strfFormat = DateUtils.tagAndGetCudfFormat(this, sparkFormat,
-          a.left.dataType == DataTypes.StringType, inputFormat)
+          a.left.dataType == DataTypes.StringType,
+          inputFormat,
+          legacyCompatibleFormats = legacyCompatibleFormats,
+          correctedCompatibleFormats = correctedCompatibleFormats)
       case None =>
         willNotWorkOnGpu("format has to be a string literal")
     }

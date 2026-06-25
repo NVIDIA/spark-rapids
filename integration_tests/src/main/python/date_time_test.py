@@ -951,6 +951,66 @@ def test_date_format_maybe_incompat_tz_rules(data_gen, date_format):
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
 
 
+@disable_ansi_mode
+@tz_sensitive_test
+def test_date_format_timestamp_millis_legacy_millisecond_format():
+    gen = SetValuesGen(LongType(), [
+        -999,
+        -1,
+        0,
+        1,
+        999,
+        1000,
+        662698800123,
+        685828800999,
+        1704067200123
+    ])
+    conf = {
+        "spark.sql.legacy.timeParserPolicy": "LEGACY",
+        "spark.rapids.sql.incompatibleDateFormats.enabled": "true"
+    }
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen, length=64).selectExpr(
+            "date_format(timestamp_millis(a), 'yyyy-MM-dd HH:mm:ss.SSS')"),
+        conf)
+
+
+@disable_ansi_mode
+@tz_sensitive_test
+def test_from_unixtime_legacy_millisecond_format():
+    gen = SetValuesGen(LongType(), [
+        -1,
+        0,
+        1,
+        662698800,
+        685828800,
+        1704067200
+    ])
+    conf = {
+        "spark.sql.legacy.timeParserPolicy": "LEGACY",
+        "spark.rapids.sql.incompatibleDateFormats.enabled": "true"
+    }
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, gen, length=64).selectExpr(
+            "from_unixtime(a, 'yyyy-MM-dd HH:mm:ss.SSS')"),
+        conf)
+
+
+@disable_ansi_mode
+@allow_non_gpu('ProjectExec')
+def test_to_timestamp_legacy_millisecond_format_still_fallback():
+    conf = {
+        "spark.sql.legacy.timeParserPolicy": "LEGACY",
+        "spark.rapids.sql.incompatibleDateFormats.enabled": "true"
+    }
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame(
+            [("2024-01-01 00:00:00.123",)], "a string")
+            .selectExpr("to_timestamp(a, 'yyyy-MM-dd HH:mm:ss.SSS')"),
+        "GetTimestamp",
+        conf)
+
+
 @disable_ansi_mode  # ANSI mode tested separately.
 # Reproduce conditions for https://github.com/NVIDIA/spark-rapids/issues/5670
 # where we had a failure due to GpuCast canonicalization with timezone.
