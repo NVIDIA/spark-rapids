@@ -2846,6 +2846,34 @@ object GpuOverrides extends Logging {
         }
       }
     ),
+    expr[ArraySort](
+      "Sorts the input array in ascending order with nulls last according to the natural " +
+          "ordering of the elements (the default comparator). A custom comparator, or a nested " +
+          "element type (array or struct), falls back to the CPU",
+      ExprChecks.projectOnly(
+        TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
+        TypeSig.ARRAY.nested(TypeSig.all),
+        Seq(
+          ParamCheck("array",
+            TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.NULL + TypeSig.DECIMAL_128),
+            TypeSig.ARRAY.nested(TypeSig.all)))),
+      (in, conf, p, r) => new ExprMeta[ArraySort](in, conf, p, r) {
+        // Wrap only the array; listSortRows applies the default comparator natively, so the
+        // comparator lambda is excluded from children (neither converted nor type-checked).
+        // This must wrap exactly one child to stay 1:1 with the single ParamCheck above, which
+        // the framework pairs to childExprs positionally.
+        override val childExprs: Seq[BaseExprMeta[_]] =
+          Seq(GpuOverrides.wrapExpr(in.arguments.head, this.conf, Some(this)))
+
+        override def tagExprForGpu(): Unit = {
+          if (!GpuArraySort.isDefaultComparator(in)) {
+            willNotWorkOnGpu("array_sort with a custom comparator function is not supported " +
+                "on the GPU; only the default ordering (ascending, nulls last) is supported")
+          }
+        }
+        override def convertToGpuImpl(): GpuExpression =
+          GpuArraySort(childExprs.head.convertToGpu())
+      }),
     expr[CreateArray](
       "Returns an array with the given elements",
       ExprChecks.projectOnly(

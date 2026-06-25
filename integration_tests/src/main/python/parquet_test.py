@@ -990,21 +990,28 @@ def test_parquet_interleaved_file_splits_partition_value_alignment(
 
     with_cpu_session(setup_table, conf=write_conf)
 
-    parquet_files_by_part = {}
-    for root, _, files in os.walk(data_path):
-        parquet_files = [os.path.join(root, f) for f in files if f.endswith(".parquet")]
-        if parquet_files:
-            parquet_files_by_part[os.path.basename(root)] = parquet_files
+    def parquet_file_info_by_part(spark):
+        rows = spark.read.parquet(data_path).selectExpr(
+            "p",
+            "named_struct('file_path', _metadata.file_path, "
+            "'file_size', _metadata.file_size) AS file_info") \
+            .groupBy("p") \
+            .agg(collect_set("file_info").alias("files")) \
+            .collect()
+        return {
+            f"p={row['p']}": [(file["file_path"], file["file_size"]) for file in row["files"]]
+            for row in rows
+        }
+
+    parquet_files_by_part = with_cpu_session(parquet_file_info_by_part)
 
     assert sorted(parquet_files_by_part.keys()) == ["p=1", "p=2"], \
         f"Expected parquet files under p=1 and p=2, got {parquet_files_by_part}"
     assert len(parquet_files_by_part["p=1"]) == 1, parquet_files_by_part["p=1"]
     assert len(parquet_files_by_part["p=2"]) == 1, parquet_files_by_part["p=2"]
 
-    a_path = parquet_files_by_part["p=1"][0]
-    b_path = parquet_files_by_part["p=2"][0]
-    a_size = os.path.getsize(a_path)
-    b_size = os.path.getsize(b_path)
+    a_path, a_size = parquet_files_by_part["p=1"][0]
+    b_path, b_size = parquet_files_by_part["p=2"][0]
     a_tail = a_size % max_split
     assert a_size > max_split, \
         f"File A ({a_size}) must exceed max_split ({max_split}) to split"
