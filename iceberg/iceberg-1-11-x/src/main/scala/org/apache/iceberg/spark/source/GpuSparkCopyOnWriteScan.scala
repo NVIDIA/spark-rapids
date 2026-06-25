@@ -19,26 +19,26 @@ package org.apache.iceberg.spark.source
 import com.nvidia.spark.rapids.{GpuScan, RapidsConf}
 
 import org.apache.spark.sql.connector.expressions.NamedReference
-import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
-import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.connector.expressions.filter.Predicate
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeV2Filtering}
 
 /**
- * Iceberg 1.9.x copy-on-write scan: {@code SupportsRuntimeFiltering} with
- * {@code filter(Array[Filter])}.
+ * Iceberg 1.11.x copy-on-write scan: {@code SupportsRuntimeV2Filtering} with
+ * {@code filter(Array[Predicate])}.
  */
 class GpuSparkCopyOnWriteScan(
     cpuScanArg: Scan,
     rapidsConfArg: RapidsConf,
     queryUsesInputFileArg: Boolean)
   extends GpuSparkCopyOnWriteScanBase(cpuScanArg, rapidsConfArg, queryUsesInputFileArg)
-  with SupportsRuntimeFiltering {
+  with SupportsRuntimeV2Filtering {
 
-  private def runtimeFilterScan: SupportsRuntimeFiltering =
-    cpuScan.asInstanceOf[SupportsRuntimeFiltering]
+  private def runtimeFilterScan: SupportsRuntimeV2Filtering =
+    cpuScan.asInstanceOf[SupportsRuntimeV2Filtering]
 
   override def filterAttributes(): Array[NamedReference] = runtimeFilterScan.filterAttributes()
 
-  override def filter(filters: Array[Filter]): Unit = runtimeFilterScan.filter(filters)
+  override def filter(predicates: Array[Predicate]): Unit = runtimeFilterScan.filter(predicates)
 
   override def withInputFile(): GpuScan =
     new GpuSparkCopyOnWriteScan(cpuScan, rapidsConf, true)

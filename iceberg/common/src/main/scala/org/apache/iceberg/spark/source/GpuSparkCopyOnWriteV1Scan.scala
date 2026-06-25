@@ -23,10 +23,20 @@ import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeFiltering}
 import org.apache.spark.sql.sources.Filter
 
 /**
- * Iceberg 1.6.x copy-on-write scan: {@code SupportsRuntimeFiltering} with
- * {@code filter(Array[Filter])}.
+ * Copy-on-write scan for the Iceberg versions that expose the V1 runtime-filter
+ * contract: {@code SupportsRuntimeFiltering} with {@code filter(Array[Filter])}.
+ * This covers Iceberg 1.6.x, 1.9.x, and 1.10.x. Iceberg 1.11.x switched to
+ * {@code SupportsRuntimeV2Filtering} with {@code filter(Array[Predicate])} and
+ * therefore ships its own per-version subclass.
+ *
+ * <p>Because this class depends only on the public {@code Scan} +
+ * {@code SupportsRuntimeFiltering} types (Iceberg internals are reached through
+ * the root-loadable {@link GpuSparkScanAccess} bridge in the base class), the V1
+ * path lives once in {@code iceberg/common} and is instantiated by every
+ * V1-version {@code ShimUtilsImpl} via {@link #create}, rather than being copied
+ * per module.
  */
-class GpuSparkCopyOnWriteScan(
+class GpuSparkCopyOnWriteV1Scan(
     cpuScanArg: Scan,
     rapidsConfArg: RapidsConf,
     queryUsesInputFileArg: Boolean)
@@ -41,12 +51,12 @@ class GpuSparkCopyOnWriteScan(
   override def filter(filters: Array[Filter]): Unit = runtimeFilterScan.filter(filters)
 
   override def withInputFile(): GpuScan =
-    new GpuSparkCopyOnWriteScan(cpuScan, rapidsConf, true)
+    new GpuSparkCopyOnWriteV1Scan(cpuScan, rapidsConf, true)
 }
 
-object GpuSparkCopyOnWriteScan {
-  /** Java-callable factory used by {@code ShimUtilsImpl.newCopyOnWriteScan}. */
+object GpuSparkCopyOnWriteV1Scan {
+  /** Java-callable factory used by the 1.6.x / 1.9.x / 1.10.x {@code ShimUtilsImpl}. */
   def create(cpuScan: Scan, rapidsConf: RapidsConf, queryUsesInputFile: Boolean)
       : GpuSparkScan =
-    new GpuSparkCopyOnWriteScan(cpuScan, rapidsConf, queryUsesInputFile)
+    new GpuSparkCopyOnWriteV1Scan(cpuScan, rapidsConf, queryUsesInputFile)
 }
