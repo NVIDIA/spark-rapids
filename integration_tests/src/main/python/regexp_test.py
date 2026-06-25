@@ -460,7 +460,7 @@ def test_regexp_replace():
 # Replacement-string parser must match java.util.regex.Matcher#appendReplacement.
 # Use the DataFrame API rather than selectExpr because Spark SQL variable substitution
 # expands ${...} inside SQL string literals before regexp_replace sees it.
-def test_regexp_replace_subbug1_backslash_digit_is_literal_14742():
+def test_regexp_replace_backslash_digit_is_literal():
     from pyspark.sql.functions import regexp_replace, col
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.createDataFrame([("abc",)], ["a"]).select(
@@ -469,7 +469,7 @@ def test_regexp_replace_subbug1_backslash_digit_is_literal_14742():
 
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
-def test_regexp_replace_subbug2_trailing_backslash_throws_14742():
+def test_regexp_replace_trailing_backslash_throws():
     from pyspark.sql.functions import regexp_replace, col
     assert_gpu_and_cpu_error(
         lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
@@ -479,7 +479,7 @@ def test_regexp_replace_subbug2_trailing_backslash_throws_14742():
 
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
-def test_regexp_replace_subbug3_dollar_non_digit_throws_14742():
+def test_regexp_replace_dollar_non_digit_throws():
     from pyspark.sql.functions import regexp_replace, col
     assert_gpu_and_cpu_error(
         lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
@@ -489,7 +489,7 @@ def test_regexp_replace_subbug3_dollar_non_digit_throws_14742():
 
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
-def test_regexp_replace_subbug4_digit_leading_named_group_throws_14742():
+def test_regexp_replace_digit_leading_named_group_throws():
     from pyspark.sql.functions import regexp_replace, col
     assert_gpu_and_cpu_error(
         lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
@@ -500,13 +500,35 @@ def test_regexp_replace_subbug4_digit_leading_named_group_throws_14742():
 
 
 @allow_non_gpu('ProjectExec', 'RegExpReplace')
-def test_regexp_replace_subbug5_unknown_named_group_throws_14742():
+def test_regexp_replace_unknown_named_group_throws():
     from pyspark.sql.functions import regexp_replace, col
     assert_gpu_and_cpu_error(
         lambda spark: spark.createDataFrame([("a",)], ["a"]).select(
             regexp_replace(col("a"), "(a)", "${name}")).collect(),
         conf=_regexp_conf,
         error_message=_regexp_replace_error_message("No group with name"))
+
+
+# `\$1` -> the backslash escapes the `$`, so the result is the literal text `$1`
+# (java.util.regex.Matcher#appendReplacement semantics). The DataFrame API avoids SQL
+# `${...}` variable substitution; the Python literal "\\$1" is the runtime string `\$1`.
+def test_regexp_replace_escaped_dollar_before_digit_is_literal():
+    from pyspark.sql.functions import regexp_replace, col
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame([("abc",)], ["a"]).select(
+            regexp_replace(col("a"), "(a)", "\\$1")),
+        conf=_regexp_conf)
+
+
+# `\\$1` -> `\\` is an escaped backslash and the following `$1` is a genuine group-1
+# backref, so the result is a literal `\` followed by the captured group. The Python
+# literal "\\\\$1" is the runtime string `\\$1`.
+def test_regexp_replace_double_backslash_before_dollar_is_backref():
+    from pyspark.sql.functions import regexp_replace, col
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame([("abc",)], ["a"]).select(
+            regexp_replace(col("a"), "(a)", "\\\\$1")),
+        conf=_regexp_conf)
 
 
 @pytest.mark.skipif(is_before_spark_320(), reason='regexp is synonym for RLike starting in Spark 3.2.0')

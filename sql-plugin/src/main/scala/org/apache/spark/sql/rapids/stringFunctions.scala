@@ -1122,7 +1122,6 @@ object GpuRegExpUtils {
         // error.
         var j = i + 1
         var n = 0
-        val consumed = new StringBuilder
         var stopped = false
         while (j < rep.length && rep.charAt(j).isDigit && !stopped) {
           val nextN = n * 10 + (rep.charAt(j) - '0')
@@ -1130,11 +1129,10 @@ object GpuRegExpUtils {
             stopped = true
           } else {
             n = nextN
-            consumed.append(rep.charAt(j))
             j += 1
           }
         }
-        if (consumed.nonEmpty) {
+        if (j > i + 1) {
           b.append("${").append(n).append("}")
           i = j
         } else {
@@ -1151,7 +1149,10 @@ object GpuRegExpUtils {
           i = k
         }
       } else if (rep.charAt(i) == '\\' && i + 1 < rep.length) {
-        // Keep `\X` pairs verbatim; `unescapeReplaceString` strips the leading backslash.
+        // Intentionally keep the whole escape sequence (`\` + the next char) together so
+        // `unescapeReplaceString` can strip just the leading backslash. The cases that matter
+        // here are `\$` (escaped dollar -> literal `$`) and `\\` (escaped backslash); any other
+        // `\X` could fall through to the else branch, but keeping the pair together is harmless.
         b.append('\\').append(rep.charAt(i + 1))
         i += 2
       } else {

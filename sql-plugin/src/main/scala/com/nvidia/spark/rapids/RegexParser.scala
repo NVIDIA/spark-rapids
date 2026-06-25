@@ -68,25 +68,29 @@ class RegexParser(pattern: String) {
   def parseReplacement(numCaptureGroups: Int): RegexReplacement = {
     val sequence = RegexReplacement(new ListBuffer(), numCaptureGroups)
     while (!eof()) {
-      parseReplacementBase() match {
-        case RegexSequence(parts) =>
-          sequence.parts ++= parts
-        case other =>
-          sequence.parts += other
-      }
+      sequence.parts ++= parseReplacementBase()
     }
     sequence
   }
 
-  private def parseReplacementBase(): RegexAST = {
-      consume() match {
-        case '\\' =>
-          parseBackrefOrEscaped()
-        case '$' =>
-          parseBackrefOrLiteralDollar()
-        case other =>
-          RegexChar(other)
-      }
+  private def parseReplacementBase(): Seq[RegexAST] = {
+    consume() match {
+      case '\\' =>
+        // `\X` escapes the next char; emit the backslash + char as flat literals so
+        // `unescapeReplaceString` later strips just the backslash (Java appendReplacement
+        // semantics). We must NOT route the next char back through `parseReplacementBase`:
+        // an escaped `$` (e.g. `\$a`) is a literal `$`, whereas the `$` case below would
+        // throw on a following non-digit and mis-handle `\$1`.
+        if (eof()) {
+          // Matches java.util.regex.Matcher's verbatim message; do not recase.
+          throw new RegexUnsupportedException("character to be escaped is missing", Some(pos))
+        }
+        Seq(RegexChar('\\'), RegexChar(consume()))
+      case '$' =>
+        parseBackrefOrLiteralDollar()
+      case other =>
+        Seq(RegexChar(other))
+    }
   }
 
 
@@ -363,17 +367,8 @@ class RegexParser(pattern: String) {
     }
   }
 
-  private def parseBackrefOrEscaped(): RegexAST = {
-    peek() match {
-      case None =>
-        throw new RegexUnsupportedException(
-          "character to be escaped is missing", Some(pos))
-      case Some(_) =>
-        RegexSequence(ListBuffer(RegexChar('\\'), RegexChar(consume())))
-    }
-  }
-
-  private def parseBackrefOrLiteralDollar(): RegexAST = {
+  private def parseBackrefOrLiteralDollar(): Seq[RegexAST] = {
+    val dollarPos = pos - 1   // position of the `$` that begins this reference
     peek() match {
       case Some('{') =>
         consumeExpected('{')
@@ -381,7 +376,7 @@ class RegexParser(pattern: String) {
           case Some(ch) if isAsciiDigit(ch) =>
             throw new RegexUnsupportedException(
               "Illegal group reference: group name starts with digit character",
-              Some(pos))
+              Some(dollarPos))
           case Some(ch) if isLetter(ch) =>
             val nameStart = pos
             while (!eof() && peek().exists(c => isLetter(c) || isAsciiDigit(c))) {
@@ -391,26 +386,26 @@ class RegexParser(pattern: String) {
             if (!peek().contains('}')) {
               throw new RegexUnsupportedException(
                 "Illegal group reference: malformed " + "$" + "{name} reference",
-                Some(pos))
+                Some(dollarPos))
             }
             consumeExpected('}')
             throw new RegexUnsupportedException(
-              s"named-group reference $${$name} is not supported on the GPU",
-              Some(pos))
+              s"Named-group reference $${$name} is not supported on the GPU",
+              Some(dollarPos))
           case _ =>
             throw new RegexUnsupportedException(
               "Illegal group reference: empty or malformed " + "$" + "{name}",
-              Some(pos))
+              Some(dollarPos))
         }
       case Some(ch) if isAsciiDigit(ch) =>
         val parts = ListBuffer[RegexAST](RegexChar('$'))
         while (!eof() && peek().exists(isAsciiDigit)) {
           parts += RegexChar(consume())
         }
-        RegexSequence(parts)
+        parts.toSeq
       case _ =>
         throw new RegexUnsupportedException(
-          "Illegal group reference", Some(pos))
+          "Illegal group reference", Some(dollarPos))
     }
   }
 
@@ -625,7 +620,7 @@ class RegexParser(pattern: String) {
 
   private def consumeInt(): Option[Int] = {
     val start = pos
-    // ASCII only: `substring.toInt` rejects Unicode digit codepoints.
+    // Accept ASCII digits only.
     while (!eof() && peek().exists(isAsciiDigit)) {
       skip()
     }
