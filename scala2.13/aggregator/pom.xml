@@ -150,6 +150,14 @@
                         <relocation>
                             <pattern>com.google</pattern>
                             <shadedPattern>${rapids.shade.package}.com.google</shadedPattern>
+                            <excludes>
+                                <!--
+                                    ORC and Spark expose unshaded protobuf message instances to
+                                    RAPIDS shim code, so protobuf references in RAPIDS classes must
+                                    stay in the original com.google.protobuf namespace.
+                                -->
+                                <exclude>com.google.protobuf.**</exclude>
+                            </excludes>
                         </relocation>
                         <relocation>
                             <pattern>io.grpc</pattern>
