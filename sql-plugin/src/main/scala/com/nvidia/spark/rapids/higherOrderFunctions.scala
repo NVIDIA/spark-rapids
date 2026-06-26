@@ -434,10 +434,13 @@ private[rapids] object GpuArrayHofFusion {
         if (outputColumns(index) == null) {
           groupsByStartIndex.get(index) match {
             case Some(group) =>
-              val transformed = evaluateFusedGroup(batch, group)
-              group.hofs.zip(transformed).foreach {
-                case (HofInProject(outputIndex, _), column) =>
-                  outputColumns(outputIndex) = column
+              val transformed = evaluateFusedGroup(batch, group).toArray[ColumnVector]
+              closeOnExcept(transformed) { _ =>
+                group.hofs.zipWithIndex.foreach {
+                  case (HofInProject(outputIndex, _), transformedIndex) =>
+                    outputColumns(outputIndex) = transformed(transformedIndex)
+                    transformed(transformedIndex) = null
+                }
               }
             case None =>
               outputColumns(index) = boundExprs(index).columnarEval(batch)
