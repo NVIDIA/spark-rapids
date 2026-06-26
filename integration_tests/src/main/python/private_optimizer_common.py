@@ -99,3 +99,28 @@ def assert_rule_fires(fn, on_conf, off_conf, marker, physical=False):
         "marker '%s' present with rule OFF, not a valid discriminator\n%s" % (marker, off_plan)
 
     assert_equal_with_local_sort(cpu_rows, gpu_rows)
+
+
+def assert_rule_skipped(fn, on_conf, off_conf, marker, physical=False, required_on_marker=None):
+    """OFF-rule CPU baseline vs ON-rule GPU run for a runtime-specific no-op path.
+
+    marker must be absent from both plans; results of the OFF-CPU and ON-GPU
+    runs must match. Use this only when the rule is expected to skip itself for
+    a known runtime or plan shape. When provided, required_on_marker must still
+    be present in the ON plan to prove the test reached the expected shape.
+    """
+    cpu_rows, off_plan = with_cpu_session(
+        lambda s: collect_and_plan(s, fn, physical), conf=off_conf)
+    gpu_rows, on_plan = with_gpu_session(
+        lambda s: collect_and_plan(s, fn, physical), conf=on_conf)
+
+    assert marker not in on_plan, \
+        "runtime skip failed: marker '%s' present with rule ON\n%s" % (marker, on_plan)
+    assert marker not in off_plan, \
+        "marker '%s' present with rule OFF, not a valid skipped-path check\n%s" % (
+            marker, off_plan)
+    if required_on_marker:
+        assert required_on_marker in on_plan, \
+            "required marker '%s' missing from rule ON plan\n%s" % (required_on_marker, on_plan)
+
+    assert_equal_with_local_sort(cpu_rows, gpu_rows)
