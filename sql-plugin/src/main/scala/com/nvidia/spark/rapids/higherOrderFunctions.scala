@@ -21,7 +21,8 @@ import scala.collection.mutable
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq,
+  ReallyAGpuExpression}
 import com.nvidia.spark.rapids.jni.GpuMapZipWithUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
 
@@ -510,7 +511,7 @@ private[rapids] object GpuArrayHofFusion {
     }
     val indexes = intermediateIndexes ++
       (lambdaArgStart until sharedBatch.numCols())
-    val columns = indexes.map { index =>
+    val columns = indexes.safeMap { index =>
       sharedBatch.column(index).asInstanceOf[GpuColumnVector].incRefCount()
     }.toArray[ColumnVector]
     new ColumnarBatch(columns, sharedBatch.numRows())
