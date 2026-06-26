@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import ai.rapids.cudf.{DType, HostColumnVector}
 import com.nvidia.spark.rapids.{GpuColumnVector, RapidsHostColumnBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.shims.ShimExpression
+import com.nvidia.spark.rapids.shims.{GpuScalarSubqueryShims, ShimExpression}
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -60,8 +60,9 @@ private case class PreparedSubqueryExpression(
     override val exprId: ExprId,
     value: Int,
     override val plan: BaseSubqueryExec = null)
-    extends ExecSubqueryExpression with LeafLike[Expression] with CodegenFallback {
-  @volatile private var updated = false
+    extends ExecSubqueryExpression with LeafLike[Expression] with CodegenFallback
+    with GpuScalarSubqueryShims {
+  @volatile protected var updated = false
 
   override def nullable: Boolean = false
   override def dataType: DataType = IntegerType
