@@ -235,56 +235,64 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
   protected def makeElementProjectBatch(
       inputBatch: ColumnarBatch,
       argColumn: GpuColumnVector): ColumnarBatch = {
-    assert(argColumn.getBase.getType.equals(DType.LIST))
     assert(isBound, "Trying to execute an un-bound transform expression")
+    GpuArrayTransformBase.makeExplodedElementBatch(
+      inputBatch, argColumn, boundIntermediate, inputToLambda, lambdaArgumentCount)
+  }
+
+}
+
+private[rapids] object GpuArrayTransformBase {
+  private[rapids] def makeExplodedElementBatch(
+      inputBatch: ColumnarBatch,
+      argColumn: GpuColumnVector,
+      intermediate: Seq[GpuExpression],
+      elementTypes: Seq[DataType],
+      lambdaArgumentCount: Int): ColumnarBatch = {
+    assert(argColumn.getBase.getType.equals(DType.LIST))
 
     def projectAndExplode(explodeOp: Table => Table): Table = {
-      withResource(GpuProjectExec.project(inputBatch, boundIntermediate)) {
-        intermediateBatch =>
-          withResource(GpuColumnVector.appendColumns(intermediateBatch, argColumn)) {
-            projectedBatch =>
-              withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
-                explodeOp(projectedTable)
-              }
-          }
+      withResource(GpuProjectExec.project(inputBatch, intermediate)) { intermediateBatch =>
+        withResource(GpuColumnVector.appendColumns(intermediateBatch, argColumn)) {
+          projectedBatch =>
+            withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
+              explodeOp(projectedTable)
+            }
+        }
       }
     }
 
-    if (function.asInstanceOf[GpuLambdaFunction].arguments.length >= 2) {
-      // Need to do an explodePosition
+    if (lambdaArgumentCount >= 2) {
       val explodedTable = projectAndExplode { projectedTable =>
-        projectedTable.explodePosition(boundIntermediate.length)
+        projectedTable.explodePosition(intermediate.length)
       }
       val reorderedTable = withResource(explodedTable) { explodedTable =>
-        // The column order is wrong after an explodePosition. It is
-        // [other_columns*, position, entry]
-        // but we want
-        // [other_columns*, entry, position]
-        // So we have to remap it
-        val cols = new Array[cudf.ColumnVector](explodedTable.getNumberOfColumns)
-        val numOtherColumns = explodedTable.getNumberOfColumns - 2
-        (0 until numOtherColumns).foreach { index =>
-          cols(index) = explodedTable.getColumn(index)
-        }
-        cols(numOtherColumns) = explodedTable.getColumn(numOtherColumns + 1)
-        cols(numOtherColumns + 1) = explodedTable.getColumn(numOtherColumns)
-
-        new cudf.Table(cols: _*)
+        reorderExplodePositionOutput(explodedTable)
       }
       withResource(reorderedTable) { reorderedTable =>
-        GpuColumnVector.from(reorderedTable, inputToLambda.toArray)
+        GpuColumnVector.from(reorderedTable, elementTypes.toArray)
       }
     } else {
-      // Need to do an explode
       val explodedTable = projectAndExplode { projectedTable =>
-        projectedTable.explode(boundIntermediate.length)
+        projectedTable.explode(intermediate.length)
       }
       withResource(explodedTable) { explodedTable =>
-        GpuColumnVector.from(explodedTable, inputToLambda.toArray)
+        GpuColumnVector.from(explodedTable, elementTypes.toArray)
       }
     }
   }
 
+  private def reorderExplodePositionOutput(explodedTable: Table): Table = {
+    val cols = new Array[cudf.ColumnVector](explodedTable.getNumberOfColumns)
+    val numOtherColumns = explodedTable.getNumberOfColumns - 2
+    (0 until numOtherColumns).foreach { index =>
+      cols(index) = explodedTable.getColumn(index)
+    }
+    cols(numOtherColumns) = explodedTable.getColumn(numOtherColumns + 1)
+    cols(numOtherColumns + 1) = explodedTable.getColumn(numOtherColumns)
+
+    new cudf.Table(cols: _*)
+  }
 }
 
 /**
@@ -325,6 +333,17 @@ trait GpuArrayElementWiseTransform extends GpuArrayTransformBase {
 
 private[rapids] object GpuArrayHofFusion {
   private case class HofInProject(index: Int, hof: GpuArrayTransformBase)
+  private case class HofGroup(hofs: Seq[HofInProject]) {
+    val startIndex: Int = hofs.head.index
+    val outputIndexes: Seq[Int] = hofs.map(_.index)
+    lazy val transforms: Seq[GpuArrayTransformBase] = hofs.map(_.hof)
+    lazy val first: GpuArrayTransformBase = transforms.head
+    lazy val unionIntermediate: Seq[GpuExpression] = collectUnionIntermediate(transforms)
+    lazy val elementTypes: Seq[DataType] = {
+      val lambdaArgTypes = first.lambdaInputTypes.drop(first.boundIntermediate.length)
+      unionIntermediate.map(_.dataType) ++ lambdaArgTypes
+    }
+  }
 
   def project(
       batch: ColumnarBatch,
@@ -339,15 +358,15 @@ private[rapids] object GpuArrayHofFusion {
 
   private[rapids] def findFusedGroupIndexes(
       boundExprs: Seq[Expression]): Seq[Seq[Int]] =
-    findFusedGroups(boundExprs).map(_.map(_.index))
+    findFusedGroups(boundExprs).map(_.outputIndexes)
 
   private def findFusedGroups(
-      boundExprs: Seq[Expression]): Seq[Seq[HofInProject]] = {
-    val fusedGroups = mutable.ArrayBuffer[Seq[HofInProject]]()
+      boundExprs: Seq[Expression]): Seq[HofGroup] = {
+    val fusedGroups = mutable.ArrayBuffer[HofGroup]()
     val groups = mutable.ArrayBuffer[mutable.ArrayBuffer[HofInProject]]()
 
     def flushGroups(): Unit = {
-      fusedGroups ++= groups.filter(_.length > 1).map(_.toSeq)
+      fusedGroups ++= groups.filter(_.length > 1).map(g => HofGroup(g.toSeq))
       groups.clear()
     }
 
@@ -406,16 +425,16 @@ private[rapids] object GpuArrayHofFusion {
   private def projectWithFusedGroups(
       batch: ColumnarBatch,
       boundExprs: Seq[Expression],
-      fusedGroups: Seq[Seq[HofInProject]]): ColumnarBatch = {
+      fusedGroups: Seq[HofGroup]): ColumnarBatch = {
     val outputColumns = new Array[ColumnVector](boundExprs.length)
-    val groupsByStartIndex = fusedGroups.map(group => group.head.index -> group).toMap
+    val groupsByStartIndex = fusedGroups.map(group => group.startIndex -> group).toMap
     closeOnExcept(outputColumns) { _ =>
       boundExprs.indices.foreach { index =>
         if (outputColumns(index) == null) {
           groupsByStartIndex.get(index) match {
             case Some(group) =>
-              val transformed = evaluateFusedGroup(batch, group.map(_.hof))
-              group.zip(transformed).foreach {
+              val transformed = evaluateFusedGroup(batch, group)
+              group.hofs.zip(transformed).foreach {
                 case (HofInProject(outputIndex, _), column) =>
                   outputColumns(outputIndex) = column
               }
@@ -430,16 +449,16 @@ private[rapids] object GpuArrayHofFusion {
 
   private def evaluateFusedGroup(
       batch: ColumnarBatch,
-      transforms: Seq[GpuArrayTransformBase]): Seq[GpuColumnVector] = {
-    val first = transforms.head
-    val unionIntermediate = collectUnionIntermediate(transforms)
-    withResource(first.argument.columnarEval(batch)) { arg =>
-      withResource(makeSharedElementBatch(batch, arg, unionIntermediate, first)) { sharedBatch =>
+      group: HofGroup): Seq[GpuColumnVector] = {
+    withResource(group.first.argument.columnarEval(batch)) { arg =>
+      withResource(GpuArrayTransformBase.makeExplodedElementBatch(
+          batch, arg, group.unionIntermediate, group.elementTypes,
+          group.first.lambdaArgumentCount)) { sharedBatch =>
         val output = mutable.ArrayBuffer[GpuColumnVector]()
         closeOnExcept(output) { _ =>
-          transforms.foreach { transform =>
-            val dataCol = withResource(makeTransformLambdaBatch(sharedBatch, unionIntermediate,
-                transform)) { lambdaBatch =>
+          group.transforms.foreach { transform =>
+            val dataCol = withResource(makeTransformLambdaBatch(sharedBatch, group, transform)) {
+              lambdaBatch =>
               transform.function.columnarEval(lambdaBatch)
             }
             withResource(dataCol) { _ =>
@@ -479,62 +498,13 @@ private[rapids] object GpuArrayHofFusion {
     unionIntermediate.toSeq
   }
 
-  private def makeSharedElementBatch(
-      inputBatch: ColumnarBatch,
-      argColumn: GpuColumnVector,
-      unionIntermediate: Seq[GpuExpression],
-      firstTransform: GpuArrayTransformBase): ColumnarBatch = {
-    assert(argColumn.getBase.getType.equals(DType.LIST))
-
-    def projectAndExplode(explodeOp: Table => Table): Table = {
-      withResource(GpuProjectExec.project(inputBatch, unionIntermediate)) { intermediateBatch =>
-        withResource(GpuColumnVector.appendColumns(
-            intermediateBatch, argColumn)) { projectedBatch =>
-          withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
-            explodeOp(projectedTable)
-          }
-        }
-      }
-    }
-
-    val lambdaArgTypes =
-      firstTransform.lambdaInputTypes.drop(firstTransform.boundIntermediate.length)
-    val elementTypes = unionIntermediate.map(_.dataType) ++ lambdaArgTypes
-    if (firstTransform.lambdaArgumentCount >= 2) {
-      val explodedTable = projectAndExplode { projectedTable =>
-        projectedTable.explodePosition(unionIntermediate.length)
-      }
-      val reorderedTable = withResource(explodedTable) { explodedTable =>
-        val cols = new Array[cudf.ColumnVector](explodedTable.getNumberOfColumns)
-        val numOtherColumns = explodedTable.getNumberOfColumns - 2
-        (0 until numOtherColumns).foreach { index =>
-          cols(index) = explodedTable.getColumn(index)
-        }
-        cols(numOtherColumns) = explodedTable.getColumn(numOtherColumns + 1)
-        cols(numOtherColumns + 1) = explodedTable.getColumn(numOtherColumns)
-
-        new cudf.Table(cols: _*)
-      }
-      withResource(reorderedTable) { reorderedTable =>
-        GpuColumnVector.from(reorderedTable, elementTypes.toArray)
-      }
-    } else {
-      val explodedTable = projectAndExplode { projectedTable =>
-        projectedTable.explode(unionIntermediate.length)
-      }
-      withResource(explodedTable) { explodedTable =>
-        GpuColumnVector.from(explodedTable, elementTypes.toArray)
-      }
-    }
-  }
-
   private def makeTransformLambdaBatch(
       sharedBatch: ColumnarBatch,
-      unionIntermediate: Seq[GpuExpression],
+      group: HofGroup,
       transform: GpuArrayTransformBase): ColumnarBatch = {
-    val lambdaArgStart = unionIntermediate.length
+    val lambdaArgStart = group.unionIntermediate.length
     val intermediateIndexes = transform.boundIntermediate.map { expr =>
-      val index = unionIntermediate.indexWhere(_.semanticEquals(expr))
+      val index = group.unionIntermediate.indexWhere(_.semanticEquals(expr))
       assert(index >= 0, s"Missing shared transform intermediate: $expr")
       index
     }
