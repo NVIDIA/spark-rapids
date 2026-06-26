@@ -21,10 +21,12 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import ai.rapids.cudf.{DType, HostColumnVector}
 import com.nvidia.spark.rapids.{GpuColumnVector, RapidsHostColumnBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.shims.ShimExpression
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, ExprId, LeafExpression, Literal, ScalaUDF}
+import org.apache.spark.sql.catalyst.expressions.{BoundReference, Expression, ExprId, LeafExpression,
+  Literal, NamedExpression, NamedLambdaVariable, ScalaUDF}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.trees.LeafLike
 import org.apache.spark.sql.catalyst.util.{ArrayBasedMapData, GenericArrayData}
@@ -85,6 +87,22 @@ private case class ConstructorSubqueryExpression(subquery: ExecSubqueryExpressio
   override def eval(input: InternalRow): Any = subquery.eval(input)
 }
 
+private case class LambdaVariableReferenceTrackingExpression(
+    first: NamedLambdaVariable,
+    second: NamedLambdaVariable,
+    seenValueIds: ConcurrentLinkedQueue[Int])
+    extends ShimExpression with CodegenFallback {
+  override def nullable: Boolean = false
+  override def dataType: DataType = IntegerType
+  override def children: Seq[Expression] = Seq(first, second)
+
+  override def eval(input: InternalRow): Any = {
+    seenValueIds.add(System.identityHashCode(first.value))
+    seenValueIds.add(System.identityHashCode(second.value))
+    11
+  }
+}
+
 /**
  * Test suite for BridgeHostColumnProjection to verify it correctly writes
  * various data types directly to RapidsHostColumnBuilder.
@@ -107,6 +125,31 @@ class BridgeHostColumnProjectionSuite extends AnyFunSuite {
 
     assert(seenIds.size() == 1)
     assert(seenIds.peek() != originalId)
+  }
+
+  test("projection refreshes lambda variable references") {
+    val seenIds = new ConcurrentLinkedQueue[Int]()
+    val variable = NamedLambdaVariable("x", IntegerType, nullable = false,
+      exprId = NamedExpression.newExprId)
+    val sameExprIdReference = variable.copy()
+    val originalValueId = System.identityHashCode(variable.value)
+    val expr = LambdaVariableReferenceTrackingExpression(variable, sameExprIdReference, seenIds)
+    val projection = BridgeHostColumnProjection.create(Seq(expr))
+
+    val resultType = GpuColumnVector.convertFrom(IntegerType, false)
+    withResource(new RapidsHostColumnBuilder(resultType, 1)) { builder =>
+      projection.apply(Iterator(InternalRow.empty), Array(builder))
+      withResource(builder.build()) { result =>
+        assert(result.getInt(0) == 11)
+      }
+    }
+
+    assert(seenIds.size() == 2)
+    val seen = seenIds.iterator()
+    val firstValueId = seen.next()
+    val secondValueId = seen.next()
+    assert(firstValueId == secondValueId)
+    assert(firstValueId != originalValueId)
   }
 
   test("projection preserves prepared subquery state") {
@@ -1570,4 +1613,3 @@ class BridgeHostColumnProjectionSuite extends AnyFunSuite {
     }
   }
 }
-

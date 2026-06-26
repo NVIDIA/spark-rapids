@@ -17,10 +17,12 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "340"}
 {"spark": "341"}
+{"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
 {"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
@@ -29,13 +31,19 @@
 {"spark": "356"}
 {"spark": "357"}
 {"spark": "358"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids
 
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, LeafExpression}
+import org.apache.spark.sql.catalyst.expressions.{CreateArray, CreateMap, Expression,
+  LeafExpression, Literal, MapFromArrays}
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.types.{DataType, LongType}
 
@@ -60,6 +68,15 @@ class GpuCpuBridgeStatefulUnitSuite extends AnyFunSuite {
     meta
   }
 
+  private def assertCanUseCpuBridge(expr: Expression): Unit = {
+    val meta = wrap(expr)
+    meta.willNotWorkOnGpu("disabled for test")
+
+    assert(meta.canMoveToCpuBridge)
+    GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(Seq(meta))
+    assert(meta.willUseGpuCpuBridge)
+  }
+
   test("stateful expressions are not CPU bridge compatible") {
     val meta = wrap(DeterministicStatefulExpression())
     meta.willNotWorkOnGpu("disabled for test")
@@ -67,5 +84,13 @@ class GpuCpuBridgeStatefulUnitSuite extends AnyFunSuite {
     assert(!meta.canMoveToCpuBridge)
     GpuCpuBridgeOptimizer.checkAndOptimizeExpressionMetas(Seq(meta))
     assert(!meta.willUseGpuCpuBridge)
+  }
+
+  test("deterministic map builders can use CPU bridge") {
+    assertCanUseCpuBridge(CreateMap(Seq(Literal(1), Literal(2)),
+      useStringTypeWhenEmpty = false))
+    assertCanUseCpuBridge(MapFromArrays(
+      CreateArray(Seq(Literal(1)), useStringTypeWhenEmpty = false),
+      CreateArray(Seq(Literal(2)), useStringTypeWhenEmpty = false)))
   }
 }

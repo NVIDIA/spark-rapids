@@ -218,8 +218,17 @@ object BridgeHostColumnProjection
       expr.makeCopy(copiedArgs)
   }
 
+  private def refreshLambdaVariables(expr: Expression): Expression = {
+    val variables = scala.collection.mutable.HashMap.empty[ExprId, NamedLambdaVariable]
+    expr.transformUp {
+      case variable: NamedLambdaVariable =>
+        variables.getOrElseUpdate(variable.exprId,
+          variable.newInstance().asInstanceOf[NamedLambdaVariable])
+    }
+  }
+
   private def cloneForBridge(expr: Expression): Expression = {
-    cloneExpressionPreservingSubqueries(expr).transformUp {
+    refreshLambdaVariables(cloneExpressionPreservingSubqueries(expr)).transformUp {
       case udf: ScalaUDF => udf.copy(function = cloneFunction(udf.function))
     }
   }

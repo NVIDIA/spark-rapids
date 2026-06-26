@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.GpuOverrides.pluginSupportedOrderableSig
 
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.catalyst.expressions.objects.{ExternalMapToCatalyst, InvokeLike}
 import org.apache.spark.sql.catalyst.plans.physical.SinglePartition
 import org.apache.spark.sql.execution._
 import org.apache.spark.sql.execution.adaptive._
@@ -37,10 +38,15 @@ import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.StringType
 
 trait Spark341PlusDBShims extends Spark332PlusDBShims {
-  override def isExpressionStateful(expr: Expression): Boolean = {
-    // ScalaUDF marks stateful because it carries mutable encoder/interpreter scratch state. The
-    // CPU bridge clones the UDF expression and function per worker projection, so keep it eligible.
-    expr.stateful && !expr.isInstanceOf[ScalaUDF]
+  private def isBridgeCloneSafeStatefulExpression(expr: Expression): Boolean = expr match {
+    case _: ScalaUDF | _: CreateMap | _: MapFromArrays | _: MapConcat |
+        _: MapFromEntries | _: StringToMap => true
+    case _ => false
+  }
+
+  override def isExpressionStateful(expr: Expression): Boolean = expr match {
+    case _: InvokeLike | _: ExternalMapToCatalyst => true
+    case _ => expr.stateful && !isBridgeCloneSafeStatefulExpression(expr)
   }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {

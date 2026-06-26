@@ -60,6 +60,18 @@ def test_cpu_bridge_add_fallback():
     conf = create_cpu_bridge_fallback_conf(['Add'])
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
+
+@allow_non_gpu('Add')
+def test_cpu_bridge_add_large_batch_parallel_path():
+    def test_func(spark):
+        return spark.range(0, 500001, 1, 1) \
+            .selectExpr("id + 1 as bridged") \
+            .agg(f.sum("bridged"))
+
+    conf = create_cpu_bridge_fallback_conf(['Add'])
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        test_func, exist_classes="GpuCpuBridgeExpression", conf=conf)
+
 # Only include Multiply and Boundreference Expressions to verify that the CPU bridge is working
 # as expected.
 @allow_non_gpu('Multiply')
