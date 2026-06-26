@@ -402,10 +402,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
   var sparkFormat: String = _
   var strfFormat: String = _
 
-  protected def legacyCompatibleFormats: Set[String] = GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS
-
-  protected def correctedCompatibleFormats: Set[String] =
-    GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS
+  protected def allowLegacyFormattingOnlyFormats: Boolean = false
 
   override def tagExprForGpu(): Unit = {
     // Date and Timestamp work too
@@ -416,8 +413,7 @@ abstract class UnixTimeExprMeta[A <: BinaryExpression with TimeZoneAwareExpressi
           strfFormat = DateUtils.tagAndGetCudfFormat(this,
             sparkFormat,
             expr.left.dataType == DataTypes.StringType,
-            legacyCompatibleFormats = legacyCompatibleFormats,
-            correctedCompatibleFormats = correctedCompatibleFormats)
+            allowLegacyFormattingOnlyFormats = allowLegacyFormattingOnlyFormats)
         case None =>
           willNotWorkOnGpu("format has to be a string literal")
       }
@@ -918,8 +914,7 @@ class FromUnixTimeMeta(a: FromUnixTime,
 
   private var colConverter: Option[FmtConverter] = None
 
-  override protected def legacyCompatibleFormats: Set[String] =
-    GpuToTimestamp.LEGACY_FORMATTING_COMPATIBLE_FORMATS
+  override protected def allowLegacyFormattingOnlyFormats: Boolean = true
 
   /**
    * More supported formats by post conversions. The idea is
@@ -955,8 +950,7 @@ class FromUnixTimeMeta(a: FromUnixTime,
         strfFormat = DateUtils.tagAndGetCudfFormat(this, sparkFormat,
           a.left.dataType == DataTypes.StringType,
           inputFormat,
-          legacyCompatibleFormats = legacyCompatibleFormats,
-          correctedCompatibleFormats = correctedCompatibleFormats)
+          allowLegacyFormattingOnlyFormats = allowLegacyFormattingOnlyFormats)
       case None =>
         willNotWorkOnGpu("format has to be a string literal")
     }

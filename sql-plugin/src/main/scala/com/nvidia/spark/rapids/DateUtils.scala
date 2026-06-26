@@ -221,10 +221,13 @@ object DateUtils {
       sparkFormat: String,
       parseString: Boolean,
       inputFormat: Option[String] = None,
-      legacyCompatibleFormats: Set[String] = GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS,
-      correctedCompatibleFormats: Set[String] =
-        GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS): String = {
+      allowLegacyFormattingOnlyFormats: Boolean = false): String = {
     val formatToConvert = inputFormat.getOrElse(sparkFormat)
+    val legacyCompatibleFormats = if (allowLegacyFormattingOnlyFormats) {
+      GpuToTimestamp.LEGACY_FORMATTING_COMPATIBLE_FORMATS
+    } else {
+      GpuToTimestamp.LEGACY_COMPATIBLE_FORMATS
+    }
     var strfFormat: String = null
     if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy) {
       try {
@@ -258,7 +261,7 @@ object DateUtils {
         // the format contains unsupported characters or words
         strfFormat = toStrf(formatToConvert, parseString)
         // format parsed ok, so it is either compatible (tested/certified) or incompatible
-        if (!correctedCompatibleFormats.contains(formatToConvert) &&
+        if (!GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS.contains(formatToConvert) &&
           !meta.conf.incompatDateFormats) {
           meta.willNotWorkOnGpu(s"CORRECTED format '$sparkFormat' on the GPU is not guaranteed " +
             s"to produce the same results as Spark on CPU. Set " +
