@@ -957,6 +957,7 @@ def test_date_format_maybe_incompat_tz_rules(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)), conf)
 
+
 @disable_ansi_mode  # ANSI mode tested separately.
 # Reproduce conditions for https://github.com/NVIDIA/spark-rapids/issues/5670
 # where we had a failure due to GpuCast canonicalization with timezone.
