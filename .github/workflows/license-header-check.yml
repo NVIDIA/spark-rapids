@@ -53,9 +53,9 @@ jobs:
             *Jenkinsfile*,
             *.ini,
             *.java,
-            *.fbs
+            *.fbs,
+            skills/*/SKILL.md
           excluded_file_patterns: |
             *target/*,
             thirdparty/*,
             sql-plugin/src/main/java/com/nvidia/spark/rapids/format/*
- 
