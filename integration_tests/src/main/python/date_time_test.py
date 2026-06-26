@@ -954,7 +954,11 @@ def test_date_format_maybe_incompat_tz_rules(data_gen, date_format):
 @disable_ansi_mode
 @tz_sensitive_test
 def test_date_format_timestamp_millis_legacy_millisecond_format():
-    gen = SetValuesGen(LongType(), [
+    start_millis = int(datetime(1900, 1, 1, tzinfo=timezone.utc).timestamp()) * 1000
+    end_millis = int(datetime(2200, 12, 30, tzinfo=timezone.utc).timestamp()) * 1000
+    gen = LongGen(min_val=start_millis, max_val=end_millis, special_cases=[
+        start_millis,
+        end_millis,
         -999,
         -1,
         0,
@@ -970,7 +974,7 @@ def test_date_format_timestamp_millis_legacy_millisecond_format():
         "spark.rapids.sql.incompatibleDateFormats.enabled": "true"
     }
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen, length=64).selectExpr(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
             "date_format(timestamp_millis(a), 'yyyy-MM-dd HH:mm:ss.SSS')"),
         conf)
 
@@ -978,7 +982,11 @@ def test_date_format_timestamp_millis_legacy_millisecond_format():
 @disable_ansi_mode
 @tz_sensitive_test
 def test_from_unixtime_legacy_millisecond_format():
-    gen = SetValuesGen(LongType(), [
+    start_seconds = int(datetime(1900, 1, 1, tzinfo=timezone.utc).timestamp())
+    end_seconds = int(datetime(2200, 12, 30, tzinfo=timezone.utc).timestamp())
+    gen = LongGen(min_val=start_seconds, max_val=end_seconds, special_cases=[
+        start_seconds,
+        end_seconds,
         -1,
         0,
         1,
@@ -991,7 +999,7 @@ def test_from_unixtime_legacy_millisecond_format():
         "spark.rapids.sql.incompatibleDateFormats.enabled": "true"
     }
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: unary_op_df(spark, gen, length=64).selectExpr(
+        lambda spark: unary_op_df(spark, gen).selectExpr(
             "from_unixtime(a, 'yyyy-MM-dd HH:mm:ss.SSS')"),
         conf)
 
