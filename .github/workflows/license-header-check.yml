@@ -54,7 +54,7 @@ jobs:
             *.ini,
             *.java,
             *.fbs,
-            skills/*/SKILL.md
+            skills/*
           excluded_file_patterns: |
             *target/*,
             thirdparty/*,
