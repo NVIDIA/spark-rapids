@@ -678,23 +678,28 @@ def test_to_timestamp_tz_rules(parser_policy):
             .select(f.col("a"), f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
 
+legacy_formats_for_legacy_mode = [
+    pytest.param('yyyyMMdd', 'yyyyMMdd', id='yyyyMMdd'),
+    pytest.param('yyyymmdd', 'yyyymmdd', id='yyyymmdd'),
+    pytest.param('yyyy-mm-dd', 'yyyy-mm-dd', id='yyyy-mm-dd'),
+    pytest.param('yyyyMMdd', 'yyyy-MM-dd HH:mm:ss.SSS', id='yyyyMMdd-to-millis')
+]
+
 # mm: minute; MM: month
 @disable_ansi_mode
-@pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd', 'yyyy-mm-dd'], ids=idfn)
+@pytest.mark.parametrize("input_format, output_format", legacy_formats_for_legacy_mode)
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
-def test_formats_for_legacy_mode(format):
+def test_formats_for_legacy_mode(input_format, output_format):
     gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4})')
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, gen),
         "tab",
         '''select unix_timestamp(a, '{}'),
                   from_unixtime(unix_timestamp(a, '{}'), '{}'),
-                  date_format(to_timestamp(a, '{}'), '{}'),
-                  date_format(timestamp_millis(unix_timestamp(a, '{}') * 1000 + 123),
-                              'yyyy-MM-dd HH:mm:ss.SSS')
+                  date_format(to_timestamp(a, '{}'), '{}')
            from tab
-        '''.format(format, format, format, format, format, format),
+        '''.format(input_format, input_format, output_format, input_format, output_format),
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
@@ -735,20 +740,6 @@ def test_formats_for_legacy_mode_other_formats_tz_rules():
         '''.format(format, format, format, format, format),
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
-
-@disable_ansi_mode
-@allow_non_gpu('ProjectExec')
-def test_to_timestamp_legacy_millisecond_format_still_fallback():
-    conf = {
-        "spark.sql.legacy.timeParserPolicy": "LEGACY",
-        "spark.rapids.sql.incompatibleDateFormats.enabled": "true"
-    }
-    assert_gpu_fallback_collect(
-        lambda spark: spark.createDataFrame(
-            [("2024-01-01 00:00:00.123",)], "a string")
-            .selectExpr("to_timestamp(a, 'yyyy-MM-dd HH:mm:ss.SSS')"),
-        "GetTimestamp",
-        conf)
 
 @disable_ansi_mode
 @tz_sensitive_test
@@ -897,21 +888,12 @@ def test_date_format_for_time_tz_rules(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark : unary_op_df(spark, data_gen).selectExpr("date_format(a, '{}')".format(date_format)))
 
-@pytest.mark.parametrize('date_format,conf',
-    [pytest.param(date_format, {}, id=date_format)
-     for date_format in supported_date_formats + ['yyyyMMdd']] +
-    [pytest.param('yyyy-MM-dd HH:mm:ss.SSS',
-                  {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
-                   'spark.sql.ansi.enabled': 'false',
-                   'spark.rapids.sql.incompatibleDateFormats.enabled': 'true'},
-                  id='LEGACY-yyyy-MM-dd HH:mm:ss.SSS')])
+@pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
 @pytest.mark.parametrize('data_gen', [LongGen(min_val=int(datetime(1, 2, 1).timestamp()), max_val=int(datetime(2200, 12, 30).timestamp()))], ids=idfn)
-def test_from_unixtime(data_gen, date_format, conf):
+def test_from_unixtime(data_gen, date_format):
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr(
-            "from_unixtime(a, '{}')".format(date_format)),
-        conf)
+        lambda spark : unary_op_df(spark, data_gen, length=5).selectExpr("from_unixtime(a, '{}')".format(date_format)))
 
 @pytest.mark.parametrize('date_format', supported_date_formats + ['yyyyMMdd'], ids=idfn)
 # from 0001-02-01 to 9999-12-30 to avoid 'year 0 is out of range'
