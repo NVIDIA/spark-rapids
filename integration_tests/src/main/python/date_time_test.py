@@ -695,11 +695,11 @@ def test_formats_for_legacy_mode(input_format, output_format):
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, gen),
         "tab",
-        '''select unix_timestamp(a, '{}'),
-                  from_unixtime(unix_timestamp(a, '{}'), '{}'),
-                  date_format(to_timestamp(a, '{}'), '{}')
+        '''select unix_timestamp(a, '{input_format}'),
+                  from_unixtime(unix_timestamp(a, '{input_format}'), '{output_format}'),
+                  date_format(to_timestamp(a, '{input_format}'), '{output_format}')
            from tab
-        '''.format(input_format, input_format, output_format, input_format, output_format),
+        '''.format(input_format=input_format, output_format=output_format),
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
