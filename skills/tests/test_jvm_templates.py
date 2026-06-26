@@ -39,7 +39,7 @@ def _unit_test_methods(lang: str) -> dict[str, str]:
             fx.SCALA_REGISTER_UDF if lang == "scala" else fx.JAVA_REGISTER_UDF
         ),
         "executeUDF": fx.EXECUTE_UDF,
-        "verifyUDFResults": fx.VERIFY_UDF_RESULTS,
+        "assertUDFResults": fx.ASSERT_UDF_RESULTS,
     }
 
 

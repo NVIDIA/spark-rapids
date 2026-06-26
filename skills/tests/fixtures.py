@@ -55,8 +55,8 @@ EXECUTE_UDF = """\
     spark.sql(s"SELECT *, $udfName(value) AS result FROM test_table")
   }"""
 
-VERIFY_UDF_RESULTS = """\
-  def verifyUDFResults(resultDF: DataFrame, testDF: DataFrame): Unit = {
+ASSERT_UDF_RESULTS = """\
+  def assertUDFResults(resultDF: DataFrame, testDF: DataFrame): Unit = {
     val results = resultDF.collect().sortBy(_.getAs[Int]("id"))
     assert(results(0).getAs[Int]("result") === 246)
     assert(results(1).getAs[Int]("result") === 0)
@@ -191,9 +191,9 @@ MICRO_EXECUTE_JAVA_CPU = _MICRO_EXECUTE_CPU_METHOD.format(
 
 
 _MICRO_EXECUTE_GPU_METHOD = """\
-  def executeGpu(table: Table, numRows: Int): ColumnVector = {{
+  def executeGpu(table: Table, numRows: Int): Unit = {{
     val udf = new com.udf.{cls}()
-    udf.evaluateColumnar(numRows, table.getColumn(1))
+    withResource(udf.evaluateColumnar(numRows, table.getColumn(1))) {{ _ => }}
   }}"""
 
 MICRO_EXECUTE_CUDF = _MICRO_EXECUTE_GPU_METHOD.format(cls=RAPIDS_UDF_NAME)
