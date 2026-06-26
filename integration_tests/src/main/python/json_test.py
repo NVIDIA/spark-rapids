@@ -1256,7 +1256,7 @@ def test_structs_to_json_timestamp(data_gen, timestamp_format, timezone):
         lambda spark : struct_to_json(spark),
         conf=conf)
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StructsToJson')
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @pytest.mark.parametrize('timezone', ['UTC+07:00'])
 def test_structs_to_json_fallback_timezone(data_gen, timezone):
@@ -1281,10 +1281,10 @@ def test_structs_to_json_fallback_timezone(data_gen, timezone):
 
     assert_gpu_fallback_collect(
         lambda spark : struct_to_json(spark),
-        'ProjectExec',
+        'StructsToJson',
         conf=conf)
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StructsToJson')
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @pytest.mark.parametrize('timezone', ['UTC+07:00'])
 def test_structs_to_json_fallback_explicit_timezone(data_gen, timezone):
@@ -1307,10 +1307,10 @@ def test_structs_to_json_fallback_explicit_timezone(data_gen, timezone):
 
     assert_gpu_fallback_collect(
         lambda spark : struct_to_json(spark),
-        'ProjectExec',
+        'StructsToJson',
         conf=conf)
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StructsToJson')
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 def test_structs_to_json_fallback_analyzed_non_utc_timezone(data_gen):
     struct_gen = StructGen([
@@ -1333,10 +1333,10 @@ def test_structs_to_json_fallback_analyzed_non_utc_timezone(data_gen):
 
     assert_gpu_fallback_collect(
         lambda spark : struct_to_json(spark),
-        'ProjectExec',
+        'StructsToJson',
         conf=conf)
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StructsToJson')
 @pytest.mark.parametrize('data_gen', [date_gen, timestamp_gen], ids=idfn)
 def test_structs_to_json_fallback_legacy(data_gen):
     struct_gen = StructGen([
@@ -1354,10 +1354,10 @@ def test_structs_to_json_fallback_legacy(data_gen):
 
     assert_gpu_fallback_collect(
         lambda spark : struct_to_json(spark),
-        'ProjectExec',
+        'StructsToJson',
         conf=conf)
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StructsToJson')
 @pytest.mark.parametrize('data_gen', [date_gen], ids=idfn)
 @pytest.mark.parametrize('timezone', ['UTC'])
 @pytest.mark.parametrize('date_format', [
@@ -1383,10 +1383,10 @@ def test_structs_to_json_fallback_date_formats(data_gen, timezone, date_format):
 
     assert_gpu_fallback_collect(
         lambda spark : struct_to_json(spark),
-        'ProjectExec',
+        'StructsToJson',
         conf=conf)
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StructsToJson')
 @pytest.mark.parametrize('data_gen', [timestamp_gen], ids=idfn)
 @pytest.mark.parametrize('timezone', ['UTC'])
 @pytest.mark.parametrize('timestamp_format', [
@@ -1412,11 +1412,11 @@ def test_structs_to_json_fallback_timestamp_formats(data_gen, timezone, timestam
 
     assert_gpu_fallback_collect(
         lambda spark : struct_to_json(spark),
-        'ProjectExec',
+        'StructsToJson',
         conf=conf)
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StructsToJson')
 def test_structs_to_json_fallback_pretty():
     struct_gen = StructGen([
         ('a', long_gen),
@@ -1436,7 +1436,7 @@ def test_structs_to_json_fallback_pretty():
 
     assert_gpu_fallback_collect(
         lambda spark : struct_to_json(spark),
-        'ProjectExec',
+        'StructsToJson',
         conf=conf)
 
 #####################################################
