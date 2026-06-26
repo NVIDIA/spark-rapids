@@ -742,6 +742,20 @@ def test_formats_for_legacy_mode_other_formats_tz_rules():
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
 @disable_ansi_mode
+@allow_non_gpu('ProjectExec')
+def test_to_timestamp_legacy_millisecond_format_fallback():
+    conf = {
+        'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+        'spark.rapids.sql.incompatibleDateFormats.enabled': True
+    }
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame(
+            [('2024-01-01 00:00:00.123',)], 'a string')
+            .selectExpr("to_timestamp(a, 'yyyy-MM-dd HH:mm:ss.SSS')"),
+        'GetTimestamp',
+        conf)
+
+@disable_ansi_mode
 @tz_sensitive_test
 @pytest.mark.parametrize("input_str", [
     "1999-12-31 11:59:59",
