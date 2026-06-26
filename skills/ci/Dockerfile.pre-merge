@@ -41,8 +41,7 @@ RUN dnf --enablerepo=powertools install -y \
   zlib-devel && \
   alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 100 && \
   alternatives --set python3 /usr/bin/python${PYTHON_VERSION} && \
-  alternatives --install /usr/bin/python python /usr/bin/python${PYTHON_VERSION} 100 && \
-  alternatives --set python /usr/bin/python${PYTHON_VERSION} && \
+  ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
   dnf clean all
 
 RUN cd /usr/local && \
