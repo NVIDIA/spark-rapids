@@ -178,77 +178,54 @@ def test_array_aggregate_with_filter_and_split():
 
 @disable_ansi_mode
 def test_array_aggregate_filtered_struct_with_nested_array_children():
-    def do_it(spark):
-        data = [
-            ([(1, 10, [1, 2], ["a"]), (2, 20, [3], ["b"])],),
-            ([(1, 30, [], []), (1, 40, [4, 5], ["c", "d"])],),
-            ([],),
-            (None,)
-        ]
-        schema = """
-            a array<struct<
-              product_id:int,
-              score:int,
-              nums:array<int>,
-              labels:array<string>>>
-        """
-        return spark.createDataFrame(data, schema).selectExpr("""
-            aggregate(
-              filter(a, ad -> ad.product_id = 1),
-              0L,
-              (acc, ad) -> acc + CAST(ad.score AS BIGINT),
-              id -> id
-            ) as total_score""")
-    assert_gpu_and_cpu_are_equal_collect(do_it)
+    element_gen = StructGen([
+        ('product_id', IntegerGen(nullable=False, min_val=0, max_val=2, special_cases=[0, 1, 2])),
+        ('score', IntegerGen(nullable=False, min_val=-100, max_val=100)),
+        ('nums', ArrayGen(IntegerGen(nullable=False), max_length=5, nullable=False)),
+        ('labels', ArrayGen(StringGen('[a-z]{1,3}', nullable=False),
+            max_length=5, nullable=False))
+    ], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(element_gen, max_length=8)).selectExpr(
+            '''aggregate(
+                 filter(a, ad -> ad.product_id = 1),
+                 0L,
+                 (acc, ad) -> acc + CAST(ad.score AS BIGINT),
+                 id -> id) as total_score'''))
 
 
 @disable_ansi_mode
 def test_array_aggregate_filtered_struct_with_nested_map_children():
-    def do_it(spark):
-        data = [
-            ([(1, 10, {"a": 1, "b": 2}), (2, 20, {"c": 3})],),
-            ([(1, 30, {}), (1, 40, {"d": 4, "e": 5})],),
-            ([],),
-            (None,)
-        ]
-        schema = """
-            a array<struct<
-              product_id:int,
-              score:int,
-              attrs:map<string,int>>>
-        """
-        return spark.createDataFrame(data, schema).selectExpr("""
-            aggregate(
-              filter(a, ad -> ad.product_id = 1),
-              0L,
-              (acc, ad) -> acc + (CAST(ad.score AS BIGINT) + CAST(size(ad.attrs) AS BIGINT)),
-              id -> id
-            ) as score_and_attr_count""")
-    assert_gpu_and_cpu_are_equal_collect(do_it)
+    element_gen = StructGen([
+        ('product_id', IntegerGen(nullable=False, min_val=0, max_val=2, special_cases=[0, 1, 2])),
+        ('score', IntegerGen(nullable=False, min_val=-100, max_val=100)),
+        ('attrs', MapGen(StringGen('key_[0-9]', nullable=False),
+            IntegerGen(nullable=False), max_length=5, nullable=False))
+    ], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(element_gen, max_length=8)).selectExpr(
+            '''aggregate(
+                 filter(a, ad -> ad.product_id = 1),
+                 0L,
+                 (acc, ad) -> acc +
+                   (CAST(ad.score AS BIGINT) + CAST(size(ad.attrs) AS BIGINT)),
+                 id -> id) as score_and_attr_count'''))
 
 
 @disable_ansi_mode
 def test_array_aggregate_nested_filter_and_aggregate_over_struct_array_field():
-    def do_it(spark):
-        data = [
-            ([
-                (1, (["10\tfoo\tIGN_ZTC_CPA_CPC", "20\tbar\tMISS"],), [1, 2]),
-                (2, (["30\tbaz\tIGN_ZTC_CPA_CPC"],), [3])
-            ],),
-            ([
-                (1, (["5\tfoo\t-", "", "7\tbar\tIGN_ZTC_CPA_CPC"],), []),
-                (1, ([],), [4, 5])
-            ],),
-            ([],),
-            (None,)
-        ]
-        schema = """
-            a array<struct<
-              product_id:int,
-              im_ad_res_field:struct<charge_info:array<string>>,
-              unused_ids:array<int>>>
-        """
-        return spark.createDataFrame(data, schema).selectExpr("""
+    charge_info_gen = StringGen(
+        '[0-9]{1,2}\t[a-z]{2}\t(IGN_ZTC_CPA_CPC|MISS|-)', nullable=False
+    ).with_special_case('', weight=5.0)
+    element_gen = StructGen([
+        ('product_id', IntegerGen(nullable=False, min_val=0, max_val=2, special_cases=[0, 1, 2])),
+        ('im_ad_res_field', StructGen([
+            ('charge_info', ArrayGen(charge_info_gen, max_length=5, nullable=False))
+        ])),
+        ('unused_ids', ArrayGen(IntegerGen(nullable=False), max_length=5, nullable=False))
+    ], nullable=False)
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(element_gen, max_length=8)).selectExpr("""
             aggregate(
               filter(a, ad -> ad.product_id = 1 AND ad.im_ad_res_field IS NOT NULL),
               0L,
@@ -263,8 +240,7 @@ def test_array_aggregate_nested_filter_and_aggregate_over_struct_array_field():
                   id -> id),
                 0L),
               id -> id
-            ) as charge_sum""")
-    assert_gpu_and_cpu_are_equal_collect(do_it)
+            ) as charge_sum"""))
 
 
 @disable_ansi_mode
