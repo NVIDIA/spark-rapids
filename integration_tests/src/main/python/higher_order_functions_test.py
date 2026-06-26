@@ -212,6 +212,19 @@ def test_array_aggregate_filtered_struct_with_nested_map_children():
                  id -> id) as score_and_attr_count'''))
 
 
+@pytest.mark.parametrize('element_gen', [
+    ArrayGen(IntegerGen(nullable=False), max_length=5, nullable=False),
+    MapGen(StringGen('key_[0-9]', nullable=False),
+        IntegerGen(nullable=False), max_length=5, nullable=False)
+], ids=['array-element', 'map-element'])
+@disable_ansi_mode
+def test_array_aggregate_direct_nested_collection_elements(element_gen):
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, ArrayGen(element_gen, max_length=8)).selectExpr(
+            'aggregate(a, 0L, (acc, x) -> acc + CAST(size(x) AS BIGINT), id -> id) '
+            'as total_size'))
+
+
 @disable_ansi_mode
 def test_array_aggregate_nested_filter_and_aggregate_over_struct_array_field():
     charge_info_gen = StringGen(
