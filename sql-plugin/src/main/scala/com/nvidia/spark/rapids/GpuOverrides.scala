@@ -3011,7 +3011,7 @@ object GpuOverrides extends Logging {
         Seq(
           ParamCheck("argument",
             TypeSig.ARRAY.nested(TypeSig.commonCudfTypes + TypeSig.DECIMAL_128 + TypeSig.NULL +
-                TypeSig.BINARY + TypeSig.STRUCT),
+                TypeSig.BINARY + TypeSig.ARRAY + TypeSig.STRUCT + TypeSig.MAP),
             TypeSig.ARRAY.nested(TypeSig.all)),
           ParamCheck("zero",
             TypeSig.commonCudfTypes + TypeSig.DECIMAL_128,
