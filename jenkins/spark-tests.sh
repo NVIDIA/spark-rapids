@@ -157,6 +157,11 @@ export PYSP_TEST_spark_driver_extraJavaOptions=-Duser.timezone=UTC
 export PYSP_TEST_spark_executor_extraJavaOptions=-Duser.timezone=UTC
 export PYSP_TEST_spark_sql_session_timeZone=UTC
 
+# Run the nightly integration tests with Spark testing mode so that Spark enforces its internal
+# contract guards (e.g. DSv2 computeStats-before-pushdown) that are silent in production.
+# See NVIDIA/spark-rapids#14950. Export SPARK_TESTING_ENABLED=0 on a job to opt out.
+export SPARK_TESTING_ENABLED=${SPARK_TESTING_ENABLED:-1}
+
 # PARALLEL or non-PARALLEL specific configs
 if [[ $PARALLEL_TEST == "true" ]]; then
   export PYSP_TEST_spark_cores_max=1
@@ -240,10 +245,13 @@ run_delta_lake_tests() {
     for v in $DELTA_LAKE_VERSIONS; do
       echo "Running Delta Lake tests for Delta Lake version $v"
       if [[ "$v" == "3.3.0" || "$v" == "4.0.0" ]]; then
-        DELTA_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
-      else 
-        DELTA_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
-      fi 
+        DELTA_MAIN_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
+      else
+        DELTA_MAIN_JAR="io.delta:delta-core_${SCALA_BINARY_VER}:$v"
+      fi
+      # Delta Lake 1.2+ moved LogStore implementations into delta-storage.
+      # All versions tested here are 2.0+, so include it explicitly.
+      DELTA_JAR="${DELTA_MAIN_JAR},io.delta:delta-storage:$v"
       HOST_NAME=$PROJECT_REPO_HOST \
         PYSP_TEST_spark_jars_packages=${DELTA_JAR} \
         PYSP_TEST_spark_jars_ivySettings="${WORKSPACE}/jenkins/ivysettings.xml" \
@@ -327,6 +335,8 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
           # filecache.enabled is a startup-only config, so it must be set here via
           # PYSP_TEST_ env var rather than as a session-level Spark config, because
           # FileCacheManager is initialized at executor startup time.
+          # Some REST catalog defaults resolve Iceberg Parquet writes to gzip, which
+          # is not supported by the GPU writer, so use a supported default codec.
           env \
             HOST_NAME=$PROJECT_REPO_HOST \
             EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
@@ -345,6 +355,8 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
             "PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri=${ICEBERG_REST_OAUTH2_SERVER_URI:-http://localhost:8080/realms/iceberg/protocol/openid-connect/token}" \
             PYSP_TEST_spark_sql_catalog_spark__catalog_scope="${ICEBERG_REST_SCOPE:-lakekeeper}" \
             PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${ICEBERG_REST_WAREHOUSE:-demo}" \
+            "PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_parquet_compression-codec=zstd" \
+            "PYSP_TEST_spark_sql_catalog_spark__catalog_table-default_write_delete_parquet_compression-codec=zstd" \
             ./run_pyspark_from_build.sh -m iceberg --iceberg
     elif [[ "$test_type" == "s3tables" ]]; then
       echo "!!! Running iceberg tests with s3tables"

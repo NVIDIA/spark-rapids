@@ -18,30 +18,32 @@ package org.apache.iceberg.spark.source
 
 import java.util.Objects
 
-import com.nvidia.spark.rapids.{GpuScan, RapidsConf}
+import com.nvidia.spark.rapids.RapidsConf
 import org.apache.iceberg.FileScanTask
 
-import org.apache.spark.sql.connector.expressions.NamedReference
-import org.apache.spark.sql.connector.read.{Scan, Statistics, SupportsRuntimeFiltering}
-import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.connector.read.{Scan, Statistics}
 
-class GpuSparkCopyOnWriteScan(
+/**
+ * Version-agnostic base for the GPU copy-on-write scan. Iceberg 1.6.x, 1.9.x,
+ * and 1.10.x have {@code SparkCopyOnWriteScan} implementing
+ * {@code SupportsRuntimeFiltering} with {@code filter(Filter[])}; Iceberg 1.11.x
+ * switched to {@code SupportsRuntimeV2Filtering} with {@code filter(Predicate[])}.
+ * The per-Iceberg-version concrete subclass lives in {@code iceberg-1-6-x} /
+ * {@code iceberg-1-9-x} / {@code iceberg-1-10-x} (and {@code iceberg-1-11-x}
+ * once it lands) and mixes in the matching Spark runtime-filter trait + delegates
+ * {@code filter} to the matching Iceberg API.
+ */
+abstract class GpuSparkCopyOnWriteScanBase(
     override val cpuScan: Scan,
     override val rapidsConf: RapidsConf,
     override val queryUsesInputFile: Boolean) extends
-  GpuSparkPartitioningAwareScan[FileScanTask](cpuScan, rapidsConf, queryUsesInputFile)
-  with SupportsRuntimeFiltering {
-
-  private def runtimeFilterScan: SupportsRuntimeFiltering =
-    cpuScan.asInstanceOf[SupportsRuntimeFiltering]
-
-  override def filterAttributes(): Array[NamedReference] = runtimeFilterScan.filterAttributes()
+  GpuSparkPartitioningAwareScan[FileScanTask](cpuScan, rapidsConf, queryUsesInputFile) {
 
   override def estimateStatistics(): Statistics = GpuSparkScanAccess.estimateStatistics(cpuScan)
 
   override def equals(obj: Any): Boolean = {
     obj match {
-      case that: GpuSparkCopyOnWriteScan =>
+      case that: GpuSparkCopyOnWriteScanBase =>
         this.cpuScan == that.cpuScan &&
           this.queryUsesInputFile == that.queryUsesInputFile
       case _ => false
@@ -60,11 +62,4 @@ class GpuSparkCopyOnWriteScan(
       s"caseSensitive=${GpuSparkScanAccess.caseSensitive(cpuScan)}, " +
       s"queryUseInputFile=$queryUsesInputFile)"
   }
-
-  /** Create a version of this scan with input file name support */
-  override def withInputFile(): GpuScan = {
-    new GpuSparkCopyOnWriteScan(cpuScan, rapidsConf, true)
-  }
-
-  override def filter(filters: Array[Filter]): Unit = runtimeFilterScan.filter(filters)
 }

@@ -36,6 +36,7 @@
 {"spark": "401"}
 {"spark": "402"}
 {"spark": "411"}
+{"spark": "412"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims.parquet
 
@@ -49,6 +50,11 @@ object GpuParquetUtilsShims {
   def setRowIndexOffset(block: BlockMetaData, offset: Long): Unit = {
     block.setRowIndexOffset(offset)
   }
+
+  /**
+   * Gets the row index offset from the BlockMetaData.
+   */
+  def getRowIndexOffset(block: BlockMetaData): Long = block.getRowIndexOffset
 
   /**
    * Build a new BlockMetaData from an existing one, but with a new set of column chunks metadata.

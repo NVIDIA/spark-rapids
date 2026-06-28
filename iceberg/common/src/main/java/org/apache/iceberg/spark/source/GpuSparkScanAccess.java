@@ -17,6 +17,9 @@
 package org.apache.iceberg.spark.source;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.Collections;
 import java.util.List;
 
 import org.apache.iceberg.BaseMetadataTable;
@@ -60,7 +63,7 @@ public final class GpuSparkScanAccess {
   }
 
   public static SparkReadConf readConf(Scan scan) {
-    return readField(sparkScan(scan), "readConf", SparkReadConf.class);
+    return readField(sparkScan(scan), SparkReadConf.class, "readConf");
   }
 
   public static Table table(Scan scan) {
@@ -68,7 +71,26 @@ public final class GpuSparkScanAccess {
   }
 
   public static String branch(Scan scan) {
-    return sparkScan(scan).branch();
+    // Iceberg 1.10.x and earlier exposed a protected SparkScan.branch() method;
+    // 1.11.x removed it but the concrete scan classes still carry a private
+    // `branch` field (included in description()). Read the field directly so this
+    // works across all supported Iceberg versions. Returns null when no branch is
+    // set (or, defensively, when the field is absent).
+    Object target = sparkScan(scan);
+    Field f = findField(target.getClass(), "branch");
+    if (f == null) {
+      return null;
+    }
+    try {
+      f.setAccessible(true);
+      Object v = f.get(target);
+      return v == null ? null : v.toString();
+    } catch (IllegalAccessException | RuntimeException e) {
+      // RuntimeException also covers InaccessibleObjectException (Java 9+ module
+      // encapsulation) and SecurityException, so any access failure degrades to
+      // null per the contract above rather than escaping from this display-only path.
+      return null;
+    }
   }
 
   public static boolean caseSensitive(Scan scan) {
@@ -76,15 +98,22 @@ public final class GpuSparkScanAccess {
   }
 
   public static Schema expectedSchema(Scan scan) {
-    return sparkScan(scan).expectedSchema();
+    // Iceberg 1.10.x: SparkScan.expectedSchema(); Iceberg 1.11.x renamed it to
+    // SparkScan.projection().
+    return invokeMethod(sparkScan(scan), Schema.class, "expectedSchema", "projection");
   }
 
   public static Statistics estimateStatistics(Scan scan) {
     return sparkScan(scan).estimateStatistics();
   }
 
+  @SuppressWarnings("unchecked")
   public static List<Expression> filterExpressions(Scan scan) {
-    return sparkScan(scan).filterExpressions();
+    // Iceberg 1.10.x: SparkScan.filterExpressions(); Iceberg 1.11.x renamed it to
+    // SparkScan.filters().
+    List<Expression> r = (List<Expression>)
+        invokeMethod(sparkScan(scan), List.class, "filterExpressions", "filters");
+    return r != null ? r : Collections.emptyList();
   }
 
   public static Types.StructType groupingKeyType(Scan scan) {
@@ -101,11 +130,17 @@ public final class GpuSparkScanAccess {
 
   @SuppressWarnings("unchecked")
   public static List<Expression> runtimeFilterExpressions(Scan scan) {
-    return (List<Expression>) readField(scan, "runtimeFilterExpressions", List.class);
+    // Iceberg 1.6.x / 1.9.x / 1.10.x: field "runtimeFilterExpressions" on
+    // SparkBatchQueryScan. Iceberg 1.11.x: field "runtimeFilters" on the new parent
+    // class SparkRuntimeFilterableScan.
+    return (List<Expression>) readField(scan, List.class,
+        "runtimeFilterExpressions", "runtimeFilters");
   }
 
   public static Schema expectedSchema(Batch batch) {
-    return readField(batch, "expectedSchema", Schema.class);
+    // Iceberg 1.10.x: field "expectedSchema" on SparkBatch.
+    // Iceberg 1.11.x: renamed to "projection".
+    return readField(batch, Schema.class, "expectedSchema", "projection");
   }
 
   public static Table table(InputPartition partition) {
@@ -128,26 +163,66 @@ public final class GpuSparkScanAccess {
     return (SparkInputPartition) partition;
   }
 
-  private static <T> T readField(Object target, String fieldName, Class<T> fieldType) {
+  /**
+   * Read the first existing field from {@code fieldNames} on {@code target} (or its
+   * superclasses). Used when a field was renamed across Iceberg versions — list the
+   * candidate names in priority order. Throws if none of the names exist.
+   */
+  private static <T> T readField(Object target, Class<T> fieldType, String... fieldNames) {
+    Field field = findField(target.getClass(), fieldNames);
+    if (field == null) {
+      throw new IllegalStateException(
+          "None of fields " + String.join(",", fieldNames)
+              + " exist on " + target.getClass().getName());
+    }
     try {
-      Field field = findField(target.getClass(), fieldName);
       field.setAccessible(true);
       return fieldType.cast(field.get(target));
     } catch (IllegalAccessException e) {
       throw new IllegalStateException(
-          "Unable to read " + fieldName + " from " + target.getClass().getName(), e);
+          "Unable to read " + field.getName() + " from " + target.getClass().getName(), e);
     }
   }
 
-  private static Field findField(Class<?> targetClass, String fieldName) {
+  private static Field findField(Class<?> targetClass, String... fieldNames) {
     Class<?> current = targetClass;
     while (current != null) {
-      try {
-        return current.getDeclaredField(fieldName);
-      } catch (NoSuchFieldException e) {
-        current = current.getSuperclass();
+      for (String fieldName : fieldNames) {
+        try {
+          return current.getDeclaredField(fieldName);
+        } catch (NoSuchFieldException ignore) {
+          // try the next name (or the superclass)
+        }
       }
+      current = current.getSuperclass();
     }
-    throw new IllegalStateException("No field " + fieldName + " in " + targetClass.getName());
+    return null;
+  }
+
+  /**
+   * Invoke the first existing zero-arg method from {@code methodNames} on
+   * {@code target} (or its superclasses). Used when a protected method was renamed or
+   * removed across Iceberg versions — list the candidate names in priority order.
+   * Returns {@code null} if none of the names exist (caller decides the fallback).
+   */
+  private static <T> T invokeMethod(Object target, Class<T> returnType, String... methodNames) {
+    Class<?> current = target.getClass();
+    while (current != null) {
+      for (String methodName : methodNames) {
+        try {
+          Method m = current.getDeclaredMethod(methodName);
+          m.setAccessible(true);
+          Object result = m.invoke(target);
+          return result == null ? null : returnType.cast(result);
+        } catch (NoSuchMethodException ignore) {
+          // try the next name (or the superclass)
+        } catch (IllegalAccessException | InvocationTargetException e) {
+          throw new IllegalStateException(
+              "Unable to invoke " + methodName + " on " + target.getClass().getName(), e);
+        }
+      }
+      current = current.getSuperclass();
+    }
+    return null;
   }
 }

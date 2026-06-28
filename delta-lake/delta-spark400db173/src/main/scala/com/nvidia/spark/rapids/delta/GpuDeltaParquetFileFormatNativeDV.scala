@@ -359,6 +359,29 @@ case class GpuDeltaParquetFileFormatNativeDV(
         }
       }
     }
+
+    override protected def computeNumRowsAlive(
+        totalNumRows: Long,
+        chunkedBlocks: Seq[BlockMetaData]): Int = {
+      if (totalNumRows == 0 || tablePathOpt.isEmpty) {
+        Math.toIntExact(totalNumRows)
+      } else {
+        val dv = RapidsDeletionVectors.lookupDeletionVector(split, deletionVectorReadInfo)
+        if (dv.dvDescriptor.isEmpty && dv.filterType.isEmpty &&
+            dv.rowIndexFilterProvider.isEmpty) {
+          Math.toIntExact(totalNumRows)
+        } else {
+          val scalaBitmap = RapidsDeletionVectors.loadScalaBitmap(
+            conf, dv.dvDescriptor, dv.filterType, dv.rowIndexFilterProvider, tablePathOpt.get)
+          RapidsDeletionVectorRowCountUtils.computeNumRowsAlive(
+            totalNumRows, scalaBitmap.cardinality, chunkedBlocks) { countDeletedRow =>
+            scalaBitmap.forEach { deletedIndex: Long =>
+              countDeletedRow(deletedIndex)
+            }
+          }
+        }
+      }
+    }
   }
 
   ///////////////////////////////////////
@@ -389,41 +412,13 @@ case class GpuDeltaParquetFileFormatNativeDV(
 
   object SpillableDeletionVectorInfo {
 
-    /**
-     * Computes the number of deleted rows within the given row ranges
-     * in the bitmap.
-     */
-    def countDeletedRows(
-        scalaBitmap: RoaringBitmapArray,
-        rowGroupOffsets: Array[Long],
-        rowGroupNumRows: Array[Int]): Long = {
-      if (scalaBitmap.cardinality == 0) return 0L
-      var count = 0L
-      val rowRanges = rowGroupOffsets.zip(rowGroupNumRows)
-      // Computes the number of deleted rows by iterating only over the set bits
-      // in the bitmap (deleted row indices) and checking which row group each
-      // belongs to. This is O(deleted_rows * num_row_groups) instead of
-      // O(total_rows). The former is usually smaller than the latter.
-      // cuDF added a dedicated API in https://github.com/rapidsai/cudf/pull/21963.
-      // Track the Spark RAPIDS follow-up in
-      // https://github.com/NVIDIA/spark-rapids/issues/14628.
-      scalaBitmap.forEach { deletedIndex: Long =>
-        rowRanges.find { case (offset, numRows) =>
-          deletedIndex >= offset && deletedIndex < offset + numRows
-        }.foreach { _ =>
-          // If the deleted index falls within this row group, count it as deleted.
-          count += 1L
-        }
-      }
-      count
-    }
-
     def apply(
         serializedBitmap: HostMemoryBuffer,
         scalaBitmap: RoaringBitmapArray,
         rowGroupOffsets: Array[Long],
         rowGroupNumRows: Array[Int]): SpillableDeletionVectorInfo = {
-      val numRowsDeleted = countDeletedRows(scalaBitmap, rowGroupOffsets, rowGroupNumRows)
+      val numRowsDeleted =
+        RapidsDeletionVectors.countDeletedRows(scalaBitmap, rowGroupOffsets, rowGroupNumRows)
       new SpillableDeletionVectorInfo(
         SpillableHostBuffer(
           serializedBitmap,
@@ -1265,11 +1260,16 @@ case class GpuDeltaParquetFileFormatNativeDV(
             }
             closeOnExcept(gpuBitmap) { _ =>
               val filterTypeOpt = entry.dvDescriptor.map(_ => RowIndexFilterType.IF_CONTAINED)
-              val scalaBitmap = RapidsDeletionVectors.loadScalaBitmap(
-                conf, entry.dvDescriptor, filterTypeOpt, entry.rowIndexFilterProvider, tp)
               val totalRows = entry.rowGroupNumRows.map(_.toLong).sum
-              val numDeleted = SpillableDeletionVectorInfo.countDeletedRows(
-                scalaBitmap, entry.rowGroupOffsets, entry.rowGroupNumRows)
+              val numDeleted =
+                if (entry.dvDescriptor.isEmpty && entry.rowIndexFilterProvider.isEmpty) {
+                  0L
+                } else {
+                  val scalaBitmap = RapidsDeletionVectors.loadScalaBitmap(
+                    conf, entry.dvDescriptor, filterTypeOpt, entry.rowIndexFilterProvider, tp)
+                  RapidsDeletionVectors.countDeletedRows(
+                    scalaBitmap, entry.rowGroupOffsets, entry.rowGroupNumRows)
+                }
               require(numDeleted <= totalRows,
                 s"Deletion vector cardinality ($numDeleted) exceeds " +
                   s"file row count ($totalRows)")
