@@ -221,12 +221,14 @@ object GroupedAggregations {
             }
           }
         } else {
+          val ascending = orderSpec.map(_.isAscending).toArray
+          val nullsFirst = orderSpec.map(_.nullOrdering == NullsFirst).toArray
           val windowOptionBuilder = WindowOptions.builder()
               .minPeriods(1) // Does not currently support custom minPeriods.
               .orderByColumns(
                 orderPositions.toArray,
-                orderSpec.map(_.isAscending).toArray,
-                orderSpec.map(_.nullOrdering == NullsFirst).toArray)
+                ascending,
+                nullsFirst)
 
           if (isUnbounded(frame.lower)) {
             windowOptionBuilder.unboundedPreceding()

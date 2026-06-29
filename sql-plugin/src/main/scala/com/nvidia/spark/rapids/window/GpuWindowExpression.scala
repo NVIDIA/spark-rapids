@@ -122,6 +122,8 @@ abstract class GpuWindowExpressionMetaBase(
                 willNotWorkOnGpu("range window frames with value boundaries are not supported " +
                   "with multiple order-by columns")
               }
+              // Order-by types accepted for multi-column RANGE windows; the analogous
+              // single-column gate is GpuWindowUtil.isValidRangeFrameType.
               def isSupportedOrderType(dt: DataType): Boolean = dt match {
                 case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType |
                      DateType | TimestampType | StringType | DecimalType() => true
