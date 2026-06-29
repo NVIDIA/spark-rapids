@@ -87,7 +87,7 @@ class RegexParser(pattern: String) {
         }
         Seq(RegexChar('\\'), RegexChar(consume()))
       case '$' =>
-        parseBackrefOrLiteralDollar()
+        parseBackref()
       case other =>
         Seq(RegexChar(other))
     }
@@ -367,7 +367,7 @@ class RegexParser(pattern: String) {
     }
   }
 
-  private def parseBackrefOrLiteralDollar(): Seq[RegexAST] = {
+  private def parseBackref(): Seq[RegexAST] = {
     val dollarPos = pos - 1   // position of the `$` that begins this reference
     peek() match {
       case Some('{') =>

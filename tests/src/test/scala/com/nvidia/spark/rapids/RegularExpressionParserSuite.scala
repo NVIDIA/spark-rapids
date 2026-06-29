@@ -295,7 +295,7 @@ class RegularExpressionParserSuite extends AnyFunSuite {
 
   test("trailing \\ in replacement throws") {
     val ex = intercept[RegexUnsupportedException] {
-      new RegexParser("\\").parseReplacement(numCaptureGroups = 0)
+      new RegexParser("abc\\").parseReplacement(numCaptureGroups = 0)
     }
     assert(ex.getMessage.contains("character to be escaped is missing"))
   }
@@ -309,7 +309,7 @@ class RegularExpressionParserSuite extends AnyFunSuite {
 
   test("trailing bare $ throws") {
     val ex = intercept[RegexUnsupportedException] {
-      new RegexParser("$").parseReplacement(numCaptureGroups = 0)
+      new RegexParser("abc$").parseReplacement(numCaptureGroups = 0)
     }
     assert(ex.getMessage.contains("Illegal group reference"))
   }
