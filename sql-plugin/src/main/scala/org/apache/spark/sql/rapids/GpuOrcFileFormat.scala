@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package org.apache.spark.sql.rapids
 
-import java.time.ZoneId
-
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
@@ -33,7 +31,6 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.orc.{OrcFileFormat, OrcOptions, OrcUtils}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types._
 
@@ -80,26 +77,13 @@ object GpuOrcFileFormat extends Logging {
         "If bloom filter is not required, unset \"orc.bloom.filter.columns\"")
     }
 
-    val types = schema.map(_.dataType).toSet
     val hasBools = schema.exists { field =>
       TrampolineUtil.dataTypeExistsRecursively(field.dataType, t =>
         t.isInstanceOf[BooleanType])
     }
 
-    if (!meta.conf.orcReadIgnoreWriterTimezone) {
-      // For timestamp type, timezone needs to be checked.
-      // This is because JVM timezone and UTC timezone offset is considered when
-      // reading timestamp type from ORC file.
-      if (types.exists(GpuOverrides.isOrContainsTimestamp)) {
-        if (!GpuOverrides.isUTCTimezone()) {
-          meta.willNotWorkOnGpu("Only UTC timezone is supported for ORC. " +
-            s"Current timezone settings: (JVM : ${ZoneId.systemDefault()}, " +
-            s"session: ${SQLConf.get.sessionLocalTimeZone}). ")
-        }
-      }
-    } else {
-      // Ignore the write timezones in the stripe footers, we support, skip the checks.
-    }
+    // ORC writing always uses UTC internally (cuDF writes writerTimezone="UTC").
+    // The reader side handles timezone conversion. No write-side timezone restriction needed.
 
     if (hasBools && !meta.conf.isOrcBoolTypeEnabled) {
       meta.willNotWorkOnGpu("Nullable Booleans can not work in certain cases with ORC writer." +
