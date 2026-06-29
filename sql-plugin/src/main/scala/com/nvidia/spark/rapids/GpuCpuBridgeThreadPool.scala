@@ -137,9 +137,13 @@ object GpuCpuBridgeThreadPool extends Logging {
         val estimatedCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
         val taskSlots = sparkConf.getInt("spark.task.cpus", 1)
         val maxTasks = estimatedCores / taskSlots
-        
+
         logDebug(s"Estimated cores: $estimatedCores, task CPUs: $taskSlots, max tasks: $maxTasks")
-        
+        if (maxTasks < 1) {
+          logWarning(s"Calculated CPU bridge max tasks as $maxTasks from $estimatedCores " +
+            s"estimated cores and $taskSlots CPUs per task; using 1 thread")
+        }
+
         // Ensure we have at least 1 thread. The upper bound is naturally limited by
         // maxTasks, which is derived from the estimated cores divided by the CPUs per task.
         Math.max(1, maxTasks)
@@ -257,7 +261,13 @@ object GpuCpuBridgeThreadPool extends Logging {
    * Calculate sub-batch boundaries for splitting a batch.
    * Returns (start, end) pairs for each sub-batch.
    */
-  def getSubBatchRanges(numRows: Int, subBatchCount: Int): Seq[(Int, Int)] = {
+  def getSubBatchRanges(numRows: Int): Seq[(Int, Int)] = {
+    getSubBatchRanges(numRows, getSubBatchCount(numRows))
+  }
+
+  private[rapids] def getSubBatchRanges(
+      numRows: Int,
+      subBatchCount: Int): Seq[(Int, Int)] = {
     if (subBatchCount <= 1) {
       Seq((0, numRows))
     } else {

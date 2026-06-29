@@ -1465,26 +1465,21 @@ abstract class BaseExprMeta[INPUT <: Expression](
     import org.apache.spark.sql.catalyst.expressions.{Generator, NamedLambdaVariable, TryEval, Unevaluable, WindowFunction}
     import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateFunction
     import org.apache.spark.sql.catalyst.expressions.objects.LambdaVariable
-    
-    if (!conf.isCpuBridgeEnabled) return false
-    
+
     val exprClass = expr.getClass
-    
-    // Check config-level disallow list
-    if (conf.bridgeDisallowList.contains(exprClass.getName)) return false
-    
+
     // TryEval implements try_* by evaluating the child expression on CPU, catching CPU
     // exceptions, and converting them to null. To preserve that contract, the entire child
     // tree would need to stay on CPU; bridging TryEval with GPU children would bypass the
     // CPU exception path. Let the enclosing plan node fall back instead.
-    if (classOf[TryEval].isAssignableFrom(exprClass)) return false
+    def isTryEval: Boolean = classOf[TryEval].isAssignableFrom(exprClass)
 
     // LambdaVariable is a scoped placeholder owned by Spark object expressions such as
     // MapObjects, CatalystToExternalMap, and ExternalMapToCatalyst. Those expressions require
     // LambdaVariable children in fixed positions and cast them back during tree rewrites.
     // Bridging LambdaVariable independently can replace the placeholder with a BoundReference
     // and corrupt the parent expression tree.
-    if (classOf[LambdaVariable].isAssignableFrom(exprClass)) return false
+    def isLambdaVariable: Boolean = classOf[LambdaVariable].isAssignableFrom(exprClass)
 
     // convertForGpuCpuBridge rebuilds the CPU expression by positionally replacing the
     // GPU-convertible children with BoundReferences and calling expr.withNewChildren. That is
@@ -1493,31 +1488,35 @@ abstract class BaseExprMeta[INPUT <: Expression](
     // (e.g. InvokeExprMeta hides the evaluator-literal child of the Invoke that Spark 4.0 uses
     // for parse_url/to_json). Bridging those would fail with "Incorrect number of children" or
     // silently rebuild the wrong tree, so let the enclosing node fall back instead.
-    val wrappedChildren = childExprs.map(_.wrapped.asInstanceOf[AnyRef])
-    val exprChildren = expr.children
-    if (wrappedChildren.length != exprChildren.length ||
-        wrappedChildren.zip(exprChildren).exists { case (w, c) => !w.eq(c.asInstanceOf[AnyRef]) }) {
-      return false
+    def childrenMatch: Boolean = {
+      val wrappedChildren = childExprs.map(_.wrapped.asInstanceOf[AnyRef])
+      val exprChildren = expr.children
+      wrappedChildren.length == exprChildren.length &&
+        !wrappedChildren.zip(exprChildren).exists {
+          case (wrappedChild, exprChild) => !wrappedChild.eq(exprChild.asInstanceOf[AnyRef])
+        }
     }
 
     // Filter out expression types that cannot be directly executed on CPU.
-    if (classOf[Unevaluable].isAssignableFrom(exprClass) ||
-        classOf[AggregateFunction].isAssignableFrom(exprClass) ||
-        classOf[WindowFunction].isAssignableFrom(exprClass) ||
-        classOf[NamedLambdaVariable].isAssignableFrom(exprClass) ||
-        classOf[Generator].isAssignableFrom(exprClass)) {
-      return false
-    }
-    
+    def canExecuteOnCpu: Boolean = !classOf[Unevaluable].isAssignableFrom(exprClass) &&
+      !classOf[AggregateFunction].isAssignableFrom(exprClass) &&
+      !classOf[WindowFunction].isAssignableFrom(exprClass) &&
+      !classOf[NamedLambdaVariable].isAssignableFrom(exprClass) &&
+      !classOf[Generator].isAssignableFrom(exprClass)
+
     // Some expressions carry task/partition-local state whose values cannot be preserved if the
     // bridge splits a batch across worker threads. The shim predicate filters out those correctness
     // blockers while allowing expressions whose mutable state is only cloned worker-local scratch.
-    if (SparkShimImpl.isExpressionStateful(expr)) return false
+    def isStateful: Boolean = SparkShimImpl.isExpressionStateful(expr)
 
-    // Exclude nondeterministic expressions for correctness
-    if (!expr.deterministic) return false
-    
-    true
+    conf.isCpuBridgeEnabled &&
+      !conf.bridgeDisallowList.contains(exprClass.getName) &&
+      !isTryEval &&
+      !isLambdaVariable &&
+      childrenMatch &&
+      canExecuteOnCpu &&
+      !isStateful &&
+      expr.deterministic
   }
 
   /**

@@ -439,7 +439,7 @@ object GpuCpuBridgeOptimizer extends Logging {
             }.sum
           } else Int.MaxValue
 
-          // Exact CPU cost via subset enumeration
+          // CPU cost via exact subset enumeration or the large-fanout heuristic
           val (_, cpuTotal, cpuLeaves): (Set[Int], Int, Set[InputKey]) = if (cpuAllowed) {
             chooseCpuSubset(expr, expr.childExprs, childCosts)
           } else (Set.empty[Int], Int.MaxValue, Set.empty[InputKey])
@@ -570,8 +570,7 @@ object GpuCpuBridgeOptimizer extends Logging {
     
     // Rewrite the parent CPU expression to substitute bridge expressions and 
     // remap BoundReferences
-    val mergedCpuExpr = rewriteCpuExpression(parentBridge.cpuExpression, 
-      parentBridge.gpuInputs, inputMapping)
+    val mergedCpuExpr = rewriteCpuExpression(parentBridge.cpuExpression, inputMapping)
     
     val mergedExpression = GpuCpuBridgeExpression(
       gpuInputs = flattenedGpuInputs,
@@ -708,13 +707,11 @@ object GpuCpuBridgeOptimizer extends Logging {
    * Rewrite a CPU expression by substituting bridge expressions and remapping BoundReferences.
    * 
    * @param cpuExpr The CPU expression to rewrite
-   * @param originalInputs The original inputs that the CPU expression references
    * @param inputMapping Mapping from original input positions to flattened positions
    * @return The rewritten CPU expression with proper BoundReference mappings
    */
   private def rewriteCpuExpression(
       cpuExpr: Expression,
-      originalInputs: Seq[Expression],
       inputMapping: Map[Int, InputMapping]): Expression = {
     
     cpuExpr.transformUp {

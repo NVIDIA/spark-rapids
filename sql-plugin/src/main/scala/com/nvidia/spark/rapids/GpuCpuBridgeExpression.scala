@@ -207,11 +207,10 @@ case class GpuCpuBridgeExpression(
    */
   private def evaluateInParallel(batch: ColumnarBatch): GpuColumnVector = {
     val numRows = batch.numRows()
-    val subBatchCount = GpuCpuBridgeThreadPool.getSubBatchCount(numRows)
-    val ranges = GpuCpuBridgeThreadPool.getSubBatchRanges(numRows, subBatchCount)
-    
-    logDebug(s"Processing $numRows rows in $subBatchCount parallel sub-batches " +
-      s"AVG ${numRows.toDouble/subBatchCount}")
+    val ranges = GpuCpuBridgeThreadPool.getSubBatchRanges(numRows)
+
+    logDebug(s"Processing $numRows rows in ${ranges.length} parallel sub-batches " +
+      s"AVG ${numRows.toDouble / ranges.length}")
 
     // Retry is still owned by the operator evaluating this expression. The bridge makes the
     // derived GPU input columns spillable before worker submission, but the caller-owned input
