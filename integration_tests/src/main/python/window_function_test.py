@@ -700,6 +700,9 @@ def test_range_windows_with_string_order_by_column(data_gen, batch_size, ansi):
             'spark.sql.ansi.enabled': ansi})
 
 
+# Multi-column RANGE peer frames cover rows equal on all order-by keys. Repeating the keys with
+# period `_multi_order_range_repeat_length` over `_multi_order_range_num_rows` rows makes key
+# tuples recur, so peer groups span more than one row.
 _multi_order_range_num_rows = 2048
 _multi_order_range_repeat_length = 64
 
