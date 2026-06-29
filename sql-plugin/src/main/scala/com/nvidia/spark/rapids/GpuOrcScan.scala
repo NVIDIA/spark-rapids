@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ case class GpuOrcScan(
   override def equals(obj: Any): Boolean = obj match {
     case o: GpuOrcScan =>
       super.equals(o) && dataSchema == o.dataSchema && options == o.options &&
-          equivalentFilters(pushedFilters, o.pushedFilters) && rapidsConf == o.rapidsConf &&
+          equivalentFilters(pushedFilters, o.pushedFilters) &&
           queryUsesInputFile == o.queryUsesInputFile
     case _ => false
   }
