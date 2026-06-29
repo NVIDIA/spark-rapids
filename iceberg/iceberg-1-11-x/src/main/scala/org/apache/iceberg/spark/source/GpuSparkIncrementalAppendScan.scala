@@ -92,6 +92,6 @@ class GpuSparkIncrementalAppendScan(
 object GpuSparkIncrementalAppendScan {
   /** Java-callable factory used by {@code IcebergProviderImpl}. Takes the public
    *  {@code Scan} type — never the package-private {@code SparkIncrementalAppendScan}. */
-  def create(cpuScan: Scan, rapidsConf: RapidsConf, queryUsesInputFile: Boolean): GpuScan =
+  def create(cpuScan: Scan, rapidsConf: RapidsConf, queryUsesInputFile: Boolean): GpuSparkScan =
     new GpuSparkIncrementalAppendScan(cpuScan, rapidsConf, queryUsesInputFile)
 }

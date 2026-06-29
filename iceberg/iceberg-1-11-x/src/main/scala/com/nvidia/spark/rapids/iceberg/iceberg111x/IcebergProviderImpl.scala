@@ -42,8 +42,7 @@ class IcebergProviderImpl extends IcebergProviderBase {
     val incrementalRule = new ScanRule[Scan](
       (a, conf, p, r) => new ScanMeta[Scan](a, conf, p, r) {
         private lazy val convertedScan: Try[GpuSparkScan] = Try(
-          GpuSparkIncrementalAppendScan.create(a, this.conf, false)
-            .asInstanceOf[GpuSparkScan])
+          GpuSparkIncrementalAppendScan.create(a, this.conf, false))
 
         override def supportsRuntimeFilters: Boolean = true
 
