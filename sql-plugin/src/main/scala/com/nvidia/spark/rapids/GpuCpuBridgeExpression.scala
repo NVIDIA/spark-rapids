@@ -214,9 +214,11 @@ case class GpuCpuBridgeExpression(
 
     // Retry is still owned by the operator evaluating this expression. The bridge makes the
     // derived GPU input columns spillable before worker submission, but the caller-owned input
-    // batch is outside this expression's ownership and cannot be made spillable here. Retryable
-    // worker failures are unwrapped below so the owning task's retry boundary sees the original
-    // exception.
+    // batch is outside this expression's ownership and cannot be made spillable here. Workers
+    // also temporarily hold materialized subVector slices that are not spillable while CPU row
+    // conversion consumes them, so a concurrent OOM in that window can fail rather than spill.
+    // Retryable worker failures are unwrapped below so the owning task's retry boundary sees the
+    // original exception, but that does not guarantee recovery from every OOM.
 
     // Evaluate GPU input expressions once
     val gpuInputColumns = gpuInputs.safeMap(_.columnarEval(batch))

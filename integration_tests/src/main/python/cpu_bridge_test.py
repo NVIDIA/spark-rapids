@@ -72,6 +72,19 @@ def test_cpu_bridge_add_large_batch_parallel_path():
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         test_func, exist_classes="GpuCpuBridgeExpression", conf=conf)
 
+
+@allow_non_gpu('CreateMap', 'Add')
+def test_cpu_bridge_stateful_map_large_batch_parallel_path():
+    def test_func(spark):
+        return spark.range(0, 500001, 1, 1) \
+            .selectExpr("id", "map(id, id + 1) as bridged") \
+            .selectExpr("element_at(bridged, id) as value") \
+            .agg(f.sum("value"))
+
+    conf = create_cpu_bridge_fallback_conf(['CreateMap'])
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        test_func, exist_classes="GpuCpuBridgeExpression", conf=conf)
+
 # Only include Multiply and Boundreference Expressions to verify that the CPU bridge is working
 # as expected.
 @allow_non_gpu('Multiply')
@@ -391,7 +404,7 @@ def test_cpu_bridge_sort_merge_left_outer_join_works():
         right.createOrReplaceTempView("right_table")
         
         # Left outer join: a+10/b+5 are not AST-able (Add disabled), so they run via the
-        # CPU bridge inside the GPU join condition instead of forcing a CPU fallback.
+        # CPU bridge in pre-join projections instead of forcing a CPU fallback.
         return spark.sql("""
             SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
             FROM left_table
@@ -421,7 +434,7 @@ def test_cpu_bridge_sort_merge_right_outer_join_works():
         right.createOrReplaceTempView("right_table")
         
         # Right outer join: a+10/b+5 are not AST-able (Add disabled), so they run via the
-        # CPU bridge inside the GPU join condition instead of forcing a CPU fallback.
+        # CPU bridge in pre-join projections instead of forcing a CPU fallback.
         return spark.sql("""
             SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
             FROM left_table
@@ -451,7 +464,7 @@ def test_cpu_bridge_sort_merge_full_outer_join_works():
         right.createOrReplaceTempView("right_table")
         
         # Full outer join: a+10/b+5 are not AST-able (Add disabled), so they run via the
-        # CPU bridge inside the GPU join condition instead of forcing a CPU fallback.
+        # CPU bridge in pre-join projections instead of forcing a CPU fallback.
         return spark.sql("""
             SELECT left_table.id, left_table.a, right_table.id as right_id, right_table.b
             FROM left_table

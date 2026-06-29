@@ -38,12 +38,6 @@ import org.apache.spark.sql.rapids.execution.python.GpuPythonUDAF
 import org.apache.spark.sql.types.StringType
 
 trait Spark341PlusDBShims extends Spark332PlusDBShims {
-  private def isBridgeCloneSafeStatefulExpression(expr: Expression): Boolean = expr match {
-    case _: ScalaUDF | _: CreateMap | _: MapFromArrays | _: MapConcat |
-        _: MapFromEntries | _: StringToMap => true
-    case _ => false
-  }
-
   override def isExpressionStateful(expr: Expression): Boolean = expr match {
     case _: InvokeLike | _: ExternalMapToCatalyst => true
     case _ => expr.stateful && !isBridgeCloneSafeStatefulExpression(expr)
