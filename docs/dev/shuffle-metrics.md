@@ -7,7 +7,7 @@ parent: Developer Overview
 # Shuffle Metrics: SparkRapidsShuffleDiskSavingsEvent
 
 When using MULTITHREADED shuffle mode with `spark.rapids.shuffle.multithreaded.skipMerge=true`,
-the RAPIDS Accelerator emits `SparkRapidsShuffleDiskSavingsEvent` to the Spark event log.
+cuDF for Spark emits `SparkRapidsShuffleDiskSavingsEvent` to the Spark event log.
 This document explains how to interpret and aggregate these events.
 
 ## Event Format

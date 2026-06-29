@@ -11,5 +11,5 @@ If you need any help or have questions on this product, please contact us:
 
 ## Issues and Discussions
 We use github to track bugs, feature requests, and answer questions. File an
-[issue](https://github.com/NVIDIA/spark-rapids/issues/new/choose) for a bug or feature request. Ask
-or answer a question on the [discussion board](https://github.com/NVIDIA/spark-rapids/discussions).
+[issue](https://github.com/NVIDIA/cudf-spark/issues/new/choose) for a bug or feature request. Ask
+or answer a question on the [discussion board](https://github.com/NVIDIA/cudf-spark/discussions).
