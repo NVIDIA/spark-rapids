@@ -3,21 +3,23 @@
 
 ###
 #
-# Pre-merge CI image for the UDF skills integration tests (skills/tests).
+# Pre-merge CI image for the UDF skills integration tests and evals.
 # This is a mirror of `skills/udf-convert-to-cuda/templates/cuda/Dockerfile`,
-# with the additions of python3.11 + pip to run integration tests.
+# with the additions of python3 + pip to run integration tests.
 #
 ###
 
-ARG CUDA_VERSION=12.9.1
-ARG LINUX_VERSION=rockylinux8
+# NOTE: skills CI currently requires the first command to be `FROM`,
+# hence why we do not parametrize the image versions using `ARG=`.
 
-FROM nvidia/cuda:${CUDA_VERSION}-devel-${LINUX_VERSION}
+# rockylinux8 is used in accordance with https://github.com/NVIDIA/cudf-spark-jni/blob/main/ci/Dockerfile
+FROM nvidia/cuda:12.9.1-devel-rockylinux8
 
 ARG TOOLSET_VERSION=14
-ARG CMAKE_VERSION=3.30.4
+ARG CMAKE_VERSION=4.0.3
 ARG CMAKE_ARCH=x86_64
 ARG CCACHE_VERSION=4.11.2
+ARG MAVEN_VERSION=3.9.9
 ARG PARALLEL_LEVEL=10
 ARG PYTHON_VERSION=3.11
 
@@ -29,7 +31,6 @@ RUN dnf --enablerepo=powertools install -y \
   gcc-toolset-${TOOLSET_VERSION} \
   git \
   java-17-openjdk-devel \
-  maven \
   ninja-build \
   patch \
   python${PYTHON_VERSION} \
@@ -42,22 +43,29 @@ RUN dnf --enablerepo=powertools install -y \
   alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 100 && \
   alternatives --set python3 /usr/bin/python${PYTHON_VERSION} && \
   ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python && \
+  ln -sf /usr/bin/pip${PYTHON_VERSION} /usr/bin/pip && \
   dnf clean all
 
 RUN cd /usr/local && \
   wget --quiet https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz && \
   tar zxf cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz && \
   rm cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz
-ENV PATH=${JAVA_HOME}/bin:/usr/local/cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}/bin:${PATH}
 
-# Bake the SCL activation and Java 17 environment into /etc/profile.d so they are restored by `bash -l` on every container start.
-RUN printf 'source /opt/rh/gcc-toolset-%s/enable\n' "${TOOLSET_VERSION}" \
-      > /etc/profile.d/scl-gcc-toolset.sh && \
-    printf '%s\n%s\n' \
-      'export JAVA_HOME=/usr/lib/jvm/java-17-openjdk' \
-      'export PATH=$JAVA_HOME/bin:$PATH' \
-      > /etc/profile.d/java17.sh
+# The rockylinux8 maven package is too old for the template build plugins.
+# Install a modern Maven binary on PATH instead.
+RUN cd /usr/local && \
+  wget --quiet https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+  tar zxf apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+  rm apache-maven-${MAVEN_VERSION}-bin.tar.gz
 
+# The CUDA image activates gcc-toolset SCL via a `bash -l ` entrypoint plus `/etc/profile.d` scripts
+# sourced on every container start via a LOGIN shell. However, Harbor evals run with a non-login shell
+# (`sh -c ...`), so instead, this image bakes the environment into ENV and does not use an ENTRYPOINT.
+ENV PATH=/opt/rh/gcc-toolset-${TOOLSET_VERSION}/root/usr/bin:${JAVA_HOME}/bin:/usr/local/cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}/bin:/usr/local/apache-maven-${MAVEN_VERSION}/bin:${PATH}
+ENV LD_LIBRARY_PATH=/opt/rh/gcc-toolset-${TOOLSET_VERSION}/root/usr/lib64:/opt/rh/gcc-toolset-${TOOLSET_VERSION}/root/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+ENV PKG_CONFIG_PATH=/opt/rh/gcc-toolset-${TOOLSET_VERSION}/root/usr/lib64/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}
+
+# ccache for interactive builds
 RUN cd /tmp && \
   wget --quiet https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}.tar.gz && \
   tar zxf ccache-${CCACHE_VERSION}.tar.gz && \
@@ -73,5 +81,3 @@ RUN cd /tmp && \
     cmake --build . --parallel ${PARALLEL_LEVEL} --target install" && \
   cd ../.. && \
   rm -rf ccache-${CCACHE_VERSION}
-
-ENTRYPOINT ["bash", "-l"]
