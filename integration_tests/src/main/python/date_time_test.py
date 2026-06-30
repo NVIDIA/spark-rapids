@@ -703,6 +703,25 @@ def test_formats_for_legacy_mode(input_format, output_format):
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
 
+
+@disable_ansi_mode
+def test_date_format_timestamp_millis_legacy_prc():
+    seconds_gen = LongGen(
+        min_val=0,
+        max_val=int(last_supported_tz_time.timestamp()),
+        nullable=False,
+        special_cases=[])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, seconds_gen).selectExpr(*[
+            "date_format(timestamp_millis(a * 1000 + {}), "
+            "'yyyy-MM-dd HH:mm:ss.SSS')".format(offset)
+            for offset in [1, 123, 999]
+        ]),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True,
+         'spark.sql.session.timeZone': 'PRC'})
+
+
 # mm: minute; MM: month
 @disable_ansi_mode
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
