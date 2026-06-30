@@ -117,6 +117,8 @@ case class GpuOrcScan(
     case o: GpuOrcScan =>
       super.equals(o) && dataSchema == o.dataSchema && options == o.options &&
           equivalentFilters(pushedFilters, o.pushedFilters) &&
+          rapidsConf.isOrcFloatTypesToStringEnable ==
+              o.rapidsConf.isOrcFloatTypesToStringEnable &&
           queryUsesInputFile == o.queryUsesInputFile
     case _ => false
   }

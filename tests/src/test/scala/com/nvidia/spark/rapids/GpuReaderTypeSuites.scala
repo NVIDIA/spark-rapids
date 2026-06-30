@@ -193,6 +193,20 @@ trait ReaderTypeSuite extends SparkQueryCompareTestSuite {
         assert(p2a.sameResult(p2b), "Equivalent V2 scan plans should have the same result")
         assert(s2a.sameResult(s2b), "Equivalent V2 batch scans should have the same result")
         assert(s2a.scan == s2b.scan, "Equivalent V2 scans should be equal")
+        s2a.scan match {
+          case scan: GpuOrcScan =>
+            def withFloatToString(enabled: Boolean): GpuOrcScan =
+              scan.copy(rapidsConf = new RapidsConf(Map(
+                RapidsConf.ENABLE_ORC_FLOAT_TYPES_TO_STRING.key -> enabled.toString)))
+            val enabled1 = withFloatToString(enabled = true)
+            val enabled2 = withFloatToString(enabled = true)
+            val disabled = withFloatToString(enabled = false)
+            assert(enabled1 == enabled2,
+              "ORC V2 scans with equal float-to-string settings should be equal")
+            assert(enabled1 != disabled,
+              "ORC V2 scans with different float-to-string settings should not be equal")
+          case _ =>
+        }
         assert(!p2a.sameResult(p3), "Different partition filters should not have the same result")
         assert(!s2a.sameResult(s3),
           "V2 batch scans with different partition filters should not have the same result")
