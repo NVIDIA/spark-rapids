@@ -678,23 +678,49 @@ def test_to_timestamp_tz_rules(parser_policy):
             .select(f.col("a"), f.to_timestamp(f.col("a"), "yyyy-MM-dd HH:mm:ss")),
         { "spark.sql.legacy.timeParserPolicy": parser_policy})
 
+legacy_formats_for_legacy_mode = [
+    pytest.param('yyyyMMdd', 'yyyyMMdd', id='yyyyMMdd'),
+    pytest.param('yyyymmdd', 'yyyymmdd', id='yyyymmdd'),
+    pytest.param('yyyy-mm-dd', 'yyyy-mm-dd', id='yyyy-mm-dd'),
+    pytest.param('yyyyMMdd', 'yyyy-MM-dd HH:mm:ss.SSS', id='yyyyMMdd-to-millis')
+]
+
 # mm: minute; MM: month
 @disable_ansi_mode
-@pytest.mark.parametrize("format", ['yyyyMMdd', 'yyyymmdd', 'yyyy-mm-dd'], ids=idfn)
+@pytest.mark.parametrize("input_format, output_format", legacy_formats_for_legacy_mode)
 # Test years after 1900, refer to issues: https://github.com/NVIDIA/spark-rapids/issues/11543, https://github.com/NVIDIA/spark-rapids/issues/11539
 @pytest.mark.skipif(get_test_tz() != "Asia/Shanghai" and get_test_tz() != "UTC", reason="https://github.com/NVIDIA/spark-rapids/issues/11562")
-def test_formats_for_legacy_mode(format):
+def test_formats_for_legacy_mode(input_format, output_format):
     gen = StringGen('(19[0-9]{2}|[2-9][0-9]{3})([0-9]{4})')
     assert_gpu_and_cpu_are_equal_sql(
         lambda spark : unary_op_df(spark, gen),
         "tab",
-        '''select unix_timestamp(a, '{}'),
-                  from_unixtime(unix_timestamp(a, '{}'), '{}'),
-                  date_format(to_timestamp(a, '{}'), '{}')
+        '''select unix_timestamp(a, '{input_format}'),
+                  from_unixtime(unix_timestamp(a, '{input_format}'), '{output_format}'),
+                  date_format(to_timestamp(a, '{input_format}'), '{output_format}')
            from tab
-        '''.format(format, format, format, format, format),
+        '''.format(input_format=input_format, output_format=output_format),
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
+
+@disable_ansi_mode
+def test_date_format_timestamp_millis_legacy_prc():
+    seconds_gen = LongGen(
+        min_val=0,
+        max_val=int(last_supported_tz_time.timestamp()),
+        nullable=False,
+        special_cases=[])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: unary_op_df(spark, seconds_gen).selectExpr(*[
+            "date_format(timestamp_millis(a * 1000 + {}), "
+            "'yyyy-MM-dd HH:mm:ss.SSS')".format(offset)
+            for offset in [1, 123, 999]
+        ]),
+        {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': True,
+         'spark.sql.session.timeZone': 'PRC'})
+
 
 # mm: minute; MM: month
 @disable_ansi_mode
@@ -733,6 +759,20 @@ def test_formats_for_legacy_mode_other_formats_tz_rules():
         '''.format(format, format, format, format, format),
         {'spark.sql.legacy.timeParserPolicy': 'LEGACY',
          'spark.rapids.sql.incompatibleDateFormats.enabled': True})
+
+@disable_ansi_mode
+@allow_non_gpu('ProjectExec')
+def test_to_timestamp_legacy_millisecond_format_fallback():
+    conf = {
+        'spark.sql.legacy.timeParserPolicy': 'LEGACY',
+        'spark.rapids.sql.incompatibleDateFormats.enabled': True
+    }
+    assert_gpu_fallback_collect(
+        lambda spark: spark.createDataFrame(
+            [('2024-01-01 00:00:00.123',)], 'a string')
+            .selectExpr("to_timestamp(a, 'yyyy-MM-dd HH:mm:ss.SSS')"),
+        'GetTimestamp',
+        conf)
 
 @disable_ansi_mode
 @tz_sensitive_test
