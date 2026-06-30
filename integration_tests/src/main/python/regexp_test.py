@@ -511,7 +511,7 @@ def test_regexp_replace_unknown_named_group_throws():
 
 # `\$1` -> the backslash escapes the `$`, so the result is the literal text `$1`
 # (java.util.regex.Matcher#appendReplacement semantics). The DataFrame API avoids SQL
-# `${...}` variable substitution; the raw Python literal r"\$1" is the runtime string `\$1`.
+# `${...}` variable substitution.
 def test_regexp_replace_escaped_dollar_before_digit_is_literal():
     from pyspark.sql.functions import regexp_replace, col
     assert_gpu_and_cpu_are_equal_collect(
@@ -521,8 +521,7 @@ def test_regexp_replace_escaped_dollar_before_digit_is_literal():
 
 
 # `\\$1` -> `\\` is an escaped backslash and the following `$1` is a genuine group-1
-# backref, so the result is a literal `\` followed by the captured group. The Python
-# raw literal r"\\$1" is the runtime string `\\$1`.
+# backref, so the result is a literal `\` followed by the captured group.
 def test_regexp_replace_double_backslash_before_dollar_is_backref():
     from pyspark.sql.functions import regexp_replace, col
     assert_gpu_and_cpu_are_equal_collect(

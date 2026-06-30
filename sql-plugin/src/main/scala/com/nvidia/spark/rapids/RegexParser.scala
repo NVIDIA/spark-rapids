@@ -512,7 +512,7 @@ class RegexParser(pattern: String) {
     RegexCharacterClass(negated, characters = getCharacters(className))
   }
 
-  private def isHexDigit(ch: Char): Boolean = ch.isDigit ||
+  private def isHexDigit(ch: Char): Boolean = isAsciiDigit(ch) ||
     (ch >= 'a' && ch <= 'f') ||
     (ch >= 'A' && ch <= 'F')
 
