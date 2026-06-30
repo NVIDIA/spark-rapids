@@ -21,10 +21,11 @@ REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BENCH_SCALA="${REPO_DIR}/scripts/ansi_jit_project_bench.scala"
 
 BENCH_BASE_PATH="${BENCH_BASE_PATH:-/tmp/ansi_jit_project_bench_${USER:-unknown}}"
+BENCH_DATA_PATH="${BENCH_DATA_PATH:-}"
 BENCH_EXPR_SUITES="${BENCH_EXPR_SUITES:-mixed}"
 BENCH_EXPR_COUNTS="${BENCH_EXPR_COUNTS:-8}"
 BENCH_EXPR_DEPTHS="${BENCH_EXPR_DEPTHS:-1,4,8}"
-BENCH_MODES="${BENCH_MODES:-CPU,GPU_PROJECT,GPU_AST_JIT_COLD,GPU_AST_JIT_HOT}"
+BENCH_MODES="${BENCH_MODES:-CPU,GPU_PROJECT,GPU_AST_JIT_COLD,GPU_AST_JIT_PCH_WARM_KERNEL_COLD,GPU_AST_JIT_HOT}"
 BENCH_APP_REPEATS="${BENCH_APP_REPEATS:-1}"
 BENCH_WARMUPS="${BENCH_WARMUPS:-1}"
 BENCH_ITERS="${BENCH_ITERS:-3}"
@@ -38,6 +39,39 @@ BENCH_RESULTS_DIR="${BENCH_RESULTS_DIR:-${BENCH_BASE_PATH}/fresh_app_results}"
 BENCH_MARKDOWN_PATH="${BENCH_MARKDOWN_PATH:-${BENCH_RESULTS_DIR}/summary.md}"
 BENCH_COMBINED_CSV_PATH="${BENCH_COMBINED_CSV_PATH:-${BENCH_RESULTS_DIR}/summary.csv}"
 LIBCUDF_JIT_ENABLED="${LIBCUDF_JIT_ENABLED:-1}"
+LIBCUDF_JIT_VERBOSE="${LIBCUDF_JIT_VERBOSE:-0}"
+LIBCUDF_JIT_DUMP_CODEGEN="${LIBCUDF_JIT_DUMP_CODEGEN:-0}"
+BENCH_PROFILE_TOOL="${BENCH_PROFILE_TOOL:-none}"
+BENCH_PROFILE_TOOL="${BENCH_PROFILE_TOOL,,}"
+BENCH_PROFILE_OUTPUT_DIR="${BENCH_PROFILE_OUTPUT_DIR:-${BENCH_RESULTS_DIR}/profiles}"
+BENCH_CUDA_HOME="${BENCH_CUDA_HOME:-${CUDA_HOME:-/usr/local/cuda}}"
+BENCH_NSYS_BIN="${BENCH_NSYS_BIN:-${BENCH_CUDA_HOME}/bin/nsys}"
+BENCH_NCU_BIN="${BENCH_NCU_BIN:-${BENCH_CUDA_HOME}/bin/ncu}"
+BENCH_NCU_SET="${BENCH_NCU_SET:-detailed}"
+BENCH_NCU_KERNEL_NAME="${BENCH_NCU_KERNEL_NAME:-regex:^cudf_kernel_entry$}"
+BENCH_NCU_LAUNCH_SKIP="${BENCH_NCU_LAUNCH_SKIP:-0}"
+BENCH_NCU_LAUNCH_COUNT="${BENCH_NCU_LAUNCH_COUNT:-1}"
+BENCH_PROFILE_POSTPROCESS="${BENCH_PROFILE_POSTPROCESS:-true}"
+
+case "${BENCH_PROFILE_TOOL}" in
+  none) ;;
+  nsys)
+    [[ -x "${BENCH_NSYS_BIN}" ]] || {
+      echo "NSYS executable not found: ${BENCH_NSYS_BIN}" >&2
+      exit 1
+    }
+    ;;
+  ncu)
+    [[ -x "${BENCH_NCU_BIN}" ]] || {
+      echo "NCU executable not found: ${BENCH_NCU_BIN}" >&2
+      exit 1
+    }
+    ;;
+  *)
+    echo "Unknown BENCH_PROFILE_TOOL=${BENCH_PROFILE_TOOL}; expected none, nsys, or ncu" >&2
+    exit 1
+    ;;
+esac
 
 if [[ "${BENCH_SUMMARIZE_ONLY}" != "true" ]]; then
   : "${SPARK_HOME:?SPARK_HOME must be set}"
@@ -57,6 +91,10 @@ if [[ "${BENCH_SUMMARIZE_ONLY}" != "true" ]]; then
 fi
 
 mkdir -p "${BENCH_RESULTS_DIR}" "${BENCH_KERNEL_CACHE_BASE}"
+if [[ "${BENCH_PROFILE_TOOL}" != "none" ]]; then
+  mkdir -p "${BENCH_PROFILE_OUTPUT_DIR}"
+  echo "Profiler enabled (${BENCH_PROFILE_TOOL}); benchmark timings are not comparable to normal runs."
+fi
 
 split_csv() {
   local value="$1"
@@ -70,6 +108,82 @@ safe_name() {
 
 is_ast_mode() {
   [[ "$1" == GPU_AST_JIT* || "$1" == GPU_AST_JIT ]]
+}
+
+report_pch_activity() {
+  local mode="$1"
+  local log_path="$2"
+  case "${LIBCUDF_JIT_VERBOSE,,}" in
+    1|true|on) ;;
+    *) return ;;
+  esac
+  if ! is_ast_mode "${mode}"; then
+    return
+  fi
+
+  local created used
+  created="$(grep -ci 'creating precompiled header' "${log_path}" || true)"
+  used="$(grep -ci 'using precompiled header' "${log_path}" || true)"
+  echo "PCH activity mode=${mode}: created=${created} used=${used}"
+  if [[ "${created}" == "0" && "${used}" == "0" ]]; then
+    echo "WARNING: no automatic PCH create/use messages found in ${log_path}" >&2
+  fi
+}
+
+postprocess_profile() {
+  local profile_base="$1"
+  local run_log="$2"
+  local run_cache="$3"
+
+  if [[ "${BENCH_PROFILE_POSTPROCESS}" != "true" ]]; then
+    return
+  fi
+
+  {
+    echo "Spark log: ${run_log}"
+    echo "RTCX cache and embedded CUDA sources: ${run_cache}"
+    echo "Generated row-IR UDFs: search the Spark log for 'Generated code for transform:'"
+  } > "${profile_base}_sources.txt"
+
+  case "${BENCH_PROFILE_TOOL}" in
+    nsys)
+      local nsys_report="${profile_base}.nsys-rep"
+      if [[ ! -s "${nsys_report}" ]]; then
+        echo "WARNING: NSYS report not found: ${nsys_report}" >&2
+        return
+      fi
+      if ! "${BENCH_NSYS_BIN}" stats \
+          --report cuda_gpu_kern_sum,cuda_api_sum,nvtx_sum \
+          "${nsys_report}" > "${profile_base}_stats.txt" 2>&1; then
+        echo "WARNING: failed to generate NSYS stats for ${nsys_report}" >&2
+      fi
+      echo "NSYS report: ${nsys_report}"
+      echo "NSYS stats:  ${profile_base}_stats.txt"
+      ;;
+    ncu)
+      local ncu_report="${profile_base}.ncu-rep"
+      if [[ ! -s "${ncu_report}" ]]; then
+        echo "WARNING: NCU report not found: ${ncu_report}" >&2
+        return
+      fi
+      if ! "${BENCH_NCU_BIN}" --import "${ncu_report}" --page source \
+          --print-source ptx > "${profile_base}_ptx.txt" 2>&1; then
+        echo "WARNING: failed to export NCU PTX source view for ${ncu_report}" >&2
+      fi
+      if ! "${BENCH_NCU_BIN}" --import "${ncu_report}" --page source \
+          --print-source cuda,sass > "${profile_base}_cuda_sass.txt" 2>&1; then
+        echo "WARNING: failed to export NCU CUDA/SASS source view for ${ncu_report}" >&2
+      fi
+      if ! "${BENCH_NCU_BIN}" --import "${ncu_report}" \
+          --page details > "${profile_base}_details.txt" 2>&1; then
+        echo "WARNING: failed to export NCU details for ${ncu_report}" >&2
+      fi
+      echo "NCU report:     ${ncu_report}"
+      echo "NCU PTX:        ${profile_base}_ptx.txt"
+      echo "NCU CUDA/SASS:  ${profile_base}_cuda_sass.txt"
+      echo "NCU details:    ${profile_base}_details.txt"
+      ;;
+  esac
 }
 
 declare -a result_csvs
@@ -90,6 +204,8 @@ else
     --jars "${RAPIDS_JAR}"
     --conf spark.plugins=com.nvidia.spark.SQLPlugin
     --conf "spark.executorEnv.LIBCUDF_JIT_ENABLED=${LIBCUDF_JIT_ENABLED}"
+    --conf "spark.executorEnv.LIBCUDF_JIT_VERBOSE=${LIBCUDF_JIT_VERBOSE}"
+    --conf "spark.executorEnv.LIBCUDF_JIT_DUMP_CODEGEN=${LIBCUDF_JIT_DUMP_CODEGEN}"
   )
 
   if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
@@ -123,6 +239,7 @@ else
             run_csv="${BENCH_RESULTS_DIR}/${run_name}.csv"
             run_log="${BENCH_RESULTS_DIR}/${run_name}.log"
             run_cache="${BENCH_KERNEL_CACHE_BASE}/${run_name}"
+            profile_base="${BENCH_PROFILE_OUTPUT_DIR}/${run_name}"
 
             if [[ "${BENCH_SKIP_EXISTING}" == "true" && -s "${run_csv}" ]]; then
               echo "[$run_index] skip existing suite=${suite} count=${count} depth=${depth} " \
@@ -153,8 +270,46 @@ else
 
             echo "[$run_index] suite=${suite} count=${count} depth=${depth} " \
               "mode=${mode} repeat=${repeat}"
-            (
+            spark_command=(
+              "${SPARK_HOME}/bin/spark-shell"
+              "${run_spark_args[@]}"
+              -i "${BENCH_SCALA}"
+            )
+            case "${BENCH_PROFILE_TOOL}" in
+              none)
+                run_command=("${spark_command[@]}")
+                ;;
+              nsys)
+                run_command=(
+                  "${BENCH_NSYS_BIN}" profile
+                  "--trace=cuda,nvtx,osrt"
+                  --sample=none
+                  --cpuctxsw=none
+                  --force-overwrite=true
+                  --output="${profile_base}"
+                  "${spark_command[@]}"
+                )
+                ;;
+              ncu)
+                run_command=(
+                  "${BENCH_NCU_BIN}"
+                  --target-processes all
+                  --set "${BENCH_NCU_SET}"
+                  --kernel-name-base function
+                  --kernel-name "${BENCH_NCU_KERNEL_NAME}"
+                  --launch-skip "${BENCH_NCU_LAUNCH_SKIP}"
+                  --launch-count "${BENCH_NCU_LAUNCH_COUNT}"
+                  --import-source yes
+                  --source-folders "${run_cache}"
+                  --force-overwrite
+                  --export "${profile_base}"
+                  "${spark_command[@]}"
+                )
+                ;;
+            esac
+            if (
               export BENCH_BASE_PATH
+              export BENCH_DATA_PATH
               export BENCH_EXPR_SUITES="${suite}"
               export BENCH_EXPR_COUNTS="${count}"
               export BENCH_EXPR_DEPTHS="${depth}"
@@ -168,17 +323,27 @@ else
               export BENCH_FRESH_APP_MODE=true
               export BENCH_CLEAR_JIT_CACHE_FOR_COLD=true
               export LIBCUDF_JIT_ENABLED
+              export LIBCUDF_JIT_VERBOSE
+              export LIBCUDF_JIT_DUMP_CODEGEN
               if is_ast_mode "${mode}"; then
                 export LIBCUDF_KERNEL_CACHE_PATH="${run_cache}"
               fi
-              "${SPARK_HOME}/bin/spark-shell" "${run_spark_args[@]}" -i "${BENCH_SCALA}" \
-                < /dev/null > "${run_log}" 2>&1
-            )
+              "${run_command[@]}" < /dev/null > "${run_log}" 2>&1
+            ); then
+              :
+            else
+              run_status=$?
+              echo "Spark/profiler command failed with status ${run_status}." >&2
+              echo "See log: ${run_log}" >&2
+              exit "${run_status}"
+            fi
             if [[ ! -s "${run_csv}" ]]; then
               echo "Spark app did not write result CSV: ${run_csv}" >&2
               echo "See log: ${run_log}" >&2
               exit 1
             fi
+            report_pch_activity "${mode}" "${run_log}"
+            postprocess_profile "${profile_base}" "${run_log}" "${run_cache}"
             result_csvs+=("${run_csv}")
             regenerate_next=false
           done
@@ -206,8 +371,9 @@ mode_order = {
     "CPU": 0,
     "GPU_PROJECT": 1,
     "GPU_AST_JIT_COLD": 2,
-    "GPU_AST_JIT_HOT": 3,
-    "GPU_AST_JIT": 3,
+    "GPU_AST_JIT_PCH_WARM_KERNEL_COLD": 3,
+    "GPU_AST_JIT_HOT": 4,
+    "GPU_AST_JIT": 4,
 }
 suite_order = {
     ("mixed" if suite.strip().lower() == "all"

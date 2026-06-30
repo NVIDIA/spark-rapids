@@ -23,6 +23,7 @@
  *   export CUDA129=/home/haoyangl/code/.conda/cudf-cuda12.9-envs/rapids
  *   export LD_LIBRARY_PATH=$CUDA129/lib:$CUDA129/targets/x86_64-linux/lib:$LD_LIBRARY_PATH
  *   export LIBCUDF_JIT_ENABLED=1
+ *   export LIBCUDF_JIT_VERBOSE=1
  *   export BENCH_BASE_PATH=/tmp/ansi_jit_project_bench
  *   export LIBCUDF_KERNEL_CACHE_PATH=$BENCH_BASE_PATH/jit_cache
  *
@@ -30,6 +31,7 @@
  *     --jars dist/target/rapids-4-spark_2.12-*-cuda12.jar \
  *     --conf spark.plugins=com.nvidia.spark.SQLPlugin \
  *     --conf spark.executorEnv.LIBCUDF_JIT_ENABLED=1 \
+ *     --conf spark.executorEnv.LIBCUDF_JIT_VERBOSE=$LIBCUDF_JIT_VERBOSE \
  *     --conf spark.executorEnv.LIBCUDF_KERNEL_CACHE_PATH=$LIBCUDF_KERNEL_CACHE_PATH \
  *     --conf spark.executorEnv.LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
  *     -i scripts/ansi_jit_project_bench.scala
@@ -42,8 +44,9 @@
  *   BENCH_EXPR_SUITES=mixed
  *   BENCH_WARMUPS=1
  *   BENCH_ITERS=3
- *   BENCH_MODES=CPU,GPU_PROJECT,GPU_AST_JIT_COLD,GPU_AST_JIT_HOT
+ *   BENCH_MODES=CPU,GPU_PROJECT,GPU_AST_JIT_COLD,GPU_AST_JIT_PCH_WARM_KERNEL_COLD,GPU_AST_JIT_HOT
  *   BENCH_BASE_PATH=/tmp/ansi_jit_project_bench
+ *   BENCH_DATA_PATH=/tmp/ansi_jit_project_bench/parquet_v2_rows_100000000_parts_16
  *   BENCH_RESULT_CSV_PATH=/tmp/ansi_jit_project_bench/results.csv
  *   BENCH_CLEAR_JIT_CACHE_FOR_COLD=true
  *   BENCH_REGENERATE_DATA=true
@@ -108,7 +111,8 @@ object AnsiJitProjectBench {
   val allowClearNonBenchJitCache: Boolean =
     envBool("BENCH_ALLOW_CLEAR_NON_BENCH_JIT_CACHE", false)
   val kernelCachePath: Option[String] = sys.env.get("LIBCUDF_KERNEL_CACHE_PATH").filter(_.nonEmpty)
-  val dataPath: String = s"$basePath/parquet_v2_rows_${rows}_parts_${partitions}"
+  val dataPath: String = env(
+    "BENCH_DATA_PATH", s"$basePath/parquet_v2_rows_${rows}_parts_${partitions}")
   val resultCsvPath: String = env("BENCH_RESULT_CSV_PATH",
     s"$basePath/results_${System.currentTimeMillis()}.csv")
 
@@ -129,11 +133,14 @@ object AnsiJitProjectBench {
       "spark.rapids.sql.projectAstEnabled" -> "false",
       "spark.rapids.sql.projectAstAnsiArithmeticEnabled" -> "false")),
     Mode("GPU_AST_JIT_COLD", astJitConfs, "cold"),
+    Mode("GPU_AST_JIT_PCH_WARM_KERNEL_COLD", astJitConfs, "pch_warm_kernel_cold"),
     Mode("GPU_AST_JIT_HOT", astJitConfs, "hot")
   )
 
   val modeByName: Map[String, Mode] = allModes.map(m => m.name -> m).toMap
-  val modeAliases: Map[String, String] = Map("GPU_AST_JIT" -> "GPU_AST_JIT_HOT")
+  val modeAliases: Map[String, String] = Map(
+    "GPU_AST_JIT" -> "GPU_AST_JIT_HOT",
+    "GPU_AST_JIT_PCH_COLD" -> "GPU_AST_JIT_PCH_WARM_KERNEL_COLD")
   val modes: Seq[Mode] = parseStrings(env("BENCH_MODES", allModes.map(_.name).mkString(",")))
     .map { name =>
       val upperName = name.toUpperCase(Locale.ROOT)
@@ -231,17 +238,24 @@ object AnsiJitProjectBench {
     path.toAbsolutePath.normalize().startsWith(normalizedBasePath)
   }
 
+  def isFullCold(mode: Mode): Boolean = mode.jitCacheState == "cold"
+
+  def isPchWarmKernelCold(mode: Mode): Boolean =
+    mode.jitCacheState == "pch_warm_kernel_cold"
+
+  def isColdMeasured(mode: Mode): Boolean = isFullCold(mode) || isPchWarmKernelCold(mode)
+
   var warnedColdCacheNotCleared = false
 
   def warnColdCacheNotCleared(reason: String): Unit = {
     if (!warnedColdCacheNotCleared) {
-      println(s"WARNING: GPU_AST_JIT_COLD cache was not cleared: $reason")
+      println(s"WARNING: GPU_AST_JIT_* cold cache was not cleared: $reason")
       println("         Cold results may include hot JIT cache effects.")
       warnedColdCacheNotCleared = true
     }
   }
 
-  def clearColdJitCache(label: String): Unit = {
+  def clearFullJitCache(label: String): Unit = {
     if (!clearJitCacheForCold) {
       warnColdCacheNotCleared("BENCH_CLEAR_JIT_CACHE_FOR_COLD=false")
     } else {
@@ -439,6 +453,13 @@ object AnsiJitProjectBench {
     input.select((0 until exprCount).map(i => makeExpr(exprSuite, i, exprDepth)): _*)
   }
 
+  def makePchProbeQuery(): DataFrame = {
+    val input = spark.read.parquet(dataPath).limit(1)
+    input.select(
+      (((col("l3") + typedLit(104729L, LongType)) * typedLit(37L, LongType)) - col("l2"))
+        .as("__pch_probe"))
+  }
+
   def flattenPlan(plan: SparkPlan): Seq[SparkPlan] =
     plan +: plan.children.flatMap(flattenPlan)
 
@@ -554,6 +575,40 @@ object AnsiJitProjectBench {
       s"Unknown BENCH_CONSUME_MODE=$other. Expected plan or aggregate.")
   }
 
+  def requireAstProject(mode: Mode, plan: SparkPlan): String = {
+    val nodes = projectNodeNames(plan)
+    if (requireAstForJit && mode.jitCacheState != "none" &&
+        !nodes.contains("GpuProjectAstExec")) {
+      val head = plan.treeString.split('\n').take(8).mkString(" | ")
+      throw new IllegalStateException(
+        s"${mode.name} expected GpuProjectAstExec but ran $nodes. " +
+          "Use BENCH_REQUIRE_AST_FOR_JIT=false to allow fallback benchmarking. " +
+          s"Plan head: $head")
+    }
+    nodes
+  }
+
+  def prewarmPch(mode: Mode, exprSuite: String, exprCount: Int, exprDepth: Int): Unit = {
+    val label = s"${mode.name}_${exprSuite}_exprs_${exprCount}_depth_${exprDepth}_pch_probe"
+    clearFullJitCache(label)
+    withConfs(commonConfs ++ mode.confs) {
+      spark.sparkContext.setJobDescription(label)
+      spark.sparkContext.setLocalProperty("spark.job.description", label)
+
+      val startNs = System.nanoTime()
+      val (rowsSeen, _, plan) = consume(makePchProbeQuery(), label)
+      val wallMs = (System.nanoTime() - startNs).toDouble / 1000000.0
+      val nodes = requireAstProject(mode, plan)
+      if (printPlan) {
+        println(s"plan[$label]:")
+        println(plan.treeString)
+      }
+
+      spark.sparkContext.setLocalProperty("spark.job.description", null)
+      println(f"PCH probe wall=$wallMs%.1f ms rows=$rowsSeen nodes=$nodes")
+    }
+  }
+
   def runOne(
       exprSuite: String,
       mode: Mode,
@@ -563,9 +618,7 @@ object AnsiJitProjectBench {
       warmup: Boolean): RunResult = {
     val label = s"${mode.name}_${exprSuite}_exprs_${exprCount}_depth_${exprDepth}_" +
       s"${if (warmup) "warmup" else s"iter_$iteration"}"
-    if (mode.jitCacheState == "cold") {
-      clearColdJitCache(label)
-    }
+    if (isFullCold(mode)) { clearFullJitCache(label) }
     withConfs(commonConfs ++ mode.confs) {
       spark.sparkContext.setJobDescription(label)
       spark.sparkContext.setLocalProperty("spark.job.description", label)
@@ -580,15 +633,8 @@ object AnsiJitProjectBench {
       val projectNonCompileMs = math.max(0.0, projectMs - compileAstsMs)
       val projectOtherMs = math.max(0.0, projectMs - compileAstsMs - computeAstsMs)
       val allGpuMs = metricValueByKeyOrName(plan, "opTime", "op time").toDouble / 1000000.0
-      val nodes = projectNodeNames(plan)
+      val nodes = requireAstProject(mode, plan)
       val head = plan.treeString.split('\n').take(8).mkString(" | ")
-      if (requireAstForJit && mode.jitCacheState != "none" &&
-          !nodes.contains("GpuProjectAstExec")) {
-        throw new IllegalStateException(
-          s"${mode.name} expected GpuProjectAstExec but ran $nodes. " +
-            "Use BENCH_REQUIRE_AST_FOR_JIT=false to allow fallback benchmarking. " +
-            s"Plan head: $head")
-      }
       if (printPlan) {
         println(s"plan[$label]:")
         println(plan.treeString)
@@ -659,6 +705,8 @@ object AnsiJitProjectBench {
     println("  GPU_AST_JIT_HOT uses warmups to prime the JIT cache before measured runs.")
     println("  GPU_AST_JIT_COLD clears LIBCUDF_KERNEL_CACHE_PATH, skips warmups, and runs one " +
       "measured iteration per expression shape.")
+    println("  GPU_AST_JIT_PCH_WARM_KERNEL_COLD runs a distinct one-row AST probe in the same " +
+      "process, then measures target expressions with warm automatic PCH and cold kernel keys.")
     println("  With BENCH_CONSUME_MODE=aggregate, CPU and GPU run the same SQL query end to end.")
     println("  With BENCH_CONSUME_MODE=plan, wall time is a lower-level Project " +
       "materialization probe.")
@@ -712,6 +760,9 @@ object AnsiJitProjectBench {
     println(s"freshAppMode=$freshAppMode")
     println(s"requireAstForJit=$requireAstForJit")
     println(s"LIBCUDF_JIT_ENABLED=${sys.env.getOrElse("LIBCUDF_JIT_ENABLED", "(unset)")}")
+    println(s"LIBCUDF_JIT_VERBOSE=${sys.env.getOrElse("LIBCUDF_JIT_VERBOSE", "(unset)")}")
+    println("LIBCUDF_JIT_DUMP_CODEGEN=" +
+      sys.env.getOrElse("LIBCUDF_JIT_DUMP_CODEGEN", "(unset)"))
     println(s"LIBCUDF_KERNEL_CACHE_PATH=${kernelCachePath.getOrElse("(unset)")}")
     println(s"clearJitCacheForCold=$clearJitCacheForCold")
     println(s"allowClearNonBenchJitCache=$allowClearNonBenchJitCache")
@@ -719,23 +770,27 @@ object AnsiJitProjectBench {
     if (sys.env.get("LIBCUDF_JIT_ENABLED") != Some("1")) {
       println("WARNING: LIBCUDF_JIT_ENABLED is not 1. GPU_AST_JIT_* modes are expected to fail.")
     }
-    if (modes.exists(_.jitCacheState == "cold") && kernelCachePath.isEmpty) {
-      println("WARNING: GPU_AST_JIT_COLD cannot force a cold disk cache without " +
+    if (modes.exists(isColdMeasured) && kernelCachePath.isEmpty) {
+      println("WARNING: GPU_AST_JIT_* cold modes cannot force a cold disk cache without " +
         "LIBCUDF_KERNEL_CACHE_PATH.")
     }
-    if (modes.exists(_.jitCacheState == "cold") &&
+    if (modes.exists(isColdMeasured) &&
         !getConf("spark.master").exists(_.startsWith("local"))) {
-      println("WARNING: GPU_AST_JIT_COLD cache clearing only deletes the driver-local path.")
+      println("WARNING: GPU_AST_JIT_* cold cache clearing only deletes the driver-local path.")
     }
     val hotIndex = modes.indexWhere(_.jitCacheState == "hot")
-    val coldIndex = modes.indexWhere(_.jitCacheState == "cold")
+    val coldIndex = modes.indexWhere(isColdMeasured)
     if (hotIndex >= 0 && coldIndex >= 0 && hotIndex < coldIndex) {
-      println("WARNING: GPU_AST_JIT_HOT appears before GPU_AST_JIT_COLD; executor process " +
+      println("WARNING: GPU_AST_JIT_HOT appears before GPU_AST_JIT_* cold modes; executor process " +
         "cache may already be warm for cold runs.")
     }
-    if (modes.exists(_.jitCacheState == "cold") && !freshAppMode) {
-      println("WARNING: GPU_AST_JIT_COLD cannot clear libcudf's in-process JIT cache from " +
+    if (modes.exists(isColdMeasured) && !freshAppMode) {
+      println("WARNING: GPU_AST_JIT_* cold modes cannot clear libcudf's in-process JIT cache from " +
         "Scala. Use a fresh Spark app for repeated process-cold samples.")
+    }
+    if (modes.exists(isPchWarmKernelCold) && !freshAppMode) {
+      println("WARNING: GPU_AST_JIT_PCH_WARM_KERNEL_COLD requires a fresh Spark app so the " +
+        "in-process kernel cache contains only its distinct PCH probe before measurement.")
     }
   }
 
@@ -751,17 +806,20 @@ object AnsiJitProjectBench {
             println()
             println(s"--- suite=$exprSuite mode=${mode.name} exprCount=$exprCount " +
               s"exprDepth=$exprDepth ---")
+            if (isPchWarmKernelCold(mode)) {
+              prewarmPch(mode, exprSuite, exprCount, exprDepth)
+            }
             val modeWarmups = mode.jitCacheState match {
-              case "cold" => 0
+              case "cold" | "pch_warm_kernel_cold" => 0
               case "hot" if warmups == 0 => 1
               case _ => warmups
             }
-            val modeIters = if (mode.jitCacheState == "cold") 1 else iters
-            if (mode.jitCacheState == "cold" && warmups != 0) {
-              println("Skipping warmups for GPU_AST_JIT_COLD.")
+            val modeIters = if (isColdMeasured(mode)) 1 else iters
+            if (isColdMeasured(mode) && warmups != 0) {
+              println(s"Skipping warmups for ${mode.name}.")
             }
-            if (mode.jitCacheState == "cold" && iters != 1) {
-              println("Using one measured iteration for GPU_AST_JIT_COLD. " +
+            if (isColdMeasured(mode) && iters != 1) {
+              println(s"Using one measured iteration for ${mode.name}. " +
                 "Rerun in a fresh Spark app for repeated cold samples.")
             }
             if (mode.jitCacheState == "hot" && warmups == 0) {
