@@ -23,7 +23,7 @@ import com.nvidia.spark.rapids.{GpuScan, ScanMeta, ScanRule, ShimReflectionUtils
 import com.nvidia.spark.rapids.iceberg.IcebergProviderBase
 import org.apache.iceberg.spark.source.{GpuSparkIncrementalAppendScan, GpuSparkScan}
 
-import org.apache.spark.sql.connector.read.Scan
+import org.apache.spark.sql.connector.read.{Scan, SupportsRuntimeV2Filtering}
 
 class IcebergProviderImpl extends IcebergProviderBase {
 
@@ -44,7 +44,8 @@ class IcebergProviderImpl extends IcebergProviderBase {
         private lazy val convertedScan: Try[GpuSparkScan] = Try(
           GpuSparkIncrementalAppendScan.create(a, this.conf, false))
 
-        override def supportsRuntimeFilters: Boolean = true
+        override def supportsRuntimeFilters: Boolean =
+          a.isInstanceOf[SupportsRuntimeV2Filtering]
 
         override def tagSelfForGpu(): Unit = {
           GpuSparkScan.tagForGpu(this, convertedScan)
