@@ -50,7 +50,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     "RegExpReplace",
     nullableStringsFromCsv,
     execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "Literal"), conf = conf) {
+      "RegExpReplace", "AttributeReference"), conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'a',strings)")
   }
 
@@ -75,7 +75,7 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
   testGpuFallback("String regexp_replace input empty cpu fall back",
     "RegExpReplace",
     nullableStringsFromCsv, execsAllowedNonGpu = Seq("ProjectExec", "Alias",
-      "RegExpReplace", "AttributeReference", "Literal"), conf = conf) {
+      "RegExpReplace", "AttributeReference"), conf = conf) {
     frame => frame.selectExpr("regexp_replace(strings,'','D')")
   }
 
