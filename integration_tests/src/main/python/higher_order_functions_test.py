@@ -173,6 +173,19 @@ def test_array_hof_mixed_project_with_aggregate():
 
 
 @disable_ansi_mode
+def test_array_hof_mixed_project_with_aggregate_outer_state():
+    data_gen = ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=8)
+    outer_gen = LongGen(min_val=-3, max_val=3, nullable=False)
+    def do_it(spark):
+        return two_col_df(spark, data_gen, outer_gen).selectExpr(
+            'transform(a, x -> coalesce(x, 0) + CAST(b AS INT)) as plus_b',
+            '''aggregate(a, b, (acc, x) -> acc +
+                 CAST(coalesce(x, 0) AS BIGINT) + b) as sum_plus_b''')
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
+@disable_ansi_mode
 def test_array_hof_mixed_project_with_indexed_lambdas():
     data_gen = ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=8)
     outer_gen = IntegerGen(min_val=-3, max_val=3, nullable=False)

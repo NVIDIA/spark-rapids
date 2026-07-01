@@ -347,7 +347,8 @@ private[rapids] object GpuArrayHofFusion {
   private case class PlannedHof(
       outputIndex: Int,
       hof: GpuArrayTransformBase,
-      lambdaColumnIndexes: Array[Int])
+      lambdaColumnIndexes: Array[Int],
+      useSharedBatch: Boolean)
 
   private case class HofGroup(
       members: Seq[HofInProject],
@@ -365,8 +366,10 @@ private[rapids] object GpuArrayHofFusion {
       }
       val lambdaArgStart = sharedIntermediate.length
       val lambdaIndexes = lambdaArgStart until lambdaArgStart + first.lambdaArgumentCount
-      PlannedHof(member.outputIndex, member.hof,
-        (intermediateIndexes ++ lambdaIndexes).toArray)
+      val columnIndexes = (intermediateIndexes ++ lambdaIndexes).toArray
+      val useSharedBatch = columnIndexes.length == elementTypes.length &&
+        columnIndexes.indices.forall(index => columnIndexes(index) == index)
+      PlannedHof(member.outputIndex, member.hof, columnIndexes, useSharedBatch)
     }
   }
 
@@ -504,8 +507,12 @@ private[rapids] object GpuArrayHofFusion {
           batch, arg, group.sharedIntermediate, group.elementTypes,
           group.first.lambdaArgumentCount)) { sharedBatch =>
         group.plannedHofs.foreach { planned =>
-          val dataCol = withResource(makeHofLambdaBatch(sharedBatch, planned)) { lambdaBatch =>
-            planned.hof.function.columnarEval(lambdaBatch)
+          val dataCol = if (planned.useSharedBatch) {
+            planned.hof.function.columnarEval(sharedBatch)
+          } else {
+            withResource(makeHofLambdaBatch(sharedBatch, planned)) { lambdaBatch =>
+              planned.hof.function.columnarEval(lambdaBatch)
+            }
           }
           outputColumns(planned.outputIndex) =
             consumeElementResults(batch, planned.hof, dataCol, arg)

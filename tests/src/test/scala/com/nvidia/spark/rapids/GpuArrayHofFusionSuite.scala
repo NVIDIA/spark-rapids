@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import com.nvidia.spark.rapids.Arm.withResource
+
 import org.apache.spark.sql.catalyst.expressions.{Expression, ExprId}
 import org.apache.spark.sql.types.{ArrayType, BooleanType, DataType, IntegerType, LongType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -40,6 +42,14 @@ class GpuArrayHofFusionSuite extends GpuUnitTests {
       throw new UnsupportedOperationException("test-only expression")
   }
 
+  private case class SideEffectExpr() extends GpuLeafExpression {
+    override def hasSideEffects: Boolean = true
+    override def dataType: DataType = IntegerType
+    override def nullable: Boolean = false
+    override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
+      throw new UnsupportedOperationException("test-only expression")
+  }
+
   private def lambda(resultType: DataType, argCount: Int = 1): GpuLambdaFunction = {
     val args = (0 until argCount).map { index =>
       GpuNamedLambdaVariable(s"x$index", IntegerType, nullable = true, ExprId(100 + index))
@@ -57,6 +67,17 @@ class GpuArrayHofFusionSuite extends GpuUnitTests {
       argCount: Int = 1,
       boundIntermediate: Seq[GpuExpression] = Seq.empty): GpuArrayTransform =
     GpuArrayTransform(argument, lambda(IntegerType, argCount), isBound = true, boundIntermediate)
+
+  private def executableTransform(exprId: Long): GpuArrayTransform = {
+    val arg = GpuNamedLambdaVariable("x", IntegerType, nullable = true, ExprId(exprId))
+    val boundArg = GpuBoundReference(0, IntegerType, nullable = true)(arg.exprId, arg.name)
+    GpuArrayTransform(arrayArg, GpuLambdaFunction(boundArg, Seq(arg)), isBound = true)
+  }
+
+  private def sideEffectTransform(): GpuArrayTransform = {
+    val arg = GpuNamedLambdaVariable("x", IntegerType, nullable = true, ExprId(200))
+    GpuArrayTransform(arrayArg, GpuLambdaFunction(SideEffectExpr(), Seq(arg)), isBound = true)
+  }
 
   private def filter(
       argument: Expression = arrayArg,
@@ -136,5 +157,45 @@ class GpuArrayHofFusionSuite extends GpuUnitTests {
     assertResult(Seq(Seq(0, 1), Seq(3, 5))) {
       GpuArrayHofFusion.findFusedGroupIndexes(exprs)
     }
+  }
+
+  test("does not fuse side-effecting HOFs or cross side-effecting barriers") {
+    val exprs = Seq(
+      alias(transform(), "before_left"),
+      alias(filter(), "before_right"),
+      alias(sideEffectTransform(), "side_effect_hof"),
+      alias(transform(), "middle_left"),
+      alias(filter(), "middle_right"),
+      alias(SideEffectExpr(), "side_effect_project"),
+      alias(transform(), "after_left"),
+      alias(filter(), "after_right"))
+
+    assertResult(Seq(Seq(0, 1), Seq(3, 4), Seq(6, 7))) {
+      GpuArrayHofFusion.findFusedGroupIndexes(exprs)
+    }
+  }
+
+  test("executes a non-contiguous fused group for empty and non-empty batches") {
+    val arrayType = ArrayType(IntegerType, containsNull = true)
+    val schema = FuzzerUtils.createSchema(arrayType)
+    val exprs = Seq(
+      alias(executableTransform(300), "left"),
+      literalProject("middle"),
+      alias(executableTransform(301), "right"))
+
+    def check(batch: ColumnarBatch): Unit = {
+      val fused = GpuArrayHofFusion.project(batch, exprs)
+      assert(fused.isDefined)
+      withResource(fused.get) { projected =>
+        assertResult(3)(projected.numCols())
+        assertResult(batch.numRows())(projected.numRows())
+        assert((0 until projected.numCols()).forall { index =>
+          projected.column(index) != null
+        })
+      }
+    }
+
+    withResource(GpuColumnVector.emptyBatchFromTypes(Array(arrayType)))(check)
+    withResource(FuzzerUtils.createColumnarBatch(schema, 8))(check)
   }
 }
