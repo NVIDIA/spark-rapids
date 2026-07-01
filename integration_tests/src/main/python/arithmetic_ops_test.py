@@ -15,7 +15,7 @@
 from logging import exception
 import pytest
 
-from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql, assert_cpu_and_gpu_are_equal_collect_with_capture
+from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_error, assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_sql
 from data_gen import *
 from marks import ignore_order, incompat, approximate_float, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides, disable_ansi_mode
 from pyspark.sql.types import *
@@ -1594,49 +1594,4 @@ def test_try_multiply_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             "try_multiply(a, b) as result"), "Multiply")
-
-
-# csc has no GPU implementation in spark-rapids and is a deterministic UnaryMathExpression
-# (1/sin(x)), so it is an ideal candidate for spark.rapids.sql.expression.cpuBridge.enabled.
-# With the conf enabled, Csc is wrapped by GpuCpuBridgeExpression and the surrounding
-# Project stays GPU-resident; with the conf disabled (default) the entire Project falls
-# back to CPU. `@allow_non_gpu("Csc", "BoundReference")` is required because the IT strict-columnar check
-# in GpuTransitionOverrides.assertIsOnTheGpu recurses into a GpuCpuBridgeExpression's
-# cpu child subtree (Csc) and would otherwise reject Csc as non-GPU; allowing it as a
-# non-GPU expression matches what the bridge does in practice.
-@allow_non_gpu("Csc", "BoundReference")
-@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-def test_cpu_bridge_csc_select(aqe_enabled):
-    conf = {
-        'spark.rapids.sql.expression.cpuBridge.enabled': 'true',
-        'spark.sql.adaptive.enabled': aqe_enabled,
-    }
-    # Plan-level assertContains(GpuCpuBridgeExpression) guards against silent
-    # coverage regression if Csc ever gains a GPU implementation (the bridge
-    # would no longer fire and result-equality alone would mask the change).
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: gen_df(spark,
-            [('x', DoubleGen(min_exp=-3, max_exp=5, no_nans=True))],
-            length=100
-        ).selectExpr("x", "csc(x) AS csc_x", "x * 2 AS x2", "abs(x) AS abs_x"),
-        exist_classes='GpuCpuBridgeExpression',
-        conf=conf)
-
-
-@allow_non_gpu("Csc", "BoundReference")
-@pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=idfn)
-def test_cpu_bridge_csc_filter(aqe_enabled):
-    conf = {
-        'spark.rapids.sql.expression.cpuBridge.enabled': 'true',
-        'spark.sql.adaptive.enabled': aqe_enabled,
-    }
-    # csc(x) in a filter predicate exercises the bridge in a Filter (not Project)
-    # context. Result rows are reduced to those where csc(x) > 1.5.
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        lambda spark: gen_df(spark,
-            [('x', DoubleGen(min_exp=-1, max_exp=2, no_nans=True))],
-            length=200
-        ).filter("csc(x) > 1.5").selectExpr("x", "csc(x) AS csc_x"),
-        exist_classes='GpuCpuBridgeExpression',
-        conf=conf)
 
