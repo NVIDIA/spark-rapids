@@ -99,6 +99,7 @@ pipeline {
                     }
 
                     def title = githubHelper.getIssue().title.toLowerCase()
+                    env.FULL_PREMERGE = (title ==~ /.*\[full-premerge\].*/).toString()
                     if (title ==~ /.*\[skip ci\].*/) {
                         githubHelper.updateCommitStatus("", "Skipped", GitHubCommitState.SUCCESS)
                         currentBuild.result == "SUCCESS"

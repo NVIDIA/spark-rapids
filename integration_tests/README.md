@@ -376,6 +376,10 @@ Developer and nightly runs keep the complete Cartesian product unless `RANDOM_SE
 configured. `RANDOM_SELECT` is not applied to pre-commit runs because a second random selection could
 remove the only selected occurrence of a parameter value.
 
+Add `[full-premerge]` to the pull request title to disable this selection and run the complete
+pre-commit test matrix. In this mode, `RANDOM_SELECT` retains its original behavior if explicitly
+configured.
+
 ### Randomly selecting tests
 
 To shorten feedback cycles, you can ask the harness to execute only a random subset of the collected

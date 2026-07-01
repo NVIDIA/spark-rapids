@@ -150,6 +150,9 @@ def is_nightly_run():
 def is_precommit_run():
     return _is_precommit_run
 
+def is_full_premerge_run():
+    return os.environ.get('FULL_PREMERGE', 'false').lower() == 'true'
+
 def is_at_least_precommit_run():
     return _is_nightly_run or _is_precommit_run
 
@@ -566,7 +569,7 @@ def _select_precommit_cases(config, items):
 
 @pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(config, items):
-    if is_precommit_run():
+    if is_precommit_run() and not is_full_premerge_run():
         _select_precommit_cases(config, items)
     else:
         _maybe_apply_random_select(config, items)
