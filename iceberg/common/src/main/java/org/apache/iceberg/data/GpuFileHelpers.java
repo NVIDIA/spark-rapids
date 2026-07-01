@@ -42,6 +42,29 @@ import java.util.List;
  * dependency, we will need to introduce all other dependencies like `iceberg-parquet`.
  */
 public class GpuFileHelpers {
+  private static final Method BUILDER_FOR;
+  private static final Method EQUALITY_DELETE_ROW_SCHEMA;
+  private static final Method EQUALITY_FIELD_IDS;
+  private static final Method BUILD;
+
+  static {
+    try {
+      BUILDER_FOR = findMethod(GenericFileWriterFactory.class, "builderFor", Table.class);
+      Class<?> builderClass = BUILDER_FOR.getReturnType();
+      EQUALITY_DELETE_ROW_SCHEMA =
+          findMethod(builderClass, "equalityDeleteRowSchema", Schema.class);
+      EQUALITY_FIELD_IDS = findMethod(builderClass, "equalityFieldIds", int[].class);
+      BUILD = findMethod(builderClass, "build");
+
+      BUILDER_FOR.setAccessible(true);
+      EQUALITY_DELETE_ROW_SCHEMA.setAccessible(true);
+      EQUALITY_FIELD_IDS.setAccessible(true);
+      BUILD.setAccessible(true);
+    } catch (NoSuchMethodException e) {
+      throw new ExceptionInInitializerError(e);
+    }
+  }
+
   public static DeleteFile writeDeleteFile(
       Table table,
       OutputFile out,
@@ -73,24 +96,10 @@ public class GpuFileHelpers {
     try {
       // Iceberg 1.10 declares Builder package-private while 1.11 makes it public. Avoid static
       // linkage so this common class has identical bytecode in both version-specific modules.
-      Method builderFor = GenericFileWriterFactory.class
-          .getDeclaredMethod("builderFor", Table.class);
-      builderFor.setAccessible(true);
-      Object builder = builderFor.invoke(null, table);
-
-      Method equalityDeleteRowSchema =
-          findMethod(builder.getClass(), "equalityDeleteRowSchema", Schema.class);
-      equalityDeleteRowSchema.setAccessible(true);
-      builder = equalityDeleteRowSchema.invoke(builder, deleteRowSchema);
-
-      Method equalityFieldIdsMethod =
-          findMethod(builder.getClass(), "equalityFieldIds", int[].class);
-      equalityFieldIdsMethod.setAccessible(true);
-      builder = equalityFieldIdsMethod.invoke(builder, (Object) equalityFieldIds);
-
-      Method build = findMethod(builder.getClass(), "build");
-      build.setAccessible(true);
-      return (FileWriterFactory<Record>) build.invoke(builder);
+      Object builder = BUILDER_FOR.invoke(null, table);
+      builder = EQUALITY_DELETE_ROW_SCHEMA.invoke(builder, deleteRowSchema);
+      builder = EQUALITY_FIELD_IDS.invoke(builder, (Object) equalityFieldIds);
+      return (FileWriterFactory<Record>) BUILD.invoke(builder);
     } catch (ReflectiveOperationException e) {
       throw new IOException("Failed to create Iceberg file writer factory", e);
     }
