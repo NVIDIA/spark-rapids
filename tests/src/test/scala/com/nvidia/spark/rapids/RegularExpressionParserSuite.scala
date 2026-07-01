@@ -284,13 +284,20 @@ class RegularExpressionParserSuite extends AnyFunSuite {
   }
   
   test("\\1 in replacement is a literal backslash+digit, not a group backref") {
-    val repl = new RegexParser("\\1").parseReplacement(numCaptureGroups = 1)
+    val repl = new RegexParser(raw"\1").parseReplacement(numCaptureGroups = 1)
     assert(repl.parts.toList === List(RegexChar('\\'), RegexChar('1')))
   }
 
   test("\\a in replacement is the literal character a") {
-    val repl = new RegexParser("\\a").parseReplacement(numCaptureGroups = 0)
+    val repl = new RegexParser(raw"\a").parseReplacement(numCaptureGroups = 0)
     assert(repl.parts.toList === List(RegexChar('\\'), RegexChar('a')))
+  }
+
+  test("backslash plus non-ASCII Unicode digit is literal in replacement") {
+    for (digit <- Seq('١', '१', '۱')) {
+      val repl = new RegexParser(raw"\$digit").parseReplacement(numCaptureGroups = 1)
+      assert(repl.parts.toList === List(RegexChar('\\'), RegexChar(digit)))
+    }
   }
 
   test("trailing \\ in replacement throws") {
@@ -320,6 +327,16 @@ class RegularExpressionParserSuite extends AnyFunSuite {
     }
     assert(ex.getMessage.contains("Illegal group reference"))
     assert(ex.getMessage.contains("digit"))
+  }
+
+  test("non-ASCII Unicode digit in braced group reference triggers GPU fallback") {
+    for (rep <- Seq("$" + "{١}", "$" + "{१}", "$" + "{۱}")) {
+      val e = intercept[RegexUnsupportedException] {
+        new RegexParser(rep).parseReplacement(numCaptureGroups = 4)
+      }
+      assert(e.getMessage.startsWith("Illegal group reference"),
+        s"unexpected message for replacement '$rep': ${e.getMessage}")
+    }
   }
 
   test("dollar-brace-name-brace for named group is not supported on GPU") {
