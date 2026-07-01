@@ -362,31 +362,21 @@ private[rapids] object GpuArrayHofFusion {
     }
   }
 
-  private[rapids] final class FusionPlan private (
-      fusedGroups: Seq[HofGroup]) extends Serializable {
-    private val groupsByStartIndex = fusedGroups.map(group => group.startIndex -> group).toMap
-
-    private[rapids] def project(
-        batch: ColumnarBatch,
-        boundExprs: Seq[Expression]): ColumnarBatch =
-      projectWithFusedGroups(batch, boundExprs, groupsByStartIndex)
-
-    private[GpuArrayHofFusion] def groupIndexes: Seq[Seq[Int]] =
-      fusedGroups.map(_.outputIndexes)
-  }
-
-  private object FusionPlan {
-    def apply(fusedGroups: Seq[HofGroup]): FusionPlan = new FusionPlan(fusedGroups)
-  }
-
-  private[rapids] def plan(boundExprs: Seq[Expression]): Option[FusionPlan] = {
+  private[rapids] def project(
+      batch: ColumnarBatch,
+      boundExprs: Seq[Expression]): Option[ColumnarBatch] = {
     val fusedGroups = findFusedGroups(boundExprs)
-    if (fusedGroups.isEmpty) None else Some(FusionPlan(fusedGroups))
+    if (fusedGroups.isEmpty) {
+      None
+    } else {
+      val groupsByStartIndex = fusedGroups.map(group => group.startIndex -> group).toMap
+      Some(projectWithFusedGroups(batch, boundExprs, groupsByStartIndex))
+    }
   }
 
   private[rapids] def findFusedGroupIndexes(
       boundExprs: Seq[Expression]): Seq[Seq[Int]] =
-    plan(boundExprs).toSeq.flatMap(_.groupIndexes)
+    findFusedGroups(boundExprs).map(_.outputIndexes)
 
   private def findFusedGroups(
       boundExprs: Seq[Expression]): Seq[HofGroup] = {
