@@ -1550,6 +1550,7 @@ def test_try_mod_fallback_to_cpu(data_gen):
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             "try_mod(a, b) as result"), "Remainder")
 
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu('Subtract')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_subtract_fallback_to_cpu(data_gen):
@@ -1557,6 +1558,7 @@ def test_try_subtract_fallback_to_cpu(data_gen):
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             "try_subtract(a, b) as result"), "Subtract")
 
+@allow_non_gpu_conditional(is_before_spark_340() and not is_databricks_runtime(), "ProjectExec")
 @allow_non_gpu('Multiply')
 @pytest.mark.parametrize('data_gen', numeric_gens, ids=idfn)
 def test_try_multiply_fallback_to_cpu(data_gen):

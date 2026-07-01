@@ -20,7 +20,7 @@ from asserts import assert_gpu_and_cpu_are_equal_collect, assert_cpu_and_gpu_are
 from marks import allow_non_gpu
 from data_gen import *
 from marks import ignore_order
-from spark_session import is_before_spark_330, is_databricks_runtime, is_spark_341_or_later, with_cpu_session
+from spark_session import is_databricks_runtime, is_spark_341_or_later, with_cpu_session
 
 
 # Helper function to create config that forces specific expressions to CPU bridge
@@ -216,7 +216,6 @@ def check_bloom_filter_join(confs, is_multi_column):
 @ignore_order(local=True)
 @pytest.mark.parametrize("is_multi_column", [False, True], ids=["SINGLE_COLUMN", "MULTI_COLUMN"])
 @pytest.mark.skipif(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/8921")
-@pytest.mark.skipif(is_before_spark_330(), reason="Bloom filter joins added in Spark 3.3.0")
 def test_bloom_filter_join_cpu_probe(is_multi_column):
     conf = {"spark.rapids.sql.expression.BloomFilterMightContain": "false"}
     check_bloom_filter_join(confs=conf, is_multi_column=is_multi_column)
