@@ -57,7 +57,8 @@ jobs:
             *.ini,
             *.java,
             *.fbs,
-            *.sql
+            *.sql,
+            *.toml
           excluded_file_patterns: |
             *target/*,
             thirdparty/*,
