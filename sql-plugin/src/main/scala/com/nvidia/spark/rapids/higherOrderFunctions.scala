@@ -435,7 +435,7 @@ private[rapids] object GpuArrayHofFusion {
           None
         }
       }
-    }
+    }.toSeq
   }
 
   private def isIntermediateSubset(
