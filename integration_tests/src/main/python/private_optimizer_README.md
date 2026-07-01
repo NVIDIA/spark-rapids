@@ -94,7 +94,7 @@ present in the ON plan and absent from the OFF plan, so a no-op conf flip fails
 the test. Use `physical=True` when the effect is only visible after AQE (the
 executed plan); otherwise the optimized plan is checked. Examples in this area:
 `sum(sum(` (pushed partial aggregate), `_stddev_` (decomposed alias),
-`generated_agg_list` (merged subquery scan), `coalesced and skewed` (skew
+`named_struct(c_0,` (merged subquery scan), `coalesced and skewed` (skew
 reader).
 
 ### When a row-count / aggregate-only check is acceptable
