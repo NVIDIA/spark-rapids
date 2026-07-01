@@ -21,7 +21,7 @@ import scala.collection.mutable
 import ai.rapids.cudf
 import ai.rapids.cudf.{DType, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingSeq,
+import com.nvidia.spark.rapids.RapidsPluginImplicits.{AutoCloseableProducingArray,
   ReallyAGpuExpression}
 import com.nvidia.spark.rapids.jni.GpuMapZipWithUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
@@ -231,7 +231,8 @@ trait GpuArrayTransformBase extends GpuSimpleHigherOrderFunction {
 
   private[rapids] def lambdaArgumentCount: Int = lambdaFunction.arguments.length
 
-  private[rapids] def lambdaInputTypes: Seq[DataType] = inputToLambda
+  private[rapids] def lambdaArgumentTypes: Seq[DataType] =
+    lambdaFunction.arguments.map(_.dataType)
 
   protected def makeElementProjectBatch(
       inputBatch: ColumnarBatch,
@@ -333,33 +334,59 @@ trait GpuArrayElementWiseTransform extends GpuArrayTransformBase {
 }
 
 private[rapids] object GpuArrayHofFusion {
-  private case class HofInProject(index: Int, hof: GpuArrayTransformBase)
-  private case class HofGroup(hofs: Seq[HofInProject]) {
-    val startIndex: Int = hofs.head.index
-    val outputIndexes: Seq[Int] = hofs.map(_.index)
-    lazy val transforms: Seq[GpuArrayTransformBase] = hofs.map(_.hof)
-    lazy val first: GpuArrayTransformBase = transforms.head
-    lazy val unionIntermediate: Seq[GpuExpression] = collectUnionIntermediate(transforms)
-    lazy val elementTypes: Seq[DataType] = {
-      val lambdaArgTypes = first.lambdaInputTypes.drop(first.boundIntermediate.length)
-      unionIntermediate.map(_.dataType) ++ lambdaArgTypes
+  private case class HofInProject(outputIndex: Int, hof: GpuArrayTransformBase)
+
+  private case class PlannedHof(
+      outputIndex: Int,
+      hof: GpuArrayTransformBase,
+      lambdaColumnIndexes: Array[Int])
+
+  private case class HofGroup(
+      members: Seq[HofInProject],
+      sharedIntermediate: Seq[GpuExpression]) {
+    val startIndex: Int = members.head.outputIndex
+    val outputIndexes: Seq[Int] = members.map(_.outputIndex)
+    val first: GpuArrayTransformBase = members.head.hof
+    val elementTypes: Seq[DataType] =
+      sharedIntermediate.map(_.dataType) ++ first.lambdaArgumentTypes
+    val plannedHofs: Seq[PlannedHof] = members.map { member =>
+      val intermediateIndexes = member.hof.boundIntermediate.map { expr =>
+        val index = sharedIntermediate.indexWhere(_.semanticEquals(expr))
+        assert(index >= 0, s"Missing shared HOF intermediate: $expr")
+        index
+      }
+      val lambdaArgStart = sharedIntermediate.length
+      val lambdaIndexes = lambdaArgStart until lambdaArgStart + first.lambdaArgumentCount
+      PlannedHof(member.outputIndex, member.hof,
+        (intermediateIndexes ++ lambdaIndexes).toArray)
     }
   }
 
-  def project(
-      batch: ColumnarBatch,
-      boundExprs: Seq[Expression]): Option[ColumnarBatch] = {
+  private[rapids] final class FusionPlan private (
+      fusedGroups: Seq[HofGroup]) extends Serializable {
+    private val groupsByStartIndex = fusedGroups.map(group => group.startIndex -> group).toMap
+
+    private[rapids] def project(
+        batch: ColumnarBatch,
+        boundExprs: Seq[Expression]): ColumnarBatch =
+      projectWithFusedGroups(batch, boundExprs, groupsByStartIndex)
+
+    private[GpuArrayHofFusion] def groupIndexes: Seq[Seq[Int]] =
+      fusedGroups.map(_.outputIndexes)
+  }
+
+  private object FusionPlan {
+    def apply(fusedGroups: Seq[HofGroup]): FusionPlan = new FusionPlan(fusedGroups)
+  }
+
+  private[rapids] def plan(boundExprs: Seq[Expression]): Option[FusionPlan] = {
     val fusedGroups = findFusedGroups(boundExprs)
-    if (fusedGroups.isEmpty) {
-      None
-    } else {
-      Some(projectWithFusedGroups(batch, boundExprs, fusedGroups))
-    }
+    if (fusedGroups.isEmpty) None else Some(FusionPlan(fusedGroups))
   }
 
   private[rapids] def findFusedGroupIndexes(
       boundExprs: Seq[Expression]): Seq[Seq[Int]] =
-    findFusedGroups(boundExprs).map(_.outputIndexes)
+    plan(boundExprs).toSeq.flatMap(_.groupIndexes)
 
   private def findFusedGroups(
       boundExprs: Seq[Expression]): Seq[HofGroup] = {
@@ -367,7 +394,7 @@ private[rapids] object GpuArrayHofFusion {
     val groups = mutable.ArrayBuffer[mutable.ArrayBuffer[HofInProject]]()
 
     def flushGroups(): Unit = {
-      fusedGroups ++= groups.filter(_.length > 1).map(g => HofGroup(g.toSeq))
+      fusedGroups ++= groups.flatMap(groupByIntermediateCoverage)
       groups.clear()
     }
 
@@ -385,8 +412,35 @@ private[rapids] object GpuArrayHofFusion {
         }
     }
     flushGroups()
-    fusedGroups.toSeq
+    fusedGroups.sortBy(_.startIndex).toSeq
   }
+
+  // Keep the shared explode no wider than an explode already required by one group member.
+  private def groupByIntermediateCoverage(
+      candidates: mutable.ArrayBuffer[HofInProject]): Seq[HofGroup] = {
+    val assigned = mutable.HashSet[Int]()
+    candidates.sortBy(member => -member.hof.boundIntermediate.length).flatMap { anchor =>
+      if (assigned.contains(anchor.outputIndex)) {
+        None
+      } else {
+        val members = candidates.filter { member =>
+          !assigned.contains(member.outputIndex) &&
+            isIntermediateSubset(member.hof.boundIntermediate, anchor.hof.boundIntermediate)
+        }
+        assigned ++= members.map(_.outputIndex)
+        if (members.length > 1) {
+          Some(HofGroup(members.toSeq, anchor.hof.boundIntermediate))
+        } else {
+          None
+        }
+      }
+    }
+  }
+
+  private def isIntermediateSubset(
+      subset: Seq[GpuExpression],
+      superset: Seq[GpuExpression]): Boolean =
+    subset.forall(expr => superset.exists(_.semanticEquals(expr)))
 
   private def extractHof(
       expr: Expression): Option[GpuArrayTransformBase] = expr match {
@@ -413,7 +467,7 @@ private[rapids] object GpuArrayHofFusion {
   private def canShareExplode(
       left: GpuArrayTransformBase,
       right: GpuArrayTransformBase): Boolean = {
-    left.lambdaArgumentCount == right.lambdaArgumentCount &&
+    left.lambdaArgumentTypes == right.lambdaArgumentTypes &&
       left.argument.semanticEquals(right.argument)
   }
 
@@ -426,22 +480,14 @@ private[rapids] object GpuArrayHofFusion {
   private def projectWithFusedGroups(
       batch: ColumnarBatch,
       boundExprs: Seq[Expression],
-      fusedGroups: Seq[HofGroup]): ColumnarBatch = {
+      groupsByStartIndex: Map[Int, HofGroup]): ColumnarBatch = {
     val outputColumns = new Array[ColumnVector](boundExprs.length)
-    val groupsByStartIndex = fusedGroups.map(group => group.startIndex -> group).toMap
     closeOnExcept(outputColumns) { _ =>
       boundExprs.indices.foreach { index =>
         if (outputColumns(index) == null) {
           groupsByStartIndex.get(index) match {
             case Some(group) =>
-              val transformed = evaluateFusedGroup(batch, group).toArray[ColumnVector]
-              closeOnExcept(transformed) { _ =>
-                group.hofs.zipWithIndex.foreach {
-                  case (HofInProject(outputIndex, _), transformedIndex) =>
-                    outputColumns(outputIndex) = transformed(transformedIndex)
-                    transformed(transformedIndex) = null
-                }
-              }
+              evaluateFusedGroup(batch, group, outputColumns)
             case None =>
               outputColumns(index) = boundExprs(index).columnarEval(batch)
           }
@@ -453,23 +499,18 @@ private[rapids] object GpuArrayHofFusion {
 
   private def evaluateFusedGroup(
       batch: ColumnarBatch,
-      group: HofGroup): Seq[GpuColumnVector] = {
+      group: HofGroup,
+      outputColumns: Array[ColumnVector]): Unit = {
     withResource(group.first.argument.columnarEval(batch)) { arg =>
       withResource(GpuArrayTransformBase.makeExplodedElementBatch(
-          batch, arg, group.unionIntermediate, group.elementTypes,
+          batch, arg, group.sharedIntermediate, group.elementTypes,
           group.first.lambdaArgumentCount)) { sharedBatch =>
-        val output = mutable.ArrayBuffer[GpuColumnVector]()
-        closeOnExcept(output) { _ =>
-          group.transforms.foreach { transform =>
-            val dataCol = withResource(makeTransformLambdaBatch(sharedBatch, group, transform)) {
-              lambdaBatch =>
-              transform.function.columnarEval(lambdaBatch)
-            }
-            withResource(dataCol) { _ =>
-              output += consumeElementResults(batch, transform, dataCol, arg)
-            }
+        group.plannedHofs.foreach { planned =>
+          val dataCol = withResource(makeHofLambdaBatch(sharedBatch, planned)) { lambdaBatch =>
+            planned.hof.function.columnarEval(lambdaBatch)
           }
-          output.toSeq
+          outputColumns(planned.outputIndex) =
+            consumeElementResults(batch, planned.hof, dataCol, arg)
         }
       }
     }
@@ -481,43 +522,27 @@ private[rapids] object GpuArrayHofFusion {
       dataCol: GpuColumnVector,
       arg: GpuColumnVector): GpuColumnVector = transform match {
     case elementWise: GpuArrayElementWiseTransform =>
-      elementWise.transformElementResults(dataCol, arg)
-    case aggregate: GpuArrayAggregate =>
-      aggregate.aggregateElementResults(batch, dataCol, arg)
-    case other =>
-      throw new IllegalStateException(
-        s"Unsupported array transform fusion expression: ${other.getClass.getName}")
-  }
-
-  private def collectUnionIntermediate(
-      transforms: Seq[GpuArrayTransformBase]): Seq[GpuExpression] = {
-    val unionIntermediate = mutable.ArrayBuffer[GpuExpression]()
-    transforms.foreach { transform =>
-      transform.boundIntermediate.foreach { expr =>
-        if (!unionIntermediate.exists(_.semanticEquals(expr))) {
-          unionIntermediate += expr
-        }
+      withResource(dataCol) { dataCol =>
+        elementWise.transformElementResults(dataCol, arg)
       }
-    }
-    unionIntermediate.toSeq
+    case aggregate: GpuArrayAggregate =>
+      aggregate.aggregateAndCloseElementResults(batch, dataCol, arg)
+    case other =>
+      withResource(dataCol) { _ =>
+        throw new IllegalStateException(
+          s"Unsupported array HOF fusion expression: ${other.getClass.getName}")
+      }
   }
 
-  private def makeTransformLambdaBatch(
+  private def makeHofLambdaBatch(
       sharedBatch: ColumnarBatch,
-      group: HofGroup,
-      transform: GpuArrayTransformBase): ColumnarBatch = {
-    val lambdaArgStart = group.unionIntermediate.length
-    val intermediateIndexes = transform.boundIntermediate.map { expr =>
-      val index = group.unionIntermediate.indexWhere(_.semanticEquals(expr))
-      assert(index >= 0, s"Missing shared transform intermediate: $expr")
-      index
-    }
-    val indexes = intermediateIndexes ++
-      (lambdaArgStart until sharedBatch.numCols())
-    val columns = indexes.safeMap { index =>
+      planned: PlannedHof): ColumnarBatch = {
+    val columns = planned.lambdaColumnIndexes.safeMap[ColumnVector] { index =>
       sharedBatch.column(index).asInstanceOf[GpuColumnVector].incRefCount()
-    }.toArray[ColumnVector]
-    new ColumnarBatch(columns, sharedBatch.numRows())
+    }
+    closeOnExcept(columns) { columns =>
+      new ColumnarBatch(columns, sharedBatch.numRows())
+    }
   }
 }
 
@@ -1597,15 +1622,17 @@ case class GpuArrayAggregate(
     }
   }
 
-  private[rapids] def aggregateElementResults(
+  private[rapids] def aggregateAndCloseElementResults(
       batch: ColumnarBatch,
       transformedData: GpuColumnVector,
       arg: GpuColumnVector): GpuColumnVector = {
     val outDType = GpuColumnVector.getNonNestedRapidsType(dataType)
     // Step 1: g(x) over children + segmented reduce.
-    val reduced: cudf.ColumnVector = withResource(GpuListUtils.replaceListDataColumnAsView(
-        arg.getBase, transformedData.getBase)) { listOfGView =>
-      listOfGView.listReduce(op.cudfAgg, op.nullPolicy, outDType)
+    val reduced: cudf.ColumnVector = withResource(transformedData) { transformedData =>
+      withResource(GpuListUtils.replaceListDataColumnAsView(
+          arg.getBase, transformedData.getBase)) { listOfGView =>
+        listOfGView.listReduce(op.cudfAgg, op.nullPolicy, outDType)
+      }
     }
 
     // Step 2: substitute op's identity where needed.
@@ -1656,9 +1683,7 @@ case class GpuArrayAggregate(
       val transformedData = withResource(makeElementProjectBatch(batch, arg)) { cb =>
         function.asInstanceOf[GpuExpression].columnarEval(cb)
       }
-      withResource(transformedData) { _ =>
-        aggregateElementResults(batch, transformedData, arg)
-      }
+      aggregateAndCloseElementResults(batch, transformedData, arg)
     }
   }
 }

@@ -102,6 +102,28 @@ class GpuArrayHofFusionSuite extends GpuUnitTests {
     }
   }
 
+  test("splits groups whose shared intermediates would be wider than each HOF") {
+    val exprs = Seq(
+      alias(transform(boundIntermediate = Seq(outerB)), "b_transform"),
+      alias(filter(boundIntermediate = Seq(outerC)), "c_filter"),
+      alias(filter(boundIntermediate = Seq(outerB)), "b_filter"),
+      alias(transform(boundIntermediate = Seq(outerC)), "c_transform"))
+
+    assertResult(Seq(Seq(0, 2), Seq(1, 3))) {
+      GpuArrayHofFusion.findFusedGroupIndexes(exprs)
+    }
+  }
+
+  test("does not fuse disjoint singleton intermediate sets") {
+    val exprs = Seq(
+      alias(transform(boundIntermediate = Seq(outerB)), "b_transform"),
+      alias(filter(boundIntermediate = Seq(outerC)), "c_filter"))
+
+    assertResult(Seq.empty[Seq[Int]]) {
+      GpuArrayHofFusion.findFusedGroupIndexes(exprs)
+    }
+  }
+
   test("splits fused groups around a non-deterministic barrier") {
     val exprs = Seq(
       alias(transform(), "before_left"),
@@ -109,7 +131,7 @@ class GpuArrayHofFusionSuite extends GpuUnitTests {
       nonDeterministicProject("barrier"),
       alias(transform(boundIntermediate = Seq(outerB)), "after_left"),
       literalProject("safe"),
-      alias(filter(boundIntermediate = Seq(outerC)), "after_right"))
+      alias(filter(boundIntermediate = Seq(outerB, outerC)), "after_right"))
 
     assertResult(Seq(Seq(0, 1), Seq(3, 5))) {
       GpuArrayHofFusion.findFusedGroupIndexes(exprs)

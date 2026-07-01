@@ -115,6 +115,13 @@ object GpuProjectExec {
   }
 
   def project(cb: ColumnarBatch, boundExprs: Seq[Expression]): ColumnarBatch = {
+    project(cb, boundExprs, GpuArrayHofFusion.plan(boundExprs))
+  }
+
+  private[rapids] def project(
+      cb: ColumnarBatch,
+      boundExprs: Seq[Expression],
+      hofFusionPlan: Option[GpuArrayHofFusion.FusionPlan]): ColumnarBatch = {
     if (isNoopProject(cb, boundExprs)) {
       // This can help avoid contiguous splits in some cases when the input data is also contiguous
       GpuColumnVector.incRefCounts(cb)
@@ -131,7 +138,7 @@ object GpuProjectExec {
         // different vector length, thus not able to reuse cached vectors.
         GpuExpressionsUtils.cachedNullVectors.get.clear()
 
-        GpuArrayHofFusion.project(cb, boundExprs).getOrElse {
+        hofFusionPlan.map(_.project(cb, boundExprs)).getOrElse {
           val newColumns = boundExprs.safeMap(_.columnarEval(cb)).toArray[ColumnVector]
           new ColumnarBatch(newColumns, cb.numRows())
         }
@@ -139,6 +146,21 @@ object GpuProjectExec {
         GpuExpressionsUtils.cachedNullVectors.get.clear()
       }
     }
+  }
+
+  private[rapids] case class HofFusionPlans(
+      all: Option[GpuArrayHofFusion.FusionPlan],
+      retryable: Option[GpuArrayHofFusion.FusionPlan],
+      notRetryable: Option[GpuArrayHofFusion.FusionPlan])
+
+  private[rapids] def planHofFusion(boundExprs: Seq[Expression]): HofFusionPlans = {
+    val (retryableExprs, notRetryableExprs) = boundExprs.partition(
+      _.asInstanceOf[GpuExpression].retryable)
+    val all = GpuArrayHofFusion.plan(boundExprs)
+    HofFusionPlans(
+      all,
+      if (notRetryableExprs.isEmpty) all else GpuArrayHofFusion.plan(retryableExprs),
+      if (retryableExprs.isEmpty) all else GpuArrayHofFusion.plan(notRetryableExprs))
   }
 
   /**
@@ -150,8 +172,15 @@ object GpuProjectExec {
    */
   def projectAndCloseWithRetrySingleBatch(sb: SpillableColumnarBatch,
       boundExprs: Seq[Expression]): ColumnarBatch = {
+    projectAndCloseWithRetrySingleBatch(sb, boundExprs, planHofFusion(boundExprs))
+  }
+
+  private[rapids] def projectAndCloseWithRetrySingleBatch(
+      sb: SpillableColumnarBatch,
+      boundExprs: Seq[Expression],
+      hofFusionPlans: HofFusionPlans): ColumnarBatch = {
     withResource(sb) { _ =>
-      projectWithRetrySingleBatch(sb, boundExprs)
+      projectWithRetrySingleBatch(sb, boundExprs, hofFusionPlans)
     }
   }
 
@@ -164,7 +193,13 @@ object GpuProjectExec {
    */
   def projectWithRetrySingleBatch(sb: SpillableColumnarBatch,
       boundExprs: Seq[Expression]): ColumnarBatch = {
+    projectWithRetrySingleBatch(sb, boundExprs, planHofFusion(boundExprs))
+  }
 
+  private[rapids] def projectWithRetrySingleBatch(
+      sb: SpillableColumnarBatch,
+      boundExprs: Seq[Expression],
+      hofFusionPlans: HofFusionPlans): ColumnarBatch = {
     // For retryable expressions, use split-retry: on GPU OOM, halve the input
     // batch by rows and re-run on each half. This recovers from cuDF-internal
     // scratch allocations that the pre-split estimator cannot see (e.g. regex
@@ -179,7 +214,8 @@ object GpuProjectExec {
       // runWithSplitRetry takes ownership of the SpillableColumnarBatch; bump
       // the ref count so the caller (which is responsible for closing `sb`,
       // per this method's contract) doesn't double-close it.
-      return runWithSplitRetry(sb.incRefCount(), retryables, project(_, boundExprs))
+      return runWithSplitRetry(sb.incRefCount(), retryables,
+        project(_, boundExprs, hofFusionPlans.all))
     }
 
     // First off we want to find/run all of the expressions that are not retryable,
@@ -190,7 +226,8 @@ object GpuProjectExec {
 
     val snd = if (notRetryableExprs.nonEmpty) {
       withResource(sb.getColumnarBatch()) { cb =>
-        Some(SpillableColumnarBatch(project(cb, notRetryableExprs),
+        Some(SpillableColumnarBatch(project(cb, notRetryableExprs,
+          hofFusionPlans.notRetryable),
           SpillPriorities.ACTIVE_ON_DECK_PRIORITY))
       }
     } else {
@@ -203,7 +240,7 @@ object GpuProjectExec {
         val retryableResults = withResource(sb.getColumnarBatch()) { cb =>
           withRestoreOnRetry(retryables) {
             // For now we are just going to run all of these and deal with losing work...
-            project(cb, retryableExprs)
+            project(cb, retryableExprs, hofFusionPlans.retryable)
           }
         }
         if (snd.isEmpty) {
@@ -1016,6 +1053,8 @@ case class GpuProjectAstExec(
  */
  case class GpuTieredProject(exprTiers: Seq[Seq[GpuExpression]]) {
 
+  private lazy val hofFusionPlans = exprTiers.map(GpuProjectExec.planHofFusion)
+
   /**
    * Inject metrics into all expressions across all tiers.
    * @param metrics Map of metric names to GpuMetric instances
@@ -1112,16 +1151,18 @@ case class GpuProjectAstExec(
       }
     } else {
       @tailrec
-      def recurse(boundExprs: Seq[Seq[GpuExpression]],
+      def recurse(
+          tierPlans: Seq[(Seq[GpuExpression], GpuProjectExec.HofFusionPlans)],
           sb: SpillableColumnarBatch,
-          recurseCloseInputBatch: Boolean): SpillableColumnarBatch = boundExprs match {
+          recurseCloseInputBatch: Boolean): SpillableColumnarBatch = tierPlans match {
         case Nil => sb
-        case exprSet :: tail =>
+        case (exprSet, hofFusionPlan) :: tail =>
           val projectSb = NvtxRegistry.PROJECT_TIER {
             val projectResult = if (recurseCloseInputBatch) {
-              GpuProjectExec.projectAndCloseWithRetrySingleBatch(sb, exprSet)
+              GpuProjectExec.projectAndCloseWithRetrySingleBatch(
+                sb, exprSet, hofFusionPlan)
             } else {
-              GpuProjectExec.projectWithRetrySingleBatch(sb, exprSet)
+              GpuProjectExec.projectWithRetrySingleBatch(sb, exprSet, hofFusionPlan)
             }
             SpillableColumnarBatch(projectResult, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           }
@@ -1129,7 +1170,7 @@ case class GpuProjectAstExec(
           recurse(tail, projectSb, recurseCloseInputBatch = true)
       }
       // Process tiers sequentially. The input batch is closed by recurse if requested.
-      withResource(recurse(exprTiers, sb, closeInputBatch)) { ret =>
+      withResource(recurse(exprTiers.zip(hofFusionPlans), sb, closeInputBatch)) { ret =>
         ret.getColumnarBatch()
       }
     }
@@ -1149,15 +1190,16 @@ case class GpuProjectAstExec(
 
   def project(batch: ColumnarBatch): ColumnarBatch = {
     @tailrec
-    def recurse(boundExprs: Seq[Seq[GpuExpression]],
+    def recurse(
+        tierPlans: Seq[(Seq[GpuExpression], GpuProjectExec.HofFusionPlans)],
         cb: ColumnarBatch,
         isFirst: Boolean): ColumnarBatch = {
-      boundExprs match {
+      tierPlans match {
         case Nil => cb
-        case exprSet :: tail =>
+        case (exprSet, hofFusionPlans) :: tail =>
           val projectCb = try {
             NvtxRegistry.PROJECT_TIER {
-              GpuProjectExec.project(cb, exprSet)
+              GpuProjectExec.project(cb, exprSet, hofFusionPlans.all)
             }
           } finally {
             // Close intermediate batches
@@ -1169,7 +1211,7 @@ case class GpuProjectAstExec(
       }
     }
     // Process tiers sequentially
-    recurse(exprTiers, batch, true)
+    recurse(exprTiers.zip(hofFusionPlans), batch, true)
   }
 }
 
