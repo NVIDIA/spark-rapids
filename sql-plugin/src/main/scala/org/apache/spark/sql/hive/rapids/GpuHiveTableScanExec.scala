@@ -158,10 +158,18 @@ case class GpuHiveTableScanExec(requestedAttributes: Seq[Attribute],
         val normalizedFilters = partitionPruningPredicate.map(_.transform {
           case a: AttributeReference => originalAttributes(a)
         })
-        sparkSession.sessionState.catalog
-          .listPartitionsByFilter(hiveTableRelation.tableMeta.identifier, normalizedFilters)
+        SparkShimImpl.listPartitionsByFilter(
+          sparkSession,
+          hiveTableRelation.tableMeta.identifier,
+          normalizedFilters,
+          Some(hiveTableRelation.tableMeta))
       } else {
-        sparkSession.sessionState.catalog.listPartitions(hiveTableRelation.tableMeta.identifier)
+        SparkShimImpl.listPartitions(
+          sparkSession,
+          hiveTableRelation.tableMeta.identifier,
+          None,
+          -1,
+          Some(hiveTableRelation.tableMeta))
       }
     prunedPartitions.map(HiveClientImpl.toHivePartition(_, hiveQlTable))
   }

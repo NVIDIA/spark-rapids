@@ -21,6 +21,10 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids._
 
+import org.apache.spark.sql.{SparkSession => SqlSparkSession}
+import org.apache.spark.sql.catalyst.TableIdentifier
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, CatalogTablePartition}
+import org.apache.spark.sql.catalyst.catalog.CatalogTypes.TablePartitionSpec
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.objects.Invoke
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
@@ -39,6 +43,25 @@ trait Spark400PlusDBShims extends Spark341PlusDBShims {
         .note("The supported types are not deterministic since it's a dynamic expression")
     ).map(r => (r.getClassFor.asSubclass(classOf[Expression]), r)).toMap
     super.getExprs ++ shimExprs
+  }
+
+  override def listPartitionsByFilter(
+      sparkSession: SqlSparkSession,
+      tableName: TableIdentifier,
+      predicates: Seq[Expression],
+      resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition] = {
+    sparkSession.sessionState.catalog.listPartitionsByFilter(
+      tableName, predicates, resolvedCatalogTable)
+  }
+
+  override def listPartitions(
+      sparkSession: SqlSparkSession,
+      tableName: TableIdentifier,
+      partialSpec: Option[TablePartitionSpec],
+      limit: Int,
+      resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition] = {
+    sparkSession.sessionState.catalog.listPartitions(
+      tableName, partialSpec, limit, resolvedCatalogTable)
   }
 
   override def getPartitionFiles(partition: FilePartition): Seq[PartitionedFile] = {
