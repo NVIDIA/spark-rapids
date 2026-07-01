@@ -341,6 +341,17 @@ class ConvertForGpuCpuBridgeSuite extends AnyFunSuite {
     // Non-deterministic expressions should not be allowed to move to bridge
     assert(!exprMeta.canMoveToCpuBridge,
       "Non-deterministic expressions should not be bridge-compatible")
+
+    val moveError = intercept[IllegalStateException] {
+      exprMeta.moveToCpuBridge()
+    }
+    assert(moveError.getMessage.contains("trying to move to bridge when not allowed"))
+
+    val conversionError = intercept[IllegalArgumentException] {
+      exprMeta.convertForGpuCpuBridge()
+    }
+    assert(conversionError.getMessage.contains(
+      "Bridge conversion requires deterministic expressions"))
   }
 
   // ============================================================================

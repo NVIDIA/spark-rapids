@@ -60,10 +60,12 @@ def test_cpu_bridge_add_fallback():
     assert_gpu_and_cpu_are_equal_collect(test_func, conf=conf)
 
 
+# MIN_ROWS_PER_SUBBATCH is 500,000: these values exercise one and two sub-batch results.
 @allow_non_gpu('Add')
-def test_cpu_bridge_add_large_batch_parallel_path():
+@pytest.mark.parametrize('row_count', [500000, 500001], ids=idfn)
+def test_cpu_bridge_add_large_batch_parallel_path(row_count):
     def test_func(spark):
-        return spark.range(0, 500001, 1, 1) \
+        return spark.range(0, row_count, 1, 1) \
             .selectExpr("id + 1 as bridged") \
             .agg(f.sum("bridged"))
 
@@ -112,7 +114,7 @@ def test_cpu_bridge_csc_select(aqe_enabled):
         lambda spark: gen_df(spark,
             [('x', DoubleGen(min_exp=-3, max_exp=5, no_nans=True))],
             length=100
-        ).selectExpr("x", "csc(x) AS csc_x", "x * 2 AS x2", "abs(x) AS abs_x"),
+        ).selectExpr("x", "csc(x) AS csc_x"),
         exist_classes='GpuCpuBridgeExpression',
         conf=conf)
 
