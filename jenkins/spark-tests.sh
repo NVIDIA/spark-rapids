@@ -278,7 +278,7 @@ run_iceberg_tests() {
   # Spark 3.5.0-3.5.3 -> Iceberg 1.6.1
   # Spark 3.5.4+       -> Iceberg 1.9.2, 1.10.1
   # Spark 4.0.0-4.0.1 -> Iceberg 1.10.1
-  # Spark 4.0.2-4.0.3 -> Iceberg 1.10.1, 1.11.0
+  # Spark 4.0.2+       -> Iceberg 1.10.1, 1.11.0
   # Spark 4.1.x        -> Iceberg 1.11.0
   local supported_versions
   if [[ "$ICEBERG_SPARK_VER" == "4.1" ]]; then
@@ -292,7 +292,7 @@ run_iceberg_tests() {
       echo "!!!! Skipping Iceberg tests. Spark 4.0 Iceberg tests require Scala 2.13"
       return 0
     fi
-    if [[ "$SPARK_PATCH_VER" -ge 2 && "$SPARK_PATCH_VER" -le 3 ]]; then
+    if [[ "$SPARK_PATCH_VER" -ge 2 ]]; then
       supported_versions="1.10.1 1.11.0"
     else
       supported_versions="1.10.1"

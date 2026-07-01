@@ -175,7 +175,7 @@ run_iceberg_version_detect_tests() {
     if [[ "$iceberg_spark_ver" == "4.1" ]]; then
         iceberg_versions="1.11.0"
     elif [[ "$iceberg_spark_ver" == "4.0" ]]; then
-        if [[ "$spark_patch_ver" -ge 2 && "$spark_patch_ver" -le 3 ]]; then
+        if [[ "$spark_patch_ver" -ge 2 ]]; then
             iceberg_versions="1.10.1 1.11.0"
         else
             iceberg_versions="1.10.1"
