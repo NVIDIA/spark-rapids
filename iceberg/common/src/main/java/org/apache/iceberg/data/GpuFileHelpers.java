@@ -78,21 +78,34 @@ public class GpuFileHelpers {
       builderFor.setAccessible(true);
       Object builder = builderFor.invoke(null, table);
 
-      Method equalityDeleteRowSchema = builder.getClass()
-          .getDeclaredMethod("equalityDeleteRowSchema", Schema.class);
+      Method equalityDeleteRowSchema =
+          findMethod(builder.getClass(), "equalityDeleteRowSchema", Schema.class);
       equalityDeleteRowSchema.setAccessible(true);
       builder = equalityDeleteRowSchema.invoke(builder, deleteRowSchema);
 
-      Method equalityFieldIdsMethod = builder.getClass()
-          .getDeclaredMethod("equalityFieldIds", int[].class);
+      Method equalityFieldIdsMethod =
+          findMethod(builder.getClass(), "equalityFieldIds", int[].class);
       equalityFieldIdsMethod.setAccessible(true);
       builder = equalityFieldIdsMethod.invoke(builder, (Object) equalityFieldIds);
 
-      Method build = builder.getClass().getDeclaredMethod("build");
+      Method build = findMethod(builder.getClass(), "build");
       build.setAccessible(true);
       return (FileWriterFactory<Record>) build.invoke(builder);
     } catch (ReflectiveOperationException e) {
       throw new IOException("Failed to create Iceberg file writer factory", e);
     }
+  }
+
+  private static Method findMethod(Class<?> type, String name, Class<?>... parameterTypes)
+      throws NoSuchMethodException {
+    Class<?> current = type;
+    while (current != null) {
+      try {
+        return current.getDeclaredMethod(name, parameterTypes);
+      } catch (NoSuchMethodException e) {
+        current = current.getSuperclass();
+      }
+    }
+    throw new NoSuchMethodException(type.getName() + "." + name);
   }
 }
