@@ -254,13 +254,15 @@ private[rapids] object GpuArrayTransformBase {
     assert(argColumn.getBase.getType.equals(DType.LIST))
 
     def projectAndExplode(explodeOp: Table => Table): Table = {
-      withResource(GpuProjectExec.project(inputBatch, intermediate)) { intermediateBatch =>
-        withResource(GpuColumnVector.appendColumns(intermediateBatch, argColumn)) {
-          projectedBatch =>
-            withResource(GpuColumnVector.from(projectedBatch)) { projectedTable =>
-              explodeOp(projectedTable)
-            }
-        }
+      val projectedBatch = withResource(GpuProjectExec.project(inputBatch, intermediate)) {
+        intermediateBatch =>
+          GpuColumnVector.appendColumns(intermediateBatch, argColumn)
+      }
+      val projectedTable = withResource(projectedBatch) { projectedBatch =>
+        GpuColumnVector.from(projectedBatch)
+      }
+      withResource(projectedTable) { projectedTable =>
+        explodeOp(projectedTable)
       }
     }
 
@@ -284,6 +286,7 @@ private[rapids] object GpuArrayTransformBase {
     }
   }
 
+  // cuDF returns [..., position, element], but Spark lambda inputs use [..., element, index].
   private def reorderExplodePositionOutput(explodedTable: Table): Table = {
     val cols = new Array[cudf.ColumnVector](explodedTable.getNumberOfColumns)
     val numOtherColumns = explodedTable.getNumberOfColumns - 2
@@ -315,6 +318,7 @@ trait GpuArrayElementWiseTransform extends GpuArrayTransformBase {
   private[rapids] def transformElementResults(
       lambdaTransformed: GpuColumnVector,
       arg: GpuColumnVector): GpuColumnVector = {
+    // Lambda evaluation is flat, so restore the original list shape before post-processing.
     withResource(GpuListUtils.replaceListDataColumnAsView(
         arg.getBase, lambdaTransformed.getBase)) { cv =>
       transformListColumnView(cv, arg.getBase)
@@ -333,6 +337,10 @@ trait GpuArrayElementWiseTransform extends GpuArrayTransformBase {
   }
 }
 
+/**
+ * Shares explode and intermediate projection across compatible top-level array HOFs in a Project.
+ * Lambda evaluation and result reconstruction remain independent for each HOF.
+ */
 private[rapids] object GpuArrayHofFusion {
   private case class HofInProject(outputIndex: Int, hof: GpuArrayTransformBase)
 

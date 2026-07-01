@@ -127,6 +127,37 @@ def test_array_aggregate_count_if_int():
 
 
 @disable_ansi_mode
+def test_array_heterogeneous_elementwise_hof_mixed_project():
+    data_gen = ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=8)
+    def do_it(spark):
+        outer_gen = IntegerGen(min_val=-5, max_val=5)
+        return three_col_df(spark, data_gen, outer_gen, outer_gen).selectExpr(
+            'a',
+            'b',
+            'c',
+            'transform(a, item -> item + b) as plus_b',
+            'transform(a, item -> item + c) as plus_c',
+            'filter(a, item -> item is not null and item + b >= c) as filtered_b_ge_c',
+            'exists(a, item -> item is not null and item + c < b) as has_c_less_b')
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
+@disable_ansi_mode
+def test_array_hof_project_with_disjoint_outer_column_groups():
+    data_gen = ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=8)
+    def do_it(spark):
+        outer_gen = IntegerGen(min_val=-5, max_val=5)
+        return three_col_df(spark, data_gen, outer_gen, outer_gen).selectExpr(
+            'transform(a, item -> item + b) as plus_b',
+            'transform(a, item -> item + c) as plus_c',
+            'filter(a, item -> item is not null and item + b >= 0) as non_negative_b',
+            'exists(a, item -> item is not null and item + c < 0) as has_negative_c')
+
+    assert_gpu_and_cpu_are_equal_collect(do_it)
+
+
+@disable_ansi_mode
 def test_array_hof_mixed_project_with_aggregate():
     data_gen = ArrayGen(IntegerGen(min_val=-10, max_val=10), max_length=8)
     def do_it(spark):
