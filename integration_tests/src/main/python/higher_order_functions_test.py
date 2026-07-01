@@ -181,7 +181,7 @@ def test_array_hof_mixed_project_with_aggregate_outer_state():
         return two_col_df(spark, data_gen, outer_gen).selectExpr(
             'transform(a, x -> coalesce(x, 0) + CAST(b AS INT)) as plus_b',
             '''aggregate(a, b, (acc, x) -> acc +
-                 CAST(coalesce(x, 0) AS BIGINT) + b) as sum_plus_b''')
+                 CAST(coalesce(x, 0) + CAST(b AS INT) AS BIGINT)) as sum_plus_b''')
 
     assert_gpu_and_cpu_are_equal_collect(do_it)
 
