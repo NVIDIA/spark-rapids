@@ -133,6 +133,7 @@ def test_cpu_bridge_csc_filter(aqe_enabled):
         exist_classes='GpuCpuBridgeExpression',
         conf=conf)
 
+
 @allow_non_gpu('ProjectExec')
 @pytest.mark.skipif(not is_spark_341_or_later(),
                     reason='TimestampNTZType is only supported in PySpark 3.4.1+')
