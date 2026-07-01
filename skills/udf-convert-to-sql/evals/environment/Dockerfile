@@ -3,17 +3,16 @@
 
 ###
 #
-# Pre-merge CI image for the UDF skills integration tests (skills/tests), also reused
-# as the skill-eval container environment (skills/*/evals/environment/Dockerfile).
-# Based on `skills/udf-convert-to-cuda/templates/cuda/Dockerfile` + python3.11/pip.
-#
-# The gcc-toolset/Java/CMake/Maven toolchain is placed on PATH via ENV (not a login-shell
-# ENTRYPOINT + /etc/profile.d scripts, as the CUDA template uses), so commands work in any
-# shell — including the non-login `sh -c` that the eval harness (Harbor) runs in the
-# container. See the ENV block below for the full rationale.
+# Pre-merge CI image for the UDF skills integration tests and evals.
+# This is a mirror of `skills/udf-convert-to-cuda/templates/cuda/Dockerfile`,
+# with the additions of python3 + pip to run integration tests.
 #
 ###
 
+# NOTE: skills CI currently requires the first command to be `FROM`,
+# hence why we do not parametrize the image versions using `ARG=`.
+
+# rockylinux8 is used in accordance with https://github.com/NVIDIA/cudf-spark-jni/blob/main/ci/Dockerfile
 FROM nvidia/cuda:12.9.1-devel-rockylinux8
 
 ARG TOOLSET_VERSION=14
@@ -52,29 +51,21 @@ RUN cd /usr/local && \
   tar zxf cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz && \
   rm cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz
 
-# The rockylinux8 `maven` package is 3.5.4, too old for the template build plugins
-# (build-helper-maven-plugin, scoverage-maven-plugin require Maven >= 3.6.3), so install
-# a modern Apache Maven binary on PATH instead.
+# The rockylinux8 maven package is too old for the template build plugins.
+# Install a modern Maven binary on PATH instead.
 RUN cd /usr/local && \
   wget --quiet https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
   tar zxf apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
   rm apache-maven-${MAVEN_VERSION}-bin.tar.gz
 
-# KEY DIFFERENCE vs the CUDA template Dockerfile: the CUDA image activates the gcc-toolset
-# SCL the "normal" way -- `ENTRYPOINT ["bash", "-l"]` plus /etc/profile.d scripts
-# (`source .../gcc-toolset-N/enable`) sourced on every container start. That only works for
-# a LOGIN shell. The skill-eval harness (Harbor) runs commands via a non-login `sh -c ...`
-# (its compose command is `sleep infinity`, not bash -l), so a login-shell ENTRYPOINT never
-# fires and the toolchain would be absent.
-#
-# So this image bakes the exact environment that `source gcc-toolset-N/enable` would set --
-# PATH, LD_LIBRARY_PATH, PKG_CONFIG_PATH -- directly into ENV, which every shell (login or
-# not) inherits. Hence, unlike the CUDA template, this image has NO `ENTRYPOINT ["bash", "-l"]`
-# and NO /etc/profile.d activation scripts -- ENV is the single source of truth for the toolchain.
+# The CUDA image activates gcc-toolset SCL via a `bash -l ` entrypoint plus `/etc/profile.d` scripts
+# sourced on every container start via a LOGIN shell. However, Harbor evals run with a non-login shell
+# (`sh -c ...`), so instead, this image bakes the environment into ENV and does not use an ENTRYPOINT.
 ENV PATH=/opt/rh/gcc-toolset-${TOOLSET_VERSION}/root/usr/bin:${JAVA_HOME}/bin:/usr/local/cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}/bin:/usr/local/apache-maven-${MAVEN_VERSION}/bin:${PATH}
 ENV LD_LIBRARY_PATH=/opt/rh/gcc-toolset-${TOOLSET_VERSION}/root/usr/lib64:/opt/rh/gcc-toolset-${TOOLSET_VERSION}/root/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 ENV PKG_CONFIG_PATH=/opt/rh/gcc-toolset-${TOOLSET_VERSION}/root/usr/lib64/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}
 
+# ccache for interactive builds
 RUN cd /tmp && \
   wget --quiet https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}.tar.gz && \
   tar zxf ccache-${CCACHE_VERSION}.tar.gz && \
