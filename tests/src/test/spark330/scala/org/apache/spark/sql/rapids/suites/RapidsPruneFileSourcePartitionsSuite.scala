@@ -34,7 +34,8 @@ class RapidsPruneFileSourcePartitionsSuite
   extends PruneFileSourcePartitionsSuite
   with RapidsSQLTestsTrait {
 
-  override protected def collectPartitionFiltersFn(): PartialFunction[SparkPlan, Seq[Expression]] = {
+  override protected def collectPartitionFiltersFn()
+      : PartialFunction[SparkPlan, Seq[Expression]] = {
     case scan: FileSourceScanExec => scan.partitionFilters
     case scan: GpuFileSourceScanExec => scan.partitionFilters
     case scan: GpuBatchScanExec if gpuPartitionFilters(scan.scan).isDefined =>

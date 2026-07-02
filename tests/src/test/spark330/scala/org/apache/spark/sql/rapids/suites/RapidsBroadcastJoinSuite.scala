@@ -20,6 +20,8 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
 import com.nvidia.spark.rapids.{GpuBuildLeft, GpuBuildRight, GpuBuildSide}
+import org.scalactic.source.Position
+import org.scalatest.Tag
 
 import org.apache.spark.SparkConf
 import org.apache.spark.internal.config.Tests.IS_TESTING
@@ -30,9 +32,6 @@ import org.apache.spark.sql.functions.broadcast
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuInMemoryTableScanExec
 import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuBroadcastNestedLoopJoinExec}
-import org.scalactic.source.Position
-import org.scalatest.Tag
-
 import org.apache.spark.sql.rapids.utils.{RapidsSQLTestsBaseTrait, RapidsTestsBaseTrait}
 import org.apache.spark.sql.rapids.utils.RapidsTestConstants.RAPIDS_TEST
 
