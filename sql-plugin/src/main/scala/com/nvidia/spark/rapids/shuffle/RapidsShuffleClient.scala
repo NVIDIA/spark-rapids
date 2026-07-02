@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.{MetadataResponse, TableMeta, TransferState}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.storage.ShuffleBlockBatchId
 
@@ -70,9 +69,9 @@ trait RapidsShuffleFetchHandler {
  * @param tableMeta shuffle metadata describing the table
  * @param handler a specific handler that is waiting for this batch
  */
-case class PendingTransferRequest(client: RapidsShuffleClient,
-                                  tableMeta: TableMeta,
-                                  handler: RapidsShuffleFetchHandler) {
+class PendingTransferRequest(val client: RapidsShuffleClient,
+                             val tableMeta: TableMeta,
+                             val handler: RapidsShuffleFetchHandler) extends Serializable {
   val getLength: Long = tableMeta.bufferMeta.size()
 }
 
@@ -98,7 +97,28 @@ class RapidsShuffleClient(
     exec: Executor,
     clientCopyExecutor: Executor,
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog)
-      extends Logging with AutoCloseable {
+      extends AutoCloseable {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[RapidsShuffleClient])
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
 
   // these are handlers that are interested (live spark tasks) in peer failure handling
   private val liveHandlers =
@@ -338,7 +358,7 @@ class RapidsShuffleClient(
       // We check the uncompressedSize to make sure we don't request a 0-sized buffer
       // from a peer. We treat such a corner case as a degenerate batch
       if (tableMeta.bufferMeta() != null && tableMeta.bufferMeta().uncompressedSize() > 0) {
-        ptrs += PendingTransferRequest(
+        ptrs += new PendingTransferRequest(
           this,
           tableMeta,
           handler)

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -172,7 +172,7 @@ class RapidsShuffleIteratorSuite extends RapidsShuffleTestHelper {
       val ac = ArgumentCaptor.forClass(classOf[RapidsShuffleFetchHandler])
       when(mockTransport.makeClient(any())).thenReturn(client)
       doNothing().when(client).doFetch(any(), ac.capture())
-      val mockBuffer = RapidsShuffleHandle(mock[SpillableDeviceBufferHandle], null)
+      val mockBuffer = new RapidsShuffleHandle(mock[SpillableDeviceBufferHandle], null)
       when(mockBuffer.spillable.sizeInBytes).thenReturn(123L)
 
       val cb = new ColumnarBatch(Array.empty, 10)

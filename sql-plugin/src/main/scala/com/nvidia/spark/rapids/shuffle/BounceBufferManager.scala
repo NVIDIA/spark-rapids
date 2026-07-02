@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import java.util
 
 import ai.rapids.cudf.MemoryBuffer
 
-import org.apache.spark.internal.Logging
 
 /**
  * Class to hold a bounce buffer reference in `buffer`.
@@ -53,9 +52,9 @@ abstract class BounceBuffer(val buffer: MemoryBuffer) extends AutoCloseable {
  * @param deviceBounceBuffer - device buffer to use for sends
  * @param hostBounceBuffer - optional host buffer to use for sends
  */
-case class SendBounceBuffers(
-    deviceBounceBuffer: BounceBuffer,
-    hostBounceBuffer: Option[BounceBuffer]) extends AutoCloseable {
+class SendBounceBuffers(
+    val deviceBounceBuffer: BounceBuffer,
+    val hostBounceBuffer: Option[BounceBuffer]) extends AutoCloseable with Serializable {
 
   def bounceBufferSize: Long = {
     deviceBounceBuffer.buffer.getLength
@@ -82,8 +81,22 @@ class BounceBufferManager[T <: MemoryBuffer](
     val bufferSize: Long,
     val numBuffers: Int,
     allocator: Long => T)
-  extends AutoCloseable
-  with Logging {
+  extends AutoCloseable {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(
+    "com.nvidia.spark.rapids.shuffle.BounceBufferManager")
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logTrace(msg: => String): Unit = {
+    if (log.isTraceEnabled) {
+      log.trace(msg)
+    }
+  }
 
   class BounceBufferImpl(buff: MemoryBuffer) extends BounceBuffer(buff) {
     override def free(bb: BounceBuffer): Unit = {

@@ -26,12 +26,19 @@ import org.apache.commons.lang3.mutable.MutableLong
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.api.plugin.PluginContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.{ProxyRapidsShuffleInternalManagerBase, RapidsShuffleInternalManagerBase}
 import org.apache.spark.storage.BlockManagerId
 
 class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
-                                    heartbeatTimeoutMillis: Long) extends Logging {
+                                    heartbeatTimeoutMillis: Long) {
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[RapidsShuffleHeartbeatManager])
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
   require(heartbeatIntervalMillis > 0,
     s"The interval value: $heartbeatIntervalMillis ms is not > 0")
 
@@ -45,14 +52,18 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
   // exposed so that it can be mocked in the tests
   def getCurrentTimeMillis: Long = System.currentTimeMillis()
 
-  private case class ExecutorRegistration(
-      id: BlockManagerId,
+  private class ExecutorRegistration(
+      val id: BlockManagerId,
       // this is this executor's registration order, as given by this manager
-      registrationOrder: Long,
+      val registrationOrder: Long,
       // this is the last registration order this executor is aware of overall
-      lastRegistrationOrderSeen: MutableLong,
+      val lastRegistrationOrderSeen: MutableLong,
       // last heartbeat received from this executor in millis
-      lastHeartbeatMillis: MutableLong)
+      val lastHeartbeatMillis: MutableLong) {
+    override def toString: String =
+      s"ExecutorRegistration($id,$registrationOrder,$lastRegistrationOrderSeen," +
+        s"$lastHeartbeatMillis)"
+  }
 
   // a counter used to mark each new executor registration with an order
   var registrationOrder = 0L
@@ -82,7 +93,7 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
     require(!executorRegistrations.containsKey(id), s"Executor $id already registered")
     removeDeadExecutors(getCurrentTimeMillis)
     val allExecutors = executors.map(e => e.id).toArray
-    val newReg = ExecutorRegistration(id,
+    val newReg = new ExecutorRegistration(id,
       registrationOrder,
       new MutableLong(registrationOrder),
       new MutableLong(getCurrentTimeMillis))
@@ -167,7 +178,40 @@ class RapidsShuffleHeartbeatManager(heartbeatIntervalMillis: Long,
 }
 
 class RapidsShuffleHeartbeatEndpoint(pluginContext: PluginContext, conf: RapidsConf)
-  extends Logging with AutoCloseable {
+  extends AutoCloseable {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[RapidsShuffleHeartbeatEndpoint])
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logTrace(msg: => String): Unit = {
+    if (log.isTraceEnabled) {
+      log.trace(msg)
+    }
+  }
+
+  private def logError(msg: => String, throwable: Throwable): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg, throwable)
+    }
+  }
+
   // Number of milliseconds between heartbeats to driver
   private[this] val heartbeatIntervalMillis =
     conf.shuffleTransportEarlyStartHeartbeatInterval

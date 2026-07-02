@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,13 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import java.nio.{ByteBuffer, ByteOrder}
+import java.nio.{Buffer, ByteBuffer, ByteOrder}
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 import ai.rapids.cudf.MemoryBuffer
 import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, ShimReflectionUtils}
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.storage.BlockManagerId
 
@@ -157,20 +156,6 @@ object TransactionStatus extends Enumeration {
 }
 
 /**
- * Case class representing stats for the a transaction
- * @param txTimeMs amount of time this [[Transaction]] took
- * @param sendSize amount of bytes sent
- * @param receiveSize amount of bytes received
- * @param sendThroughput send throughput in GB/sec
- * @param recvThroughput receive throughput in GB/sec
- */
-case class TransactionStats(txTimeMs: Double,
-                            sendSize: Long,
-                            receiveSize: Long,
-                            sendThroughput: Double,
-                            recvThroughput: Double)
-
-/**
  * TransportBuffer represents a buffer with an address and length.
  *
  * There are two implementations:
@@ -194,7 +179,7 @@ class MetadataTransportBuffer(val dbb: RefCountedDirectByteBuffer) extends Trans
   def copy(in: ByteBuffer): Unit = {
     val bb = dbb.getBuffer()
     bb.put(in)
-    bb.rewind()
+    bb.asInstanceOf[Buffer].rewind()
   }
 
   override def getAddress(): Long =
@@ -400,7 +385,15 @@ trait RapidsShuffleTransport extends AutoCloseable {
  *
  * @param bufferSize the size of direct `ByteBuffer` to allocate.
  */
-class DirectByteBufferPool(bufferSize: Long) extends Logging {
+class DirectByteBufferPool(bufferSize: Long) {
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[DirectByteBufferPool])
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
   val buffers = new ConcurrentLinkedQueue[ByteBuffer]()
   val high = new AtomicInteger(0)
 
@@ -415,7 +408,7 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
       logDebug(s"Allocating new direct buffer, high watermark = $high")
       new RefCountedDirectByteBuffer(ByteBuffer.allocateDirect(bufferSize.toInt), Option(this))
     } else {
-      buff.clear()
+      buff.asInstanceOf[Buffer].clear()
       // Reset endianness to BIG_ENDIAN, as it could have changed depending on the consumer
       // (i.e. flat buffers force byte order to be LITTLE_ENDIAN, but pool consumers could be
       //  things like handshake messages that don't use flat buffers).
@@ -430,7 +423,7 @@ class DirectByteBufferPool(bufferSize: Long) extends Logging {
 
   def releaseBuffer(buff: RefCountedDirectByteBuffer): Boolean = {
     logDebug(s"Free direct buffers ${buffers.size()}")
-    buff.getBuffer().clear()
+    buff.getBuffer().asInstanceOf[Buffer].clear()
     buffers.offer(buff.getBuffer())
   }
 }
@@ -531,7 +524,7 @@ object TransportUtils {
     NvtxRegistry.TRANSPORT_COPY_BUFFER.push()
     try {
       val ro = src.asReadOnlyBuffer()
-      ro.limit(ro.position() + size) // make sure we only copy size bytes
+      ro.asInstanceOf[Buffer].limit(ro.position() + size) // make sure we only copy size bytes
       // copy from position to remaining = (limit - position)
       dst.put(ro) // bulk put
     } finally {
@@ -550,7 +543,16 @@ object TransportUtils {
   }
 }
 
-object RapidsShuffleTransport extends Logging {
+object RapidsShuffleTransport {
+  private val log = org.slf4j.LoggerFactory.getLogger(
+    "com.nvidia.spark.rapids.shuffle.RapidsShuffleTransport")
+
+  private def logError(msg: => String, throwable: Throwable): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg, throwable)
+    }
+  }
+
   /**
    * Used in `BlockManagerId`s when returning a map status after a shuffle write to
    * let the readers know what TCP port to use to establish a transport connection.

@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids
 
 import java.io.{InputStream, IOException}
 import java.lang.{Boolean => JBoolean}
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.channels.WritableByteChannel
 import java.util.HashSet
 import java.util.concurrent.ConcurrentHashMap
@@ -28,7 +28,6 @@ import scala.collection.mutable.ArrayBuffer
 import _root_.io.netty.handler.stream.ChunkedStream
 import com.nvidia.spark.rapids.spill.SpillablePartialFileHandle
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.network.buffer.ManagedBuffer
 import org.apache.spark.network.util.AbstractFileRegion
 import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
@@ -40,10 +39,10 @@ import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
  * @param offset starting offset within the handle
  * @param length number of bytes in this segment
  */
-case class PartitionSegment(
-    handle: SpillablePartialFileHandle,
-    offset: Long,
-    length: Long)
+class PartitionSegment(
+    val handle: SpillablePartialFileHandle,
+    val offset: Long,
+    val length: Long)
 
 /**
  * Catalog for managing shuffle data in MULTITHREADED mode without merging.
@@ -57,7 +56,19 @@ case class PartitionSegment(
  * (MEMORY_WITH_SPILL mode) or stored directly on disk (ONLY_FILE mode) depending
  * on memory pressure - both modes work with this skip-merge design.
  */
-class MultithreadedShuffleBufferCatalog extends Logging {
+class MultithreadedShuffleBufferCatalog {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logError(msg: => String, throwable: Throwable): Unit = {
+    log.error(msg, throwable)
+  }
+
 
   /**
    * Map from ShuffleBlockId to list of segments.
@@ -99,7 +110,7 @@ class MultithreadedShuffleBufferCatalog extends Logging {
     }
 
     val blockId = ShuffleBlockId(shuffleId, mapId, partitionId)
-    val segment = PartitionSegment(handle, offset, length)
+    val segment = new PartitionSegment(handle, offset, length)
 
     partitionSegments.compute(blockId, (_, existing) => {
       val segments = if (existing == null) new ArrayBuffer[PartitionSegment]() else existing
@@ -280,7 +291,7 @@ class MultiBatchManagedBuffer(segments: Seq[PartitionSegment]) extends ManagedBu
       }
     }
 
-    buffer.flip()
+    buffer.asInstanceOf[Buffer].flip()
     buffer
   }
 

@@ -133,7 +133,7 @@ abstract class RapidsShuffleTestHelper
 
   def getSendBounceBuffer(size: Long): SendBounceBuffers = {
     val db = DeviceMemoryBuffer.allocate(size)
-    SendBounceBuffers(new BounceBuffer(db) {
+    new SendBounceBuffers(new BounceBuffer(db) {
       override def free(bb: BounceBuffer): Unit = {
         db.close()
       }

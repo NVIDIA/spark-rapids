@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.spill
 
 import java.io._
-import java.nio.ByteBuffer
+import java.nio.{Buffer, ByteBuffer}
 import java.nio.channels.{Channels, FileChannel, WritableByteChannel}
 import java.nio.file.StandardOpenOption
 import java.util
@@ -29,17 +29,15 @@ import scala.collection.mutable
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer,
   GpuCompressedColumnVector, GpuDeviceManager, HashedPriorityQueue, HostAlloc,
-  HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, NvtxId, NvtxRegistry,
-  RapidsConf, RapidsHostColumnVector, TaskRegistryTracker}
+  HostByteBufferIterator, HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator,
+  NvtxId, NvtxRegistry, RapidsConf, RapidsHostColumnVector, TaskRegistryTracker}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.format.TableMeta
-import com.nvidia.spark.rapids.internal.HostByteBufferIterator
 import com.nvidia.spark.rapids.jni.TaskPriority
 import org.apache.commons.io.IOUtils
 
 import org.apache.spark.{SparkConf, SparkEnv, TaskContext}
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.{GpuTaskMetrics, RapidsDiskBlockManager}
 import org.apache.spark.sql.rapids.execution.{SerializedHostTableUtils, TrampolineUtil}
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
@@ -175,7 +173,13 @@ trait StoreHandle extends AutoCloseable {
   var taskPriority: Long = taskId.map(TaskPriority.getTaskPriority).getOrElse(Long.MaxValue)
 }
 
-trait SpillableHandle extends StoreHandle with Logging {
+trait SpillableHandle extends StoreHandle {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    log.warn(msg, throwable)
+  }
+
   /**
    * used to gate when a spill is actively being done so that a second thread won't
    * also begin spilling, and a handle won't release the underlying buffer if it's
@@ -352,7 +356,7 @@ trait HostSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
   }
 }
 
-object SpillableHostBufferHandle extends Logging {
+object SpillableHostBufferHandle {
   def apply(hmb: HostMemoryBuffer): SpillableHostBufferHandle = {
     val handle = new SpillableHostBufferHandle(hmb.getLength, host = Some(hmb))
     SpillFramework.stores.hostStore.trackNoSpill(handle)
@@ -678,7 +682,7 @@ class SpillableColumnarBatchHandle private (
     override val approxSizeInBytes: Long,
     private[spill] override var dev: Option[ColumnarBatch],
     private[spill] var host: Option[SpillableHostBufferHandle] = None)
-  extends DeviceSpillableHandle[ColumnarBatch] with Logging {
+  extends DeviceSpillableHandle[ColumnarBatch] {
 
   override def spillable: Boolean = synchronized {
     if (super.spillable) {
@@ -1308,7 +1312,7 @@ object HandleComparator extends util.Comparator[StoreHandle] {
   }
 }
 
-trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
+trait HandleStore[T <: StoreHandle] extends AutoCloseable {
   protected lazy val handles = new HashedPriorityQueue[T](HandleComparator)
 
   def numHandles: Int = synchronized {
@@ -1361,7 +1365,7 @@ trait HandleStore[T <: StoreHandle] extends AutoCloseable with Logging {
 }
 
 trait SpillableStore[T <: SpillableHandle]
-    extends HandleStore[T] with Logging {
+    extends HandleStore[T] {
   protected def spillNvtxRange: NvtxId
 
   /**
@@ -1483,8 +1487,16 @@ trait SpillableStore[T <: SpillableHandle]
 }
 
 class SpillableHostStore(val maxSize: Option[Long] = None)
-  extends SpillableStore[HostSpillableHandle[_]]
-    with Logging {
+  extends SpillableStore[HostSpillableHandle[_]] {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
 
   private[spill] var totalSize: Long = 0L
 
@@ -1651,7 +1663,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
   private class SpillableHostBufferHandleBuilderForHost(
     var handle: SpillableHostBufferHandle,
     var singleShotBuffer: HostMemoryBuffer)
-      extends SpillableHostBufferHandleBuilder with Logging {
+      extends SpillableHostBufferHandleBuilder {
     private var copied = 0L
 
     override def copyNext(mb: DeviceMemoryBuffer, len: Long, stream: Cuda.Stream): Unit = {
@@ -1755,7 +1767,13 @@ class SpillableDeviceStore extends SpillableStore[DeviceSpillableHandle[_]] {
 }
 
 class DiskHandleStore(conf: SparkConf)
-    extends HandleStore[DiskHandle] with Logging {
+    extends HandleStore[DiskHandle] {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
   val diskBlockManager: RapidsDiskBlockManager = new RapidsDiskBlockManager(conf)
 
   def getFile(blockId: BlockId): File = {
@@ -1918,7 +1936,7 @@ class SpillableTableHandle private (
     override val approxSizeInBytes: Long,
     private[spill] override var dev: Option[Table],
     private[spill] var host: Option[SpillableHostBufferHandle] = None)
-  extends DeviceSpillableHandle[Table] with Logging {
+  extends DeviceSpillableHandle[Table] {
 
   override def spillable: Boolean = synchronized {
     if (super.spillable) {
@@ -2050,7 +2068,19 @@ object SpillableTableHandle {
   }
 }
 
-object SpillFramework extends Logging {
+object SpillFramework {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
   // public for tests. Some tests not in the `spill` package require setting this
   // because they need fine control over allocations.
   var storesInternal: SpillableStores = _
@@ -2214,7 +2244,13 @@ private[spill] class BounceBuffer[T <: AutoCloseable](
 class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
                                            private val bbCount: Int,
                                            private val allocator: Long => T)
-  extends AutoCloseable with Logging {
+  extends AutoCloseable {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logError(msg: => String): Unit = {
+    log.error(msg)
+  }
+
 
   private val pool = new ArrayBlockingQueue[BounceBuffer[T]](bbCount)
   for (_ <- 1 to bbCount) {
@@ -2286,7 +2322,13 @@ class BounceBufferPool[T <: AutoCloseable](private val bufSize: Long,
  */
 class ChunkedPacker(table: Table,
                     bounceBufferPool: BounceBufferPool[DeviceMemoryBuffer])
-  extends Iterator[(BounceBuffer[DeviceMemoryBuffer], Long)] with Logging with AutoCloseable {
+  extends Iterator[(BounceBuffer[DeviceMemoryBuffer], Long)] with AutoCloseable {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
 
   private var closed: Boolean = false
 
@@ -2319,7 +2361,7 @@ class ChunkedPacker(table: Table,
     val tmpBB = packedMeta.getMetadataDirectBuffer
     val metaCopy = ByteBuffer.allocateDirect(tmpBB.capacity())
     metaCopy.put(tmpBB)
-    metaCopy.flip()
+    metaCopy.asInstanceOf[Buffer].flip()
     metaCopy
   }
 

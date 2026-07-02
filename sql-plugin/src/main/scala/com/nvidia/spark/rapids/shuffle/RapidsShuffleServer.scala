@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, RapidsShuffleHandle, S
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId}
@@ -74,7 +73,40 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                           requestHandler: RapidsShuffleRequestHandler,
                           exec: Executor,
                           bssExec: Executor,
-                          rapidsConf: RapidsConf) extends AutoCloseable with Logging {
+                          rapidsConf: RapidsConf) extends AutoCloseable {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[RapidsShuffleServer])
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logTrace(msg: => String): Unit = {
+    if (log.isTraceEnabled) {
+      log.trace(msg)
+    }
+  }
+
+  private def logError(msg: => String): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg)
+    }
+  }
+
+  private def logError(msg: => String, throwable: Throwable): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg, throwable)
+    }
+  }
+
 
   def getId: BlockManagerId = {
     // upon seeing this port, the other side will try to connect to the port

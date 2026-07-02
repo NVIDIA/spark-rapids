@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,22 +28,21 @@ import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.spill.{SpillableDeviceBufferHandle, SpillableHandle}
 
 import org.apache.spark.{SparkEnv, TaskContext}
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.storage.ShuffleBlockId
 
-/** Identifier for a shuffle buffer that holds the data for a table */
-case class ShuffleBufferId(
-    blockId: ShuffleBlockId,
-    tableId: Int) {
-  val shuffleId: Int = blockId.shuffleId
-  val mapId: Long = blockId.mapId
-}
-
 /** Catalog for lookup of shuffle buffers by block ID */
-class ShuffleBufferCatalog extends Logging {
+class ShuffleBufferCatalog {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
   /**
    * Information stored for each active shuffle.
    * A shuffle block can be comprised of multiple batches. Each batch
@@ -259,7 +258,7 @@ class ShuffleBufferCatalog extends Logging {
     }
 
     val tableId = tableIdCounter.getAndUpdate(ShuffleBufferCatalog.TABLE_ID_UPDATER)
-    val id = ShuffleBufferId(blockId, tableId)
+    val id = new ShuffleBufferId(blockId, tableId)
     val prev = tableMap.put(tableId, id)
     if (prev != null) {
       throw new IllegalStateException(s"table ID $tableId is already in use")
@@ -283,7 +282,7 @@ class ShuffleBufferCatalog extends Logging {
     val (maybeHandle, meta) = bufferIdToHandle.get(shuffleBufferId)
     maybeHandle match {
       case Some(spillable) =>
-        RapidsShuffleHandle(spillable, meta)
+        new RapidsShuffleHandle(spillable, meta)
       case None =>
         throw new IllegalStateException(
           "a buffer handle could not be obtained for a degenerate buffer")
