@@ -67,10 +67,8 @@ class RapidsOrcV2SchemaPruningSuite
       expectedSchemaCatalogStrings: String*): Unit = {
     val fileSourceScanSchemata =
       getExecutedPlan(df).collect {
-        case scan: GpuBatchScanExec =>
-          scan.scan match {
-            case orcScan: GpuOrcScan => orcScan.readDataSchema
-          }
+        case scan: GpuBatchScanExec if scan.scan.isInstanceOf[GpuOrcScan] =>
+          scan.scan.asInstanceOf[GpuOrcScan].readDataSchema
       }
     assert(fileSourceScanSchemata.size === expectedSchemaCatalogStrings.size,
       s"Found ${fileSourceScanSchemata.size} file sources in dataframe, " +
