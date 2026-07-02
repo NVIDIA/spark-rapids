@@ -21,42 +21,31 @@ import java.net.URI
 import com.nvidia.spark.rapids.RapidsConf.LORE_SKIP_DUMPING_PLAN
 import com.nvidia.spark.rapids.lore.{GpuLore, GpuLoreDumpExec}
 import com.nvidia.spark.rapids.lore.GpuLore.{loreIdOf, LORE_DUMP_PATH_TAG, LORE_DUMP_RDD_TAG}
-import com.nvidia.spark.rapids.shims.{ShimUnaryCommand, ShimUnaryExecNode}
+import com.nvidia.spark.rapids.shims.{ShimDataWritingCommand, ShimUnaryExecNode}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{Row, SaveMode}
+import org.apache.spark.sql.SaveMode
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
-import org.apache.spark.sql.execution.command.DataWritingCommand
 import org.apache.spark.sql.execution.metric.{SQLMetric, SQLMetrics}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
 /**
  * An extension of `DataWritingCommand` that allows columnar execution.
  */
-trait GpuDataWritingCommand extends DataWritingCommand with ShimUnaryCommand {
+trait GpuDataWritingCommand extends ShimDataWritingCommand {
   lazy val basicMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.basicMetrics
   lazy val taskMetrics: Map[String, GpuMetric] = GpuWriteJobStatsTracker.taskMetrics
 
   override lazy val metrics: Map[String, SQLMetric] = GpuMetric.unwrap(basicMetrics ++ taskMetrics)
-
-  def run(sparkSession: SparkSession, child: SparkPlan): Seq[Row] = {
-    Arm.withResource(runColumnar(sparkSession, child)) { batches =>
-      assert(batches.isEmpty)
-    }
-    Seq.empty[Row]
-  }
-
-  def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch]
 
   def gpuWriteJobStatsTracker(
       hadoopConf: Configuration): GpuWriteJobStatsTracker = {
@@ -122,7 +111,7 @@ case class GpuDataWritingCommandExec(cmd: GpuDataWritingCommand, child: SparkPla
     dumpLoreMetaInfo()
     // Execute the command with LoRE dumping if needed
     val childWithDumping = dumpLoreRDD(child)
-    cmd.runColumnar(sparkSession, childWithDumping)
+    cmd.runColumnarFromAny(sparkSession, childWithDumping)
   }
 
   override def output: Seq[Attribute] = cmd.output

@@ -19,6 +19,9 @@ package com.nvidia.spark.rapids.shims
 import org.apache.spark.sql.catalyst.expressions.{BinaryExpression, Expression, TernaryExpression, UnaryExpression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, UnaryCommand}
 import org.apache.spark.sql.execution.{BinaryExecNode, SparkPlan, UnaryExecNode}
+import org.apache.spark.sql.execution.command.DataWritingCommand
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
+import org.apache.spark.sql.vectorized.ColumnarBatch
 
 trait ShimExpression extends Expression {
   override def withNewChildrenInternal(newChildren: IndexedSeq[Expression]): Expression = {
@@ -67,5 +70,20 @@ trait ShimBinaryExecNode extends BinaryExecNode {
 trait ShimUnaryCommand extends UnaryCommand {
   override def withNewChildInternal(newChild: LogicalPlan): LogicalPlan = {
     legacyWithNewChildren(Seq(newChild))
+  }
+}
+
+trait ShimDataWritingCommand extends DataWritingCommand with ShimUnaryCommand {
+  def runColumnar(sparkSession: SparkSession, child: SparkPlan): Seq[ColumnarBatch]
+
+  def runColumnarFromAny(sparkSession: AnyRef, child: SparkPlan): Seq[ColumnarBatch] = {
+    runColumnar(sparkSession.asInstanceOf[SparkSession], child)
+  }
+
+  override def run(sparkSession: SparkSession, child: SparkPlan): Seq[org.apache.spark.sql.Row] = {
+    com.nvidia.spark.rapids.Arm.withResource(runColumnar(sparkSession, child)) { batches =>
+      assert(batches.isEmpty)
+    }
+    Seq.empty[org.apache.spark.sql.Row]
   }
 }

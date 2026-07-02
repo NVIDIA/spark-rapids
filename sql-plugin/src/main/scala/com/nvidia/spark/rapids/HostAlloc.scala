@@ -28,12 +28,22 @@ import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
 import com.nvidia.spark.rapids.spill.SpillFramework
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 
-case class HostAllocResult(buffer: HostMemoryBuffer, isPinned: Boolean)
 
-private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with Logging {
+private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator {
+  private def logTrace(msg: => String): Unit = {
+    HostAlloc.logTrace(msg)
+  }
+
+  private def logInfo(msg: => String): Unit = {
+    HostAlloc.logInfo(msg)
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    HostAlloc.logWarning(msg)
+  }
+
   private var currentNonPinnedAllocated: Long = 0L
   private val pinnedLimit: Long = PinnedMemoryPool.getTotalPoolSizeBytes
   // For now we are going to assume that we are the only ones calling into the pinned pool
@@ -205,14 +215,14 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       do {
         ret = (
           if (preferPinned) {
-            tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
+            tryAllocPinned(amount).map(buffer => new HostAllocResult(buffer, true))
           } else {
-            tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
+            tryAllocNonPinned(amount).map(buffer => new HostAllocResult(buffer, false))
           }).orElse {
           if (preferPinned) {
-            tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
+            tryAllocNonPinned(amount).map(buffer => new HostAllocResult(buffer, false))
           } else {
-            tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
+            tryAllocPinned(amount).map(buffer => new HostAllocResult(buffer, true))
           }
         }
         if (ret.isEmpty) {
@@ -226,7 +236,9 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
       allocAttemptFinishedWithoutException = true
     } finally {
       ret match {
-        case Some(HostAllocResult(buffer: HostMemoryBuffer, isPinned: Boolean)) =>
+        case Some(result) =>
+          val buffer = result.buffer
+          val isPinned = result.isPinned
           val metrics = GpuTaskMetrics.get
           metrics.incHostBytesAllocated(amount, isPinned)
           if (BOOKKEEP_MEMORY) {
@@ -287,7 +299,25 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
 /**
  * A new API for host memory allocation. This can be used to limit the amount of host memory.
  */
-object HostAlloc extends Logging {
+object HostAlloc {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logTrace(msg: => String): Unit = {
+    if (log.isTraceEnabled) {
+      log.trace(msg)
+    }
+  }
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
   private var singleton: HostAlloc = new HostAlloc(-1)
 
   private def getSingleton: HostAlloc = synchronized {
@@ -334,7 +364,7 @@ object HostAlloc extends Logging {
     buff.synchronized {
       val previous = Option(buff.getEventHandler)
       val handlerToSet = previous.map { p =>
-        MultiEventHandler(p, handler)
+        new MultiEventHandler(p, handler)
       }.getOrElse {
         handler
       }
@@ -354,7 +384,7 @@ object HostAlloc extends Logging {
       case oldA: MultiEventHandler =>
         // From how the MultiEventHandler is set up we know that b cannot be one
         val newA = removeEventHandlerFrom(oldA, handler)
-        MultiEventHandler(newA, multiEventHandler.b)
+        new MultiEventHandler(newA, multiEventHandler.b)
       case _ =>
         multiEventHandler
     }
@@ -390,8 +420,8 @@ object HostAlloc extends Logging {
     }
   }
 
-  private case class MultiEventHandler(a: MemoryBuffer.EventHandler,
-                                       b: MemoryBuffer.EventHandler)
+  private class MultiEventHandler(val a: MemoryBuffer.EventHandler,
+                                  val b: MemoryBuffer.EventHandler)
     extends MemoryBuffer.EventHandler {
     override def onClosed(i: Int): Unit = {
       var t: Option[Throwable] = None
@@ -434,7 +464,7 @@ object HostAlloc extends Logging {
     }
     override def remove(addr: Long, amount: Long): Unit = totalMem.add(-amount)
   }
-  private case class MemoryUsageDetail(addr: Long, amount: Long, callStack: String) {
+  private class MemoryUsageDetail(val addr: Long, val amount: Long, val callStack: String) {
     override def toString: String = s"$amount bytes behind address $addr at $callStack"
   }
 
@@ -445,7 +475,7 @@ object HostAlloc extends Logging {
         s"${details.values.mkString("\n")}"
 
     override def add(addr: Long, amount: Long, callstack: String): Unit =
-      details.put(addr, MemoryUsageDetail(addr, amount, callstack))
+      details.put(addr, new MemoryUsageDetail(addr, amount, callstack))
 
     override def remove(addr: Long, amount: Long): Unit =
       details.remove(addr)

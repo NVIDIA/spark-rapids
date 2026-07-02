@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -242,10 +242,10 @@ case class GpuRunningWindowExec(
     }
     if (gpuPartitionSpec.isEmpty) {
       // If unpartitioned, batch on the order-by column.
-      BatchedByKey(gpuOrderSpec)(cpuOrderSpec)
+      new BatchedByKey(gpuOrderSpec)(cpuOrderSpec)
     } else {
       // If partitioned, batch on partition-columns + order-by columns.
-      BatchedByKey(gpuPartitionOrdering ++ gpuOrderSpec)(cpuPartitionOrdering ++ cpuOrderSpec)
+      new BatchedByKey(gpuPartitionOrdering ++ gpuOrderSpec)(cpuPartitionOrdering ++ cpuOrderSpec)
     }
   }
 
