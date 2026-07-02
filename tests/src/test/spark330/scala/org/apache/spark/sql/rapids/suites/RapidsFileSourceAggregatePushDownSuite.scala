@@ -19,7 +19,12 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.suites
 
-import org.apache.spark.sql.execution.datasources.{OrcV1AggregatePushDownSuite, OrcV2AggregatePushDownSuite, ParquetV1AggregatePushDownSuite, ParquetV2AggregatePushDownSuite}
+import org.apache.spark.sql.execution.datasources.{
+  OrcV1AggregatePushDownSuite,
+  OrcV2AggregatePushDownSuite,
+  ParquetV1AggregatePushDownSuite,
+  ParquetV2AggregatePushDownSuite
+}
 import org.apache.spark.sql.rapids.utils.RapidsSQLTestsBaseTrait
 
 class RapidsParquetV1AggregatePushDownSuite
