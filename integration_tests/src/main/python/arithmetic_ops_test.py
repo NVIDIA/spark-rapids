@@ -1594,4 +1594,3 @@ def test_try_multiply_fallback_to_cpu(data_gen):
     assert_gpu_fallback_collect(
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
             "try_multiply(a, b) as result"), "Multiply")
-

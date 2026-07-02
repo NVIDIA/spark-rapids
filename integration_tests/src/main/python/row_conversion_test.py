@@ -165,3 +165,40 @@ def test_host_columnar_transition(spark_tmp_path, data_gen):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path).filter("a IS NOT NULL"),
         conf={ 'spark.rapids.sql.exec.FileSourceScanExec' : 'false'})
+
+
+# Mixed-primitives parquet read+collect walks the primitive-type
+# CudfUnsafeRowBase.getXxx accessors on the GPU -> host row path
+# (Boolean / Byte / Short / Int / Long / Float / Double / Decimal at varying
+# precision / scale / UTF8String). The common Int/Long/Double arms are
+# already exercised by other tests; this fills the under-tested Boolean /
+# Byte / Short / Float / Decimal / String arms. Nested-type (Struct / Array /
+# Map), Binary, and Interval accessors are intentionally out of scope.
+#
+# BinaryType is intentionally NOT in the gen list: CudfRowTransitions
+# .isC2RSupportedType has no BinaryType branch, so including it would route
+# the scan through the fallback (non-Cudf) ColumnarToRowIterator and
+# contribute 0 LC to the target class.
+def test_cudf_unsafe_row_primitive_sweep(spark_tmp_path):
+    data_path = spark_tmp_path + "/cudf_unsafe_row"
+    gen_list = [
+        ('b',      BooleanGen()),
+        ('by',     ByteGen()),
+        ('sh',     ShortGen()),
+        ('i',      IntegerGen()),
+        ('l',      LongGen()),
+        ('f',      FloatGen(no_nans=True)),
+        ('d',      DoubleGen(no_nans=True)),
+        ('d18_2',  DecimalGen(precision=18, scale=2)),
+        ('d38_18', DecimalGen(precision=38, scale=18)),
+        ('s',      StringGen()),
+    ]
+    with_cpu_session(lambda spark:
+        gen_df(spark, gen_list, length=200).write.mode("overwrite").parquet(data_path))
+    # Pin acceleratedColumnarToRow so a future default flip or local conf
+    # override cannot silently route the test through the slow CPU
+    # ColumnarToRowIterator (which would still pass the equality check but
+    # contribute 0 LC to CudfUnsafeRowBase).
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.parquet(data_path),
+        conf={'spark.rapids.sql.acceleratedColumnarToRow.enabled': 'true'})
