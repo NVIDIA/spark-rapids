@@ -365,6 +365,21 @@ This marker has the following arguments:
                need the special override.
 - `permanent`: forces a test to ignore `DATAGEN_SEED` if True. If False, or if absent, the `DATAGEN_SEED` value always wins.
 
+### Pre-commit parameter combination selection
+
+Runs configured with `--test_type=pre-commit` use deterministic each-choice selection for tests with
+two or more stacked `pytest.mark.parametrize` decorators. The selected combinations include every
+value from every decorator at least once. Tests with zero or one parametrization decorator run all
+cases. Tests whose collected cases do not form the expected Cartesian product also run all cases.
+
+Developer and nightly runs keep the complete Cartesian product unless `RANDOM_SELECT` is explicitly
+configured. `RANDOM_SELECT` is not applied to pre-commit runs because a second random selection could
+remove the only selected occurrence of a parameter value.
+
+Add `[full-premerge]` to the pull request title to disable this selection and run the complete
+pre-commit test matrix. In this mode, `RANDOM_SELECT` retains its original behavior if explicitly
+configured.
+
 ### Randomly selecting tests
 
 To shorten feedback cycles, you can ask the harness to execute only a random subset of the collected
