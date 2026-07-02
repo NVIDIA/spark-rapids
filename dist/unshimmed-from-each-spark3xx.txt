@@ -1,3 +1,5 @@
+com/nvidia/spark/rapids/Arm*
+com/nvidia/spark/rapids/CloseableHolder*
 com/nvidia/spark/rapids/*/RapidsShuffleManager.class
 com/nvidia/spark/rapids/AvroProvider.class
 com/nvidia/spark/rapids/HiveProvider.class
