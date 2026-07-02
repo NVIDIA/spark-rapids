@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.LongAdder
 
 import scala.collection.mutable
 
-import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PinnedMemoryPool}
+import ai.rapids.cudf.{DefaultHostMemoryAllocator, HostMemoryAllocator, HostMemoryBuffer, MemoryBuffer, PageableMemoryPool, PinnedMemoryPool}
 import com.nvidia.spark.rapids.HostAlloc.bookkeepHostMemoryFree
 import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{BOOKKEEP_MEMORY, BOOKKEEP_MEMORY_CALLSTACK}
 import com.nvidia.spark.rapids.jni.{CpuRetryOOM, RmmSpark}
@@ -120,8 +120,18 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
     ret
   }
 
-  private def tryAllocNonPinned(amount: Long): Option[HostMemoryBuffer] = {
-    val ret = if (isUnlimited) {
+  private def tryAllocNonPinned(amount: Long, usePool: Boolean): Option[HostMemoryBuffer] = {
+    // When usePool=true (pinned-preferred fallback path), try the pre-touched pageable pool
+    // first to avoid page-fault cost. When usePool=false (preferPinned=false primary path),
+    // skip the pool: high-concurrency callers (e.g. shuffle readers) contend on the pool's
+    // synchronized monitor; raw malloc uses per-thread glibc arenas and is faster there.
+    val fromPool = if (usePool) Option(PageableMemoryPool.tryAllocate(amount)) else None
+    val ret: Option[HostMemoryBuffer] = if (fromPool.isDefined) {
+      synchronized {
+        currentNonPinnedAllocated += amount
+      }
+      fromPool
+    } else if (isUnlimited) {
       synchronized {
         currentNonPinnedAllocated += amount
       }
@@ -207,10 +217,10 @@ private class HostAlloc(nonPinnedLimit: Long) extends HostMemoryAllocator with L
           if (preferPinned) {
             tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
           } else {
-            tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
+            tryAllocNonPinned(amount, usePool = false).map(HostAllocResult(_, isPinned = false))
           }).orElse {
           if (preferPinned) {
-            tryAllocNonPinned(amount).map(HostAllocResult(_, isPinned = false))
+            tryAllocNonPinned(amount, usePool = true).map(HostAllocResult(_, isPinned = false))
           } else {
             tryAllocPinned(amount).map(HostAllocResult(_, isPinned = true))
           }
