@@ -108,7 +108,7 @@ class GpuReaderFactory(private val metrics: Map[String, GpuMetric],
           queryUsesInputFile || hasFilePathMetadata || hasRowPositionMetadata ||
             !hasNoDeletes
         MultiThread(poolConfBuilder, partition.maxNumParquetFilesParallel,
-          CombineConf(combineThresholdSize, combineWaitTime),
+          new CombineConf(combineThresholdSize, combineWaitTime),
           disableCombining,
           hasFilePathMetadata,
           hasRowPositionMetadata)
