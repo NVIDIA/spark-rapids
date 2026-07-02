@@ -8,9 +8,10 @@ ARG LINUX_VERSION=rockylinux8
 FROM nvidia/cuda:${CUDA_VERSION}-devel-${LINUX_VERSION}
 
 ARG TOOLSET_VERSION=14
-ARG CMAKE_VERSION=3.30.4
+ARG CMAKE_VERSION=4.0.3
 ARG CMAKE_ARCH=x86_64
 ARG CCACHE_VERSION=4.11.2
+ARG MAVEN_VERSION=3.9.9
 ARG PARALLEL_LEVEL=10
 
 ENV TOOLSET_VERSION=${TOOLSET_VERSION}
@@ -21,7 +22,6 @@ RUN dnf --enablerepo=powertools install -y \
   gcc-toolset-${TOOLSET_VERSION} \
   git \
   java-17-openjdk-devel \
-  maven \
   ninja-build \
   patch \
   python39 \
@@ -36,7 +36,16 @@ RUN cd /usr/local && \
   wget --quiet https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz && \
   tar zxf cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz && \
   rm cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}.tar.gz
-ENV PATH=${JAVA_HOME}/bin:/usr/local/cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}/bin:${PATH}
+
+# The rockylinux8 `maven` package is 3.5.4, too old for the template build plugins
+# (build-helper-maven-plugin, scoverage-maven-plugin require Maven >= 3.6.3), so install
+# a modern Apache Maven binary on PATH instead.
+RUN cd /usr/local && \
+  wget --quiet https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+  tar zxf apache-maven-${MAVEN_VERSION}-bin.tar.gz && \
+  rm apache-maven-${MAVEN_VERSION}-bin.tar.gz
+
+ENV PATH=${JAVA_HOME}/bin:/usr/local/cmake-${CMAKE_VERSION}-linux-${CMAKE_ARCH}/bin:/usr/local/apache-maven-${MAVEN_VERSION}/bin:${PATH}
 
 # Bake the SCL activation and Java 17 environment into /etc/profile.d so they are restored by `bash -l` on every container start.
 RUN printf 'source /opt/rh/gcc-toolset-%s/enable\n' "${TOOLSET_VERSION}" \
