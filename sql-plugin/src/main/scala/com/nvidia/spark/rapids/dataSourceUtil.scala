@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,18 +37,6 @@ class PartitionIterator[T](reader: PartitionReader[T]) extends Iterator[T] {
     }
     valuePrepared = false
     reader.get()
-  }
-}
-
-class MetricsBatchIterator(iter: Iterator[ColumnarBatch]) extends Iterator[ColumnarBatch] {
-  private[this] val inputMetrics = TaskContext.get().taskMetrics().inputMetrics
-
-  override def hasNext: Boolean = iter.hasNext
-
-  override def next(): ColumnarBatch = {
-    val batch = iter.next()
-    TrampolineUtil.incInputRecordsRows(inputMetrics, batch.numRows())
-    batch
   }
 }
 

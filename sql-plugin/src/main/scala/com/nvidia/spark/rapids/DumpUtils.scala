@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,10 +28,15 @@ import com.nvidia.spark.rapids.jni.kudo.KudoSerializer
 import org.apache.commons.io.IOUtils
 import org.apache.hadoop.conf.Configuration
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-object DumpUtils extends Logging {
+object DumpUtils {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
   /**
    * Debug utility to dump a host memory buffer to a file.
    *
@@ -51,7 +56,8 @@ object DumpUtils extends Logging {
       prefix: String,
       suffix: String): String = {
     try {
-      val (out, path) = FileUtils.createTempFile(conf, prefix, suffix)
+      val tempFile = FileUtils.createTempFile(conf, prefix, suffix)
+      val out = tempFile.getOutputStream
       withResource(out) { _ =>
         withResource(data.slice(offset, len)) { hmb =>
           withResource(new HostMemoryInputStream(hmb, hmb.getLength)) { in =>
@@ -59,7 +65,7 @@ object DumpUtils extends Logging {
           }
         }
       }
-      path.toString
+      tempFile.getPath.toString
     } catch {
       case e: Exception =>
         log.error(s"Error attempting to dump data", e)
@@ -73,7 +79,8 @@ object DumpUtils extends Logging {
       prefix: String,
       suffix: String): String = {
     try {
-      val (out, path) = FileUtils.createTempFile(conf, prefix, suffix)
+      val tempFile = FileUtils.createTempFile(conf, prefix, suffix)
+      val out = tempFile.getOutputStream
       withResource(out) { _ =>
         data.foreach { hmb =>
           withResource(new HostMemoryInputStream(hmb, hmb.getLength)) { in =>
@@ -81,7 +88,7 @@ object DumpUtils extends Logging {
           }
         }
       }
-      path.toString
+      tempFile.getPath.toString
     } catch {
       case e: Exception =>
         log.error(s"Error attempting to dump data", e)
@@ -324,7 +331,15 @@ private class ColumnIndex() {
   }
 }
 
-object ParquetDumper extends Logging {
+object ParquetDumper {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
   val COMPRESS_TYPE = CompressionType.SNAPPY
 
   def parquetWriterOptionsFromTable[T <: NestedBuilder[_, _], V <: ColumnWriterOptions](

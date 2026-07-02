@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ class GpuReadCSVFileFormat extends CSVFileFormat with GpuReadFileFormatWithMetri
       sqlConf.sessionLocalTimeZone,
       sqlConf.columnNameOfCorruptRecord)
     val rapidsConf = new RapidsConf(sqlConf)
-    val factory = GpuCSVPartitionReaderFactory(
+    val factory = new GpuCSVPartitionReaderFactory(
       sqlConf,
       broadcastedHadoopConf,
       dataSchema,
@@ -80,7 +80,7 @@ class GpuReadCSVFileFormat extends CSVFileFormat with GpuReadFileFormatWithMetri
   }
 }
 
-object GpuReadCSVFileFormat {
+object GpuReadCSVFileFormat extends Serializable {
   def tagSupport(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val fsse = meta.wrapped
     GpuCSVScan.tagSupport(

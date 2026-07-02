@@ -33,7 +33,7 @@ import org.apache.commons.io.output.CountingOutputStream
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
-import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 private[rapids] class AvroSeekableInputStream(in: SeekableInput) extends InputStream
     with SeekableInput {
@@ -82,7 +82,7 @@ case class Header(
   @transient
   lazy val schema: Schema = {
     getMetaString(SCHEMA)
-      .map(s => TrampolineConnectShims.createSchemaParser().parse(s))
+      .map(s => TrampolineUtil.createSchemaParser().parse(s))
       .orNull
   }
 
@@ -126,26 +126,6 @@ object Header {
     case (k, v) => h2.meta.get(k).exists(!_.sameElements(v))
   }
 }
-
-/**
- * The each Avro block information
- *
- * @param blockStart the start of block
- * @param blockSize  the whole block size = the size between two sync buffers + sync buffer
- * @param dataSize   the block data size
- * @param count      how many entries in this block
- */
-case class BlockInfo(blockStart: Long, blockSize: Long, dataSize: Long, count: Long)
-
-/**
- * The mutable version of the BlockInfo without block start.
- * This is for reusing an existing instance when accessing data in the iterator pattern.
- *
- * @param blockSize the whole block size (the size between two sync buffers + sync buffer size)
- * @param dataSize  the data size in this block
- * @param count   how many entries in this block
- */
-case class MutableBlockInfo(var blockSize: Long, var dataSize: Long, var count: Long)
 
 /** The parent of the Rapids Avro file readers */
 abstract class AvroFileReader(si: SeekableInput) extends AutoCloseable {
@@ -328,7 +308,7 @@ class AvroMetaFileReader(si: SeekableInput) extends AvroFileReader(si) {
       val dataSizeLongLen = BinaryData.encodeLong(blockDataSize, buf, 0)
       // (len of entries) + (len of block size) + (block size) + (sync size)
       val blockLength = countLongLen + dataSizeLongLen + blockDataSize + SYNC_SIZE
-      blocks += BlockInfo(curBlockStart, blockLength, blockDataSize, blockCount)
+      blocks += new BlockInfo(curBlockStart, blockLength, blockDataSize, blockCount)
 
       // Do we need to check the SYNC BUFFER, or just let cudf do it?
       curBlockStart += blockLength
@@ -405,11 +385,11 @@ class AvroDataFileReader(si: SeekableInput) extends AvroFileReader(si) {
       throw new NoSuchElementException
     }
     if (reuse == null) {
-      MutableBlockInfo(curBlockSize, curDataSize, curCount)
+      new MutableBlockInfo(curBlockSize, curDataSize, curCount)
     } else {
-      reuse.blockSize = curBlockSize
-      reuse.dataSize = curDataSize
-      reuse.count = curCount
+      reuse.setBlockSize(curBlockSize)
+      reuse.setDataSize(curDataSize)
+      reuse.setCount(curCount)
       reuse
     }
   }
