@@ -43,7 +43,6 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{BucketJoinTwoSidesPrefetch, FoldLocalAggregate, RapidsConf}
-
 import org.apache.hadoop.fs.FileStatus
 
 import org.apache.spark.sql.catalyst.InternalRow
