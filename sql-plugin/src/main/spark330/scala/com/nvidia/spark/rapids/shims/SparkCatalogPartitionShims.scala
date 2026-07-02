@@ -59,7 +59,8 @@ trait SparkCatalogPartitionShims extends SparkShims {
       sparkSession: SqlSparkSession,
       tableName: TableIdentifier,
       predicates: Seq[Expression],
-      @scala.annotation.unused resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition] = {
+      @scala.annotation.unused resolvedCatalogTable: Option[CatalogTable]): 
+  Seq[CatalogTablePartition] = {
     sparkSession.sessionState.catalog.listPartitionsByFilter(tableName, predicates)
   }
 
@@ -67,7 +68,8 @@ trait SparkCatalogPartitionShims extends SparkShims {
       sparkSession: SqlSparkSession,
       tableName: TableIdentifier,
       partialSpec: Option[TablePartitionSpec],
-      @scala.annotation.unused resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition] = {
+      @scala.annotation.unused resolvedCatalogTable: Option[CatalogTable]): 
+  Seq[CatalogTablePartition] = {
     sparkSession.sessionState.catalog.listPartitions(tableName, partialSpec)
   }
 }
