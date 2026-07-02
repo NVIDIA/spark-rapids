@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,22 +39,6 @@ import org.apache.spark.SparkEnv
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
 import org.apache.spark.storage.BlockManagerId
-
-case class Rkeys(rkeys: Seq[ByteBuffer])
-
-/**
- * A simple wrapper for an Active Message Id and a header. This pair
- * is used together when dealing with Active Messages, with `activeMessageId`
- * being a fire-and-forget registration with UCX, and `header` being a dynamic long
- * we continue to update (it contains the local executor id, and the transaction id).
- *
- * This allows us to send a request (with a header that the response handler knows about),
- * and for the request handler to echo back that header when it's done.
- */
-case class UCXActiveMessage(activeMessageId: Int, header: Long, forceRndv: Boolean) {
-  override def toString: String =
-    UCX.formatAmIdAndHeader(activeMessageId, header)
-}
 
 /**
  * The UCX class wraps JUCX classes and handles all communication with UCX from other
@@ -427,7 +411,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
               s"Received message with wrong header size $headerSize")
           } else {
             val header = UcxUtils.getByteBufferView(headerAddr, headerSize).getLong()
-            val am = UCXActiveMessage(reg.activeMessageId, header, reg.useRndv)
+            val am = new UCXActiveMessage(reg.activeMessageId, header, reg.useRndv)
 
             withResource(new NvtxRange("AM Receive", NvtxColor.YELLOW)) { _ =>
               logDebug(s"Active Message received: $am")
@@ -448,7 +432,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
                     cb.onSuccess(am, mtb)
                   case _ =>
                     cb.onError(am,
-                      UCXError(0, "Received an eager message for non-metadata message"))
+                      new UCXError(0, "Received an eager message for non-metadata message"))
                 })
 
                 // we return OK telling UCX `amData` is ok to be closed, along with the eagerly
@@ -475,7 +459,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
                                     s" status=$ucsStatus, msg=$errorMsg")
                                 cb.onCancel(am)
                               } else {
-                                cb.onError(am, UCXError(ucsStatus, errorMsg))
+                                cb.onError(am, new UCXError(ucsStatus, errorMsg))
                               }
                             }
                           }
@@ -833,7 +817,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         s"for ${connectionRequest.getClientAddress}")
 
       // Register a `Control` active message for a handshake response
-      val responseAm = UCXActiveMessage(
+      val responseAm = new UCXActiveMessage(
         UCXConnection.composeResponseAmId(MessageType.Control), ep.getNativeId, false)
 
       registerResponseHandler(responseAm, new UCXAmCallback {
@@ -918,7 +902,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       if (reverseLookupEndpoints.containsKey(ucpEndpoint)) {
         val executorId = reverseLookupEndpoints.get(ucpEndpoint)
         if (!isShuttingDown) {
-          val error = UCXError(errorCode, errorString)
+          val error = new UCXError(errorCode, errorString)
           logError(s"UcpListener detected an error for executorId $executorId: " +
             s"$error")
         }
@@ -1036,7 +1020,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
     // called from progress thread - on ConnectionRequest
     private def sendControlRequest(ep: UcpEndpoint, responseAm: UCXActiveMessage): Unit = {
-      val requestAm = UCXActiveMessage(
+      val requestAm = new UCXActiveMessage(
         UCXConnection.composeRequestAmId(MessageType.Control), ep.getNativeId, false)
 
       val handshakeMsg =
@@ -1048,7 +1032,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
           TransportUtils.getAddress(handshakeMsg), handshakeMsg.remaining(),
           new UcxCallback {
             override def onError(ucsStatus: Int, errorMsg: String): Unit = {
-              val error = UCXError(ucsStatus, errorMsg)
+              val error = new UCXError(ucsStatus, errorMsg)
               logError(s"Error sending handshake header, " +
                 s"error: $error active message: $requestAm handshake: $handshakeMsg")
               RapidsStorageUtils.dispose(handshakeMsg)
@@ -1071,7 +1055,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       // reply
       val handshakeMsg = UCXConnection.packHandshake(localExecutorId, localRkeys)
       val responseAmId = UCXConnection.composeResponseAmId(MessageType.Control)
-      val responseAm = UCXActiveMessage(responseAmId, requestAm.header, false)
+      val responseAm = new UCXActiveMessage(responseAmId, requestAm.header, false)
       val address = TransportUtils.getAddress(handshakeMsg)
       val len = handshakeMsg.remaining()
 
@@ -1080,7 +1064,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
         sendActiveMessage(ep, responseAm, address, len,
           new UcxCallback {
             override def onError(ucsStatus: Int, errorMsg: String): Unit = {
-              val error = UCXError(ucsStatus, errorMsg)
+              val error = new UCXError(ucsStatus, errorMsg)
               logError(s"Error replying to sending handshake header, " +
                 s"error: $error active message: $responseAm")
               RapidsStorageUtils.dispose(handshakeMsg)
