@@ -236,9 +236,79 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
 
   test("hex digits - find") {
     val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}",
-      raw"\x80", raw"\xff", raw"\x{0008f}", raw"\x{10FFFF}", raw"\x{00eeee}")
+      raw"\x80", raw"\xff", raw"\x{0008f}", raw"\x{00eeee}")
+    // NOTE: supplementary codepoints (cp > U+FFFF) such as `\x{1F600}` are
+    // covered below -- they now throw and fall back to CPU before a `.toChar`
+    // rewrite can truncate them.
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b",
         "\u0007\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "ab\ueeeecd"))
+  }
+
+  test("supplementary codepoint hex escapes fall back to CPU") {
+    // Before the fix, `\x{1F600}` (U+1F600 grinning-face emoji) was
+    // silently truncated to `RegexChar(0x1F600.toChar)` = `RegexChar('')`,
+    // making the GPU match U+F600 instead of the supplementary codepoint.
+    // The parser now throws RegexUnsupportedException for any hex escape whose
+    // codepoint exceeds U+FFFF, so spark-rapids falls back to
+    // the CPU regex engine (which Java's Pattern handles correctly).
+    val supplementaryHexPatterns = Seq(
+      raw"\x{10000}",             // lowest supplementary codepoint
+      raw"\x{1F600}",             // grinning face emoji
+      raw"\x{10FFFF}",            // highest valid Unicode codepoint
+      raw"a\x{1F600}b",           // embedded in a longer pattern
+      raw"[\x{1F600}abc]",        // inside a character class
+      raw"[\x{10000}-\x{10FFFF}]" // range with supplementary endpoints
+    )
+    supplementaryHexPatterns.foreach { p =>
+      assertUnsupported(p, RegexFindMode,
+        "GPU regex hex escapes do not support supplementary codepoints")
+    }
+
+    // BMP boundary U+FFFF must continue to transpile (regression guard).
+    assertCpuGpuMatchesRegexpFind(
+      Seq(raw"\x{FFFF}", raw"\xff"),
+      Seq("", "a", "x￿y", "xÿy", "￿", "ÿ"))
+  }
+
+  test("CudfRegexTranspiler.rewrite recurses into RegexCharacterRange") {
+    // Exercise the AST overload directly: the string parser normally converts
+    // these endpoints before the range reaches the transpiler.
+    val directRange = RegexCharacterRange(RegexHexDigit("80"), RegexHexDigit("ff"))
+    val (rewrittenRange, replacement) = new CudfRegexTranspiler(RegexFindMode)
+      .getTranspiledAST(directRange, None, None)
+    assert(replacement.isEmpty)
+    assert(rewrittenRange === RegexCharacterRange(RegexChar('\u0080'), RegexChar('\u00ff')))
+
+    // These characters are literals in a range. Without the endpoint bypass,
+    // the ordinary top-level rewrite would treat them as anchors or wildcard.
+    "^$.".foreach { ch =>
+      val literalRange = RegexCharacterRange(RegexChar(ch), RegexChar(ch))
+      val (rewrittenLiteralRange, _) = new CudfRegexTranspiler(RegexFindMode)
+        .getTranspiledAST(literalRange, None, None)
+      assert(rewrittenLiteralRange === literalRange)
+    }
+
+    // A range endpoint must remain a character-class component after recursion.
+    val invalidRange = RegexCharacterRange(RegexEscaped('s'), RegexChar('z'))
+    val error = intercept[RegexUnsupportedException] {
+      new CudfRegexTranspiler(RegexFindMode).getTranspiledAST(invalidRange, None, None)
+    }
+    assert(error.getMessage.contains(
+      "Character range start did not transpile to a character class component"))
+
+    // Parsed BMP ranges round-trip through GPU == CPU parity. This also protects
+    // the `^$.` literal bypass used while recursively rewriting range endpoints.
+    val bmpRangePatterns = Seq(
+      raw"[\x41-\x5a]",            // ASCII A-Z via 2-digit hex on both sides
+      raw"[\x{41}-\x{5a}]",        // ASCII A-Z via braced hex on both sides
+      raw"[\x00-\x7f]",            // null to DEL
+      raw"[\x{0000}-\x{007F}]",    // null to DEL via braced hex
+      raw"[a-\xff]",               // mixed literal / hex endpoints
+      raw"[\x20-z]"                // hex start / literal end (existing case)
+    )
+    val bmpRangeInputs = Seq("", "A", "Z", "a", "\u007f", "\u0000",
+      "ABCxyz", "x￿y", "abc!", "\u0080")
+    assertCpuGpuMatchesRegexpFind(bmpRangePatterns, bmpRangeInputs)
   }
 
   test("hex digit character classes") {
