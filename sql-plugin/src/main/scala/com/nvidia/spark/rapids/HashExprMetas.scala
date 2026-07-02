@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025, NVIDIA CORPORATION.
+ * Copyright (c) 2025-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,14 +83,14 @@ object HashExprChecks {
 
   val murmur3ProjectChecks: ExprChecks = ExprChecks.projectOnly(
     TypeSig.INT, TypeSig.INT,
-    repeatingParamCheck = Some(RepeatingParamCheck(
+    repeatingParamCheck = Some(new RepeatingParamCheck(
       "input",
       murmur3InputTypes,
       TypeSig.all)))
 
   val xxhash64ProjectChecks: ExprChecks = ExprChecks.projectOnly(
     TypeSig.LONG, TypeSig.LONG,
-    repeatingParamCheck = Some(RepeatingParamCheck(
+    repeatingParamCheck = Some(new RepeatingParamCheck(
       "input",
       XxHash64Shims.supportedTypes,
       TypeSig.all)))

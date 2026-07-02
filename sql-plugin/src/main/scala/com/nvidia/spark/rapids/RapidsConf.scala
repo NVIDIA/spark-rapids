@@ -27,7 +27,6 @@ import com.nvidia.spark.rapids.jni.kudo.DumpOption
 import com.nvidia.spark.rapids.lore.{LoreId, OutputLoreId}
 
 import org.apache.spark.SparkConf
-import org.apache.spark.internal.Logging
 import org.apache.spark.network.util.{ByteUnit, JavaUtils}
 import org.apache.spark.sql.catalyst.analysis.FunctionRegistry
 import org.apache.spark.sql.internal.SQLConf
@@ -319,7 +318,19 @@ object RapidsReaderType extends Enumeration {
   val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
 }
 
-object RapidsConf extends Logging {
+object RapidsConf {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
   val MULTITHREAD_READ_NUM_THREADS_DEFAULT = 20
 
   private val registeredConfs = new ListBuffer[ConfEntry[_]]()
@@ -3055,7 +3066,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       .createWithDefault(-1)
 
   // default value for the OOM injection logic (no injection, for regular operation)
-  private val noInjection = OomInjectionConf(
+  private val noInjection = new OomInjectionConf(
     numOoms = 0,
     skipCount = 0,
     oomInjectionFilter = OomInjectionType.CPU_OR_GPU,
@@ -3104,7 +3115,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
       TEST_RETRY_OOM_INJECTION_MODE.get(SQLConf.get).toLowerCase match {
         case "false" => noInjection
         case "true" =>
-          OomInjectionConf(numOoms = 1, skipCount = 0,
+          new OomInjectionConf(numOoms = 1, skipCount = 0,
             oomInjectionFilter = OomInjectionType.CPU_OR_GPU, withSplit = false)
         case injectConfStr =>
           val injectConfMap = injectConfStr.split(',').map(_.split('=')).collect {
@@ -3117,7 +3128,7 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
             .toUpperCase()
           val oomFilter = OomInjectionType.valueOf(oomFilterStr)
           val withSplit = injectConfMap.getOrElse("split", false.toString)
-          val ret = OomInjectionConf(
+          val ret = new OomInjectionConf(
             numOoms = numOoms.toInt,
             skipCount = skipCount.toInt,
             oomInjectionFilter = oomFilter,
@@ -3309,14 +3320,18 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
     val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
     val logCardinality = LOG_JOIN_CARDINALITY.get(conf)
     val sizeEstimateThreshold = JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD.get(conf)
-    JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
+    new JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
   }
 }
 
-class RapidsConf(conf: Map[String, String]) extends Logging {
+class RapidsConf(conf: Map[String, String]) {
 
   import ConfHelper._
   import RapidsConf._
+
+  private def logWarning(msg: => String): Unit = {
+    RapidsConf.logWarning(msg)
+  }
 
   def this(sqlConf: SQLConf) = {
     this(sqlConf.getAllConfs)
@@ -3410,7 +3425,7 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
     val buildSideSelection = JoinBuildSideSelection.withName(buildSideStr)
     val logCardinality = get(LOG_JOIN_CARDINALITY)
     val sizeEstimateThreshold = get(JOIN_GATHERER_SIZE_ESTIMATE_THRESHOLD)
-    JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
+    new JoinOptions(strategy, buildSideSelection, targetSize, logCardinality, sizeEstimateThreshold)
   }
 
   lazy val sizedJoinPartitionAmplification: Double = get(SIZED_JOIN_PARTITION_AMPLIFICATION)
@@ -4175,9 +4190,12 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   def getCpuBridgeThreadPoolSize: Option[Int] = get(CPU_BRIDGE_THREAD_POOL_SIZE).map(_.toInt)
 }
 
-case class OomInjectionConf(
-  numOoms: Int,
-  skipCount: Int,
-  withSplit: Boolean,
-  oomInjectionFilter: OomInjectionType
-)
+class OomInjectionConf(
+    val numOoms: Int,
+    val skipCount: Int,
+    val withSplit: Boolean,
+    val oomInjectionFilter: OomInjectionType) extends Serializable {
+  override def toString: String =
+    "OomInjectionConf(" + numOoms + "," + skipCount + "," + withSplit + "," +
+        oomInjectionFilter + ")"
+}

@@ -33,6 +33,8 @@ import com.nvidia.spark.rapids.RapidsConf.AllowMultipleJars
 import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
+import com.nvidia.spark.rapids.fileio.RapidsInputFiles
+import com.nvidia.spark.rapids.fileio.hadoop.PerfIOS3Reader
 import com.nvidia.spark.rapids.io.async.TrafficController
 import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, Hash, JSONUtils, RmmSpark, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -40,7 +42,6 @@ import org.apache.commons.lang3.exception.ExceptionUtils
 
 import org.apache.spark.{ExceptionFailure, SparkConf, SparkContext, TaskContext, TaskFailedReason}
 import org.apache.spark.api.plugin.{DriverPlugin, ExecutorPlugin, PluginContext, SparkPlugin}
-import org.apache.spark.internal.Logging
 import org.apache.spark.rapids.hybrid.HybridExecutionUtils
 import org.apache.spark.serializer.{JavaSerializer, KryoSerializer}
 import org.apache.spark.sql.catalyst.rules.Rule
@@ -51,9 +52,10 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 
 class PluginException(msg: String) extends RuntimeException(msg)
 
-case class CudfVersionMismatchException(errorMsg: String) extends PluginException(errorMsg)
+class CudfVersionMismatchException(val errorMsg: String)
+    extends PluginException(errorMsg) with Serializable
 
-case class ColumnarOverrideRules() extends ColumnarRule with Logging {
+class ColumnarOverrideRules extends ColumnarRule {
   lazy val overrides: Rule[SparkPlan] = GpuOverrides()
   lazy val overrideTransitions: Rule[SparkPlan] = new GpuTransitionOverrides()
 
@@ -62,7 +64,33 @@ case class ColumnarOverrideRules() extends ColumnarRule with Logging {
   override def postColumnarTransitions: Rule[SparkPlan] = overrideTransitions
 }
 
-object RapidsPluginUtils extends Logging {
+object RapidsPluginUtils {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logDebug(msg: => String, throwable: Throwable): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg, throwable)
+    }
+  }
+
   val CUDF_PROPS_FILENAME = "cudf-java-version-info.properties"
   val JNI_PROPS_FILENAME = "spark-rapids-jni-version-info.properties"
   val PLUGIN_PROPS_FILENAME = "rapids4spark-version-info.properties"
@@ -83,7 +111,7 @@ object RapidsPluginUtils extends Logging {
   private val SPARK_MASTER = "spark.master"
   private val SPARK_RAPIDS_REPO_URL = "https://github.com/NVIDIA/spark-rapids"
 
-  lazy val buildInfoEvent = SparkRapidsBuildInfoEvent(
+  lazy val buildInfoEvent = new SparkRapidsBuildInfoEvent(
     sparkRapidsBuildInfo = loadProps(PLUGIN_PROPS_FILENAME),
     sparkRapidsJniBuildInfo = loadProps(JNI_PROPS_FILENAME),
     cudfBuildInfo = loadProps(CUDF_PROPS_FILENAME),
@@ -460,11 +488,31 @@ object RapidsPluginUtils extends Logging {
 /**
  * The Spark driver plugin provided by the RAPIDS Spark plugin.
  */
-class RapidsDriverPlugin extends DriverPlugin with Logging {
+class RapidsDriverPlugin extends DriverPlugin {
   var rapidsShuffleHeartbeatManager: RapidsShuffleHeartbeatManager = null
   var shuffleCleanupListener: ShuffleCleanupListener = null
   private lazy val extraDriverPlugins =
     RapidsPluginUtils.extraPlugins.map(_.driverPlugin()).filterNot(_ == null)
+
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
 
   override def receive(msg: Any): AnyRef = {
     msg match {
@@ -506,6 +554,7 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
   override def init(
     sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
     val sparkConf = pluginContext.conf
+    RapidsInputFiles.setS3PerfReader(PerfIOS3Reader.INSTANCE)
     RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
     val conf = new RapidsConf(sparkConf)
     RapidsPluginUtils.detectMultipleJars(conf)
@@ -585,10 +634,10 @@ class RapidsDriverPlugin extends DriverPlugin with Logging {
  * We store the object in concurrent map where the key is the executor task thread.
  * It is `AutoCloseable`, so the caller must close it on task success or failure.
  */
-case class ActiveTaskMetrics(
-    stageId: Int,
-    taskAttemptId: Long,
-    attemptNumber: Int) extends AutoCloseable {
+class ActiveTaskMetrics(
+    val stageId: Int,
+    val taskAttemptId: Long,
+    val attemptNumber: Int) extends AutoCloseable with Serializable {
   private var nvtx = new NvtxRange(
     s"Stage $stageId Task $taskAttemptId-$attemptNumber", NvtxColor.DARK_GREEN)
   private var closed = false
@@ -607,11 +656,49 @@ case class ActiveTaskMetrics(
 /**
  * The Spark executor plugin provided by the RAPIDS Spark plugin.
  */
-class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
+class RapidsExecutorPlugin extends ExecutorPlugin {
   var rapidsShuffleHeartbeatEndpoint: RapidsShuffleHeartbeatEndpoint = null
   var shuffleCleanupEndpoint: ShuffleCleanupEndpoint = null
   private lazy val extraExecutorPlugins =
     RapidsPluginUtils.extraPlugins.map(_.executorPlugin()).filterNot(_ == null)
+
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg, throwable)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logError(msg: => String): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg)
+    }
+  }
+
+  private def logError(msg: => String, throwable: Throwable): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg, throwable)
+    }
+  }
 
   private val activeTaskInfo = new ConcurrentHashMap[Thread, ActiveTaskMetrics]()
 
@@ -623,6 +710,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     try {
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
+      RapidsInputFiles.setS3PerfReader(PerfIOS3Reader.INSTANCE)
 
       val sparkConf = pluginContext.conf()
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)
@@ -759,16 +847,17 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   private def checkCudfVersion(conf: RapidsConf): Unit = {
     try {
       val expectedCudfVersion = buildInfoEvent.sparkRapidsBuildInfo.getOrElse("cudf_version",
-        throw CudfVersionMismatchException("Could not find cudf version in " +
+        throw new CudfVersionMismatchException("Could not find cudf version in " +
             RapidsPluginUtils.PLUGIN_PROPS_FILENAME))
 
       val cudfVersion = buildInfoEvent.cudfBuildInfo.getOrElse("version",
-        throw CudfVersionMismatchException("Could not find cudf version in " +
+        throw new CudfVersionMismatchException("Could not find cudf version in " +
             RapidsPluginUtils.CUDF_PROPS_FILENAME))
 
       // compare cudf version in the classpath with the cudf version expected by plugin
       if (!RapidsExecutorPlugin.cudfVersionSatisfied(expectedCudfVersion, cudfVersion)) {
-        throw CudfVersionMismatchException(s"Found cudf version $cudfVersion, RAPIDS Accelerator " +
+        throw new CudfVersionMismatchException(
+            s"Found cudf version $cudfVersion, RAPIDS Accelerator " +
             s"expects $expectedCudfVersion")
       }
     } catch {
@@ -901,7 +990,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
     val attemptNumber = taskCtx.attemptNumber()
     activeTaskInfo.put(
       Thread.currentThread(),
-      ActiveTaskMetrics(stageId, taskAttemptId, attemptNumber))
+      new ActiveTaskMetrics(stageId, taskAttemptId, attemptNumber))
   }
 
   private def endTaskNvtx(): Unit = {
@@ -912,7 +1001,27 @@ class RapidsExecutorPlugin extends ExecutorPlugin with Logging {
   }
 }
 
-object RapidsExecutorPlugin extends Logging {
+object RapidsExecutorPlugin {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg, throwable)
+    }
+  }
+
   /**
    * Calling System.exit will trigger shutdown hooks to run.
    * This code is intended to let them run, but then force

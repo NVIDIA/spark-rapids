@@ -78,9 +78,9 @@ object JoinTypeChecks {
     joinRideAlongTypes,
     TypeSig.all,
     Map(
-      LEFT_KEYS -> InputCheck(cudfSupportedKeyTypes, sparkSupportedJoinKeyTypes),
-      RIGHT_KEYS -> InputCheck(cudfSupportedKeyTypes, sparkSupportedJoinKeyTypes),
-      CONDITION -> InputCheck(TypeSig.BOOLEAN, TypeSig.BOOLEAN)))
+      LEFT_KEYS -> new InputCheck(cudfSupportedKeyTypes, sparkSupportedJoinKeyTypes, Nil),
+      RIGHT_KEYS -> new InputCheck(cudfSupportedKeyTypes, sparkSupportedJoinKeyTypes, Nil),
+      CONDITION -> new InputCheck(TypeSig.BOOLEAN, TypeSig.BOOLEAN, Nil)))
 
   def equiJoinMeta(leftKeys: Seq[BaseExprMeta[_]],
       rightKeys: Seq[BaseExprMeta[_]],
@@ -94,7 +94,7 @@ object JoinTypeChecks {
   val nonEquiJoinChecks: ExecChecks = ExecChecks(
     joinRideAlongTypes,
     TypeSig.all,
-    Map(CONDITION -> InputCheck(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
+    Map(CONDITION -> new InputCheck(TypeSig.BOOLEAN, TypeSig.BOOLEAN,
       notes = List("A non-inner join only is supported if the condition expression can be " +
           "converted to a GPU AST expression"))))
 
