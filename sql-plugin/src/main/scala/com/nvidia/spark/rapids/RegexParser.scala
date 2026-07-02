@@ -214,6 +214,8 @@ class RegexParser(pattern: String) {
           val octalChar = parseOctalDigit
           octalChar.codePoint match {
             case 0 => RegexHexDigit("00")
+            // Octal escapes parse at most `\0mnn` with m <= 3, so codePoint <= 0xFF;
+            // no supplementary-codepoint guard is needed.
             case codePoint => RegexChar(codePoint.toChar)
           }
         case Some(ch) =>
@@ -539,6 +541,13 @@ class RegexParser(pattern: String) {
     val value = Integer.parseInt(hexDigit, 16)
     if (value < Character.MIN_CODE_POINT || value > Character.MAX_CODE_POINT) {
       throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit", Some(start))
+    }
+    if (value > 0xFFFF) {
+      // RegexHexDigit is rewritten through a single UTF-16 Char. Reject supplementary
+      // codepoints here so every downstream use is protected from `.toChar` truncation.
+      throw new RegexUnsupportedException(
+        "GPU regex hex escapes do not support supplementary codepoints (cp > U+FFFF); " +
+          "falling back to CPU", Some(start - 2))
     }
     new RegexHexDigit(hexDigit, start - 2)
   }
@@ -1116,7 +1125,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
         if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
           RegexEscaped(r.codePoint.toChar)
         } else if (r.codePoint >= 128) {
-          // cuDF only supports 0x00 to 0x7f hexidecimal chars
+          // cuDF only supports 0x00 to 0x7f hexadecimal chars
           RegexChar(r.codePoint.toChar)
         } else {
           RegexHexDigit(String.format("%02x", Int.box(r.codePoint)))
