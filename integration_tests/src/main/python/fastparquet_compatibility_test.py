@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import numpy as np
 import pytest
 
 from asserts import assert_gpu_and_cpu_are_equal_collect
@@ -30,6 +31,38 @@ def fastparquet_unavailable():
         return False
     except ImportError:
         return True
+
+
+def pandas_to_spark_preserving_nan(spark, pandas_df):
+    """Create a Spark DataFrame without treating non-nullable floating-point NaNs as nulls.
+
+    Databricks converts NaNs to nulls when it converts a pandas DataFrame directly.
+    Infer the same schema from pandas, but pass explicit rows through Spark's schema-aware
+    conversion instead of passing the pandas DataFrame directly. Top-level numpy scalars
+    are materialized as Python values; nested struct dictionaries can retain numpy scalars
+    because the row conversion path, unlike DBR's pandas conversion path, preserves NaN.
+
+    This conversion is only safe for non-nullable data because pandas represents both
+    floating-point NaNs and Parquet nulls as NaN.
+    """
+    schema = spark.createDataFrame(pandas_df).schema
+    rows = [
+        tuple(value.item() if isinstance(value, np.generic) else value for value in row)
+        for row in pandas_df.itertuples(index=False, name=None)
+    ]
+    return spark.createDataFrame(rows, schema=schema)
+
+
+def needs_nan_preserving_conversion(data_gen):
+    """Whether data_gen contains NaN-capable floats and cannot contain nulls."""
+    if data_gen.nullable:
+        return False
+    if isinstance(data_gen, (FloatGen, DoubleGen)):
+        return True
+    if isinstance(data_gen, StructGen):
+        return (all(not child.nullable for _, child in data_gen.children) and
+                any(needs_nan_preserving_conversion(child) for _, child in data_gen.children))
+    return False
 
 
 rebase_write_corrected_conf = {
@@ -71,7 +104,7 @@ def delete_local_directory(local_path):
             print("Could not clean up local files in {}".format(local_path))
 
 
-def read_parquet(data_path, local_data_path):
+def read_parquet(data_path, local_data_path, preserve_nans=False):
     """
     (Fetches a function that) Reads Parquet from the specified `data_path`.
     If the plugin is enabled, the read is done via Spark APIs, through the plugin.
@@ -89,6 +122,8 @@ def read_parquet(data_path, local_data_path):
         else:
             copy_to_local(spark, data_path, local_data_path)
             df = fastparquet.ParquetFile(local_data_path).to_pandas()
+            if preserve_nans:
+                return pandas_to_spark_preserving_nan(spark, df)
             return spark.createDataFrame(df)
 
     return read_with_fastparquet_or_plugin
@@ -110,12 +145,8 @@ def read_parquet(data_path, local_data_path):
     pytest.param(IntegerGen(nullable=True),
                  marks=pytest.mark.xfail(reason="Nullables cause merge errors, when converting to Spark dataframe")),
     LongGen(nullable=False),
-    pytest.param(FloatGen(nullable=False),
-                 marks=pytest.mark.xfail(is_databricks_runtime(),
-                                         reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
-    pytest.param(DoubleGen(nullable=False),
-                 marks=pytest.mark.xfail(is_databricks_runtime(),
-                                         reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
+    FloatGen(nullable=False),
+    DoubleGen(nullable=False),
     StringGen(nullable=False),
     pytest.param(DecimalGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads Decimal columns as Float, as per "
@@ -141,11 +172,8 @@ def read_parquet(data_path, local_data_path):
         marks=pytest.mark.xfail(reason="Conversion from Pandas dataframe (read with fastparquet) to Spark dataframe "
                                        "fails: \"Unable to infer the type of the field a\".")),
 
-    pytest.param(
-        StructGen(children=[("first", IntegerGen(nullable=False)),
-                            ("second", FloatGen(nullable=False))], nullable=False),
-        marks=pytest.mark.xfail(is_databricks_runtime(),
-                                reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
+    StructGen(children=[("first", IntegerGen(nullable=False)),
+                        ("second", FloatGen(nullable=False))], nullable=False),
 ], ids=idfn)
 def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     """
@@ -167,7 +195,8 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
 
     try:
         # Read Parquet with CPU (fastparquet) and GPU (plugin), and compare records.
-        assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path, local_data_path),
+        assert_gpu_and_cpu_are_equal_collect(read_parquet(
+            data_path, local_data_path, needs_nan_preserving_conversion(data_gen)),
                                              result_canonicalize_func_before_compare=get_fastparquet_result_canonicalizer())
     finally:
         # Clean up local copy of data.
@@ -192,12 +221,8 @@ def test_reading_file_written_by_spark_cpu(data_gen, spark_tmp_path):
     LongGen(nullable=False),
     pytest.param(LongGen(nullable=True),
                  marks=pytest.mark.xfail(reason="Nullables cause merge errors, when converting to Spark dataframe")),
-    pytest.param(FloatGen(nullable=False),
-                 marks=pytest.mark.xfail(is_databricks_runtime(),
-                                         reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
-    pytest.param(DoubleGen(nullable=False),
-                 marks=pytest.mark.xfail(is_databricks_runtime(),
-                                         reason="https://github.com/NVIDIA/spark-rapids/issues/9778")),
+    FloatGen(nullable=False),
+    DoubleGen(nullable=False),
     StringGen(nullable=False),
     pytest.param(DecimalGen(nullable=False),
                  marks=pytest.mark.xfail(reason="fastparquet reads Decimal columns as Float, as per "
@@ -244,7 +269,10 @@ def test_reading_file_written_with_gpu(spark_tmp_path, column_gen):
 
     try:
         # For now, this compares the results of reading back the GPU-written data, via fastparquet and GPU.
-        assert_gpu_and_cpu_are_equal_collect(read_parquet(data_path=data_path, local_data_path=local_data_path),
+        assert_gpu_and_cpu_are_equal_collect(read_parquet(
+            data_path=data_path,
+            local_data_path=local_data_path,
+            preserve_nans=needs_nan_preserving_conversion(column_gen)),
                                              conf=conf)
     finally:
         # Clean up local copy of data.
