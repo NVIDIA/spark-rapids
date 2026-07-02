@@ -381,24 +381,24 @@ class RegularExpressionParserSuite extends AnyFunSuite {
   }
 
   test("escaped metachar \\$ in replacement keeps the \\ pair") {
-    val repl = new RegexParser("\\$").parseReplacement(numCaptureGroups = 0)
+    val repl = new RegexParser("""\$""").parseReplacement(numCaptureGroups = 0)
     assert(repl.parts.toList === List(RegexChar('\\'), RegexChar('$')))
   }
 
   test("escaped backslash \\\\ in replacement keeps the \\ pair") {
-    val repl = new RegexParser("\\\\").parseReplacement(numCaptureGroups = 0)
+    val repl = new RegexParser("""\\""").parseReplacement(numCaptureGroups = 0)
     assert(repl.parts.toList === List(RegexChar('\\'), RegexChar('\\')))
   }
 
   test("escaped dollar before digit \\$1 keeps the \\ pair as literals (not a backref)") {
     // Java appendReplacement: `\` escapes the `$`, so `\$1` is the literal text `$1`.
-    val repl = new RegexParser("\\$1").parseReplacement(numCaptureGroups = 1)
+    val repl = new RegexParser("""\$1""").parseReplacement(numCaptureGroups = 1)
     assert(repl.parts.toList === List(RegexChar('\\'), RegexChar('$'), RegexChar('1')))
   }
 
   test("double backslash before dollar \\\\$1 does NOT escape the $ (real backref)") {
     // `\\` is an escaped backslash; the following `$1` is a genuine group-1 backref.
-    val repl = new RegexParser("\\\\$1").parseReplacement(numCaptureGroups = 1)
+    val repl = new RegexParser("""\\$1""").parseReplacement(numCaptureGroups = 1)
     assert(repl.parts.toList ===
       List(RegexChar('\\'), RegexChar('\\'), RegexChar('$'), RegexChar('1')))
   }
