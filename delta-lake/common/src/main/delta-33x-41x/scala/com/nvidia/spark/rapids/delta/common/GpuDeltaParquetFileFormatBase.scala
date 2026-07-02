@@ -26,7 +26,6 @@ import org.apache.hadoop.fs.Path
 import scala.collection.mutable.ArrayBuffer
 
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory}
@@ -52,7 +51,7 @@ class GpuDeltaParquetFileFormatBase(
     optimizationsEnabled: Boolean = true,
     tablePath: Option[String] = None,
     isCDCRead: Boolean = false
-  ) extends com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat with Logging {
+  ) extends com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormat {
 
   // Validate either we have all arguments for DV enabled read or none of them.
 

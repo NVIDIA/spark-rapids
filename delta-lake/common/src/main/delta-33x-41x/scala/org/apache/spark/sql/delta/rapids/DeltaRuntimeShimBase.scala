@@ -58,7 +58,7 @@ abstract class DeltaRuntimeShimBase extends DeltaRuntimeShim {
 
   override def startTransaction(log: DeltaLog, conf: RapidsConf, clock: Clock):
       GpuOptimisticTransactionBase = {
-    startTransaction(StartTransactionArg(log, conf, clock))
+    startTransaction(new StartTransactionArg(log, conf, clock))
   }
 
   override def startTransaction(arg: StartTransactionArg): GpuOptimisticTransactionBase = {

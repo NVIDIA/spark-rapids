@@ -86,6 +86,10 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
 
   override def toString: String = s"GpuIcebergWrite(table=$table, format=$format)"
 
+  private[source] def abort(messages: Array[WriterCommitMessage]): Unit = {
+    GpuSparkWriteAccess.abort(cpu, messages)
+  }
+
   override def distributionStrictlyRequired(): Boolean =
     writeRequirements.distributionStrictlyRequired()
 
@@ -95,7 +99,6 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
     writeRequirements.advisoryPartitionSizeInBytes()
 
   override def requiredDistribution(): Distribution = writeRequirements.requiredDistribution()
-
   override def requiredOrdering(): Array[SortOrder] = writeRequirements.requiredOrdering()
 
   private[source] def createDataWriterFactory: DataWriterFactory = {
@@ -153,6 +156,16 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
       outputWriterFactory,
       statsTracker,
       serializedHadoopConf)
+  }
+
+  private[source] def files(messages: Array[WriterCommitMessage]): Seq[DataFile] = {
+    messages.filter(_ != null)
+      .flatMap(GpuSparkWriteAccess.taskCommitFiles)
+      .toSeq
+  }
+
+  private[source] def commitOperation(operation: SnapshotUpdate[_], desc: String) = {
+    GpuSparkWriteAccess.commitOperation(cpu, operation, desc)
   }
 }
 
@@ -250,7 +263,7 @@ object GpuSparkWrite {
         val transform = partitionField.transform()
         GpuTransform.tryFrom(transform) match {
           case Success(t) =>
-            val fieldTransform = GpuFieldTransform(partitionField.sourceId(), t)
+            val fieldTransform = new GpuFieldTransform(partitionField.sourceId(), t)
             if (!fieldTransform.supports(dataSparkType.get, dataSchema.get)) {
               meta.willNotWorkOnGpu(
                 s"Iceberg partition transform $transform is not supported on GPU")
