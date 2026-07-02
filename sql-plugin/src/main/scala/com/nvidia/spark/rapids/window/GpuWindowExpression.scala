@@ -117,21 +117,23 @@ abstract class GpuWindowExpressionMetaBase(
             } else {
               // check whether order by column is supported or not
               val orderSpec = wrapped.windowSpec.orderSpec
-              if (orderSpec.length > 1) {
-                // We only support a single order by column
-                willNotWorkOnGpu("only a single date/time or numeric (Boolean exclusive) " +
-                  "based column in window range functions is supported")
+              val hasMultipleOrderByColumns = orderSpec.length > 1
+              if (hasMultipleOrderByColumns && spec.isValueBound) {
+                willNotWorkOnGpu("range window frames with value boundaries are not supported " +
+                  "with multiple order-by columns")
               }
-              val orderByTypeSupported = orderSpec.forall { so =>
-                so.dataType match {
-                  case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType |
-                       DateType | TimestampType | StringType | DecimalType() => true
-                  case _ => false
-                }
+              // Order-by types accepted for multi-column RANGE windows; the analogous
+              // single-column gate is GpuWindowUtil.isValidRangeFrameType.
+              def isSupportedOrderType(dt: DataType): Boolean = dt match {
+                case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType |
+                     DateType | TimestampType | StringType | DecimalType() => true
+                case _ => false
               }
-              if (!orderByTypeSupported) {
+              // Report the first unsupported column so the message names the offending type even
+              // when an earlier order-by column is supported.
+              orderSpec.find(so => !isSupportedOrderType(so.dataType)).foreach { so =>
                 willNotWorkOnGpu(s"the type of orderBy column is not supported in a window" +
-                  s" range function, found ${orderSpec.head.dataType}")
+                  s" range function, found ${so.dataType}")
               }
 
               def checkRangeBoundaryConfig(dt: DataType): Unit = {
