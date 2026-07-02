@@ -830,6 +830,10 @@ class CudfRegexTranspiler(mode: RegexMode) {
         }
         None
 
+      case RegexChoice(a, b) =>
+        getUnsupportedRepetitionBaseOption(a)
+          .orElse(getUnsupportedRepetitionBaseOption(b))
+
       case RegexGroup(_, term, _) =>
         getUnsupportedRepetitionBaseOption(term)
 
