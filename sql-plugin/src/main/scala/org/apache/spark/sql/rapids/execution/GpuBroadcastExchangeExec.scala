@@ -41,7 +41,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Attribute
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.Statistics
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastMode, BroadcastPartitioning, Partitioning}
 import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
@@ -51,6 +51,26 @@ import org.apache.spark.sql.execution.metric.SQLMetrics
 import org.apache.spark.sql.internal.{SQLConf, StaticSQLConf}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
+
+/**
+ * Cache key used by [[SerializeConcatHostBuffersDeserializeBatch]] to memoize the projected
+ * `Array[InternalRow]` on the broadcast value across DPP probe sites that share the same
+ * broadcast.
+ *
+ * `kind` discriminates callers that share the same broadcast value but project differently:
+ *   - "subquery"   - [[GpuSubqueryBroadcastExec]]: a subset of build-key indices with optional
+ *                    HashedRelation mode-key re-projection, used by InSubqueryExec / DPP.
+ *   - "broadcastRow" - [[GpuBroadcastToRowExec]]: all columns projected to InternalRows.
+ *
+ * `canonicalBuildKeys` and `canonicalModeKeys` are canonicalized (per Spark's
+ * `Expression#canonicalized`) so that we hit the cache exactly when Spark's `ReusedSubquery`
+ * rule already considers the subqueries equivalent.
+ */
+case class ProjectedRowsKey(
+    kind: String,
+    indices: Seq[Int],
+    canonicalBuildKeys: Seq[Expression],
+    canonicalModeKeys: Option[Seq[Expression]])
 
 /**
  * Class that is used to broadcast results (a contiguous host batch) to executors.
@@ -81,7 +101,43 @@ class SerializeConcatHostBuffersDeserializeBatch(
   // used for memoization of deserialization to GPU on Executor
   @transient private var batchInternal: SpillableColumnarBatch = null
 
+  /**
+   * Memoized `Array[InternalRow]` keyed by the projection spec. Hit once per unique
+   * [[ProjectedRowsKey]] per executor for the lifetime of this broadcast value, so the
+   * GPU->host copy + per-row CPU projection runs once per broadcast on each executor instead
+   * of once per DPP probe site.
+   */
+  @transient private lazy val projectedRowsCache =
+    new ConcurrentHashMap[ProjectedRowsKey, Array[InternalRow]]()
+
   private def maybeGpuBatch: Option[SpillableColumnarBatch] = Option(batchInternal)
+
+  /**
+   * Compute the projected `Array[InternalRow]` for `key` exactly once per executor for this
+   * broadcast value, and return the same memoized array for subsequent calls with an equal key.
+   *
+   * The `compute` thunk MUST be deterministic with respect to `key` and the broadcast contents,
+   * because it is only evaluated for the first caller. The returned array is shared across
+   * probe sites and MUST NOT be mutated by callers (matches the existing contract of
+   * `executeCollect()` which already returns an immutable array to `InSubqueryExec`).
+   */
+  def projectedRowsOrCompute(
+      key: ProjectedRowsKey)(compute: => Array[InternalRow]): Array[InternalRow] = {
+    // computeIfAbsent is preferred over get/putIfAbsent so the slow path runs at most once
+    // per key even under concurrent probe-site evaluations on the same executor.
+    val existing = projectedRowsCache.get(key)
+    if (existing != null) {
+      existing
+    } else {
+      // Evaluate `compute` outside computeIfAbsent because it can be expensive
+      // (host copy + projection) and we don't want to hold the table-level lock for that long.
+      // Race is benign: if two threads race, one of the freshly computed arrays is discarded
+      // and both threads return the same winning array.
+      val fresh = compute
+      val winner = projectedRowsCache.putIfAbsent(key, fresh)
+      if (winner == null) fresh else winner
+    }
+  }
 
   def batch: SpillableColumnarBatch = this.synchronized {
     maybeGpuBatch.getOrElse {
@@ -248,6 +304,11 @@ class SerializeConcatHostBuffersDeserializeBatch(
     Seq(data, batchInternal).safeClose()
     data = null
     batchInternal = null
+    // Drop the projected-row memoizations so the InternalRow arrays become collectable.
+    // Touching `projectedRowsCache` here forces the lazy val to initialize if it had never
+    // been used, but that just allocates an empty ConcurrentHashMap — a one-time, negligible
+    // cost on the GC path.
+    projectedRowsCache.clear()
   }
 
   @scala.annotation.nowarn("msg=method finalize in class Object is deprecated")

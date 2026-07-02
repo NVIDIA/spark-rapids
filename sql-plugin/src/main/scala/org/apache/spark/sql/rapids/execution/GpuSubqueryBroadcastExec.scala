@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -214,7 +214,28 @@ case class GpuSubqueryBroadcastExec(
       SQLExecution.withExecutionId(session, executionId) {
         val broadcastBatch = child.executeBroadcast[Any]()
         val result: Array[InternalRow] = broadcastBatch.value match {
-          case b: SerializeConcatHostBuffersDeserializeBatch =>  projectSerializedBatchToRows(b)
+          case b: SerializeConcatHostBuffersDeserializeBatch =>
+            // Memoize the projected rows on the broadcast value itself. The cache key is the
+            // canonical projection spec (indices + buildKeys + modeKeys), which matches
+            // Spark's ReusedSubquery canonicalization. Sibling fact-table sub-trees that
+            // reference the same DPP subquery (e.g. one date_dim feeding multiple fact-table
+            // scans) now resolve to a ConcurrentHashMap get instead of re-running
+            // serBatch.hostBatch -> rowIterator -> UnsafeProjection per probe site.
+            val beforeCollect = System.nanoTime()
+            val key = ProjectedRowsKey(
+              "subquery",
+              indices,
+              buildKeys.map(_.canonicalized),
+              modeKeys.map(_.map(_.canonicalized)))
+            val rows = b.projectedRowsOrCompute(key) {
+              projectSerializedBatchToRows(b)
+            }
+            // Update metrics on every call (cache hit and miss) to preserve the
+            // per-probe-site semantics that consumers of the Spark UI saw before this
+            // cache was introduced.
+            gpuLongMetric("dataSize") += b.dataSize
+            gpuLongMetric(COLLECT_TIME) += System.nanoTime() - beforeCollect
+            rows
           case b if SparkShimImpl.isEmptyRelation(b) => Array.empty
           case b => throw new IllegalStateException(s"Unexpected broadcast type: ${b.getClass}")
         }
@@ -224,10 +245,12 @@ case class GpuSubqueryBroadcastExec(
     }
   }
 
+  // Pure projection — does not touch metrics. The caller is responsible for recording
+  // `dataSize` and `COLLECT_TIME` on every invocation (including cache hits) so the Spark
+  // UI keeps reporting a per-probe-site value even after `projectedRowsOrCompute` starts
+  // serving cached results.
   private def projectSerializedBatchToRows(
       serBatch: SerializeConcatHostBuffersDeserializeBatch): Array[InternalRow] = {
-    val beforeCollect = System.nanoTime()
-
     // Creates projection to extract target field from Row, as what Spark does.
     // Note that unlike Spark, the GPU broadcast data has not applied the key expressions from
     // the HashedRelation, so that is applied here if necessary to ensure the proper values
@@ -261,17 +284,12 @@ case class GpuSubqueryBroadcastExec(
 
     // Deserializes the batch on the host. Then, transforms it to rows and performs row-wise
     // projection. We should NOT run any device operation on the driver node.
-    val result = withResource(serBatch.hostBatch) { hostBatch =>
+    withResource(serBatch.hostBatch) { hostBatch =>
       hostBatch.rowIterator().asScala.map { row =>
         val broadcastRow = broadcastModeProject.map(_(row)).getOrElse(row)
         rowProject(broadcastRow).copy().asInstanceOf[InternalRow]
       }.toArray // force evaluation so we don't close hostBatch too soon
     }
-
-    gpuLongMetric("dataSize") += serBatch.dataSize
-    gpuLongMetric(COLLECT_TIME) += System.nanoTime() - beforeCollect
-
-    result
   }
 
   protected override def doExecute(): RDD[InternalRow] = {
