@@ -42,23 +42,68 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
+import java.io.OutputStream
+import java.lang.reflect.Method
+
 import org.apache.orc.impl.OutStream
-import org.apache.orc.protobuf.{AbstractMessage, CodedOutputStream}
 
 class OrcProtoWriterShim(orcOutStream: OutStream) {
-  val proxied = CodedOutputStream.newInstance(orcOutStream)
-  def writeAndFlush(obj: Any): Unit = obj match {
-    case m: AbstractMessage =>
-      m.writeTo(proxied)
-      proxied.flush()
-      orcOutStream.flush()
-    case _ =>
-      require(obj.isInstanceOf[AbstractMessage],
-        s"Unexpected protobuf message type: $obj")
+  import OrcProtoWriterShim.ProtoApi
+
+  private[this] var proxiedApi: ProtoApi = _
+  private[this] var proxied: AnyRef = _
+
+  private def proxiedFor(api: ProtoApi): AnyRef = {
+    if (proxiedApi != api) {
+      proxiedApi = api
+      proxied = api.newInstance.invoke(null, orcOutStream.asInstanceOf[OutputStream])
+    }
+    proxied
+  }
+
+  def writeAndFlush(obj: Any): Unit = {
+    val api = OrcProtoWriterShim.apiFor(obj).getOrElse {
+      throw new IllegalArgumentException(
+        s"requirement failed: Unexpected protobuf message type: $obj")
+    }
+    val currentProxied = proxiedFor(api)
+    api.writeTo.invoke(obj.asInstanceOf[AnyRef], currentProxied)
+    api.flush.invoke(currentProxied)
+    orcOutStream.flush()
   }
 }
 
 object OrcProtoWriterShim {
+  private case class ProtoApi(
+      messageClass: Class[_],
+      newInstance: Method,
+      writeTo: Method,
+      flush: Method)
+
+  private val protoClassNames = Seq(
+    ("org.apache.orc.protobuf.AbstractMessage",
+      "org.apache.orc.protobuf.CodedOutputStream"),
+    ("com.google.protobuf.AbstractMessage",
+      "com.google.protobuf.CodedOutputStream"))
+
+  private lazy val protoApis: Seq[ProtoApi] = protoClassNames.flatMap { case (msg, out) =>
+    try {
+      val messageClass = Class.forName(msg)
+      val codedOutputStreamClass = Class.forName(out)
+      Some(ProtoApi(
+        messageClass,
+        codedOutputStreamClass.getMethod("newInstance", classOf[OutputStream]),
+        messageClass.getMethod("writeTo", codedOutputStreamClass),
+        codedOutputStreamClass.getMethod("flush")))
+    } catch {
+      case _: ReflectiveOperationException => None
+    }
+  }
+
+  private def apiFor(obj: Any): Option[ProtoApi] = {
+    protoApis.find(_.messageClass.isInstance(obj))
+  }
+
   def apply(orcOutStream: OutStream) = {
     new OrcProtoWriterShim(orcOutStream)
   }
