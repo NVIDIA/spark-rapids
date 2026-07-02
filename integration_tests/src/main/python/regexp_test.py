@@ -633,10 +633,10 @@ def test_regexp_hexadecimal_digits():
                 # Issue #14739: non-braced \xNN followed by another hex digit
                 # used to be greedily consumed and rejected. The cap fix below
                 # makes these patterns run on GPU instead of falling back.
-                'regexp_replace(a, "\\\\x61a", "X")',
-                'regexp_replace(a, "\\\\x41f", "X")',
-                'rlike(a, "\\\\x61a")',
-                'rlike(a, "[\\\\x41b]")',
+                r'regexp_replace(a, "\\x61a", "X")',
+                r'regexp_replace(a, "\\x41f", "X")',
+                r'rlike(a, "\\x61a")',
+                r'rlike(a, "[\\x41b]")',
             ),
         conf=_regexp_conf)
     # Issue #14739 (positive-match path): the random data above only contains
@@ -648,11 +648,11 @@ def test_regexp_hexadecimal_digits():
             lambda spark: spark.createDataFrame(
                 [("aa",), ("Af",), ("ab",), ("zz",), ("Aff",), ("xaay",)],
                 "a string").selectExpr(
-                'regexp_replace(a, "\\\\x61a", "X")',  # "aa" -> "X"
-                'regexp_replace(a, "\\\\x41f", "X")',  # "Af" -> "X"
-                'rlike(a, "\\\\x61a")',
-                'rlike(a, "\\\\x41f")',
-                'rlike(a, "[\\\\x41b]")',  # [A,b] char class
+                r'regexp_replace(a, "\\x61a", "X")',  # "aa" -> "X"
+                r'regexp_replace(a, "\\x41f", "X")',  # "Af" -> "X"
+                r'rlike(a, "\\x61a")',
+                r'rlike(a, "\\x41f")',
+                r'rlike(a, "[\\x41b]")',  # [A,b] char class
             ),
         conf=_regexp_conf)
 

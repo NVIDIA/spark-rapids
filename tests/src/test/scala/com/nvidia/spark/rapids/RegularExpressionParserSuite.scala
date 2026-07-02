@@ -149,7 +149,7 @@ class RegularExpressionParserSuite extends AnyFunSuite {
       RegexSequence(ListBuffer(RegexHexDigit("ABC"))))
   }
 
-  test("issue-14739: non-braced \\xNN caps at 2 hex digits") {
+  test("non-braced \\xNN caps at 2 hex digits") {
     // Java spec: non-braced \x consumes EXACTLY two hex digits; any trailing
     // hex digits are part of the surrounding pattern. Previously the parser
     // greedily consumed all subsequent hex digits and then rejected the

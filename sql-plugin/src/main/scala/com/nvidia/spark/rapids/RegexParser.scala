@@ -530,10 +530,8 @@ class RegexParser(pattern: String) {
     // patterns like "\\x61a" were rejected even though they are valid Java
     // regex meaning "0x61 (= 'a') followed by the literal 'a'".
     val hexLimit = if (varHex) Int.MaxValue else 2
-    var consumed = 0
-    while (consumed < hexLimit && !eof() && isHexDigit(pattern.charAt(pos))) {
+    while (pos - start < hexLimit && !eof() && isHexDigit(pattern.charAt(pos))) {
       pos += 1
-      consumed += 1
     }
     val hexDigit = pattern.substring(start, pos)
     if (varHex) {
