@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,7 +71,8 @@ object GpuBindReferences extends Logging {
         if (ordinal == -1) {
           sys.error(s"Couldn't find $a in ${input.attrs.mkString("[", ",", "]")}")
         } else {
-          GpuBoundReference(ordinal, a.dataType, input(ordinal).nullable)(a.exprId, a.name)
+          GpuBoundReference(ordinal, input(ordinal).dataType, input(ordinal).nullable)(
+            a.exprId, a.name)
         }
     }
     val matchFunc = regularMatch.orElse(partial)
