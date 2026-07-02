@@ -18,7 +18,7 @@ import random
 from asserts import assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_are_equal_sql, \
     assert_gpu_sql_fallback_collect, assert_gpu_fallback_collect, assert_gpu_and_cpu_error, \
     assert_cpu_and_gpu_are_equal_collect_with_capture
-from conftest import is_databricks_runtime, get_datagen_seed, is_dataproc_serverless_runtime
+from conftest import is_databricks_runtime, get_datagen_seed
 from data_gen import *
 from marks import *
 from pyspark.sql.types import *
@@ -38,8 +38,6 @@ _gbk_edge_cases = [
     bytearray(b'Hi\xc4\xe3\xba\xc3World'), # mixed ASCII and Chinese
 ]
 
-@pytest.mark.skipif(is_dataproc_serverless_runtime(),
-                    reason="https://github.com/NVIDIA/spark-rapids/issues/14815")
 @pytest.mark.parametrize('data_gen', [
     # Random CJK ideographs encoded as GBK — tests normal decode path
     BinaryGen(min_length=0, max_length=50, min_val=0x4E00, max_val=0x9FA5, encoding='gbk'),
@@ -167,7 +165,7 @@ def test_substring_index(data_gen,delim):
                 f.substring_index(f.col('a'), delim, -4)))
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('SubstringIndex')
 @pytest.mark.parametrize('data_gen', [mk_str_gen('([ABC]{0,3}_?){0,7}')], ids=idfn)
 def test_unsupported_fallback_substring_index(data_gen):
     delim_gen = StringGen(pattern="_")
@@ -201,7 +199,7 @@ def test_lpad():
                 'LPAD(a, -1, "G")'))
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StringLPad')
 def test_unsupported_fallback_lpad():
     gen = mk_str_gen('.{0,5}')
     pad_gen = StringGen(pattern="G")
@@ -234,7 +232,7 @@ def test_rpad():
                 'RPAD(a, -1, "G")'))
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StringRPad')
 def test_unsupported_fallback_rpad():
     gen = mk_str_gen('.{0,5}')
     pad_gen = StringGen(pattern="G")
@@ -278,7 +276,7 @@ def test_locate():
                 'locate("_", a, NULL)'))
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StringLocate')
 def test_unsupported_fallback_locate():
     gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')
     pos_gen = IntegerGen()
@@ -293,7 +291,7 @@ def test_unsupported_fallback_locate():
     assert_gpu_did_fallback('locate(a, a, pos)')
     assert_gpu_did_fallback('locate(a, "a", pos)')
 
-# There is no contains function exposed in Spark. You can turn it into a
+# There is no contains function exposed in older versions of Spark. You can turn it into a
 # LIKE %FOO% or we have seen some use instr > 0 to do the same thing.
 # Spark optimizes LIKE to be a contains, we also optimize instr to do
 # something similar.
@@ -321,7 +319,7 @@ def test_instr():
                 'instr(NULL, NULL)'))
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StringInstr')
 def test_unsupported_fallback_instr():
     gen = mk_str_gen('.{0,3}Z_Z.{0,3}A.{0,3}')
 
@@ -410,7 +408,7 @@ def test_startswith():
                 f.col('a').startswith(None),
                 f.col('a').startswith('A\ud720')))
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StartsWith')
 def test_unsupported_fallback_startswith():
     gen = StringGen(pattern='[a-z]')
 
@@ -439,7 +437,7 @@ def test_endswith():
                 f.col('a').endswith('A\ud720')))
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('EndsWith')
 def test_unsupported_fallback_endswith():
     gen = StringGen(pattern='[a-z]')
 
@@ -742,7 +740,7 @@ def test_translate():
                 'translate("AaBbCc", "abc", "1")'))
 
 @incompat
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('StringTranslate')
 def test_unsupported_fallback_translate():
     gen = mk_str_gen('.{0,5}TEST[\ud720 A]{0,5}')
     def assert_gpu_did_fallback(sql_text):
@@ -851,7 +849,7 @@ def test_like():
                 f.col('a').like('_?|}{_%'),
                 f.col('a').like('%a{3}%')))
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('Like')
 def test_unsupported_fallback_like():
     gen = StringGen('[a-z]')
     def assert_gpu_did_fallback(sql_text):
@@ -863,7 +861,7 @@ def test_unsupported_fallback_like():
     assert_gpu_did_fallback("a like a")
 
 
-@allow_non_gpu('ProjectExec')
+@allow_non_gpu('RLike')
 def test_unsupported_fallback_rlike():
     gen = StringGen('\/lit\/')
 

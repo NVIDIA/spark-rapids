@@ -208,24 +208,14 @@ class RegexParser(pattern: String) {
           val hexChar = parseHexDigit
           hexChar.codePoint match {
             case 0 => hexChar
-            case codePoint if codePoint > 0xFFFF =>
-              // cuDF's regex JNI surface cannot represent supplementary
-              // codepoints (cp > U+FFFF); previously these were silently
-              // truncated to their low 16 bits via `.toChar`, producing
-              // wrong matches. See NVIDIA/spark-rapids#14744.
-              throw new RegexUnsupportedException(
-                "cuDF does not support supplementary codepoints (cp > U+FFFF) " +
-                "in hex escapes; falling back to CPU", hexChar.position)
             case codePoint => RegexChar(codePoint.toChar)
           }
         case Some('0') =>
           val octalChar = parseOctalDigit
           octalChar.codePoint match {
             case 0 => RegexHexDigit("00")
-            case codePoint if codePoint > 0xFFFF =>
-              throw new RegexUnsupportedException(
-                "cuDF does not support supplementary codepoints (cp > U+FFFF) " +
-                "in octal escapes; falling back to CPU", octalChar.position)
+            // Octal escapes parse at most `\0mnn` with m <= 3, so codePoint <= 0xFF;
+            // no supplementary-codepoint guard is needed.
             case codePoint => RegexChar(codePoint.toChar)
           }
         case Some(ch) =>
@@ -402,8 +392,11 @@ class RegexParser(pattern: String) {
         if (peek().contains('}')) {
           consumeExpected('}')
           num match {
-            case Some(n) =>
-              RegexBackref(n)
+            case Some(_) =>
+              throw new RegexUnsupportedException(
+                "Numeric `${N}` backref in replacement string is not supported on GPU " +
+                  "(Java's Matcher.appendReplacement rejects this syntax)",
+                Some(start))
             case _ =>
               treatAsLiteralDollar()
           }
@@ -548,6 +541,13 @@ class RegexParser(pattern: String) {
     val value = Integer.parseInt(hexDigit, 16)
     if (value < Character.MIN_CODE_POINT || value > Character.MAX_CODE_POINT) {
       throw new RegexUnsupportedException(s"Invalid hex digit: $hexDigit", Some(start))
+    }
+    if (value > 0xFFFF) {
+      // RegexHexDigit is rewritten through a single UTF-16 Char. Reject supplementary
+      // codepoints here so every downstream use is protected from `.toChar` truncation.
+      throw new RegexUnsupportedException(
+        "GPU regex hex escapes do not support supplementary codepoints (cp > U+FFFF); " +
+          "falling back to CPU", Some(start - 2))
     }
     new RegexHexDigit(hexDigit, start - 2)
   }
@@ -771,6 +771,7 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   def transpileToSplittableString(e: RegexAST): Option[String] = {
     e match {
+      case RegexEscaped('b') | RegexEscaped('B') => None
       case RegexEscaped(ch) if escapeChars.contains(ch) => Some(escapeChars(ch).toString)
       case RegexEscaped(ch) if regexPunct.contains(ch) => Some(ch.toString)
       case RegexChar(ch) if !regexMetaChars.contains(ch) => Some(ch.toString)
@@ -862,20 +863,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
   private val lineTerminatorChars = Seq('\n', '\r', '\u0085', '\u2028', '\u2029')
 
-  // from Java 8 documention: a line terminator is a 1 to 2 character sequence that marks
-  // the end of a line of an input character sequence.
-  // this method produces a RegexAST which outputs a regular expression to match any possible
-  // combination of line terminators.
-  // Cudf added support to identify \n, \r, \u0085, \u2028, \u2029 as line break characters
-  // when EXT_NEWLINE flag is set. See issue: https://github.com/NVIDIA/spark-rapids/issues/11554
-  private def lineTerminatorMatcher(excludeCRLF: Boolean, capture: Boolean): RegexAST = {
-    if (excludeCRLF) {
-      RegexEmpty()
-    } else {
-      RegexGroup(capture = capture, RegexSequence(ListBuffer(RegexChar('\r'), RegexChar('\n'))),
-          None)
-    }
-  }
 
   private def negateCharacterClass(
       components: ListBuffer[RegexCharacterClassComponent]): RegexAST = {
@@ -1098,26 +1085,13 @@ class CudfRegexTranspiler(mode: RegexMode) {
                 && lineTerminatorChars.contains(ch) =>
                 throw new RegexUnsupportedException("Regex sequences with a line terminator "
                     + "character followed by '$' are not supported in replace mode", regex.position)
-            case Some(RegexChar(ch)) if ch == '\r' =>
-              // when using the the CR (\r), it prevents the line anchor from handling any other
-              // line terminator sequences, so we just output the anchor and we are finished
-              // for example: \r$ -> \r$ (no transpilation)
-              RegexChar('$')
             case Some(RegexEscaped('b')) | Some(RegexEscaped('B')) =>
               throw new RegexUnsupportedException(
                       "Regex sequences with \\b or \\B not supported around $", regex.position)
             case _ =>
-              // otherwise by default we can match any or none the full set of line terminators
-              if (mode == RegexReplaceMode) {
-                replacement match {
-                  case Some(rr) => rr.appendBackref(rr.numCaptureGroups + 1)
-                  case _ =>
-                }
-              }
-              RegexSequence(ListBuffer(
-                RegexRepetition(lineTerminatorMatcher(excludeCRLF = false,
-                    capture = mode == RegexReplaceMode), SimpleQuantifier('?')),
-                RegexChar('$')))
+              // cuDF #22763 makes EXT_NEWLINE treat \r\n as one line terminator for $, so emit
+              // the anchor directly instead of the (\r\n)? synthetic group it needed before.
+              RegexChar('$')
           }
         case '^' if mode == RegexSplitMode =>
           RegexEscaped('A')
@@ -1141,14 +1115,6 @@ class CudfRegexTranspiler(mode: RegexMode) {
 
         if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
           RegexEscaped(r.codePoint.toChar)
-        } else if (r.codePoint > 0xFFFF) {
-          // cuDF's regex JNI cannot represent supplementary codepoints
-          // (cp > U+FFFF); previously these were silently truncated via
-          // `.toChar`, producing wrong matches.
-          // See NVIDIA/spark-rapids#14744.
-          throw new RegexUnsupportedException(
-            "cuDF does not support supplementary codepoints (cp > U+FFFF) " +
-            "in octal escapes; falling back to CPU", r.position)
         } else if(r.codePoint >= 128) {
           RegexChar(r.codePoint.toChar)
         } else {
@@ -1158,15 +1124,8 @@ class CudfRegexTranspiler(mode: RegexMode) {
       case r @ RegexHexDigit(_) =>
         if (regexMetaChars.map(_.toInt).contains(r.codePoint)) {
           RegexEscaped(r.codePoint.toChar)
-        } else if (r.codePoint > 0xFFFF) {
-          // See NVIDIA/spark-rapids#14744 — supplementary codepoints
-          // cannot round-trip through cuDF's regex JNI, so we fall back
-          // to CPU rather than emit a truncated `.toChar` match.
-          throw new RegexUnsupportedException(
-            "cuDF does not support supplementary codepoints (cp > U+FFFF) " +
-            "in hex escapes; falling back to CPU", r.position)
         } else if (r.codePoint >= 128) {
-          // cuDF only supports 0x00 to 0x7f hexidecimal chars
+          // cuDF only supports 0x00 to 0x7f hexadecimal chars
           RegexChar(r.codePoint.toChar)
         } else {
           RegexHexDigit(String.format("%02x", Int.box(r.codePoint)))
@@ -1976,7 +1935,11 @@ sealed case class RegexBackref(num: Int, isNew: Boolean = false) extends RegexAS
     this.position = Some(position)
   }
   override def children(): Seq[RegexAST] = Seq.empty
-  override def toRegexString: String = s"$$$num"
+  // Backrefs marked as internally generated are emitted in braced `${N}` form so
+  // `backrefConversion` can tell them apart from user-authored `$N` tokens and pass them
+  // through verbatim. User-authored backrefs keep the raw `$N` form so the
+  // greedy-with-backoff parser in `backrefConversion` honors the user's pattern group count.
+  override def toRegexString: String = if (isNew) s"$${$num}" else s"$$$num"
 }
 
 sealed case class RegexReplacement(parts: ListBuffer[RegexAST],

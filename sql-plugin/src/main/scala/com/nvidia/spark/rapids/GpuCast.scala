@@ -755,7 +755,7 @@ object GpuCast {
     case DateType => input.asStrings("%Y-%m-%d")
     case TimestampType if options.castToJsonString => castTimestampToJson(input)
     case TimestampType => castTimestampToString(input)
-    case FloatType | DoubleType => CastStrings.fromFloat(input)
+    case FloatType | DoubleType => CastStrings.fromFloat(input, options.castToJsonString)
     case BinaryType => castBinToString(input, options)
     case _: DecimalType => GpuCastShims.CastDecimalToString(input, options.useDecimalPlainString)
     case StructType(fields) => castStructToString(input, fields, options)
@@ -1121,15 +1121,10 @@ object GpuCast {
                   attrColumns += attrValue.incRefCount()
             }
             // now concatenate
-            val jsonAttr = withResource(Scalar.fromString("")) { emptyString =>
-              ColumnVector.stringConcatenate(emptyString, emptyString, attrColumns.toArray)
-            }
             // add an empty string or the attribute
-            withResource(jsonAttr) { _ =>
-              withResource(cv.isNull) { isNull =>
-                withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
-                  isNull.ifElse(nullScalar, jsonAttr)
-                }
+            withResource(Scalar.fromString("")) { emptyString =>
+              withResource(Scalar.fromNull(DType.STRING)) { nullScalar =>
+                ColumnVector.stringConcatenate(emptyString, nullScalar, attrColumns.toArray)
               }
             }
           } else {

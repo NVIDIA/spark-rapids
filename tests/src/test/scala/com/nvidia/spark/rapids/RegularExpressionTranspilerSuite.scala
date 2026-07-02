@@ -238,18 +238,18 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     val patterns = Seq(raw"\x07", raw"\x3f", raw"\x7F", raw"\x7f", raw"\x{7}", raw"\x{0007f}",
       raw"\x80", raw"\xff", raw"\x{0008f}", raw"\x{00eeee}")
     // NOTE: supplementary codepoints (cp > U+FFFF) such as `\x{1F600}` are
-    // covered by `issue-14744:` below -- they now throw and fall back to CPU
-    // because cuDF's regex JNI cannot represent them.
+    // covered below -- they now throw and fall back to CPU before a `.toChar`
+    // rewrite can truncate them.
     assertCpuGpuMatchesRegexpFind(patterns, Seq("", "\u0007", "a\u0007b",
         "\u0007\u003f\u007f", "\u0080", "a\u00fe\u00ffb", "ab\ueeeecd"))
   }
 
-  test("issue-14744: supplementary codepoint hex/octal escapes fall back to CPU") {
+  test("supplementary codepoint hex escapes fall back to CPU") {
     // Before the fix, `\x{1F600}` (U+1F600 grinning-face emoji) was
     // silently truncated to `RegexChar(0x1F600.toChar)` = `RegexChar('')`,
     // making the GPU match U+F600 instead of the supplementary codepoint.
-    // The transpiler now throws RegexUnsupportedException for any hex/octal
-    // escape whose codepoint exceeds U+FFFF, so spark-rapids falls back to
+    // The parser now throws RegexUnsupportedException for any hex escape whose
+    // codepoint exceeds U+FFFF, so spark-rapids falls back to
     // the CPU regex engine (which Java's Pattern handles correctly).
     val supplementaryHexPatterns = Seq(
       raw"\x{10000}",             // lowest supplementary codepoint
@@ -261,7 +261,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     )
     supplementaryHexPatterns.foreach { p =>
       assertUnsupported(p, RegexFindMode,
-        "cuDF does not support supplementary codepoints")
+        "GPU regex hex escapes do not support supplementary codepoints")
     }
 
     // BMP boundary U+FFFF must continue to transpile (regression guard).
@@ -495,7 +495,7 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     doTranspileTest(TIMESTAMP_TRUNCATE_REGEX,
       TIMESTAMP_TRUNCATE_REGEX
         .replaceAll("\\.", "[^\n\r\u0085\u2028\u2029]")
-        .replaceAll("\\\\Z", "(?:\r\n)?\\$"))
+        .replaceAll("\\\\Z", "\\$"))
   }
 
   test("transpile \\A repetitions") {
@@ -508,12 +508,9 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     assertUnsupported("abc\\z", RegexFindMode, "")
   }
 
-  test("transpile $") {
-    doTranspileTest("a$", "a(?:\r\n)?$")
-  }
-
   test("transpile \\Z") {
-    val expected = "a(?:\r\n)?$"
+    val expected = "a$"
+    doTranspileTest("a$", expected)
     doTranspileTest("a\\Z", expected)
     doTranspileTest("a\\Z+", expected)
     doTranspileTest("a\\Z{1}", expected)
@@ -798,6 +795,10 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     }
   }
 
+  test("issue-14748: word boundaries are not literal split delimiters") {
+    assertNoTranspileToSplittableString(Set(raw"\b", raw"\B"))
+  }
+
   test("regexp_split - character class repetition - ? and *") {
     val patterns = Set(raw"[a-z][0-9]?", raw"[a-z][0-9]*")
     val data = Seq("a", "aa", "a1a1", "a1b2", "a1b")
@@ -1050,7 +1051,9 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
       input: Seq[String]): Array[String] = {
     val result = new Array[String](input.length)
     val replace = GpuRegExpUtils.unescapeReplaceString(replaceString)
-    val (hasBackrefs, converted) = GpuRegExpUtils.backrefConversion(replace)
+    // Pass -1 to opt out of Java-spec greedy-with-backoff; the REPLACE_STRING used by this
+    // helper contains no `$N` backrefs, so the legacy behavior is sufficient here.
+    val (hasBackrefs, converted) = GpuRegExpUtils.backrefConversion(replace, -1)
     withResource(ColumnVector.fromStrings(input: _*)) { cv =>
       val c = if (hasBackrefs) {
         cv.stringReplaceWithBackrefs(new RegexProgram(cudfPattern,
