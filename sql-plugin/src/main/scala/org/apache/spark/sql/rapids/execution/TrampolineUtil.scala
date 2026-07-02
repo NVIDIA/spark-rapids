@@ -59,7 +59,6 @@ object TrampolineUtil {
     DataTypeUtilsShim.toAttributes(structType)
 
   private[this] lazy val dataTypeJsonValue = classOf[DataType].getMethod("jsonValue")
-
   def jsonValue(dataType: DataType): AnyRef = dataTypeJsonValue.invoke(dataType)
 
   private[this] lazy val trampolineConnectShims = Class

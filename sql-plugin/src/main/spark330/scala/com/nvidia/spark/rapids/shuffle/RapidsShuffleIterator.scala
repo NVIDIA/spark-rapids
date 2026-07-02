@@ -36,7 +36,6 @@ import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.shuffle.rapids.{RapidsShuffleFetchFailedException, RapidsShuffleTimeoutException}
 import org.apache.spark.sql.rapids.{GpuShuffleEnv, ShuffleMetricsUpdater}
 import org.apache.spark.sql.types.DataType
@@ -68,8 +67,33 @@ class RapidsShuffleIterator(
     taskAttemptId: Long,
     catalog: ShuffleReceivedBufferCatalog = GpuShuffleEnv.getReceivedCatalog,
     timeoutSeconds: Long = GpuShuffleEnv.shuffleFetchTimeoutSeconds)
-  extends Iterator[ColumnarBatch]
-    with Logging {
+  extends Iterator[ColumnarBatch] {
+  private[this] val log = org.slf4j.LoggerFactory.getLogger(getClass)
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
+  private def logWarning(msg: => String): Unit = {
+    if (log.isWarnEnabled) {
+      log.warn(msg)
+    }
+  }
+
+  private def logError(msg: => String): Unit = {
+    if (log.isErrorEnabled) {
+      log.error(msg)
+    }
+  }
+
 
   /**
    * General trait encapsulating either a buffer or an error. Used to hand off batches
@@ -345,7 +369,7 @@ class RapidsShuffleIterator(
     // thread to schedule the fetches for us, it may be something we consider in the future, given
     // memory pressure.
     // No good way to get a metric in here for semaphore time.
-    taskContext.foreach(GpuSemaphore.acquireIfNecessary)
+    taskContext.foreach(GpuSemaphore.acquireIfNecessary(_))
 
     if (!started) {
       // kick off if we haven't already
