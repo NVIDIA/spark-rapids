@@ -46,6 +46,7 @@ jobs:
             *.xml,
             *.properties,
             *.scala,
+            skills/udf-*/*.md,
             *.py,
             build/*,
             *.cpp,
