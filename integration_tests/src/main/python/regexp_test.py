@@ -449,14 +449,23 @@ def test_re_replace_null():
         conf=_regexp_conf)
 
 def test_regexp_replace():
-    gen = mk_str_gen('[abcd]{0,3}')
+    gen = mk_str_gen('[abcd]{0,3}') \
+        .with_special_case('xfoocat') \
+        .with_special_case('foofoocat') \
+        .with_special_case('foofish') \
+        .with_special_case('foodog') \
+        .with_special_case('catfoo') \
+        .with_special_case('dogfoo')
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark: unary_op_df(spark, gen).selectExpr(
                 'regexp_replace(a, "a", "A")',
                 'regexp_replace(a, "[^xyz]", "A")',
                 'regexp_replace(a, "([^x])|([^y])", "A")',
                 'regexp_replace(a, "(?:aa)+", "A")',
-                'regexp_replace(a, "a|b|c", "A")'),
+                'regexp_replace(a, "a|b|c", "A")',
+                'regexp_replace(a, "foo(cat|dog)", "X")',
+                'regexp_replace(a, "(cat|dog)foo", "X")',
+                'regexp_replace(a, "(foo)(cat)", "X")'),
         conf=_regexp_conf)
 
 @pytest.mark.skipif(is_before_spark_320(), reason='regexp is synonym for RLike starting in Spark 3.2.0')
