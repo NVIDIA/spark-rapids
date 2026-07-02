@@ -59,8 +59,9 @@ trait SparkCatalogPartitionShims extends SparkShims {
       sparkSession: SqlSparkSession,
       tableName: TableIdentifier,
       predicates: Seq[Expression],
-      @scala.annotation.unused resolvedCatalogTable: Option[CatalogTable]): 
-  Seq[CatalogTablePartition] = {
+      resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition] = {
+    // DBR 17.3 needs this shared shim parameter; legacy SessionCatalog APIs do not.
+    val _ = resolvedCatalogTable
     sparkSession.sessionState.catalog.listPartitionsByFilter(tableName, predicates)
   }
 
@@ -68,8 +69,9 @@ trait SparkCatalogPartitionShims extends SparkShims {
       sparkSession: SqlSparkSession,
       tableName: TableIdentifier,
       partialSpec: Option[TablePartitionSpec],
-      @scala.annotation.unused resolvedCatalogTable: Option[CatalogTable]): 
-  Seq[CatalogTablePartition] = {
+      resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition] = {
+    // DBR 17.3 needs this shared shim parameter; legacy SessionCatalog APIs do not.
+    val _ = resolvedCatalogTable
     sparkSession.sessionState.catalog.listPartitions(tableName, partialSpec)
   }
 }
