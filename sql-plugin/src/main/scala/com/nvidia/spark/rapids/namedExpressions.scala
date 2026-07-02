@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,10 @@ import java.util.Objects
 import ai.rapids.cudf.ColumnVector
 import ai.rapids.cudf.ast
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
-import com.nvidia.spark.rapids.shims.SparkShimImpl
 
 import org.apache.spark.sql.catalyst.analysis.UnresolvedAttribute
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Expression, ExprId, Generator, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.logical.EventTimeWatermark
-import org.apache.spark.sql.catalyst.util.quoteIdentifier
 import org.apache.spark.sql.types.{DataType, Metadata}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -87,14 +85,9 @@ case class GpuAlias(child: Expression, name: String)(
   }
 
   override def sql: String = {
-    if (SparkShimImpl.hasAliasQuoteFix) {
-      val qualifierPrefix =
-        if (qualifier.nonEmpty) qualifier.map(quoteIfNeeded).mkString(".") + "." else ""
-      s"${child.sql} AS $qualifierPrefix${quoteIfNeeded(name)}"
-    } else {
-      val qualifierPrefix = if (qualifier.nonEmpty) qualifier.mkString(".") + "." else ""
-      s"${child.sql} AS $qualifierPrefix${quoteIdentifier(name)}"
-    }
+    val qualifierPrefix =
+      if (qualifier.nonEmpty) qualifier.map(quoteIfNeeded).mkString(".") + "." else ""
+    s"${child.sql} AS $qualifierPrefix${quoteIfNeeded(name)}"
   }
 
   private def quoteIfNeeded(part: String): String = {

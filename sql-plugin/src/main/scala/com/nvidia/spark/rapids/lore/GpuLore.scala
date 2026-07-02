@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,6 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.trees.TreeNodeTag
@@ -42,9 +41,14 @@ import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.util.SerializableConfiguration
 
-case class LoreRDDMeta(numPartitions: Int, outputPartitions: Seq[Int], attrs: Seq[Attribute])
+class LoreRDDMeta(
+    val numPartitions: Int,
+    val outputPartitions: Seq[Int],
+    val attrs: Seq[Attribute]) extends Serializable
 
-case class LoreRDDPartitionMeta(numBatches: Int, dataType: Seq[DataType])
+class LoreRDDPartitionMeta(
+    val numBatches: Int,
+    val dataType: Seq[DataType]) extends Serializable
 
 trait GpuLoreRDD {
   def rootPath: Path
@@ -64,7 +68,17 @@ trait GpuLoreRDD {
   }
 }
 
-object GpuLore extends Logging {
+object GpuLore {
+  private val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+
+  private def logWarning(msg: => String): Unit = {
+    log.warn(msg)
+  }
+
+  private def logWarning(msg: => String, throwable: Throwable): Unit = {
+    log.warn(msg, throwable)
+  }
+
   /**
    * Lore id of a plan node.
    */
@@ -262,12 +276,13 @@ object GpuLore extends Logging {
                 checkUnsupportedOperator(g)
                 val currentExecRootPath = new Path(loreOutputRootPath, s"loreId-$loreId")
                 registerTag(g, LORE_DUMP_PATH_TAG, currentExecRootPath.toString, tagRollbacks)
-                val loreOutputInfo = LoreOutputInfo(outputLoreIds,
+                val loreOutputInfo = new LoreOutputInfo(outputLoreIds,
                   currentExecRootPath.toString)
 
                 g.children.zipWithIndex.foreach {
                   case (child, idx) =>
-                    val dumpRDDInfo = LoreDumpRDDInfo(idx, loreOutputInfo, child.output, hadoopConf,
+                    val dumpRDDInfo = new LoreDumpRDDInfo(idx, loreOutputInfo, child.output,
+                      hadoopConf,
                       useOriginalSchemaNames = rapidsConf.loreParquetUseOriginalNames,
                       nonStrictMode = allowNonStrictMode)
                     child match {
@@ -335,7 +350,7 @@ object GpuLore extends Logging {
       tagRollbacks: mutable.ArrayBuffer[TagRollback], nonStrictMode: Boolean) = {
     val innerPlan = sub.plan.child
     if (innerPlan.isInstanceOf[GpuExec]) {
-      val dumpRDDInfo = LoreDumpRDDInfo(id, loreOutputInfo, innerPlan.output,
+      val dumpRDDInfo = new LoreDumpRDDInfo(id, loreOutputInfo, innerPlan.output,
         hadoopConf,
         useOriginalSchemaNames = RapidsConf.LORE_PARQUET_USE_ORIGINAL_NAMES
           .get(SparkSessionUtils.sessionFromPlan(innerPlan).sessionState.conf),

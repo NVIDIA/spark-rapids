@@ -457,7 +457,7 @@ case class GpuTopN(
   }
 }
 
-case class GpuTakeOrderedAndProjectExecMeta(
+class GpuTakeOrderedAndProjectExecMeta(
    takeExec: TakeOrderedAndProjectExec,
    rapidsConf: RapidsConf,
    parentOpt: Option[RapidsMeta[_, _, _]],

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2024-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -125,8 +125,8 @@ object TableAndBatchUtils {
 // the ride-along columns and the aggregation result should both be sorted by the partition by
 // columns.  Also the aggregation result must have a count column so it can be expanded using
 // repeat to get back to the size of the ride-along columns.
-case class FirstPassAggResult(rideAlongColumns: SpillableColumnarBatch,
-    aggResult: SpillableColumnarBatch) extends AutoCloseable {
+class FirstPassAggResult(val rideAlongColumns: SpillableColumnarBatch,
+    val aggResult: SpillableColumnarBatch) extends AutoCloseable {
   override def close(): Unit = {
     rideAlongColumns.close()
     aggResult.close()
@@ -219,7 +219,7 @@ class GpuUnboundedToUnboundedAggWindowFirstPassIterator(
               val rideAlongColumns = GpuProjectExec.project(preProcessedInput,
                 boundStages.boundRideAlong)
 
-              FirstPassAggResult(
+              new FirstPassAggResult(
                 adoptAndMakeSpillable(rideAlongColumns),
                 toSpillableBatch(aggResultTable,
                   boundStages.groupingColumnTypes ++ boundStages.aggResultTypes))
@@ -333,8 +333,8 @@ class PartitionedFirstPassAggResult(firstPassAggResult: FirstPassAggResult,
 // an iterator of ride-along columns, and the full agg results for those columns. It is not
 // the responsibility of the second stage to try and combine small batches or split up large
 // ones, beyond what the retry framework might do.
-case class SecondPassAggResult(rideAlongColumns: util.LinkedList[SpillableColumnarBatch],
-                               aggResult: SpillableColumnarBatch) extends AutoCloseable {
+class SecondPassAggResult(val rideAlongColumns: util.LinkedList[SpillableColumnarBatch],
+                               val aggResult: SpillableColumnarBatch) extends AutoCloseable {
   override def close(): Unit = {
     rideAlongColumns.forEach(_.close())
     rideAlongColumns.clear()
@@ -467,7 +467,7 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
                   .asInstanceOf[util.LinkedList[SpillableColumnarBatch]]
               completedRideAlongBatches.add(partitioned.otherGroupRideAlong.get)
               val groupsRemoved = removeGroupColumns(mergedAggResults)
-              SecondPassAggResult(completedRideAlongBatches,
+              new SecondPassAggResult(completedRideAlongBatches,
                                   groupsRemoved)
             }
           }
@@ -503,7 +503,7 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
                                 boundStages.groupingColumnTypes ++
                                   boundStages.aggResultTypes)) { concatAggResults =>
               withResource(groupByMerge(concatAggResults)) { mergedAggResults =>
-                Some(SecondPassAggResult(rideAlongColumnsPendingCompletion,
+                Some(new SecondPassAggResult(rideAlongColumnsPendingCompletion,
                      removeGroupColumns(mergedAggResults)))
               }
             }
@@ -521,8 +521,8 @@ class GpuUnboundedToUnboundedAggWindowSecondPassIterator(
 // The next to final step is to take the original input data along with the agg data, estimate how
 // to split/combine the input batches to output batches that are close to the target batch size.
 
-case class SlicedBySize(rideAlongColumns: SpillableColumnarBatch,
-    aggResults: SpillableColumnarBatch) extends AutoCloseable {
+class SlicedBySize(val rideAlongColumns: SpillableColumnarBatch,
+    val aggResults: SpillableColumnarBatch) extends AutoCloseable {
   override def close(): Unit = {
     rideAlongColumns.close()
     aggResults.close()
@@ -827,9 +827,9 @@ class PendingSecondAggResults private(
       if (rideAlongColumns.isEmpty) {
         // This is the last batch so we don't need to even figure out where to slice
         // the AggResult
-        SlicedBySize(rideAlongScb, aggResult.incRefCount())
+        new SlicedBySize(rideAlongScb, aggResult.incRefCount())
       } else {
-        SlicedBySize(rideAlongScb, getSlicedAggResultByRepeatedRows(rideAlongScb.numRows()))
+        new SlicedBySize(rideAlongScb, getSlicedAggResultByRepeatedRows(rideAlongScb.numRows()))
       }
     }
   }
@@ -943,12 +943,12 @@ class GpuUnboundedToUnboundedAggFinalIterator(
  * @param boundAggregations aggregations to be done. NOTE THIS IS WIP
  * @param boundFinalProject the final project to get the output in the right order
  */
-case class GpuUnboundedToUnboundedAggStages(
-    inputTypes: Seq[DataType],
-    boundPartitionSpec: Seq[GpuExpression],
-    boundRideAlong: Seq[GpuExpression],
-    boundAggregations: Seq[GpuExpression],
-    boundFinalProject: Seq[GpuExpression]) extends Serializable {
+class GpuUnboundedToUnboundedAggStages(
+    val inputTypes: Seq[DataType],
+    val boundPartitionSpec: Seq[GpuExpression],
+    val boundRideAlong: Seq[GpuExpression],
+    val boundAggregations: Seq[GpuExpression],
+    val boundFinalProject: Seq[GpuExpression]) extends Serializable {
 
   val groupingColumnTypes: Seq[DataType] = boundPartitionSpec.map{_.dataType}
   val groupColumnOrdinals: Seq[Int] = boundPartitionSpec.map {
@@ -1108,7 +1108,7 @@ object GpuUnboundedToUnboundedAggWindowIterator {
     val finalProject = computeFinalProject(rideAlongOutput, aggsToRepeatOutput, windowOps,
       metrics)
 
-    GpuUnboundedToUnboundedAggStages(childTypes, boundPartitionSpec, boundRideAlong,
+    new GpuUnboundedToUnboundedAggStages(childTypes, boundPartitionSpec, boundRideAlong,
                                      boundAggregations, finalProject)
   }
 
