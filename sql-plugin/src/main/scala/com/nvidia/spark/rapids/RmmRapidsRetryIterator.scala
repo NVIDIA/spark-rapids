@@ -494,6 +494,12 @@ object RmmRapidsRetryIterator extends Logging {
     private def closeInternal(): Unit = {
       attemptStack.safeClose()
       attemptStack.clear()
+      // Close the input too: the single-item/seq wrappers close their un-pulled input,
+      // covering the case where we close before the first next() pushes onto attemptStack.
+      input match {
+        case ac: AutoCloseable => ac.close()
+        case _ =>
+      }
     }
 
     // Don't install the callback if in a unit test
