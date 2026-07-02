@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -163,6 +163,8 @@ object GpuOrcFileFormat extends Logging {
 }
 
 class GpuOrcFileFormat extends ColumnarFileFormat with Logging {
+  override def toString: String = "ORC"
+
   /**
    * Prepares a write job and returns an `ColumnarOutputWriterFactory`.  Client side job
    * preparation can be put here.  For example, user defined output committer can be configured here
