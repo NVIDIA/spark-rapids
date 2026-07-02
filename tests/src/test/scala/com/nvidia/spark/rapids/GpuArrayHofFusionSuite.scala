@@ -123,6 +123,17 @@ class GpuArrayHofFusionSuite extends GpuUnitTests {
     }
   }
 
+  test("does not group unsupported HOFs or treat them as barriers") {
+    val exprs = Seq(
+      alias(transform(), "left"),
+      alias(filter(argCount = 3), "unsupported"),
+      alias(filter(), "right"))
+
+    assertResult(Seq(Seq(0, 2))) {
+      GpuArrayHofFusion.findFusedGroupIndexes(exprs)
+    }
+  }
+
   test("splits groups whose shared intermediates would be wider than each HOF") {
     val exprs = Seq(
       alias(transform(boundIntermediate = Seq(outerB)), "b_transform"),
