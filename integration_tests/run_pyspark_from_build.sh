@@ -103,7 +103,7 @@ else
     # support alternate local jars NOT building from the source code
     if [ -d "$LOCAL_JAR_PATH" ]; then
         AVRO_JARS=$(echo "$LOCAL_JAR_PATH"/spark-avro*.jar)
-        PROTOBUF_JARS=$(echo "$LOCAL_JAR_PATH"/spark-protobuf*.jar "$LOCAL_JAR_PATH"/protobuf-java-*.jar)
+        PROTOBUF_JARS=$(echo "$LOCAL_JAR_PATH"/spark-protobuf*.jar)
         PLUGIN_JAR=$(echo "$LOCAL_JAR_PATH"/rapids-4-spark_*.jar)
         if [ -f $(echo $LOCAL_JAR_PATH/parquet-hadoop*.jar) ]; then
             export INCLUDE_PARQUET_HADOOP_TEST_JAR=true
@@ -120,7 +120,7 @@ else
     else
         [[ "$SCALA_VERSION" != "2.12"  ]] && TARGET_DIR=${TARGET_DIR/integration_tests/scala$SCALA_VERSION\/integration_tests}
         AVRO_JARS=$(echo "$TARGET_DIR"/dependency/spark-avro*.jar)
-        PROTOBUF_JARS=$(echo "$TARGET_DIR"/dependency/spark-protobuf*.jar "$TARGET_DIR"/dependency/protobuf-java-*.jar)
+        PROTOBUF_JARS=$(echo "$TARGET_DIR"/dependency/spark-protobuf*.jar)
         PARQUET_HADOOP_TESTS=$(echo "$TARGET_DIR"/dependency/parquet-hadoop*.jar)
         # remove the log4j.properties file so it doesn't conflict with ours, ignore errors
         # if it isn't present or already removed
@@ -146,16 +146,14 @@ else
         AVRO_JARS=""
     fi
 
-    # spark-protobuf shades `com.google.protobuf.*` internally and Spark does not bundle the
-    # unshaded jar, so we must ship both jars to the test classpath.
     INCLUDE_SPARK_PROTOBUF_JAR_REQUESTED=$(echo "${INCLUDE_SPARK_PROTOBUF_JAR}" | tr '[:upper:]' '[:lower:]')
     if [[ "$INCLUDE_SPARK_PROTOBUF_JAR_REQUESTED" != "false" \
-          && $(readlink -e $PROTOBUF_JARS 2>/dev/null | wc -l) -eq 2 ]];
+          && $(readlink -e $PROTOBUF_JARS 2>/dev/null | wc -l) -eq 1 ]];
     then
         export INCLUDE_SPARK_PROTOBUF_JAR=true
     else
         if [[ "$INCLUDE_SPARK_PROTOBUF_JAR_REQUESTED" == "true" ]]; then
-            >&2 echo "WARNING: INCLUDE_SPARK_PROTOBUF_JAR=true was requested but spark-protobuf/protobuf-java jars were not found (searched: $PROTOBUF_JARS); disabling protobuf tests."
+            >&2 echo "WARNING: INCLUDE_SPARK_PROTOBUF_JAR=true was requested but a spark-protobuf jar was not found (searched: $PROTOBUF_JARS); disabling protobuf tests."
         fi
         export INCLUDE_SPARK_PROTOBUF_JAR=false
         PROTOBUF_JARS=""

@@ -133,7 +133,6 @@
                                         <include>parquet-hadoop*.jar</include>
                                         <include>spark-avro*.jar</include>
                                         <include>spark-protobuf*.jar</include>
-                                        <include>protobuf-java-*.jar</include>
                                     </includes>
                                 </filesets>
                             </filesets>
@@ -168,8 +167,6 @@
                             </artifactItems>
                         </configuration>
                     </execution>
-                    <!-- spark-protobuf shades `com.google.protobuf` internally, so the
-                         unshaded jar is shipped separately for the tests to use. -->
                     <execution>
                         <id>copy-spark-protobuf</id>
                         <phase>package</phase>
@@ -184,11 +181,6 @@
                                     <groupId>org.apache.spark</groupId>
                                     <artifactId>spark-protobuf_${scala.binary.version}</artifactId>
                                     <version>${spark.version}</version>
-                                </artifactItem>
-                                <artifactItem>
-                                    <groupId>com.google.protobuf</groupId>
-                                    <artifactId>protobuf-java</artifactId>
-                                    <version>3.25.5</version>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>

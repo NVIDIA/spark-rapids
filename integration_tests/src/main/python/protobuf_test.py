@@ -19,7 +19,7 @@ import pytest
 
 from asserts import assert_gpu_fallback_collect
 from marks import allow_non_gpu
-from spark_session import is_before_spark_340, with_cpu_session
+from spark_session import is_before_spark_340
 import pyspark.sql.functions as f
 
 if os.environ.get('INCLUDE_SPARK_PROTOBUF_JAR', 'true').lower() == 'false':
@@ -69,33 +69,19 @@ def _encode_simple_message(i32_value, s_value):
     return bytes(buf)
 
 
-def _build_simple_descriptor_bytes(spark):
-    D = spark.sparkContext._jvm.com.google.protobuf.DescriptorProtos
-    i32_field = D.FieldDescriptorProto.newBuilder() \
-        .setName("i32").setNumber(1) \
-        .setLabel(D.FieldDescriptorProto.Label.LABEL_OPTIONAL) \
-        .setType(D.FieldDescriptorProto.Type.TYPE_INT32).build()
-    s_field = D.FieldDescriptorProto.newBuilder() \
-        .setName("s").setNumber(2) \
-        .setLabel(D.FieldDescriptorProto.Label.LABEL_OPTIONAL) \
-        .setType(D.FieldDescriptorProto.Type.TYPE_STRING).build()
-    msg = D.DescriptorProto.newBuilder() \
-        .setName("Simple").addField(i32_field).addField(s_field).build()
-    file_builder = D.FileDescriptorProto.newBuilder() \
-        .setName("simple.proto").setPackage("test").addMessageType(msg) \
-        .setSyntax("proto2")
-    fds = D.FileDescriptorSet.newBuilder().addFile(file_builder.build()).build()
-    return bytes(fds.toByteArray())
+# Avoid depending on whichever unshaded protobuf runtime the Spark driver provides.
+_simple_desc_bytes = bytes.fromhex(
+    "0a360a0c73696d706c652e70726f746f12047465737422200a0653696d706c65"
+    "120b0a0369333218012001280512090a0173180220012809")
 
 
 @pytest.fixture
 def simple_desc(local_tmp_path):
     # from_protobuf reads descFilePath via java.io.File on the driver.
     desc_path = local_tmp_path + "/simple.desc"
-    desc_bytes = with_cpu_session(_build_simple_descriptor_bytes)
     with open(desc_path, "wb") as fp:
-        fp.write(desc_bytes)
-    return desc_path, desc_bytes
+        fp.write(_simple_desc_bytes)
+    return desc_path, _simple_desc_bytes
 
 
 _smoke_rows = [(1, "a"), (-2, "bb"), (0, ""), (12345, "hello")]
