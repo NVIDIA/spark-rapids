@@ -42,6 +42,8 @@ import java.util.List;
  * dependency, we will need to introduce all other dependencies like `iceberg-parquet`.
  */
 public class GpuFileHelpers {
+  private static final String GENERIC_FILE_WRITER_FACTORY_CLASS =
+      "org.apache.iceberg.data.GenericFileWriterFactory";
   private static final Method BUILDER_FOR;
   private static final Method EQUALITY_DELETE_ROW_SCHEMA;
   private static final Method EQUALITY_FIELD_IDS;
@@ -49,7 +51,9 @@ public class GpuFileHelpers {
 
   static {
     try {
-      BUILDER_FOR = findMethod(GenericFileWriterFactory.class, "builderFor", Table.class);
+      Class<?> factoryClass = Class.forName(
+          GENERIC_FILE_WRITER_FACTORY_CLASS, true, Table.class.getClassLoader());
+      BUILDER_FOR = findMethod(factoryClass, "builderFor", Table.class);
       Class<?> builderClass = BUILDER_FOR.getReturnType();
       EQUALITY_DELETE_ROW_SCHEMA =
           findMethod(builderClass, "equalityDeleteRowSchema", Schema.class);
@@ -60,7 +64,7 @@ public class GpuFileHelpers {
       EQUALITY_DELETE_ROW_SCHEMA.setAccessible(true);
       EQUALITY_FIELD_IDS.setAccessible(true);
       BUILD.setAccessible(true);
-    } catch (NoSuchMethodException e) {
+    } catch (ReflectiveOperationException e) {
       throw new ExceptionInInitializerError(e);
     }
   }
