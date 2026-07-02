@@ -37,8 +37,10 @@ def pandas_to_spark_preserving_nan(spark, pandas_df):
     """Create a Spark DataFrame without treating non-nullable floating-point NaNs as nulls.
 
     Databricks converts NaNs to nulls when it converts a pandas DataFrame directly.
-    Infer the same schema from pandas, but materialize numpy scalars as Python values
-    before creating the DataFrame so NaN remains a floating-point value.
+    Infer the same schema from pandas, but pass explicit rows through Spark's schema-aware
+    conversion instead of passing the pandas DataFrame directly. Top-level numpy scalars
+    are materialized as Python values; nested struct dictionaries can retain numpy scalars
+    because the row conversion path, unlike DBR's pandas conversion path, preserves NaN.
 
     This conversion is only safe for non-nullable data because pandas represents both
     floating-point NaNs and Parquet nulls as NaN.
