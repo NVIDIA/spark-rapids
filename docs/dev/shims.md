@@ -114,7 +114,9 @@ Use `--format=json` when comparing safe components across artifacts or build out
 keeps counts exact and bounds example sections with `--limit`.
 Shortest paths explain why a class is blocked and usually identify the adapter boundary to cut.
 Strongly connected components, not shortest paths, provide the migration ordering because classes in
-the same component have to move or be refactored together.
+the same component have to move or be refactored together. See
+[Parallel World Unshimming Algorithm](parallel-world-unshimming.md) for the SCC model and migration
+workflow.
 
 ## Method signature discrepancies
 
