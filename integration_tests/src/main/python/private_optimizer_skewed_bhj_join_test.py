@@ -16,10 +16,52 @@ import pytest
 
 from private_optimizer_common import (
     assert_rule_fires,
+    assert_rule_skipped,
     private_optimizer_conf,
     require_private_optimizer,
 )
 from spark_session import is_databricks_runtime
+
+
+SKEWED_BHJ_MARKER = "coalesced and skewed"
+
+
+def _skewed_bhj_conf_extra():
+    return {
+        "spark.sql.adaptive.enabled": "true",
+        "spark.sql.adaptive.skewJoin.enabled": "true",
+        "spark.sql.autoBroadcastJoinThreshold": "-1",
+        "spark.sql.adaptive.autoBroadcastJoinThreshold": "10m",
+        "spark.sql.adaptive.coalescePartitions.minPartitionNum": "1",
+        "spark.sql.shuffle.partitions": "100",
+        "spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes": "800",
+        "spark.sql.adaptive.advisoryPartitionSizeInBytes": "800",
+        "spark.sql.adaptive.localShuffleReader.enabled": "false",
+    }
+
+
+def _skewed_bhj_confs():
+    conf_extra = _skewed_bhj_conf_extra()
+    on = private_optimizer_conf(
+        {"spark.rapids.sql.adaptive.skewJoin.broadcast.enabled": "true"},
+        extra_conf=conf_extra)
+    off = private_optimizer_conf(
+        {"spark.rapids.sql.adaptive.skewJoin.broadcast.enabled": "false"},
+        extra_conf=conf_extra)
+    return on, off
+
+
+def _skewed_bhj_global_agg(spark):
+    spark.range(0, 2000, 1, 10).selectExpr(
+        "CASE WHEN id < 1000 THEN 249 ELSE id END AS key2", "id AS value2"
+    ).createOrReplaceTempView("skewData2")
+    spark.range(0, 1000, 1, 10).selectExpr(
+        "CASE WHEN id < 250 THEN 249 WHEN id >= 750 THEN 1000 ELSE id END AS key1",
+        "id AS value1"
+    ).createOrReplaceTempView("skewData1")
+    return spark.sql(
+        "SELECT count(*) AS cnt, min(value2) AS mn, max(value2) AS mx, sum(value1) AS sm "
+        "FROM skewData1 JOIN skewData2 ON key1 = key2")
 
 
 @pytest.mark.private_optimizer
@@ -43,31 +85,22 @@ def test_optimize_skewed_bhj_join(spark_tmp_path):
 
     Validated with a small GLOBAL aggregate over the materialized skewed join;
     a GROUP BY on the skew key is intentionally avoided here."""
-    conf_extra = {
-        "spark.sql.adaptive.enabled": "true",
-        "spark.sql.adaptive.skewJoin.enabled": "true",
-        "spark.sql.autoBroadcastJoinThreshold": "-1",
-        "spark.sql.adaptive.autoBroadcastJoinThreshold": "10m",
-        "spark.sql.adaptive.coalescePartitions.minPartitionNum": "1",
-        "spark.sql.shuffle.partitions": "100",
-        "spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes": "800",
-        "spark.sql.adaptive.advisoryPartitionSizeInBytes": "800",
-        "spark.sql.adaptive.localShuffleReader.enabled": "false",
-    }
+    on, off = _skewed_bhj_confs()
+    assert_rule_fires(_skewed_bhj_global_agg, on, off, marker=SKEWED_BHJ_MARKER,
+                      physical=True)
 
-    def fn(spark):
-        spark.range(0, 2000, 1, 10).selectExpr(
-            "CASE WHEN id < 1000 THEN 249 ELSE id END AS key2", "id AS value2"
-        ).createOrReplaceTempView("skewData2")
-        spark.range(0, 1000, 1, 10).selectExpr(
-            "CASE WHEN id < 250 THEN 249 WHEN id >= 750 THEN 1000 ELSE id END AS key1", "id AS value1"
-        ).createOrReplaceTempView("skewData1")
-        return spark.sql(
-            "SELECT count(*) AS cnt, min(value2) AS mn, max(value2) AS mx, sum(value1) AS sm "
-            "FROM skewData1 JOIN skewData2 ON key1 = key2")
 
-    on = private_optimizer_conf(
-        {"spark.rapids.sql.adaptive.skewJoin.broadcast.enabled": "true"}, extra_conf=conf_extra)
-    off = private_optimizer_conf(
-        {"spark.rapids.sql.adaptive.skewJoin.broadcast.enabled": "false"}, extra_conf=conf_extra)
-    assert_rule_fires(fn, on, off, marker="coalesced and skewed", physical=True)
+@pytest.mark.private_optimizer
+@require_private_optimizer
+@pytest.mark.skipif(
+    not is_databricks_runtime(),
+    reason="Databricks-only coverage for executor-broadcast AQE fallback. "
+           "Apache runtime coverage is in test_optimize_skewed_bhj_join.")
+def test_optimize_skewed_bhj_join_skips_on_databricks_executor_broadcast(spark_tmp_path):
+    """Databricks executor-broadcast AQE can use a different BHJ shape than the
+    streamed-side skew split tested above. In that shape the private optimizer is
+    expected to skip this rewrite, so the streamed-side skew marker must not be
+    present while CPU and GPU results still match."""
+    on, off = _skewed_bhj_confs()
+    assert_rule_skipped(_skewed_bhj_global_agg, on, off, marker=SKEWED_BHJ_MARKER,
+                        physical=True, required_on_marker="BroadcastHashJoin")

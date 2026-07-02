@@ -51,6 +51,10 @@ All modules carry `@pytest.mark.private_optimizer`, so the whole area runs with:
      such as broadcast thresholds or AQE toggles).
    - `assert_rule_fires(fn, on_conf, off_conf, marker, physical=False)`
      — runs the OFF-CPU vs ON-GPU comparison and the plan-marker check.
+   - `assert_rule_skipped(fn, on_conf, off_conf, marker, physical=False,
+     required_on_marker=None)`
+     — runs the same comparison but asserts a runtime-specific no-op path where
+     the marker is absent from both plans.
    - `require_private_optimizer` — the shared compatibility guard (see below).
 3. **Decorate** the test with `@pytest.mark.private_optimizer` and
    `@require_private_optimizer`. Add `@approximate_float` only when the rule
@@ -96,6 +100,12 @@ executed plan); otherwise the optimized plan is checked. Examples in this area:
 `sum(sum(` (pushed partial aggregate), `_stddev_` (decomposed alias),
 `named_struct(c_0,` (merged subquery scan), `coalesced and skewed` (skew
 reader).
+
+When a known runtime or plan shape intentionally skips a rule, add a separate
+test with `assert_rule_skipped` instead of weakening the positive marker test.
+That skipped-path test must explain the runtime/shape reason, still compare
+OFF-CPU vs ON-GPU results, and use `required_on_marker` when possible to prove
+the expected plan shape was reached.
 
 ### When a row-count / aggregate-only check is acceptable
 
