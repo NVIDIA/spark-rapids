@@ -35,10 +35,34 @@ esac
 
 STEP=0
 export SPARK_SHARED_TXT="$PWD/spark-shared.txt"
+export SPARK_SHARED_CLASSES_TXT="$PWD/spark-shared-classes.txt"
 export SPARK_SHARED_COPY_LIST="$PWD/spark-shared-copy-list.txt"
 export DELETE_DUPLICATES_TXT="$PWD/delete-duplicates.txt"
 export SPARK_SHARED_DIR="$PWD/spark-shared"
 export UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST="$PWD/unshimmed-from-spark-shared-copy-list.txt"
+export ROOT_SAFE_SPARK_SHARED_TXT="$PWD/root-safe-spark-shared.txt"
+export DEFAULT_UNSHIMMED_SPARK_SHARED_TXT="$PWD/default-unshimmed-spark-shared.txt"
+export UNSHIMMED_NEED_SHARED_TXT="$PWD/unshimmed-need-shared.txt"
+export UNSHIMMED_MISSING_SHARED_TXT="$PWD/unshimmed-missing-shared.txt"
+
+SPARK_SHIM_DIRS=()
+if [[ "${UNSHIM_FAST:-0}" == "1" ]]; then
+  while IFS= read -r shim_dir; do
+    SPARK_SHIM_DIRS+=("$shim_dir")
+  done < <(find ./parallel-world -maxdepth 1 -mindepth 1 -type d -name 'spark[34]*' | sort)
+fi
+
+DEDUPE_CACHE_DIR="${UNSHIM_DEDUPE_CACHE_DIR:-}"
+DEDUPE_CACHE_SPARK_SHARED_TXT=""
+DEDUPE_CACHE_SHA1_FILES_TXT=""
+DEDUPE_CACHE_SHIM_SHA_PACKAGE_FILES_TXT=""
+DEDUPE_CACHE_COUNT_SHIM_SHA_PACKAGE_FILES_TXT=""
+if [[ -n "$DEDUPE_CACHE_DIR" ]]; then
+  DEDUPE_CACHE_SPARK_SHARED_TXT="$DEDUPE_CACHE_DIR/spark-shared.txt"
+  DEDUPE_CACHE_SHA1_FILES_TXT="$DEDUPE_CACHE_DIR/tmp-sha1-files.txt"
+  DEDUPE_CACHE_SHIM_SHA_PACKAGE_FILES_TXT="$DEDUPE_CACHE_DIR/tmp-shim-sha-package-files.txt"
+  DEDUPE_CACHE_COUNT_SHIM_SHA_PACKAGE_FILES_TXT="$DEDUPE_CACHE_DIR/tmp-count-shim-sha-package-files.txt"
+fi
 
 # This script de-duplicates .class files at the binary level.
 # We could also diff classes using scalap / javap outputs.
@@ -55,24 +79,54 @@ export UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST="$PWD/unshimmed-from-spark-shared-c
 # - put the path starting with /sparkxyz back together for the final list
 echo "Retrieving class files hashing to a single value ..."
 
+CACHE_HIT=0
+if [[ -n "$DEDUPE_CACHE_SPARK_SHARED_TXT" && \
+      -f "$DEDUPE_CACHE_SPARK_SHARED_TXT" && \
+      -f "$DEDUPE_CACHE_SHA1_FILES_TXT" && \
+      -f "$DEDUPE_CACHE_SHIM_SHA_PACKAGE_FILES_TXT" && \
+      -f "$DEDUPE_CACHE_COUNT_SHIM_SHA_PACKAGE_FILES_TXT" ]]; then
+  echo "$((++STEP))/ reusing cached files with unique sha1 > $SPARK_SHARED_TXT"
+  cp "$DEDUPE_CACHE_SPARK_SHARED_TXT" "$SPARK_SHARED_TXT"
+  cp "$DEDUPE_CACHE_SHA1_FILES_TXT" tmp-sha1-files.txt
+  cp "$DEDUPE_CACHE_SHIM_SHA_PACKAGE_FILES_TXT" tmp-shim-sha-package-files.txt
+  cp "$DEDUPE_CACHE_COUNT_SHIM_SHA_PACKAGE_FILES_TXT" tmp-count-shim-sha-package-files.txt
+  CACHE_HIT=1
+# With one shim there is no cross-shim identity proof to perform; every
+# non-META file is the sole representative for its path.
+elif [[ "${UNSHIM_FAST:-0}" == "1" && "${#SPARK_SHIM_DIRS[@]}" == "1" ]]; then
+  echo "$((++STEP))/ single shim fast path; listing files > $SPARK_SHARED_TXT"
+  : > tmp-sha1-files.txt
+  : > tmp-shim-sha-package-files.txt
+  : > tmp-count-shim-sha-package-files.txt
+  find "${SPARK_SHIM_DIRS[0]}" -name META-INF -prune -o -name webapps -prune -o \( -type f -print \) | \
+    sort | sed 's|^\./parallel-world||' > "$SPARK_SHARED_TXT"
+else
+  echo "$((++STEP))/ SHA1 of all non-META files > tmp-sha1-files.txt"
+  find ./parallel-world/spark[34]* -name META-INF -prune -o -name webapps -prune -o \( -type f -print0 \) | \
+    xargs --null $SHASUM > tmp-sha1-files.txt
 
-echo "$((++STEP))/ SHA1 of all non-META files > tmp-sha1-files.txt"
-find ./parallel-world/spark[34]* -name META-INF -prune -o -name webapps -prune -o \( -type f -print0 \) | \
-  xargs --null $SHASUM > tmp-sha1-files.txt
+  echo "$((++STEP))/ make shim column 1 > tmp-shim-sha-package-files.txt"
+  < tmp-sha1-files.txt awk -F/ '$1=$1' | \
+    awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | \
+    tr -s  ' ' > tmp-shim-sha-package-files.txt
 
-echo "$((++STEP))/ make shim column 1 > tmp-shim-sha-package-files.txt"
-< tmp-sha1-files.txt awk -F/ '$1=$1' | \
-  awk '{checksum=$1; shim=$4; $1=shim; $2=$3=""; $4=checksum;  print $0}' | \
-  tr -s  ' ' > tmp-shim-sha-package-files.txt
+  echo "$((++STEP))/ sort by path, sha1; output first from each group > tmp-count-shim-sha-package-files.txt"
+  sort -k3 -k2,2 -u tmp-shim-sha-package-files.txt | \
+    uniq -f 2 -c > tmp-count-shim-sha-package-files.txt
 
-echo "$((++STEP))/ sort by path, sha1; output first from each group > tmp-count-shim-sha-package-files.txt"
-sort -k3 -k2,2 -u tmp-shim-sha-package-files.txt | \
-  uniq -f 2 -c > tmp-count-shim-sha-package-files.txt
+  echo "$((++STEP))/ files with unique sha1 > $SPARK_SHARED_TXT"
+  grep '^\s\+1 .*' tmp-count-shim-sha-package-files.txt | \
+    awk '{$1=""; $3=""; print $0 }' | \
+    tr -s ' ' | sed 's/\ /\//g' > "$SPARK_SHARED_TXT"
+fi
 
-echo "$((++STEP))/ files with unique sha1 > $SPARK_SHARED_TXT"
-grep '^\s\+1 .*' tmp-count-shim-sha-package-files.txt | \
-  awk '{$1=""; $3=""; print $0 }' | \
-  tr -s ' ' | sed 's/\ /\//g' > "$SPARK_SHARED_TXT"
+if [[ "$CACHE_HIT" == "0" && -n "$DEDUPE_CACHE_SPARK_SHARED_TXT" ]]; then
+  mkdir -p "$DEDUPE_CACHE_DIR"
+  cp "$SPARK_SHARED_TXT" "$DEDUPE_CACHE_SPARK_SHARED_TXT"
+  cp tmp-sha1-files.txt "$DEDUPE_CACHE_SHA1_FILES_TXT"
+  cp tmp-shim-sha-package-files.txt "$DEDUPE_CACHE_SHIM_SHA_PACKAGE_FILES_TXT"
+  cp tmp-count-shim-sha-package-files.txt "$DEDUPE_CACHE_COUNT_SHIM_SHA_PACKAGE_FILES_TXT"
+fi
 
 function retain_single_copy() {
   set -e
@@ -100,9 +154,10 @@ function retain_single_copy() {
   done >> "$DELETE_DUPLICATES_TXT" || exit 255
 }
 
-function copy_unshimmed_from_spark_shared() {
+function append_matching_spark_shared_patterns() {
   set -e
-  local unshimmed_patterns_txt="${UNSHIMMED_COMMON_FROM_SINGLE_SHIM_TXT:-}"
+  local unshimmed_patterns_txt="$1"
+  local output_txt="$2"
 
   [[ -n "$unshimmed_patterns_txt" ]] || return 0
   [[ -f "$unshimmed_patterns_txt" ]] || {
@@ -110,23 +165,102 @@ function copy_unshimmed_from_spark_shared() {
     exit 255
   }
 
-  : > "$UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST"
-  while read -r shared_path; do
-    local rel_path="${shared_path#./parallel-world/spark-shared/}"
-    local pattern
-    while read -r pattern; do
-      [[ -n "$pattern" ]] || continue
-      [[ "$pattern" =~ ^[[:space:]]*# ]] && continue
-      # shellcheck disable=SC2053
-      if [[ "$rel_path" == $pattern ]]; then
-        echo "$rel_path" >> "$UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST"
-        break
-      fi
-    done < "$unshimmed_patterns_txt"
-  done < <(find ./parallel-world/spark-shared -type f)
+  local shared_dir="./parallel-world/spark-shared"
+  local pattern
+  while IFS= read -r pattern; do
+    [[ -n "$pattern" ]] || continue
+    [[ "$pattern" =~ ^[[:space:]]*# ]] && continue
+    case "$pattern" in
+      *[\*\?\[]*)
+        find "$shared_dir" -type f -path "$shared_dir/$pattern" |
+          sed "s|^\./parallel-world/spark-shared/||" >> "$output_txt"
+        ;;
+      *)
+        if [[ -f "$shared_dir/$pattern" ]]; then
+          echo "$pattern" >> "$output_txt"
+        fi
+        ;;
+    esac
+  done < "$unshimmed_patterns_txt"
+}
 
+function write_root_safe_spark_shared_classes() {
+  set -e
+  local analyzer_script="${UNSHIM_ANALYZER_SCRIPT:-}"
+  if [[ -z "$analyzer_script" && -n "${UNSHIMMED_COMMON_FROM_SINGLE_SHIM_TXT:-}" ]]; then
+    analyzer_script="$(dirname "$UNSHIMMED_COMMON_FROM_SINGLE_SHIM_TXT")/scripts/analyze-parallel-world-deps.py"
+  fi
+  [[ -n "$analyzer_script" && -f "$analyzer_script" ]] || {
+    echo >&2 "Cannot locate analyze-parallel-world-deps.py for default unshim analysis"
+    exit 255
+  }
+
+  echo "$((++STEP))/ analyzing spark-shared dependency paths > $ROOT_SAFE_SPARK_SHARED_TXT"
+  python3 "$analyzer_script" ./parallel-world \
+    --write-safe-paths "$ROOT_SAFE_SPARK_SHARED_TXT"
+}
+
+function write_default_unshimmed_spark_shared_classes() {
+  set -e
+  echo "$((++STEP))/ selecting all bitwise-identical spark-shared classes > $DEFAULT_UNSHIMMED_SPARK_SHARED_TXT"
+  sed -E "s|^/spark[^/]*/||" "$SPARK_SHARED_TXT" | \
+    grep '\.class$' | sort -u > "$DEFAULT_UNSHIMMED_SPARK_SHARED_TXT"
+}
+
+function keep_in_spark_shared() {
+  set -e
+  local class_file="$1"
+  local keep_patterns_txt="${KEEP_IN_SPARK_SHARED_TXT:-}"
+  [[ -n "$keep_patterns_txt" ]] || return 1
+  [[ -f "$keep_patterns_txt" ]] || {
+    echo >&2 "Keep-in-spark-shared list does not exist: $keep_patterns_txt"
+    exit 255
+  }
+
+  local pattern
+  while IFS= read -r pattern; do
+    [[ -n "$pattern" ]] || continue
+    [[ "$pattern" =~ ^[[:space:]]*# ]] && continue
+    # shellcheck disable=SC2053
+    if [[ "$class_file" == $pattern ]]; then
+      return 0
+    fi
+  done < "$keep_patterns_txt"
+  return 1
+}
+
+function filter_keep_in_spark_shared() {
+  set -e
+  local input_txt="$1"
+  local output_txt="$2"
+  local class_file
+  : > "$output_txt"
+  while IFS= read -r class_file; do
+    [[ -n "$class_file" ]] || continue
+    if keep_in_spark_shared "$class_file"; then
+      continue
+    fi
+    echo "$class_file"
+  done < "$input_txt" > "$output_txt.tmp"
+  mv "$output_txt.tmp" "$output_txt"
+}
+
+function copy_unshimmed_from_spark_shared() {
+  set -e
+  local raw_copy_list="$UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST.raw"
+  local sorted_copy_list="$UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST.sorted"
+
+  : > "$raw_copy_list"
+  write_root_safe_spark_shared_classes
+  write_default_unshimmed_spark_shared_classes
+  cat "$DEFAULT_UNSHIMMED_SPARK_SHARED_TXT" >> "$raw_copy_list"
+  append_matching_spark_shared_patterns \
+    "${UNSHIMMED_COMMON_FROM_SINGLE_SHIM_TXT:-}" "$raw_copy_list"
+
+  sort -u "$raw_copy_list" > "$sorted_copy_list"
+  filter_keep_in_spark_shared "$sorted_copy_list" "$UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST"
   if [[ -s "$UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST" ]]; then
-    echo "Promoting root-layout files from spark-shared via $unshimmed_patterns_txt"
+    echo "Promoting root-layout files from spark-shared by default"
     rsync --files-from="$UNSHIMMED_FROM_SPARK_SHARED_COPY_LIST" \
       ./parallel-world/spark-shared ./parallel-world
   fi
@@ -141,9 +275,23 @@ rm -rf "$SPARK_SHARED_DIR"
 mkdir -p "$SPARK_SHARED_DIR"
 
 echo "$((++STEP))/ retaining a single copy of spark-shared classes"
-while read -r spark_common_class; do
-  retain_single_copy "$spark_common_class"
-done < "$SPARK_SHARED_TXT"
+awk -F/ "
+  NF >= 3 {
+    shim = \$2
+    package_class = \$0
+    sub(\"^/spark[34][^/]*/\", \"\", package_class)
+    print package_class >> (\"from-\" shim \"-to-spark-shared.txt\")
+  }
+" "$SPARK_SHARED_TXT"
+for pw in ./parallel-world/spark[34]* ; do
+  awk -v pw="$pw" "
+    {
+      package_class = \$0
+      sub(\"^/spark[34][^/]*/\", \"\", package_class)
+      print pw \"/\" package_class
+    }
+  " "$SPARK_SHARED_TXT"
+done >> "$DELETE_DUPLICATES_TXT"
 
 echo "$((++STEP))/ rsyncing common classes to $SPARK_SHARED_DIR"
 for copy_list in from-spark[34]*-to-spark-shared.txt; do
@@ -157,7 +305,7 @@ done
 
 mv "$SPARK_SHARED_DIR" parallel-world/
 
-echo "$((++STEP))/ promoting allowlisted spark-shared files to root layout"
+echo "$((++STEP))/ promoting default spark-shared files to root layout"
 copy_unshimmed_from_spark_shared
 
 # Verify that all class files in the conventional jar location are bitwise
@@ -184,11 +332,16 @@ copy_unshimmed_from_spark_shared
 
 # Determine the list of unshimmed class files
 UNSHIMMED_LIST_TXT=unshimmed-result.txt
-echo "$((++STEP))/ creating sorted list of unshimmed classes > $UNSHIMMED_LIST_TXT"
-find ./parallel-world -name '*.class' -not -path './parallel-world/spark[34-]*' | \
+echo "$((++STEP))/ creating sorted list of root-layout unshimmed classes > $UNSHIMMED_LIST_TXT"
+find ./parallel-world -name '*.class' \
+  -not -path './parallel-world/spark[34-]*' \
+  -not -path './parallel-world/spark-shared/*' | \
   cut -d/ -f 3- | sort > "$UNSHIMMED_LIST_TXT"
 
-function verify_same_sha_for_unshimmed() {
+echo "$((++STEP))/ creating sorted list of spark-shared classes > $SPARK_SHARED_CLASSES_TXT"
+sed -E "s|^/spark[^/]*/||" "$SPARK_SHARED_TXT" | sort -u > "$SPARK_SHARED_CLASSES_TXT"
+
+function unshimmed_class_needs_shared_identity() {
   set -e
   class_file="$1"
 
@@ -196,7 +349,7 @@ function verify_same_sha_for_unshimmed() {
   # including the ones that are unshimmed. Instead of expensively recomputing
   # sha1 look up if there is an entry with the unshimmed class as a suffix
 
-  class_file_quoted=$(printf '%q' "$class_file")
+  class_file_quoted=$(printf "%q" "$class_file")
   # TODO currently RapidsShuffleManager is "removed" from /spark* by construction in
   # dist pom.xml via ant. We could delegate this logic to this script
   # and make both simmpler
@@ -211,34 +364,72 @@ function verify_same_sha_for_unshimmed() {
   # the class provides concrete implementations for ALL getReader variants,
   # so the JVM resolves the correct one at runtime regardless of which
   # ShuffleManager version the class was compiled against.
-  if [[ ! "$class_file_quoted" =~ com/nvidia/spark/rapids/spark[34].*/.*ShuffleManager.class && \
-          "$class_file_quoted" != "com/nvidia/spark/ParquetCachedBatchSerializer.class" && \
-          ! "$class_file_quoted" =~ org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase ]]; then
-      if ! grep -q "/spark.\+/$class_file_quoted" "$SPARK_SHARED_TXT"; then
-        echo >&2 "$class_file is not bitwise-identical across shims"
-        exit 255
-      fi
+  # GpuShuffleDependency has identical JVM bytecode and descriptors between
+  # Spark 3.5 and 4.1. Only ScalaSignature metadata differs after compiling
+  # the same source against different Spark dependency jars. WindowInPandasExecTypeShim
+  # has no methods in the class shell; its companion carries the behavior.
+  # CloseableColumnBatchIterator has identical descriptors and code; Scala 2.13 only
+  # renames generic Signature-attribute type variables across the Spark 3.5/4.1 compiles.
+  # GpuReadCSVFileFormat and GpuReadJsonFileFormat have identical descriptors and
+  # executable javap output; only ScalaSignature metadata differs across Spark deps.
+  # PythonMapInArrowExecShims and PythonArgumentUtils class shells have identical
+  # executable bytecode; only source-file metadata differs across shim source names.
+  # GpuUnionExecShim and RapidsErrorUtils class shells have identical executable
+  # bytecode; only ScalaSignature metadata differs.
+  # GpuStringTrim* differs after Spark 4.1 because String2TrimExpression adds
+  # collation/context-independent foldability methods. The case-class fields,
+  # product surface, and Spark 3.5-callable methods remain compatible; Spark 3.x
+  # does not invoke the added methods.
+  # GpuAtomicCreateTableAsSelectExec companion has identical executable bytecode;
+  # only line-number debug metadata differs across shim sources.
+  if [[ "$class_file_quoted" =~ com/nvidia/spark/rapids/spark[34].*/.*ShuffleManager.class || \
+          "$class_file_quoted" == "com/nvidia/spark/ParquetCachedBatchSerializer.class" || \
+          "$class_file_quoted" =~ org/apache/spark/sql/rapids/ProxyRapidsShuffleInternalManagerBase || \
+          "$class_file_quoted" == "org/apache/spark/sql/rapids/GpuShuffleDependency.class" || \
+          "$class_file_quoted" == "com/nvidia/spark/rapids/parquet/CloseableColumnBatchIterator.class" || \
+          "$class_file_quoted" == "com/nvidia/spark/rapids/GpuReadCSVFileFormat.class" || \
+          "$class_file_quoted" == "org/apache/spark/sql/catalyst/json/rapids/GpuReadJsonFileFormat.class" || \
+          "$class_file_quoted" == "com/nvidia/spark/rapids/shims/PythonMapInArrowExecShims.class" || \
+          "$class_file_quoted" == "org/apache/spark/sql/rapids/execution/python/shims/PythonArgumentUtils.class" || \
+          "$class_file_quoted" == "com/nvidia/spark/rapids/shims/GpuUnionExecShim.class" || \
+          "$class_file_quoted" == "org/apache/spark/sql/rapids/GpuStringTrim.class" || \
+          "$class_file_quoted" == "org/apache/spark/sql/rapids/GpuStringTrimLeft.class" || \
+          "$class_file_quoted" == "org/apache/spark/sql/rapids/GpuStringTrimRight.class" || \
+          "$class_file" == "org/apache/spark/sql/execution/datasources/v2/rapids/GpuAtomicCreateTableAsSelectExec$.class" || \
+          "$class_file_quoted" == "org/apache/spark/sql/rapids/shims/RapidsErrorUtils.class" || \
+          "$class_file_quoted" == "org/apache/spark/sql/rapids/execution/python/shims/WindowInPandasExecTypeShim.class" ]]; then
+      return 1
   fi
+  return 0
 }
 
-echo "$((++STEP))/ verifying unshimmed classes have unique sha1 across shims"
+echo "$((++STEP))/ filtering unshimmed classes that require shared identity > $UNSHIMMED_NEED_SHARED_TXT"
 while read -r unshimmed_class; do
-  verify_same_sha_for_unshimmed "$unshimmed_class"
-done < "$UNSHIMMED_LIST_TXT"
+  if unshimmed_class_needs_shared_identity "$unshimmed_class"; then
+    echo "$unshimmed_class"
+  fi
+done < "$UNSHIMMED_LIST_TXT" | sort -u > "$UNSHIMMED_NEED_SHARED_TXT"
+
+echo "$((++STEP))/ verifying unshimmed classes have unique sha1 across shims"
+comm -23 "$UNSHIMMED_NEED_SHARED_TXT" "$SPARK_SHARED_CLASSES_TXT" > "$UNSHIMMED_MISSING_SHARED_TXT"
+if [[ -s "$UNSHIMMED_MISSING_SHARED_TXT" ]]; then
+  read -r missing_unshimmed_class < "$UNSHIMMED_MISSING_SHARED_TXT"
+  echo >&2 "$missing_unshimmed_class is not bitwise-identical across shims"
+  exit 255
+fi
 
 # Remove unshimmed classes from parallel worlds
 # TODO rework with low priority, only a few classes.
 echo "$((++STEP))/ removing duplicates of unshimmed classes"
-
-while read -r unshimmed_class; do
+{
+  sed "s|^|./parallel-world/spark-shared/|" "$UNSHIMMED_LIST_TXT"
   for pw in ./parallel-world/spark[34-]* ; do
-    unshimmed_path="$pw/$unshimmed_class"
-    [[ -f "$unshimmed_path" ]] && echo "$unshimmed_path" || true
-  done >> "$DELETE_DUPLICATES_TXT"
-done < "$UNSHIMMED_LIST_TXT"
+    awk -v pw="$pw" "{ print pw \"/\" \$0 }" "$UNSHIMMED_LIST_TXT"
+  done
+} >> "$DELETE_DUPLICATES_TXT"
 
 echo "$((++STEP))/ deleting all class files listed in $DELETE_DUPLICATES_TXT"
-< "$DELETE_DUPLICATES_TXT" sort -u | xargs rm
+< "$DELETE_DUPLICATES_TXT" sort -u | xargs rm -f
 
 end_time=$(date +%s)
 echo "binary-dedupe completed in $((end_time - start_time)) seconds"

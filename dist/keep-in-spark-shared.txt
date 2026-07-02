@@ -1,0 +1,6 @@
+# Patterns for common spark-shared class files that must not be promoted to
+# the root layout even when binary dedupe marks them bitwise-identical.
+#
+# Add entries only when a class is bitwise-identical but must remain loaded
+# from spark-shared for compatibility or packaging reasons. New common classes
+# should normally stay unshimmed by default.

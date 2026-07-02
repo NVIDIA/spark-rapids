@@ -1,3 +1,7 @@
+# Files that must be promoted to the root layout from one representative shim
+# but are not selected by default class promotion. Common class files are
+# unshimmed by default when binary-dedupe proves they are bitwise-identical
+# across shims.
 META-INF/DEPENDENCIES
 META-INF/LICENSE
 META-INF/NOTICE
@@ -47,4 +51,5 @@ org/apache/iceberg/spark/source/GpuSparkScanAccess.class
 org/apache/iceberg/spark/source/GpuSparkWriteAccess.class
 org/apache/spark/sql/rapids/AdaptiveSparkPlanHelperShim*
 org/apache/spark/sql/rapids/ExecutionPlanCaptureCallback*
+rapids4spark-private-version-info.properties
 rapids/*.py
