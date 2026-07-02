@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.fileio;
 
+import com.nvidia.spark.rapids.PerfIO;
 import com.nvidia.spark.rapids.PerfIOConf;
 import org.apache.spark.SparkEnv;
 
@@ -39,16 +40,16 @@ public final class RapidsInputFiles {
         return env.conf().getBoolean(PerfIOConf.S3PERF_ENABLED().key(), false);
     }
     /**
-     * True iff {@code spark.rapids.perfio.gcs.enabled} is set to {@code true} on
-     * the active SparkConf. Returns false when no {@link SparkEnv} is initialized
-     * (e.g. before driver bring-up) so callers default to the non-PerfIO path.
+     * True iff PerfIO initialized GCS support on this executor. Returns false when
+     * no {@link SparkEnv} is initialized (e.g. before driver bring-up) so callers
+     * default to the non-PerfIO path.
      */
     public static boolean isGCSPerfEnabled() {
         SparkEnv env = SparkEnv.get();
         if (env == null) {
             return false;
         }
-        return env.conf().getBoolean(PerfIOConf.GCSPERF_ENABLED().key(), false);
+        return PerfIO.isGCSPerfEnabled();
     }
 
 }
