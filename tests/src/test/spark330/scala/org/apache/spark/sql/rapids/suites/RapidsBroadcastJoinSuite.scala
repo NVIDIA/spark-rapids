@@ -22,6 +22,7 @@ package org.apache.spark.sql.rapids.suites
 import com.nvidia.spark.rapids.{GpuBuildLeft, GpuBuildRight, GpuBuildSide}
 
 import org.apache.spark.SparkConf
+import org.apache.spark.internal.config.Tests.IS_TESTING
 import org.apache.spark.sql.{Row, SparkSession}
 import org.apache.spark.sql.execution.adaptive.{DisableAdaptiveExecutionSuite, EnableAdaptiveExecutionSuite}
 import org.apache.spark.sql.execution.joins.BroadcastJoinSuiteBase
@@ -53,6 +54,14 @@ trait RapidsBroadcastJoinSuiteBase extends BroadcastJoinSuiteBase with RapidsTes
   }
 
   override def beforeAll(): Unit = {
+    // Do the SparkFunSuite setup that BroadcastJoinSuiteBase.beforeAll() would normally do.
+    // Calling super.beforeAll() here would create Spark's local-cluster session before RAPIDS
+    // configs are applied.
+    System.setProperty(IS_TESTING.key, "true")
+    if (enableAutoThreadAudit) {
+      doThreadPreAudit()
+    }
+
     val conf = RapidsSQLTestsBaseTrait.nativeSparkConf(new SparkConf(), warehouse)
     spark = SparkSession.builder()
       .master("local[2]")
