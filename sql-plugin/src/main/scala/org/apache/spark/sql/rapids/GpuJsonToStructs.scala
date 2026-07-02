@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package org.apache.spark.sql.rapids
 import java.util.Locale
 
 import ai.rapids.cudf
-import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression, NvtxRegistry}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuJsonToStructsCpuFallback, GpuUnaryExpression, NvtxRegistry}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.jni.JSONUtils
 import com.nvidia.spark.rapids.shims.NullIntolerantShim
@@ -51,17 +51,28 @@ case class GpuJsonToStructs(
       schema match {
         case _: MapType => JSONUtils.extractRawMapFromJsonString(input.getBase, cudfOptions)
         case struct: StructType =>
-          val parsedStructs = JSONUtils.fromJSONToStructs(input.getBase, makeSchema(struct),
+          val fromJson = JSONUtils.fromJSONToStructs(input.getBase, makeSchema(struct),
             cudfOptions, parsedOptions.locale == Locale.US)
-          val hasDateTime = TrampolineUtil.dataTypeExistsRecursively(struct, t =>
-            t.isInstanceOf[DateType] || t.isInstanceOf[TimestampType]
-          )
-          if (hasDateTime) {
-            withResource(parsedStructs) { _ =>
-              convertDateTimeType(parsedStructs, struct, parsedOptions)
+          if (fromJson.hasSchemaMismatch) {
+            // cuDF flags a nested schema-category mismatch at column granularity and nulls the
+            // whole column, which over-nulls mixed-row batches vs Spark's per-row depth-1 nulling.
+            // Recompute this batch on CPU for exact parity; clean batches stay on the GPU.
+            // See spark-rapids-jni#4536 / #4645.
+            withResource(fromJson.getData) { _ =>
+              GpuJsonToStructsCpuFallback.fallbackToCpu(input.getBase, struct, options, timeZoneId)
             }
           } else {
-            parsedStructs
+            val parsedStructs = fromJson.getData
+            val hasDateTime = TrampolineUtil.dataTypeExistsRecursively(struct, t =>
+              t.isInstanceOf[DateType] || t.isInstanceOf[TimestampType]
+            )
+            if (hasDateTime) {
+              withResource(parsedStructs) { _ =>
+                convertDateTimeType(parsedStructs, struct, parsedOptions)
+              }
+            } else {
+              parsedStructs
+            }
           }
         case _ => throw new IllegalArgumentException(
           s"GpuJsonToStructs currently does not support schema of type $schema.")
