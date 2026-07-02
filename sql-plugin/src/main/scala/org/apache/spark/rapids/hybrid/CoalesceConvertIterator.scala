@@ -22,7 +22,6 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.hybrid.{CoalesceBatchConverter => NativeConverter, HybridHostRetryAllocator, RapidsHostColumn}
 
 import org.apache.spark.TaskContext
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -36,7 +35,13 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
                               targetBatchSizeInBytes: Long,
                               schema: StructType,
                               metrics: Map[String, GpuMetric])
-  extends Iterator[Array[RapidsHostColumn]] with Logging {
+  extends Iterator[Array[RapidsHostColumn]] {
+
+  @transient private lazy val log = org.slf4j.LoggerFactory.getLogger(
+    classOf[CoalesceConvertIterator])
+
+  private def logInfo(msg: => String): Unit = if (log.isInfoEnabled) log.info(msg)
+
 
   private var converterImpl: NativeConverter = _
 
@@ -140,7 +145,7 @@ class CoalesceConvertIterator(cpuScanIter: Iterator[ColumnarBatch],
   }
 }
 
-object CoalesceConvertIterator extends Logging {
+object CoalesceConvertIterator {
   /**
    * Consumes the RapidsHostBatchProducer and converts the HostColumnVectors to Device ones.
    */

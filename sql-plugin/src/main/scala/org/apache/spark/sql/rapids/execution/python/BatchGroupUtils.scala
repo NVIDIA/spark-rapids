@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -41,10 +41,10 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
  *                   and data columns by the Python workers.
  * @param groupingOffsets the grouping offsets(aka column indices) in the deduplicated attributes.
  */
-case class GroupArgs(
-    dedupAttrs: Seq[Attribute],
-    argOffsets: Array[Int],
-    groupingOffsets: Seq[Int])
+class GroupArgs(
+    val dedupAttrs: Seq[Attribute],
+    val argOffsets: Array[Int],
+    val groupingOffsets: Seq[Int])
 
 /**
  * Basic functionality to deal with groups in a batch.
@@ -138,7 +138,7 @@ private[python] object BatchGroupUtils {
     val argOffsets = Array(argOffsetLen, groupingAttrs.length) ++
       groupingArgOffsets ++ dataAttrs.indices
 
-    GroupArgs(dedupAttrs, argOffsets, groupingArgOffsets)
+    new GroupArgs(dedupAttrs, argOffsets, groupingArgOffsets)
   }
 
   /**

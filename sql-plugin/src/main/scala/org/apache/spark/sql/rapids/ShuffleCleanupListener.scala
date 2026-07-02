@@ -23,7 +23,6 @@ import scala.collection.mutable
 
 import com.nvidia.spark.rapids.ShuffleCleanupManager
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.scheduler.{SparkListener, SparkListenerEvent, SparkListenerJobStart}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd
@@ -48,7 +47,22 @@ import org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd
  * Note: This file is placed in org.apache.spark.sql.rapids package to access
  * the private[spark] shuffleDepId field in StageInfo.
  */
-class ShuffleCleanupListener extends SparkListener with Logging {
+class ShuffleCleanupListener extends SparkListener {
+
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[ShuffleCleanupListener])
+
+  private def logInfo(msg: => String): Unit = {
+    if (log.isInfoEnabled) {
+      log.info(msg)
+    }
+  }
+
+  private def logDebug(msg: => String): Unit = {
+    if (log.isDebugEnabled) {
+      log.debug(msg)
+    }
+  }
+
 
   /**
    * Maps SQL execution ID to the set of shuffle IDs associated with that execution.

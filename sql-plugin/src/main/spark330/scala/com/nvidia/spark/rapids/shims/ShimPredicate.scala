@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * Copyright (c) 2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 {"spark": "343"}
 {"spark": "344"}
 {"spark": "350"}
+{"spark": "350db143"}
 {"spark": "351"}
 {"spark": "352"}
 {"spark": "353"}
@@ -38,32 +39,11 @@
 {"spark": "357"}
 {"spark": "358"}
 spark-rapids-shim-json-lines ***/
-package org.apache.spark.sql.rapids.execution.python.shims
+package com.nvidia.spark.rapids.shims
 
-import scala.collection.mutable.ArrayBuffer
+import org.apache.spark.sql.catalyst.expressions.Predicate
 
-import com.nvidia.spark.rapids.python.GpuPythonArguments
-
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.types.DataType
-
-object PythonArgumentUtils {
-
-  /** Flatten all the arguments as a GpuPythonArguments. Almost the same as Spark */
-  def flatten(args: Seq[Seq[Expression]]): GpuPythonArguments = {
-    val allInputs = new ArrayBuffer[Expression]
-    val dataTypes = new ArrayBuffer[DataType]
-    val argOffsets = args.map { input =>
-      input.map { e =>
-        if (allInputs.exists(_.semanticEquals(e))) {
-          allInputs.indexWhere(_.semanticEquals(e))
-        } else {
-          allInputs += e
-          dataTypes += e.dataType
-          allInputs.length - 1
-        }
-      }.toArray
-    }.toArray
-    new GpuPythonArguments(allInputs.toSeq, dataTypes.toSeq, argOffsets, None)
-  }
+trait ShimPredicate extends Predicate {
+  def contextIndependentFoldable: Boolean = children.forall(_.foldable)
 }
+

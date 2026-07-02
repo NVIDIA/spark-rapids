@@ -34,7 +34,7 @@ import com.nvidia.spark.rapids.RapidsPluginUtils.buildInfoEvent
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.filecache.{FileCache, FileCacheLocalityManager, FileCacheLocalityMsg}
 import com.nvidia.spark.rapids.fileio.RapidsInputFiles
-import com.nvidia.spark.rapids.fileio.hadoop.PerfIOS3Reader
+import com.nvidia.spark.rapids.fileio.hadoop.{PerfIOGCSReader, PerfIOS3Reader}
 import com.nvidia.spark.rapids.io.async.TrafficController
 import com.nvidia.spark.rapids.jni.{GpuTimeZoneDB, Hash, JSONUtils, RmmSpark, TaskPriority}
 import com.nvidia.spark.rapids.python.PythonWorkerSemaphore
@@ -555,6 +555,7 @@ class RapidsDriverPlugin extends DriverPlugin {
     sc: SparkContext, pluginContext: PluginContext): java.util.Map[String, String] = {
     val sparkConf = pluginContext.conf
     RapidsInputFiles.setS3PerfReader(PerfIOS3Reader.INSTANCE)
+    RapidsInputFiles.setGCSPerfReader(PerfIOGCSReader.INSTANCE)
     RapidsPluginUtils.fixupConfigsOnDriver(sparkConf)
     val conf = new RapidsConf(sparkConf)
     RapidsPluginUtils.detectMultipleJars(conf)
@@ -711,6 +712,7 @@ class RapidsExecutorPlugin extends ExecutorPlugin {
       // if configured, re-register checking leaks hook.
       reRegisterCheckLeakHook()
       RapidsInputFiles.setS3PerfReader(PerfIOS3Reader.INSTANCE)
+      RapidsInputFiles.setGCSPerfReader(PerfIOGCSReader.INSTANCE)
 
       val sparkConf = pluginContext.conf()
       val numCores = RapidsPluginUtils.estimateCoresOnExec(sparkConf)

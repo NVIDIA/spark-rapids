@@ -34,7 +34,7 @@ import com.nvidia.spark.rapids.jni.CharsetDecode
 import com.nvidia.spark.rapids.jni.GpuSubstringIndexUtils
 import com.nvidia.spark.rapids.jni.NumberConverter
 import com.nvidia.spark.rapids.jni.RegexRewriteUtils
-import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression, SparkShimImpl}
+import com.nvidia.spark.rapids.shims.{NullIntolerantShim, ShimExpression, ShimPredicate, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.errors.ConvUtils
@@ -163,7 +163,7 @@ case class GpuStringLocate(substr: Expression, col: Expression, start: Expressio
 
 case class GpuStartsWith(left: Expression, right: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
-      with Predicate
+      with ShimPredicate
       with ImplicitCastInputTypes
       with NullIntolerantShim {
 
@@ -189,7 +189,7 @@ case class GpuStartsWith(left: Expression, right: Expression)
 
 case class GpuEndsWith(left: Expression, right: Expression)
   extends GpuBinaryExpressionArgsAnyScalar
-      with Predicate
+      with ShimPredicate
       with ImplicitCastInputTypes
       with NullIntolerantShim {
 
@@ -396,7 +396,7 @@ case class GpuConcatWs(children: Seq[Expression])
 
 case class GpuContains(left: Expression, right: Expression)
     extends GpuBinaryExpression
-        with Predicate
+        with ShimPredicate
         with ImplicitCastInputTypes
         with NullIntolerantShim
         with GpuCombinable {
@@ -496,7 +496,7 @@ class ContainsCombiner(private val exp: GpuContains) extends GpuExpressionCombin
   override def addExpression(e: Expression): Unit = {
     val localOutputLocation = outputLocation
     outputLocation += 1
-    val key = GpuExpressionEquals(e)
+    val key = new GpuExpressionEquals(e)
     if (!toCombine.contains(key)) {
       toCombine.put(key, localOutputLocation)
     }
@@ -530,7 +530,7 @@ class ContainsCombiner(private val exp: GpuContains) extends GpuExpressionCombin
   }
 
   override def getReplacementExpression(e: Expression): Option[Expression] = {
-    toCombine.get(GpuExpressionEquals(e)).map { localId =>
+    toCombine.get(new GpuExpressionEquals(e)).map { localId =>
       GpuGetStructField(multiContains, localId, Some(fieldName(localId)))
     }
   }

@@ -37,7 +37,6 @@ import com.nvidia.spark.rapids.shims.{BroadcastExchangeShims, ShimBroadcastExcha
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.internal.Logging
 import org.apache.spark.launcher.SparkLauncher
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
@@ -75,7 +74,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
     output: Seq[Attribute],
     var numRows: Int,
     var dataLen: Long)
-  extends Serializable with Logging {
+  extends Serializable {
   @transient private var dataTypes = output.map(_.dataType).toArray
 
   // used for memoization of deserialization to GPU on Executor
@@ -323,7 +322,7 @@ class GpuBroadcastMeta(
     conf: RapidsConf,
     parent: Option[RapidsMeta[_, _, _]],
     rule: DataFromReplacementRule) extends
-  SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) with Logging {
+  SparkPlanMeta[BroadcastExchangeExec](exchange, conf, parent, rule) {
 
   override def tagPlanForGpu(): Unit = {
     if (!TrampolineUtil.isSupportedRelation(exchange.mode)) {
@@ -643,7 +642,7 @@ case class GpuBroadcastExchangeExec(
 }
 
 /** Caches the mappings from canonical CPU exchanges to the GPU exchanges that replaced them */
-object ExchangeMappingCache extends Logging {
+object ExchangeMappingCache {
   // Cache is a mapping from CPU broadcast plan to GPU broadcast plan. The cache should not
   // artificially hold onto unused plans, so we make both the keys and values weak. The values
   // point to their corresponding keys, so the keys will not be collected unless the value

@@ -338,7 +338,7 @@ abstract class GpuMin(child: Expression) extends GpuAggregateFunction
 
   override def groupByScanAggregation(
       isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
-    Seq(AggAndReplace(GroupByScanAggregation.min(), Some(ReplacePolicy.PRECEDING)))
+    Seq(new AggAndReplace(GroupByScanAggregation.min(), Some(ReplacePolicy.PRECEDING)))
 
   override def isGroupByScanSupported: Boolean = child.dataType match {
     case StringType | TimestampType | DateType => false
@@ -347,7 +347,7 @@ abstract class GpuMin(child: Expression) extends GpuAggregateFunction
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
-    Seq(AggAndReplace(ScanAggregation.min(), Some(ReplacePolicy.PRECEDING)))
+    Seq(new AggAndReplace(ScanAggregation.min(), Some(ReplacePolicy.PRECEDING)))
 
   override def isScanSupported: Boolean  = child.dataType match {
     case TimestampType | DateType => false
@@ -522,7 +522,7 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
 
   override def groupByScanAggregation(
       isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
-    Seq(AggAndReplace(GroupByScanAggregation.max(), Some(ReplacePolicy.PRECEDING)))
+    Seq(new AggAndReplace(GroupByScanAggregation.max(), Some(ReplacePolicy.PRECEDING)))
 
   override def isGroupByScanSupported: Boolean = child.dataType match {
     case StringType | TimestampType | DateType => false
@@ -531,7 +531,7 @@ abstract class GpuMax(child: Expression) extends GpuAggregateFunction
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] = inputProjection
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
-    Seq(AggAndReplace(ScanAggregation.max(), Some(ReplacePolicy.PRECEDING)))
+    Seq(new AggAndReplace(ScanAggregation.max(), Some(ReplacePolicy.PRECEDING)))
 
   override def isScanSupported: Boolean = child.dataType match {
     case TimestampType | DateType => false
@@ -1044,13 +1044,13 @@ abstract class GpuSum(
 
   override def groupByScanAggregation(
       isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
-    Seq(AggAndReplace(GroupByScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
+    Seq(new AggAndReplace(GroupByScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     windowInputProjection
 
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
-    Seq(AggAndReplace(ScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
+    Seq(new AggAndReplace(ScanAggregation.sum(), Some(ReplacePolicy.PRECEDING)))
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector = {
     if (internalSumForWindowDataType != resultType) {
@@ -1498,13 +1498,13 @@ case class GpuCount(children: Seq[Expression],
 
   override def groupByScanAggregation(
       isRunningBatched: Boolean): Seq[AggAndReplace[GroupByScanAggregation]] =
-    Seq(AggAndReplace(GroupByScanAggregation.sum(), None))
+    Seq(new AggAndReplace(GroupByScanAggregation.sum(), None))
 
   override def scanInputProjection(isRunningBatched: Boolean): Seq[Expression] =
     groupByScanInputProjection(isRunningBatched)
 
   override def scanAggregation(isRunningBatched: Boolean): Seq[AggAndReplace[ScanAggregation]] =
-    Seq(AggAndReplace(ScanAggregation.sum(), None))
+    Seq(new AggAndReplace(ScanAggregation.sum(), None))
 
   override def scanCombine(isRunningBatched: Boolean, cols: Seq[ColumnVector]): ColumnVector =
     cols.head.castTo(DType.INT64)

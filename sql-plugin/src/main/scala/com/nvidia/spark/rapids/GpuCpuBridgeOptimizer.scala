@@ -666,7 +666,7 @@ object GpuCpuBridgeOptimizer extends Logging {
     val deduplicationMapping = scala.collection.mutable.Map[Int, Int]()
         
     flattenedInputs.zipWithIndex.foreach { case (expr, oldIndex) =>
-      val exprWrapper = GpuExpressionEquals(expr)
+      val exprWrapper = new GpuExpressionEquals(expr)
       seenExpressions.get(exprWrapper) match {
         case Some(existingIndex) =>
           // This expression is a duplicate - map to existing index
