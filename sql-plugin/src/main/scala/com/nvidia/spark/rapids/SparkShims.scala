@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids
 
-import java.lang.reflect.InvocationTargetException
-
 import org.apache.hadoop.fs.FileStatus
 import org.apache.parquet.schema.MessageType
 
@@ -103,111 +101,17 @@ trait SparkShims {
    */
   def getPartitionFiles(partition: FilePartition): Seq[PartitionedFile]
 
-  // Keep the default implementation compatible with Spark catalogs before and after
-  // the resolvedCatalogTable parameter was added.
-  private val listPartitionsByFilterWithResolvedTableSignature = Seq(
-    classOf[TableIdentifier],
-    classOf[scala.collection.immutable.Seq[_]],
-    classOf[Option[_]])
-
-  private val listPartitionsByFilterSignature = Seq(
-    classOf[TableIdentifier],
-    classOf[scala.collection.immutable.Seq[_]])
-
-  private val listPartitionsWithResolvedTableSignature = Seq(
-    classOf[TableIdentifier],
-    classOf[Option[_]],
-    classOf[Int],
-    classOf[Option[_]])
-
-  private val listPartitionsSignature = Seq(
-    classOf[TableIdentifier],
-    classOf[Option[_]],
-    classOf[Int])
-
   def listPartitionsByFilter(
       sparkSession: SqlSparkSession,
       tableName: TableIdentifier,
       predicates: Seq[Expression],
-      resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition] = {
-    invokeSessionCatalog(
-      sparkSession,
-      "listPartitionsByFilter",
-      listPartitionsByFilterWithResolvedTableSignature,
-      Seq(tableName, predicates, resolvedCatalogTable),
-      listPartitionsByFilterSignature,
-      Seq(tableName, predicates))
-  }
+      resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition]
 
   def listPartitions(
       sparkSession: SqlSparkSession,
       tableName: TableIdentifier,
       partialSpec: Option[TablePartitionSpec],
-      limit: Int,
-      resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition] = {
-    invokeSessionCatalog(
-      sparkSession,
-      "listPartitions",
-      listPartitionsWithResolvedTableSignature,
-      Seq(tableName, partialSpec, Int.box(limit), resolvedCatalogTable),
-      listPartitionsSignature,
-      Seq(tableName, partialSpec, Int.box(limit)))
-  }
-
-  private def invokeSessionCatalog[A](
-      sparkSession: SqlSparkSession,
-      methodName: String,
-      preferredSignature: Seq[Class[_]],
-      preferredArgs: Seq[AnyRef],
-      fallbackSignature: Seq[Class[_]],
-      fallbackArgs: Seq[AnyRef]): A = {
-    val catalog = sparkSession.sessionState.catalog
-    val catalogClass = catalog.getClass
-    val (method, args) = findSessionCatalogMethod(
-        catalogClass, methodName, preferredSignature).map(_ -> preferredArgs)
-      .orElse(findSessionCatalogMethod(catalogClass, methodName, fallbackSignature)
-        .map(_ -> fallbackArgs))
-      .getOrElse {
-        throw new NoSuchMethodException(
-          s"${catalogClass.getName}.$methodName with ${signatureString(preferredSignature)} or " +
-            s"${signatureString(fallbackSignature)}")
-      }
-    try {
-      method.invoke(catalog, args: _*).asInstanceOf[A]
-    } catch {
-      case e: InvocationTargetException =>
-        e.getCause() match {
-          case null => throw e
-          case cause => throw cause
-        }
-    }
-  }
-
-  private def findSessionCatalogMethod(
-      catalogClass: Class[_],
-      methodName: String,
-      signature: Seq[Class[_]]): Option[java.lang.reflect.Method] = {
-    val matches = catalogClass.getMethods.filter { method =>
-      val parameterTypes = method.getParameterTypes
-      method.getName == methodName &&
-        parameterTypes.length == signature.length &&
-        parameterTypes.indices.forall { index =>
-          parameterTypes(index) == signature(index)
-        }
-    }
-    matches.toSeq match {
-      case Seq(method) => Some(method)
-      case Seq() => None
-      case _ =>
-        throw new NoSuchMethodException(
-          s"${catalogClass.getName}.$methodName matched multiple overloads for " +
-            signatureString(signature))
-    }
-  }
-
-  private def signatureString(signature: Seq[Class[_]]): String = {
-    signature.map(_.getName).mkString("(", ", ", ")")
-  }
+      resolvedCatalogTable: Option[CatalogTable]): Seq[CatalogTablePartition]
 
   def shouldFailDivOverflow: Boolean
 

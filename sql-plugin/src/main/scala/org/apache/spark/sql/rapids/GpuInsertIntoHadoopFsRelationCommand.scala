@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2019-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -109,7 +109,6 @@ case class GpuInsertIntoHadoopFsRelationCommand(
         sparkSession,
         catalogTable.get.identifier,
         Some(staticPartitions),
-        -1,
         catalogTable)
       initialMatchingPartitions = matchingPartitions.map(_.spec)
       customPartitionLocations = getCustomPartitionLocations(
