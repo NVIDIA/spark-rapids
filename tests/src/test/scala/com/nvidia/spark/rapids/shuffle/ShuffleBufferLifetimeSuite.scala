@@ -52,8 +52,6 @@ import org.apache.spark.storage.{ShuffleBlockBatchId, ShuffleBlockId}
 class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
   private val awaitSeconds = 30L
   private val readTypes: Array[DataType] = Array(IntegerType)
-  // the send loop waits at most 100 ms between polls, so this covers ten of them
-  private val unservedWaitMillis = 1000L
   private val unableToPrepare = "IllegalStateException: Unable to prepare any sends. This " +
     "issue can occur when requesting too many shuffle blocks. The sends will not be retried."
   private val closedHandleForPeer2 = "RapidsShuffleSendPrepareException: Error while copying " +
@@ -202,6 +200,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
   private class CatalogRequestHandler(catalog: ShuffleBufferCatalog)
       extends RapidsShuffleRequestHandler {
     @volatile var pauseAfterLookupOf: Option[Int] = None
+    @volatile var resumedInTime = false
     val lookedUp = new CountDownLatch(1)
     val resume = new CountDownLatch(1)
 
@@ -209,7 +208,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
       val handle = catalog.getShuffleBufferHandle(tableId)
       if (pauseAfterLookupOf.contains(tableId)) {
         lookedUp.countDown()
-        resume.await(awaitSeconds, TimeUnit.SECONDS)
+        resumedInTime = resume.await(awaitSeconds, TimeUnit.SECONDS)
       }
       handle
     }
@@ -368,10 +367,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     def nextRequestGets(tableId: Int): String = {
       val next = transferRequest(3L, Seq(tableId))
       requestTransfer(next)
-      if (died.getCount == 0) {
-        // nothing else polls the request queue once the loop is gone
-        Thread.sleep(unservedWaitMillis)
-      }
+      // nothing else polls the request queue once the loop is gone, so there is nothing to wait for
       Option(peer.sends.poll(if (died.getCount == 0) 0 else awaitSeconds, TimeUnit.SECONDS))
         .foreach(peer.complete)
       s"${reply(next)}, read by the server: ${calls(next, "releaseMessage") > 0}"
@@ -744,6 +740,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
         outcomes("data matches", sameBytes(sent.bytes, gone.bytes))
         loop.peer.complete(sent)
       }
+      assert(handler.resumedInTime, "the paused lookup timed out before the test resumed it")
       outcomes("requester gets", reply(tx))
       outcomes("request transaction", txState(tx))
       outcomes("next request gets", loop.nextRequestGets(live.tableId))
