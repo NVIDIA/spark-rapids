@@ -2455,11 +2455,6 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
 }
 
-// Parquet schema wrapper
-case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
-  override def isEmpty: Boolean = schema.getFields.isEmpty
-}
-
 // Parquet BlockMetaData wrapper
 case class ParquetDataBlock(
     dataBlock: BlockMetaData,
