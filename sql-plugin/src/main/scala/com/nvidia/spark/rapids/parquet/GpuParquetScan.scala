@@ -191,6 +191,28 @@ object GpuParquetScan {
     }
   }
 
+  def tagVariantSupport(
+      readSchema: StructType,
+      meta: RapidsMeta[_, _, _],
+      sqlConf: SQLConf): Unit = {
+    val schemaHasPushedVariant = readSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(
+        field.dataType, ParquetVariantShims.isPushedVariantStruct)
+    }
+    if (schemaHasPushedVariant) {
+      meta.willNotWorkOnGpu("GPU Parquet reader does not support Variant extraction pushdown")
+    }
+
+    val schemaHasPotentiallyShreddedVariant =
+      hasPotentiallyShreddedVariant(readSchema.map(_.dataType), sqlConf)
+    if (schemaHasPotentiallyShreddedVariant) {
+      val reason = "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
+        "shredded Variant input"
+      // Keep the scan and its consumers on CPU until an operator no longer outputs Variant.
+      tagVariantScanPrefixForCpu(meta, reason, sqlConf)
+    }
+  }
+
   def tagSupport(scanMeta: ScanMeta[ParquetScan]): Unit = {
     val scan = scanMeta.wrapped
     val schema = StructType(scan.readDataSchema ++ scan.readPartitionSchema)
@@ -213,23 +235,8 @@ object GpuParquetScan {
         s"${RapidsConf.ENABLE_PARQUET_READ} to true")
     }
 
-    val schemaHasPushedVariant = readSchema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(
-        field.dataType, ParquetVariantShims.isPushedVariantStruct)
-    }
-    if (schemaHasPushedVariant) {
-      meta.willNotWorkOnGpu("GPU Parquet reader does not support Variant extraction pushdown")
-    }
-
     val sqlConf = sparkSession.sessionState.conf
-    val schemaHasPotentiallyShreddedVariant =
-      hasPotentiallyShreddedVariant(readSchema.map(_.dataType), sqlConf)
-    if (schemaHasPotentiallyShreddedVariant) {
-      val reason = "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
-        "shredded Variant input"
-      // Keep the scan and its consumers on CPU until an operator no longer outputs Variant.
-      tagVariantScanPrefixForCpu(meta, reason, sqlConf)
-    }
+    tagVariantSupport(readSchema, meta, sqlConf)
 
     FileFormatChecks.tag(meta, readSchema, ParquetFormatType, ReadFileOp)
 
