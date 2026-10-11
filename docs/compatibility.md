@@ -267,6 +267,15 @@ use different timezones. A similar issue exists for writing dates as described
 to work for dates after the epoch as described
 [here](https://github.com/NVIDIA/cudf-spark/issues/140).
 
+ORC writes containing `DATE` columns, including nested `DATE` columns, use the CPU writer by
+default. The cuDF ORC writer does not record calendar metadata in the file footer, so readers
+can interpret dates before October 15, 1582 incorrectly. Applications that guarantee **every**
+written `DATE` value is on or after October 15, 1582 can set
+`spark.rapids.sql.format.orc.write.dateType.enabled=true` to allow the GPU writer. The plugin
+does not inspect values to enforce this guarantee. Keep the default CPU writer if the data may
+include older dates; the opt-in does not add calendar metadata to ORC files. The metadata fix is
+tracked in [cuDF #23794](https://github.com/NVIDIA/cudf/issues/23794).
+
 The plugin supports reading `uncompressed`, `snappy`, `zlib` and `zstd` ORC files and writing
  `uncompressed`, `snappy` and `zstd` ORC files.  At this point, the plugin does not have the 
 ability to 
