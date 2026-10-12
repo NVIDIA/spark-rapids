@@ -438,7 +438,7 @@ public final class RapidsHostColumnBuilder implements AutoCloseable {
     byte currentByte = valid.getByte(bucket);
     int bitmask = ~(1 << (index % 8));
     int ret = (currentByte >> (index % 8)) & 0x1;
-    currentByte &= bitmask;
+    currentByte = (byte) (currentByte & bitmask);
     valid.setByte(bucket, currentByte);
     return ret;
   }

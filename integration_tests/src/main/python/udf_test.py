@@ -320,6 +320,59 @@ def test_group_apply_udf_zero_conf(data_gen, zero_enabled):
             conf=conf_with_zero)
 
 
+@pytest.mark.skipif(not is_databricks_version(18, 3),
+                    reason="DBR 18.3 grouped runner selection")
+@ignore_order(local=True)
+@pytest.mark.parametrize(
+    'zero_enabled,arrow_slicing_enabled',
+    [(False, False), (False, True), (True, False), (True, True)],
+    ids=['window-no-slicing', 'window-with-slicing',
+         'grouped-no-slicing', 'grouped-with-slicing'])
+def test_group_apply_udf_runner_selection_db183(zero_enabled, arrow_slicing_enabled):
+    def identity(pdf):
+        return pdf
+
+    conf = arrow_udf_conf.copy()
+    conf.update({
+        'spark.databricks.execution.pandasZeroConfConversion.groupbyApply.enabled':
+            zero_enabled,
+        'spark.databricks.execution.pandasZeroConfConversion.groupbyApply.maxBytesPerSlice':
+            '1',
+        'spark.databricks.execution.python.arrowBatchSize.slicing.enabled':
+            arrow_slicing_enabled,
+    })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(256).select(
+            (f.col('id') % 8).alias('a'), f.col('id').alias('b'))
+            .groupBy('a')
+            .applyInPandas(identity, schema="a long, b long"),
+        conf=conf)
+
+
+@pytest.mark.skipif(not is_databricks_version(18, 3),
+                    reason="DBR 18.3 grouped runner selection")
+@ignore_order(local=True)
+def test_group_apply_udf_zero_conf_large_single_group_db183():
+    def identity(pdf):
+        return pdf
+
+    conf = arrow_udf_conf.copy()
+    conf.update({
+        'spark.databricks.execution.pandasZeroConfConversion.groupbyApply.enabled': True,
+        'spark.databricks.execution.pandasZeroConfConversion.groupbyApply.maxBytesPerSlice':
+            '64',
+        'spark.databricks.execution.python.arrowBatchSize.slicing.enabled': True,
+    })
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.range(4096).select(
+            f.lit(0).cast('long').alias('a'), f.col('id').alias('b'))
+            .groupBy('a')
+            .applyInPandas(identity, schema="a long, b long"),
+        conf=conf)
+
+
 @pytest.mark.skipif(is_databricks_runtime(), reason="This is tested by other tests from db9.1")
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [LongGen()], ids=idfn)

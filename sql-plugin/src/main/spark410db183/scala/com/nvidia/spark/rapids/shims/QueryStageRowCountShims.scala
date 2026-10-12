@@ -13,17 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /*** spark-rapids-shim-json-lines
-{"spark": "420"}
-{"spark": "500"}
+{"spark": "410db183"}
 spark-rapids-shim-json-lines ***/
+package com.nvidia.spark.rapids.shims
 
-package org.apache.spark.sql.rapids.shims
+import org.apache.spark.sql.execution.adaptive.QueryStageExec
 
-import org.apache.spark.sql.errors.QueryCompilationErrors
-
-object RapidsQueryErrorUtilsShims {
-  def dataSchemaNotSpecifiedError(format: String, fileCatalog: String): Throwable = {
-    QueryCompilationErrors.dataSchemaNotSpecifiedError(format)
+object QueryStageRowCountShims {
+  def getRowCount(qse: QueryStageExec): Option[BigInt] = {
+    qse.runtimeStatistics.rowCount
   }
 }

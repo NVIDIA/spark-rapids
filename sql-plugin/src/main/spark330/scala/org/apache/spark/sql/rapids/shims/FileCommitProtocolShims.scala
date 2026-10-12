@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 {"spark": "330db"}
@@ -44,8 +45,8 @@
 {"spark": "402"}
 {"spark": "403"}
 {"spark": "404"}
+{"spark": "410db183"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.hadoop.mapreduce.TaskAttemptContext

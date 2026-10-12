@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 {"spark": "331"}
@@ -41,11 +42,11 @@
 {"spark": "402"}
 {"spark": "403"}
 {"spark": "404"}
+{"spark": "410db183"}
 {"spark": "411"}
 {"spark": "412"}
 {"spark": "413"}
 spark-rapids-shim-json-lines ***/
-
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.{ColumnVector, Scalar}

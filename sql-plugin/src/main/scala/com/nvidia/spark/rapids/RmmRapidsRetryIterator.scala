@@ -963,7 +963,7 @@ object RmmRapidsRetryIterator extends Logging {
     => {
       // Print the thread name and its state
       sb.append(s"Thread: ${thread.getName} - State: ${thread.getState} " +
-        s"- Thread ID: ${thread.getId}\n")
+        s"- Thread ID: ${ThreadCompat.threadId(thread)}\n")
       // Print the stack trace for this thread
       for (element <- stackTrace) {
         sb.append(s"\tat $element")

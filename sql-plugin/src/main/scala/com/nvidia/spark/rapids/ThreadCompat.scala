@@ -13,23 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/*** spark-rapids-shim-json-lines
-{"spark": "420"}
-{"spark": "500"}
-spark-rapids-shim-json-lines ***/
 
-package org.apache.spark.sql.rapids.shims
+package com.nvidia.spark.rapids
 
-import org.apache.spark.sql.connector.catalog.Table
-import org.apache.spark.sql.connector.write.RowLevelOperation.Command.DELETE
-import org.apache.spark.sql.connector.write.RowLevelOperationTable
-
-object RowLevelOperationTableShims {
-  def isDeleteRowLevelOperationTable(table: Table): Boolean = {
-    table match {
-      case rowLevelOperationTable: RowLevelOperationTable =>
-        rowLevelOperationTable.operation.command == DELETE
-      case _ => false
-    }
-  }
+private[rapids] object ThreadCompat {
+  // Thread.threadId is unavailable on JDK 17, while Thread.getId is deprecated on JDK 19+.
+  @scala.annotation.nowarn("msg=method getId in class Thread is deprecated")
+  def threadId(thread: Thread): Long = thread.getId
 }

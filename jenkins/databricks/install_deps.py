@@ -239,6 +239,19 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--org.apache.orc--orc-format--org.apache.orc__orc-format__*-shaded-protobuf.jar')
         ]
 
+    # DBR 18.3 splits Java utility classes from the Spark common-utils JAR.
+    if spark_version.startswith('4.1'):
+        deps += [
+        Artifact('org.apache.spark', f'spark-common-utils-java_{scala_version}',
+                 f'{spark_prefix}--common--utils-java--common-utils-java-{spark_suffix}_deploy.jar'),
+        Artifact('com.databricks', f'sql-history-prediction-proto_{scala_version}',
+                 f'{spark_prefix}--sql--catalyst--src--main--scala--com--databricks--sql--history--prediction--proto--proto-{spark_suffix}_deploy.jar'),
+        Artifact('com.databricks', f'grpc-shaded-scalapb-runtime_{scala_version}',
+                 f'third_party--scalapb-090--grpc_shaded_scala_{scala_version}--*--runtime-unshaded-jetty9-hadoop1_{scala_version}_deploy.jar'),
+        Artifact('com.databricks', 'grpc-shaded-protobuf-java',
+                 'third_party--armeria--protobuf_java_shaded--*--com.google.protobuf__protobuf-java__*.jar')
+        ]
+
     return deps
 
 def install_deps(deps, spark_version_to_install_databricks_jars, m2_dir, jar_dir, file):

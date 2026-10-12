@@ -454,7 +454,7 @@ object HostAlloc extends Logging {
   private val addr2threadId = new ConcurrentHashMap[Long, java.lang.Long]()
 
   private def bookkeepHostMemoryAlloc(addr: Long, amount: Long): Unit = {
-    val threadId = Thread.currentThread().getId
+    val threadId = ThreadCompat.threadId(Thread.currentThread())
     HostAlloc.addr2threadId.put(addr, threadId)
     if (BOOKKEEP_MEMORY_CALLSTACK) {
       val mu = muPerThreads.computeIfAbsent(threadId, _ => new PerThreadMemoryUsageInDetails)

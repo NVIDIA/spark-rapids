@@ -309,7 +309,7 @@ class HostAllocSuite extends AnyFunSuite with BeforeAndAfterEach with
       ConsoleOutput.writeErrorLine("\n\n\t\tTEST THREAD APPEARS TO BE STUCK")
       Thread.getAllStackTraces.forEach {
         case (thread, trace) =>
-          val name = if (thread.getId == testThread.getId) {
+          val name = if (ThreadCompat.threadId(thread) == ThreadCompat.threadId(testThread)) {
             s"TEST THREAD ${thread.getName}"
           } else {
             thread.getName

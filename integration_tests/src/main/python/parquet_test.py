@@ -2083,7 +2083,11 @@ def _write_parquet_unknown_null_table(
 # SPARK-56045 / SPARK-54220: Parquet UNKNOWN logical type annotation. PyArrow null columns are
 # written as INT32 physical + UNKNOWN/Null logical annotation.
 
-@pytest.mark.skipif(is_spark_411_or_later(),
+dbr_183_unknown_type_annotation_semantics = is_databricks_version(18, 3)
+unknown_type_annotation_412_semantics = \
+    is_spark_412_or_later() or dbr_183_unknown_type_annotation_semantics
+
+@pytest.mark.skipif(is_spark_411_or_later() or dbr_183_unknown_type_annotation_semantics,
                     reason='pre-SPARK-54220 physical-type behavior')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_pre_411_physical(spark_tmp_path, reader_confs):
@@ -2099,7 +2103,7 @@ def test_parquet_unknown_type_annotation_pre_411_physical(spark_tmp_path, reader
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=reader_confs)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_default_physical(spark_tmp_path, reader_confs):
@@ -2119,7 +2123,8 @@ def test_parquet_unknown_type_annotation_default_physical(spark_tmp_path, reader
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_411_or_later(),
+@pytest.mark.skipif(
+    not (is_spark_411_or_later() or dbr_183_unknown_type_annotation_semantics),
                     reason='SPARK-54220 requires Spark 4.1.1+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec')
@@ -2129,7 +2134,7 @@ def test_parquet_unknown_type_annotation_respect_nulltype(spark_tmp_path, reader
 
     # Spark 4.1.1 always maps UNKNOWN to NullType; 4.1.2+ needs the conf enabled.
     conf = reader_confs
-    if is_spark_412_or_later():
+    if unknown_type_annotation_412_semantics:
         conf = copy_and_update(reader_confs, {
             'spark.sql.parquet.reader.respectUnknownTypeAnnotation.enabled': 'true',
         })
@@ -2144,7 +2149,7 @@ def test_parquet_unknown_type_annotation_respect_nulltype(spark_tmp_path, reader
     assert_gpu_fallback_collect(read_and_check_schema, 'FileSourceScanExec', conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_explicit_int_schema(spark_tmp_path, reader_confs):
@@ -2169,7 +2174,7 @@ def test_parquet_unknown_type_annotation_explicit_int_schema(spark_tmp_path, rea
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_preserves_field_id(spark_tmp_path, reader_confs):
@@ -2193,7 +2198,7 @@ def test_parquet_unknown_type_annotation_preserves_field_id(spark_tmp_path, read
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_list_physical(spark_tmp_path, reader_confs):
@@ -2214,7 +2219,7 @@ def test_parquet_unknown_type_annotation_list_physical(spark_tmp_path, reader_co
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_map_physical(spark_tmp_path, reader_confs):

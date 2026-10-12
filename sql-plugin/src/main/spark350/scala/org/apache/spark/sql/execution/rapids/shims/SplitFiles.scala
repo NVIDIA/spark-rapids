@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+
 /*** spark-rapids-shim-json-lines
 {"spark": "350"}
 {"spark": "350db143"}
@@ -33,13 +34,13 @@
 {"spark": "402"}
 {"spark": "403"}
 {"spark": "404"}
+{"spark": "410db183"}
 {"spark": "411"}
 {"spark": "412"}
 {"spark": "413"}
 {"spark": "420"}
 {"spark": "500"}
 spark-rapids-shim-json-lines ***/
-
 package org.apache.spark.sql.execution.rapids.shims
 
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim

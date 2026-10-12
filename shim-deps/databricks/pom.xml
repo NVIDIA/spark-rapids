@@ -384,6 +384,30 @@
             </activation>
             <dependencies>
                 <dependency>
+                    <groupId>org.apache.spark</groupId>
+                    <artifactId>spark-common-utils-java_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.databricks</groupId>
+                    <artifactId>sql-history-prediction-proto_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.databricks</groupId>
+                    <artifactId>grpc-shaded-scalapb-runtime_${scala.binary.version}</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.databricks</groupId>
+                    <artifactId>grpc-shaded-protobuf-java</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+                <dependency>
                     <groupId>org.apache.orc</groupId>
                     <artifactId>orc-format</artifactId>
                     <version>${spark.version}</version>

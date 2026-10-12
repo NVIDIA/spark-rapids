@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids
 
-import java.net.URL
+import java.net.{URI, URL}
 
 import scala.collection.JavaConverters.enumerationAsScalaIteratorConverter
 import scala.util.Try
@@ -64,10 +64,10 @@ object ShimLoader {
     val url = getClass.getClassLoader.getResource(thisClassFile)
     val urlStr = url.toString
     val rootUrlStr = urlStr.substring(0, urlStr.length - thisClassFile.length)
-    new URL(rootUrlStr)
+    URI.create(rootUrlStr).toURL
   }
 
-  private val shimCommonURL = new URL(s"${shimRootURL.toString}spark-shared/")
+  private val shimCommonURL = URI.create(s"${shimRootURL.toString}spark-shared/").toURL
   @volatile private var shimProviderClass: String = _
   @volatile private var shimProvider: SparkShimServiceProvider = _
   @volatile private var shimURL: URL = _
@@ -246,7 +246,7 @@ object ShimLoader {
     val (matchingProviders, restProviders) = serviceProviderList.flatMap { shimServiceProviderStr =>
       val mask = shimIdFromPackageName(shimServiceProviderStr)
       try {
-        val shimURL = new java.net.URL(s"${shimRootURL.toString}$mask/")
+        val shimURL = URI.create(s"${shimRootURL.toString}$mask/").toURL
         val shimClassLoader = new MutableURLClassLoader(Array(shimURL, shimCommonURL),
           thisClassLoader)
         val shimClass = Try[java.lang.Class[_]] {
