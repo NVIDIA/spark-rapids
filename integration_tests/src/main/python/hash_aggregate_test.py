@@ -1761,13 +1761,30 @@ def test_exact_percentile_descending_fallback():
             """),
         'Percentile')
 
-@allow_non_gpu(*_exact_percentile_fallback_classes)
-def test_exact_percentile_null_frequency_fallback():
-    assert_gpu_fallback_collect(
-        lambda spark: spark.createDataFrame(
-            [(10.0, 1), (20.0, None)], 'val double, freq long')
-        .selectExpr('percentile(val, 0.5, freq)'),
-        'Percentile')
+def test_exact_percentile_null_frequency():
+    data = [(10.0, 1), (20.0, None), (None, -1), (30.0, 0)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data, 'val double, freq long')
+        .selectExpr(
+            'percentile(val, 0.5, freq)',
+            'percentile(val, array(0.0, 0.5, 1.0), freq)'))
+
+@ignore_order(local=True)
+def test_exact_percentile_null_frequency_groupby():
+    data = [
+        (0, 10.0, 1), (0, 20.0, None), (0, None, -1), (0, 30.0, 0),
+        (1, 40.0, None), (1, None, -1),
+        (2, 50.0, 2), (2, 70.0, 1), (2, None, 1)]
+    schema = StructType([
+        StructField('key', IntegerType(), nullable=False),
+        StructField('val', DoubleType(), nullable=True),
+        StructField('freq', LongType(), nullable=True)])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data, schema)
+        .groupby('key')
+        .agg(
+            f.expr('percentile(val, 0.5, freq)'),
+            f.expr('percentile(val, array(0.0, 0.5, 1.0), freq)')))
 
 exact_percentile_reduction_cpu_fallback_data_gen = [
     [('val', data_gen),
