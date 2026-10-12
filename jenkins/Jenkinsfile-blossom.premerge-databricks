@@ -121,9 +121,7 @@ pipeline {
                                 container('cpu') {
                                     try {
                                         unstash('source_tree')
-                                        databricksFallback(this, DbUtils,
-                                            { -> readJSON(returnPojo: true, text: sh(returnStdout: true,
-                                                script: 'python3 jenkins/databricks/fallback-config.py')) },
+                                        load('jenkins/databricks/fallback.groovy').run(this, DbUtils,
                                             { clusterId -> databricksBuild(clusterId) },
                                             { clusterId -> databricksTest(clusterId) })
                                     } catch (e) {

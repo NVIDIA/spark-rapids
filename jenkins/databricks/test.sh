@@ -81,7 +81,7 @@ fi
 
 WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 
-# CI-only hook installed and supplied by the Jenkins shared library, not a local prerequisite.
+# CI-only hook installed by fallback.groovy, not a prerequisite for local build/test commands.
 # Leave SPARK_STARTUP_CHECK unset for local usage; ordinary callers keep their existing behavior.
 if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
     bash "$SPARK_STARTUP_CHECK" databricks
