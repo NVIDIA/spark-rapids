@@ -15,6 +15,7 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "410db183"}
 {"spark": "411"}
 {"spark": "412"}
 {"spark": "413"}
@@ -23,17 +24,9 @@
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.catalyst.plans.logical.MergeRows.{Copy, Delete, Insert, Keep, Update}
-import org.apache.spark.sql.execution.datasources.v2.GpuMergeRowsExec
-
 /**
- * Map Spark 4.1+ Keep.context onto GpuKeep action tags used for MergeSummary metrics.
+ * Spark 4.1+ forwards MergeSummary via BatchWrite.commit(messages, summary).
  */
-object GpuMergeRowsKeepShims {
-  def actionOf(keep: Keep): String = keep.context match {
-    case Copy => GpuMergeRowsExec.ACTION_COPY
-    case Insert => GpuMergeRowsExec.ACTION_INSERT
-    case Update => GpuMergeRowsExec.ACTION_UPDATE
-    case Delete => GpuMergeRowsExec.ACTION_DELETE
-  }
+object GpuMergeRowMetricsShims {
+  val writeSummaryEnabled: Boolean = true
 }

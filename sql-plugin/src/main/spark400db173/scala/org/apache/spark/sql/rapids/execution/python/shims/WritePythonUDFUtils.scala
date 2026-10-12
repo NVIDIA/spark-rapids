@@ -31,19 +31,16 @@ object WritePythonUDFUtils {
       funcs: Seq[(ChainedPythonFunctions, Long)],
       argOffsets: Array[Array[Int]],
       argNames: Option[Array[Array[Option[String]]]] = None,
-      profiler: Option[String] = None): Unit = {
-    // spark.sql.pyspark.udf.logging.maxEntries (default 0 = no logs collected)
-    // spark.sql.pyspark.udf.logging.logLevel (default "WARNING")
-    val udfLogMaxEntries = 0
-    val udfLogLevel = "WARNING"
-    
+      profiler: Option[String] = None,
+      udfLogMaxEntries: Int = 0,
+      udfLogLevel: String = "WARNING"): Unit = {
     if (argNames.isDefined) {
       val argMetas = argOffsets.zip(argNames.get).map { case (idxs, names) =>
         idxs.zip(names).map { case (idx, name) =>
           ArgumentMetadata(idx, name)
         }
       }
-      PythonUDFRunner.writeUDFs(dataOut, funcs, argMetas, profiler, 
+      PythonUDFRunner.writeUDFs(dataOut, funcs, argMetas, profiler,
         udfLogMaxEntries, udfLogLevel)
     } else {
       PythonUDFRunner.writeUDFs(dataOut, funcs, argOffsets, profiler,

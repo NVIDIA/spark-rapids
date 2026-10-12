@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 /*** spark-rapids-shim-json-lines
+{"spark": "410db183"}
 {"spark": "411"}
 {"spark": "412"}
 {"spark": "413"}

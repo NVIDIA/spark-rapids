@@ -15,17 +15,26 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "410db183"}
 {"spark": "411"}
 {"spark": "412"}
 {"spark": "413"}
 {"spark": "420"}
-{"spark": "500"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
+import org.apache.spark.sql.connector.write.{BatchWrite, WriterCommitMessage, WriteSummary}
+
 /**
- * Spark 4.1+ forwards MergeSummary via BatchWrite.commit(messages, summary).
+ * Forward [[BatchWrite.commit]] with a [[WriteSummary]] to the CPU delegate.
+ *
+ * Without this override, the default interface method calls `commit(messages)` and drops the
+ * summary, so Iceberg/Delta commit metadata would miss DML metrics on the GPU path.
  */
-object GpuMergeRowMetricsShims {
-  val writeSummaryEnabled: Boolean = true
+trait GpuV2BatchWriteSummaryCommit { this: BatchWrite =>
+  protected def summaryCommitDelegate: BatchWrite
+
+  override def commit(messages: Array[WriterCommitMessage], summary: WriteSummary): Unit = {
+    summaryCommitDelegate.commit(messages, summary)
+  }
 }

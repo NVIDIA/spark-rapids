@@ -38,6 +38,8 @@ case class GpuGroupedPythonRunnerFactory(
   private val arrowBatchSlicingEnabled = conf.pythonArrowBatchSlicingEnabled
   private val sessionLocalTimeZone = conf.sessionLocalTimeZone
   private val pythonRunnerConf = ArrowUtilsShim.getPythonRunnerConfMap(conf)
+  private val udfLogMaxEntries = conf.pythonUdfLogMaxEntries
+  private val udfLogLevel = conf.pythonUdfLogLevel
 
   def getRunner(): GpuBasePythonRunner[ColumnarBatch] with GpuArrowOutput = {
     if (GpuGroupedPythonRunnerFactory.shouldUseGroupUdfRunner(
@@ -51,7 +53,9 @@ case class GpuGroupedPythonRunnerFactory(
         pythonRunnerConf,
         Int.MaxValue,
         pythonOutputSchema,
-        argNames)
+        argNames,
+        udfLogMaxEntries,
+        udfLogLevel)
     } else {
       new GpuWindowArrowPythonRunner(
         chainedFunc,
@@ -62,7 +66,9 @@ case class GpuGroupedPythonRunnerFactory(
         pythonRunnerConf,
         Int.MaxValue,
         pythonOutputSchema,
-        argNames)
+        argNames,
+        udfLogMaxEntries,
+        udfLogLevel)
     }
   }
 }

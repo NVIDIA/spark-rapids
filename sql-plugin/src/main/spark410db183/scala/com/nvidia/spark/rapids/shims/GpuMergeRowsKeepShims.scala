@@ -15,25 +15,26 @@
  */
 
 /*** spark-rapids-shim-json-lines
+{"spark": "410db183"}
 {"spark": "411"}
 {"spark": "412"}
 {"spark": "413"}
 {"spark": "420"}
+{"spark": "500"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
-import org.apache.spark.sql.connector.write.{BatchWrite, WriterCommitMessage, WriteSummary}
+import org.apache.spark.sql.catalyst.plans.logical.MergeRows.{Copy, Delete, Insert, Keep, Update}
+import org.apache.spark.sql.execution.datasources.v2.GpuMergeRowsExec
 
 /**
- * Forward [[BatchWrite.commit]] with a [[WriteSummary]] to the CPU delegate.
- *
- * Without this override, the default interface method calls `commit(messages)` and drops the
- * summary, so Iceberg/Delta commit metadata would miss DML metrics on the GPU path.
+ * Map Spark 4.1+ Keep.context onto GpuKeep action tags used for MergeSummary metrics.
  */
-trait GpuV2BatchWriteSummaryCommit { this: BatchWrite =>
-  protected def summaryCommitDelegate: BatchWrite
-
-  override def commit(messages: Array[WriterCommitMessage], summary: WriteSummary): Unit = {
-    summaryCommitDelegate.commit(messages, summary)
+object GpuMergeRowsKeepShims {
+  def actionOf(keep: Keep): String = keep.context match {
+    case Copy => GpuMergeRowsExec.ACTION_COPY
+    case Insert => GpuMergeRowsExec.ACTION_INSERT
+    case Update => GpuMergeRowsExec.ACTION_UPDATE
+    case Delete => GpuMergeRowsExec.ACTION_DELETE
   }
 }

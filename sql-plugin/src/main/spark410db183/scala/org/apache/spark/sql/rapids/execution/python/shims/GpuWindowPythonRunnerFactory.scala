@@ -50,7 +50,9 @@ object GpuWindowPythonRunnerFactory {
       conf: Map[String, String],
       batchSize: Long,
       pythonOutSchema: StructType,
-      argNames: Option[Array[Array[Option[String]]]]
+      argNames: Option[Array[Array[Option[String]]]],
+      udfLogMaxEntries: Int = 0,
+      udfLogLevel: String = "WARNING"
   ): GpuBasePythonRunner[ColumnarBatch] with GpuArrowOutput = {
     new GpuWindowArrowPythonRunner(
       funcs,
@@ -61,6 +63,8 @@ object GpuWindowPythonRunnerFactory {
       conf,
       batchSize,
       pythonOutSchema,
-      argNames)
+      argNames,
+      udfLogMaxEntries,
+      udfLogLevel)
   }
 }
