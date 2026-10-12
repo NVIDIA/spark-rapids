@@ -374,6 +374,23 @@
                 </dependency>
             </dependencies>
         </profile>
+        <profile>
+            <id>release410db183</id>
+            <activation>
+                <property>
+                    <name>buildver</name>
+                    <value>410db183</value>
+                </property>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>org.apache.orc</groupId>
+                    <artifactId>orc-format</artifactId>
+                    <version>${spark.version}</version>
+                    <scope>compile</scope>
+                </dependency>
+            </dependencies>
+        </profile>
         --><!-- #endif scala-2.13 -->
     </profiles>
 </project>

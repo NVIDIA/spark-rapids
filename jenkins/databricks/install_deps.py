@@ -33,6 +33,7 @@ def define_deps(spark_version, scala_version):
     hive_version = "2.3"
     spark_prefix = '----workspace'
     mvn_prefix = '--maven-trees'
+    is_spark_4_x = spark_version.startswith('4.')
 
     if spark_version.startswith('3.2'):
         spark_prefix = '----workspace_spark_3_2'
@@ -48,8 +49,11 @@ def define_deps(spark_version, scala_version):
     elif spark_version.startswith('4.0'):
         spark_prefix = '----ws_4_0'
         mvn_prefix = '--mvn'
+    elif spark_version.startswith('4.1'):
+        spark_prefix = '----ws_4_1'
+        mvn_prefix = '--mvn'
     else:
-        raise Exception(f"Unsupported Databricks version {spark.version}")
+        raise Exception(f"Unsupported Databricks Spark version {spark_version}")
 
     spark_suffix = f'hive-{hive_version}__hadoop-{hadoop_version}_{scala_version}'
 
@@ -88,8 +92,8 @@ def define_deps(spark_version, scala_version):
         Artifact('org.apache.hive', 'hive-exec',
                          f'{spark_prefix}--patched-hive-with-glue--hive-exec*.jar'),
     ]
-    # hive-metastore-client-patched has different naming pattern in Spark 4.0
-    if spark_version.startswith('4.0'):
+    # hive-metastore-client-patched has a different naming pattern in Spark 4.x
+    if is_spark_4_x:
         # Spark 4.0: the patch jar uses scala 2.13
         deps += [Artifact('org.apache.hive', 'hive-metastore-client-patched',
                  f'{spark_prefix}--patched-hive-with-glue--hive-*-patch-hive-2.3__hadoop-3.2_2.*.jar')]
@@ -159,7 +163,7 @@ def define_deps(spark_version, scala_version):
     ]
 
     # spark-avro has different locations depending on Spark version
-    if spark_version.startswith('4.0'):
+    if is_spark_4_x:
         deps += [Artifact('org.apache.spark', f'spark-avro_{scala_version}',
                  f'{spark_prefix}--connector--avro--avro-{spark_suffix}_*.jar')]
     elif spark_version.startswith('3.5'):
@@ -170,7 +174,7 @@ def define_deps(spark_version, scala_version):
                  f'{spark_prefix}--vendor--avro--avro-*.jar')]
 
     # Parquet
-    if spark_version.startswith('3.4') or spark_version.startswith('3.5') or spark_version.startswith('4.0'):
+    if spark_version.startswith('3.4') or spark_version.startswith('3.5') or is_spark_4_x:
         deps += [
         Artifact('org.apache.parquet', 'parquet-hadoop',
              f'{spark_prefix}--third_party--parquet-mr--parquet-hadoop--parquet-hadoop-shaded--*--libparquet-hadoop-internal.jar'),
@@ -199,7 +203,7 @@ def define_deps(spark_version, scala_version):
 
 
     # log4j-core
-    if spark_version.startswith('3.3') or spark_version.startswith('3.4') or spark_version.startswith('3.5') or spark_version.startswith('4.0'):
+    if spark_version.startswith('3.3') or spark_version.startswith('3.4') or spark_version.startswith('3.5') or is_spark_4_x:
         deps += Artifact('org.apache.logging.log4j', 'log4j-core',
                          f'{prefix_ws_sp_mvn_hadoop}--org.apache.logging.log4j--log4j-core--org.apache.logging.log4j__log4j-core__*.jar'),
 
@@ -209,7 +213,7 @@ def define_deps(spark_version, scala_version):
                  f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-parser-combinators_{scala_version}-*.jar')
     ]
 
-    if spark_version.startswith('3.4') or spark_version.startswith('3.5') or spark_version.startswith('4.0'):
+    if spark_version.startswith('3.4') or spark_version.startswith('3.5') or is_spark_4_x:
         deps += [
         # Spark Internal Logging
         Artifact('org.apache.spark', f'spark-common-utils_{scala_version}', f'{spark_prefix}--common--utils--common-utils-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar'),
@@ -217,15 +221,15 @@ def define_deps(spark_version, scala_version):
         Artifact('org.apache.spark', f'spark-sql-api_{scala_version}', f'{spark_prefix}--sql--api--sql-api-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar')
         ]
 
-    if spark_version.startswith('3.5') or spark_version.startswith('4.0'):
+    if spark_version.startswith('3.5') or is_spark_4_x:
         deps += [
         Artifact('org.scala-lang.modules', f'scala-collection-compat_{scala_version}',
              f'{prefix_ws_sp_mvn_hadoop}--org.scala-lang.modules--scala-collection-compat_{scala_version}--org.scala-lang.modules__scala-collection-compat_{scala_version}__2.11.0.jar'), 
         Artifact('org.apache.avro', f'avro-connector', f'{spark_prefix}--connector--avro--avro-hive-2.3__hadoop-3.2_{scala_version}_shaded--*--avro-unshaded-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar')
         ]
 
-    # Databricks 17.3 (Spark 4.0) requires additional common-utils JARs
-    if spark_version.startswith('4.0'):
+    # Databricks Spark 4.x requires additional common-utils JARs
+    if is_spark_4_x:
         deps += [
         # Logging class is in common-utils-other
         Artifact('org.apache.spark', f'spark-common-utils-other_{scala_version}', f'{spark_prefix}--common--utils--common-utils-other-hive-2.3__hadoop-3.2_{scala_version}_deploy.jar'),
