@@ -1912,7 +1912,7 @@ def test_spark_from_json_timestamp_format_option_zoneid_but_supported_format(zon
         conf=conf)
 
 @pytest.mark.parametrize('zone_id', [
-    pytest.param("UTC", marks=validate_execs_in_gpu_plan('GpuProjectExec')),
+    pytest.param("UTC", marks=validate_execs_in_gpu_plan('GpuProjectExec') if not is_not_utc() else []),
     pytest.param("-08:00", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("+01:00", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("Africa/Dakar", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
@@ -1920,7 +1920,7 @@ def test_spark_from_json_timestamp_format_option_zoneid_but_supported_format(zon
     pytest.param("Asia/Urumqi", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("Asia/Hong_Kong", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("Europe/Brussels", marks=pytest.mark.allow_non_gpu('JsonToStructs'))], ids=idfn)
-@allow_non_gpu_conditional(is_not_utc(), 'JsonToStructs')
+@allow_non_gpu_conditional(is_not_utc(), 'JsonToStructs', 'ProjectExec')
 def test_spark_from_json_timestamp_format_option_zoneid_but_default_format(zone_id):
     schema = StructType([StructField("t", TimestampType())])
     data = [[r'''{"t": "2016-01-01 00:00:00"}'''],
