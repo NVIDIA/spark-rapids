@@ -93,6 +93,9 @@ class BounceBufferManager[T <: MemoryBuffer](
 
   private[this] val freeBufferMap = new util.BitSet(numBuffers)
 
+  // set by close, under this manager's monitor
+  private[this] var closed = false
+
   private[this] val rootBuffer = allocator(bufferSize * numBuffers)
 
   freeBufferMap.set(0, numBuffers)
@@ -125,6 +128,10 @@ class BounceBufferManager[T <: MemoryBuffer](
    * @return a sequence of `BounceBuffer`s, or empty if the request can't be satisfied
    */
   def acquireBuffersNonBlocking(possibleNumBuffers: Int): Seq[BounceBuffer] = synchronized {
+    if (closed) {
+      // the pool is freed, so nothing is handed out any more
+      return Seq.empty
+    }
     if (numFree < possibleNumBuffers) {
       // would block
       logTrace(s"$poolName at capacity. numFree: ${numFree}, " +
@@ -162,5 +169,8 @@ class BounceBufferManager[T <: MemoryBuffer](
    */
   def getRootBuffer(): MemoryBuffer = rootBuffer
 
-  override def close(): Unit = rootBuffer.close()
+  override def close(): Unit = synchronized {
+    closed = true
+    rootBuffer.close()
+  }
 }

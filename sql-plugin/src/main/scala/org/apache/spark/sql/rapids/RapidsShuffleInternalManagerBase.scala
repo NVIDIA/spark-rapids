@@ -1952,6 +1952,9 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
           catalog.getShuffleBufferHandle(tableId)
         }
 
+        override def isShuffleBufferRemoved(tableId: Int, handle: RapidsShuffleHandle): Boolean =
+          catalog.isShuffleBufferRemoved(tableId, handle.spillable)
+
         override def getShuffleBufferMetas(sbbId: ShuffleBlockBatchId): Seq[TableMeta] = {
           (sbbId.startReduceId to sbbId.endReduceId).flatMap(rid => {
             catalog.blockIdToMetas(ShuffleBlockId(sbbId.shuffleId, sbbId.mapId, rid))

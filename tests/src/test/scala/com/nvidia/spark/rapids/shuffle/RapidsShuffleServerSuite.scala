@@ -243,7 +243,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("when we fail to prepare a send, throw if nothing can be handled") {
+  test("when we fail to prepare a send, end the request if nothing can be handled") {
     val mockSendBuffer = mock[SendBounceBuffers]
     val mockDeviceBounceBuffer = mock[BounceBuffer]
     val mockDeviceMemoryBuffer = mock[DeviceMemoryBuffer]
@@ -297,23 +297,16 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       server.start()
 
       val bss = new BufferSendState(mockTransaction, mockSendBuffer, mockRequestHandler, null)
-      // if nothing else can be handled, we throw
-      assertThrows[IllegalStateException] {
-        try {
-          server.doHandleTransferRequest(Seq(bss))
-        } catch {
-          case e: Throwable =>
-            assertResult(1)(e.getSuppressed.length)
-            assertResult(ex)(e.getSuppressed()(0).getCause)
-            throw e
-        }
-      }
+      // if nothing else can be handled, the request ends rather than the send loop
+      server.doHandleTransferRequest(Seq(bss))
+      assertResult(Some(BufferSendState.Failed))(bss.endedWith)
 
       // since nothing could be handled, we don't try again
       verify(server, times(0)).addToContinueQueue(any())
 
-      // bounce buffers are freed
+      // bounce buffers are freed, and the request transaction is closed, once
       verify(mockSendBuffer, times(1)).close()
+      verify(mockTransaction, times(1)).close()
 
       verify(mockRequestHandler, times(1))
         .getShuffleHandle(ArgumentMatchers.eq(1))
