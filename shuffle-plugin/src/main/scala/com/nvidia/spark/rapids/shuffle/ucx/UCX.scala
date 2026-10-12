@@ -640,7 +640,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       // The task is queued, and the progress thread runs it on its next pass, so a failure to
       // wake the worker must not reach callers: they treat a throw from here as a task that was
       // never queued and will never call back.
-      val signalFailure = try {
+      try {
         withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
           // take up the worker object lock to protect against another `.close`
           synchronized {
@@ -649,11 +649,10 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
             }
           }
         }
-        None
       } catch {
-        case NonFatal(t) => Some(t)
+        // runs after the monitor is released
+        case NonFatal(t) => logWarning("Unable to signal the UCX worker", t)
       }
-      signalFailure.foreach(t => logWarning("Unable to signal the UCX worker", t))
     }
   }
 

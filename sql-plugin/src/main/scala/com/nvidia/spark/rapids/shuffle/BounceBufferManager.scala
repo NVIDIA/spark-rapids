@@ -62,8 +62,12 @@ case class SendBounceBuffers(
   }
 
   override def close(): Unit = {
-    deviceBounceBuffer.close()
-    hostBounceBuffer.foreach(_.close())
+    try {
+      deviceBounceBuffer.close()
+    } finally {
+      // returned even if returning the device buffer failed
+      hostBounceBuffer.foreach(_.close())
+    }
   }
 }
 

@@ -251,6 +251,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   bssExec.execute(() => {
     loopEntered = true
+    var exitFailure: Throwable = null
     try {
       while (started) {
         val bssToIssue = new ArrayBuffer[BufferSendState]()
@@ -307,9 +308,17 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           }
         }
       }
+    } catch {
+      case t: Throwable =>
+        exitFailure = t
+        throw t
     } finally {
       try {
         endQueuedOnExit()
+      } catch {
+        // keep the error the loop is exiting with, which a drain failure would replace
+        case t: Throwable if exitFailure != null && (t ne exitFailure) =>
+          exitFailure.addSuppressed(t)
       } finally {
         loopExited.countDown()
       }
@@ -655,7 +664,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         addToContinueQueue(statesToRetry).foreach(_.finish(BufferSendState.ServerClosed))
       }
     } catch {
-      case NonFatal(t) =>
+      // a raw interruption comes from the OOM backoff's sleep
+      case t if NonFatal(t) || t.isInstanceOf[InterruptedException] =>
         // Failures while cleaning up are kept with the one that started it, so that a fatal
         // CUDA error or an interruption among them still ends the loop below.
         def keep(e: Throwable): Unit = if (e ne t) t.addSuppressed(e)
