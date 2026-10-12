@@ -21,7 +21,7 @@
  *
  */
 
-@Library('blossom-lib@databricks-premerge-fallback')
+@Library('blossom-lib@main')
 @Library('blossom-github-lib@master')
 
 import ipp.blossom.*

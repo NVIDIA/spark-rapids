@@ -1,9 +1,9 @@
 # Databricks premerge validation
 
 This draft tests provider fallback through
-`@Library('blossom-lib@databricks-premerge-fallback')` in the Databricks child
-Jenkinsfile. The fallback implementation is supplied by that shared-library ref,
-not stored in this repository. There is no `DATABRICKS_CI_MODE` parameter.
+`@Library('blossom-lib@main')` in the Databricks child Jenkinsfile. The shared-library
+change has merged; its implementation is not stored in this repository. There is
+no `DATABRICKS_CI_MODE` parameter.
 
 ## Manual validation
 
@@ -17,13 +17,16 @@ not stored in this repository. There is no `DATABRICKS_CI_MODE` parameter.
    is still selected by the existing `DATABRICKS_TYPE` job setting (`aws` or
    `azure3`). A classified preparation or Spark-readiness failure can switch to
    the other profile once, after confirmed cluster termination.
-4. Inspect the per-attempt `databricks-attempt-*.json` diagnostics. A successful
-   first attempt does not validate the provider-fallback path.
+4. Inspect the per-attempt `databricks-attempt-*.json` diagnostics. Filenames
+   include the child build number; state is bound to the build, runtime, provider
+   and workspace. A successful first attempt does not validate the fallback path.
 
 The shared library supplies `SPARK_STARTUP_CHECK` through the existing `EXTRA_ENVS`.
 After environment setup, it runs a plugin-free Spark job on the Databricks runtime.
 CI_PART1 also checks the upstream Spark local-cluster launch used by the two-shim
 smoke test. These checks run before product tests, with a ten-minute limit each.
+The merged library also verifies that a successful test callback left a successful
+readiness result. Missing or malformed results cannot silently skip readiness.
 
 Compilation and product-test failures never trigger fallback. A failed readiness
 check needs concrete infrastructure evidence, such as a disk-full/disk-I/O error
@@ -42,7 +45,7 @@ The runtime matrix and test selection are unchanged. Independent builds resolve
 Maven SNAPSHOT dependencies separately, so identical source SHAs do not guarantee
 identical dependency bytes. CI duration and resource usage need live validation.
 
-The temporary library ref must not be merged as a permanent dependency. Before
-marking ready, validate the shared-library change and adopt its approved ref.
-To stop testing, use the pre-pilot Jenkinsfiles again; changing only the library
-ref is insufficient because the revised child calls the new shared-library step.
+The consumer now uses the merged library main branch. Before marking ready,
+complete live Jenkins/CPS and Databricks validation. To stop testing, use the
+pre-pilot Jenkinsfiles again; reverting only the library is insufficient because
+the revised child calls the new shared-library step.
