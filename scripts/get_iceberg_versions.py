@@ -186,6 +186,14 @@ class IcebergVersionMatrix:
         return cls(iceberg_supports)
 
     def supported_iceberg_versions(self, spark_version):
+        # Spark master can use a snapshot in a family with no Iceberg integration.
+        # Preserve the callers' skip for that family without treating snapshots
+        # in covered families as their corresponding releases or silently skipping them.
+        if isinstance(spark_version, str) and spark_version.endswith("-SNAPSHOT"):
+            _version_tuple(spark_version[:-len("-SNAPSHOT")])
+            if not any(_spark_family(spark_version) in support.spark_minor_to_patch
+                       for support in self.iceberg_supports):
+                return []
         _version_tuple(spark_version)
         return [
             iceberg_support.version

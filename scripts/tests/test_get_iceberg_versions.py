@@ -133,6 +133,28 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
                 self.assertIn(f"No Iceberg versions selected for Spark {spark_version}", stderr)
                 self.assertIn("minimum-baseline and packaging test policy", stderr)
 
+    def test_cli_skips_snapshot_without_iceberg_family(self):
+        exit_code, stdout, stderr = self._run_cli("--spark-version", "5.0.0-SNAPSHOT")
+        self.assertEqual(0, exit_code)
+        self.assertEqual("\n", stdout)
+        self.assertIn("No Iceberg versions selected for Spark 5.0.0-SNAPSHOT", stderr)
+
+    def test_cli_rejects_snapshot_in_matrix_family(self):
+        # Do not silently skip or select the corresponding release for a family
+        # whose Iceberg coverage is defined by the matrix.
+        exit_code, stdout, stderr = self._run_cli("--spark-version", "3.5.6-SNAPSHOT")
+        self.assertEqual(1, exit_code)
+        self.assertEqual("", stdout)
+        self.assertIn("invalid version", stderr)
+
+    def test_cli_rejects_malformed_snapshot_versions(self):
+        for spark_version in ("5.0-SNAPSHOT", "5.0.0-SNAPSHOT-SNAPSHOT", "5.0.0-preview"):
+            with self.subTest(spark=spark_version):
+                exit_code, stdout, stderr = self._run_cli("--spark-version", spark_version)
+                self.assertEqual(1, exit_code)
+                self.assertEqual("", stdout)
+                self.assertIn("invalid version", stderr)
+
     def test_cli_validates_requested_versions(self):
         exit_code, stdout, stderr = self._run_cli(
             "--spark-version", "3.5.6", "--requested-versions", "1.10.1, 1.9.2")

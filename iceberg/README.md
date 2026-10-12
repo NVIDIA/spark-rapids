@@ -46,11 +46,15 @@ Consequently, the following exclusions are intentional:
 | 3.5.4 | None | Packaged Iceberg 1.9.2 and 1.10.1 have 3.5.5 and 3.5.6 test baselines. |
 | 3.5.5 | Iceberg 1.9.2 | Packaged Iceberg 1.10.1 has a 3.5.6 test baseline. |
 | 4.2.0 | None | The release profile uses the Iceberg stub, and the matrix has no 4.2 baseline. |
+| 5.0.0-SNAPSHOT | None | The Spark master profile uses the Iceberg stub, and the matrix has no 5.0 baseline. |
 
 An empty selection succeeds and reports the test policy in the CLI diagnostic and CI skip
 message. Missing matrix entries for shims at or above a baseline are validation errors,
 so the callers fail instead of silently skipping those tests. Explicitly requested Iceberg
 versions must also satisfy the baseline and packaging policy.
+Well-formed Spark snapshots in families absent from the matrix also produce an empty
+selection. Snapshots in families covered by the matrix fail validation instead of being
+treated as their corresponding releases or silently skipped.
 
 For Spark 3.5.4+, both `iceberg-1-9-x` and `iceberg-1-10-x` modules are compiled into the
 build. The correct version-specific implementation is
