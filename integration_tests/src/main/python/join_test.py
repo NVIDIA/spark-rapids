@@ -22,7 +22,7 @@ from asserts import (assert_gpu_and_cpu_are_equal_collect, assert_gpu_and_cpu_ro
                      collect_plan_nodes)
 from conftest import is_dataproc_runtime, is_dataproc_serverless_runtime, is_emr_runtime
 from data_gen import *
-from marks import (allow_non_gpu, disable_ansi_mode, ignore_order, incompat,
+from marks import (allow_non_gpu, disable_ansi_mode, ignore_order, incompat, shuffle_test,
                    validate_execs_in_gpu_plan)
 from spark_session import (with_cpu_session, is_databricks_runtime, is_spark_400_or_later,
                            is_spark_411_or_later, spark_version)
@@ -1099,6 +1099,24 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
     assert_gpu_and_cpu_are_equal_collect(do_join, {
         'spark.sql.autoBroadcastJoinThreshold': '1',
     })
+
+# A null-safe equality with a literal leaves one side of the join with no columns. With the
+# exchange of that side on the GPU, its rows-only batches are hash partitioned there. A bigint
+# key sends them to partition 1 of 4, not 0, and partitions stay uncoalesced so a wrong partition
+# loses matches. Full outer joins, and left outer joins over a much larger build side, still
+# fail later, in the hash join itself.
+@shuffle_test
+@ignore_order(local=True)
+@pytest.mark.parametrize('join_type', ['LeftOuter', 'LeftAnti'], ids=idfn)
+def test_null_safe_literal_key_join_rows_only_exchange(join_type):
+    def do_join(spark):
+        left = spark.range(0, 30).selectExpr('CAST(id % 3 AS BIGINT) AS a')
+        right = gen_df(spark, [('b', int_gen)], length=5000)
+        return left.join(right, left.a.eqNullSafe(lit(1)), join_type).select(left.a)
+    assert_gpu_and_cpu_are_equal_collect(do_join, conf={
+        'spark.sql.autoBroadcastJoinThreshold': '-1',
+        'spark.sql.adaptive.autoBroadcastJoinThreshold': '-1',
+        'spark.sql.adaptive.coalescePartitions.enabled': 'false'})
 
 # A null-safe equality with a literal leaves the build side with no columns, which reaches the
 # hash joins as several rows-only batches. A GPU exchange of that side fails earlier, so the
