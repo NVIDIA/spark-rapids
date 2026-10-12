@@ -582,7 +582,7 @@ def test_delta_rest_direct_catalog_provider_tags_ctas_and_rtas(unity_catalog_ser
 
 @delta_lake
 @unity_catalog
-def test_delta_rest_direct_catalog_non_delta_default_stays_on_cpu():
+def test_delta_rest_direct_catalog_non_delta_provider_stays_on_cpu():
     def check(spark):
         catalog_session = spark._jsparkSession.newSession()
         catalog_session.conf().set("spark.sql.sources.default", "parquet")
@@ -598,10 +598,12 @@ def test_delta_rest_direct_catalog_non_delta_default_stays_on_cpu():
         assert catalog_session.conf().get("spark.sql.sources.default") == "parquet"
         shim = spark_jvm().org.apache.spark.sql.delta.catalog.DeltaCatalogRestApiShim
         assert not shim.isRestApiEnabled(catalog)
-        for replace in (False, True):
-            reason = _tag_direct_delta_catalog_write(
-                spark, catalog, replace=replace, provider=None)
-            assert "non-Delta catalog writes must run on CPU" in reason, reason
+        for default_provider, provider in (("parquet", None), ("delta", "parquet")):
+            catalog_session.conf().set("spark.sql.sources.default", default_provider)
+            for replace in (False, True):
+                reason = _tag_direct_delta_catalog_write(
+                    spark, catalog, replace=replace, provider=provider)
+                assert "non-Delta catalog writes must run on CPU" in reason, reason
 
     with_cpu_session(check, conf={"spark.sql.sources.default": "delta"})
 

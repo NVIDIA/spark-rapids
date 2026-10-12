@@ -209,12 +209,15 @@ object Delta43xProvider extends DeltaProviderBase with Logging {
       meta: AtomicReplaceTableAsSelectExecMeta): Unit = {
     super.tagForGpu(cpuExec, meta)
     if (!tagIfUnityCatalog(meta, cpuExec.catalog)) {
+      val deltaCatalog = cpuExec.catalog.asInstanceOf[DeltaCatalog]
       tagIfCatalogManagedReplace(
         meta,
-        cpuExec.catalog.asInstanceOf[DeltaCatalog],
+        deltaCatalog,
         cpuExec.ident,
         cpuExec.properties)
-      tagIfTargetTableUnsupported(meta, cpuExec)
+      if (isDeltaProvider(cpuExec.properties, deltaCatalog.spark)) {
+        tagIfTargetTableUnsupported(meta, cpuExec)
+      }
     }
     tagIfUnsupportedWriterFeatures(
       meta, cpuExec.properties, cpuExec.partitioning.nonEmpty, cpuExec.session)
