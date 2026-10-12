@@ -43,7 +43,8 @@ and both CI parts, a classified readiness failure followed by fallback, and a
 product-test failure that stops without fallback. No builds are triggered by the
 local validation procedure.
 
-The runtime matrix and test selection are unchanged. Independent builds resolve
+The runtime matrix is unchanged. Outside the temporary incident injections below,
+the product-test selection is unchanged. Independent builds resolve
 Maven SNAPSHOT dependencies separately, so identical source SHAs do not guarantee
 identical dependency bytes. CI duration and resource usage need live validation.
 
@@ -69,39 +70,44 @@ Before marking ready, remove the validation-only commit to restore ordinary stag
 selection and duplicate-run cancellation. Keep the merged-library adoption commit
 and normal fallback wiring.
 
-## Current Incidents: Four Parallel Cells
+## Current Incidents: No-Fallback Boundaries
 
-This separate, temporary test commit assigns a different incident to each of the
-four runtime/CI-part cells. Only the preferred profile selected by
-`DATABRICKS_TYPE` (`aws` by default) is affected. No case-selection job parameter
-is added; the alternate profile always runs the normal workload.
+This round replaces the preceding four positive fallback signals with four
+negative cases. Both runtime cells and both CI parts remain selected. Only the
+preferred profile selected by `DATABRICKS_TYPE` (`aws` by default) is affected;
+no case-selection job parameter is added.
 
-| Runtime | CI part | Synthetic incident | Expected reason |
+| Runtime | CI part | Synthetic incident | Expected evidence |
 | --- | --- | --- | --- |
-| 14.3 | CI_PART1 | SSH connection timed out | `SSH_UNREACHABLE` |
-| 14.3 | CI_PART2 | SSH connection refused | `SSH_UNREACHABLE` |
-| 17.3 | CI_PART1 | Spark startup disk full | `SPARK_STARTUP_DISK_FULL` |
-| 17.3 | CI_PART2 | Spark startup disk I/O error | `SPARK_STARTUP_DISK_IO` |
+| 14.3 | CI_PART1 | Build-command exit 42 | Build callback fails before compilation, outside startup classification |
+| 14.3 | CI_PART2 | Test-command exit 43 | Real Databricks readiness is `READY` before the test command fails |
+| 17.3 | CI_PART1 | Ambiguous Spark startup error | Readiness reason `SPARK_STARTUP_UNCLASSIFIED`, with no allowlisted cluster termination |
+| 17.3 | CI_PART2 | SSH authentication denied | Preparation reason `SSH_READINESS_FAILED` |
 
-The SSH wrapper intercepts only the preferred profile's `ssh ... true` readiness
-probe and returns the selected error with exit code 255. The library's real
-six-probe loop and classifier are unchanged. Other SSH commands use the real
-client. Spark cases substitute only the initial Databricks readiness probe's
-`spark-shell`; the real library readiness script writes and classifies its result.
-Builds are real, so a compilation failure prevents that Spark incident from being
-reached. The upstream readiness hook remains unmodified on successful attempts.
+All four cells and the overall run are expected to FAIL, with no alternate
+provider attempt. A red build alone is not sufficient: verify the assigned
+injection message, `retryable: false`, confirmed termination and
+`cleanup_complete: true` in the preferred attempt, and no second attempt in logs
+or archived JSON. The test/startup cases should retain the top-level classification
+`NOT_A_CLASSIFIED_SPARK_STARTUP_FAILURE`; the build case retains its prepared
+state because no startup classifier should run after a build error.
 
-These are synthetic failure signals, not real host/network/disk faults. No
-credentials, firewall rules, cluster state JSON or shared-library source are
-modified. The SSH wrapper returns immediately instead of reproducing elapsed
-network timeouts. Cluster creation and cleanup are real.
+The build/test command exits simulate failure propagation, not actual compiler
+or product defects. The test case requires a real build and successful plugin-free
+Databricks readiness first, then stops before product tests. The unknown-startup
+case also requires a real build; its replacement `spark-shell` emits only
+`Master removed our application: FAILED`, which is not infrastructure evidence.
+The real readiness script still writes and classifies the result. The SSH case
+returns `Permission denied (publickey)` with exit 255 for the preferred profile's
+readiness probe only; it does not change credentials or contact that SSH endpoint.
 
-For each cell, confirm the expected reason and `retryable: true`, then termination
-and `cleanup_complete: true` before the alternate starts. Confirm the alternate
-completes real builds, Spark readiness and product tests. Check archived attempt
-JSON and logs, not just the final build status. A different failure does not prove
-the assigned incident ran. Four cells can create up to eight clusters in total,
-with cleanup required before each cell allocates its alternate.
+No host, network, credentials, attempt-state JSON or shared-library source is
+modified. Cluster creation, readiness where applicable, classification and
+cleanup are real. Fail-fast remains disabled so a negative result in one cell
+does not cancel another. A genuine preparation/termination fault before or during
+the experiment can invalidate a case and must be distinguished from the injection.
 
-Remove this incident commit before another experiment or merging. Restore normal
-fail-fast behavior and direct readiness invocation, retaining the CI-only comments.
+The previous positive matrix remains available at commit `471d1408dc`.
+Reverting only this follow-up restores those positive injections, not production
+behavior. Before merging, remove all temporary incident code, restore normal
+fail-fast and direct readiness invocation, and retain the CI-only comments.

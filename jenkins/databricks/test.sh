@@ -86,7 +86,7 @@ WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
     # VALIDATION ONLY: substitute this probe's spark-shell; keep the real readiness script.
     case "${DB_FALLBACK_TEST_INCIDENT:-}" in
-        spark-disk-full|spark-disk-io)
+        spark-unclassified)
             chmod +x jenkins/databricks/fallback-validation/spark/bin/spark-shell
             SPARK_HOME="$PWD/jenkins/databricks/fallback-validation/spark" \
                 bash "$SPARK_STARTUP_CHECK" databricks
@@ -95,6 +95,11 @@ if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
             ;;
         *) bash "$SPARK_STARTUP_CHECK" databricks ;;
     esac
+    # VALIDATION ONLY: a test-command failure after successful readiness must not trigger fallback.
+    if [[ "${DB_FALLBACK_TEST_INCIDENT:-}" == test-failure ]]; then
+        echo 'VALIDATION ONLY: synthetic test-command failure after real Spark readiness' >&2
+        exit 43
+    fi
 fi
 
 IS_SPARK_321_OR_LATER=0

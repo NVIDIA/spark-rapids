@@ -17,14 +17,9 @@ set -euo pipefail
 
 # CI validation only: fail the preferred profile's readiness probe, not real hosts.
 if [[ -n "${DB_FALLBACK_TEST_PROFILE:-}" && "${DB_TYPE:-}" == "$DB_FALLBACK_TEST_PROFILE" &&
-      "${*: -1}" == true ]]; then
-    case "${DB_FALLBACK_TEST_INCIDENT:-}" in
-        ssh-timeout) failure='Connection timed out' ;;
-        ssh-refused) failure='Connection refused' ;;
-        *) exec /usr/bin/ssh "$@" ;;
-    esac
-    echo "VALIDATION ONLY: synthetic SSH failure: $failure" >&2
-    printf 'ssh: connect to host validation.invalid port 2200: %s\n' "$failure" >&2
+      "${DB_FALLBACK_TEST_INCIDENT:-}" == ssh-auth && "${*: -1}" == true ]]; then
+    echo 'VALIDATION ONLY: synthetic SSH authentication failure; credentials are unchanged' >&2
+    echo 'ubuntu@validation.invalid: Permission denied (publickey).' >&2
     exit 255
 fi
 

@@ -15,12 +15,11 @@
 
 set -euo pipefail
 
-# CI validation only: feed the real readiness classifier without damaging a disk.
-case "${DB_FALLBACK_TEST_INCIDENT:-}" in
-    spark-disk-full) failure='No space left on device' ;;
-    spark-disk-io) failure='Input/output error' ;;
-    *) echo 'No Spark startup incident assigned' >&2; exit 2 ;;
-esac
-echo "VALIDATION ONLY: synthetic Spark startup failure: $failure" >&2
-printf 'java.io.IOException: %s\n' "$failure" >&2
+# CI validation only: ambiguous Spark startup failure is not proof of an infrastructure fault.
+if [[ "${DB_FALLBACK_TEST_INCIDENT:-}" != spark-unclassified ]]; then
+    echo 'No Spark startup incident assigned' >&2
+    exit 2
+fi
+echo 'VALIDATION ONLY: synthetic unclassified Spark startup failure' >&2
+echo 'org.apache.spark.SparkException: Master removed our application: FAILED' >&2
 exit 42
