@@ -21,7 +21,7 @@
  *
  */
 
-@Library('blossom-lib@main')
+@Library('blossom-lib@databricks-explicit-config')
 @Library('blossom-github-lib@master')
 
 import ipp.blossom.*
@@ -122,6 +122,8 @@ pipeline {
                                     try {
                                         unstash('source_tree')
                                         databricksFallback(this, DbUtils,
+                                            { -> readJSON(returnPojo: true, text: sh(returnStdout: true,
+                                                script: 'python3 jenkins/databricks/fallback-config.py')) },
                                             { clusterId -> databricksBuild(clusterId) },
                                             { clusterId -> databricksTest(clusterId) })
                                     } catch (e) {
