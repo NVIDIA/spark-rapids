@@ -81,7 +81,8 @@ fi
 
 WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 
-# The premerge pilot supplies a shared-library readiness check; other callers are unchanged.
+# CI-only hook installed and supplied by the Jenkins shared library, not a local prerequisite.
+# Leave SPARK_STARTUP_CHECK unset for local usage; ordinary callers keep their existing behavior.
 if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
     bash "$SPARK_STARTUP_CHECK" databricks
 fi
@@ -144,6 +145,7 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             tar xf "/tmp/$JAR_FILE_NAME" -C $HOME
             rm -f "/tmp/$JAR_FILE_NAME"
         fi
+        # The same CI-only hook checks upstream Spark; local runs leave it unset.
         if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
             SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
                 bash "$SPARK_STARTUP_CHECK" upstream
