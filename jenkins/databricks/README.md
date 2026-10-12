@@ -49,3 +49,20 @@ The consumer now uses the merged library main branch. Before marking ready,
 complete live Jenkins/CPS and Databricks validation. To stop testing, use the
 pre-pilot Jenkinsfiles again; reverting only the library is insufficient because
 the revised child calls the new shared-library step.
+
+## Temporary Validation-Only Commit
+
+Do not merge the validation-only commit. The parent temporarily runs only the
+two Databricks CI parts, skipping Docker builds, Linux Maven/UT/Scala jobs and
+Skills stages before they allocate agents. Both Databricks runtime cells remain.
+Duplicate-run cancellation and its delay are disabled to allow overlapping runs
+of the same PR. Existing fail-fast behavior within each run is unchanged.
+
+There are no added case-selection parameters or fault-injection hooks. Individual
+test commits will be prepared separately when requested. Manual triggering remains
+with the operator. Check each Jenkins build independently; concurrent runs can
+overwrite the shared GitHub PR status.
+
+Before marking ready, remove the validation-only commit to restore ordinary stage
+selection and duplicate-run cancellation. Keep the merged-library adoption commit
+and normal fallback wiring.

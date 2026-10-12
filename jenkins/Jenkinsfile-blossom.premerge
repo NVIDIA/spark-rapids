@@ -97,14 +97,8 @@ pipeline {
                     githubHelper = GithubHelper.getInstance("${GITHUB_TOKEN}", params.GITHUB_DATA)
                     // desc contains the PR ID and can be accessed from different builds
                     currentBuild.description = githubHelper.getBuildDescription()
-                    try {
-                        // quiet period here in case the first build of two close dup triggers has not set desc
-                        sleep(time: 30, unit: "SECONDS")
-                        // abort duplicate running builds of the same PR (based on build desc)
-                        abortDupBuilds()
-                    } catch (e) { // do not block following build if abort failure
-                        echo "failed to try abort duplicate builds: " + e.toString()
-                    }
+                    // VALIDATION ONLY: allow concurrent runs of the same PR, without the quiet period.
+                    // abortDupBuilds()
 
                     def title = githubHelper.getIssue().title.toLowerCase()
                     def serialUt = title.contains('[serial ut]') ||
@@ -140,6 +134,13 @@ pipeline {
                             (normal_build && databricksTestNeeded())) {
                         db_build = true
                     }
+                    // VALIDATION ONLY: skip unrelated agents and builds; revert this commit before merging.
+                    normal_build = false
+                    skills_build = false
+                    TEMP_IMAGE_BUILD = false
+                    TEMP_SKILLS_IMAGE_BUILD = false
+                    db_build = true
+                    echo 'VALIDATION ONLY: running both Databricks CI parts; all other build stages disabled'
                 }
             }
         } // end of Init githubHelper
@@ -227,7 +228,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                 beforeAgent true
                 beforeOptions true
                 expression {
-                    !skipped && (normal_build || skills_build)
+                    !skipped && (normal_build || skills_build || db_build)
                 }
             }
             // Parallel run mvn verify (build and integration tests) and unit tests (for multiple Spark versions)
