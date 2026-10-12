@@ -16,7 +16,7 @@ import pytest
 from pyspark import BarrierTaskContext, TaskContext
 
 from conftest import is_at_least_precommit_run, is_databricks_runtime
-from spark_session import (is_before_spark_331, is_before_spark_350,
+from spark_session import (is_before_spark_331, is_before_spark_350, is_databricks_version,
                            is_spark_400_or_later,
                            is_spark_411_or_later, is_spark_420_or_later,
                            with_cpu_session)
