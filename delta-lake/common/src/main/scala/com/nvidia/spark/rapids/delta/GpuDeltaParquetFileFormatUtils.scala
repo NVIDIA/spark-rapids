@@ -46,7 +46,7 @@ object GpuDeltaParquetFileFormatUtils {
   val FILE_PATH_COL: String = "_metadata_file_path"
   val FILE_PATH_FIELD: StructField = StructField(FILE_PATH_COL, StringType, nullable = false)
 
-  /** Add the requested row-index metadata column to the iterator. */
+  /** Add row-index metadata and, when a deletion vector is supplied, deletion metadata. */
   def addMetadataColumnToIterator(
       schema: StructType,
       delVector: Option[Roaring64Bitmap],
@@ -56,7 +56,12 @@ object GpuDeltaParquetFileFormatUtils {
       metadataRowIndexColumnName: String = METADATA_ROW_IDX_COL
   ): Iterator[ColumnarBatch] = {
     val metadataRowIndexCol = schema.fieldNames.indexOf(metadataRowIndexColumnName)
-    val delRowIdx = schema.fieldNames.indexOf(METADATA_ROW_DEL_COL)
+    // Row-index-only discovery scans may contain a user column with the deletion-marker name.
+    val delRowIdx = if (delVector.isDefined) {
+      schema.fieldNames.indexOf(METADATA_ROW_DEL_COL)
+    } else {
+      -1
+    }
     if (metadataRowIndexCol == -1 && delRowIdx == -1) {
       return input
     }

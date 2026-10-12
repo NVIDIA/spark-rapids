@@ -28,6 +28,8 @@ delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                             "spark.rapids.sql.command.MergeIntoCommandEdge": "true",
                             "spark.rapids.sql.delta.lowShuffleMerge.enabled": "true",
                             "spark.rapids.sql.test.delta.lowShuffleMerge.failOnFallback": "true",
+                            # Record no-op CPU MERGEs so history contains counters to compare.
+                            "spark.databricks.delta.skipRecordingEmptyCommits": "false",
                             "spark.rapids.sql.format.parquet.reader.type": "PERFILE",
                             "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
                             "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled":
@@ -301,7 +303,8 @@ def test_delta_low_shuffle_merge_internal_column_names(
                  min_val=-1000000, max_val=1000000, nullable=False, special_cases=[])),
              ("_metadata_file_path", StringGen(
                  pattern="[a-z]{1,20}", nullable=False)),
-             ("__metadata_row_index", LongGen(nullable=False))])
+             ("__metadata_row_index", LongGen(nullable=False)),
+             ("__metadata_row_del", BooleanGen(nullable=False))])
 
     def src_table_func(spark):
         generated = dest_table_func(spark)
@@ -310,28 +313,30 @@ def test_delta_low_shuffle_merge_internal_column_names(
             "k", f.lit(True).alias("apply"),
             f.concat(f.lit("updated-"), "v").alias("v"),
             (f.col("_incr_metrics_") + 1).alias("_incr_metrics_"),
-            "_metadata_file_path", "__metadata_row_index")
+            "_metadata_file_path", "__metadata_row_index", "__metadata_row_del")
         ignored = matched.select(
             "k", f.lit(False).alias("apply"),
             f.concat(f.lit("ignored-"), "v").alias("v"),
             (f.col("_incr_metrics_") + 2).alias("_incr_metrics_"),
-            "_metadata_file_path", "__metadata_row_index")
+            "_metadata_file_path", "__metadata_row_index", "__metadata_row_del")
         inserted = generated.where(f.pmod("k", f.lit(4)) == 1).select(
             (f.col("k") + _INSERT_KEY_OFFSET).alias("k"),
             f.lit(True).alias("apply"),
             "v", "_incr_metrics_",
-            "_metadata_file_path", "__metadata_row_index")
+            "_metadata_file_path", "__metadata_row_index", "__metadata_row_del")
         return effective.unionByName(ignored).unionByName(inserted)
 
     merge_sql = ("MERGE INTO {dest_table} t USING {src_table} s ON t.k = s.k "
                  "AND t._metadata_file_path = s._metadata_file_path "
                  "AND t.__metadata_row_index = s.__metadata_row_index "
+                 "AND t.__metadata_row_del = s.__metadata_row_del "
                  "WHEN MATCHED AND s.apply THEN UPDATE SET "
-                 "t.v = s.v, t._incr_metrics_ = s._incr_metrics_ "
+                 "t.v = s.v, t._incr_metrics_ = s._incr_metrics_, "
+                 "t.__metadata_row_del = NOT s.__metadata_row_del "
                  "WHEN NOT MATCHED THEN INSERT (k, v, _incr_metrics_, "
-                 "_metadata_file_path, __metadata_row_index) "
+                 "_metadata_file_path, __metadata_row_index, __metadata_row_del) "
                  "VALUES (s.k, s.v, s._incr_metrics_, "
-                 "s._metadata_file_path, s.__metadata_row_index)")
+                 "s._metadata_file_path, s.__metadata_row_index, s.__metadata_row_del)")
     assert_delta_sql_merge_collect(
         spark_tmp_path, spark_tmp_table_factory,
         use_cdf=use_cdf, enable_deletion_vectors=False,
