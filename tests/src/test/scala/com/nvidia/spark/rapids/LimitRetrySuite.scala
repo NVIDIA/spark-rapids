@@ -102,7 +102,12 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
       (Seq(0, 7, 0), 5, 0),
       (Seq(0, 0), 5, 0),
       (Seq(1000), 5, 0),
-      (Seq(10, Int.MaxValue - 5), 10, 0) // the two inputs together pass Int.MaxValue rows
+      (Seq(10, Int.MaxValue - 5), 10, 0), // the two inputs together pass Int.MaxValue rows
+      // So do the most rows a limit of 2^30 keeps from each of two inputs.
+      (Seq(1 << 30, 1 << 30), 1 << 30, 0),
+      (Seq(1 << 30, 1 << 30), 1 << 30, 7),
+      // The largest limit Spark 3.5 plans as a top-k, under topKSortFallbackThreshold.
+      (Seq(Int.MaxValue, Int.MaxValue, Int.MaxValue), Int.MaxValue - 16, 0)
     ).foreach { case (rowCounts, limit, offset) =>
       val expected = math.max(0L, math.min(limit, rowCounts.map(_.toLong).sum) - offset).toInt
       assertResult(Seq((expected, 0)), s"rows $rowCounts, limit $limit, offset $offset")(
