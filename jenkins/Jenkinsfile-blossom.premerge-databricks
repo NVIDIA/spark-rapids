@@ -79,7 +79,7 @@ pipeline {
                     def title = githubHelper.getIssue().title.toLowerCase()
                     env.REDUCED_IT = (title ==~ /.*\[reduced-it\].*/).toString()
                     if (!(params.REF ==~ /[0-9a-f]{40}/)) {
-                        error 'Databricks pilot requires REF to be the same full commit SHA for both CI parts'
+                        error 'Databricks premerge requires REF to be the same full commit SHA for both CI parts'
                     }
                     checkoutCode(githubHelper.getCloneUrl(), params.REF)
                 }
@@ -87,7 +87,7 @@ pipeline {
         } // end of Init githubHelper
 
         stage('Databricks') {
-            // VALIDATION ONLY: collect both runtime outcomes even if one incident fails.
+            // VALIDATION ONLY: let both runtimes finish without cancelling a sibling on failure.
             failFast false
             matrix {
                 axes {
@@ -121,27 +121,9 @@ pipeline {
                                 container('cpu') {
                                     try {
                                         unstash('source_tree')
-                                        // VALIDATION ONLY: one fixed incident per runtime/CI part, preferred profile only.
-                                        def incident = [
-                                            '14.3/CI_PART1': 'build-failure',
-                                            '14.3/CI_PART2': 'test-failure',
-                                            '17.3/CI_PART1': 'spark-unclassified',
-                                            '17.3/CI_PART2': 'ssh-auth'
-                                        ]["${env.DB_RUNTIME}/${params.TEST_MODE}".toString()]
-                                        if (!incident) {
-                                            error 'No validation incident assigned to this runtime/CI part'
-                                        }
-                                        sh 'test -x /usr/bin/ssh && chmod +x jenkins/databricks/fallback-validation/ssh'
-                                        echo "VALIDATION ONLY: ${env.DB_RUNTIME}/${params.TEST_MODE}: $incident on ${env.DB_TYPE}"
-                                        withEnv([
-                                            "PATH+DB_FALLBACK_TEST=${pwd()}/jenkins/databricks/fallback-validation",
-                                            "DB_FALLBACK_TEST_PROFILE=${env.DB_TYPE}",
-                                            "DB_FALLBACK_TEST_INCIDENT=$incident"
-                                        ]) {
-                                            databricksFallback(this, DbUtils,
-                                                { clusterId -> databricksBuild(clusterId) },
-                                                { clusterId -> databricksTest(clusterId) })
-                                        }
+                                        databricksFallback(this, DbUtils,
+                                            { clusterId -> databricksBuild(clusterId) },
+                                            { clusterId -> databricksTest(clusterId) })
                                     } catch (e) {
                                         try {
                                             withCredentials([usernamePassword(
@@ -173,13 +155,6 @@ String getDbType() {
 void databricksBuild(String clusterId) {
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
     stage("Build against $SPARK_MAJOR DB") {
-        // VALIDATION ONLY: exercise build-error propagation without modifying product source.
-        if (env.DB_TYPE == env.DB_FALLBACK_TEST_PROFILE && env.DB_FALLBACK_TEST_INCIDENT == 'build-failure') {
-            sh '''
-                echo 'VALIDATION ONLY: synthetic build-command failure; no provider retry expected' >&2
-                exit 42
-            '''
-        }
         sh "rm -rf spark-rapids-ci.tgz"
         sh "tar -zcf spark-rapids-ci.tgz * .git"
         withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
@@ -195,12 +170,8 @@ void databricksTest(String clusterId) {
     try {
         stage("Test against $SPARK_MAJOR DB") {
             withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                // VALIDATION ONLY: never inject an incident into the alternate provider.
-                def incident = env.DB_TYPE == env.DB_FALLBACK_TEST_PROFILE ? env.DB_FALLBACK_TEST_INCIDENT : ''
-                withEnv(["EXTRA_ENVS=${env.EXTRA_ENVS},DB_FALLBACK_TEST_INCIDENT=$incident"]) {
-                    def TEST_PARAMS = DbUtils.getParameters(this, 'TEST', "-c $clusterId")
-                    sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
-                }
+                def TEST_PARAMS = DbUtils.getParameters(this, 'TEST', "-c $clusterId")
+                sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
             }
         }
     } finally {

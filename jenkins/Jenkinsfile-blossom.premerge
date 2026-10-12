@@ -231,7 +231,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     !skipped && (normal_build || skills_build || db_build)
                 }
             }
-            // VALIDATION ONLY: collect both CI-part outcomes even if one incident fails.
+            // VALIDATION ONLY: let both CI parts finish without cancelling a sibling on failure.
             failFast false
             parallel {
                 stage('Skills Premerge Test') {
