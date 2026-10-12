@@ -2157,11 +2157,19 @@ def test_delta_dv_read_user_native_row_index_name(spark_tmp_path):
     def read_table(spark):
         return spark.read.format("delta").load(path).select("_tmp_metadata_row_index", "k")
 
-    expected = with_cpu_session(lambda spark: read_table(spark).orderBy("k").collect(), conf=conf)
-    assert [(row[0], row[1]) for row in expected] == [(101, 1), (303, 3)]
-    assert_cpu_and_gpu_are_equal_collect_with_capture(
-        read_table, exist_classes="GpuFileSourceScanExec", conf=conf,
-        require_non_empty=True)
+    # DBR's CPU Delta scan uses this name for its synthetic row index, so compare the
+    # GPU scan with the known surviving rows from the fixture instead.
+    expected = [(101, 1), (303, 3)]
+
+    def read_gpu(spark):
+        df = read_table(spark).orderBy("k")
+        rows = df.collect()
+        spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback.assertContains(
+            df._jdf, "GpuFileSourceScanExec")
+        return rows
+
+    actual = with_gpu_session(read_gpu, conf=conf)
+    assert [(row[0], row[1]) for row in actual] == expected
 
 
 @allow_non_gpu_conditional(
