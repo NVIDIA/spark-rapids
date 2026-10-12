@@ -34,61 +34,17 @@ SPEC.loader.exec_module(MATRIX_READER)
 
 # Only the properties consumed by the loader are needed. Keep parser/selector tests
 # independent of the live release profiles, Spark shims, and Iceberg version pins.
-POM_FIXTURE = """<project xmlns="http://maven.apache.org/POM/4.0.0">
-  <properties>
-    <spark350.version>3.5.0</spark350.version>
-    <spark351.version>3.5.1</spark351.version>
-    <spark354.version>3.5.4</spark354.version>
-    <spark355.version>3.5.5</spark355.version>
-    <spark356.version>3.5.6</spark356.version>
-    <spark401.version>4.0.1</spark401.version>
-    <spark420.version>4.2.0</spark420.version>
-    <iceberg.version>1.6.1</iceberg.version>
-  </properties>
-</project>
-"""
+FIXTURE_DIR = Path(__file__).resolve().parent / "resources" / "iceberg"
 
 
 class IcebergVersionMatrixSuite(unittest.TestCase):
     def setUp(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
-        self.pom_path = Path(temp_dir.name) / "pom.xml"
-        self.pom_path.write_text(POM_FIXTURE, encoding="utf-8")
+        self.pom_path = FIXTURE_DIR / "spark-shims.xml"
         self.matrix_path = Path(temp_dir.name) / "matrix.json"
-        self.document = {
-            "iceberg_versions": [
-                {
-                    "version": "1.6.1",
-                    "upstream_minimums": {"3.5": "3.5.1"},
-                    "spark_versions": [
-                        {"version": "3.5.1", "supported": True},
-                        {"version": "3.5.4", "supported": False,
-                         "reason": "Iceberg 1.6.x is not packaged for this Spark shim"},
-                        {"version": "3.5.5", "supported": False,
-                         "reason": "Iceberg 1.6.x is not packaged for this Spark shim"},
-                        {"version": "3.5.6", "supported": False,
-                         "reason": "Iceberg 1.6.x is not packaged for this Spark shim"},
-                    ],
-                },
-                {
-                    "version": "1.9.2",
-                    "upstream_minimums": {"3.5": "3.5.5"},
-                    "spark_versions": [
-                        {"version": "3.5.5", "supported": True},
-                        {"version": "3.5.6", "supported": True},
-                    ],
-                },
-                {
-                    "version": "1.10.1",
-                    "upstream_minimums": {"3.5": "3.5.6", "4.0": "4.0.0"},
-                    "spark_versions": [
-                        {"version": "3.5.6", "supported": True},
-                        {"version": "4.0.1", "supported": True},
-                    ],
-                },
-            ],
-        }
+        self.document = json.loads(
+            (FIXTURE_DIR / "iceberg-versions.json").read_text(encoding="utf-8"))
         self.matrix = self._load_document(self.document)
 
     def _load_document(self, document):
