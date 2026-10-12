@@ -951,7 +951,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   }
 
   test("an interrupted preparation ends the loop and keeps the thread's interrupt") {
-    val healthyBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val healthySlice = mock[DeviceMemoryBuffer]
+    val healthyBuffer = makeSendBuffer(healthySlice)
     val interruptedBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
     val healthyTx = makeTx(1)
     val interruptedTx = makeTx(2)
@@ -988,6 +989,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       assertResult(Some(BufferSendState.Failed))(interrupted.endedWith)
       verify(healthyBuffer, times(1)).close()
       verify(interruptedBuffer, times(1)).close()
+      // the healthy state's window was prepared but never sent, so the pass closes its slice
+      verify(healthySlice, times(1)).close()
       verify(server, times(0)).addToContinueQueue(any())
       verify(serverConnection, times(0)).send(
         any(), any(), any(), any[MemoryBuffer](), any[TransactionCallback]())
