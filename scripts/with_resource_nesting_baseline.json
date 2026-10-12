@@ -49,11 +49,6 @@
       "resource": "withResource(GpuColumnVector.from(cb))"
     },
     {
-      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/conditionalExpressions.scala",
-      "fingerprint": "d88291756077c688ade8",
-      "resource": "withResource(oneColumnTable.gather(firstTrueIndex))"
-    },
-    {
       "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/higherOrderFunctions.scala",
       "fingerprint": "7f869aeb1f10af718805",
       "resource": "withResource(updatedMapView.getChildColumnView(0))"
