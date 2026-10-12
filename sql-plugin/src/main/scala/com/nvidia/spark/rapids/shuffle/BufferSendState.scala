@@ -182,8 +182,9 @@ class BufferSendState(
    * nothing. It releases the acquired buffers, the bounce buffers and the request transaction,
    * each one even if releasing another fails, and logs rather than throws a failure to release.
    *
-   * While a send of this state is in flight only that send's callback may call this, because
-   * the transport can still read the bounce buffer until the callback runs.
+   * While a send of this state is in flight only that send's callback may call this, or the
+   * server's sweep once the transport has stopped, because the transport can still read the
+   * bounce buffer until then.
    * @return true if this call ended the state
    */
   def finish(result: BufferSendState.Outcome): Boolean = {
@@ -361,7 +362,7 @@ object BufferSendState {
   /** The server failed to prepare or issue a send, for a reason other than the ones below. */
   case object Failed extends Outcome
 
-  /** A requested buffer is gone, because its shuffle was unregistered. */
+  /** A requested buffer is gone: the catalog no longer holds it, as after an unregister. */
   case object MissingOutput extends Outcome
 
   /** Materialization kept running out of memory past the retry window. */

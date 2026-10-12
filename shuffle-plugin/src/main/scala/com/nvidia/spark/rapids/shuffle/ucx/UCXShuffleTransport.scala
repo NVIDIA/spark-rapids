@@ -594,8 +594,9 @@ class UCXShuffleTransport(shuffleServerId: BlockManagerId, rapidsConf: RapidsCon
     }
 
     ucx.close()
-    // No send callback can come after this, so release the sends that never got one, before
-    // their bounce buffers' pools are freed.
+    // If the progress thread terminated, no send callback can come after this, so the sends
+    // that never got one are released here, before their bounce buffers' pools are freed.
+    // Otherwise they are leaked, since UCX may still read those buffers.
     val transportStopped = ucx.isProgressThreadTerminated
     servers.forEach(_.releaseAbandoned(transportStopped))
     freeBounceBufferPools()

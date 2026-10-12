@@ -22,8 +22,9 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{Cuda, MemoryBuffer}
-import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, RapidsShuffleHandle, ShuffleMetadata}
+import ai.rapids.cudf.{Cuda, CudaFatalException, MemoryBuffer}
+import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, RapidsShuffleHandle, ShuffleBufferCatalog,
+  ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.format.TableMeta
 
@@ -32,7 +33,7 @@ import org.apache.spark.shuffle.rapids.{RapidsShuffleSendPrepareException,
   ShuffleOutputGoneException}
 import org.apache.spark.sql.rapids.GpuShuffleEnv
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
-import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId}
+import org.apache.spark.storage.{BlockManagerId, ShuffleBlockBatchId, ShuffleBlockId}
 
 /**
  * Trait used for the server to get buffer metadata (for metadata requests), and
@@ -64,6 +65,23 @@ trait RapidsShuffleRequestHandler {
    * @return true if the buffer is gone, false if it is still held or this cannot tell
    */
   def isShuffleBufferRemoved(tableId: Int, handle: RapidsShuffleHandle): Boolean = false
+}
+
+/** The request handler a shuffle manager gives its server: lookups in its executor's catalog. */
+class CatalogShuffleRequestHandler(catalog: ShuffleBufferCatalog)
+    extends RapidsShuffleRequestHandler {
+  override def getShuffleHandle(tableId: Int): RapidsShuffleHandle = {
+    catalog.getShuffleBufferHandle(tableId)
+  }
+
+  override def isShuffleBufferRemoved(tableId: Int, handle: RapidsShuffleHandle): Boolean =
+    catalog.isShuffleBufferRemoved(tableId, handle.spillable)
+
+  override def getShuffleBufferMetas(sbbId: ShuffleBlockBatchId): Seq[TableMeta] = {
+    (sbbId.startReduceId to sbbId.endReduceId).flatMap(rid => {
+      catalog.blockIdToMetas(ShuffleBlockId(sbbId.shuffleId, sbbId.mapId, rid))
+    })
+  }
 }
 
 /**
@@ -213,10 +231,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   private[this] val bssContinueQueue = new ConcurrentLinkedQueue[BufferSendState]()
 
   /**
-   * Send states whose send the transport accepted and whose callback has not run yet. The
-   * transport may still read their bounce buffers, so only that callback ends them, or
-   * `releaseAbandoned` once the transport has stopped. Guarded by its own monitor, which also
-   * guards `inFlightSealed`.
+   * Send states from just before their send until its callback runs, or until the catch around
+   * the send if it throws. The transport may still read their bounce buffers, so only that
+   * callback ends them, or `releaseAbandoned` once the transport has stopped. Guarded by its own
+   * monitor, which also guards `inFlightSealed`.
    */
   private[this] val inFlight = new mutable.HashSet[BufferSendState]()
 
@@ -308,9 +326,13 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         serverStream))
     } catch {
       case NonFatal(t) =>
-        val reason = if (isOutputGone(t)) "the requested shuffle output is gone" else "an error"
-        logError(s"Unable to start transfer request ${pendingTransfer.tx}, because of " +
-            s"$reason. It will not be retried.", t)
+        if (isOutputGone(t)) {
+          logWarning(s"Unable to start transfer request ${pendingTransfer.tx}: the requested " +
+              "shuffle output is gone. It will not be retried.", t)
+        } else {
+          logError(s"Unable to start transfer request ${pendingTransfer.tx}. " +
+              "It will not be retried.", t)
+        }
         closeQuietly("send bounce buffers", sendBounceBuffers)
         closeQuietly("a transfer request", pendingTransfer.tx)
         None
@@ -346,6 +368,17 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     case ex: RapidsShuffleSendPrepareException =>
       ex.getCause.isInstanceOf[ShuffleOutputGoneException]
     case _ => false
+  }
+
+  /**
+   * Whether a fatal CUDA error is among `error`'s causes or suppressed errors. The fail-fast
+   * error carries the preparation failures it summarizes as suppressed errors.
+   */
+  private def isCudaFatal(error: Throwable): Boolean = {
+    val seen = new java.util.IdentityHashMap[Throwable, Throwable]()
+    def visit(e: Throwable): Boolean = e != null && seen.put(e, e) == null &&
+        (e.isInstanceOf[CudaFatalException] || visit(e.getCause) || e.getSuppressed.exists(visit))
+    visit(error)
   }
 
   private def closeQuietly(what: String, resource: AutoCloseable): Unit = {
@@ -631,6 +664,11 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             bufferSendState.finish(BufferSendState.Failed)
           }
         }
+        // The GPU is unusable after a fatal CUDA error. Let it end the loop, as it always did,
+        // so that the executor exits and its shuffle output is recomputed elsewhere.
+        if (isCudaFatal(t)) {
+          throw t
+        }
     }
   }
 
@@ -689,6 +727,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         // anything but success. No reply follows: a reply would take the same failing path.
         logError(s"Error while sending buffers $bufferTx.")
         bufferSendState.finish(BufferSendState.SendFailed)
+        wakeLoop()
       } else if (bufferSendState.isTerminal) {
         logWarning(s"Send completed for $bufferSendState, which already ended")
       } else if (bufferSendState.hasMoreSends) {
@@ -698,39 +737,52 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           s"Still pending: ${pendingTransfersQueue.size}.")
         addToContinueQueue(Seq(bufferSendState)).foreach(_.finish(BufferSendState.ServerClosed))
       } else if (!started) {
-        // the server is closing, and the transport would not deliver a reply any more
+        // A reply queued after the transport's close task would never run or release its
+        // response, so a closing server ends the state without one.
         bufferSendState.finish(BufferSendState.ServerClosed)
+        wakeLoop()
       } else {
-        val transferResponse = bufferSendState.getTransferResponse()
-
-        val requestTx = bufferSendState.getRequestTransaction
-        logDebug(s"Handling transfer request $requestTx for executor " +
-          s"${bufferSendState.peerExecutorId} with $buffersToSend")
-
+        var outcome: BufferSendState.Outcome = BufferSendState.Failed
         try {
+          val transferResponse = bufferSendState.getTransferResponse()
+
+          val requestTx = bufferSendState.getRequestTransaction
+          logDebug(s"Handling transfer request $requestTx for executor " +
+            s"${bufferSendState.peerExecutorId} with $buffersToSend")
+
           // send the transfer response
-          requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
-            withResource(transferResponse) { _ =>
-              responseTx.getStatus match {
-                case TransactionStatus.Cancelled | TransactionStatus.Error =>
-                  logError(s"Error while handling TransferResponse: " +
-                    s"${responseTx.getErrorMessage}")
-                case _ =>
+          try {
+            requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
+              withResource(transferResponse) { _ =>
+                responseTx.getStatus match {
+                  case TransactionStatus.Cancelled | TransactionStatus.Error =>
+                    logError(s"Error while handling TransferResponse: " +
+                      s"${responseTx.getErrorMessage}")
+                  case _ =>
+                }
               }
-            }
-          })
+            })
+          } catch {
+            case t: Throwable =>
+              // a respond that throws queued nothing, so its callback will not release this
+              closeQuietly("a transfer response", transferResponse)
+              throw t
+          }
+          outcome = BufferSendState.Completed
         } finally {
           logDebug(s"Buffer send state " +
             s"${TransportUtils.toHex(bufferSendState.getPeerBufferReceiveHeader)} " +
             s"is done, closing. Still pending: ${pendingTransfersQueue.size}.")
-          bufferSendState.finish(BufferSendState.Completed)
+          bufferSendState.finish(outcome)
         }
-      }
-      // wake up the bssExec since bounce buffers may have become available
-      bssExec.synchronized {
-        bssExec.notifyAll()
+        wakeLoop()
       }
     }
+  }
+
+  // wake up the bssExec, since a state that ended returned its bounce buffers
+  private def wakeLoop(): Unit = bssExec.synchronized {
+    bssExec.notifyAll()
   }
 
   override def close(): Unit = {
@@ -745,6 +797,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       logWarning("The shuffle server's send loop did not exit in time")
     }
   }
+
+  // exposed for testing
+  private[shuffle] def inFlightCount: Int = inFlight.synchronized(inFlight.size)
 
   /**
    * Called by the transport once it has closed: ends every send state whose callback never

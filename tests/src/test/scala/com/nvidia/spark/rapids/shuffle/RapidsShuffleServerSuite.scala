@@ -16,7 +16,7 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import java.io.IOException
+import java.io.{FileNotFoundException, IOException}
 import java.nio.ByteBuffer
 
 import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
@@ -382,6 +382,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(mockHandleThatThrows, times(2)).materialize()
       verify(mockMaterialized, times(2)).close()
       verify(mockSendBuffer, times(1)).close()
+      assertResult(Some(BufferSendState.OomExpired))(bss.endedWith)
+      verify(mockTransaction, times(1)).close()
     }
   }
 
@@ -482,6 +484,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(sendBufferA, times(1)).close()
       verify(sendBufferB, times(0)).close()
       verify(server, times(1)).addToContinueQueue(Seq(bssB))
+      assertResult(Some(BufferSendState.OomExpired))(bssA.endedWith)
+      assertResult(None)(bssB.endedWith)
     }
   }
 
@@ -661,6 +665,137 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
           }
         }
       }
+    }
+  }
+
+  test("when a buffer is gone from the catalog, end its request instead of retrying it") {
+    val sendBuffer = mock[SendBounceBuffers]
+    val deviceBounceBuffer = mock[BounceBuffer]
+    when(deviceBounceBuffer.buffer).thenReturn(mock[DeviceMemoryBuffer])
+    when(sendBuffer.bounceBufferSize).thenReturn(1024)
+    when(sendBuffer.hostBounceBuffer).thenReturn(None)
+    when(sendBuffer.deviceBounceBuffer).thenReturn(deviceBounceBuffer)
+
+    val request = ShuffleMetadata.buildTransferRequest(0, Seq(1))
+    when(mockTransaction.releaseMessage()).thenReturn(
+      new MetadataTransportBuffer(new RefCountedDirectByteBuffer(request)))
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handle = mock[SpillableDeviceBufferHandle]
+      when(handle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
+      // a disk-spilled buffer whose spill file the unregister deleted
+      when(handle.materialize()).thenAnswer(_ => {
+        throw new FileNotFoundException("spill file deleted in test")
+      })
+      val rapidsHandle = RapidsShuffleHandle(handle, tableMeta)
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(rapidsHandle)
+      when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(1),
+        ArgumentMatchers.eq(rapidsHandle))).thenReturn(true)
+
+      val server = spy(new RapidsShuffleServer(
+        mockTransport,
+        mock[ServerConnection],
+        RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+        requestHandler,
+        mockExecutor,
+        mockBssExecutor,
+        mockConf))
+
+      val bss = new BufferSendState(mockTransaction, sendBuffer, requestHandler, null)
+      server.doHandleTransferRequest(Seq(bss))
+
+      assertResult(Some(BufferSendState.MissingOutput))(bss.endedWith)
+      verify(server, times(0)).addToContinueQueue(any())
+      verify(sendBuffer, times(1)).close()
+      verify(mockTransaction, times(1)).close()
+    }
+  }
+
+  test("a slice that fails to close after its send leaves its state to the send's callback") {
+    def makeSendBuffer(slice: DeviceMemoryBuffer): SendBounceBuffers = {
+      val sendBuffer = mock[SendBounceBuffers]
+      val bounceBuffer = mock[BounceBuffer]
+      val bounceMemory = mock[DeviceMemoryBuffer]
+      when(bounceBuffer.buffer).thenReturn(bounceMemory)
+      when(bounceMemory.getLength).thenReturn(1024L)
+      when(bounceMemory.slice(ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong()))
+        .thenReturn(slice)
+      when(sendBuffer.bounceBufferSize).thenReturn(1024)
+      when(sendBuffer.hostBounceBuffer).thenReturn(None)
+      when(sendBuffer.deviceBounceBuffer).thenReturn(bounceBuffer)
+      sendBuffer
+    }
+    def makeTx(tableId: Int): Transaction = {
+      val tx = mock[Transaction]
+      when(tx.releaseMessage()).thenReturn(new MetadataTransportBuffer(
+        new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferRequest(0, Seq(tableId)))))
+      tx
+    }
+    // the slice of the state that is sent fails to close once its send returned
+    val sentSlice = mock[DeviceMemoryBuffer]
+    doThrow(new IllegalStateException("slice close failed in test")).when(sentSlice).close()
+    val sentBuffer = makeSendBuffer(sentSlice)
+    val retriedBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val sentTx = makeTx(1)
+    val retriedTx = makeTx(2)
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val sentHandle = mock[SpillableDeviceBufferHandle]
+      when(sentHandle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
+      when(sentHandle.materialize()).thenReturn(mock[DeviceMemoryBuffer])
+      // fails to prepare for a reason that is not classified, so it would be retried
+      val retriedHandle = mock[SpillableDeviceBufferHandle]
+      when(retriedHandle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
+      when(retriedHandle.materialize()).thenAnswer(_ => {
+        throw new IOException("mmap failed in test")
+      })
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1)))
+        .thenReturn(RapidsShuffleHandle(sentHandle, tableMeta))
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(2)))
+        .thenReturn(RapidsShuffleHandle(retriedHandle, tableMeta))
+
+      val serverConnection = mock[ServerConnection]
+      val callback = ArgumentCaptor.forClass(classOf[TransactionCallback])
+      when(serverConnection.send(
+        any(), any(), any(), any[MemoryBuffer](), callback.capture())).thenReturn(mock[Transaction])
+
+      val server = spy(new RapidsShuffleServer(
+        mockTransport,
+        serverConnection,
+        RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+        requestHandler,
+        mockExecutor,
+        mockBssExecutor,
+        mockConf))
+
+      val sent = new BufferSendState(sentTx, sentBuffer, requestHandler, null)
+      val retried = new BufferSendState(retriedTx, retriedBuffer, requestHandler, null)
+      server.doHandleTransferRequest(Seq(sent, retried))
+
+      // the failure came after the send returned, so the transport may still read the buffer
+      assertResult(None)(sent.endedWith)
+      verify(sentBuffer, times(0)).close()
+      assertResult(1)(server.inFlightCount)
+      // the state that had not been sent ends in that pass, and is never queued to retry
+      assertResult(Some(BufferSendState.Failed))(retried.endedWith)
+      verify(retriedBuffer, times(1)).close()
+      verify(retriedTx, times(1)).close()
+      verify(server, times(0)).addToContinueQueue(any())
+
+      val done = mock[Transaction]
+      when(done.getStatus).thenReturn(TransactionStatus.Success)
+      callback.getValue.asInstanceOf[TransactionCallback](done)
+      assertResult(Some(BufferSendState.Completed))(sent.endedWith)
+      verify(sentTx, times(1)).respond(any(), any())
+      verify(sentBuffer, times(1)).close()
+      verify(sentTx, times(1)).close()
+      assertResult(0)(server.inFlightCount)
     }
   }
 }
