@@ -21,7 +21,7 @@ from conftest import is_not_utc
 from datetime import timezone
 from conftest import is_databricks_runtime
 from marks import (approximate_float, allow_non_gpu, allow_non_gpu_conditional,
-                   ignore_order, datagen_overrides)
+                   ignore_order, datagen_overrides, validate_execs_in_gpu_plan)
 from spark_session import *
 
 # mark this test as ci_1 for mvn verify sanity check in pre-merge CI
@@ -1912,7 +1912,7 @@ def test_spark_from_json_timestamp_format_option_zoneid_but_supported_format(zon
         conf=conf)
 
 @pytest.mark.parametrize('zone_id', [
-    "UTC",
+    pytest.param("UTC", marks=validate_execs_in_gpu_plan('GpuProjectExec')),
     pytest.param("-08:00", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("+01:00", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
     pytest.param("Africa/Dakar", marks=pytest.mark.allow_non_gpu('JsonToStructs')),
@@ -1924,7 +1924,11 @@ def test_spark_from_json_timestamp_format_option_zoneid_but_supported_format(zon
 def test_spark_from_json_timestamp_format_option_zoneid_but_default_format(zone_id):
     schema = StructType([StructField("t", TimestampType())])
     data = [[r'''{"t": "2016-01-01 00:00:00"}'''],
-        [r'''{"t": "2023-07-27 12:21:05"}''']]
+        [r'''{"t": "2023-07-27 12:21:05"}'''],
+        [r'''{"t": "6395-12-21T56:86:40.205705Z"}'''],
+        [r'''{"t": "2023-01-01T24:00:00Z"}'''],
+        [r'''{"t": "2023-01-01T00:60:00Z"}'''],
+        [r'''{"t": "2023-01-01T00:00:60Z"}''']]
     conf = copy_and_update(_enable_all_types_conf, {"spark.rapids.sql.json.read.datetime.enabled": "true"})
     assert_gpu_and_cpu_are_equal_collect(
             lambda spark : spark.createDataFrame(data, 'json STRING').select(f.col('json'), f.from_json(f.col('json'), schema, {'timeZone': zone_id})),

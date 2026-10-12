@@ -242,18 +242,22 @@ object GpuTextBasedPartitionReader {
       sparkFormat: String,
       dtype: DType): ColumnVector = {
 
-    val optionalSeconds = raw"(?:\:\d{2})?"
+    // Reject invalid time fields before trying cuDF's date-only format, which can accept
+    // a valid date even when a trailing time is malformed.
+    val optionalSeconds = raw"(?:\:[0-5]\d)?"
     val optionalMicros = raw"(?:\.\d{1,6})?"
     val twoDigits = raw"\d{2}"
     val fourDigits = raw"\d{4}"
+    val validHours = raw"(?:[01]\d|2[0-3])"
+    val validMinutes = raw"[0-5]\d"
 
     val regexRoot = sparkFormat
         .replace("'T'", "T")
         .replace("yyyy", fourDigits)
         .replace("MM", twoDigits)
         .replace("dd", twoDigits)
-        .replace("HH", twoDigits)
-        .replace("mm", twoDigits)
+        .replace("HH", validHours)
+        .replace("mm", validMinutes)
         .replace("[:ss]", optionalSeconds)
         .replace(":ss", optionalSeconds) // Spark always treats seconds portion as optional
         .replace("[.SSSXXX]", optionalMicros)
