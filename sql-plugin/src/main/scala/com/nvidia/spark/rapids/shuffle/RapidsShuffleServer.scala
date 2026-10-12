@@ -581,8 +581,13 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         // failed before copying anything, so no copy into its bounce buffer can be running.
         val (gone, failures) = allFailures.partition(f => isOutputGone(f._2))
         if (gone.nonEmpty) {
+          // expected after an unregister, so the trace is debug only
           logWarning(s"Unable to send ${gone.size} transfer requests, because requested " +
-              "shuffle output is gone. These sends will not be retried.", gone.head._2)
+              s"shuffle output is gone (${gone.head._2.getMessage}): " +
+              RapidsShuffleServer.describeRequests(
+                gone.map(f => (f._1.peerExecutorId, f._1.getPeerBufferReceiveHeader))) +
+              ". These sends will not be retried.")
+          logDebug("Missing output while preparing shuffle sends", gone.head._2)
           gone.foreach(_._1.finish(BufferSendState.MissingOutput))
         }
 
@@ -870,4 +875,20 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 object RapidsShuffleServer {
   // how long close() waits for the send loop to exit
   private val CLOSE_WAIT_MILLIS = 500L
+
+  // how many requests a log line names before it only counts the rest
+  private val MAX_REQUESTS_NAMED = 5
+
+  /**
+   * Names requests by the executor that sent each one and its receive header, the first few
+   * of them, for a log line.
+   * @param requests the executor id and receive header of each request
+   */
+  private[shuffle] def describeRequests(requests: Seq[(Long, Long)]): String = {
+    val named = requests.take(MAX_REQUESTS_NAMED).map { case (executorId, header) =>
+      s"executor $executorId header ${TransportUtils.toHex(header)}"
+    }
+    val more = requests.size - named.size
+    named.mkString(", ") + (if (more > 0) s" and $more more" else "")
+  }
 }

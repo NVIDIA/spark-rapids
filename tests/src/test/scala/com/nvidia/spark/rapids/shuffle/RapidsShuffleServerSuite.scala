@@ -1034,4 +1034,14 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(server, times(0)).addToContinueQueue(any())
     }
   }
+
+  test("a missing-output warning names the first requests and counts the rest") {
+    def request(executorId: Long): (Long, Long) = (executorId, executorId << 8)
+    def named(executorId: Long): String =
+      s"executor $executorId header ${TransportUtils.toHex(executorId << 8)}"
+    assertResult(s"${named(1)}, ${named(2)}")(
+      RapidsShuffleServer.describeRequests(Seq(request(1), request(2))))
+    assertResult((1L to 5L).map(named).mkString(", ") + " and 2 more")(
+      RapidsShuffleServer.describeRequests((1L to 7L).map(request)))
+  }
 }
