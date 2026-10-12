@@ -261,7 +261,7 @@ class CudfMergeM2 extends CudfAggregate {
   override lazy val reductionAggregate: cudf.ColumnVector => cudf.Scalar =
     (col: cudf.ColumnVector) => {
       NvtxRegistry.REDUCTION_MERGE_M2 {
-        withResource(col.copyToHost()) { hcv =>
+        val (mergeN, mergeMean, mergeM2) = withResource(col.copyToHost()) { hcv =>
           withResource(hcv.getChildColumnView(0)) { partialN =>
             withResource(hcv.getChildColumnView(1)) { partialMean =>
               withResource(hcv.getChildColumnView(2)) { partialM2 =>
@@ -289,14 +289,15 @@ class CudfMergeM2 extends CudfAggregate {
                   }
                 }
 
-                withResource(ColumnVector.fromDoubles(mergeN)) { cvMergeN =>
-                  withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
-                    withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
-                      Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
-                    }
-                  }
-                }
+                (mergeN, mergeMean, mergeM2)
               }
+            }
+          }
+        }
+        withResource(ColumnVector.fromDoubles(mergeN)) { cvMergeN =>
+          withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
+            withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
+              Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
             }
           }
         }
@@ -878,32 +879,31 @@ case class GpuCheckOverflowAfterSum(
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector =
     CurrentOrigin.withOrigin(capturedOrigin) {
-      withResource(data.columnarEval(batch)) { dataCol =>
-        val dataBase = dataCol.getBase
-        withResource(GpuCast.checkNFixDecimalBounds(dataBase, dataType, !nullOnOverflow)) {
-          fixedData =>
-            withResource(isEmpty.columnarEval(batch)) { isEmptyCol =>
-              val isEmptyBase = isEmptyCol.getBase
-              if (!nullOnOverflow) {
-                // ANSI mode
-                val problem = withResource(fixedData.isNull) { isNull =>
-                  withResource(isEmptyBase.not()) { notEmpty =>
-                    isNull.and(notEmpty)
-                  }
-                }
-                withResource(problem) { problem =>
-                  withResource(problem.any()) { anyProblem =>
-                    if (anyProblem.isValid && anyProblem.getBoolean) {
-                      throw new ArithmeticException("Overflow in sum of decimals.")
-                    }
-                  }
-                }
-                // No problems fall through...
-              }
-              withResource(GpuScalar.from(null, dataType)) { nullScale =>
-                GpuColumnVector.from(isEmptyBase.ifElse(nullScale, fixedData), dataType)
+      val fixedData = withResource(data.columnarEval(batch)) { dataCol =>
+        GpuCast.checkNFixDecimalBounds(dataCol.getBase, dataType, !nullOnOverflow)
+      }
+      withResource(fixedData) { _ =>
+        withResource(isEmpty.columnarEval(batch)) { isEmptyCol =>
+          val isEmptyBase = isEmptyCol.getBase
+          if (!nullOnOverflow) {
+            // ANSI mode
+            val problem = withResource(fixedData.isNull) { isNull =>
+              withResource(isEmptyBase.not()) { notEmpty =>
+                isNull.and(notEmpty)
               }
             }
+            withResource(problem) { _ =>
+              withResource(problem.any()) { anyProblem =>
+                if (anyProblem.isValid && anyProblem.getBoolean) {
+                  throw new ArithmeticException("Overflow in sum of decimals.")
+                }
+              }
+            }
+            // No problems fall through...
+          }
+          withResource(GpuScalar.from(null, dataType)) { nullScale =>
+            GpuColumnVector.from(isEmptyBase.ifElse(nullScale, fixedData), dataType)
+          }
         }
       }
     }
