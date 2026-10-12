@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.shuffle
 import java.io.{FileNotFoundException, IOException}
 import java.nio.ByteBuffer
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import ai.rapids.cudf.{CudaFatalException, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.{MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
@@ -28,6 +28,7 @@ import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
 
+import org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException
 import org.apache.spark.storage.ShuffleBlockBatchId
 
 class MockRapidsShuffleRequestHandler(mockBuffers: Seq[RapidsShuffleHandle])
@@ -81,6 +82,50 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         }
       }
     }
+  }
+
+  /** Mocked send bounce buffers of 1024 bytes whose slices are `slice`. */
+  private def makeSendBuffer(slice: DeviceMemoryBuffer): SendBounceBuffers = {
+    val sendBuffer = mock[SendBounceBuffers]
+    val bounceBuffer = mock[BounceBuffer]
+    val bounceMemory = mock[DeviceMemoryBuffer]
+    when(bounceBuffer.buffer).thenReturn(bounceMemory)
+    when(bounceMemory.getLength).thenReturn(1024L)
+    when(bounceMemory.slice(ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong()))
+      .thenReturn(slice)
+    when(sendBuffer.bounceBufferSize).thenReturn(1024)
+    when(sendBuffer.hostBounceBuffer).thenReturn(None)
+    when(sendBuffer.deviceBounceBuffer).thenReturn(bounceBuffer)
+    sendBuffer
+  }
+
+  /** A transfer request for one table. */
+  private def makeTx(tableId: Int): Transaction = {
+    val tx = mock[Transaction]
+    when(tx.releaseMessage()).thenReturn(new MetadataTransportBuffer(
+      new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferRequest(0, Seq(tableId)))))
+    tx
+  }
+
+  /** A handle whose materialization answers with `materialize`. */
+  private def makeHandle(tableMeta: TableMeta, materialize: () => DeviceMemoryBuffer)
+      : RapidsShuffleHandle = {
+    val handle = mock[SpillableDeviceBufferHandle]
+    when(handle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
+    when(handle.materialize()).thenAnswer(_ => materialize())
+    RapidsShuffleHandle(handle, tableMeta)
+  }
+
+  private def newServer(requestHandler: RapidsShuffleRequestHandler,
+      serverConnection: ServerConnection): RapidsShuffleServer = {
+    spy(new RapidsShuffleServer(
+      mockTransport,
+      serverConnection,
+      RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+      requestHandler,
+      mockExecutor,
+      mockBssExecutor,
+      mockConf))
   }
 
   test("sending tables that fit within one bounce buffer") {
@@ -715,25 +760,6 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   }
 
   test("a slice that fails to close after its send leaves its state to the send's callback") {
-    def makeSendBuffer(slice: DeviceMemoryBuffer): SendBounceBuffers = {
-      val sendBuffer = mock[SendBounceBuffers]
-      val bounceBuffer = mock[BounceBuffer]
-      val bounceMemory = mock[DeviceMemoryBuffer]
-      when(bounceBuffer.buffer).thenReturn(bounceMemory)
-      when(bounceMemory.getLength).thenReturn(1024L)
-      when(bounceMemory.slice(ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong()))
-        .thenReturn(slice)
-      when(sendBuffer.bounceBufferSize).thenReturn(1024)
-      when(sendBuffer.hostBounceBuffer).thenReturn(None)
-      when(sendBuffer.deviceBounceBuffer).thenReturn(bounceBuffer)
-      sendBuffer
-    }
-    def makeTx(tableId: Int): Transaction = {
-      val tx = mock[Transaction]
-      when(tx.releaseMessage()).thenReturn(new MetadataTransportBuffer(
-        new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferRequest(0, Seq(tableId)))))
-      tx
-    }
     // the slice of the state that is sent fails to close once its send returned
     val sentSlice = mock[DeviceMemoryBuffer]
     doThrow(new IllegalStateException("slice close failed in test")).when(sentSlice).close()
@@ -796,6 +822,92 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(sentBuffer, times(1)).close()
       verify(sentTx, times(1)).close()
       assertResult(0)(server.inFlightCount)
+    }
+  }
+
+  test("a fatal CUDA error found while cleaning up after another failure still ends the loop") {
+    val constructor =
+      classOf[CudaFatalException].getDeclaredConstructor(classOf[String], classOf[Int])
+    constructor.setAccessible(true)
+    val fatal = constructor.newInstance("an illegal memory access in test", Int.box(700))
+    // both states prepare; releasing the first one's buffer then fails with an ordinary error,
+    // and releasing the second one's, while the pass cleans up, with a fatal CUDA error
+    val ordinaryRelease = mock[DeviceMemoryBuffer]
+    doThrow(new IllegalStateException("release failed in test")).when(ordinaryRelease).close()
+    val fatalRelease = mock[DeviceMemoryBuffer]
+    doThrow(fatal).when(fatalRelease).close()
+    val firstBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val secondBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val firstTx = makeTx(1)
+    val secondTx = makeTx(2)
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val firstHandle = makeHandle(tableMeta, () => ordinaryRelease)
+      val secondHandle = makeHandle(tableMeta, () => fatalRelease)
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(firstHandle)
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(2))).thenReturn(secondHandle)
+      val serverConnection = mock[ServerConnection]
+      val server = newServer(requestHandler, serverConnection)
+
+      val first = new BufferSendState(firstTx, firstBuffer, requestHandler, null)
+      val second = new BufferSendState(secondTx, secondBuffer, requestHandler, null)
+      val failure = intercept[IllegalStateException] {
+        server.doHandleTransferRequest(Seq(first, second))
+      }
+
+      assertResult("release failed in test")(failure.getMessage)
+      assert(failure.getSuppressed.contains(fatal))
+      assertResult(Some(BufferSendState.Failed))(first.endedWith)
+      assertResult(Some(BufferSendState.Failed))(second.endedWith)
+      verify(firstBuffer, times(1)).close()
+      verify(secondBuffer, times(1)).close()
+      verify(firstTx, times(1)).close()
+      verify(secondTx, times(1)).close()
+      verify(serverConnection, times(0)).send(
+        any(), any(), any(), any[MemoryBuffer](), any[TransactionCallback]())
+    }
+  }
+
+  test("an interrupted preparation ends the loop and keeps the thread's interrupt") {
+    val healthyBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val interruptedBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val healthyTx = makeTx(1)
+    val interruptedTx = makeTx(2)
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val materialized = mock[DeviceMemoryBuffer]
+      val healthyHandle = makeHandle(tableMeta, () => materialized)
+      // as a disk-spilled buffer does when its wait for a host spill bounce buffer is interrupted
+      val interruptedHandle =
+        makeHandle(tableMeta, () => throw new InterruptedException("in test"))
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(healthyHandle)
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(2))).thenReturn(interruptedHandle)
+      val serverConnection = mock[ServerConnection]
+      val server = newServer(requestHandler, serverConnection)
+
+      val healthy = new BufferSendState(healthyTx, healthyBuffer, requestHandler, null)
+      val interrupted = new BufferSendState(interruptedTx, interruptedBuffer, requestHandler, null)
+      val failure = intercept[RapidsShuffleSendPrepareException] {
+        server.doHandleTransferRequest(Seq(healthy, interrupted))
+      }
+      // read, and cleared, before anything else on this thread could be interrupted by it
+      val interruptKept = Thread.interrupted()
+
+      assert(interruptKept)
+      assert(failure.getCause.isInstanceOf[InterruptedException])
+      assertResult(Some(BufferSendState.Failed))(healthy.endedWith)
+      assertResult(Some(BufferSendState.Failed))(interrupted.endedWith)
+      verify(healthyBuffer, times(1)).close()
+      verify(interruptedBuffer, times(1)).close()
+      verify(server, times(0)).addToContinueQueue(any())
+      verify(serverConnection, times(0)).send(
+        any(), any(), any(), any[MemoryBuffer](), any[TransactionCallback]())
     }
   }
 }

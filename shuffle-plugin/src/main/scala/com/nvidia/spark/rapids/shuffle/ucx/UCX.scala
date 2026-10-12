@@ -637,21 +637,23 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   def onWorkerThreadAsync(task: () => Unit): Unit = {
     workerTasks.add(task)
     if (rapidsConf.shuffleUcxUseWakeup) {
-      withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
-        // take up the worker object lock to protect against another `.close`
-        synchronized {
-          if (worker != null) {
-            // The task is queued, and the progress thread runs it on its next pass, so a
-            // failure to wake the worker must not reach callers: they treat a throw from here
-            // as a task that was never queued and will never call back.
-            try {
+      // The task is queued, and the progress thread runs it on its next pass, so a failure to
+      // wake the worker must not reach callers: they treat a throw from here as a task that was
+      // never queued and will never call back.
+      val signalFailure = try {
+        withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
+          // take up the worker object lock to protect against another `.close`
+          synchronized {
+            if (worker != null) {
               worker.signal()
-            } catch {
-              case NonFatal(t) => logWarning("Unable to signal the UCX worker", t)
             }
           }
         }
+        None
+      } catch {
+        case NonFatal(t) => Some(t)
       }
+      signalFailure.foreach(t => logWarning("Unable to signal the UCX worker", t))
     }
   }
 

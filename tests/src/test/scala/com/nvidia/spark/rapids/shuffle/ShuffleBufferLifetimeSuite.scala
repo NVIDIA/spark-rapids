@@ -1217,8 +1217,14 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
       val bounce = sendBounceBuffer(cached.size, cleanups)
       val state = spy(new BufferSendState(tx, bounce, handler))
       state.finish(BufferSendState.Failed)
+      // counted down when the loop checks the state it polled from the queue
+      val checked = new CountDownLatch(1)
+      doAnswer { invocation =>
+        checked.countDown()
+        invocation.callRealMethod()
+      }.when(state).isTerminal
       loop.server.addToContinueQueue(Seq(state))
-      // served in a later pass than the one that polled the ended state
+      outcomes("the loop checked the ended state", checked.await(awaitSeconds, TimeUnit.SECONDS))
       outcomes("next request gets", loop.nextRequestGets(cached.tableId))
       outcomes("ended state prepared again", calls(state, "getBufferToSend"))
       outcomes("ended state", ended(state))
@@ -1229,6 +1235,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     }
     outcomes("device bytes still allocated", Rmm.getTotalBytesAllocated - allocatedBefore)
     outcomes.check(
+      "the loop checked the ended state" -> true,
       "next request gets" -> "sent, read by the server: true",
       "ended state prepared again" -> 0,
       "ended state" -> "ended: Failed",
@@ -1312,9 +1319,9 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     }
     outcomes.check(
       "data sent" -> false,
-      "send loop" -> ("exited, pool threads running it: 0: IllegalStateException: Unable to " +
-        "prepare any sends. This issue can occur when requesting too many shuffle blocks. The " +
-        "sends will not be retried."),
+      // the failed preparation ends the loop at once, rather than as a batch with nothing to send
+      "send loop" -> ("exited, pool threads running it: 0: RapidsShuffleSendPrepareException: " +
+        "Error while copying to bounce buffer for executor 2 and header 0x0000000000000002"),
       "request transaction closes" -> 1,
       "requester gets" -> "none",
       "send bounce buffers not returned" -> "0")

@@ -20,7 +20,7 @@ import java.io.IOException
 
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer}
+import ai.rapids.cudf.{Cuda, CudaFatalException, DeviceMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.{RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -180,7 +180,8 @@ class BufferSendState(
   /**
    * Ends this state once: the first outcome is final, and later calls return false and do
    * nothing. It releases the acquired buffers, the bounce buffers and the request transaction,
-   * each one even if releasing another fails, and logs rather than throws a failure to release.
+   * attempting each even if releasing another failed. It logs a failure to release, and
+   * rethrows one that must end the send loop (see `BufferSendState.endsSendLoop`).
    *
    * While a send of this state is in flight only that send's callback may call this, or the
    * server's sweep once the transport has stopped, because the transport can still read the
@@ -213,6 +214,9 @@ class BufferSendState(
       release(transaction.close())
       if (error != null) {
         logError(s"Error while releasing a BufferSendState that ended with $result", error)
+        if (BufferSendState.endsSendLoop(error)) {
+          throw error
+        }
       }
     }
     first
@@ -347,12 +351,35 @@ class BufferSendState(
    * allowing us to safely return buffers to the catalog to be potentially freed if spilling.
    */
   def releaseAcquiredToCatalog(): Unit = synchronized {
-    acquiredBuffs.foreach(_.close())
+    // detached first, so that a close that throws leaves nothing to close a second time
+    val toRelease = acquiredBuffs
     acquiredBuffs = Seq.empty
+    toRelease.safeClose()
   }
 }
 
 object BufferSendState {
+  /**
+   * Whether `error`, one of its causes or one of their suppressed errors must end the send loop
+   * rather than be contained: a fatal CUDA error, after which the GPU is unusable, or an
+   * interruption of the thread.
+   */
+  private[shuffle] def endsSendLoop(error: Throwable): Boolean = exists(error) {
+    case _: CudaFatalException | _: InterruptedException => true
+    case _ => false
+  }
+
+  /** Whether `error`, one of its causes or one of their suppressed errors is an interruption. */
+  private[shuffle] def wasInterrupted(error: Throwable): Boolean =
+    exists(error)(_.isInstanceOf[InterruptedException])
+
+  private def exists(error: Throwable)(p: Throwable => Boolean): Boolean = {
+    val seen = new java.util.IdentityHashMap[Throwable, Throwable]()
+    def visit(e: Throwable): Boolean = e != null && seen.put(e, e) == null &&
+        (p(e) || visit(e.getCause) || e.getSuppressed.exists(visit))
+    visit(error)
+  }
+
   /** How a [[BufferSendState]] ended. Only the first outcome recorded for a state counts. */
   sealed trait Outcome
 

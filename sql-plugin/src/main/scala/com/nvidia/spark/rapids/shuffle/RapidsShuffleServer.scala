@@ -22,7 +22,7 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
-import ai.rapids.cudf.{Cuda, CudaFatalException, MemoryBuffer}
+import ai.rapids.cudf.{Cuda, MemoryBuffer}
 import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, RapidsShuffleHandle, ShuffleBufferCatalog,
   ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.withResource
@@ -288,9 +288,12 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         } catch {
           case NonFatal(t) =>
             // no send has been issued in this pass yet, so these states can end here
-            logError("Error while gathering shuffle sends. These sends will not be retried.", t)
             bssToIssue.foreach(_.finish(BufferSendState.Failed))
             bssToIssue.clear()
+            if (BufferSendState.endsSendLoop(t)) {
+              throw t
+            }
+            logError("Error while gathering shuffle sends. These sends will not be retried.", t)
             backOff = true
         }
         if (bssToIssue.nonEmpty) {
@@ -305,8 +308,11 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         }
       }
     } finally {
-      endQueuedOnExit()
-      loopExited.countDown()
+      try {
+        endQueuedOnExit()
+      } finally {
+        loopExited.countDown()
+      }
     }
   })
 
@@ -327,8 +333,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     } catch {
       case NonFatal(t) =>
         if (isOutputGone(t)) {
+          // expected after an unregister, possibly once per request, so the trace is debug only
           logWarning(s"Unable to start transfer request ${pendingTransfer.tx}: the requested " +
-              "shuffle output is gone. It will not be retried.", t)
+              s"shuffle output is gone (${t.getMessage}). It will not be retried.")
+          logDebug(s"Missing output for transfer request ${pendingTransfer.tx}", t)
         } else {
           logError(s"Unable to start transfer request ${pendingTransfer.tx}. " +
               "It will not be retried.", t)
@@ -359,8 +367,18 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         request = pendingTransfersQueue.poll()
       }
     }
-    states.foreach(_.finish(BufferSendState.ServerClosed))
+    var failure: Throwable = null
+    states.foreach { state =>
+      try {
+        state.finish(BufferSendState.ServerClosed)
+      } catch {
+        case NonFatal(t) => if (failure == null) failure = t else failure.addSuppressed(t)
+      }
+    }
     requests.foreach(r => closeQuietly("a transfer request", r.tx))
+    if (failure != null) {
+      throw failure
+    }
   }
 
   private def isOutputGone(error: Throwable): Boolean = error match {
@@ -368,17 +386,6 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     case ex: RapidsShuffleSendPrepareException =>
       ex.getCause.isInstanceOf[ShuffleOutputGoneException]
     case _ => false
-  }
-
-  /**
-   * Whether a fatal CUDA error is among `error`'s causes or suppressed errors. The fail-fast
-   * error carries the preparation failures it summarizes as suppressed errors.
-   */
-  private def isCudaFatal(error: Throwable): Boolean = {
-    val seen = new java.util.IdentityHashMap[Throwable, Throwable]()
-    def visit(e: Throwable): Boolean = e != null && seen.put(e, e) == null &&
-        (e.isInstanceOf[CudaFatalException] || visit(e.getCause) || e.getSuppressed.exists(visit))
-    visit(error)
   }
 
   private def closeQuietly(what: String, resource: AutoCloseable): Unit = {
@@ -532,6 +539,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             val buffersToSend = bufferSendState.getBufferToSend()
             bssBuffers.append((bufferSendState, buffersToSend))
           } catch {
+            case ex: RapidsShuffleSendPrepareException if BufferSendState.endsSendLoop(ex) =>
+              // the catch at the bottom ends this pass's states, then ends the loop
+              throw ex
             case ex: RapidsShuffleSendPrepareException =>
               // We failed to prepare the send (copy to bounce buffer), and got an exception.
               // Put the `bufferSendState` back in the continue queue, so it can be retried.
@@ -574,7 +584,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           val ise = new IllegalStateException("Unable to prepare any sends. " +
               "This issue can occur when requesting too many shuffle blocks. " +
               "The sends will not be retried.")
-          supressedErrors.foreach(ise.addSuppressed)
+          failures.foreach(f => ise.addSuppressed(f._2))
           throw ise
         }
 
@@ -646,29 +656,43 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
       }
     } catch {
       case NonFatal(t) =>
-        logError("Error while handling shuffle sends. The sends not yet issued will not be " +
-            "retried.", t)
+        // Failures while cleaning up are kept with the one that started it, so that a fatal
+        // CUDA error or an interruption among them still ends the loop below.
+        def keep(e: Throwable): Unit = if (e ne t) t.addSuppressed(e)
         try {
           serverStream.sync()
         } catch {
-          case NonFatal(syncError) => logError("Error while synchronizing the server stream",
-            syncError)
+          case NonFatal(e) => keep(e)
         }
         bssBuffers.foreach { case (bufferSendState, buffersToSend) =>
           if (!sendsReached.contains(bufferSendState)) {
-            closeQuietly("a bounce buffer slice", buffersToSend)
+            try {
+              buffersToSend.close()
+            } catch {
+              case NonFatal(e) => keep(e)
+            }
           }
         }
         bufferSendStates.foreach { bufferSendState =>
           if (!sendsReached.contains(bufferSendState)) {
-            bufferSendState.finish(BufferSendState.Failed)
+            try {
+              bufferSendState.finish(BufferSendState.Failed)
+            } catch {
+              case NonFatal(e) => keep(e)
+            }
           }
         }
-        // The GPU is unusable after a fatal CUDA error. Let it end the loop, as it always did,
-        // so that the executor exits and its shuffle output is recomputed elsewhere.
-        if (isCudaFatal(t)) {
+        // The GPU is unusable after a fatal CUDA error, and an interruption asks the thread to
+        // stop. Either ends the loop, as it always did, so that the executor exits and its
+        // shuffle output is recomputed elsewhere.
+        if (BufferSendState.endsSendLoop(t)) {
+          if (BufferSendState.wasInterrupted(t)) {
+            Thread.currentThread().interrupt()
+          }
           throw t
         }
+        logError("Error while handling shuffle sends. The sends not yet issued will not be " +
+            "retried.", t)
     }
   }
 
@@ -818,7 +842,13 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     if (abandoned.nonEmpty) {
       if (transportStopped) {
         logWarning(s"Ending ${abandoned.size} shuffle sends whose completion never arrived")
-        abandoned.foreach(_.finish(BufferSendState.ServerClosed))
+        abandoned.foreach { state =>
+          try {
+            state.finish(BufferSendState.ServerClosed)
+          } catch {
+            case NonFatal(t) => logError(s"Error while ending abandoned send $state", t)
+          }
+        }
       } else {
         logWarning(s"Leaking ${abandoned.size} shuffle sends, because the transport did not " +
             "stop and may still read their bounce buffers")
