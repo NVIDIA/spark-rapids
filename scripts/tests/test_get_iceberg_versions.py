@@ -51,12 +51,13 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
         self.matrix_path.write_text(json.dumps(document), encoding="utf-8")
         return MATRIX_READER.IcebergVersionMatrix.load(self.matrix_path, self.pom_path)
 
-    def _run_cli(self, *arguments):
+    def _run_cli(self, command, *arguments):
         stdout = io.StringIO()
         stderr = io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             exit_code = MATRIX_READER.main([
-                "--matrix", str(self.matrix_path), "--pom", str(self.pom_path), *arguments])
+                command, "--matrix", str(self.matrix_path),
+                "--pom", str(self.pom_path), *arguments])
         return exit_code, stdout.getvalue(), stderr.getvalue()
 
     def test_selects_representative_versions(self):
@@ -117,7 +118,7 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
     def test_cli_fails_for_missing_mapping_instead_of_skipping(self):
         self.document["iceberg_versions"][1]["spark_versions"].pop(0)
         self.matrix_path.write_text(json.dumps(self.document), encoding="utf-8")
-        exit_code, stdout, stderr = self._run_cli("--spark-version", "3.5.5")
+        exit_code, stdout, stderr = self._run_cli("list", "--spark-version", "3.5.5")
         self.assertEqual(1, exit_code)
         self.assertEqual("", stdout)
         self.assertIn("missing 3.5.5", stderr)
@@ -127,14 +128,14 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
         # empty selections under issue #15875, even if their POM packages Iceberg.
         for spark_version in ("4.2.0", "3.5.0", "3.5.4"):
             with self.subTest(spark=spark_version):
-                exit_code, stdout, stderr = self._run_cli("--spark-version", spark_version)
+                exit_code, stdout, stderr = self._run_cli("list", "--spark-version", spark_version)
                 self.assertEqual(0, exit_code)
                 self.assertEqual("\n", stdout)
                 self.assertIn(f"No Iceberg versions selected for Spark {spark_version}", stderr)
                 self.assertIn("minimum-baseline and packaging test policy", stderr)
 
     def test_cli_skips_snapshot_without_iceberg_family(self):
-        exit_code, stdout, stderr = self._run_cli("--spark-version", "5.0.0-SNAPSHOT")
+        exit_code, stdout, stderr = self._run_cli("list", "--spark-version", "5.0.0-SNAPSHOT")
         self.assertEqual(0, exit_code)
         self.assertEqual("\n", stdout)
         self.assertIn("No Iceberg versions selected for Spark 5.0.0-SNAPSHOT", stderr)
@@ -142,7 +143,7 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
     def test_cli_rejects_snapshot_in_matrix_family(self):
         # Do not silently skip or select the corresponding release for a family
         # whose Iceberg coverage is defined by the matrix.
-        exit_code, stdout, stderr = self._run_cli("--spark-version", "3.5.6-SNAPSHOT")
+        exit_code, stdout, stderr = self._run_cli("list", "--spark-version", "3.5.6-SNAPSHOT")
         self.assertEqual(1, exit_code)
         self.assertEqual("", stdout)
         self.assertIn("invalid version", stderr)
@@ -150,24 +151,63 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
     def test_cli_rejects_malformed_snapshot_versions(self):
         for spark_version in ("5.0-SNAPSHOT", "5.0.0-SNAPSHOT-SNAPSHOT", "5.0.0-preview"):
             with self.subTest(spark=spark_version):
-                exit_code, stdout, stderr = self._run_cli("--spark-version", spark_version)
+                exit_code, stdout, stderr = self._run_cli("list", "--spark-version", spark_version)
                 self.assertEqual(1, exit_code)
                 self.assertEqual("", stdout)
                 self.assertIn("invalid version", stderr)
 
     def test_cli_validates_requested_versions(self):
         exit_code, stdout, stderr = self._run_cli(
-            "--spark-version", "3.5.6", "--requested-versions", "1.10.1, 1.9.2")
+            "validate-requested", "--spark-version", "3.5.6",
+            "--requested-versions", "1.10.1, 1.9.2")
         self.assertEqual(0, exit_code)
         self.assertEqual("1.10.1 1.9.2\n", stdout)
         self.assertEqual("", stderr)
 
     def test_cli_reports_malformed_json(self):
         self.matrix_path.write_text("{", encoding="utf-8")
-        exit_code, stdout, stderr = self._run_cli("--validate")
+        exit_code, stdout, stderr = self._run_cli("validate")
         self.assertEqual(1, exit_code)
         self.assertEqual("", stdout)
         self.assertIn("Iceberg test matrix error", stderr)
+
+    def test_cli_validates_matrix_without_query_arguments(self):
+        self.assertEqual((0, "", ""), self._run_cli("validate"))
+
+    def test_cli_lists_versions_in_matrix_order(self):
+        self.assertEqual(
+            (0, "1.9.2 1.10.1\n", ""),
+            self._run_cli("list", "--spark-version", "3.5.6"))
+
+    def test_cli_requires_command_and_its_arguments(self):
+        cases = (
+            ([], "command"),
+            (["list"], "--spark-version"),
+            (["validate-requested", "--requested-versions", "1.10.1"], "--spark-version"),
+            (["validate-requested", "--spark-version", "3.5.6"], "--requested-versions"),
+        )
+        for arguments, missing in cases:
+            with self.subTest(arguments=arguments):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as error:
+                    MATRIX_READER.parse_args(arguments)
+                self.assertEqual(2, error.exception.code)
+                self.assertIn("required", stderr.getvalue())
+                self.assertIn(missing, stderr.getvalue())
+
+    def test_cli_rejects_arguments_from_other_commands(self):
+        cases = (
+            ["validate", "--spark-version", "3.5.6"],
+            ["validate", "--requested-versions", "1.10.1"],
+            ["list", "--spark-version", "3.5.6", "--requested-versions", "1.10.1"],
+        )
+        for arguments in cases:
+            with self.subTest(arguments=arguments):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as error:
+                    MATRIX_READER.parse_args(arguments)
+                self.assertEqual(2, error.exception.code)
+                self.assertIn("unrecognized arguments", stderr.getvalue())
 
 
 if __name__ == "__main__":

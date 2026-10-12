@@ -38,7 +38,12 @@ SPARK_PROPERTY_PATTERN = re.compile(r"^spark[0-9]+\.version$")
 
 
 class MatrixError(ValueError):
-    pass
+    """Invalid matrix metadata or a query that violates the test-selection policy.
+
+    The message identifies the offending version, field, or missing mapping.
+    File access, JSON decoding, and XML parsing errors retain their native types;
+    the CLI reports all of these failures on stderr and exits with status 1.
+    """
 
 
 def _version_tuple(version):
@@ -52,6 +57,21 @@ def _spark_family(version):
 
 
 def read_spark_shims(pom_path):
+    """Return the set of release Spark versions declared in a Maven POM.
+
+    Args:
+        pom_path: Path to a Maven XML file whose top-level properties contain
+            ``spark<digits>.version`` entries, such as ``spark356.version``.
+
+    Returns:
+        Unique ``major.minor.patch`` version strings. Snapshot values, properties
+        with other names, and values without three numeric components are ignored.
+
+    Raises:
+        MatrixError: The POM has no top-level properties element.
+        OSError: The POM cannot be read.
+        ET.ParseError: The POM is not well-formed XML.
+    """
     root = ET.parse(pom_path).getroot()
     namespace = {"pom": "http://maven.apache.org/POM/4.0.0"}
     properties = root.find("pom:properties", namespace)
@@ -69,12 +89,36 @@ def read_spark_shims(pom_path):
 
 @dataclass(frozen=True)
 class SparkSupport:
+    """One Spark release's test eligibility for a particular Iceberg release.
+
+    Use ``from_dict`` to validate serialized entries before constructing a record.
+    This records cudf-spark test policy, not an upstream compatibility guarantee.
+
+    Attributes:
+        version: Exact Spark release string in ``major.minor.patch`` form.
+        supported: Whether the matrix enables this combination. For entries at
+            or above the test baseline, this reflects the packaged integration.
+        reason: Non-blank explanation required when ``supported`` is false;
+            otherwise None. It is included in rejected-request diagnostics.
+    """
+
     version: str
     supported: bool
     reason: Optional[str] = None
 
     @classmethod
     def from_dict(cls, entry, iceberg_version):
+        """Validate a Spark JSON entry and return its ``SparkSupport`` record.
+
+        Args:
+            entry: Mapping with ``version`` and boolean ``supported`` fields,
+                and an optional ``reason`` field. No other keys are accepted.
+            iceberg_version: Parent Iceberg version, used to identify errors.
+
+        Raises:
+            MatrixError: The entry has invalid keys, a malformed version, a
+                non-boolean support flag, or a reason inconsistent with that flag.
+        """
         if not isinstance(entry, dict):
             raise MatrixError(f"invalid Spark entry for Iceberg {iceberg_version}")
         required_keys = {"version", "supported"}
@@ -101,12 +145,42 @@ class SparkSupport:
 
 @dataclass(frozen=True)
 class IcebergSupport:
+    """Test baselines and Spark eligibility records for one Iceberg runtime.
+
+    Attributes:
+        version: Exact Iceberg runtime release in ``major.minor.patch`` form.
+        spark_minor_to_patch: Mapping from a Spark family to its full minimum
+            test version, for example ``{"3.5": "3.5.6"}``. Serialized as
+            ``upstream_minimums``, these are Iceberg dependency pins interpreted
+            as minimum test baselines by cudf-spark policy.
+        spark_supports: Spark records in JSON order, including unsupported
+            combinations and their reasons. When loaded through ``from_dict``,
+            this list contains every POM shim at or above a declared family's
+            baseline, exactly once, and no other versions.
+    """
+
     version: str
     spark_minor_to_patch: Dict[str, str]
     spark_supports: List[SparkSupport]
 
     @classmethod
     def from_dict(cls, entry, spark_shims):
+        """Validate an Iceberg JSON entry against the POM shims and return it.
+
+        Args:
+            entry: Mapping containing exactly ``version``, ``upstream_minimums``,
+                and ``spark_versions``. Baselines and Spark entries must be nonempty.
+            spark_shims: Collection of release Spark version strings, normally the
+                set returned by ``read_spark_shims``.
+
+        Raises:
+            MatrixError: Metadata is malformed, a baseline belongs to the wrong
+                family, a Spark entry is invalid or duplicated, or the entry list
+                differs from the shims selected by the minimum baselines.
+
+        Packaging flags are read from the JSON; this method does not infer them
+        from Maven release profiles.
+        """
         if not isinstance(entry, dict) or set(entry) != {
                 "version", "upstream_minimums", "spark_versions"}:
             raise MatrixError(
@@ -154,20 +228,57 @@ class IcebergSupport:
         return cls(version, spark_minor_to_patch, spark_supports)
 
     def support_for(self, spark_version):
+        """Return the record for an exact Spark version string, or None if absent.
+
+        Unsupported records are returned too, so callers can inspect their reason.
+        The input is neither normalized nor validated by this lookup.
+        """
         return next(
             (support for support in self.spark_supports if support.version == spark_version), None)
 
     def supports(self, spark_version):
+        """Return whether an exact Spark version has an enabled matrix entry.
+
+        Both a missing record and a record marked unsupported return false.
+        As with ``support_for``, this lookup does not validate the input string.
+        """
         spark_support = self.support_for(spark_version)
         return spark_support is not None and spark_support.supported
 
 
 @dataclass(frozen=True)
 class IcebergVersionMatrix:
+    """Collection of Iceberg releases used to select CI test combinations.
+
+    Use ``load`` to validate both the JSON schema and its coverage of POM shims.
+
+    Attributes:
+        iceberg_supports: Iceberg records in JSON order. ``load`` requires a
+            nonempty list of unique Iceberg versions; automatic selection
+            preserves this order.
+    """
+
     iceberg_supports: List[IcebergSupport]
 
     @classmethod
     def load(cls, matrix_path=DEFAULT_MATRIX, pom_path=DEFAULT_POM):
+        """Read the matrix and POM, validate all entries, and return the matrix.
+
+        Args:
+            matrix_path: JSON file with a single ``iceberg_versions`` list.
+                Defaults to the repository's ``scripts/iceberg-versions.json``.
+            pom_path: Maven POM supplying the Spark shim properties. Defaults
+                to the repository's ``scala2.13/pom.xml``.
+
+        Raises:
+            MatrixError: The schema, a version entry, shim coverage, or Iceberg
+                version uniqueness is invalid.
+            OSError: Either input file cannot be read.
+            json.JSONDecodeError: The matrix is not valid JSON.
+            ET.ParseError: The POM is not well-formed XML.
+
+        Validation covers the entire matrix before any individual version query.
+        """
         with open(matrix_path, encoding="utf-8") as stream:
             document = json.load(stream)
         if not isinstance(document, dict) or set(document) != {"iceberg_versions"}:
@@ -186,6 +297,21 @@ class IcebergVersionMatrix:
         return cls(iceberg_supports)
 
     def supported_iceberg_versions(self, spark_version):
+        """Return enabled Iceberg versions for Spark, preserving matrix order.
+
+        Args:
+            spark_version: Exact ``major.minor.patch`` Spark release, or a
+                well-formed ``major.minor.patch-SNAPSHOT`` in a family absent
+                from every Iceberg baseline mapping.
+
+        Returns:
+            A list of Iceberg version strings. No enabled match yields an empty
+            list, including the accepted snapshot case, so CI can skip the run.
+
+        Raises:
+            MatrixError: The Spark version is malformed or is a snapshot in a
+                family covered by the matrix. Snapshots never select release entries.
+        """
         # Spark master can use a snapshot in a family with no Iceberg integration.
         # Preserve the callers' skip for that family without treating snapshots
         # in covered families as their corresponding releases or silently skipping them.
@@ -202,6 +328,20 @@ class IcebergVersionMatrix:
         ]
 
     def validate_requested_versions(self, spark_version, requested_versions):
+        """Validate caller-selected Iceberg versions and return the original list.
+
+        Args:
+            spark_version: Exact Spark release in ``major.minor.patch`` form.
+                Explicit requests do not accept Spark snapshots.
+            requested_versions: List of exact Iceberg version strings. Each must
+                have an enabled entry for Spark; caller order and duplicates are
+                preserved, and an empty list remains empty.
+
+        Raises:
+            MatrixError: Spark is malformed, an Iceberg version is not in the
+                matrix, or a combination is absent or marked unsupported. The
+                latter error includes the entry's exclusion reason.
+        """
         _version_tuple(spark_version)
         by_version = {support.version: support for support in self.iceberg_supports}
         for iceberg_version in requested_versions:
@@ -221,31 +361,58 @@ class IcebergVersionMatrix:
 
 
 def parse_args(arguments=None):
+    """Parse command-specific CLI options into an ``argparse.Namespace``.
+
+    ``arguments`` is a sequence of argument strings; None reads ``sys.argv[1:]``.
+    Each required subcommand owns its input-file options and accepts only the
+    query arguments relevant to that operation. Invalid usage raises SystemExit
+    with status 2; requesting help raises SystemExit with status 0.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--spark-version", help="Spark version whose Iceberg versions should be listed")
-    parser.add_argument(
-        "--requested-versions",
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    inputs = argparse.ArgumentParser(add_help=False)
+    inputs.add_argument(
+        "--matrix", type=Path, default=DEFAULT_MATRIX,
+        help="matrix JSON file (default: scripts/iceberg-versions.json)")
+    inputs.add_argument(
+        "--pom", type=Path, default=DEFAULT_POM,
+        help="Spark shim POM (default: scala2.13/pom.xml)")
+
+    subparsers.add_parser(
+        "validate", parents=[inputs], help="validate the entire matrix against the POM")
+
+    list_parser = subparsers.add_parser(
+        "list", parents=[inputs], help="list matrix-selected Iceberg versions for Spark")
+    list_parser.add_argument(
+        "--spark-version", required=True, help="exact Spark version to query")
+
+    requested_parser = subparsers.add_parser(
+        "validate-requested", parents=[inputs],
+        help="validate and echo caller-selected Iceberg versions for Spark")
+    requested_parser.add_argument(
+        "--spark-version", required=True, help="exact Spark release to query")
+    requested_parser.add_argument(
+        "--requested-versions", required=True,
         help="comma- or whitespace-separated Iceberg versions to validate and echo")
-    parser.add_argument("--matrix", type=Path, default=DEFAULT_MATRIX)
-    parser.add_argument("--pom", type=Path, default=DEFAULT_POM)
-    parser.add_argument(
-        "--validate", action="store_true", help="validate the matrix without querying it")
-    args = parser.parse_args(arguments)
-    if not args.validate and not args.spark_version:
-        parser.error("--spark-version is required unless --validate is used")
-    if args.requested_versions and not args.spark_version:
-        parser.error("--requested-versions requires --spark-version")
-    return args
+    return parser.parse_args(arguments)
 
 
 def main(arguments=None):
+    """Run one CLI command and return 0 on success or 1 for matrix/query errors.
+
+    ``arguments`` follows ``parse_args``. The ``validate`` command is silent on
+    success; ``list`` and ``validate-requested`` print space-separated versions
+    followed by a newline. Empty selections also explain the skip on stderr.
+    File, parse, and validation failures print a diagnostic on stderr. Argument
+    parsing retains argparse's SystemExit behavior for usage errors and help.
+    """
     args = parse_args(arguments)
     try:
         matrix = IcebergVersionMatrix.load(args.matrix, args.pom)
-        if args.validate:
+        if args.command == "validate":
             return 0
-        if args.requested_versions:
+        if args.command == "validate-requested":
             requested = [
                 version for version in re.split(r"[\s,]+", args.requested_versions) if version]
             versions = matrix.validate_requested_versions(args.spark_version, requested)

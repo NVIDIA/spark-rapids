@@ -56,6 +56,27 @@ Well-formed Spark snapshots in families absent from the matrix also produce an e
 selection. Snapshots in families covered by the matrix fail validation instead of being
 treated as their corresponding releases or silently skipped.
 
+The reader exposes three subcommands, each with its own arguments:
+
+```bash
+# Validate all matrix entries against the declared Spark shims.
+python3 scripts/get_iceberg_versions.py validate
+
+# List selected Iceberg versions for an exact Spark version.
+python3 scripts/get_iceberg_versions.py list --spark-version 3.5.6
+
+# Check caller-selected versions and echo them in the requested order.
+python3 scripts/get_iceberg_versions.py validate-requested \
+  --spark-version 3.5.6 --requested-versions '1.10.1, 1.9.2'
+```
+
+Run these commands from the repository root. Each subcommand accepts `--matrix` and
+`--pom` to override the default input files, and `--help` describes its arguments.
+`validate` produces no output on success. The other commands print space-separated
+versions for shell callers; `validate-requested` accepts comma- or whitespace-separated
+input. Invalid command arguments exit with status 2, while matrix and query errors exit
+with status 1.
+
 For Spark 3.5.4+, both `iceberg-1-9-x` and `iceberg-1-10-x` modules are compiled into the
 build. The correct version-specific implementation is
 selected at runtime by probing the `iceberg-spark-runtime` jar on the classpath.

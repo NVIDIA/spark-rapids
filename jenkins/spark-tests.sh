@@ -459,11 +459,11 @@ run_iceberg_tests() {
 
   local matrix_reader="$WORKSPACE/scripts/get_iceberg_versions.py"
   local supported_versions
-  supported_versions=$(python "$matrix_reader" --spark-version "$SPARK_VER") || return 1
+  supported_versions=$(python "$matrix_reader" list --spark-version "$SPARK_VER") || return 1
 
   local iceberg_versions
   if [[ -n "${ICEBERG_VERSIONS:-}" ]]; then
-    iceberg_versions=$(python "$matrix_reader" \
+    iceberg_versions=$(python "$matrix_reader" validate-requested \
       --spark-version "$SPARK_VER" --requested-versions "$ICEBERG_VERSIONS") || return 1
     echo "Using user-specified ICEBERG_VERSIONS=$ICEBERG_VERSIONS"
   elif [[ -z "$supported_versions" ]]; then
