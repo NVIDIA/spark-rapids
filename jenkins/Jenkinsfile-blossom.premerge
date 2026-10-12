@@ -231,9 +231,8 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     !skipped && (normal_build || skills_build || db_build)
                 }
             }
-            // Parallel run mvn verify (build and integration tests) and unit tests (for multiple Spark versions)
-            // If any one is failed will abort another if not finish yet and will upload failure log to Github
-            failFast true
+            // VALIDATION ONLY: collect both CI-part outcomes even if one incident fails.
+            failFast false
             parallel {
                 stage('Skills Premerge Test') {
                     when {

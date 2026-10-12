@@ -84,7 +84,17 @@ WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 # CI-only hook installed and supplied by the Jenkins shared library, not a local prerequisite.
 # Leave SPARK_STARTUP_CHECK unset for local usage; ordinary callers keep their existing behavior.
 if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
-    bash "$SPARK_STARTUP_CHECK" databricks
+    # VALIDATION ONLY: substitute this probe's spark-shell; keep the real readiness script.
+    case "${DB_FALLBACK_TEST_INCIDENT:-}" in
+        spark-disk-full|spark-disk-io)
+            chmod +x jenkins/databricks/fallback-validation/spark/bin/spark-shell
+            SPARK_HOME="$PWD/jenkins/databricks/fallback-validation/spark" \
+                bash "$SPARK_STARTUP_CHECK" databricks
+            echo 'ERROR: Spark readiness unexpectedly accepted the injected failure' >&2
+            exit 1
+            ;;
+        *) bash "$SPARK_STARTUP_CHECK" databricks ;;
+    esac
 fi
 
 IS_SPARK_321_OR_LATER=0
