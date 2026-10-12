@@ -1073,6 +1073,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
 
+  lazy val isOrcDateWriteEnabled: Boolean = get(ENABLE_ORC_DATE_WRITE)
+
   lazy val isOrcFloatTypesToStringEnable: Boolean = get(ENABLE_ORC_FLOAT_TYPES_TO_STRING)
 
   lazy val isOrcPerFileReadEnabled: Boolean =
