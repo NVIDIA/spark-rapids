@@ -862,6 +862,9 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       assert(failure.getSuppressed.contains(fatal))
       assertResult(Some(BufferSendState.Failed))(first.endedWith)
       assertResult(Some(BufferSendState.Failed))(second.endedWith)
+      // a release that threw is not attempted a second time
+      verify(ordinaryRelease, times(1)).close()
+      verify(fatalRelease, times(1)).close()
       verify(firstBuffer, times(1)).close()
       verify(secondBuffer, times(1)).close()
       verify(firstTx, times(1)).close()
