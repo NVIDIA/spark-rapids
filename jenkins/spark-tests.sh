@@ -302,7 +302,21 @@ run_delta_lake_tests() {
   fi
 
   if [[ $SPARK_VER =~ $SPARK_35X_PATTERN ]]; then
-    DELTA_LAKE_VERSIONS="3.3.0"
+    local java_command="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+    local java_specification_version
+    java_specification_version=$("$java_command" -XshowSettings:properties -version 2>&1 |
+      awk '$1 == "java.specification.version" {print $3}')
+    if [[ -z "$java_specification_version" ]]; then
+      echo "Cannot determine the Java version for Delta Lake tests" >&2
+      return 1
+    fi
+    if [[ "$java_specification_version" == "1.8" ]]; then
+      # Delta 3.3.3 bitmap deserialization calls a ByteBuffer API absent from Java 8.
+      DELTA_LAKE_VERSIONS="3.3.0"
+    else
+      # Delta 3.3.3 fixes staged-table truncate validation on Spark 3.5.6+.
+      DELTA_LAKE_VERSIONS="3.3.3"
+    fi
   fi
 
   if [[ $SPARK_VER =~ $SPARK_40X_PATTERN ]]; then
@@ -314,7 +328,7 @@ run_delta_lake_tests() {
         DELTA_LAKE_VERSIONS="4.0.1"
       fi
       if [[ "$SPARK_VER" == "4.0.1" ]]; then
-        DELTA_LAKE_VERSIONS="$DELTA_LAKE_VERSIONS 4.2.0"
+        DELTA_LAKE_VERSIONS="$DELTA_LAKE_VERSIONS 4.2.0 4.3.0"
       fi
     else
       echo "Skipping Delta Lake 4.0.x tests for Scala $SCALA_BINARY_VER (requires Scala 2.13)"
@@ -326,7 +340,7 @@ run_delta_lake_tests() {
     if [[ "$SCALA_BINARY_VER" == "2.13" ]]; then
       DELTA_LAKE_VERSIONS="4.1.0"
       if [[ "$SPARK_VER" == "4.1.1" ]]; then
-        DELTA_LAKE_VERSIONS="$DELTA_LAKE_VERSIONS 4.2.0"
+        DELTA_LAKE_VERSIONS="$DELTA_LAKE_VERSIONS 4.2.0 4.3.0"
       fi
     else
       echo "Skipping Delta Lake 4.1.x tests for Scala $SCALA_BINARY_VER (requires Scala 2.13)"
@@ -338,12 +352,12 @@ run_delta_lake_tests() {
   else
     for v in $DELTA_LAKE_VERSIONS; do
       echo "Running Delta Lake tests for Delta Lake version $v"
-      if [[ "$v" == "4.2.0" ]]; then
+      if [[ "$v" == "4.2.0" || "$v" == "4.3.0" ]]; then
         DELTA_SPARK_LINE=${SPARK_VER%.*}
         DELTA_MAIN_JAR="io.delta:delta-spark_${DELTA_SPARK_LINE}_${SCALA_BINARY_VER}:$v"
       elif [[ "$v" == "4.1.0" ]]; then
         DELTA_MAIN_JAR="io.delta:delta-spark_4.1_${SCALA_BINARY_VER}:$v"
-      elif [[ "$v" == "3.3.0" || "$v" == "4.0.0" || \
+      elif [[ "$v" == "3.3.0" || "$v" == "3.3.3" || "$v" == "4.0.0" || \
           "$v" == "4.0.1" ]]; then
         DELTA_MAIN_JAR="io.delta:delta-spark_${SCALA_BINARY_VER}:$v"
       else
@@ -352,13 +366,19 @@ run_delta_lake_tests() {
       # Delta Lake 1.2+ moved LogStore implementations into delta-storage.
       # All versions tested here are 2.0+, so include it explicitly.
       DELTA_JAR="${DELTA_MAIN_JAR},io.delta:delta-storage:$v"
-      env \
-        HOST_NAME=$PROJECT_REPO_HOST \
-        PYSP_TEST_spark_jars_packages=${DELTA_JAR} \
-        PYSP_TEST_spark_jars_ivySettings="${WORKSPACE}/jenkins/ivysettings.xml" \
-        PYSP_TEST_spark_sql_extensions="io.delta.sql.DeltaSparkSessionExtension" \
-        PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.spark.sql.delta.catalog.DeltaCatalog" \
-        ./run_pyspark_from_build.sh -m delta_lake --delta_lake
+      local delta_test_env=(env
+        "HOST_NAME=$PROJECT_REPO_HOST"
+        "PYSP_TEST_spark_jars_packages=${DELTA_JAR}"
+        "PYSP_TEST_spark_jars_ivySettings=${WORKSPACE}/jenkins/ivysettings.xml"
+        "PYSP_TEST_spark_sql_extensions=io.delta.sql.DeltaSparkSessionExtension"
+        "PYSP_TEST_spark_sql_catalog_spark__catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog")
+      if [[ "$v" == "3.3.0" || "$v" == "3.3.3" ]]; then
+        # Catch Delta/JDK linkage failures before running the full matrix.
+        "${delta_test_env[@]}" TEST= \
+          TESTS=delta_lake_test.py::test_delta_bitmap_serialization_java_compatibility \
+          ./run_pyspark_from_build.sh -m delta_lake --delta_lake || return 1
+      fi
+      "${delta_test_env[@]}" ./run_pyspark_from_build.sh -m delta_lake --delta_lake
     done
   fi
 }
@@ -732,7 +752,16 @@ if [[ "$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "MULTITHREADED_SHUFFLE" ]]; t
 fi
 
 if [[ "$TEST_MODE" == "UCX_SHUFFLE" ]]; then
-  invoke_shuffle_integration_test UCX ./run_pyspark_from_build.sh
+  # Disable pytest parallelism and use two single-core executors in the same
+  # application to exercise UCX remote fetches;
+  # parallel applications with one executor each cannot provide this coverage.
+  TEST_PARALLEL=0 \
+  PYSP_TEST_spark_cores_max=2 \
+  PYSP_TEST_spark_executor_cores=1 \
+    invoke_shuffle_integration_test UCX ./run_pyspark_from_build.sh
+
+  # UCX fetches from a peer executor (RapidsShuffleIterator INFO); 0 means none was logged
+  echo "UCX remote fetches: $(cat "$SPARK_HOME"/work/app-*/*/std* | grep -c 'triggered, for')"
 fi
 
 # cudf_udf test: this mostly depends on cudf-py, so we run it into an independent CI
