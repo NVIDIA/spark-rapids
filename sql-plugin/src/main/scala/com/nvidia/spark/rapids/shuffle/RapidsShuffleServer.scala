@@ -26,6 +26,7 @@ import ai.rapids.cudf.{Cuda, MemoryBuffer}
 import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, RapidsShuffleHandle, ShuffleBufferCatalog,
   ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.TableMeta
 
 import org.apache.spark.internal.Logging
@@ -681,11 +682,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         }
         bssBuffers.foreach { case (bufferSendState, buffersToSend) =>
           if (!sendsReached.contains(bufferSendState)) {
-            try {
-              buffersToSend.close()
-            } catch {
-              case NonFatal(e) => keep(e)
-            }
+            buffersToSend.safeClose(t)
           }
         }
         bufferSendStates.foreach { bufferSendState =>
