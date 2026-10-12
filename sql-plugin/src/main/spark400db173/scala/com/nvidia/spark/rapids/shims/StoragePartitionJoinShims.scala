@@ -24,9 +24,9 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.catalyst.plans.physical.KeyGroupedShuffleSpec
+import org.apache.spark.sql.catalyst.expressions.{Expression, GenericInternalRow}
 import org.apache.spark.sql.catalyst.util.InternalRowComparableWrapper
+import org.apache.spark.sql.connector.catalog.functions.Reducer
 // Spark 4.1.0+: StoragePartitionJoinParams moved to joins package
 import org.apache.spark.sql.execution.joins.StoragePartitionJoinParams
 
@@ -49,7 +49,15 @@ object StoragePartitionJoinShims {
       spjParams: SpjParams,
       partExpressions: Seq[Expression]): Option[InternalRow => InternalRowComparableWrapper] =
     spjParams.reducers.map { reducers =>
-      (row: InternalRow) =>
-        KeyGroupedShuffleSpec.reducePartitionValue(row, partExpressions, reducers)
+      (row: InternalRow) => {
+        // DBR 18 removes KeyGroupedShuffleSpec.reducePartitionValue. Keep the implementation
+        // equivalent to Spark so partition keys are reduced into the same comparison space.
+        val partitionValues = row.toSeq(partExpressions.map(_.dataType))
+        val reducedValues = partitionValues.zip(reducers).map {
+          case (value, Some(reducer: Reducer[Any, Any])) => reducer.reduce(value)
+          case (value, _) => value
+        }.toArray
+        InternalRowComparableWrapper(new GenericInternalRow(reducedValues), partExpressions)
+      }
     }
 }
