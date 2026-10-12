@@ -165,18 +165,28 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
         scan: GpuFileSourceScanExec): SparkPlan = {
       def isMarkedGpuRowIndex(field: StructField): Boolean =
         GpuDeltaParquetFileFormatBase.isGpuRowIndexColumn(field)
+      // A table may have a real column with the same name as DBR's temporary row index.
+      val hasUserRowIndexColumn = scan.relation.fileFormat match {
+        case format: GpuDeltaParquetFileFormatBase =>
+          val resolver = scan.relation.sparkSession.sessionState.conf.resolver
+          format.referenceSchema.fieldNames.exists(
+            resolver(_, DeltaParquetFileFormat.ROW_INDEX_STRUCT_FIELD.name))
+        case _ => false
+      }
+      def isUnusedRowIndex(field: StructField): Boolean =
+        !hasUserRowIndexColumn &&
+          field.name == DeltaParquetFileFormat.ROW_INDEX_STRUCT_FIELD.name &&
+          !isMarkedGpuRowIndex(field)
 
       project.copy(projectList = project.projectList.filterNot(_.name == "_metadata"))
         .withNewChildren(Seq(
           scan.copy(
             originalOutput = scan.originalOutput.filterNot { attr =>
-              attr.name == "_tmp_metadata_row_index" && !isMarkedGpuRowIndex(StructField(
+              isUnusedRowIndex(StructField(
                 attr.name, attr.dataType, attr.nullable, attr.metadata))
             },
             requiredSchema = StructType(
-              scan.requiredSchema.filterNot { field =>
-                field.name == "_tmp_metadata_row_index" && !isMarkedGpuRowIndex(field)
-              }
+              scan.requiredSchema.filterNot(isUnusedRowIndex)
             ))(scan.rapidsConf)))
     }
 
