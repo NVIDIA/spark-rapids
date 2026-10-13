@@ -174,6 +174,37 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
     def test_cli_validates_matrix_without_query_arguments(self):
         self.assertEqual((0, "", ""), self._run_cli("validate"))
 
+    def test_cli_validate_fails_for_missing_pom_derived_mapping(self):
+        self.document["iceberg_versions"][1]["spark_versions"].pop(0)
+        self.matrix_path.write_text(json.dumps(self.document), encoding="utf-8")
+        exit_code, stdout, stderr = self._run_cli("validate")
+        self.assertEqual(1, exit_code)
+        self.assertEqual("", stdout)
+        self.assertIn("missing 3.5.5", stderr)
+
+    def test_cli_validate_fails_for_malformed_pom(self):
+        pom_path = self.matrix_path.parent / "malformed-pom.xml"
+        pom_path.write_text("<project>", encoding="utf-8")
+        exit_code, stdout, stderr = self._run_cli("validate", "--pom", str(pom_path))
+        self.assertEqual(1, exit_code)
+        self.assertEqual("", stdout)
+        self.assertIn("Iceberg test matrix error", stderr)
+
+    def test_cli_requested_version_failures_return_nonzero(self):
+        cases = (
+            ("3.5.6", "9.9.9", "not present in the test matrix"),
+            ("3.5.6", "1.6.1", "Iceberg 1.6.x is not packaged"),
+            ("3.5.5", "1.10.1", "minimum-baseline"),
+        )
+        for spark_version, iceberg_version, diagnostic in cases:
+            with self.subTest(spark=spark_version, iceberg=iceberg_version):
+                exit_code, stdout, stderr = self._run_cli(
+                    "validate-requested", "--spark-version", spark_version,
+                    "--requested-versions", iceberg_version)
+                self.assertEqual(1, exit_code)
+                self.assertEqual("", stdout)
+                self.assertIn(diagnostic, stderr)
+
     def test_cli_lists_versions_in_matrix_order(self):
         self.assertEqual(
             (0, "1.9.2 1.10.1\n", ""),

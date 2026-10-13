@@ -360,13 +360,101 @@ class IcebergVersionMatrix:
         return requested_versions
 
 
+def _print_versions(spark_version, versions):
+    """Print shell-readable versions and explain an empty selection on stderr."""
+    if not versions:
+        # A valid matrix can intentionally exclude even a packaged combination.
+        # Missing entries for shims at or above a baseline fail during load().
+        print(
+            f"No Iceberg versions selected for Spark {spark_version}: "
+            "the minimum-baseline and packaging test policy excludes all entries "
+            "(https://github.com/NVIDIA/cudf-spark/issues/15875).",
+            file=sys.stderr)
+    print(" ".join(versions))
+
+
+def command_validate(args):
+    """Check the entire matrix against the POM without selecting test versions.
+
+    Args:
+        args: Parsed ``validate`` arguments. ``matrix`` is the JSON input path
+            and ``pom`` is the Maven POM declaring the Spark release shims.
+
+    Returns:
+        None after both inputs have been read and all matrix entries validated.
+        Success produces no output; ``main`` translates it to exit status 0.
+
+    Raises:
+        MatrixError: The schema, version entries, or POM-derived mappings are
+            invalid. Validation includes duplicates and unsupported-entry reasons.
+        OSError: Either input cannot be read.
+        json.JSONDecodeError: The matrix is not valid JSON.
+        ET.ParseError: The POM is not well-formed XML.
+
+    These failures reach ``main``, which reports them and returns exit status 1.
+    """
+    IcebergVersionMatrix.load(args.matrix, args.pom)
+
+
+def command_list(args):
+    """Validate the inputs and print matrix-selected Iceberg versions for Spark.
+
+    Args:
+        args: Parsed ``list`` arguments containing the ``matrix`` JSON path,
+            the ``pom`` path, and the exact ``spark_version`` to query.
+
+    Returns:
+        None after printing space-separated versions in matrix order and a
+        newline. An empty selection prints a newline and a policy diagnostic
+        on stderr; it is successful and lets CI skip that Spark combination.
+
+    Raises:
+        MatrixError: Matrix validation fails or the Spark query is malformed,
+            including a snapshot in a family covered by the matrix.
+        OSError, json.JSONDecodeError, ET.ParseError: An input cannot be read
+            or parsed. ``main`` reports these failures and returns status 1.
+    """
+    matrix = IcebergVersionMatrix.load(args.matrix, args.pom)
+    versions = matrix.supported_iceberg_versions(args.spark_version)
+    _print_versions(args.spark_version, versions)
+
+
+def command_validate_requested(args):
+    """Validate caller-selected versions for Spark and echo them in caller order.
+
+    Args:
+        args: Parsed ``validate-requested`` arguments containing ``matrix`` and
+            ``pom`` paths, an exact Spark release in ``spark_version``, and a
+            comma- or whitespace-separated ``requested_versions`` string.
+
+    Returns:
+        None after printing the requested versions separated by spaces and a
+        newline. Input order and duplicates are retained. An empty version list
+        prints a newline and the empty-selection diagnostic on stderr.
+
+    Raises:
+        MatrixError: The matrix or Spark release is invalid, or a requested
+            Iceberg version is unknown, below the test baseline, or unsupported.
+        OSError, json.JSONDecodeError, ET.ParseError: An input cannot be read
+            or parsed. ``main`` reports these failures and returns status 1.
+
+    The entire matrix is validated before the requested combinations are checked.
+    """
+    matrix = IcebergVersionMatrix.load(args.matrix, args.pom)
+    requested = [
+        version for version in re.split(r"[\s,]+", args.requested_versions) if version]
+    versions = matrix.validate_requested_versions(args.spark_version, requested)
+    _print_versions(args.spark_version, versions)
+
+
 def parse_args(arguments=None):
     """Parse command-specific CLI options into an ``argparse.Namespace``.
 
     ``arguments`` is a sequence of argument strings; None reads ``sys.argv[1:]``.
     Each required subcommand owns its input-file options and accepts only the
-    query arguments relevant to that operation. Invalid usage raises SystemExit
-    with status 2; requesting help raises SystemExit with status 0.
+    query arguments relevant to that operation. The returned namespace includes
+    the command's ``handler`` function. Invalid usage raises SystemExit with
+    status 2; requesting help raises SystemExit with status 0.
     """
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -379,13 +467,15 @@ def parse_args(arguments=None):
         "--pom", type=Path, default=DEFAULT_POM,
         help="Spark shim POM (default: scala2.13/pom.xml)")
 
-    subparsers.add_parser(
+    validate_parser = subparsers.add_parser(
         "validate", parents=[inputs], help="validate the entire matrix against the POM")
+    validate_parser.set_defaults(handler=command_validate)
 
     list_parser = subparsers.add_parser(
         "list", parents=[inputs], help="list matrix-selected Iceberg versions for Spark")
     list_parser.add_argument(
         "--spark-version", required=True, help="exact Spark version to query")
+    list_parser.set_defaults(handler=command_list)
 
     requested_parser = subparsers.add_parser(
         "validate-requested", parents=[inputs],
@@ -395,38 +485,21 @@ def parse_args(arguments=None):
     requested_parser.add_argument(
         "--requested-versions", required=True,
         help="comma- or whitespace-separated Iceberg versions to validate and echo")
+    requested_parser.set_defaults(handler=command_validate_requested)
     return parser.parse_args(arguments)
 
 
 def main(arguments=None):
-    """Run one CLI command and return 0 on success or 1 for matrix/query errors.
+    """Dispatch to the selected command and translate failures to exit status 1.
 
-    ``arguments`` follows ``parse_args``. The ``validate`` command is silent on
-    success; ``list`` and ``validate-requested`` print space-separated versions
-    followed by a newline. Empty selections also explain the skip on stderr.
+    ``arguments`` follows ``parse_args``. A handler that completes successfully
+    yields status 0; command handlers document their output and validation rules.
     File, parse, and validation failures print a diagnostic on stderr. Argument
     parsing retains argparse's SystemExit behavior for usage errors and help.
     """
     args = parse_args(arguments)
     try:
-        matrix = IcebergVersionMatrix.load(args.matrix, args.pom)
-        if args.command == "validate":
-            return 0
-        if args.command == "validate-requested":
-            requested = [
-                version for version in re.split(r"[\s,]+", args.requested_versions) if version]
-            versions = matrix.validate_requested_versions(args.spark_version, requested)
-        else:
-            versions = matrix.supported_iceberg_versions(args.spark_version)
-        if not versions:
-            # A valid matrix can intentionally exclude even a packaged combination.
-            # Missing entries for shims at or above a baseline fail during load().
-            print(
-                f"No Iceberg versions selected for Spark {args.spark_version}: "
-                "the minimum-baseline and packaging test policy excludes all entries "
-                "(https://github.com/NVIDIA/cudf-spark/issues/15875).",
-                file=sys.stderr)
-        print(" ".join(versions))
+        args.handler(args)
         return 0
     except (MatrixError, ET.ParseError, OSError, json.JSONDecodeError) as error:
         print(f"Iceberg test matrix error: {error}", file=sys.stderr)

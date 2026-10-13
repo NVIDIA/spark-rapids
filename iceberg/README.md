@@ -72,10 +72,13 @@ python3 scripts/get_iceberg_versions.py validate-requested \
 
 Run these commands from the repository root. Each subcommand accepts `--matrix` and
 `--pom` to override the default input files, and `--help` describes its arguments.
-`validate` produces no output on success. The other commands print space-separated
-versions for shell callers; `validate-requested` accepts comma- or whitespace-separated
-input. Invalid command arguments exit with status 2, while matrix and query errors exit
-with status 1.
+`validate` reads both input files and checks the JSON schema, unique version entries,
+unsupported-entry reasons, and POM-derived Spark mappings. It produces no output and
+returns status 0 only when validation succeeds; input and validation failures report an
+error on stderr and return status 1. The other commands run the same matrix validation
+before printing space-separated versions for shell callers; `validate-requested` accepts
+comma- or whitespace-separated input. Invalid command arguments exit with status 2,
+while matrix and query errors exit with status 1.
 
 For Spark 3.5.4+, both `iceberg-1-9-x` and `iceberg-1-10-x` modules are compiled into the
 build. The correct version-specific implementation is
