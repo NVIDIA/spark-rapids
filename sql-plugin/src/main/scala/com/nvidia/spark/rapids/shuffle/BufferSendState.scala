@@ -91,12 +91,20 @@ class BufferSendState(
       val bufferMetas = new Array[BufferMeta](transferRequest.requestsLength())
 
       val btr = new BufferTransferRequest() // for reuse
-      val blocksToSend = (0 until transferRequest.requestsLength()).map { ix =>
-        val bufferTransferRequest = transferRequest.requests(btr, ix)
-        val tableId = bufferTransferRequest.bufferId()
-        val handle = requestHandler.getShuffleHandle(tableId)
-        bufferMetas(ix) = handle.tableMeta.bufferMeta()
-        new SendBlock(tableId, handle)
+      val blocksToSend = try {
+        (0 until transferRequest.requestsLength()).map { ix =>
+          val bufferTransferRequest = transferRequest.requests(btr, ix)
+          val tableId = bufferTransferRequest.bufferId()
+          val handle = requestHandler.getShuffleHandle(tableId)
+          bufferMetas(ix) = handle.tableMeta.bufferMeta()
+          new SendBlock(tableId, handle)
+        }
+      } catch {
+        case NonFatal(t) =>
+          // the request is released once this block ends, so its ids are read here
+          throw new BufferLookupException((0 until transferRequest.requestsLength()).map {
+            ix => transferRequest.requests(btr, ix).bufferId()
+          }, t)
       }
       (peerBufferReceiveHeader, bufferMetas, blocksToSend)
     }
@@ -210,9 +218,13 @@ class BufferSendState(
    * While a send of this state is in flight only that send's callback may call this, or the
    * server's sweep once the transport has stopped, because the transport can still read the
    * bounce buffer until then.
+   * @param errorReply why the request failed, to answer its requester with an error reply
+   *                   before the request transaction closes; none sends no reply
    * @return true if this call ended the state
    */
-  def finish(result: BufferSendState.Outcome): Boolean = {
+  def finish(
+      result: BufferSendState.Outcome,
+      errorReply: Option[String] = None): Boolean = {
     val first = synchronized {
       val isFirst = outcome == null
       if (isFirst) {
@@ -234,7 +246,13 @@ class BufferSendState(
       }
       release(releaseAcquiredToCatalog())
       release(freeBounceBuffers())
-      // outside this state's monitor, since closing a transaction is a call into the transport
+      // The requester of a state whose release ends the send loop hears of it when its
+      // connection closes. Replying and closing the transaction are calls into the transport,
+      // so they run outside this state's monitor.
+      if (error == null || !BufferSendState.endsSendLoop(error)) {
+        errorReply.foreach(reason => BufferSendState.sendErrorReply(transaction,
+          getErrorResponse(reason)))
+      }
       release(transaction.close())
       if (error != null) {
         if (BufferSendState.endsSendLoop(error)) {
@@ -383,6 +401,13 @@ class BufferSendState(
     toRelease.safeClose()
   }
 }
+
+/**
+ * A transfer request whose buffers could not all be looked up, with the id of every buffer it
+ * asked for, which cannot be read from the request once it is released.
+ */
+private[shuffle] class BufferLookupException(val tableIds: Seq[Int], cause: Throwable)
+    extends RuntimeException(cause.getMessage, cause)
 
 object BufferSendState extends Logging {
   /**

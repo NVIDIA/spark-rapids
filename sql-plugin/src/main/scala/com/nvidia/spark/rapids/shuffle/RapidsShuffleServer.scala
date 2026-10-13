@@ -146,7 +146,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     val failure = new IllegalStateException(
       s"Unable to prepare shuffle sends. $reason These sends will not be retried.")
     errors.foreach(failure.addSuppressed)
-    states.foreach(_.finish(BufferSendState.OomExpired))
+    val reply = errorReply(BufferSendState.OomExpired, failure)
+    states.foreach(_.finish(BufferSendState.OomExpired, reply))
     logError(failure.getMessage, failure)
     bssExec.synchronized {
       bssExec.notifyAll()
@@ -290,7 +291,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         } catch {
           case NonFatal(t) =>
             // no send has been issued in this pass yet, so these states can end here
-            bssToIssue.foreach(_.finish(BufferSendState.Failed))
+            val reply = errorReply(BufferSendState.Failed, t)
+            bssToIssue.foreach(_.finish(BufferSendState.Failed, reply))
             bssToIssue.clear()
             if (BufferSendState.endsSendLoop(t)) {
               throw t
@@ -328,8 +330,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
   /**
    * Builds the send state of a transfer request. If its lookups fail, nothing was sent and the
-   * request is not retried: the bounce buffers and the request transaction are released here,
-   * and the requester times out waiting for a reply.
+   * request is not retried: the bounce buffers are released, the requester gets an error reply,
+   * and the request transaction is closed, here.
    */
   private def newSendState(
       pendingTransfer: PendingTransferResponse,
@@ -342,7 +344,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         serverStream))
     } catch {
       case NonFatal(t) =>
-        if (isOutputGone(t)) {
+        val gone = isOutputGone(t)
+        if (gone) {
           // expected after an unregister, possibly once per request, so the trace is debug only
           logWarning(s"Unable to start transfer request ${pendingTransfer.tx}: the requested " +
               s"shuffle output is gone (${t.getMessage}). It will not be retried.")
@@ -352,6 +355,18 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
               "It will not be retried.", t)
         }
         closeQuietly("send bounce buffers", sendBounceBuffers)
+        // a request whose own receive failed has no header to answer
+        if (pendingTransfer.tx.getStatus == TransactionStatus.Success) {
+          val requested = t match {
+            case e: BufferLookupException => e.tableIds
+            case _ => Seq.empty
+          }
+          errorReply(if (gone) BufferSendState.MissingOutput else BufferSendState.Failed, t)
+            .foreach { reason =>
+              BufferSendState.sendErrorReply(pendingTransfer.tx, new RefCountedDirectByteBuffer(
+                ShuffleMetadata.buildTransferErrorResponse(requested, reason)))
+            }
+        }
         closeQuietly("a transfer request", pendingTransfer.tx)
         None
     }
@@ -393,10 +408,20 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
   private def isOutputGone(error: Throwable): Boolean = error match {
     case _: ShuffleOutputGoneException => true
+    case e: BufferLookupException => isOutputGone(e.getCause)
     case ex: RapidsShuffleSendPrepareException =>
       ex.getCause.isInstanceOf[ShuffleOutputGoneException]
     case _ => false
   }
+
+  /**
+   * The error reply for a request that ended with `outcome` because of `cause`: none when `cause`
+   * ends the send loop, since the executor then exits and the requester hears of it when its
+   * connection closes.
+   */
+  private def errorReply(outcome: BufferSendState.Outcome, cause: Throwable): Option[String] =
+    if (BufferSendState.endsSendLoop(cause)) None
+    else Some(RapidsShuffleServer.failureReason(outcome))
 
   private def closeQuietly(what: String, resource: AutoCloseable): Unit = {
     try {
@@ -556,8 +581,6 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
               // We failed to prepare the send (copy to bounce buffer), and got an exception.
               // Put the `bufferSendState` back in the continue queue, so it can be retried.
               // If no `BufferSendState` could be handled, retry only transient OOM failures.
-              // TODO: we should respond with a failure to the client.
-              // Please see: https://github.com/NVIDIA/spark-rapids/issues/3040
               if (toTryAgain == null) {
                 toTryAgain = new ArrayBuffer[BufferSendState]()
                 supressedErrors = new ArrayBuffer[Throwable]()
@@ -589,7 +612,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
                 gone.map(f => (f._1.peerExecutorId, f._1.getPeerBufferReceiveHeader))) +
               ". These sends will not be retried.")
           logDebug("Missing output while preparing shuffle sends", gone.head._2)
-          gone.foreach(_._1.finish(BufferSendState.MissingOutput))
+          gone.foreach { case (state, error) =>
+            state.finish(BufferSendState.MissingOutput,
+              errorReply(BufferSendState.MissingOutput, error))
+          }
         }
 
         // Preserve the existing fail-fast behavior when an entire batch fails and at least one
@@ -688,7 +714,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         bufferSendStates.foreach { bufferSendState =>
           if (!sendsReached.contains(bufferSendState)) {
             try {
-              bufferSendState.finish(BufferSendState.Failed)
+              // Checked for each state, since ending one can find an error that ends the loop.
+              // States answered before it was found stay answered.
+              bufferSendState.finish(BufferSendState.Failed, errorReply(BufferSendState.Failed, t))
             } catch {
               case NonFatal(e) => keep(e)
             }
@@ -742,7 +770,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           }
           logError(s"Error while issuing a send for $bufferSendState. " +
               "It will not be retried.", t)
-          bufferSendState.finish(BufferSendState.Failed)
+          bufferSendState.finish(BufferSendState.Failed, errorReply(BufferSendState.Failed, t))
       }
     }
   }
