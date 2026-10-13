@@ -227,20 +227,22 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       job: Job,
       options: Map[String, String],
       dataSchema: StructType): ColumnarOutputWriterFactory = {
-    prepareWriteInternal(sparkSession, job, options, dataSchema, None)
+    prepareWriteInternal(sparkSession, job, options, dataSchema, None, None)
   }
 
   /**
-   * Prepares a write using the specified physical Parquet timestamp type, independent of
-   * Spark's session configuration and per-write options.
+   * Prepares a write using the specified physical Parquet timestamp type and rebase mode,
+   * independent of Spark's session configuration and per-write options.
    */
-  def prepareWriteWithOutputTimestampType(
+  def prepareWriteWithTimestampOverrides(
       sparkSession: SparkSession,
       job: Job,
       options: Map[String, String],
       dataSchema: StructType,
-      outputTimestampType: ParquetOutputTimestampType.Value): ColumnarOutputWriterFactory = {
-    prepareWriteInternal(sparkSession, job, options, dataSchema, Some(outputTimestampType))
+      outputTimestampType: ParquetOutputTimestampType.Value,
+      timestampRebaseMode: DateTimeRebaseMode): ColumnarOutputWriterFactory = {
+    prepareWriteInternal(sparkSession, job, options, dataSchema,
+      Some(outputTimestampType), Some(timestampRebaseMode))
   }
 
   @scala.annotation.nowarn(
@@ -251,7 +253,8 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
       job: Job,
       options: Map[String, String],
       dataSchema: StructType,
-      outputTimestampTypeOverride: Option[ParquetOutputTimestampType.Value])
+      outputTimestampTypeOverride: Option[ParquetOutputTimestampType.Value],
+      timestampRebaseModeOverride: Option[DateTimeRebaseMode])
       : ColumnarOutputWriterFactory = {
     val sqlConf = sparkSession.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
@@ -286,11 +289,13 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
         sqlConf.parquetOutputTimestampType.toString).toUpperCase(Locale.ROOT))
     val dateTimeRebaseMode = DateTimeRebaseMode.fromName(
       sparkSession.sqlContext.getConf(SparkShimImpl.parquetRebaseWriteKey))
-    val timestampRebaseMode = if (outputTimestampType.equals(ParquetOutputTimestampType.INT96)) {
-      DateTimeRebaseMode.fromName(
-        sparkSession.sqlContext.getConf(SparkShimImpl.int96ParquetRebaseWriteKey))
-    } else {
-      dateTimeRebaseMode
+    val timestampRebaseMode = timestampRebaseModeOverride.getOrElse {
+      if (outputTimestampType.equals(ParquetOutputTimestampType.INT96)) {
+        DateTimeRebaseMode.fromName(
+          sparkSession.sqlContext.getConf(SparkShimImpl.int96ParquetRebaseWriteKey))
+      } else {
+        dateTimeRebaseMode
+      }
     }
 
     val committerClass =

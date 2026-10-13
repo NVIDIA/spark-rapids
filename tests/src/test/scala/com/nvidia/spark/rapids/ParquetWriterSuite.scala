@@ -155,18 +155,19 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }, conf)
   }
 
-  test("explicit parquet output timestamp type overrides session config") {
+  test("explicit parquet timestamp settings override session config") {
     val conf = new SparkConf()
       .set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, "INT96")
     withGpuSparkSession(spark => {
       val job = Job.getInstance(spark.sparkContext.hadoopConfiguration)
-      new GpuParquetFileFormat().prepareWriteWithOutputTimestampType(
+      new GpuParquetFileFormat().prepareWriteWithTimestampOverrides(
         spark,
         job,
         Map(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key ->
           ParquetOutputTimestampType.TIMESTAMP_MILLIS.toString),
         new StructType(),
-        ParquetOutputTimestampType.TIMESTAMP_MICROS)
+        ParquetOutputTimestampType.TIMESTAMP_MICROS,
+        DateTimeRebaseCorrected)
 
       assertResult(ParquetOutputTimestampType.TIMESTAMP_MICROS.toString) {
         job.getConfiguration.get(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key)

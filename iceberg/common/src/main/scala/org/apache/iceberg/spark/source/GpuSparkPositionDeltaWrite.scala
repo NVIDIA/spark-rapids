@@ -126,12 +126,13 @@ class GpuSparkPositionDeltaWrite(cpu: DeltaWrite)
       command, context)
 
     // Iceberg timestamps use int64 microseconds regardless of Spark's Parquet timestamp config.
-    val outputWriterFactory = new GpuParquetFileFormat().prepareWriteWithOutputTimestampType(
+    val outputWriterFactory = new GpuParquetFileFormat().prepareWriteWithTimestampOverrides(
       SparkSession.active,
       job,
       GpuSparkWrite.translateIcebergWriteProperties(writeProps),
       dataSparkTypeWithFieldIds,
-      ParquetOutputTimestampType.TIMESTAMP_MICROS
+      ParquetOutputTimestampType.TIMESTAMP_MICROS,
+      DateTimeRebaseCorrected
     )
 
     val serializedHadoopConf = new SerializableConfiguration(job.getConfiguration)

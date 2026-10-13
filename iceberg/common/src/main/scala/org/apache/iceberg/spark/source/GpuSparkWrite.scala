@@ -131,12 +131,13 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
     }
 
     // Iceberg timestamps use int64 microseconds regardless of Spark's Parquet timestamp config.
-    val outputWriterFactory = new GpuParquetFileFormat().prepareWriteWithOutputTimestampType(
+    val outputWriterFactory = new GpuParquetFileFormat().prepareWriteWithTimestampOverrides(
       SparkSession.active,
       job,
       GpuSparkWrite.translateIcebergWriteProperties(writeProps.asScala.toMap),
       dsSchema,
-      ParquetOutputTimestampType.TIMESTAMP_MICROS
+      ParquetOutputTimestampType.TIMESTAMP_MICROS,
+      DateTimeRebaseCorrected
     )
 
     val serializedHadoopConf = new SerializableConfiguration(job.getConfiguration)

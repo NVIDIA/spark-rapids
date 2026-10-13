@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import datetime, timezone
 from typing import Callable, Dict, Optional
 
 import pytest
@@ -22,7 +23,7 @@ from asserts import (assert_cpu_and_gpu_are_equal_collect_with_capture,
                      assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect,
                      assert_gpu_fallback_collect, assert_gpu_fallback_write, collect_plan_nodes)
 from conftest import is_iceberg_remote_catalog, spark_jvm
-from data_gen import gen_df, copy_and_update, RepeatSeqGen
+from data_gen import gen_df, copy_and_update, long_gen, RepeatSeqGen, TimestampGen
 from iceberg import (create_iceberg_table,
                      iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
@@ -137,14 +138,25 @@ def test_ctas_unpartitioned_table(spark_tmp_table_factory):
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Requires footer access through Hadoop")
-def test_ctas_gpu_timestamp_uses_iceberg_micros_and_has_metrics(spark_tmp_table_factory):
+@pytest.mark.parametrize(
+    "datetime_rebase_mode", ["LEGACY", "EXCEPTION"],
+    ids=lambda mode: f"datetime_rebase_mode={mode.lower()}")
+def test_ctas_gpu_timestamp_uses_iceberg_micros_and_has_metrics(
+        spark_tmp_table_factory, datetime_rebase_mode):
     conf = copy_and_update(iceberg_write_enabled_conf, {
-        "spark.sql.parquet.outputTimestampType": "INT96"
+        "spark.sql.parquet.outputTimestampType": "INT96",
+        "spark.sql.parquet.int96RebaseModeInWrite": "CORRECTED",
+        "spark.sql.parquet.datetimeRebaseModeInWrite": datetime_rebase_mode
     })
 
     def timestamp_df(spark):
-        return spark.range(200).selectExpr(
-            "id AS unique_id", "CAST(id AS TIMESTAMP) AS sale_datetime")
+        return gen_df(spark, [
+            ("unique_id", long_gen),
+            ("sale_datetime", TimestampGen(
+                start=datetime(1000, 1, 1, tzinfo=timezone.utc),
+                end=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                nullable=False))
+        ], length=200)
 
     def assert_gpu_ctas(_cpu_plan, plan):
         callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
