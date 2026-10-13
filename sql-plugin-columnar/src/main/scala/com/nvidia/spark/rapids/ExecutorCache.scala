@@ -18,21 +18,13 @@ package com.nvidia.spark.rapids
 
 import java.lang.management.ManagementFactory
 
-import ai.rapids.cudf.{Cuda, CudaComputeMode}
+import ai.rapids.cudf.Cuda
 
 /**
  * A singleton object to cache executor related information.
  * Uses lazy mode to ensure the values are only computed once per executor.
  */
 object ExecutorCache {
-
-  /**
-   * Cache the current device compute mode for current executor.
-   * It's based on the assumption that executor has been assigned to a single device,
-   * and will not change during the lifetime of the executor.
-   * Should be called on executor side.
-   */
-  private[rapids] lazy val getCurrentDeviceComputeMode: CudaComputeMode = Cuda.getComputeMode()
 
   /**
    * Cache the current device UUID for current executor.
@@ -48,4 +40,3 @@ object ExecutorCache {
    */
   private[rapids] lazy val getProcessName: String = ManagementFactory.getRuntimeMXBean.getName
 }
-
