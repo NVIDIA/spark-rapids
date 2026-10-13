@@ -125,6 +125,12 @@ class BufferSendState(
 
   private[this] var acquiredBuffs: Seq[RangeBuffer] = Seq.empty
 
+  // How many requested blocks, in order, the windows prepared so far cover completely, and how
+  // many the windows handed to the transport do. The requester gets every window handed over, or
+  // the send fails and it gets no error reply.
+  private[this] var blocksPrepared = 0
+  private[this] var blocksIssued = 0
+
   // A retry window belongs to this transfer request. Its first materialization OOM starts an
   // episode, and only a successful preparation by this state resets the episode. Results from
   // other BufferSendState instances that happen to share a server batch do not affect it.
@@ -167,6 +173,21 @@ class BufferSendState(
   def getTransferResponse(): RefCountedDirectByteBuffer = synchronized {
     new RefCountedDirectByteBuffer(
       ShuffleMetadata.buildBufferTransferResponse(bufferMetas))
+  }
+
+  /** Records that the transport took the window that `getBufferToSend` prepared last. */
+  def windowIssued(): Unit = synchronized {
+    blocksIssued = blocksPrepared
+  }
+
+  /**
+   * The error reply to this state's requester: the requested buffers that it will not get, and
+   * why.
+   * @param reason why the request failed, for the requester's error message
+   */
+  def getErrorResponse(reason: String): RefCountedDirectByteBuffer = synchronized {
+    new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferErrorResponse(
+      blocksToSend.drop(blocksIssued).map(_.tableId), reason))
   }
 
   /** Whether this state has ended. An ended state never becomes live again. */
@@ -328,6 +349,7 @@ class BufferSendState(
         }
 
         val buffSlice = bounceBuffToUse.slice(0, buffOffset)
+        blocksPrepared += blockRanges.count(_.isComplete())
 
         if (windowedBlockIterator.hasNext) {
           blockRanges = windowedBlockIterator.next()
@@ -362,7 +384,38 @@ class BufferSendState(
   }
 }
 
-object BufferSendState {
+object BufferSendState extends Logging {
+  /**
+   * Answers a failed transfer request with an error reply, and releases the reply: its send's
+   * callback does, whatever the status, or this does when the send cannot start. A reply that
+   * cannot be sent is logged, and its requester waits until it times out, as with no reply.
+   */
+  private[shuffle] def sendErrorReply(
+      request: Transaction,
+      reply: => RefCountedDirectByteBuffer): Unit = {
+    try {
+      val response = reply
+      try {
+        request.respond(response.acquire(), withResource(_) { responseTx =>
+          withResource(response) { _ =>
+            if (responseTx.getStatus != TransactionStatus.Success) {
+              logError(s"Error while sending an error reply: ${responseTx.getErrorMessage}")
+            }
+          }
+        })
+      } catch {
+        // A respond that throws queued nothing, so its callback will not release the reply. A
+        // fatal error can come after the send was queued, and then the reply is left alone.
+        case NonFatal(t) =>
+          response.safeClose(t)
+          throw t
+      }
+    } catch {
+      case NonFatal(t) => logError("Unable to send an error reply, so the requester will " +
+          "wait until it times out", t)
+    }
+  }
+
   /**
    * Whether `error`, one of its causes or one of their suppressed errors must end the send loop
    * rather than be contained: a fatal CUDA error, after which the GPU is unusable, or an

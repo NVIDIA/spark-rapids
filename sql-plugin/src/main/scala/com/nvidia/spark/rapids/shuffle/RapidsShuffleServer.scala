@@ -734,6 +734,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         serverConnection.send(peerExecutorId, MessageType.Buffer,
           // TODO: it may be nice to hide `sendHeader` in `Transaction`
           sendHeader, buffersToSend, txCallback)
+        bufferSendState.windowIssued()
       } catch {
         case NonFatal(t) =>
           inFlight.synchronized {
@@ -872,6 +873,14 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 object RapidsShuffleServer {
   // how long close() waits for the send loop to exit
   private val CLOSE_WAIT_MILLIS = 500L
+
+  /** Why a transfer request ended with `outcome`, in the error reply its requester gets. */
+  private[shuffle] def failureReason(outcome: BufferSendState.Outcome): String = outcome match {
+    case BufferSendState.MissingOutput => "the shuffle output it asked for is gone"
+    case BufferSendState.OomExpired =>
+      "GPU memory ran out while preparing it, past the retry window"
+    case _ => "the server failed to prepare or send it"
+  }
 
   // how many requests a log line names before it only counts the rest
   private val MAX_REQUESTS_NAMED = 5
