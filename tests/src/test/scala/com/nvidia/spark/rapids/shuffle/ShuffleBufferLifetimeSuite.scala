@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.shuffle
 
+import java.nio.ByteBuffer
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, CountDownLatch, LinkedBlockingQueue, ThreadFactory, ThreadPoolExecutor, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 
@@ -24,6 +25,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{ColumnVector, ContiguousTable, Cuda, CudaFatalException, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer, Rmm, Table}
 import com.nvidia.spark.rapids.{RapidsShuffleHandle, ShuffleBufferCatalog, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.format.TransferState
 import com.nvidia.spark.rapids.spill.{SpillableDeviceBufferHandle, SpillFramework}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
@@ -39,8 +41,9 @@ import org.apache.spark.storage.ShuffleBlockId
  * buffer and to the send's bounce buffer and request transaction, with exact counts. The
  * outcomes are logged with `info` and then compared, in one assertion, against what the server
  * does, so a change to the ownership of these buffers shows up as the list of outcomes it
- * changed rather than as the first failed check. A failed request gets no reply yet: the
- * requester times out, until the server can send an error reply.
+ * changed rather than as the first failed check. A request the server fails gets an error reply
+ * naming the tables it will not send, unless a data send failed, the server closed, or the failure
+ * ends the send loop.
  */
 class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
   private val awaitSeconds = 30L
@@ -257,11 +260,14 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
 
   // counted down when a request transaction is closed, which can happen on the loop's thread
   private val closedRequests = new ConcurrentHashMap[Transaction, CountDownLatch]()
+  // the tables each request transaction asks for, in order
+  private val requestedTables = new ConcurrentHashMap[Transaction, Seq[Int]]()
 
   private def transferRequest(peerId: Long, tableIds: Seq[Int]): Transaction = {
     val tx = mock[Transaction]
     val closed = new CountDownLatch(1)
     closedRequests.put(tx, closed)
+    requestedTables.put(tx, tableIds)
     doAnswer { _ =>
       closed.countDown()
       null
@@ -279,7 +285,36 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     assert(closedRequests.get(tx).await(awaitSeconds, TimeUnit.SECONDS),
       "the server never closed the request transaction")
 
-  private def reply(tx: Transaction): String = if (calls(tx, "respond") > 0) "sent" else "none"
+  /**
+   * What the requester got: "none", "sent" for a completed request's transfer response, or an
+   * error reply, which names the tables it will not send by their place in the request.
+   */
+  private def reply(tx: Transaction): String = {
+    val replies = new ArrayBuffer[String]()
+    val it = mockingDetails(tx).getInvocations.iterator()
+    while (it.hasNext) {
+      val invocation = it.next()
+      if (invocation.getMethod.getName == "respond") {
+        val response = ShuffleMetadata.getTransferResponse(invocation.getArgument[ByteBuffer](0))
+        val error = response.error()
+        replies += (if (error == null) {
+          "sent"
+        } else {
+          val requested = requestedTables.get(tx)
+          val failed = (0 until response.responsesLength()).map { i =>
+            val failedTable = response.responses(i)
+            val place = requested.indexOf(failedTable.bufferId()) + 1
+            if (failedTable.state() == TransferState.FAILED) s"$place" else s"$place not failed"
+          }
+          s"error for ${failed.mkString(",")} of ${requested.size}: ${error.reason()}"
+        })
+      }
+    }
+    if (replies.isEmpty) "none" else replies.mkString("; ")
+  }
+
+  private val goneReply = RapidsShuffleServer.failureReason(BufferSendState.MissingOutput)
+  private val failedReply = RapidsShuffleServer.failureReason(BufferSendState.Failed)
 
   private def txCloses(tx: Transaction): Int = calls(tx, "close")
 
@@ -460,7 +495,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
       "server throws" -> "none",
       "send state" -> "ended: MissingOutput",
       "data sends" -> 0,
-      "requester gets" -> "none",
+      "requester gets" -> s"error for 1 of 1: $goneReply",
       "request transaction closes" -> 1,
       "send bounce buffer" -> "returned",
       "buffer at the end" -> "catalog=(0,0,0) spillStore=0 deviceRefs=0",
@@ -509,7 +544,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
       "live data matches" -> true,
       "live requester gets" -> "sent",
       "live send state" -> "ended: Completed",
-      "closed buffer's requester gets" -> "none",
+      "closed buffer's requester gets" -> s"error for 1 of 1: $goneReply",
       "closed buffer's request transaction closes" -> 1,
       "sends in flight at the end" -> 0,
       "buffers at the end" -> "catalog=(1,1,1) spillStore=1 deviceRefs=0,1",
@@ -559,7 +594,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
       "second window throws" -> "none",
       "send state" -> "ended: MissingOutput",
       "data sends" -> 1,
-      "requester gets" -> "none",
+      "requester gets" -> s"error for 2 of 2: $goneReply",
       "request transaction closes" -> 1,
       "send bounce buffer" -> "returned",
       "buffers at the end" -> "catalog=(0,0,0) spillStore=0 deviceRefs=0,0",
@@ -873,7 +908,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
       "throwing send's state" -> "ended: Failed",
       "throwing send's bounce buffer" -> "returned",
       "throwing send's request transaction closes" -> 1,
-      "throwing send's requester gets" -> "none",
+      "throwing send's requester gets" -> s"error for 1 of 1: $failedReply",
       "co-batched state after the pass" -> "live",
       "states re-queued" -> 1,
       "sends in flight after the pass" -> 1,
@@ -916,6 +951,8 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
         describe(attempt(server.doHandleTransferRequest(Seq(goneState, heldState)))))
       outcomes("send states", s"${ended(goneState)}, ${ended(heldState)}")
       outcomes("request transactions close", s"${txCloses(goneTx)}, ${txCloses(heldTx)}")
+      // the pass ends the removed buffer's state a second time, with no second reply
+      outcomes("requesters get", s"${reply(goneTx)}, ${reply(heldTx)}")
       outcomes("bounce buffers", s"${bounceState(goneBounce)}, ${bounceState(heldBounce)}")
       outcomes("states re-queued", calls(server, "addToContinueQueue"))
       outcomes("data sends", peer.dataSends)
@@ -931,6 +968,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
       "pass throws" -> "none",
       "send states" -> "ended: MissingOutput, ended: Failed",
       "request transactions close" -> "1, 1",
+      "requesters get" -> s"error for 1 of 1: $goneReply, error for 1 of 1: $failedReply",
       "bounce buffers" -> "returned, returned",
       "states re-queued" -> 0,
       "data sends" -> 0,
@@ -977,7 +1015,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     outcomes.check(
       "a request before the unregister gets" -> "sent, read by the server: true",
       "send loop" -> "running",
-      "requester gets" -> "none",
+      "requester gets" -> s"error for 1 of 1: $goneReply",
       "request transaction closes" -> 1,
       "next request gets" -> "sent, read by the server: true",
       "data sends" -> 2,
@@ -1021,7 +1059,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     outcomes("device bytes still allocated", Rmm.getTotalBytesAllocated - allocatedBefore)
     outcomes.check(
       "send loop" -> "running",
-      "requester gets" -> "none",
+      "requester gets" -> s"error for 1,2 of 2: $goneReply",
       "request transaction closes" -> 1,
       "next request gets" -> "sent, read by the server: true",
       "data sends" -> 1,
@@ -1063,7 +1101,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     outcomes("device bytes still allocated", Rmm.getTotalBytesAllocated - allocatedBefore)
     outcomes.check(
       "buffer after unregister" -> "catalog=(1,1,1) spillStore=1 deviceRefs=0",
-      "requester gets" -> "none",
+      "requester gets" -> s"error for 1 of 1: $goneReply",
       "request transaction closes" -> 1,
       "next request gets" -> "sent, read by the server: true",
       "send loop" -> "running",
@@ -1107,7 +1145,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     outcomes.check(
       "first window matches" -> true,
       "buffers after unregister" -> "catalog=(1,1,1) spillStore=1 deviceRefs=0,0",
-      "requester gets" -> "none",
+      "requester gets" -> s"error for 2 of 2: $goneReply",
       "request transaction closes" -> 1,
       "next request gets" -> "sent, read by the server: true",
       "send loop" -> "running",
@@ -1231,6 +1269,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
       outcomes("ended state prepared again", calls(state, "getBufferToSend"))
       outcomes("ended state", ended(state))
       outcomes("ended state's request transaction closes", txCloses(tx))
+      outcomes("ended state's requester gets", reply(tx))
       outcomes("ended state's bounce buffer", bounceState(bounce))
       outcomes("data sends", loop.peer.dataSends)
       outcomes("send loop", loop.loop)
@@ -1242,6 +1281,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
       "ended state prepared again" -> 0,
       "ended state" -> "ended: Failed",
       "ended state's request transaction closes" -> 1,
+      "ended state's requester gets" -> "none",
       "ended state's bounce buffer" -> "returned",
       "data sends" -> 1,
       "send loop" -> "running",
@@ -1285,7 +1325,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     outcomes("send bounce buffers not returned", notReturned)
     outcomes("device bytes still allocated", Rmm.getTotalBytesAllocated - allocatedBefore)
     outcomes.check(
-      "built request" -> "reply none, closes 1",
+      "built request" -> s"reply error for 1 of 1: $failedReply, closes 1",
       "next request's data matches" -> true,
       "next requester gets" -> "sent",
       "send loop" -> "running",

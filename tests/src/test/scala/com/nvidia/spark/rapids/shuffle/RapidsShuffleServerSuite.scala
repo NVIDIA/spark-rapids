@@ -19,6 +19,8 @@ package com.nvidia.spark.rapids.shuffle
 import java.io.{FileNotFoundException, IOException}
 import java.nio.ByteBuffer
 
+import scala.collection.mutable.ArrayBuffer
+
 import ai.rapids.cudf.{Cuda, CudaFatalException, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.{LogCaptureUtils, MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
@@ -439,6 +441,10 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(mockSendBuffer, times(1)).close()
       assertResult(Some(BufferSendState.OomExpired))(bss.endedWith)
       verify(mockTransaction, times(1)).close()
+      val reply = ArgumentCaptor.forClass(classOf[ByteBuffer])
+      verify(mockTransaction, times(1)).respond(reply.capture(), any())
+      assertResult(RapidsShuffleServer.failureReason(BufferSendState.OomExpired))(
+        ShuffleMetadata.getTransferResponse(reply.getValue).error().reason())
     }
   }
 
@@ -971,6 +977,9 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     assert(failure.getSuppressed.contains(fatal))
     assert(!Thread.interrupted())
     assertEndedOnce(states, buffers, txs, releases, serverConnection)
+    // only the state ended before the fatal error surfaced was answered
+    verify(txs.head, times(1)).respond(any(), any())
+    txs.tail.foreach(tx => verify(tx, never()).respond(any(), any()))
     // rethrown, so left to whoever ends the loop with it to log
     assertResult(0)(logs.count(_.startsWith(releaseErrorLog)))
   }
@@ -980,6 +989,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       withLogs(cleanupAfterFailure(new IllegalStateException("second release failed in test")))
     assert(failure == null)
     assertEndedOnce(states, buffers, txs, releases, serverConnection)
+    // the loop goes on, so every requester is answered
+    txs.foreach(tx => verify(tx, times(1)).respond(any(), any()))
     // contained, so logged where it is contained
     assertResult(1)(logs.count(_.startsWith(releaseErrorLog)))
   }
@@ -1019,6 +1030,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       states.foreach(state => assertResult(Some(BufferSendState.Failed))(state.endedWith))
       buffers.foreach(buffer => verify(buffer, times(1)).close())
       txs.foreach(tx => verify(tx, times(1)).close())
+      // the loop ends, so the requesters hear of it when their connections close
+      txs.foreach(tx => verify(tx, never()).respond(any(), any()))
       verify(server, times(0)).addToContinueQueue(any())
     }
   }
@@ -1064,6 +1077,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(interruptedBuffer, times(1)).close()
       // the healthy state's window was prepared but never sent, so the pass closes its slice
       verify(healthySlice, times(1)).close()
+      Seq(healthyTx, interruptedTx).foreach(tx => verify(tx, never()).respond(any(), any()))
       verify(server, times(0)).addToContinueQueue(any())
       verify(serverConnection, times(0)).send(
         any(), any(), any(), any[MemoryBuffer](), any[TransactionCallback]())
@@ -1107,7 +1121,70 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       assertResult(Some(BufferSendState.Failed))(bss.endedWith)
       verify(sendBuffer, times(1)).close()
       verify(tx, times(1)).close()
+      verify(tx, never()).respond(any(), any())
       verify(server, times(0)).addToContinueQueue(any())
+    }
+  }
+
+  test("an error reply is released once, whether its send fails or cannot start") {
+    // The first reply goes through the real UCX server connection and transaction, with only UCX
+    // mocked, so that its failed send reaches the reply's callback as UCX reports it.
+    val ucx = mock[UCX]
+    val connection = new UCXServerConnection(ucx, mock[UCXShuffleTransport])
+    val sendFailsTx = makeTx(1)
+    doAnswer(new Answer[Transaction] {
+      override def answer(invocation: InvocationOnMock): Transaction =
+        connection.send(2L, MessageType.TransferRequest, 0L,
+          invocation.getArgument[ByteBuffer](0), invocation.getArgument[TransactionCallback](1))
+    }).when(sendFailsTx).respond(any(), any())
+    val cannotStartTx = makeTx(2)
+    doThrow(new IllegalStateException("respond failed in test"))
+      .when(cannotStartTx).respond(any(), any())
+    val txs = Seq(sendFailsTx, cannotStartTx)
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      // both buffers are gone, so that both requests end with an error reply
+      Seq(1, 2).foreach { id =>
+        val handle = makeHandle(tableMeta,
+          () => throw new FileNotFoundException("spill file deleted in test"))
+        when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(id))).thenReturn(handle)
+        when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(id),
+          ArgumentMatchers.eq(handle))).thenReturn(true)
+      }
+      val server = newServer(requestHandler, mock[ServerConnection])
+      val replies = new ArrayBuffer[RefCountedDirectByteBuffer]()
+      val states = txs.map { tx =>
+        val state = spy(new BufferSendState(
+          tx, makeSendBuffer(mock[DeviceMemoryBuffer]), requestHandler, null))
+        doAnswer(new Answer[RefCountedDirectByteBuffer] {
+          override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
+            val reply = invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer]
+            replies += reply
+            reply
+          }
+        }).when(state).getErrorResponse(any())
+        state
+      }
+
+      val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[BufferSendState].getName)) {
+        server.doHandleTransferRequest(states)
+        val completion = ArgumentCaptor.forClass(classOf[UcxCallback])
+        verify(ucx, times(1)).sendActiveMessage(
+          anyLong(), any[UCXActiveMessage](), any[ByteBuffer](), completion.capture())
+        completion.getValue.onError(-1, "the peer is gone in test")
+      }
+
+      states.foreach(state =>
+        assertResult(Some(BufferSendState.MissingOutput))(state.endedWith))
+      assertResult(2)(replies.size)
+      assert(replies.forall(_.isClosed))
+      txs.foreach(tx => verify(tx, times(1)).close())
+      // a second release throws, into the transport's callback wrapper or the reply's own catch
+      assertResult(0)(logs.count(_.startsWith("Detected an exception from user code")))
+      assertResult(0)(logs.count(_.contains("Close called too many times")))
     }
   }
 
