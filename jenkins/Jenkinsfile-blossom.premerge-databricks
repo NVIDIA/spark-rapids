@@ -21,7 +21,7 @@
  *
  */
 
-@Library('blossom-lib@databricks-explicit-config')
+@Library('blossom-lib@main')
 @Library('blossom-github-lib@master')
 
 import ipp.blossom.*
@@ -87,8 +87,7 @@ pipeline {
         } // end of Init githubHelper
 
         stage('Databricks') {
-            // VALIDATION ONLY: let both runtimes finish without cancelling a sibling on failure.
-            failFast false
+            failFast true // Abort running if one branch failed
             matrix {
                 axes {
                     axis {

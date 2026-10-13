@@ -29,9 +29,11 @@ import requests
 RETRYABLE_EXIT = 75
 START_TIMEOUT = 30 * 60
 SSH_ATTEMPTS = 6
-RETRYABLE_TERMINATIONS = {
+CAPACITY_TERMINATIONS = {
     "AWS_INSUFFICIENT_INSTANCE_CAPACITY_FAILURE",
     "CLOUD_PROVIDER_RESOURCE_STOCKOUT",
+}
+RETRYABLE_TERMINATIONS = CAPACITY_TERMINATIONS | {
     "CLUSTER_OPERATION_TIMEOUT",
     "INSTANCE_UNREACHABLE",
     "SPOT_INSTANCE_TERMINATION",
@@ -80,7 +82,12 @@ def check_termination(info):
         return
     reason = info.get("termination_reason") or {}
     code = reason.get("code", "UNKNOWN_TERMINATION")
-    retryable = code in RETRYABLE_TERMINATIONS and reason.get("type") != "CLIENT_ERROR"
+    # These explicit capacity codes describe infrastructure shortages even when the API
+    # categorizes the termination as CLIENT_ERROR. Do not extend that exception to other codes.
+    retryable = code in CAPACITY_TERMINATIONS or (
+        code in RETRYABLE_TERMINATIONS and reason.get("type") != "CLIENT_ERROR")
+    print("Cluster termination: code=%s, type=%s, retryable=%s" %
+          (code, reason.get("type", "UNKNOWN"), retryable), flush=True)
     raise PreparationError(code, retryable)
 
 
