@@ -371,6 +371,18 @@ def read_parquet_codec(spark: SparkSession, path: str) -> str:
         reader.close()
 
 
+def read_parquet_schema(spark: SparkSession, path: str) -> str:
+    """Open the Parquet footer of `path` and return its physical schema."""
+    jvm = spark_jvm()
+    hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+    hadoop_path = jvm.org.apache.hadoop.fs.Path(path)
+    reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(hadoop_conf, hadoop_path)
+    try:
+        return reader.getFooter().getFileMetaData().getSchema().toString()
+    finally:
+        reader.close()
+
+
 def assert_iceberg_files_use_codec(spark: SparkSession, table_name: str, expected_codec: str,
                                    files_table: str = "files") -> None:
     """Assert every Parquet file listed in `{table_name}.{files_table}` uses `expected_codec`.

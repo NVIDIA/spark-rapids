@@ -222,14 +222,37 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
    * here by setting the output committer class in the conf of
    * spark.sql.sources.outputCommitterClass.
    */
-  @scala.annotation.nowarn(
-    "msg=value ENABLE_JOB_SUMMARY in class ParquetOutputFormat is deprecated"
-  )
   override def prepareWrite(
       sparkSession: SparkSession,
       job: Job,
       options: Map[String, String],
       dataSchema: StructType): ColumnarOutputWriterFactory = {
+    prepareWriteInternal(sparkSession, job, options, dataSchema, None)
+  }
+
+  /**
+   * Prepares a write using the specified physical Parquet timestamp type, independent of
+   * Spark's session configuration and per-write options.
+   */
+  def prepareWriteWithOutputTimestampType(
+      sparkSession: SparkSession,
+      job: Job,
+      options: Map[String, String],
+      dataSchema: StructType,
+      outputTimestampType: ParquetOutputTimestampType.Value): ColumnarOutputWriterFactory = {
+    prepareWriteInternal(sparkSession, job, options, dataSchema, Some(outputTimestampType))
+  }
+
+  @scala.annotation.nowarn(
+    "msg=value ENABLE_JOB_SUMMARY in class ParquetOutputFormat is deprecated"
+  )
+  private def prepareWriteInternal(
+      sparkSession: SparkSession,
+      job: Job,
+      options: Map[String, String],
+      dataSchema: StructType,
+      outputTimestampTypeOverride: Option[ParquetOutputTimestampType.Value])
+      : ColumnarOutputWriterFactory = {
     val sqlConf = sparkSession.sessionState.conf
     val parquetOptions = new ParquetOptions(options, sqlConf)
 
@@ -243,7 +266,10 @@ class GpuParquetFileFormat extends ColumnarFileFormat with Logging {
     FileWriteOptionsShims.setConfWithWriteOptionPrecedence(
       conf,
       SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key,
-      sqlConf.parquetOutputTimestampType.toString)
+      outputTimestampTypeOverride.getOrElse(sqlConf.parquetOutputTimestampType).toString)
+    outputTimestampTypeOverride.foreach { timestampType =>
+      conf.set(SQLConf.PARQUET_OUTPUT_TIMESTAMP_TYPE.key, timestampType.toString)
+    }
     FileWriteOptionsShims.setupLegacyParquetNanosAsLong(conf, sqlConf)
 
     GpuParquetFileFormat.parquetBlockSizeWarning(conf, options).foreach { warning =>

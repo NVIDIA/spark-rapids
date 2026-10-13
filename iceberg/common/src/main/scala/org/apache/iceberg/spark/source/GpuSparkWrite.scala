@@ -46,6 +46,7 @@ import org.apache.spark.sql.connector.write.{DataWriter, _}
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.v2.{AtomicCreateTableAsSelectExec, AtomicReplaceTableAsSelectExec}
+import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.types.StructType
@@ -129,11 +130,13 @@ class GpuSparkWrite(cpu: Write) extends GpuWrite with RequiresDistributionAndOrd
       tmpJob
     }
 
-    val outputWriterFactory = new GpuParquetFileFormat().prepareWrite(
+    // Iceberg timestamps use int64 microseconds regardless of Spark's Parquet timestamp config.
+    val outputWriterFactory = new GpuParquetFileFormat().prepareWriteWithOutputTimestampType(
       SparkSession.active,
       job,
       GpuSparkWrite.translateIcebergWriteProperties(writeProps.asScala.toMap),
-      dsSchema
+      dsSchema,
+      ParquetOutputTimestampType.TIMESTAMP_MICROS
     )
 
     val serializedHadoopConf = new SerializableConfiguration(job.getConfiguration)
