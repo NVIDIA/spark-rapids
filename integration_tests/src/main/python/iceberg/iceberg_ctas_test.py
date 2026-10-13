@@ -96,7 +96,7 @@ def _assert_gpu_equals_cpu_ctas(spark_tmp_table_factory,
         with_gpu_session(
             lambda spark: _execute_ctas(
                 spark, gpu_table, spark_tmp_table_factory,
-                df_gen, table_prop, partition_col_sql, ret=True),
+                df_gen, table_prop, partition_col_sql, ret=False),
             conf=conf)
         with_cpu_session(
             lambda spark: _execute_ctas(
