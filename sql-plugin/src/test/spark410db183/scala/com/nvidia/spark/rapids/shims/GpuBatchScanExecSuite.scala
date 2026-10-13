@@ -37,7 +37,6 @@ import org.apache.spark.sql.connector.expressions.NamedReference
 import org.apache.spark.sql.connector.expressions.filter.Predicate
 import org.apache.spark.sql.connector.read.{Batch, HasPartitionKey, InputPartition,
   PartitionReader, PartitionReaderFactory, SupportsRuntimeV2Filtering}
-import org.apache.spark.sql.execution.datasources.v2.DataSourceRDDPartition
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 
 class GpuBatchScanExecSuite extends AnyFunSuite with BeforeAndAfterAll with FQSuiteName {
@@ -68,6 +67,7 @@ class GpuBatchScanExecSuite extends AnyFunSuite with BeforeAndAfterAll with FQSu
   private case class TestPartition(key: Int, id: String)
       extends InputPartition with HasPartitionKey {
     override def partitionKey(): InternalRow = InternalRow(key)
+    override def preferredLocations(): Array[String] = Array(id)
   }
 
   private object NoopReaderFactory extends PartitionReaderFactory {
@@ -153,11 +153,10 @@ class GpuBatchScanExecSuite extends AnyFunSuite with BeforeAndAfterAll with FQSu
       .groupMapReduce(identity)(_ => 1)(_ + _)
     assert(keyCounts === Map(1 -> 2, 2 -> 1, 3 -> 1))
 
-    val actual = exec.inputRDD.partitions.toSeq.map {
-      _.asInstanceOf[DataSourceRDDPartition].inputPartition
-        .map(_.asInstanceOf[TestPartition].key)
-    }
+    val rdd = exec.inputRDD
+    assert(rdd.isInstanceOf[GpuDataSourceRDD])
+    val actual = rdd.partitions.toSeq.map(rdd.preferredLocations)
     assert(scan.filterCalls === 1)
-    assert(actual === Seq(Some(1), None, None, Some(3)))
+    assert(actual === Seq(Seq("one-b"), Seq.empty, Seq.empty, Seq("three")))
   }
 }
