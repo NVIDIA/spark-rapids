@@ -46,12 +46,15 @@ pipeline {
     }
 
     parameters {
-        string(name: 'REF', defaultValue: '',
-            description: 'Full merged commit SHA shared by both CI parts')
+        string(name: 'REF', defaultValue: 'main',
+            description: 'Merged commit SHA; legacy branch refs resolve from the PR metadata')
         string(name: 'GITHUB_DATA', defaultValue: '',
             description: 'Json-formatted github data from upstream blossom-ci')
         choice(name: 'TEST_MODE', choices: ['CI_PART1', 'CI_PART2'],
             description: 'Separate integration tests into 2 parts, and run each part in parallell')
+        // Parameter definitions are shared with old branches; retain even when unused here.
+        string(name: 'PLUGIN_BUILT_DIR', defaultValue: 'dbfs:/cicd',
+            description: 'Legacy CI_PART1 artifact path for CI_PART2; unused by independent builds')
     }
 
     environment {
@@ -78,10 +81,10 @@ pipeline {
                     currentBuild.description = githubHelper.getBuildDescription() + " | $TEST_MODE"
                     def title = githubHelper.getIssue().title.toLowerCase()
                     env.REDUCED_IT = (title ==~ /.*\[reduced-it\].*/).toString()
-                    if (!(params.REF ==~ /[0-9a-f]{40}/)) {
-                        error 'Databricks premerge requires REF to be the same full commit SHA for both CI parts'
-                    }
-                    checkoutCode(githubHelper.getCloneUrl(), params.REF)
+                    // New parents pin both parts to one SHA; older parents pass branch refs.
+                    def sourceSha = (params.REF ==~ /[0-9a-f]{40}/) ?
+                        params.REF : githubHelper.getMergedSHA()
+                    checkoutCode(githubHelper.getCloneUrl(), sourceSha)
                 }
             }
         } // end of Init githubHelper
@@ -146,7 +149,7 @@ pipeline {
     } // end of stages
 } // end of pipeline
 
-// params.DATABRICKS_TYPE: 'aws' or 'azure', param can be defined through the jenkins webUI
+// params.DATABRICKS_TYPE: 'aws' or 'azure3', param can be defined through the jenkins webUI
 String getDbType() {
     return params.DATABRICKS_TYPE ? params.DATABRICKS_TYPE : 'aws'
 }

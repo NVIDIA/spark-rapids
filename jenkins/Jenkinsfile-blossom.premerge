@@ -49,6 +49,8 @@ def TEMP_SKILLS_IMAGE_BUILD = false
 def normal_build = true
 def sourcePattern = 'shuffle-plugin/src/main/scala/,udf-compiler/src/main/scala/,' +
     'sql-plugin/src/main/java/,sql-plugin/src/main/scala/'
+// Retain the shared artifact path for older child Jenkinsfiles using the same job.
+def plugin_built_dir = "dbfs:/cicd/$BUILD_TAG"
 
 pipeline {
     agent {
@@ -450,6 +452,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                         string(name: 'REF', value: env.DATABRICKS_SOURCE_SHA),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
                                         string(name: 'TEST_MODE', value: 'CI_PART1'),
+                                        string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
                                 // Output Databricks failure logs to uploaded onto the pre-merge PR
@@ -474,6 +477,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                                         string(name: 'REF', value: env.DATABRICKS_SOURCE_SHA),
                                         string(name: 'GITHUB_DATA', value: params.GITHUB_DATA),
                                         string(name: 'TEST_MODE', value: 'CI_PART2'),
+                                        string(name: 'PLUGIN_BUILT_DIR', value: "$plugin_built_dir"),
                                 ])
                             if ( DBJob.result != 'SUCCESS' ) {
                                 // Output Databricks failure logs to uploaded onto the pre-merge PR
