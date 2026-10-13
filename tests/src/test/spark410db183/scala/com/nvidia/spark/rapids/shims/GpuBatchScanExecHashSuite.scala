@@ -21,12 +21,17 @@ package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{GpuScan, SparkQueryCompareTestSuite}
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Expression, Literal}
-import org.apache.spark.sql.connector.metric.CustomMetric
-import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReaderFactory}
+import org.apache.spark.sql.connector.metric.{CustomMetric, CustomTaskMetric}
+import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReader,
+  PartitionReaderFactory}
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
 class GpuBatchScanExecHashSuite extends SparkQueryCompareTestSuite {
+  import GpuBatchScanExecHashSuite._
+
   private object TestCustomMetric extends CustomMetric {
     override def name(): String = "testCustomMetric"
     override def description(): String = "test custom metric"
@@ -76,9 +81,64 @@ class GpuBatchScanExecHashSuite extends SparkQueryCompareTestSuite {
 
   test("task custom metrics use the accumulators exposed by the plan") {
     withCpuSparkSession { _ =>
-      val plan = exec()
+      val metricScan = new GpuScan {
+        override def readSchema(): StructType = new StructType()
+        override def toBatch: Batch = new Batch {
+          override def planInputPartitions(): Array[InputPartition] = Array(MetricPartition)
+          override def createReaderFactory(): PartitionReaderFactory = MetricReaderFactory
+        }
+        override def withInputFile(): GpuScan = this
+        override def description(): String = "metric-test-scan"
+        override def supportedCustomMetrics(): Array[CustomMetric] = Array(TestCustomMetric)
+      }
+      val plan = GpuBatchScanExec(output = Nil, scan = metricScan, table = null)
       assert(plan.scanCustomSQLMetrics(TestCustomMetric.name()) eq
         plan.metrics(TestCustomMetric.name()))
+      plan.inputRDD.asInstanceOf[org.apache.spark.rdd.RDD[ColumnarBatch]]
+        .foreachPartition(batches => batches.foreach(_.close()))
+      assert(plan.metrics(TestCustomMetric.name()).value == 7L)
+    }
+  }
+}
+
+object GpuBatchScanExecHashSuite {
+  private case object MetricPartition extends InputPartition
+
+  private object MetricReaderFactory extends PartitionReaderFactory {
+    override def createReader(partition: InputPartition): PartitionReader[InternalRow] =
+      throw new UnsupportedOperationException("Only columnar reads are supported")
+
+    override def supportColumnarReads(partition: InputPartition): Boolean = true
+
+    override def createColumnarReader(
+        partition: InputPartition): PartitionReader[ColumnarBatch] = {
+      new PartitionReader[ColumnarBatch] {
+        private var emitted = false
+        private var metricValue = 0L
+
+        override def next(): Boolean = {
+          if (emitted) {
+            false
+          } else {
+            emitted = true
+            true
+          }
+        }
+
+        override def get(): ColumnarBatch = {
+          metricValue = 7L
+          new ColumnarBatch(Array.empty[ColumnVector], 1)
+        }
+
+        override def currentMetricsValues(): Array[CustomTaskMetric] = {
+          Array(new CustomTaskMetric {
+            override def name(): String = "testCustomMetric"
+            override def value(): Long = metricValue
+          })
+        }
+
+        override def close(): Unit = {}
+      }
     }
   }
 }

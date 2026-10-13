@@ -83,6 +83,8 @@ object GpuWindowPythonRunnerFactory {
       conf,
       batchSize,
       pythonOutSchema,
-      argNames)
+      argNames,
+      udfLogMaxEntries = udfLogMaxEntries,
+      udfLogLevel = udfLogLevel)
   }
 }
