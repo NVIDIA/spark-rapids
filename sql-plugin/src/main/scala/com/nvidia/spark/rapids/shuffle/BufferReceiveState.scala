@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,9 @@ case class ConsumedBatchFromBounceBuffer(
     contigBuffer: DeviceMemoryBuffer,
     meta: TableMeta,
     handler: RapidsShuffleFetchHandler)
+
+/** A transfer request that the server failed: why, and the requests that will not arrive. */
+case class FailedTransfer(reason: String, notReceived: Seq[PendingTransferRequest])
 
 /**
  * A helper case class to maintain the state associated with a transfer request to a peer.
@@ -99,6 +102,12 @@ class BufferReceiveState(
 
   private[this] var hasMoreBuffers_ = windowedBlockIterator.hasNext
 
+  // how many requests, in order, were consumed into batches
+  private[this] var received = 0
+
+  // why the server failed this request, until the state ends
+  private[this] var serverFailure: String = null
+
   def getBufferWhenReady(finalizeCb: TransportBuffer => Unit, size: Long): Unit =
     synchronized {
       require(transportBuffer.getLength() >= size,
@@ -140,6 +149,32 @@ class BufferReceiveState(
   }
 
   def hasMoreBlocks: Boolean = synchronized { hasMoreBuffers_ }
+
+  /**
+   * Records that the server failed this request, so that no more windows come, and ends the
+   * state if no window is left to consume.
+   * @param reason why, for the error that each reader of a request that will not arrive gets
+   * @return what `takeFailure` returns
+   */
+  def serverFailed(reason: String): Option[FailedTransfer] = synchronized {
+    serverFailure = reason
+    takeFailure()
+  }
+
+  /**
+   * Ends this state if the server failed its request and no window is left to consume: until
+   * then, UCX can still write into the bounce buffer. The one caller that ends it gets the
+   * failure, and releases the state.
+   */
+  def takeFailure(): Option[FailedTransfer] = synchronized {
+    if (serverFailure != null && toConsume == 0) {
+      val failure = FailedTransfer(serverFailure, requests.drop(received))
+      serverFailure = null
+      Some(failure)
+    } else {
+      None
+    }
+  }
 
   private def advance(): Unit = {
     if (!hasMoreBuffers_) {
@@ -238,6 +273,7 @@ class BufferReceiveState(
         results.foreach { result =>
           RmmSpark.poolThreadFinishedForTasks(result.handler.getTaskIds)
         }
+        received += results.size
 
         // cpu is in sync, we can recycle the bounce buffer
         if (!toFinalize.isEmpty) {
