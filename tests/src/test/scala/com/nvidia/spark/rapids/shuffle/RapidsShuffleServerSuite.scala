@@ -1161,7 +1161,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
           tx, makeSendBuffer(mock[DeviceMemoryBuffer]), requestHandler, null))
         doAnswer(new Answer[RefCountedDirectByteBuffer] {
           override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
-            val reply = invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer]
+            val reply = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
             replies += reply
             reply
           }
@@ -1180,11 +1180,10 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       states.foreach(state =>
         assertResult(Some(BufferSendState.MissingOutput))(state.endedWith))
       assertResult(2)(replies.size)
-      assert(replies.forall(_.isClosed))
+      replies.foreach(reply => verify(reply, times(1)).close())
       txs.foreach(tx => verify(tx, times(1)).close())
-      // a second release throws, into the transport's callback wrapper or the reply's own catch
+      // the reply's callback threw nothing into the transport's callback wrapper
       assertResult(0)(logs.count(_.startsWith("Detected an exception from user code")))
-      assertResult(0)(logs.count(_.contains("Close called too many times")))
     }
   }
 

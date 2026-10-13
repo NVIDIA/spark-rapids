@@ -93,25 +93,28 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     val (first, second) = (reader(), reader())
-    val requests = Seq(
-      PendingTransferRequest(requester.client, tableMeta(1, 1000), first),
-      PendingTransferRequest(requester.client, tableMeta(2, 2000), second),
-      PendingTransferRequest(requester.client, tableMeta(3, 3000), first))
+    // tables 1 to 7, alternating between two readers
+    val requests = (1 to 7).map { id =>
+      PendingTransferRequest(requester.client, tableMeta(id, 100L * id),
+        if (id % 2 == 1) first else second)
+    }
     val closes = new AtomicInteger()
     withBounceBuffer(4096) { bounceBuffer =>
-      val state = new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet())
+      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
+        () => closes.incrementAndGet()))
       requester.client.doIssueBufferReceives(state)
-      requester.answer(ShuffleMetadata.buildTransferErrorResponse(Seq(1, 2, 3), reason))
+      requester.answer(ShuffleMetadata.buildTransferErrorResponse(1 to 7, reason))
 
-      // each reader with a request in the state fails once
+      // each reader with a request in the state fails once, told of the first few buffers
       Seq(first, second).foreach { handler =>
-        verify(handler, times(1)).transferError(contains(reason), isNull())
+        verify(handler, times(1)).transferError(
+          contains(s"buffers 1, 2, 3, 4, 5 and 2 more: $reason"), isNull())
       }
       // the receive pool slot, the in-flight bytes and the transport's entry are returned
+      verify(state, times(1)).close()
       assert(bounceBuffer.isClosed)
       assertResult(1)(closes.get)
-      verify(mockTransport, times(1)).doneBytesInFlight(6000L)
+      verify(mockTransport, times(1)).doneBytesInFlight(2800L)
     }
   }
 
@@ -119,14 +122,14 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     val (delivered, failed) = (reader(), reader())
-    // a bounce buffer the size of the first table makes one window of each table
+    // the first window holds the first table and half of the second
     val requests = Seq(
-      PendingTransferRequest(requester.client, tableMeta(1, 1024), delivered),
-      PendingTransferRequest(requester.client, tableMeta(2, 512), failed))
+      PendingTransferRequest(requester.client, tableMeta(1, 512), delivered),
+      PendingTransferRequest(requester.client, tableMeta(2, 1024), failed))
     val closes = new AtomicInteger()
     withBounceBuffer(1024) { bounceBuffer =>
-      val state = new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet())
+      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
+        () => closes.incrementAndGet()))
       requester.client.doIssueBufferReceives(state)
       // the first window arrives, and UCX receives it into the slot
       state.getBufferWhenReady(_ => (), 1024)
@@ -142,11 +145,39 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       verify(delivered, times(1)).batchReceived(any())
       verify(delivered, never()).transferError(any(), any())
       verify(failed, times(1)).transferError(contains(reason), isNull())
+      verify(state, times(1)).close()
       assert(bounceBuffer.isClosed)
       assertResult(1)(closes.get)
       // the delivered table's bytes come back with its batch, the failed one's with the reply
-      verify(mockTransport, times(1)).doneBytesInFlight(1024L)
       verify(mockTransport, times(1)).doneBytesInFlight(512L)
+      verify(mockTransport, times(1)).doneBytesInFlight(1024L)
+    }
+  }
+
+  test("an error reply after the requester ended the state itself releases nothing again") {
+    RmmSpark.removeAllCurrentThreadAssociation()
+    val requester = new Requester
+    val (first, second) = (reader(), reader())
+    // the window cannot be handed to its reader, so the copy thread ends the state itself
+    when(first.batchReceived(any())).thenThrow(new IllegalStateException("reader failed in test"))
+    val requests = Seq(
+      PendingTransferRequest(requester.client, tableMeta(1, 1024), first),
+      PendingTransferRequest(requester.client, tableMeta(2, 512), second))
+    val closes = new AtomicInteger()
+    withBounceBuffer(1024) { bounceBuffer =>
+      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
+        () => closes.incrementAndGet()))
+      requester.client.doIssueBufferReceives(state)
+      state.getBufferWhenReady(_ => (), 1024)
+      val windowReceived = mock[Transaction]
+      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+      requester.client.doHandleBounceBufferReceive(windowReceived, state)
+      assertResult(1)(closes.get)
+
+      // the server, which does not know, fails the request's next window
+      requester.answer(ShuffleMetadata.buildTransferErrorResponse(Seq(2), reason))
+      verify(state, times(1)).close()
+      assertResult(1)(closes.get)
     }
   }
 
@@ -156,11 +187,14 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     val closes = new AtomicInteger()
     when(mockTransport.makeClient(any())).thenReturn(requester.client)
     // as the transport's throttle does, issuing every queued request in one receive state
+    val states = new ArrayBuffer[BufferReceiveState]()
     doAnswer { invocation =>
       val bounceBuffer = getBounceBuffer(4096)
       bounceBuffers += bounceBuffer
-      requester.client.issueBufferReceives(new BufferReceiveState(123L, bounceBuffer,
+      val state = spy(new BufferReceiveState(123L, bounceBuffer,
         invocation.getArgument[Seq[PendingTransferRequest]](0), () => closes.incrementAndGet()))
+      states += state
+      requester.client.issueBufferReceives(state)
       null
     }.when(mockTransport).queuePending(any())
 
@@ -194,6 +228,8 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       assert(failure.get.isInstanceOf[RapidsShuffleFetchFailedException],
         s"the reader ended with ${failure.get}")
       assert(failure.get.getMessage.contains(reason))
+      assertResult(1)(states.size)
+      verify(states.head, times(1)).close()
       assert(bounceBuffers.forall(_.isClosed))
       assertResult(1)(closes.get)
     } finally {
