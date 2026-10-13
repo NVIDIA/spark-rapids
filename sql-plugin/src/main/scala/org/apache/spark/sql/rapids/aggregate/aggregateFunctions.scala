@@ -20,7 +20,7 @@ import ai.rapids.cudf
 import ai.rapids.cudf.{Aggregation128Utils, BinaryOp, ColumnVector, DType, GroupByAggregation, GroupByScanAggregation, NaNEquality, NullEquality, NullPolicy, ReductionAggregation, ReplacePolicy, RollingAggregation, RollingAggregationOnColumn, Scalar, ScanAggregation}
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.Aggregation64Utils
 import com.nvidia.spark.rapids.shims.{GpuDeterministicFirstLastCollectShim, ShimExpression,
   TypeUtilsShims}
@@ -294,12 +294,10 @@ class CudfMergeM2 extends CudfAggregate {
             }
           }
         }
-        withResource(ColumnVector.fromDoubles(mergeN)) { cvMergeN =>
-          withResource(ColumnVector.fromDoubles(mergeMean)) { cvMergeMean =>
-            withResource(ColumnVector.fromDoubles(mergeM2)) { cvMergeM2 =>
-              Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
-            }
-          }
+        withResource(Seq(mergeN, mergeMean, mergeM2)
+            .safeMap(value => ColumnVector.fromDoubles(value))) {
+          case Seq(cvMergeN, cvMergeMean, cvMergeM2) =>
+            Scalar.structFromColumnViews(cvMergeN, cvMergeMean, cvMergeM2)
         }
       }
     }
