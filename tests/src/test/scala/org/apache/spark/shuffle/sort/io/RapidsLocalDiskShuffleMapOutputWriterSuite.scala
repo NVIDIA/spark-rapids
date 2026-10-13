@@ -20,11 +20,12 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.file.Files
 
+import com.nvidia.spark.rapids.ShimLoader
 import org.mockito.Mockito.when
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatestplus.mockito.MockitoSugar
 
-import org.apache.spark.SparkConf
+import org.apache.spark.{HashPartitioner, SparkConf, SparkContext}
 import org.apache.spark.shuffle.IndexShuffleBlockResolver
 
 class RapidsLocalDiskShuffleMapOutputWriterSuite extends AnyFunSuite with MockitoSugar {
@@ -41,7 +42,7 @@ class RapidsLocalDiskShuffleMapOutputWriterSuite extends AnyFunSuite with Mockit
       val channelWrapper = firstPartition.openChannelWrapper().get()
       val channel = channelWrapper.channel()
       assert(channel.write(ByteBuffer.wrap(Array[Byte](1, 2, 3))) == 3)
-      assert(channel.write(ByteBuffer.wrap(Array[Byte](4, 5))) == 2)
+      assert(channelWrapper.channel().write(ByteBuffer.wrap(Array[Byte](4, 5))) == 2)
       assert(firstPartition.getNumBytesWritten == 5)
       channel.close()
       channelWrapper.close()
@@ -61,6 +62,29 @@ class RapidsLocalDiskShuffleMapOutputWriterSuite extends AnyFunSuite with Mockit
     } finally {
       writer.abort(null)
       directory.delete()
+    }
+  }
+
+  test("transfer-to shuffle retains records with RAPIDS local disk IO") {
+    val shimVersion = ShimLoader.getShimVersion
+    val shuffleManagerClass =
+      s"com.nvidia.spark.rapids.spark${shimVersion.toString.replace(".", "")}.RapidsShuffleManager"
+    val conf = new SparkConf(false)
+      .setMaster("local[2]")
+      .setAppName("RapidsLocalDiskShuffleMapOutputWriterSuite")
+      .set("spark.shuffle.manager", shuffleManagerClass)
+      .set("spark.shuffle.sort.io.plugin.class", classOf[RapidsLocalDiskShuffleDataIO].getName)
+      .set("spark.file.transferTo", "true")
+      .set("spark.ui.enabled", "false")
+    val sparkContext = new SparkContext(conf)
+
+    try {
+      val shuffled = sparkContext.parallelize(0 until 1000, 4)
+        .map(value => (value % 2, value))
+        .partitionBy(new HashPartitioner(2))
+      assert(shuffled.count() == 1000)
+    } finally {
+      sparkContext.stop()
     }
   }
 }
