@@ -706,12 +706,45 @@ def parse_args(arguments: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
 
 def main(arguments: Optional[Sequence[str]] = None) -> int:
-    """Dispatch to the selected command and translate failures to exit status 1.
+    r"""Validate or query the integration-test source of truth, scripts/iceberg-versions.json.
 
-    ``arguments`` follows ``parse_args``. A handler that completes successfully
-    yields status 0; command handlers document their output and validation rules.
-    File, parse, and validation failures print a diagnostic on stderr. Argument
-    parsing retains argparse's SystemExit behavior for usage errors and help.
+    Run from the repository root, with Maven available::
+
+        python3 scripts/get_iceberg_versions.py validate
+        python3 scripts/get_iceberg_versions.py list --spark-version 3.5.6
+        python3 scripts/get_iceberg_versions.py validate-requested \
+            --spark-version 3.5.6 --requested-versions '1.10.1, 1.9.2'
+
+    Each command accepts --matrix and --pom to override the JSON and parent POM
+    inputs; defaults are scripts/iceberg-versions.json and scala2.13/pom.xml.
+    Use --help on a command to see its arguments. The MVN environment variable
+    can supply the existing Maven command and settings options. Relative settings
+    paths resolve against the current working directory. Maven's effective POMs
+    validate the entire matrix before selection; Maven logs stay off stdout.
+
+    validate produces no output on success. list prints enabled versions in JSON
+    order. validate-requested accepts comma- or whitespace-separated versions and
+    echoes valid requests in caller order, retaining duplicates. An empty selection
+    prints a newline and a policy diagnostic on stderr, letting CI skip that run.
+
+    Issue #15875 treats Iceberg's Spark dependency pins in upstream_minimums as
+    minimum test baselines, not upstream compatibility guarantees. Combinations
+    below a baseline are intentionally excluded even when Maven packages them:
+    Spark 3.5.0 and 3.5.4 select no versions; Spark 3.5.5 selects 1.9.2 but excludes
+    1.10.1. Spark 4.2.0 uses the stub and selects none. Well-formed snapshots in
+    families absent from the matrix, including 5.0.0-SNAPSHOT, also select none;
+    snapshots in covered families and malformed versions fail. Explicit requests
+    must satisfy both the baseline and packaging rules.
+
+    Args:
+        arguments: Command-line strings; None reads sys.argv[1:].
+
+    Returns:
+        0 on success; 1 after reporting file, Maven, parse, or validation failures
+        on stderr. Missing matrix entries and rejected requests are failures.
+
+    Raises:
+        SystemExit: argparse uses status 2 for invalid usage and 0 for --help.
     """
     args = parse_args(arguments)
     try:

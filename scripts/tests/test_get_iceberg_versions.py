@@ -468,5 +468,101 @@ class MavenEffectivePomSuite(unittest.TestCase):
                 MATRIX_READER._effective_pom(Path("pom.xml"), "release357")
 
 
+class IcebergCatalogCallerSuite(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.workspace = Path(directory.name) / "workspace with spaces"
+        self.artifacts = self.workspace / "jars" / "integration_tests"
+        self.artifacts.mkdir(parents=True)
+        scripts = self.workspace / "scripts"
+        scripts.mkdir()
+        (scripts / "get_iceberg_versions.py").write_text(
+            (REPO_ROOT / "scripts" / "get_iceberg_versions.py").read_text(), encoding="utf-8")
+        (scripts / "iceberg-versions.json").write_text(
+            (FIXTURE_DIR / "iceberg-versions.json").read_text(), encoding="utf-8")
+        pom = self.workspace / "scala2.13" / "pom.xml"
+        pom.parent.mkdir()
+        pom.write_text((FIXTURE_DIR / "effective-parent.xml").read_text(), encoding="utf-8")
+        settings = self.workspace / "jenkins" / "settings.xml"
+        settings.parent.mkdir()
+        settings.write_text("<settings />", encoding="utf-8")
+        binary_dir = self.workspace / "bin"
+        binary_dir.mkdir()
+        (binary_dir / "python").symlink_to(sys.executable)
+        self.invocations = self.workspace / "runner.log"
+        self.maven_log = self.workspace / "maven.log"
+        self.cwd_log = self.workspace / "cwd.log"
+        runner = self.artifacts / "run_pyspark_from_build.sh"
+        runner.write_text(
+            '#!/usr/bin/env bash\nprintf "%s|%s\\n" "$EXPECTED_ICEBERG_VERSION" "$PWD" '
+            '>> "$INVOCATIONS"\n', encoding="utf-8")
+        runner.chmod(0o755)
+        source = (REPO_ROOT / "jenkins" / "spark-tests.sh").read_text()
+        start = source.index("run_iceberg_tests() {")
+        end = source.index("\n}\n", start) + len("\n}\n")
+        self.definition = self.workspace / "functions.sh"
+        self.definition.write_text(source[start:end], encoding="utf-8")
+
+    def _run_catalog(self, catalog: str, requested: Optional[str] = None,
+                     settings: str = "jenkins/settings.xml") -> Tuple[
+                         subprocess.CompletedProcess[str], List[str], List[str]]:
+        for log in (self.invocations, self.maven_log, self.cwd_log):
+            if log.exists():
+                log.unlink()
+        environment = os.environ.copy()
+        for name in ("MVN", "ICEBERG_VERSIONS", "ICEBERG_TEST_FAST_RUN"):
+            environment.pop(name, None)
+        environment.update(
+            WORKSPACE=str(self.workspace), SPARK_VER="3.5.7", SCALA_BINARY_VER="2.13",
+            PROJECT_REPO_HOST="unused", ICEBERG_REST_CREDENTIAL="unused",
+            MAVEN_FIXTURES=str(FIXTURE_DIR), FAKE_MAVEN=str(FIXTURE_DIR / "fake-maven.sh"),
+            MAVEN_LOG=str(self.maven_log), INVOCATIONS=str(self.invocations),
+            CWD_LOG=str(self.cwd_log), DEFINITION=str(self.definition),
+            MVN_SETTINGS=settings, CATALOG=catalog,
+            PATH=str(self.workspace / "bin") + os.pathsep + environment.get("PATH", ""))
+        if requested is not None:
+            environment["ICEBERG_VERSIONS"] = requested
+        command = '''set -e
+source "$DEFINITION"
+download_maven_jars() { printf '/fixture-jars\\n'; }
+MVN="bash \\"$FAKE_MAVEN\\" -s \\"$MVN_SETTINGS\\""
+run_iceberg_tests "$CATALOG"
+printf '%s\\n' "$PWD" > "$CWD_LOG"
+'''
+        result = subprocess.run(["bash", "-c", command], cwd=self.artifacts,
+                                env=environment, text=True, capture_output=True)
+        calls = self.invocations.read_text().splitlines() if self.invocations.exists() else []
+        maven_calls = self.maven_log.read_text().splitlines() if self.maven_log.exists() else []
+        return result, calls, maven_calls
+
+    def test_relative_settings_for_all_catalogs(self) -> None:
+        for catalog in ("default", "rest", "s3tables"):
+            with self.subTest(catalog=catalog):
+                result, calls, maven_calls = self._run_catalog(catalog)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual([f"1.9.2|{self.artifacts}", f"1.10.1|{self.artifacts}"], calls)
+                self.assertEqual([f"{self.workspace}|jenkins/settings.xml"] * 9, maven_calls)
+                self.assertEqual(str(self.artifacts), self.cwd_log.read_text().strip())
+
+    def test_requested_versions_use_workspace_settings_for_all_catalogs(self) -> None:
+        for catalog in ("default", "rest", "s3tables"):
+            with self.subTest(catalog=catalog):
+                result, calls, maven_calls = self._run_catalog(catalog, "1.10.1, 1.9.2")
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual([f"1.10.1|{self.artifacts}", f"1.9.2|{self.artifacts}"], calls)
+                self.assertEqual([f"{self.workspace}|jenkins/settings.xml"] * 18, maven_calls)
+                self.assertEqual(str(self.artifacts), self.cwd_log.read_text().strip())
+
+    def test_missing_settings_fail_before_running_any_catalog_tests(self) -> None:
+        for catalog in ("default", "rest", "s3tables"):
+            with self.subTest(catalog=catalog):
+                result, calls, maven_calls = self._run_catalog(catalog, settings="missing.xml")
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual([], calls)
+                self.assertEqual([f"{self.workspace}|missing.xml"], maven_calls)
+                self.assertIn("missing Maven settings: missing.xml", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
