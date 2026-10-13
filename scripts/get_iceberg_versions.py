@@ -21,21 +21,26 @@ not upstream compatibility guarantees. Packaged combinations below those baselin
 are intentionally excluded: https://github.com/NVIDIA/cudf-spark/issues/15875.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
+import os
 import re
+import shlex
+import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, TypeVar, Union
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MATRIX = REPO_ROOT / "scripts" / "iceberg-versions.json"
 DEFAULT_POM = REPO_ROOT / "scala2.13" / "pom.xml"
 VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 SPARK_PROPERTY_PATTERN = re.compile(r"^spark[0-9]+\.version$")
-PROPERTY_REFERENCE_PATTERN = re.compile(r"^\$\{([^}]+)\}$")
 POM_NAMESPACE = {"pom": "http://maven.apache.org/POM/4.0.0"}
 
 
@@ -48,17 +53,80 @@ class MatrixError(ValueError):
     """
 
 
-def _version_tuple(version):
+def _version_parts(version: str) -> Tuple[int, int, int]:
     if not isinstance(version, str) or not VERSION_PATTERN.fullmatch(version):
         raise MatrixError(f"invalid version: {version!r}")
-    return tuple(int(part) for part in version.split("."))
+    major, minor, patch = version.split(".")
+    return int(major), int(minor), int(patch)
 
 
-def _spark_family(version):
-    return ".".join(version.split(".")[:2])
+@dataclass(frozen=True, order=True)
+class SparkVersion:
+    """A release Spark version, ordered numerically by major, minor, and patch.
+
+    Attributes:
+        major: Nonnegative Spark major release number.
+        minor: Nonnegative minor release number within the major release.
+        patch: Nonnegative patch release number within the minor release.
+    """
+
+    major: int
+    minor: int
+    patch: int
+
+    def __post_init__(self) -> None:
+        """Reject noninteger or negative release components."""
+        _validate_version_parts(self.major, self.minor, self.patch)
+
+    @classmethod
+    def parse(cls, version: str) -> SparkVersion:
+        """Parse an exact major.minor.patch release; raise MatrixError otherwise."""
+        return cls(*_version_parts(version))
+
+    @property
+    def family(self) -> str:
+        """Return the major.minor family used to look up minimum test baselines."""
+        return f"{self.major}.{self.minor}"
+
+    def __str__(self) -> str:
+        """Return the release string used by JSON and the command line."""
+        return f"{self.major}.{self.minor}.{self.patch}"
 
 
-def _pom_properties(element):
+@dataclass(frozen=True, order=True)
+class IcebergVersion:
+    """An Iceberg runtime release, distinct from a Spark version.
+
+    Attributes:
+        major: Nonnegative Iceberg major release number.
+        minor: Nonnegative minor release number within the major release.
+        patch: Nonnegative patch release number within the minor release.
+    """
+
+    major: int
+    minor: int
+    patch: int
+
+    def __post_init__(self) -> None:
+        """Reject noninteger or negative release components."""
+        _validate_version_parts(self.major, self.minor, self.patch)
+
+    @classmethod
+    def parse(cls, version: str) -> IcebergVersion:
+        """Parse an exact major.minor.patch runtime; raise MatrixError otherwise."""
+        return cls(*_version_parts(version))
+
+    def __str__(self) -> str:
+        """Return the runtime string used by JSON and the command line."""
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+
+def _validate_version_parts(major: int, minor: int, patch: int) -> None:
+    if any(type(part) is not int or part < 0 for part in (major, minor, patch)):
+        raise MatrixError(f"invalid release components: {(major, minor, patch)!r}")
+
+
+def _pom_properties(element: ET.Element) -> Dict[str, str]:
     properties = element.find("pom:properties", POM_NAMESPACE)
     if properties is None:
         return {}
@@ -66,22 +134,54 @@ def _pom_properties(element):
             for child in properties}
 
 
-def _resolve_property(value, properties):
-    seen = set()
-    while True:
-        match = PROPERTY_REFERENCE_PATTERN.fullmatch(value)
-        if match is None:
-            return value
-        name = match.group(1)
-        if name in seen or name not in properties:
-            raise MatrixError(f"unresolved or cyclic Maven property: {name}")
-        seen.add(name)
-        value = properties[name]
-
-
-def _spark_shims(properties):
-    return {value for name, value in properties.items()
+def _spark_shims(properties: Dict[str, str]) -> Set[SparkVersion]:
+    return {SparkVersion.parse(value) for name, value in properties.items()
             if SPARK_PROPERTY_PATTERN.fullmatch(name) and VERSION_PATTERN.fullmatch(value)}
+
+
+def _effective_pom(pom_path: Path, profile: Optional[str] = None,
+                   modules: Sequence[str] = ()) -> List[ET.Element]:
+    """Ask Maven to resolve a parent or a release profile's Iceberg projects.
+
+    Args:
+        pom_path: Parent POM passed to Maven as an absolute path.
+        profile: Profile to activate; None evaluates only the parent project.
+        modules: Iceberg reactor paths selected alongside the parent for a profile.
+
+    Returns:
+        Effective project elements, with the parent first. Maven handles property
+        interpolation, inheritance, profile activation, and dependency management.
+        Only Maven's generated XML is parsed; source POMs are not interpreted here.
+
+    Raises:
+        MatrixError: Maven fails or returns no effective projects.
+        OSError, ET.ParseError: Maven cannot run, or its output cannot be read.
+
+    The existing MVN environment variable supplies the Maven command and settings.
+    Captured Maven logs cannot contaminate the shell-readable CLI output.
+    """
+    command = shlex.split(os.environ.get("MVN", "mvn"))
+    command.extend(["-B", "-q", "-f", str(pom_path.resolve())])
+    if profile is None:
+        command.append("-N")
+    else:
+        command.extend(["-P", profile, "-pl", ",".join([".", *modules])])
+    with tempfile.TemporaryDirectory() as directory:
+        output = Path(directory) / "effective-pom.xml"
+        command.extend(["help:effective-pom", f"-Doutput={output}"])
+        try:
+            subprocess.run(command, check=True, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True)
+        except subprocess.CalledProcessError as error:
+            raise MatrixError(
+                f"Maven effective-POM failed for {profile or 'parent'}: {error.stdout.strip()}") \
+                from error
+        root = ET.parse(output).getroot()
+    projects = [root] if root.tag.rsplit("}", 1)[-1] == "project" else \
+        root.findall("pom:project", POM_NAMESPACE)
+    if not projects:
+        raise MatrixError(f"Maven returned no effective projects for {profile or 'parent'}")
+    return projects
 
 
 @dataclass(frozen=True)
@@ -96,81 +196,95 @@ class MavenPackaging:
             Stub modules contribute no runtime version.
     """
 
-    spark_versions: Set[str]
-    iceberg_versions_by_spark: Dict[str, Set[str]]
+    spark_versions: Set[SparkVersion]
+    iceberg_versions_by_spark: Dict[SparkVersion, Set[IcebergVersion]]
 
     @classmethod
-    def load(cls, pom_path):
-        """Read release profiles and the runtime dependencies of their Iceberg modules.
+    def load(cls, pom_path: Path) -> MavenPackaging:
+        """Evaluate release profiles and their Iceberg runtime dependencies with Maven.
 
         Args:
             pom_path: Parent POM, normally ``scala2.13/pom.xml``. Included
                 ``iceberg/`` module POMs are resolved relative to this file.
 
         Returns:
-            Packaging records after resolving Spark and Iceberg version property
-            references. Parent properties are overridden by profile properties
-            and then by the included module's properties. Non-release Spark
+            Packaging records read from Maven's effective POMs. Non-release Spark
             profiles, including snapshots and Databricks versions, are ignored.
 
         Raises:
-            MatrixError: Parent properties are absent, version properties cannot
-                be resolved, a release profile has no declared Spark shim, or an
-                included runtime version is malformed.
-            OSError, ET.ParseError: An input POM cannot be read or parsed.
+            MatrixError: Maven fails, parent properties are absent, a release
+                profile has no declared Spark shim, or a runtime is malformed.
+            OSError, ET.ParseError: Maven cannot run or its output is invalid.
         """
         pom_path = Path(pom_path)
-        root = ET.parse(pom_path).getroot()
+        root = _effective_pom(pom_path)[0]
         if root.find("pom:properties", POM_NAMESPACE) is None:
             raise MatrixError(f"properties not found in {pom_path}")
         properties = _pom_properties(root)
         spark_versions = _spark_shims(properties)
-        packaged = {}
-        module_roots = {}
+        packaged: Dict[SparkVersion, Set[IcebergVersion]] = {}
         for profile in root.findall("pom:profiles/pom:profile", POM_NAMESPACE):
             profile_values = _pom_properties(profile)
-            profile_properties = {**properties, **profile_values}
             version = profile_values.get("spark.version")
-            if version is None:
+            if version is None or not VERSION_PATTERN.fullmatch(version):
                 continue
-            spark_version = _resolve_property(version, profile_properties)
-            if not VERSION_PATTERN.fullmatch(spark_version):
-                continue
+            profile_id = profile.findtext("pom:id", "", POM_NAMESPACE)
+            modules = [(module.text or "").strip() for module in
+                       profile.findall("pom:modules/pom:module", POM_NAMESPACE)
+                       if (module.text or "").strip().startswith("iceberg/")]
+            projects = _effective_pom(pom_path, profile_id, modules)
+            spark_version = SparkVersion.parse(_pom_properties(projects[0]).get("spark.version", ""))
             if spark_version not in spark_versions:
                 raise MatrixError(f"profile Spark version {spark_version} has no declared shim property")
             versions = packaged.setdefault(spark_version, set())
-            for module in profile.findall("pom:modules/pom:module", POM_NAMESPACE):
-                module_name = (module.text or "").strip()
-                if not module_name.startswith("iceberg/"):
-                    continue
-                module_path = pom_path.parent / module_name / "pom.xml"
-                if module_path not in module_roots:
-                    module_roots[module_path] = ET.parse(module_path).getroot()
-                module_root = module_roots[module_path]
-                module_properties = {**profile_properties, **_pom_properties(module_root)}
-                for dependency in module_root.findall(
+            for project in projects[1:]:
+                for dependency in project.findall(
                         "pom:dependencies/pom:dependency", POM_NAMESPACE):
                     group = dependency.findtext("pom:groupId", "", POM_NAMESPACE).strip()
                     artifact = dependency.findtext("pom:artifactId", "", POM_NAMESPACE).strip()
                     if group == "org.apache.iceberg" and artifact.startswith("iceberg-spark-runtime-"):
                         runtime = dependency.findtext("pom:version", "", POM_NAMESPACE).strip()
-                        runtime = _resolve_property(runtime, module_properties)
-                        _version_tuple(runtime)
-                        versions.add(runtime)
+                        versions.add(IcebergVersion.parse(runtime))
         return cls(spark_versions, packaged)
 
-    def supports(self, spark_version, iceberg_version):
+    def supports(self, spark_version: SparkVersion, iceberg_version: IcebergVersion) -> bool:
         """Return whether a release profile packages the exact runtime combination.
 
         Args:
-            spark_version: Exact release Spark version string.
-            iceberg_version: Exact Iceberg runtime version string.
+            spark_version: SparkVersion for an exact release Spark version.
+            iceberg_version: IcebergVersion for an exact runtime version.
 
         Returns:
             A boolean; missing profiles and stub-only profiles return false.
             Minimum test baselines are applied separately by the matrix validator.
         """
         return iceberg_version in self.iceberg_versions_by_spark.get(spark_version, set())
+
+
+Record = TypeVar("Record", "SparkSupport", "IcebergSupport")
+Version = Union[SparkVersion, IcebergVersion]
+
+
+def _index_records(records: List[Record]) -> Dict[Version, Record]:
+    """Index decoded JSON records, rejecting duplicate or malformed versions."""
+    if not isinstance(records, list):
+        raise MatrixError("version records must be a list")
+    indexed: Dict[Version, Record] = {}
+    for record in records:
+        if not isinstance(record, (SparkSupport, IcebergSupport)):
+            raise MatrixError("each version entry requires its declared record fields")
+        if record.version in indexed:
+            kind = "Spark" if isinstance(record, SparkSupport) else "Iceberg"
+            raise MatrixError(f"duplicate {kind} version: {record.version}")
+        indexed[record.version] = record
+    return indexed
+
+
+def _decode_minimums(minimums: Dict[str, str]) -> Dict[str, SparkVersion]:
+    """Decode JSON minimum test baselines as Spark versions."""
+    if not isinstance(minimums, dict):
+        raise MatrixError("upstream_minimums must be a mapping")
+    return {family: SparkVersion.parse(minimum) for family, minimum in minimums.items()}
 
 
 @dataclass(frozen=True)
@@ -181,20 +295,21 @@ class SparkSupport:
     This records cudf-spark test policy, not an upstream compatibility guarantee.
 
     Attributes:
-        version: Exact Spark release string in ``major.minor.patch`` form.
+        version: SparkVersion describing an exact Spark release.
         supported: Whether the matrix enables this combination. For entries at
             or above the test baseline, this reflects the packaged integration.
         reason: Non-blank explanation required when ``supported`` is false;
             otherwise None. It is included in rejected-request diagnostics.
     """
 
-    version: str
+    version: SparkVersion = field(metadata={"decoder": SparkVersion.parse})
     supported: bool
     reason: Optional[str] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Reject invalid versions, support flags, and exclusion reasons."""
-        _version_tuple(self.version)
+        if not isinstance(self.version, SparkVersion):
+            raise MatrixError("Spark support requires a SparkVersion")
         if type(self.supported) is not bool:
             raise MatrixError(f"supported must be boolean for Spark {self.version}")
         if not self.supported and (not isinstance(self.reason, str) or not self.reason.strip()):
@@ -208,43 +323,43 @@ class IcebergSupport:
     """Test baselines and Spark eligibility records for one Iceberg runtime.
 
     Attributes:
-        version: Exact Iceberg runtime release in ``major.minor.patch`` form.
+        version: IcebergVersion describing an exact Iceberg runtime release.
         spark_minor_to_patch: Mapping from a Spark family to its full minimum
-            test version, for example ``{"3.5": "3.5.6"}``. Serialized as
-            ``upstream_minimums``, these are Iceberg dependency pins interpreted
+            test SparkVersion, serialized for example as ``{"3.5": "3.5.6"}``
+            under ``upstream_minimums``. These are Iceberg dependency pins interpreted
             as minimum test baselines by cudf-spark policy.
-        spark_supports: Spark records in JSON order, including unsupported
-            combinations and their reasons. ``validate`` checks that this list
+        spark_supports: Records keyed by SparkVersion, in JSON order, including unsupported
+            combinations and their reasons. ``validate`` checks that this mapping
             contains every POM shim at or above a declared family's baseline
             exactly once, and that each support flag agrees with Maven packaging.
     """
 
-    version: str
-    spark_minor_to_patch: Dict[str, str] = field(metadata={"json_name": "upstream_minimums"})
-    spark_supports: List[SparkSupport] = field(metadata={"json_name": "spark_versions"})
+    version: IcebergVersion = field(metadata={"decoder": IcebergVersion.parse})
+    spark_minor_to_patch: Dict[str, SparkVersion] = field(
+        metadata={"json_name": "upstream_minimums", "decoder": _decode_minimums})
+    spark_supports: Dict[SparkVersion, SparkSupport] = field(
+        metadata={"json_name": "spark_versions", "decoder": _index_records})
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate the version, baselines, and decoded Spark records at construction."""
-        _version_tuple(self.version)
+        if not isinstance(self.version, IcebergVersion):
+            raise MatrixError("Iceberg support requires an IcebergVersion")
         if not isinstance(self.spark_minor_to_patch, dict) or not self.spark_minor_to_patch:
             raise MatrixError(f"upstream_minimums for Iceberg {self.version} must be a mapping")
-        if not isinstance(self.spark_supports, list) or not self.spark_supports:
-            raise MatrixError(f"spark_versions for Iceberg {self.version} must be a list")
+        if not isinstance(self.spark_supports, dict) or not self.spark_supports:
+            raise MatrixError(f"spark_versions for Iceberg {self.version} must decode to a mapping")
         for family, minimum in self.spark_minor_to_patch.items():
-            _version_tuple(minimum)
-            if not isinstance(family, str) or _spark_family(minimum) != family:
+            if not isinstance(minimum, SparkVersion) or minimum.family != family:
                 raise MatrixError(
                     f"minimum {minimum!r} does not belong to Spark family {family!r}")
-        versions = set()
-        for support in self.spark_supports:
-            if not isinstance(support, SparkSupport):
+        for version, support in self.spark_supports.items():
+            if not isinstance(version, SparkVersion) or not isinstance(support, SparkSupport):
                 raise MatrixError(
                     f"Spark entries for Iceberg {self.version} require version and supported")
-            if support.version in versions:
-                raise MatrixError(f"duplicate Spark version {support.version} for Iceberg {self.version}")
-            versions.add(support.version)
+            if support.version != version:
+                raise MatrixError(f"Spark key {version} disagrees with record {support.version}")
 
-    def validate(self, packaging):
+    def validate(self, packaging: MavenPackaging) -> None:
         """Compare eligible Spark records and support flags with inferred Maven combinations.
 
         Args:
@@ -263,46 +378,43 @@ class IcebergSupport:
         """
         # Issue #15875 uses upstream build/test pins as minimum test baselines.
         # Maven packaging alone does not qualify a below-baseline Spark patch.
-        expected_versions = set()
+        expected_versions: Set[SparkVersion] = set()
         for family, minimum in self.spark_minor_to_patch.items():
-            minimum_tuple = _version_tuple(minimum)
             expected_versions.update(
                 spark_version for spark_version in packaging.spark_versions
-                if _spark_family(spark_version) == family and
-                _version_tuple(spark_version) >= minimum_tuple)
+                if spark_version.family == family and spark_version >= minimum)
 
-        actual_versions = {support.version for support in self.spark_supports}
+        actual_versions = set(self.spark_supports)
 
         missing = expected_versions - actual_versions
         extra = actual_versions - expected_versions
         if missing or extra:
             details = []
             if missing:
-                details.append(f"missing {', '.join(sorted(missing, key=_version_tuple))}")
+                details.append(f"missing {', '.join(map(str, sorted(missing)))}")
             if extra:
-                details.append(f"unexpected {', '.join(sorted(extra, key=_version_tuple))}")
+                details.append(f"unexpected {', '.join(map(str, sorted(extra)))}")
             raise MatrixError(f"Iceberg {self.version} Spark entries: {'; '.join(details)}")
-        for support in self.spark_supports:
+        for support in self.spark_supports.values():
             inferred = packaging.supports(support.version, self.version)
             if support.supported != inferred:
                 raise MatrixError(
                     f"Iceberg {self.version}, Spark {support.version}: supported={support.supported} "
                     f"disagrees with Maven packaging (expected {inferred})")
 
-    def support_for(self, spark_version):
-        """Return the record for an exact Spark version string, or None if absent.
+    def support_for(self, spark_version: SparkVersion) -> Optional[SparkSupport]:
+        """Return the record for a SparkVersion, or None if absent.
 
         Unsupported records are returned too, so callers can inspect their reason.
-        The input is neither normalized nor validated by this lookup.
+        The input is a parsed SparkVersion; no additional validation is performed.
         """
-        return next(
-            (support for support in self.spark_supports if support.version == spark_version), None)
+        return self.spark_supports.get(spark_version)
 
-    def supports(self, spark_version):
+    def supports(self, spark_version: SparkVersion) -> bool:
         """Return whether an exact Spark version has an enabled matrix entry.
 
         Both a missing record and a record marked unsupported return false.
-        As with ``support_for``, this lookup does not validate the input string.
+        As with ``support_for``, this lookup accepts a parsed SparkVersion.
         """
         spark_support = self.support_for(spark_version)
         return spark_support is not None and spark_support.supported
@@ -315,28 +427,28 @@ class IcebergVersionMatrix:
     Use ``load`` to decode the JSON records and validate their Maven combinations.
 
     Attributes:
-        iceberg_supports: Iceberg records in JSON order. ``load`` requires a
-            nonempty list of unique Iceberg versions; automatic selection
+        iceberg_supports: Records keyed by IcebergVersion in JSON order. ``load`` requires a
+            nonempty mapping of unique Iceberg versions; automatic selection
             preserves this order.
     """
 
-    iceberg_supports: List[IcebergSupport] = field(metadata={"json_name": "iceberg_versions"})
+    iceberg_supports: Dict[IcebergVersion, IcebergSupport] = field(
+        metadata={"json_name": "iceberg_versions", "decoder": _index_records})
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Require decoded Iceberg records with unique runtime versions."""
-        if not isinstance(self.iceberg_supports, list) or not self.iceberg_supports:
-            raise MatrixError("iceberg_versions must be a non-empty list")
-        if any(not isinstance(support, IcebergSupport) for support in self.iceberg_supports):
+        if not isinstance(self.iceberg_supports, dict) or not self.iceberg_supports:
+            raise MatrixError("iceberg_versions must decode to a non-empty mapping")
+        if any(not isinstance(version, IcebergVersion) or not isinstance(support, IcebergSupport)
+               for version, support in self.iceberg_supports.items()):
             raise MatrixError(
                 "each Iceberg entry requires version, upstream_minimums, and spark_versions")
-        versions = [support.version for support in self.iceberg_supports]
-        if len(set(versions)) != len(versions):
-            duplicate = next(version for index, version in enumerate(versions)
-                             if version in versions[:index])
-            raise MatrixError(f"duplicate Iceberg version: {duplicate}")
+        if any(version != support.version for version, support in self.iceberg_supports.items()):
+            raise MatrixError("Iceberg version keys disagree with their records")
 
     @classmethod
-    def load(cls, matrix_path=DEFAULT_MATRIX, pom_path=DEFAULT_POM):
+    def load(cls, matrix_path: Path = DEFAULT_MATRIX,
+             pom_path: Path = DEFAULT_POM) -> IcebergVersionMatrix:
         """Decode JSON dataclasses, validate the inferred Maven combinations, and return them.
 
         Args:
@@ -349,9 +461,9 @@ class IcebergVersionMatrix:
         Raises:
             MatrixError: The schema, an entry, or its inferred Maven support is
                 invalid, or a packaged Iceberg version is missing from the matrix.
-            OSError: The JSON, parent POM, or an included module POM cannot be read.
+            OSError: The JSON cannot be read, Maven cannot run, or its output is unreadable.
             json.JSONDecodeError: The matrix is not valid JSON.
-            ET.ParseError: The POM is not well-formed XML.
+            ET.ParseError: Maven's effective POM output is not well-formed XML.
 
         The standard-library JSON ``object_hook`` constructs the dataclasses using
         their field metadata and constructor validation. Maven comparison covers
@@ -362,17 +474,18 @@ class IcebergVersionMatrix:
         if not isinstance(matrix, cls):
             raise MatrixError("matrix must contain only an iceberg_versions list")
         packaging = MavenPackaging.load(pom_path)
-        versions = {support.version for support in matrix.iceberg_supports}
-        packaged_versions = set().union(*packaging.iceberg_versions_by_spark.values())
-        missing = packaged_versions - versions
+        packaged_versions: Set[IcebergVersion] = set().union(
+            *packaging.iceberg_versions_by_spark.values())
+        missing = packaged_versions - matrix.iceberg_supports.keys()
         if missing:
             raise MatrixError(
-                f"packaged Iceberg versions missing from the matrix: {', '.join(sorted(missing))}")
-        for support in matrix.iceberg_supports:
+                "packaged Iceberg versions missing from the matrix: "
+                f"{', '.join(map(str, sorted(missing)))}")
+        for support in matrix.iceberg_supports.values():
             support.validate(packaging)
         return matrix
 
-    def supported_iceberg_versions(self, spark_version):
+    def supported_iceberg_versions(self, spark_version: str) -> List[str]:
         """Return enabled Iceberg versions for Spark, preserving matrix order.
 
         Args:
@@ -392,18 +505,19 @@ class IcebergVersionMatrix:
         # Preserve the callers' skip for that family without treating snapshots
         # in covered families as their corresponding releases or silently skipping them.
         if isinstance(spark_version, str) and spark_version.endswith("-SNAPSHOT"):
-            _version_tuple(spark_version[:-len("-SNAPSHOT")])
-            if not any(_spark_family(spark_version) in support.spark_minor_to_patch
-                       for support in self.iceberg_supports):
+            snapshot = SparkVersion.parse(spark_version[:-len("-SNAPSHOT")])
+            if not any(snapshot.family in support.spark_minor_to_patch
+                       for support in self.iceberg_supports.values()):
                 return []
-        _version_tuple(spark_version)
+        release = SparkVersion.parse(spark_version)
         return [
-            iceberg_support.version
-            for iceberg_support in self.iceberg_supports
-            if iceberg_support.supports(spark_version)
+            str(iceberg_support.version)
+            for iceberg_support in self.iceberg_supports.values()
+            if iceberg_support.supports(release)
         ]
 
-    def validate_requested_versions(self, spark_version, requested_versions):
+    def validate_requested_versions(self, spark_version: str,
+                                    requested_versions: List[str]) -> List[str]:
         """Validate caller-selected Iceberg versions and return the original list.
 
         Args:
@@ -418,13 +532,13 @@ class IcebergVersionMatrix:
                 matrix, or a combination is absent or marked unsupported. The
                 latter error includes the entry's exclusion reason.
         """
-        _version_tuple(spark_version)
-        by_version = {support.version: support for support in self.iceberg_supports}
+        release = SparkVersion.parse(spark_version)
         for iceberg_version in requested_versions:
-            if iceberg_version not in by_version:
+            runtime = IcebergVersion.parse(iceberg_version)
+            if runtime not in self.iceberg_supports:
                 raise MatrixError(
                     f"Iceberg version {iceberg_version} is not present in the test matrix")
-            spark_support = by_version[iceberg_version].support_for(spark_version)
+            spark_support = self.iceberg_supports[runtime].support_for(release)
             if spark_support is None:
                 raise MatrixError(
                     f"Iceberg {iceberg_version} with Spark {spark_version} is excluded "
@@ -436,12 +550,14 @@ class IcebergVersionMatrix:
         return requested_versions
 
 
-def _decode_matrix_record(record):
+def _decode_matrix_record(record: Dict[str, Any]) -> Union[
+        Dict[str, Any], SparkSupport, IcebergSupport, IcebergVersionMatrix]:
     """JSON object hook constructing records from dataclass fields and JSON aliases.
 
     The decoder visits nested objects first. Required fields and optional defaults
-    come from ``dataclasses.fields``; no per-class dictionary resolver is needed.
-    Other dictionaries, such as Spark baseline mappings, remain dictionaries.
+    come from ``dataclasses.fields``; field metadata also specifies decoders for
+    typed versions and version-indexed collections. Other dictionaries remain
+    dictionaries until their enclosing record decodes them.
     """
     for record_type in (SparkSupport, IcebergSupport, IcebergVersionMatrix):
         record_fields = fields(record_type)
@@ -449,11 +565,17 @@ def _decode_matrix_record(record):
         required = {item.metadata.get("json_name", item.name) for item in record_fields
                     if item.default is MISSING and item.default_factory is MISSING}
         if required <= record.keys() <= aliases.keys():
-            return record_type(**{aliases[name]: value for name, value in record.items()})
+            decoders: Dict[str, Callable[[Any], Any]] = {
+                item.name: item.metadata["decoder"] for item in record_fields
+                if "decoder" in item.metadata}
+            arguments = {aliases[name]: decoders[aliases[name]](value)
+                         if aliases[name] in decoders else value
+                         for name, value in record.items()}
+            return record_type(**arguments)
     return record
 
 
-def _print_versions(spark_version, versions):
+def _print_versions(spark_version: str, versions: List[str]) -> None:
     """Print shell-readable versions and explain an empty selection on stderr."""
     if not versions:
         # A valid matrix can intentionally exclude even a packaged combination.
@@ -466,13 +588,13 @@ def _print_versions(spark_version, versions):
     print(" ".join(versions))
 
 
-def command_validate(args):
+def command_validate(args: argparse.Namespace) -> None:
     """Check the entire matrix against the POM without selecting test versions.
 
     Args:
         args: Parsed ``validate`` arguments. ``matrix`` is the JSON input path
             and ``pom`` is the Maven POM declaring Spark release profiles.
-            Included Iceberg module POMs are read relative to the parent POM.
+            Maven evaluates included Iceberg module POMs relative to the parent.
 
     Returns:
         None after both inputs have been read and all matrix entries validated.
@@ -483,14 +605,14 @@ def command_validate(args):
             are invalid. Validation includes duplicates and unsupported-entry reasons.
         OSError: Either input cannot be read.
         json.JSONDecodeError: The matrix is not valid JSON.
-        ET.ParseError: The POM is not well-formed XML.
+        ET.ParseError: Maven's effective POM output is not well-formed XML.
 
     These failures reach ``main``, which reports them and returns exit status 1.
     """
     IcebergVersionMatrix.load(args.matrix, args.pom)
 
 
-def command_list(args):
+def command_list(args: argparse.Namespace) -> None:
     """Validate the inputs and print matrix-selected Iceberg versions for Spark.
 
     Args:
@@ -513,7 +635,7 @@ def command_list(args):
     _print_versions(args.spark_version, versions)
 
 
-def command_validate_requested(args):
+def command_validate_requested(args: argparse.Namespace) -> None:
     """Validate caller-selected versions for Spark and echo them in caller order.
 
     Args:
@@ -541,7 +663,7 @@ def command_validate_requested(args):
     _print_versions(args.spark_version, versions)
 
 
-def parse_args(arguments=None):
+def parse_args(arguments: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse command-specific CLI options into an ``argparse.Namespace``.
 
     ``arguments`` is a sequence of argument strings; None reads ``sys.argv[1:]``.
@@ -583,7 +705,7 @@ def parse_args(arguments=None):
     return parser.parse_args(arguments)
 
 
-def main(arguments=None):
+def main(arguments: Optional[Sequence[str]] = None) -> int:
     """Dispatch to the selected command and translate failures to exit status 1.
 
     ``arguments`` follows ``parse_args``. A handler that completes successfully
@@ -593,7 +715,8 @@ def main(arguments=None):
     """
     args = parse_args(arguments)
     try:
-        args.handler(args)
+        handler: Callable[[argparse.Namespace], None] = args.handler
+        handler(args)
         return 0
     except (MatrixError, ET.ParseError, OSError, json.JSONDecodeError) as error:
         print(f"Iceberg test matrix error: {error}", file=sys.stderr)

@@ -182,7 +182,7 @@ run_iceberg_version_detect_tests() {
     echo "Running Iceberg version detection tests for Spark $spark_ver (Scala $scala_ver)..."
 
     local iceberg_versions
-    iceberg_versions=$(python scripts/get_iceberg_versions.py list \
+    iceberg_versions=$(MVN="${MVN:-mvn}" python scripts/get_iceberg_versions.py list \
         --spark-version "$spark_ver") || return 1
     if [[ -z "$iceberg_versions" ]]; then
         # Issue #15875 can exclude packaged combinations below the minimum test baselines.

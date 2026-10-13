@@ -14,12 +14,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-<project xmlns="http://maven.apache.org/POM/4.0.0">
-  <dependencies>
-    <dependency>
-      <groupId>org.apache.iceberg</groupId>
-      <artifactId>iceberg-spark-runtime-3.5_2.13</artifactId>
-      <version>${iceberg.19x.version}</version>
-    </dependency>
-  </dependencies>
-</project>
+<projects xmlns="http://maven.apache.org/POM/4.0.0">
+  <project>
+    <artifactId>iceberg-matrix-fixture</artifactId>
+    <properties>
+      <spark.version>4.2.0</spark.version>
+    </properties>
+  </project>
+  <project>
+    <artifactId>iceberg-stub</artifactId>
+  </project>
+</projects>

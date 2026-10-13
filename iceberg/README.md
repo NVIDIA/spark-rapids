@@ -32,15 +32,20 @@ dependency pin does not itself declare a minimum compatible Spark patch.
 The standard-library JSON decoder constructs the `SparkSupport`, `IcebergSupport`, and
 `IcebergVersionMatrix` dataclasses directly using an `object_hook`. Field metadata maps the
 JSON names to their dataclass fields, and construction validates each record.
+`SparkVersion` and `IcebergVersion` are distinct dataclasses with numeric major, minor,
+and patch components. Spark support records are indexed by `SparkVersion`, and Iceberg
+records by `IcebergVersion`, for direct lookup. The JSON remains a readable ordered list;
+decoding rejects duplicates before indexing and preserves selection order.
 
 The `spark_versions` list is computed from the `spark*.version` properties in
 `scala2.13/pom.xml` and checked against the inferred Maven packaging combinations.
 For each family in `upstream_minimums`, it contains every cudf-spark shim whose patch version is
 greater than or equal to the baseline. A shim is marked as supported when cudf-spark
-packages the corresponding Iceberg runtime. The reader resolves each release profile's
-`spark.version`, follows its included `iceberg/` modules, and reads their
-`org.apache.iceberg:iceberg-spark-runtime-*` dependency versions. Runtime property references
-use the parent, profile, and module properties. For example, `release357` includes
+packages the corresponding Iceberg runtime. The reader invokes `mvn help:effective-pom`
+for the parent and each release profile's included Iceberg projects. Maven resolves
+properties, inheritance, active profiles, and dependency management; the reader extracts
+the resulting runtime pins from the generated XML. It does not interpret source POMs
+or resolve property references itself. For example, `release357` includes
 `iceberg-1-9-x` and `iceberg-1-10-x`, whose runtime dependencies resolve to Iceberg 1.9.2 and
 1.10.1; both are eligible for Spark 3.5.7. The stub contributes no runtime.
 
@@ -84,7 +89,12 @@ python3 scripts/get_iceberg_versions.py validate-requested \
 
 Run these commands from the repository root. Each subcommand accepts `--matrix` and
 `--pom` to override the default input files, and `--help` describes its arguments.
-`validate` reads the JSON, parent POM, and included Iceberg module POMs. It checks the schema,
+Maven must be available. The reader uses the existing `MVN` environment variable when set,
+including its settings options; Jenkins passes its configured Maven command through.
+Maven output is captured so stdout contains only the selected versions. A Maven failure
+fails validation and reports its diagnostic on stderr.
+`validate` reads the JSON and asks Maven to evaluate the parent and Iceberg module POMs.
+It checks the schema,
 unique version entries, unsupported-entry reasons, and inferred Spark × Iceberg combinations
 after applying the minimum baselines. It produces no output and
 returns status 0 only when validation succeeds; input and validation failures report an
