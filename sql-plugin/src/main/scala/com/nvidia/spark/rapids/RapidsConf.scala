@@ -1073,6 +1073,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
 
+  lazy val isOrcDateWriteEnabled: Boolean = get(ENABLE_ORC_DATE_WRITE)
+
   lazy val isOrcFloatTypesToStringEnable: Boolean = get(ENABLE_ORC_FLOAT_TYPES_TO_STRING)
 
   lazy val isOrcPerFileReadEnabled: Boolean =
@@ -1174,8 +1176,6 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
-
-  lazy val shuffleUcxActiveMessagesForceRndv: Boolean = get(SHUFFLE_UCX_ACTIVE_MESSAGES_FORCE_RNDV)
 
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
 
@@ -1402,6 +1402,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
+
+  lazy val testDeltaLowShuffleMergeFailOnFallback: Boolean =
+    get(TEST_DELTA_LOW_SHUFFLE_MERGE_FAIL_ON_FALLBACK)
 
   lazy val isDeltaDeletionVectorPredicatePushdownEnabled: Boolean =
     get(DELTA_DELETION_VECTOR_PREDICATE_PUSHDOWN)

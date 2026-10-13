@@ -872,8 +872,7 @@ def test_delta_atomic_create_table_as_select(spark_tmp_table_factory, spark_tmp_
 @pytest.mark.skipif(is_before_spark_320(), reason="Delta Lake writes are not supported before Spark 3.2.x")
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_xfail_reasons(
                             enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
-@pytest.mark.xfail(is_spark_356_or_later() and not is_spark_400_or_later(),
-                   reason="https://github.com/delta-io/delta/issues/4671")
+@delta_rtas_truncate_skip
 @pytest.mark.xfail(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/11169")
 def test_delta_atomic_replace_table_as_select(spark_tmp_table_factory, spark_tmp_path, enable_deletion_vectors):
     _atomic_write_table_as_select(delta_write_gens, spark_tmp_table_factory, spark_tmp_path,
@@ -944,8 +943,7 @@ def test_delta_ctas_sql(spark_tmp_table_factory, enable_deletion_vectors, use_cd
 @pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values_with_xfail_reasons(
     enabled_xfail_reason="https://github.com/NVIDIA/spark-rapids/issues/12041"), ids=idfn)
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
-@pytest.mark.xfail(is_spark_356_or_later() and not is_spark_400_or_later(),
-                   reason="https://github.com/delta-io/delta/issues/4671")
+@delta_rtas_truncate_skip
 @pytest.mark.xfail(is_databricks_runtime(), reason="https://github.com/NVIDIA/spark-rapids/issues/11169")
 def test_delta_rtas_sql(spark_tmp_table_factory, enable_deletion_vectors, use_cdf):
     _atomic_write_table_as_select_sql(delta_write_gens, spark_tmp_table_factory,
@@ -999,11 +997,28 @@ def test_delta_rtas_truncate_capability(spark_tmp_table_factory):
     assert [row.id for row in gpu_rows] == list(range(10, 20))
 
 
+@pytest.mark.parametrize("version, expected", [
+    ("3.4.10", False),
+    ("3.5.5", False),
+    ("3.5.6", True),
+    ("3.5.9", True),
+    ("3.5.10", True),
+    ("3.5.5-SNAPSHOT", False),
+    ("3.5.6-SNAPSHOT", True),
+    ("3.5.10-amzn-0", True),
+    ("4.0.0", True),
+])
+def test_is_spark_356_or_later(version, expected, monkeypatch):
+    monkeypatch.setattr("spark_session.spark_version", lambda: version)
+    assert is_spark_356_or_later() == expected
+
+
 @allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.xfail(is_databricks_runtime(),
                    reason="https://github.com/NVIDIA/spark-rapids/issues/11169")
+@delta_rtas_truncate_skip
 def test_delta_replace_where_save_as_table_preserves_partitioning(spark_tmp_table_factory):
     cpu_table = spark_tmp_table_factory.get()
     gpu_table = spark_tmp_table_factory.get()
@@ -1037,12 +1052,14 @@ def test_delta_replace_where_save_as_table_preserves_partitioning(spark_tmp_tabl
         plans = callback.getResultsWithTimeout(10000)
         assert any(callback.contains(plan, "GpuAtomicReplaceTableAsSelectExec")
                    for plan in plans), "GpuAtomicReplaceTableAsSelectExec was not executed"
-        # Spark 3.5+ runs the RTAS data write as a nested query execution. Spark 4.0+
-        # issues it as OverwriteByExpression, while Spark 3.5 uses AppendData. Earlier
-        # Spark versions write through V1 directly and do not produce a separately
-        # captured V1 write plan.
+        # Spark 3.5+ runs the RTAS data write as a nested query execution. OSS Spark
+        # 3.5.6+ and Spark 4.0+ issue it as OverwriteByExpression; earlier Spark 3.5
+        # releases use AppendData. Before Spark 3.5, the V1 write is not captured
+        # as a separate plan.
         if not is_before_spark_350():
-            v1_write_node = ("GpuOverwriteByExpressionExecV1" if is_spark_400_or_later()
+            uses_overwrite = (is_spark_400_or_later() or
+                              (not is_databricks_runtime() and is_spark_356_or_later()))
+            v1_write_node = ("GpuOverwriteByExpressionExecV1" if uses_overwrite
                              else "GpuAppendDataExecV1")
             assert any(callback.contains(plan, v1_write_node)
                        for plan in plans), f"{v1_write_node} was not executed"
@@ -1136,6 +1153,60 @@ def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
     _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('b', 'd', 2L)")
     _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('c', 'e', 1)")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_oss_delta_lake_42_or_43(),
+                    reason="INSERT BY NAME schema evolution requires Delta 4.2+")
+@pytest.mark.parametrize("columns", ["data, id, new_col", "new_col, data, id"])
+def test_delta_insert_by_name_schema_evolution(spark_tmp_path, columns):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    src_path = spark_tmp_path + "/PARQUET_DATA"
+    confs = copy_and_update(_delta_confs,
+                           {"spark.databricks.delta.schema.autoMerge.enabled": "true"})
+    expected_schema = StructType([
+        StructField("id", LongType()),
+        StructField("data", StringType()),
+        StructField("new_col", IntegerType())])
+
+    def setup(spark):
+        gen_df(spark, [("id", LongGen(nullable=False, min_val=0)),
+                       ("data", string_gen), ("new_col", int_gen)], length=32) \
+            .coalesce(1).write.parquet(src_path)
+        _create_cpu_gpu_tables(spark, data_path, "id BIGINT, data STRING")
+        for path in [data_path + "/CPU", data_path + "/GPU"]:
+            spark.sql(f"INSERT INTO delta.`{path}` VALUES (-1L, 'existing')")
+
+    with_cpu_session(setup, conf=_delta_confs)
+
+    def insert(spark, path):
+        # DeltaAnalysis resolves BY NAME to AppendData; the existing V1 append writer handles it.
+        query = spark.sql(f"INSERT INTO delta.`{path}` BY NAME "
+                          f"SELECT {columns} FROM parquet.`{src_path}`")
+        assert query._jdf.queryExecution().analyzed().nodeName() == "AppendData"
+        query.collect()
+
+    def read_and_check(spark, path):
+        df = read_delta_path(spark, path)
+        assert df.schema == expected_schema
+        expected = spark.read.parquet(src_path).select("id", "data", "new_col").union(
+            spark.sql("SELECT -1L AS id, 'existing' AS data, CAST(NULL AS INT) AS new_col"))
+        assert_equal(df.orderBy("id", "data", "new_col").collect(),
+                     expected.orderBy("id", "data", "new_col").collect())
+        logs = read_delta_logs(spark, path + "/_delta_log/*.json")
+        metadata = [action["metaData"] for action in logs[max(logs)] if "metaData" in action]
+        assert len(metadata) == 1, "Schema evolution must commit a metadata action"
+        assert json.loads(metadata[0]["schemaString"]) == expected_schema.jsonValue()
+        return df
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        insert, read_and_check, data_path, conf=confs,
+        expected_command="GpuAppendDataExecV1")
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path),
+                     conf=confs)
+
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
