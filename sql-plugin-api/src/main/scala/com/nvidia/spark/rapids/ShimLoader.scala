@@ -48,11 +48,11 @@ import org.apache.spark.util.MutableURLClassLoader
     Each shim can see a consistent parallel world without conflicts by referencing
     only one conflicting directory.
     E.g., Spark 3.2.0 Shim will use
-    jar:file:/home/spark/rapids-4-spark_2.12-26.10.0.jar!/spark-shared/
-    jar:file:/home/spark/rapids-4-spark_2.12-26.10.0.jar!/spark320/
+    jar:file:/home/spark/rapids-4-spark_2.12-26.12.0.jar!/spark-shared/
+    jar:file:/home/spark/rapids-4-spark_2.12-26.12.0.jar!/spark320/
     Spark 3.3.1 will use
-    jar:file:/home/spark/rapids-4-spark_2.12-26.10.0.jar!/spark-shared/
-    jar:file:/home/spark/rapids-4-spark_2.12-26.10.0.jar!/spark331/
+    jar:file:/home/spark/rapids-4-spark_2.12-26.12.0.jar!/spark-shared/
+    jar:file:/home/spark/rapids-4-spark_2.12-26.12.0.jar!/spark331/
     Using these Jar URL's allows referencing different bytecode produced from identical sources
     by incompatible Scala / Spark dependencies.
  */
@@ -350,13 +350,6 @@ object ShimLoader {
       "com.nvidia.spark.rapids.GpuQueryStagePrepOverrides")
     val constructor = clz.getConstructor(classOf[SparkSession])
     constructor.newInstance(ss).asInstanceOf[Rule[SparkPlan]]
-  }
-
-  def newGpuPostHocResolutionOverrides(ss: SparkSession): Rule[LogicalPlan] = {
-    val clz = ShimReflectionUtils.loadClass(
-      "com.nvidia.spark.rapids.GpuPostHocResolutionOverrides")
-    val constructor = clz.getConstructor(classOf[SparkSession])
-    constructor.newInstance(ss).asInstanceOf[Rule[LogicalPlan]]
   }
 
   def newUdfLogicalPlanRules(): Rule[LogicalPlan] = {

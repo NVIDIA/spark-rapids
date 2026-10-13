@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 import ai.rapids.cudf.{NvtxColor, NvtxRange}
-import com.nvidia.spark.rapids.{NvtxId, NvtxRegistry, PerfIO}
+import com.nvidia.spark.rapids.{LimiterMetricsRecorder, NvtxId, NvtxRegistry, PerfIO}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -269,6 +269,7 @@ class GpuTaskMetrics extends Serializable with Logging {
   private val readSpillFromDiskTimeNs = new NanoSecondAccumulator
   private val spillToHostBytes = new SizeInBytesAccumulator
   private val spillToDiskBytes = new SizeInBytesAccumulator
+  private val outputBatchBytes = new SizeInBytesAccumulator
 
   private val maxDeviceMemoryBytes = new HighWatermarkAccumulator
   private val maxHostMemoryBytes = new HighWatermarkAccumulator
@@ -287,6 +288,8 @@ class GpuTaskMetrics extends Serializable with Logging {
   private val perfioS3CrtExecutors = new LongAccumulator
   private val perfioS3S3aExecutors = new LongAccumulator
   private val perfioS3IcebergFallbacks = new LongAccumulator
+  private val perfioS3RequestLimiterTotalWaitTime = new NanoSecondAccumulator
+  private val perfioS3RequestLimiterMaxWaitingRequests = new MaxLongAccumulator
 
   // GCS PerfIO executor counts split by the connector-repackaged SDK transport.
   private val perfioGcsHttpExecutors = new LongAccumulator
@@ -344,6 +347,7 @@ class GpuTaskMetrics extends Serializable with Logging {
     "gpuReadSpillFromDiskTime" -> readSpillFromDiskTimeNs,
     "gpuSpillToHostBytes" -> spillToHostBytes,
     "gpuSpillToDiskBytes" -> spillToDiskBytes,
+    "gpuOutputBatchBytes" -> outputBatchBytes,
     "gpuMaxDeviceMemoryBytes" -> maxDeviceMemoryBytes,
     "gpuMaxHostMemoryBytes" -> maxHostMemoryBytes,
     "gpuMaxDiskMemoryBytes" -> maxDiskMemoryBytes,
@@ -360,7 +364,9 @@ class GpuTaskMetrics extends Serializable with Logging {
     "perfio.s3.s3a.executors" -> perfioS3S3aExecutors,
     "perfio.s3.iceberg.fallbacks" -> perfioS3IcebergFallbacks,
     "perfio.gcs.http.executors" -> perfioGcsHttpExecutors,
-    "perfio.gcs.grpc.executors" -> perfioGcsGrpcExecutors
+    "perfio.gcs.grpc.executors" -> perfioGcsGrpcExecutors,
+    "perfio.s3.requestLimiter.totalWaitTime" -> perfioS3RequestLimiterTotalWaitTime,
+    "perfio.s3.requestLimiter.maxWaitingRequests" -> perfioS3RequestLimiterMaxWaitingRequests
   )
 
   def register(sc: SparkContext): Unit = {
@@ -436,6 +442,14 @@ class GpuTaskMetrics extends Serializable with Logging {
 
   def recordSpillToHost(sizeInBytes: Long): Unit = {
     spillToHostBytes.add(sizeInBytes)
+  }
+
+  /**
+   * Sums decoded scan bytes for the task. A task with more than one scan input
+   * (e.g. a broadcast loop join) over-counts relative to the per-node SQL metric.
+   */
+  def recordOutputBatchBytes(bytes: Long): Unit = {
+    outputBatchBytes.add(bytes)
   }
 
   def recordSpillToDisk(sizeInBytes: Long): Unit = {
@@ -531,7 +545,8 @@ class GpuTaskMetrics extends Serializable with Logging {
         acc.add(1L)
       }
     } catch {
-      case _: IllegalArgumentException => // accumulator not yet registered; no-op
+      case _: IllegalArgumentException | _: IllegalStateException =>
+        // accumulator not yet registered; no-op
     }
   }
 
@@ -553,6 +568,19 @@ class GpuTaskMetrics extends Serializable with Logging {
   def recordPerfioS3IcebergFallback(): Unit = {
     perfioS3IcebergFallbacks.add(1L)
   }
+
+  @transient private lazy val requestLimiterMetricsRecorder = new LimiterMetricsRecorder {
+    override def recordWaitTime(waitTimeNanos: Long): Unit = {
+      perfioS3RequestLimiterTotalWaitTime.add(waitTimeNanos)
+    }
+
+    override def recordWaitingRequests(waitingRequests: Int): Unit = {
+      perfioS3RequestLimiterMaxWaitingRequests.add(waitingRequests.toLong)
+    }
+  }
+
+  def perfioS3RequestLimiterMetricsRecorder: LimiterMetricsRecorder =
+    requestLimiterMetricsRecorder
 }
 
 /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,31 @@ import org.apache.spark.sql.vectorized.{ArrowColumnVector, ColumnarBatch}
 
 class GpuCoalesceBatchesSuite extends SparkQueryCompareTestSuite {
   val rapidsConf = new RapidsConf(Map.empty[String, String])
+
+  test("coalesce preserves child output ordering") {
+    withGpuSparkSession { spark =>
+      val child = spark.range(1000).sort("id").queryExecution.executedPlan
+      assert(child.outputOrdering.nonEmpty)
+
+      val coalesce = GpuCoalesceBatches(child, TargetSize(1024))
+      assertResult(child.outputOrdering)(coalesce.outputOrdering)
+    }
+  }
+
+  test("buildNonEmptyBatchFromTypes sums the row counts of rows-only batches") {
+    val rowsOnly = Array(new ColumnarBatch(Array.empty, 3), new ColumnarBatch(Array.empty, 4))
+    withResource(ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(rowsOnly, Array.empty)) {
+      batch =>
+        assertResult(0)(batch.numCols())
+        assertResult(7)(batch.numRows())
+    }
+    val tooManyRows = Array(
+      new ColumnarBatch(Array.empty, Int.MaxValue), new ColumnarBatch(Array.empty, 1))
+    val e = intercept[IllegalArgumentException] {
+      ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(tooManyRows, Array.empty)
+    }
+    assert(e.getMessage.contains("Cannot concatenate"), e.getMessage)
+  }
 
   def getCapturedPlan(): SparkPlan = {
     val capturedPlans = ExecutionPlanCaptureCallback.getResultsWithTimeout()

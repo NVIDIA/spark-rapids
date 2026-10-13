@@ -26,7 +26,7 @@ import scala.collection.mutable
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 import com.nvidia.spark.rapids._
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.NvtxRegistry
 import com.nvidia.spark.rapids.RapidsConf
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -81,10 +81,10 @@ abstract class GpuShuffleBlockResolverBase(
     blockId match {
       case sbid: ShuffleBlockId =>
         // Check MultithreadedShuffleBufferCatalog for single partition blocks
-        mtCatalogOpt match {
-          case Some(mtc) if mtc.hasData(sbid) =>
-            return mtc.getMergedBuffer(sbid)
-          case _ =>
+        mtCatalogOpt.flatMap(_.getMergedBufferOption(sbid)) match {
+          case Some(buffer) =>
+            return buffer
+          case None =>
         }
 
         // Check UCX/CACHE_ONLY catalog
@@ -183,6 +183,23 @@ object RapidsShuffleInternalManagerBase extends Logging {
     }
   }
 
+  private def awaitTermination(poolName: String, pool: ExecutorService): Unit = {
+    var terminated = false
+    try {
+      terminated = pool.awaitTermination(5, TimeUnit.SECONDS)
+    } catch {
+      case ie: InterruptedException =>
+        Thread.currentThread.interrupt()
+        logWarning(s"Interrupted while waiting for thread pool ${poolName} to terminate", ie)
+      case e: Throwable =>
+        logWarning(s"Exception during shutdown while terminating pool ${poolName}", e)
+    } finally {
+      if (!terminated) {
+        logWarning(s"Thread pool ${poolName} did not terminate within 5 seconds after shutdown")
+      }
+    }
+  }
+
   def startThreadPoolIfNeeded(
       numWriterThreads: Int,
       numReaderThreads: Int): Unit = synchronized {
@@ -209,18 +226,27 @@ object RapidsShuffleInternalManagerBase extends Logging {
 
   def stopThreadPool(): Unit = synchronized {
     mtShuffleInitialized = false
+    // Interrupt all pools first so workers receive the signal concurrently.
     if (writerPool != null) {
       shutdownNow(writerPool)
-      writerPool = null
     }
-
     if (readerPool != null) {
       shutdownNow(readerPool)
-      readerPool = null
     }
-
     if (mergerPool != null) {
       shutdownNow(mergerPool)
+    }
+    // Then wait for each pool to drain before releasing shared resources.
+    if (writerPool != null) {
+      awaitTermination("shuffle writer", writerPool)
+      writerPool = null
+    }
+    if (readerPool != null) {
+      awaitTermination("shuffle reader", readerPool)
+      readerPool = null
+    }
+    if (mergerPool != null) {
+      awaitTermination("shuffle merge", mergerPool)
       mergerPool = null
     }
   }
@@ -285,12 +311,12 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
    *
    * @param buffer The compressed data buffer (owned by this record, closed after writing)
    * @param compressedSize The actual size of compressed data in buffer
-   * @param remainingQuota The quota to release after writing to disk
+   * @param quotaToRelease The quota to release after writing to disk
    */
   private case class CompressedRecord(
     buffer: OpenByteArrayOutputStream,
     compressedSize: Long,
-    remainingQuota: Long)
+    quotaToRelease: AtomicLong)
 
   /**
    * Cooperatively writes one GPU batch without occupying a merger thread while waiting for work.
@@ -314,8 +340,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     private case object NotReady extends WorkState
     private case object EmptyPartition extends WorkState
     private case class ReadyRecord(
-        queue: ConcurrentLinkedQueue[Future[CompressedRecord]],
-        future: Future[CompressedRecord]) extends WorkState
+        queue: ConcurrentLinkedQueue[Future[CompressedRecord]]) extends WorkState
     private case object FinishedPartition extends WorkState
 
     def schedule(): Unit = {
@@ -360,12 +385,11 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
               // The producer has advanced beyond this partition without adding records.
               writer.getPartitionWriter(currentPartitionToWrite).openStream().close()
               currentPartitionToWrite += 1
-            case ReadyRecord(recordQueue, future) =>
+            case ReadyRecord(recordQueue) =>
               if (outputStream == null) {
                 outputStream = writer.getPartitionWriter(currentPartitionToWrite).openStream()
               }
-              recordQueue.poll()
-              writeRecord(future.get())
+              writeRecord(recordQueue)
             case FinishedPartition =>
               closeOutputStream()
               partitionRecords.remove(currentPartitionToWrite)
@@ -378,9 +402,10 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         }
       } catch {
         case ee: ExecutionException => fail(ee.getCause)
-        case _: InterruptedException =>
+        case ie: InterruptedException =>
           Thread.currentThread().interrupt()
           completionFuture.cancel(true)
+          limiter.signalFailure(ie)
         case t: Throwable => fail(t)
       } finally {
         stepFuture.set(null)
@@ -410,7 +435,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           } else {
             val future = recordQueue.peek()
             if (future != null && future.isDone) {
-              ReadyRecord(recordQueue, future)
+              ReadyRecord(recordQueue)
             } else if (future == null && currentPartitionToWrite < maxQueued) {
               FinishedPartition
             } else {
@@ -423,12 +448,27 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
     private def hasReadyWork: Boolean = currentWorkState != NotReady
 
-    private def writeRecord(record: CompressedRecord): Unit = {
-      if (record.compressedSize > 0) {
-        outputStream.write(record.buffer.getBuf, 0, record.compressedSize.toInt)
+    private def writeRecord(queue: ConcurrentLinkedQueue[Future[CompressedRecord]]): Unit = {
+      var record: CompressedRecord = null
+      var buffer: OpenByteArrayOutputStream = null
+      try {
+        record = queue.peek().get()
+        buffer = record.buffer
+        if (record.compressedSize > 0) {
+          outputStream.write(buffer.getBuf, 0, record.compressedSize.toInt)
+        }
+        queue.poll()
+      } finally {
+        if (record != null) {
+          val toRelease = record.quotaToRelease.getAndSet(0)
+          if (toRelease > 0) {
+            limiter.release(toRelease)
+          }
+        }
+        if (buffer != null) {
+          buffer.close()
+        }
       }
-      record.buffer.close()
-      limiter.release(record.remainingQuota)
     }
 
     private def closeOutputStream(): Unit = {
@@ -449,6 +489,24 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     private def fail(t: Throwable): Unit = {
       closeOutputStreamQuietly()
       completionFuture.completeExceptionally(t)
+      // Signal the limiter so any producer blocked in acquireOrBlock wakes up and
+      // throws, allowing the write loop to exit and cleanupBatch to release all quotas.
+      limiter.signalFailure(t)
+      // Also release quota for already-completed futures that writeRecord will never see.
+      partitionRecords.values().asScala.foreach { recordQueue =>
+        recordQueue.forEach { future =>
+          if (future != null && future.isDone && !future.isCancelled) {
+            try {
+              val toRelease = future.get().quotaToRelease.getAndSet(0)
+              if (toRelease > 0) {
+                limiter.release(toRelease)
+              }
+            } catch {
+              case _: Exception => // quota was released in the compression catch block
+            }
+          }
+        }
+      }
     }
   }
 
@@ -564,7 +622,13 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
     mapOutputWriters += mapOutputWriter  // Track for cleanup
 
     val partLengths = if (!records.hasNext) {
-      commitAllPartitions(mapOutputWriter, true)
+      val lengths = commitAllPartitions(mapOutputWriter, true)
+      // An empty attempt follows the catalog's rules too: a map id published earlier keeps its
+      // output and lengths, and a shuffle already cleaned up fails the task.
+      GpuShuffleEnv.getMultithreadedCatalog.map { catalog =>
+        catalog.publishMapOutputOrFail(shuffleId, mapId, new MapOutputSegments.Builder().build(),
+          numPartitions)
+      }.getOrElse(lengths)
     } else {
       writePartitionedGpuBatches(records, mapOutputWriter)
     }
@@ -691,12 +755,30 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
         // Acquire limiter and process compression task immediately
         val waitOnLimiterStart = System.nanoTime()
-        limiter.acquireOrBlock(recordSize)
+        closeOnExcept(cb) { _ =>
+          limiter.acquireOrBlock(recordSize)
+        }
         waitTimeOnLimiterNs += System.nanoTime() - waitOnLimiterStart
 
         val batchForRecord = currentBatch
+        // Tracks how much quota this task still owes back to the limiter. Initialized to
+        // the full recordSize; decremented when excessQuota is released early on the success
+        // path. getAndSet(0) in the catch block atomically claims whatever remains,
+        // ensuring quota is only released after call() has freed its resources.
+        val quotaToRelease = new AtomicLong(recordSize)
+        // CAS gate shared between call() and done(). Whoever wins compareAndSet(false, true)
+        // is responsible for closing cb and releasing quota. This prevents both a cb leak
+        // (done() fires for a cancelled-before-start task and cb is never closed) and
+        // double-close (done() and call() both try to close cb in the race window).
+        val cbOwner = new AtomicBoolean(false)
         val compressionTask = new FutureTask[CompressedRecord](new Callable[CompressedRecord] {
           override def call(): CompressedRecord = {
+            if (!cbOwner.compareAndSet(false, true)) {
+              // done() already closed cb and released quota; bail out.
+              throw new IOException(
+                s"Failed compression task for shuffle $shuffleId, map $mapId, " +
+                  s"partition $reducePartitionId: cancelled before starting")
+            }
             try {
               withResource(cb) { _ =>
                 // Create a new buffer for this record.
@@ -724,16 +806,33 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
                 // Note: excessQuota can be 0 if compression doesn't reduce size (or expands)
                 val excessQuota = math.max(0L, recordSize - compressedSize)
                 if (excessQuota > 0) {
-                  limiter.release(excessQuota)
+                  // addAndGet returns negative if done() already claimed quota via getAndSet(0);
+                  // skip the direct release. The merger also sees negative and skips.
+                  val remaining = quotaToRelease.addAndGet(-excessQuota)
+                  if (remaining >= 0) {
+                    limiter.release(excessQuota)
+                  }
                 }
 
-                // Return CompressedRecord with buffer and remaining quota for Merger
-                // Total released = excessQuota + remainingQuota should equal recordSize
-                val remainingQuota = recordSize - excessQuota
-                CompressedRecord(buffer, compressedSize, remainingQuota)
+                // Return CompressedRecord carrying quotaToRelease so writeRecord can use
+                // getAndSet(0) to release the remainder — or skip if done() claimed it.
+                CompressedRecord(buffer, compressedSize, quotaToRelease)
               }
             } catch {
+              case e: InterruptedException =>
+                Thread.currentThread().interrupt()
+                val toRelease = quotaToRelease.getAndSet(0)
+                if (toRelease > 0) {
+                  limiter.release(toRelease)
+                }
+                throw new IOException(
+                  s"Failed compression task for shuffle $shuffleId, map $mapId, " +
+                    s"partition $reducePartitionId", e)
               case e: Exception =>
+                val toRelease = quotaToRelease.getAndSet(0)
+                if (toRelease > 0) {
+                  limiter.release(toRelease)
+                }
                 throw new IOException(
                   s"Failed compression task for shuffle $shuffleId, map $mapId, " +
                     s"partition $reducePartitionId", e)
@@ -741,8 +840,25 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           }
         }) {
           override def done(): Unit = {
-            // FutureTask invokes done only after isDone becomes true.
-            batchForRecord.scheduleMerger()
+            try {
+              // If call() never ran, win the CAS to close cb (prevents the ref-count leak
+              // from incRefCountAndGetSize). Quota is handled separately below.
+              if (cbOwner.compareAndSet(false, true)) {
+                cb.close()
+              }
+            } finally {
+              // Release quota when cancelled, or when the merger has already failed (so
+              // writeRecord will never be called for this future's CompressedRecord).
+              // getAndSet(0) is idempotent: fail() may have already claimed it; returns 0.
+              if (isCancelled ||
+                  batchForRecord.merger.completionFuture.isCompletedExceptionally) {
+                val toRelease = quotaToRelease.getAndSet(0)
+                if (toRelease > 0) {
+                  limiter.release(toRelease)
+                }
+              }
+              batchForRecord.scheduleMerger()
+            }
           }
         }
         val future = RapidsShuffleInternalManagerBase.queueWriteTask(compressionTask)
@@ -813,12 +929,20 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
           var future = recordQueue.poll()
           while (future != null) {
             future.cancel(true)
-            // If future already completed, try to close the buffer
+            // If future completed normally (merger never processed it), release the
+            // remaining quota and close the buffer. Quota release comes first so that a
+            // buffer close failure does not leave the limiter stranded.
+            // Cancelled futures are handled by done().
             if (future.isDone && !future.isCancelled) {
               try {
-                future.get().buffer.close()
+                val record = future.get()
+                val toRelease = record.quotaToRelease.getAndSet(0)
+                if (toRelease > 0) {
+                  limiter.release(toRelease)
+                }
+                try { record.buffer.close() } catch { case _: Exception => }
               } catch {
-                case _: Exception => // Ignore cleanup errors
+                case _: Exception => // future.get() threw (e.g. failed compression task)
               }
             }
             future = recordQueue.poll()
@@ -847,7 +971,7 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
         case Some(catalog) =>
           // Store data in MultithreadedShuffleBufferCatalog instead of merging.
           // The catalog takes ownership of the handles.
-          val lengths = storePartialFilesInCatalog(catalog, partialFiles.toSeq, isMultiBatch)
+          val lengths = storePartialFilesInCatalog(catalog, partialFiles.toSeq)
           handlesTransferred = true
           lengths
         case None =>
@@ -900,47 +1024,21 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
    *
    * @param catalog the MultithreadedShuffleBufferCatalog to store data
    * @param partialFiles list of partial files from all batches
-   * @param isMultiBatch whether this is a multi-batch scenario
-   * @return array of partition lengths (sum across all batches for each partition)
+   * @return partition lengths of the output the catalog keeps for this map, which is an earlier
+   *         attempt's if one was already published
+   * @throws IllegalStateException if the shuffle was cleaned up before the publish; the catalog
+   *                               has closed the handles by then
    */
   private def storePartialFilesInCatalog(
       catalog: MultithreadedShuffleBufferCatalog,
-      partialFiles: Seq[PartialFile],
-      isMultiBatch: Boolean): Array[Long] = {
-    val accumulatedLengths = new Array[Long](numPartitions)
-
-    if (isMultiBatch) {
-      // Multi-batch: store each partial file's partitions in catalog
-      partialFiles.foreach { pf =>
-        var offset = 0L
-        for (partId <- 0 until numPartitions) {
-          val length = pf.partitionLengths(partId)
-          if (length > 0) {
-            catalog.addPartition(shuffleId, mapId, partId, pf.handle, offset, length)
-          }
-          accumulatedLengths(partId) += length
-          offset += length
-        }
-        // Don't close the handle here - it will be closed when shuffle is unregistered
-        // Disk write savings are recorded by the reducer when reading the data
-      }
-    } else {
-      // Single batch: use handle already extracted in the write loop
-      // (partialFiles should have exactly one element in single-batch mode)
-      val pf = partialFiles.head
-      var offset = 0L
-      for (partId <- 0 until numPartitions) {
-        val length = pf.partitionLengths(partId)
-        if (length > 0) {
-          catalog.addPartition(shuffleId, mapId, partId, pf.handle, offset, length)
-        }
-        accumulatedLengths(partId) = length
-        offset += length
-      }
-      // Disk write savings are recorded by the reducer when reading the data
-    }
-
-    accumulatedLengths
+      partialFiles: Seq[PartialFile]): Array[Long] = {
+    val output = partialFiles.foldLeft(new MapOutputSegments.Builder()) { (builder, pf) =>
+      builder.addPartialFile(pf.handle, pf.partitionLengths)
+    }.build()
+    // Published whole, so readers never see part of a map output. The catalog owns the handles
+    // from here and closes them itself if it does not keep this output.
+    // Disk write savings are recorded by the reducer when reading the data
+    catalog.publishMapOutputOrFail(shuffleId, mapId, output, numPartitions)
   }
 
   /**
@@ -1038,13 +1136,14 @@ abstract class RapidsShuffleThreadedWriterBase[K, V](
 
 class BytesInFlightLimiter(maxBytesInFlight: Long) {
   private var inFlight: Long = 0L
+  private var failureCause: Throwable = null
 
   def acquire(sz: Long): Boolean = {
     if (sz == 0) {
       true
     } else {
       synchronized {
-        if (inFlight == 0 || sz + inFlight < maxBytesInFlight) {
+        if (inFlight == 0 || sz + inFlight <= maxBytesInFlight) {
           inFlight += sz
           true
         } else {
@@ -1054,18 +1153,18 @@ class BytesInFlightLimiter(maxBytesInFlight: Long) {
     }
   }
 
-  def acquireOrBlock(sz: Long): Unit = {
-    var acquired = acquire(sz)
-    if (!acquired) {
-      synchronized {
-        while (!acquired) {
-          acquired = acquire(sz)
-          if (!acquired) {
-            wait()
-          }
-        }
-      }
+  def acquireOrBlock(sz: Long): Unit = synchronized {
+    while (failureCause == null && !acquire(sz)) {
+      wait()
     }
+    if (failureCause != null) {
+      throw new IOException("Compression batch failed; quota acquisition aborted", failureCause)
+    }
+  }
+
+  def signalFailure(t: Throwable): Unit = synchronized {
+    failureCause = t
+    notifyAll()
   }
 
   def release(sz: Long): Unit = synchronized {
@@ -1208,22 +1307,10 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
     // Register a completion handler to close any queued cbs,
     // pending iterators, or futures
     onTaskCompletion(context) {
-      // remove any materialized batches
-      queued.forEach {
-        case (_, cb:ColumnarBatch) => cb.close()
-      }
-      queued.clear()
-
-      // close any materialized BlockState objects that are holding onto netty buffers or
-      // file descriptors
-      pendingIts.safeClose()
-      pendingIts.clear()
-
-      // we could have futures left that are either done or in flight
-      // we need to cancel them and then close out any `BlockState`
-      // objects that were created (to remove netty buffers or file descriptors)
+      // Cancel/join futures first so that no deserializeTask thread can call
+      // queued.offer() after we drain the queue below.
       val futuresAndCancellations = futures.map { f =>
-        val didCancel = f.cancel(true)
+        val didCancel = try { f.cancel(true) } catch { case _: Exception => false }
         (f, didCancel)
       }
 
@@ -1238,8 +1325,7 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
             // this could either be a successful future, or it finished with exception
             // the case when it will fail with exception is when the underlying stream is closed
             // as part of the shutdown process of the task.
-            future.get(10, TimeUnit.MILLISECONDS)
-              .foreach(_.close())
+            future.get(10, TimeUnit.MILLISECONDS).foreach(_.close())
           } catch {
             case t: Throwable =>
               // this is going to capture the first exception and not worry about others
@@ -1251,6 +1337,18 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           }
         }
       futures.clear()
+
+      // All futures are now done or cancelled — no more queued.offer() calls can arrive.
+      // Safe to drain queued and pendingIts without a race.
+      queued.forEach {
+        case (_, cb:ColumnarBatch) => cb.close()
+      }
+      queued.clear()
+
+      // close any materialized BlockState objects that are holding onto netty buffers or
+      // file descriptors
+      pendingIts.safeClose()
+      pendingIts.clear()
       try {
         if (fallbackIter != null) {
           fallbackIter.close()
@@ -1364,18 +1462,29 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
           // here while we wait.
           waitTimeStart = System.nanoTime()
           val res = queued.take()
-          val queueWaitThisCall = System.nanoTime() - waitTimeStart
-          // limiter is now released immediately after deserialization in deserializeTask
-          res match {
-            case (_, _: ColumnarBatch) =>
-              popFetchedIfAvailable()
-            case _ => // do nothing
+          var success = false
+          try {
+            val queueWaitThisCall = System.nanoTime() - waitTimeStart
+            // limiter is now released immediately after deserialization in deserializeTask
+            res match {
+              case (_, _: ColumnarBatch) =>
+                popFetchedIfAvailable()
+              case _ => // do nothing
+            }
+            waitTime += queueWaitThisCall
+            deserWaitTimeNs.foreach(_ += queueWaitThisCall)
+            deserializationTimeNs.foreach(_ += waitTime)
+            shuffleReadTimeNs.foreach(_ += waitTime)
+            success = true
+            res
+          } finally {
+            if (!success) {
+              res match {
+                case (_, cb: ColumnarBatch) => cb.close()
+                case _ => // do nothing
+              }
+            }
           }
-          waitTime += queueWaitThisCall
-          deserWaitTimeNs.foreach(_ += queueWaitThisCall)
-          deserializationTimeNs.foreach(_ += waitTime)
-          shuffleReadTimeNs.foreach(_ += waitTime)
-          res
         }
 
         val uncompressedSize = result match {
@@ -1622,14 +1731,14 @@ class RapidsCachingWriter[K, V](
               val contigTable = c.getContiguousTable
               partSize = c.getTableBuffer.getLength
               uncompressedMetric += partSize
-              catalog.addContiguousTable(
+              writtenBufferIds += catalog.addContiguousTable(
                 blockId,
                 contigTable,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_TASK_PRIORITY)
             case c: GpuCompressedColumnVector =>
               partSize = c.getTableBuffer.getLength
               uncompressedMetric += c.getTableMeta.bufferMeta().uncompressedSize()
-              catalog.addCompressedBatch(
+              writtenBufferIds += catalog.addCompressedBatch(
                 blockId,
                 batch,
                 SpillPriorities.OUTPUT_FOR_SHUFFLE_INITIAL_TASK_PRIORITY)
@@ -1649,7 +1758,7 @@ class RapidsCachingWriter[K, V](
         } else {
           // no device data, tracking only metadata
           val tableMeta = MetaUtils.buildDegenerateTableMeta(batch)
-          catalog.addDegenerateRapidsBuffer(
+          writtenBufferIds += catalog.addDegenerateRapidsBuffer(
             blockId,
             tableMeta)
 
@@ -1662,6 +1771,11 @@ class RapidsCachingWriter[K, V](
       }
       metricsReporter.incBytesWritten(bytesWritten)
       metricsReporter.incRecordsWritten(recordsWritten)
+      if (catalog.mapIdsCanRepeat) {
+        catalog.commitMapOutput(handle.shuffleId, mapId, writtenBufferIds, sizes)
+        // the catalog owns these buffers now, and a later stop(false) must not remove them
+        writtenBufferIds.clear()
+      }
     }
   }
 
@@ -1736,7 +1850,9 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
   // NOTE: this can be null in the driver side.
   protected lazy val env = SparkEnv.get
   protected lazy val blockManager = env.blockManager
-  protected lazy val shouldFallThroughOnEverything = {
+  // Stable reasons to always fall back to SortShuffleManager, evaluated once at
+  // first shuffle registration.
+  protected lazy val shouldAlwaysFallBack = {
     val fallThroughReasons = new ListBuffer[String]()
     if (!rapidsConf.isMultiThreadedShuffleManagerMode) {
       if (GpuShuffleEnv.isExternalShuffleEnabled) {
@@ -1749,17 +1865,26 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     if (rapidsConf.isSqlExplainOnlyEnabled) {
       fallThroughReasons += "Plugin is in explain only mode"
     }
-    if (GpuShuffleEnv.isRowBasedChecksumEnabled) {
-      fallThroughReasons += "Detected order-independent checksum enabled " +
-        "(spark.sql.shuffle.orderIndependentChecksum.enabled or " +
-        "enableFullRetryOnMismatch). " +
-        "This Spark 4.1+ feature is not yet supported by Spark-Rapids."
-    }
     if (fallThroughReasons.nonEmpty) {
       logWarning(s"Rapids Shuffle Plugin is falling back to SortShuffleManager " +
         s"because: ${fallThroughReasons.mkString(", ")}")
     }
     fallThroughReasons.nonEmpty
+  }
+
+  private val rowBasedChecksumFallbackLogged = new AtomicBoolean(false)
+
+  private def shouldFallThroughForShuffle: Boolean = {
+    val rowBasedChecksumFallback = GpuShuffleEnv.isRowBasedChecksumEnabled
+    if (rowBasedChecksumFallback) {
+      if (rowBasedChecksumFallbackLogged.compareAndSet(false, true)) {
+        logWarning("Rapids Shuffle Plugin is falling back to SortShuffleManager because: " +
+          "Detected order-independent checksum enabled " +
+          "(spark.sql.shuffle.orderIndependentChecksum.enabled or enableFullRetryOnMismatch). " +
+          "This Spark 4.1+ feature is not yet supported by Spark-Rapids.")
+      }
+    }
+    shouldAlwaysFallBack || rowBasedChecksumFallback
   }
 
   private lazy val localBlockManagerId = blockManager.blockManagerId
@@ -1776,7 +1901,7 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
         "RapidsShuffleManager is configured"))
 
   protected lazy val resolver =
-    if (shouldFallThroughOnEverything) {
+    if (shouldAlwaysFallBack) {
       wrapped.shuffleBlockResolver
     } else if (rapidsConf.isMultiThreadedShuffleManagerMode) {
       // MULTITHREADED mode: use GpuShuffleBlockResolver
@@ -1848,11 +1973,13 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     val orig = wrapped.registerShuffle(shuffleId, dependency)
 
     dependency match {
-      case _ if shouldFallThroughOnEverything ||
-        rapidsConf.isMultiThreadedShuffleManagerMode => orig
       case gpuDependency: GpuShuffleDependency[K, V, C] if gpuDependency.useGPUShuffle =>
-        new GpuShuffleHandle(orig,
-          dependency.asInstanceOf[GpuShuffleDependency[K, V, V]])
+        val gpuDep = gpuDependency.asInstanceOf[GpuShuffleDependency[K, V, V]]
+        gpuDep.checksumFallback = shouldFallThroughForShuffle
+        if (rapidsConf.isMultiThreadedShuffleManagerMode) orig
+        else new GpuShuffleHandle(orig, gpuDep)
+      case _ if shouldAlwaysFallBack ||
+        rapidsConf.isMultiThreadedShuffleManagerMode => orig
       case _ => orig
     }
   }
@@ -1900,6 +2027,8 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       context: TaskContext,
       metricsReporter: ShuffleWriteMetricsReporter): ShuffleWriter[K, V] = {
     handle match {
+      case gpu: GpuShuffleHandle[_, _] if gpu.dependency.checksumFallback =>
+        wrapped.getWriter(gpu.wrapped, mapId, context, metricsReporter)
       case gpu: GpuShuffleHandle[_, _] =>
         registerGpuShuffle(handle.shuffleId)
         new RapidsCachingWriter(
@@ -1914,6 +2043,7 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
         handle.dependency match {
           case gpuDep: GpuShuffleDependency[_, _, _]
             if gpuDep.useMultiThreadedShuffle &&
+              !gpuDep.checksumFallback &&
               rapidsConf.shuffleMultiThreadedWriterThreads > 0 =>
             // use the threaded writer if the number of threads specified is 1 or above,
             // with 0 threads we fallback to the Spark-provided writer.
@@ -1925,7 +2055,7 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
               // cast the handle with specific generic types due to type-erasure
               gpuDep.asInstanceOf[GpuShuffleDependency[K, V, V]])
             // we need to track this mapId so we can clean it up later on unregisterShuffle
-            trackMapTaskForCleanup(handle.shuffleId, context.taskAttemptId())
+            trackMapTaskForCleanup(handle.shuffleId, mapId)
             // in most scenarios, the pools have already started, except for local mode
             // here we try to start them if we see they haven't
             RapidsShuffleInternalManagerBase.startThreadPoolIfNeeded(
@@ -1957,6 +2087,9 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
     handle match {
+      case gpuHandle: GpuShuffleHandle[_, _] if gpuHandle.dependency.checksumFallback =>
+        ShuffleManagerShims.getReader(wrapped, gpuHandle.wrapped, startMapIndex, endMapIndex,
+          startPartition, endPartition, context, metrics)
       case gpuHandle: GpuShuffleHandle[_, _] =>
         logInfo(s"Asking map output tracker for dependency ${gpuHandle.dependency}, " +
           s"map output sizes for: ${gpuHandle.shuffleId}, parts=$startPartition-$endPartition")
@@ -1995,7 +2128,8 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
         //   would need to be made to deal with missing metrics, for example, for a regular
         //   Exchange node.
         baseHandle.dependency match {
-          case gpuDep: GpuShuffleDependency[K, C, C] if gpuDep.useMultiThreadedShuffle =>
+          case gpuDep: GpuShuffleDependency[K, C, C]
+              if gpuDep.useMultiThreadedShuffle && !gpuDep.checksumFallback =>
             // We want to use batch fetch in the non-push shuffle case. Spark
             // checks for a config to see if batch fetch is enabled (this check), and
             // it also checks when getting (potentially merged) map status from
@@ -2093,7 +2227,7 @@ class RapidsShuffleInternalManagerBase(conf: SparkConf, val isDriver: Boolean)
     wrapped.unregisterShuffle(shuffleId)
   }
 
-  override def shuffleBlockResolver: ShuffleBlockResolver = resolver
+  def shuffleBlockResolver: ShuffleBlockResolver = resolver
 
   override def stop(): Unit = synchronized {
     wrapped.stop()

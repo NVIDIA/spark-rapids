@@ -15,6 +15,7 @@
  */
 /*** spark-rapids-shim-json-lines
 {"spark": "420"}
+{"spark": "500"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
@@ -22,7 +23,8 @@ import ai.rapids.cudf.NaNEquality
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
 import org.apache.spark.sql.catalyst.expressions.aggregate.{CollectList, CollectSet}
-import org.apache.spark.sql.types.{DataType, NullType, NumericType}
+import org.apache.spark.sql.types.{DataType, DoubleType, FloatType, IntegerType, LongType, NullType,
+  NumericType}
 
 /**
  * Reimplement the function `checkForNumericExpr` which has been removed since
@@ -39,6 +41,14 @@ object TypeUtilsShims {
 
   // Spark 4.2 stores collect_set buffers in a way that treats all NaN values as one set entry.
   val collectSetFloatNanEquality: NaNEquality = NaNEquality.ALL_EQUAL
+
+  // Spark 4.2 CollectSet keys float/double by normalized bit patterns in the agg buffer.
+  // GPU CollectSet uses the same buffer element types so mixed CPU/GPU stages match.
+  def collectSetCpuBufferElementType(childType: DataType): DataType = childType match {
+    case FloatType => IntegerType
+    case DoubleType => LongType
+    case other => other
+  }
 
   def collectListIgnoreNulls(collectList: CollectList): Boolean = collectList.ignoreNulls
 

@@ -20,20 +20,32 @@ import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.NoopMetric$;
 import com.nvidia.spark.rapids.RapidsConf;
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
+import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.ContentFile;
+import org.apache.iceberg.DeleteFile;
+import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.deletes.PositionDelete;
+import org.apache.iceberg.io.DataWriteResult;
+import org.apache.iceberg.io.DeleteWriteResult;
 import org.apache.iceberg.io.FileIO;
+import org.apache.iceberg.io.OutputFileFactory;
+import org.apache.iceberg.io.PartitioningWriter;
+import org.apache.iceberg.io.WriteResult;
 import org.apache.iceberg.parquet.GpuParquetIO;
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.iceberg.spark.source.GpuSparkScan;
+import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.read.Scan;
+import org.apache.spark.sql.connector.write.DeltaBatchWrite;
 import scala.Option;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.Map;
 
 /**
@@ -45,6 +57,9 @@ import java.util.Map;
  * {@link ShimUtils} based on the detected Iceberg version.
  */
 public interface IcebergShimUtils {
+    /** Returns the Iceberg table format version from the table's current metadata. */
+    int formatVersion(Table table);
+
     /**
      * Returns the fully qualified location URI of an Iceberg {@link ContentFile},
      * e.g. {@code "s3://bucket/path/to/file.parquet"} or {@code "file:/path/to/file.parquet"}.
@@ -52,6 +67,59 @@ public interface IcebergShimUtils {
      * {@code location()} in 1.9.x+).
      */
     String locationOf(ContentFile<?> f);
+
+    /** Returns whether a positional delete is an Iceberg Puffin deletion vector. */
+    boolean isDeletionVector(DeleteFile deleteFile);
+
+    /** Returns whether a resolved delete-file format writes Puffin deletion vectors. */
+    boolean isPuffinFormat(FileFormat fileFormat);
+
+    /**
+     * Returns delete files that Iceberg requires a deletion-vector write to replace.
+     *
+     * @return an opaque handle, or {@code null} when there are no existing deletes to rewrite
+     */
+    RewritableDeletes broadcastRewritableDeletes(
+            DeltaBatchWrite write);
+
+    /**
+     * Opaque, serializable handle for version-specific rewritable-delete state.
+     *
+     * <p>The underlying broadcast value uses Iceberg's {@code DeleteFileSet}, which is absent
+     * from Iceberg 1.6. Iceberg 1.9 and later share an implementation outside the common module
+     * so this interface does not expose an API that is unavailable in older Iceberg versions.
+     */
+    interface RewritableDeletes extends Serializable {}
+
+    /**
+     * Creates Iceberg's version-specific deletion-vector writer.
+     *
+     * @param rewritableDeletes existing deletes to merge and replace, or {@code null} when the
+     *                          data file has no existing deletes
+     */
+    PartitioningWriter<PositionDelete<InternalRow>, DeleteWriteResult>
+            newDeletionVectorWriter(
+                    Table table, OutputFileFactory fileFactory,
+                    RewritableDeletes rewritableDeletes);
+
+    /** Combines data and delete results, including rewritten deletes when supported. */
+    WriteResult positionDeltaWriteResult(
+            DataWriteResult dataResult, DeleteWriteResult deleteResult);
+
+    /** Populates a reusable position-delete record across Iceberg API versions. */
+    void setPositionDelete(
+            PositionDelete<InternalRow> delete, CharSequence path, long position);
+
+    /**
+     * Reads exactly the recorded deletion-vector byte range and returns its compressed bitmap.
+     *
+     * <p>This is version-dispatched because Iceberg 1.6 does not expose the Puffin file format or
+     * deletion-vector manifest fields, and its {@code PositionDeleteIndex} lacks the decode and
+     * iteration APIs available in later releases.
+     */
+    IcebergDeletionVector readDeletionVector(
+            DeleteFile deleteFile, RapidsInputFile inputFile, boolean validateCrc)
+            throws IOException;
 
     /**
      * Builds the constants map for a file scan task. Constants include partition values,

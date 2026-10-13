@@ -81,6 +81,12 @@ fi
 
 WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 
+# CI-only hook installed by fallback.groovy, not a prerequisite for local build/test commands.
+# Leave SPARK_STARTUP_CHECK unset for local usage; ordinary callers keep their existing behavior.
+if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
+    bash "$SPARK_STARTUP_CHECK" databricks
+fi
+
 IS_SPARK_321_OR_LATER=0
 [[ "$(printf '%s\n' "3.2.1" "$BASE_SPARK_VERSION" | sort -V | head -n1)" = "3.2.1" ]] && IS_SPARK_321_OR_LATER=1
 
@@ -138,6 +144,11 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             fi
             tar xf "/tmp/$JAR_FILE_NAME" -C $HOME
             rm -f "/tmp/$JAR_FILE_NAME"
+        fi
+        # The same CI-only hook checks upstream Spark; local runs leave it unset.
+        if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
+            SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
+                bash "$SPARK_STARTUP_CHECK" upstream
         fi
         SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
         SPARK_SHELL_SMOKE_TEST=1 \

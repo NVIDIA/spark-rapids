@@ -21,10 +21,10 @@ import java.util.Optional
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.{ColumnView, DType, Table}
+import ai.rapids.cudf.{ColumnVector, ColumnView, DType, Table}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableProducingSeq
-import com.nvidia.spark.rapids.jni.GpuTimeZoneDB
+import com.nvidia.spark.rapids.jni.{DateTimeRebase, GpuTimeZoneDB}
 
 object GpuOrcTimezoneUtils {
 
@@ -51,87 +51,203 @@ object GpuOrcTimezoneUtils {
   }
 
   /**
-   * Rebase ORC timestamps considering writer and reader timezones.
+   * Convert an integer-derived local timestamp using the GPU ORC schema-evolution semantics.
    *
-   * Uses the JNI kernel `GpuTimeZoneDB.convertOrcTimezones` for both same- and cross-timezone
-   * reads. Even when the timezone rules match, the kernel must reconstruct the writer-specific
-   * ORC 2015 base before deciding whether to apply the negative nanos borrow.
-   *
-   * @param input the input table (timestamps read as UTC via ignoreTimezoneInStripeFooter)
-   * @param writerTimezone the resolved writer timezone from the ORC stripe footer
-   * @return table with rebased timestamp columns; input is closed
+   * Apache ORC uses java.util.TimeZone for this conversion, while Spark materializes the
+   * resulting java.sql.Timestamp using java.time rules. Before the reader timezone's first
+   * recorded transition those rule sets can differ, so preserve the ORC-selected instant through
+   * Spark's historical rebase and retain ORC's conversion for all later values.
    */
-  def rebaseOrcTimestamps(input: Table, writerTimezone: ZoneId): Table = {
-    rebaseWithWriterTimezone(input, writerTimezone.getId, ZoneId.systemDefault().getId)
+  private[rapids] def convertOrcIntegerTimestamp(
+      timestamp: ColumnVector,
+      readerZone: ZoneId): ColumnVector = {
+    val readerTz = readerZone.getId
+    withResource(GpuTimeZoneDB.buildOrcTimezoneContext(readerTz, readerTz)) { tzCtx =>
+      GpuTimeZoneDB.convertOrcIntegerTimestampToSpark(timestamp, tzCtx)
+    }
   }
 
   /**
-   * Rebase timestamps using the writer and reader timezones.
+   * Rebase ORC legacy dates and timestamps considering writer and reader timezones.
    *
-   * cuDF reads ORC timestamps with `ignoreTimezoneInStripeFooter`, so the base_timestamp
-   * is computed in UTC. ORC Java computes base_timestamp in the *writer* timezone, so the
-   * millis passed to `convertBetweenTimezones` already encode the writer TZ base offset.
+   * Uses the fused JNI kernel `GpuTimeZoneDB.convertOrcTimestampToSpark` for proleptic-calendar
+   * files. cuDF has already decided ORC's negative nanos borrow in the writer timezone's ORC epoch
+   * frame. JNI then applies the remaining writer-to-reader timezone conversion and Spark's
+   * historical java.util.TimeZone-to-java.time rebase. Legacy-calendar files apply the timezone
+   * conversion before Spark's Julian-to-Gregorian rebase.
    *
-   * To match ORC Java, the JNI `convertOrcTimezones` kernel first applies the writer TZ base
-   * offset and recomputes the negative nanos borrow, then applies any writer-to-reader TZ delta.
+   * @param input the input table (timestamps read with ignoreTimezoneInStripeFooter)
+   * @param writerTimezone the resolved writer timezone from the ORC stripe footer
+   * @param writerUsedProlepticGregorian whether the writer used the proleptic Gregorian calendar
+   * @return table with rebased date/time columns; input is closed
+   */
+  def rebaseOrcDateTime(
+      input: Table,
+      writerTimezone: ZoneId,
+      writerUsedProlepticGregorian: Boolean): Table = {
+    rebaseWithWriterTimezone(input, writerTimezone.getId, ZoneId.systemDefault().getId,
+      writerUsedProlepticGregorian)
+  }
+
+  /**
+   * Rebase date/time values using the writer calendar and writer/reader timezones.
+   *
+   * Legacy dates are rebased from the hybrid Julian/Gregorian calendar to the proleptic
+   * Gregorian calendar. Proleptic dates are retained unchanged.
+   *
+   * cuDF reads ORC timestamps with `ignoreTimezoneInStripeFooter`, but still uses the writer
+   * timezone's ORC epoch to decide the negative nanos borrow. JNI consumes that decoded value
+   * without recomputing the borrow and applies the remaining writer-to-reader timezone
+   * conversion. Proleptic-calendar files also use the fused historical
+   * java.util.TimeZone-to-java.time correction; legacy files instead apply Spark's
+   * timezone-specific Julian-to-Gregorian rebase.
    */
   private def rebaseWithWriterTimezone(
-      input: Table, writerTz: String, readerTz: String): Table = {
+      input: Table,
+      writerTz: String,
+      readerTz: String,
+      writerUsedProlepticGregorian: Boolean): Table = {
+    val readerZone = ZoneId.of(readerTz, ZoneId.SHORT_IDS)
     withResource(input) { _ =>
-      withResource(GpuTimeZoneDB.buildOrcTimezoneContext(writerTz, readerTz)) { tzCtx =>
-        val newColumns = (0 until input.getNumberOfColumns).safeMap { colIdx =>
-          val col = input.getColumn(colIdx)
-          val dType = col.getType
-          if (dType.hasTimeResolution) {
-            GpuTimeZoneDB.convertOrcTimezones(col, tzCtx)
-          } else if (dType == DType.LIST || dType == DType.STRUCT) {
-            withResource(new ArrayBuffer[ColumnView]) { toClose =>
-              val rebased = rebaseNestedWithWriterTimezone(col, tzCtx, toClose)
-              if (rebased eq col) {
-                col.incRefCount()
-              } else {
-                toClose += rebased
-                rebased.copyToColumnVector()
-              }
-            }
-          } else {
-            col.incRefCount()
+      if (containsOrcTimestamp(input)) {
+        val legacyTimestampRebase = if (writerUsedProlepticGregorian) {
+          None
+        } else {
+          Some(new GpuTimestampRebaseUtils.LazyJulianToGregorianMicrosContext(readerZone.getId))
+        }
+        withResource(legacyTimestampRebase) { legacyRebase =>
+          withResource(GpuTimeZoneDB.buildOrcTimezoneContext(writerTz, readerTz)) { tzCtx =>
+            rebaseColumns(input, Some(tzCtx), legacyRebase,
+              writerUsedProlepticGregorian)
           }
         }
-        withResource(newColumns) { _ =>
-          new Table(newColumns: _*)
+      } else {
+        rebaseColumns(input, None, None, writerUsedProlepticGregorian)
+      }
+    }
+  }
+
+  private def containsOrcTimestamp(input: Table): Boolean = {
+    (0 until input.getNumberOfColumns).exists { colIdx =>
+      containsOrcTimestamp(input.getColumn(colIdx))
+    }
+  }
+
+  private def containsOrcTimestamp(col: ColumnView): Boolean = {
+    val dType = col.getType
+    if (dType.hasTimeResolution) {
+      true
+    } else if (dType == DType.LIST || dType == DType.STRUCT) {
+      (0 until col.getNumChildren).exists { childIdx =>
+        withResource(col.getChildColumnView(childIdx)) { child =>
+          containsOrcTimestamp(child)
         }
       }
+    } else {
+      false
+    }
+  }
+
+  private def rebaseColumns(
+      input: Table,
+      tzCtx: Option[GpuTimeZoneDB.OrcTimezoneContext],
+      legacyTimestampRebase: Option[
+        GpuTimestampRebaseUtils.LazyJulianToGregorianMicrosContext],
+      writerUsedProlepticGregorian: Boolean): Table = {
+    val newColumns = (0 until input.getNumberOfColumns).safeMap { colIdx =>
+      val col = input.getColumn(colIdx)
+      val dType = col.getType
+      if (dType == DType.TIMESTAMP_DAYS && !writerUsedProlepticGregorian) {
+        DateTimeRebase.rebaseJulianToGregorian(col)
+      } else if (dType.hasTimeResolution) {
+        convertOrcTimestamp(col, tzCtx.get, legacyTimestampRebase)
+      } else if (dType == DType.LIST || dType == DType.STRUCT) {
+        withResource(new ArrayBuffer[ColumnView]) { toClose =>
+          val rebased = rebaseNestedWithWriterTimezone(
+            col, tzCtx, legacyTimestampRebase,
+            writerUsedProlepticGregorian, toClose)
+          if (rebased eq col) {
+            col.incRefCount()
+          } else {
+            toClose += rebased
+            rebased.copyToColumnVector()
+          }
+        }
+      } else {
+        col.incRefCount()
+      }
+    }
+    withResource(newColumns) { _ =>
+      new Table(newColumns: _*)
+    }
+  }
+
+  /**
+   * Match the full Spark ORC timestamp path after cuDF decides the negative nanos borrow in the
+   * writer timezone's ORC epoch frame. JNI applies the remaining writer-to-reader conversion.
+   * Legacy-calendar files then use Spark's timezone-specific Julian-to-Gregorian rebase map.
+   * Files already written with the proleptic calendar instead use the java.util.TimeZone versus
+   * java.time rule correction from the ORC materialization path.
+   */
+  private def convertOrcTimestamp(
+      col: ColumnView,
+      tzCtx: GpuTimeZoneDB.OrcTimezoneContext,
+      legacyTimestampRebase: Option[
+        GpuTimestampRebaseUtils.LazyJulianToGregorianMicrosContext]): ColumnVector = {
+    legacyTimestampRebase match {
+      case Some(rebase) =>
+        withResource(GpuTimeZoneDB.convertOrcTimezones(col, tzCtx)) { orcTimestamp =>
+          rebase.rebase(orcTimestamp)
+        }
+      case None =>
+        GpuTimeZoneDB.convertOrcTimestampToSpark(col, tzCtx)
     }
   }
 
   private def rebaseNestedWithWriterTimezone(
       col: ColumnView,
-      tzCtx: GpuTimeZoneDB.OrcTimezoneContext,
+      tzCtx: Option[GpuTimeZoneDB.OrcTimezoneContext],
+      legacyTimestampRebase: Option[
+        GpuTimestampRebaseUtils.LazyJulianToGregorianMicrosContext],
+      writerUsedProlepticGregorian: Boolean,
       toClose: ArrayBuffer[ColumnView]): ColumnView = {
     val addToClose = (v: ColumnView) => { toClose += v; v }
     val dType = col.getType
 
-    if (dType.hasTimeResolution) {
-      GpuTimeZoneDB.convertOrcTimezones(col, tzCtx)
+    if (dType == DType.TIMESTAMP_DAYS && !writerUsedProlepticGregorian) {
+      DateTimeRebase.rebaseJulianToGregorian(col)
+    } else if (dType.hasTimeResolution) {
+      convertOrcTimestamp(col, tzCtx.get, legacyTimestampRebase)
     } else if (dType == DType.LIST) {
       val child = addToClose(col.getChildColumnView(0))
-      val newChild = rebaseNestedWithWriterTimezone(child, tzCtx, toClose)
+      val newChild = rebaseNestedWithWriterTimezone(
+        child, tzCtx, legacyTimestampRebase,
+        writerUsedProlepticGregorian, toClose)
       if (newChild ne child) {
         col.replaceListChild(addToClose(newChild))
       } else {
         col
       }
     } else if (dType == DType.STRUCT) {
+      var childChanged = false
       val newViews = (0 until col.getNumChildren).map { i =>
         val child = addToClose(col.getChildColumnView(i))
-        val newChild = rebaseNestedWithWriterTimezone(child, tzCtx, toClose)
-        if (newChild ne child) addToClose(newChild)
+        val newChild = rebaseNestedWithWriterTimezone(
+          child, tzCtx, legacyTimestampRebase,
+          writerUsedProlepticGregorian, toClose)
+        if (newChild ne child) {
+          childChanged = true
+          addToClose(newChild)
+        }
         newChild
       }
-      val opNullCount = Optional.of(col.getNullCount.asInstanceOf[java.lang.Long])
-      new ColumnView(col.getType, col.getRowCount, opNullCount, col.getValid,
-        col.getOffsets, newViews.toArray)
+      if (childChanged) {
+        val opNullCount = Optional.of(col.getNullCount.asInstanceOf[java.lang.Long])
+        new ColumnView(col.getType, col.getRowCount, opNullCount, col.getValid,
+          col.getOffsets, newViews.toArray)
+      } else {
+        col
+      }
     } else {
       col
     }

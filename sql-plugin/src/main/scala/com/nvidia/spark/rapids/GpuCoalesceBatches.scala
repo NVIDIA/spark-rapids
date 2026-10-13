@@ -66,6 +66,13 @@ object ConcatAndConsumeAll {
                                   dataTypes: Array[DataType]): ColumnarBatch = {
     if (arrayOfBatches.length == 1) {
       arrayOfBatches(0)
+    } else if (arrayOfBatches.length > 1 && arrayOfBatches.forall(_.numCols() == 0)) {
+      // cuDF cannot build a Table without columns, and rows-only batches concatenate by row count.
+      withResource(arrayOfBatches) { _ =>
+        val numRows = arrayOfBatches.iterator.map(_.numRows().toLong).sum
+        require(numRows <= Int.MaxValue, s"Cannot concatenate $numRows rows into one batch")
+        new ColumnarBatch(Array.empty, numRows.toInt)
+      }
     } else {
       val tables = arrayOfBatches.safeMap(GpuColumnVector.from)
       try {
@@ -255,6 +262,34 @@ object OpNameNvtxMap {
   )
 
   def get(opName: String): Option[NvtxId] = map.get(opName)
+}
+
+/**
+ * Marks upstream iterator calls made while feeding a range shuffle. This is deliberately a
+ * small execution-scope marker rather than a SQL metric or plan-level setting: the same scan can
+ * be reused by other consumers, and only the range-shuffle consumer needs one-batch-at-a-time
+ * coalescing.
+ */
+object RangeInputBatching {
+  private val active = new ThreadLocal[java.lang.Boolean]()
+
+  def isActive: Boolean = active.get() == java.lang.Boolean.TRUE
+
+  def withRangeInput[T](enabled: Boolean)(body: => T): T = {
+    if (enabled) {
+      val previous = active.get()
+      active.set(java.lang.Boolean.TRUE)
+      try body finally {
+        if (previous == null) {
+          active.remove()
+        } else {
+          active.set(previous)
+        }
+      }
+    } else {
+      body
+    }
+  }
 }
 
 abstract class AbstractGpuCoalesceIterator(
@@ -470,7 +505,12 @@ abstract class AbstractGpuCoalesceIterator(
     }
 
     // there is a hard limit of 2^31 rows
-    while (numRows < filteringModeRowsThreshold && !hasOnDeck && iter.hasNext) {
+    // A range shuffle consumes every splittable, size-based input batch independently. Avoid
+    // reading and retaining the next wide batch while the current range-shuffle batch is still
+    // live. Single-batch goals must continue reading the complete partition.
+    while (numRows < filteringModeRowsThreshold && !hasOnDeck &&
+        !(RangeInputBatching.isActive && goal.isInstanceOf[SplittableGoal] && hasAnyToConcat) &&
+        iter.hasNext) {
       val cbFromIter = iter.next()
       numInputBatches += 1
 

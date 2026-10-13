@@ -96,8 +96,11 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
   }
 
   override def getExprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
-    val rule = GpuCheckOverflowInTableWrite.exprRule
-    super.getExprs + (rule.getClassFor.asSubclass(classOf[Expression]) -> rule)
+    val rules: Seq[ExprRule[_ <: Expression]] = Seq(
+      GpuCheckOverflowInTableWrite.exprRule,
+      GpuIncrementMetric.exprRule,
+      GpuConditionalIncrementMetric.exprRule)
+    super.getExprs ++ rules.map(r => (r.getClassFor.asSubclass(classOf[Expression]), r))
   }
 
   override def getRunnableCommandRules: Map[Class[_ <: RunnableCommand],
@@ -122,7 +125,9 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
   override def getReadFileFormat(
       relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat = {
     val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    if (isPushDVPredicateDownEnabled(rapidsConf)) {
+    if (GpuDeltaParquetFileFormat.isLowShuffleMergeScan(relation.options)) {
+      GpuDeltaParquetFileFormat.convertToGpu(relation)
+    } else if (isPushDVPredicateDownEnabled(rapidsConf)) {
       GpuDeltaParquetFileFormatNativeDV(
         relation = relation,
         protocol = fmt.protocol,
@@ -516,7 +521,10 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
       GpuProjectExec(projList2, child, enablePreSplit1), enablePreSplit2) =>
         val projSet1 = projList1.map(_.exprId).toSet
         val projSet2 = projList2.map(_.exprId).toSet
-        if (projSet1 == projSet2) {
+        // An Alias carries the exprId it defines, so equal exprId sets do not imply
+        // identical projections: merging over an alias-computing child would drop the
+        // alias's only producer ("Couldn't find <attr>"). Merge only pure pass-throughs.
+        if (projSet1 == projSet2 && projList2.forall(_.isInstanceOf[AttributeReference])) {
           GpuProjectExec(projList1, child, enablePreSplit1 && enablePreSplit2)
         } else {
           p

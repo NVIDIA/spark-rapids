@@ -86,6 +86,8 @@ For manual installation, you need to setup your environment:
 - pytest
   : A framework that makes it easy to write small, readable tests, and can scale to support complex
   functional testing for applications and libraries (requires  Python 3.6+).
+- protobuf
+  : Provides Protocol Buffers APIs for protobuf integration-test fixtures.
 - sre_yield
   : Provides a set of APIs to generate string data from a regular expression.
 - pandas
@@ -263,7 +265,7 @@ individually, so you don't risk running unit tests along with the integration te
 http://www.scalatest.org/user_guide/using_the_scalatest_shell
 
 ```shell
-spark-shell --jars rapids-4-spark-tests_2.12-26.10.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-26.10.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
+spark-shell --jars rapids-4-spark-tests_2.12-26.12.0-SNAPSHOT-tests.jar,rapids-4-spark-integration-tests_2.12-26.12.0-SNAPSHOT-tests.jar,scalatest_2.12-3.0.5.jar,scalactic_2.12-3.0.5.jar
 ```
 
 First you import the `scalatest_shell` and tell the tests where they can find the test files you
@@ -286,7 +288,7 @@ If you just want to verify the SQL replacement is working you will need to add t
 assumes CUDA 12 is being used and the Spark distribution is built with Scala 2.12.
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.10.0-SNAPSHOT-cuda12.jar" ./runtests.py
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.12.0-SNAPSHOT-cuda12.jar" ./runtests.py
 ```
 
 You don't have to enable the plugin for this to work, the test framework will do that for you.
@@ -298,6 +300,18 @@ You do need to have access to a compatible GPU with the needed CUDA drivers. The
 
 `--runtime_env` is used to specify the environment you are running the tests in. Valid values are `databricks`,`emr`,`dataproc`,`dataproc_serverless` and `apache`. This is generally used
 when certain environments have different behavior, and the tests don't have a good way to auto-detect the environment yet.
+
+#### Protobuf tests on Databricks
+
+On Databricks, `INCLUDE_SPARK_PROTOBUF_JAR` controls only external `spark-protobuf` jar injection; it
+does not control protobuf test eligibility. Apache Spark runs require a matching external jar and
+skip the protobuf tests when this variable is set to `false`. Databricks runs use the runtime-bundled
+protobuf implementation instead, so `run_pyspark_from_build.sh --runtime_env=databricks` does not
+inject a matching jar from either the build dependencies or `LOCAL_JAR_PATH`, even if the variable
+is explicitly set to `true`.
+
+The smoke tests detect the bundled runtime independently and use a static descriptor set, so they do
+not depend on Spark's private, runtime-specific shaded protobuf classes.
 
 ### timezone
 
@@ -448,19 +462,6 @@ non_utc_allow_for_sequence = ['ProjectExec'] # Update after non-utc time zone is
 test_my_new_added_case_for_sequence_operator()
 ```
 
-### Running with Hybrid execution
-The hybrid tests require extra jars. To enable hybrid tests, the following prerequisites are required::
-- Build Gluten bundle jar, Gluten thirdparty jar, refer to [link](../docs/dev/hybrid-execution.md#build)
-- Download Hybrid jar, refer to [link](../docs/dev/hybrid-execution.md#download-rapids-hybrid-jar-from-maven-repo)
-
-Execute the following command to run Hybrid tests:
-```shell
-$ LOAD_HYBRID_BACKEND=1 \
-  HYBRID_BACKEND_JARS=/path/to/${GLUTEN_BUNDLE_JAR},/path/to/${GLUTEN_THIRD_PARTY_JAR},/path/to/HYBRID_JAR \
-  ./integration_tests/run_pyspark_from_build.sh -m hybrid_test
-```
-For more information about Hybrid feature, refer to [link](../docs/dev/hybrid-execution.md)
-
 ### Reviewing integration tests in Spark History Server
 
 If the integration tests are run using [run_pyspark_from_build.sh](run_pyspark_from_build.sh) we have
@@ -509,7 +510,7 @@ The tests can be enabled by just appending the option `--cudf_udf` to the comman
 cudf_udf tests needs a couple of different settings, they may need to run separately.
 
 To enable cudf_udf tests, need following pre requirements:
-   * Install cuDF Python library on all the nodes running executors. The instruction could be found at [here](https://rapids.ai/start.html). Please follow the steps to choose the version based on your environment and install the cuDF library via Conda or use other ways like building from source.
+   * Install the cuDF Python library on all executor nodes. Use the [RAPIDS install selector](https://docs.rapids.ai/install#selector) to choose the version for your environment and install cuDF with Conda, or build it from source.
    * Disable the GPU exclusive mode on all the nodes running executors. The sample command is `sudo nvidia-smi -c DEFAULT`
 
 To run cudf_udf tests, need following configuration changes:
@@ -520,7 +521,7 @@ To run cudf_udf tests, need following configuration changes:
 As an example, here is the `spark-submit` command with the cudf_udf parameter on CUDA 12:
 
 ```
-$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.10.0-SNAPSHOT-cuda12.jar,rapids-4-spark-tests_2.12-26.10.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-26.10.0-SNAPSHOT-cuda12.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-26.10.0-SNAPSHOT-cuda12.jar" ./runtests.py --cudf_udf
+$SPARK_HOME/bin/spark-submit --jars "rapids-4-spark_2.12-26.12.0-SNAPSHOT-cuda12.jar,rapids-4-spark-tests_2.12-26.12.0-SNAPSHOT.jar" --conf spark.rapids.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.memory.gpu.allocFraction=0.3 --conf spark.rapids.python.concurrentPythonWorkers=2 --py-files "rapids-4-spark_2.12-26.12.0-SNAPSHOT-cuda12.jar" --conf spark.executorEnv.PYTHONPATH="rapids-4-spark_2.12-26.12.0-SNAPSHOT-cuda12.jar" ./runtests.py --cudf_udf
 ```
 
 ### Enabling fuzz tests
@@ -538,6 +539,8 @@ Some tests require that Apache Iceberg has been configured in the Spark environm
 properly without it. These tests assume Iceberg is not configured and are disabled by default.
 If Spark has been configured to support Iceberg then these tests can be enabled by adding the
 `--iceberg` option to the command.
+Set `EXPECTED_ICEBERG_VERSION` to the exact Iceberg runtime version whenever `--iceberg` is used;
+pytest reports a configuration error when it is missing.
 
 When testing Iceberg package-private access paths, load the local Iceberg runtime jar with
 `ICEBERG_EXTRA_CLASSPATH` instead of `PYSP_TEST_spark_jars` or
@@ -545,6 +548,7 @@ When testing Iceberg package-private access paths, load the local Iceberg runtim
 jars on `spark.driver.extraClassPath` and `spark.executor.extraClassPath`:
 
 ```shell
+EXPECTED_ICEBERG_VERSION=1.10.1 \
 ICEBERG_EXTRA_CLASSPATH=/path/to/iceberg-spark-runtime-3.5_2.12-1.10.1.jar \
 PYSP_TEST_spark_sql_extensions=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions \
 PYSP_TEST_spark_sql_catalog_spark__catalog=org.apache.iceberg.spark.SparkSessionCatalog \
@@ -606,6 +610,69 @@ Some tests require that Delta Lake has been configured in the Spark environment 
 properly without it. These tests assume Delta Lake is not configured and are disabled by default.
 If Spark has been configured to support Delta Lake then these tests can be enabled by adding the
 `--delta_lake` option to the command.
+
+### Enabling Unity Catalog catalog-managed table tests
+
+`delta_lake_catalog_managed_test.py` covers Delta Lake 4.2 catalog-managed (catalog-owned) tables
+through an OSS Unity Catalog server. `delta_lake_catalog_rest_test.py` covers the Delta 4.3 REST
+API safety boundary. They need a running catalog server, so they are disabled by default and are
+skipped unless both `--delta_lake` and `--unity_catalog` are passed and `DELTA_UC_URI` names a
+reachable server.
+
+The suites only apply to a narrow, pinned combination: Scala 2.13, Delta Lake 4.2.0 or 4.3.0,
+Unity Catalog 0.6.0, and Spark 4.0.1 or 4.1.1. The 4.2 implementation validates the expected 0.6.0
+`UCSingleCatalog` staging shape and falls back if that shape is not recognized. The 4.3 suite
+verifies that the CPU Delta catalog retains REST staging and commit control, including catalog
+identity, managed location, credentials, and metadata-changing operations. Failed staged writes
+are checked for partial table or Delta commit publication. Catalog staging-record cleanup is out
+of scope: Delta 4.3.0's staged-table abort does not remove those records, and Unity Catalog 0.6.0
+provides no staging-delete REST operation.
+Reads and classic path tables can still use the GPU.
+
+In Delta 4.3.0, dynamic partition overwrite, UPDATE, and MERGE write generated row-tracking
+domain metadata into the staged commit referenced by the REST `add-commit` update; these
+operations do not send a separate `set-domain-metadata` update. The REST suite verifies the
+referenced staged action for each DML operation and separately verifies a direct
+`set-domain-metadata` intent on clustered RTAS. It does not claim direct REST domain-intent
+coverage for DML that Delta 4.3.0 does not emit.
+
+`run_unity_catalog_server.sh` resolves the Unity Catalog jars, starts a server backed by a fake S3
+bucket on local disk, and exports everything the tests need. To run the whole suite in one shot:
+
+```shell
+./integration_tests/run_unity_catalog_server.sh -- \
+  ./integration_tests/run_pyspark_from_build.sh -m unity_catalog --delta_lake --unity_catalog
+```
+
+The default is Delta 4.2.0. Pass `--delta-version 4.3.0` and select
+`delta_lake_catalog_rest_test.py` to run the REST safety suite.
+
+To keep one server alive across repeated test runs, start it without a command. It stays in the
+foreground and prints an env file to source from a second terminal:
+
+```shell
+./integration_tests/run_unity_catalog_server.sh
+```
+
+`--port`, `--uc-version`, `--delta-version`, and `--refresh` are available; see `--help`. Spark and
+Scala versions are taken from `SPARK_VER`/`SCALA_BINARY_VER` when set and otherwise derived from
+`$SPARK_HOME`, and the resolved classpaths are cached under
+`integration_tests/target/unity-catalog/`.
+
+No real object store is involved. `CredentialTestFileSystem` maps the fake `s3://test-bucket0`
+bucket onto local disk and asserts that the credentials vended by the catalog reached the
+filesystem, so a path-only Delta log cannot pass, and the RAPIDS S3 reader is disabled because
+that bucket is not a real S3 endpoint. The tests create their own catalog and schema on the server
+and generate all of their own data, so it starts empty and is discarded afterwards.
+
+`jenkins/spark-tests.sh` runs an end-to-end Delta 4.2 managed-table smoke case and the complete
+Delta 4.3 REST safety suite in `TEST_MODE=DEFAULT` for the supported Spark/Scala matrix.
+`TEST_MODE=DELTA_LAKE_UC_ONLY` runs both complete suites with its own copy of the server launch.
+
+This base catalog-managed-table integration accelerates DELETE, UPDATE, MERGE, and dynamic
+partition overwrite when those operations rewrite data files. If an operation is configured to
+persist deletion vectors, it deliberately falls back to the CPU until the separate persistent-DV
+DML work is integrated and exercised against catalog-managed tables.
 
 ### Enabling large data tests
 Some tests are testing large data which will take a long time. By default, these tests are disabled.

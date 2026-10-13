@@ -24,7 +24,7 @@ import com.nvidia.spark.rapids.jni.JSONUtils
 import com.nvidia.spark.rapids.shims.ShimExpression
 
 import org.apache.spark.sql.catalyst.analysis.TypeCheckResult
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, JsonTuple}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -139,4 +139,23 @@ case class GpuJsonTuple(children: Seq[Expression]) extends GpuGenerator
       splitIndices
     }
   }
+}
+
+case class GpuJsonTupleMeta(
+    jsonTuple: JsonTuple,
+    override val conf: RapidsConf,
+    parentMeta: Option[RapidsMeta[_, _, _]],
+    rule: DataFromReplacementRule)
+    extends GeneratorExprMeta[JsonTuple](jsonTuple, conf, parentMeta, rule) {
+
+  override def tagExprForGpu(): Unit = {
+    if (childExprs.length >= 50) {
+      // If the number of field parameters is too large, fall back to CPU to avoid
+      // potential performance problems.
+      willNotWorkOnGpu("JsonTuple with large number of fields is not supported on GPU")
+    }
+  }
+
+  override def convertToGpuImpl(): GpuExpression =
+    GpuJsonTuple(childExprs.map(_.convertToGpu()))
 }

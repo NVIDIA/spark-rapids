@@ -11,8 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import builtins
 import os
 import re
+import shutil
+import tempfile
 
 import pytest
 
@@ -23,7 +26,7 @@ from parquet_write_test import parquet_datetime_gen_simple, parquet_nested_datet
 from marks import *
 import pyarrow as pa
 import pyarrow.parquet as pq
-from parquet_test_utils import parquet_row_group_midpoints
+from parquet_test_utils import copy_from_local, parquet_row_group_midpoints
 from pyspark.sql.types import *
 from pyspark.sql.functions import *
 from spark_init_internal import spark_version
@@ -74,7 +77,7 @@ parquet_gens_list = [[byte_gen, short_gen, int_gen, long_gen, float_gen, double_
     StructGen([['child0', ArrayGen(byte_gen)], ['child1', byte_gen], ['child2', float_gen], ['child3', decimal_gen_64bit]]),
     ArrayGen(StructGen([['child0', string_gen], ['child1', double_gen], ['child2', int_gen]]))] +
                      parquet_map_gens + decimal_gens,
-                     pytest.param([timestamp_gen], marks=pytest.mark.xfail(reason='https://github.com/NVIDIA/spark-rapids/issues/132'))]
+                     [timestamp_gen]]
 
 # test with original parquet file reader, the multi-file parallel reader for cloud, and coalesce file reader for
 # non-cloud
@@ -242,6 +245,52 @@ def test_parquet_read_multithread_flow_ctrl_excessive_req(spark_tmp_path, keep_o
         'spark.rapids.sql.format.parquet.multithreaded.read.keepOrder': keep_order,
     }
     assert_gpu_and_cpu_are_equal_collect(read_parquet_sql(data_path), conf=tiny_pool_conf)
+
+
+def _scan_output_batches(plan):
+    """Batches the scan produced. Raises if no GPU scan is present, so CPU fallback fails."""
+    nodes = [plan]
+    while nodes:
+        node = nodes.pop()
+        metric = node.metrics().get('numOutputBatches')
+        if 'Scan' in node.nodeName() and metric.isDefined():
+            return metric.get().value()
+        children = node.children()
+        for i in range(children.size()):
+            nodes.append(children.apply(i))
+    raise AssertionError('no scan with numOutputBatches in plan')
+
+
+def test_parquet_read_estimate_limits_output_batches(spark_tmp_path):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    # Small row groups so one file holds many blocks for the reader to coalesce.
+    with_cpu_session(
+        lambda spark: gen_df(spark, [('a', long_gen)], length=8192).coalesce(1).write
+            .option('parquet.block.size', 4096).parquet(data_path),
+        conf=rebase_write_corrected_conf)
+
+    def batches_for(chunked, use_estimate):
+        """Batches the scan produced. use_estimate of None leaves the config unset."""
+        conf = {
+            'spark.sql.adaptive.enabled': 'false',
+            'spark.rapids.sql.metrics.level': 'DEBUG',
+            'spark.rapids.sql.reader.chunked': chunked,
+            'spark.rapids.sql.reader.batchSizeBytes': 4096}
+        if use_estimate is not None:
+            conf['spark.rapids.sql.reader.useReadEstimateFromSchema'] = use_estimate
+        captured = {}
+        assert_cpu_and_gpu_are_equal_collect_with_capture(
+            lambda spark: spark.read.parquet(data_path),
+            conf=conf,
+            gpu_plan_assertion=lambda cpu_plan, gpu_plan: captured.update(
+                {'batches': _scan_output_batches(gpu_plan)}))
+        return captured['batches']
+
+    # Without a chunked reader the estimate caps a batch before the byte limit is reached.
+    assert batches_for('false', 'true') > batches_for('false', 'false')
+    # Unset uses the estimate only when there is no chunked reader.
+    assert batches_for('false', None) == batches_for('false', 'true')
+    assert batches_for('true', None) == batches_for('true', 'false')
 
 
 """
@@ -1091,13 +1140,50 @@ def test_spark_32639(std_input_path):
         lambda spark: spark.read.schema(schema_str).parquet(data_path),
         conf=original_parquet_file_reader_conf)
 
+def _completed_stages(spark):
+    sc = spark.sparkContext._jsc.sc()
+    sc.listenerBus().waitUntilEmpty()
+    store = sc.statusStore()
+    completed = spark._jvm.java.util.Collections.singletonList(
+        spark._jvm.org.apache.spark.status.api.v1.StageStatus.COMPLETE)
+    stages = store.stageList(completed, False, False,
+        getattr(store, 'stageList$default$4')(),
+        getattr(store, 'stageList$default$5')()).iterator()
+    while stages.hasNext():
+        yield stages.next()
+
 @pytest.mark.parametrize('reader_type', ['COALESCING', 'MULTITHREADED', 'PERFILE'])
 def test_parquet_read_empty_arrow(std_input_path, reader_type):
     conf = {'spark.rapids.sql.format.parquet.reader.type': reader_type}
     data_path = "%s/empty_arrow.parquet" % (std_input_path)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.parquet(data_path),
-        conf=conf)
+    read_parquet = lambda spark: spark.read.parquet(data_path)
+
+    if (data_path.startswith(('s3://', 's3a://')) and
+            os.environ.get('ASSERT_PERFIO_S3_BACKEND') == '1'):
+        spark = get_spark_i_know_what_i_am_doing()
+        last_stage_id = builtins.max(
+            (stage.stageId() for stage in _completed_stages(spark)), default=-1)
+        assert_cpu_and_gpu_are_equal_collect_with_capture(
+            read_parquet,
+            exist_classes=r'GpuFile(GpuScan|SourceScanExec)',
+            conf=conf)
+        backend_metrics = {
+            'perfio.s3.netty.executors': 0,
+            'perfio.s3.crt.executors': 0,
+            'perfio.s3.s3a.executors': 0,
+        }
+        for stage in _completed_stages(spark):
+            if stage.stageId() > last_stage_id:
+                updates = stage.accumulatorUpdates().iterator()
+                while updates.hasNext():
+                    metric = updates.next()
+                    if metric.name() in backend_metrics:
+                        backend_metrics[metric.name()] += int(metric.value())
+        assert backend_metrics['perfio.s3.s3a.executors'] == 0, backend_metrics
+        assert (backend_metrics['perfio.s3.netty.executors'] +
+            backend_metrics['perfio.s3.crt.executors']) > 0, backend_metrics
+    else:
+        assert_gpu_and_cpu_are_equal_collect(read_parquet, conf=conf)
 
 @pytest.mark.skipif(not is_before_spark_320(), reason='Spark 3.1.x does not need special handling')
 @pytest.mark.skipif(is_dataproc_runtime(), reason='https://github.com/NVIDIA/spark-rapids/issues/8074')
@@ -1107,10 +1193,16 @@ def test_parquet_read_nano_as_longs_31x(std_input_path):
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.parquet(data_path))
 
+# Spark 5 enables nanosecond timestamp types by default when spark.testing is set. These tests
+# verify the legacy rejection behavior, so keep the preview feature disabled there.
+legacy_parquet_nanos_error_conf = copy_and_update(
+    original_parquet_file_reader_conf,
+    {'spark.sql.timestampNanosTypes.enabled': False} if is_spark_500_or_later() else {})
+
 @pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
 def test_parquet_read_nano_as_longs_false(std_input_path):
     data_path = "%s/timestamp-nanos.parquet" % (std_input_path)
-    conf = copy_and_update(original_parquet_file_reader_conf, {
+    conf = copy_and_update(legacy_parquet_nanos_error_conf, {
             'spark.sql.legacy.parquet.nanosAsLong': False })
     def read_timestamp_nano_parquet(spark):
         spark.read.parquet(data_path).collect()
@@ -1126,7 +1218,7 @@ def test_parquet_read_nano_as_longs_not_configured(std_input_path):
         spark.read.parquet(data_path).collect()
     assert_gpu_and_cpu_error(
         read_timestamp_nano_parquet,
-        conf=original_parquet_file_reader_conf,
+        conf=legacy_parquet_nanos_error_conf,
         error_message="Illegal Parquet type: INT64 (TIMESTAMP(NANOS,true))")
 
 @pytest.mark.skipif(is_before_spark_320(), reason='Spark 3.1.x supports reading timestamps in nanos')
@@ -1996,7 +2088,12 @@ def test_parquet_partition_batch_row_count_only_splitting(spark_tmp_path):
 
 def _write_parquet_unknown_null_table(
         data_path, with_list=False, with_map=False, field_id=None):
-    """Write INT32 physical + UNKNOWN/Null logical annotation (Spark void_in_parquet shape)."""
+    """Write INT32 physical + UNKNOWN/Null logical annotation (Spark void_in_parquet shape).
+
+    PyArrow writes only to the local filesystem, while spark_tmp_path is created via
+    Hadoop FileSystem.mkdirs. On Dataproc the default FS is typically GCS, so writing
+    directly to data_path fails with FileNotFoundError. Write locally then copy.
+    """
     if with_list:
         table = pa.table({
             'list_void': pa.array([[None, None], [None], None], type=pa.list_(pa.null())),
@@ -2018,7 +2115,13 @@ def _write_parquet_unknown_null_table(
             'id': pa.array([1, 2, 3], type=pa.int32()),
             'void_col': pa.array([None, None, None], type=pa.null()),
         })
-    pq.write_table(table, data_path)
+    local_dir = tempfile.mkdtemp(prefix='parquet_unknown_')
+    try:
+        local_file = os.path.join(local_dir, 'part.parquet')
+        pq.write_table(table, local_file)
+        with_cpu_session(lambda spark: copy_from_local(spark, local_file, data_path))
+    finally:
+        shutil.rmtree(local_dir, ignore_errors=True)
 
 
 # SPARK-56045 / SPARK-54220: Parquet UNKNOWN logical type annotation. PyArrow null columns are

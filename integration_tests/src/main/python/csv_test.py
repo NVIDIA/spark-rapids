@@ -576,26 +576,72 @@ def test_csv_read_count(spark_tmp_path):
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path),
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
+
+@pytest.mark.parametrize('compression', ['none', 'bzip2'])
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('projection', ['all', 'pruned', 'count',
+    pytest.param('limit', marks=pytest.mark.allow_non_gpu('CollectLimitExec'))])
+def test_csv_small_reader_budget(spark_tmp_path, compression, v1_enabled_list, projection):
+    generators = [int_gen, StringGen('[a-zé,]{1,8}'), long_gen]
+    gen = StructGen([(f'c{i}', generators[i % 3]) for i in range(46)], nullable=False)
+    path = spark_tmp_path + '/csv_small_reader_budget'
+    with_cpu_session(lambda spark: gen_df(spark, gen, length=64).coalesce(1).write
+                     .option('header', True).option('compression', compression).csv(path))
+
+    def read(spark):
+        df = spark.read.schema(gen.data_type).option('header', True).csv(path)
+        if projection == 'pruned':
+            return df.select('c0', 'c1', 'c2')
+        if projection == 'count':
+            return df.selectExpr('count(*) as n')
+        if projection == 'limit':
+            return df.limit(1)
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(read, conf={
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.rapids.sql.reader.batchSizeBytes': '2048'})
+
+
+spark_350_timestamp_inference_xfail_formats = {
+    ('yyyy-MM-dd', ''),
+    ('yyyy-MM', ''),
+    ('yyyy-MM-dd', "'T'HH:mm:ss"),
+    ('yyyy-MM-dd', "'T'HH:mm"),
+}
+
+def run_csv_infer_schema_timestamp_ntz(
+        spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list, cpu_scan_class):
+    try:
+        csv_infer_schema_timestamp_ntz(
+            spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list,
+            cpu_scan_class)
+    except Exception:
+        if (is_spark_350()
+                and timestamp_type == 'TIMESTAMP_LTZ'
+                and (date_format, ts_part) in spark_350_timestamp_inference_xfail_formats):
+            pytest.xfail(reason="https://github.com/NVIDIA/spark-rapids/issues/9325")
+        raise
+
 @allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
 @pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
-@pytest.mark.parametrize("timestamp_type", [
-    pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.xfail(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
-    "TIMESTAMP_NTZ"])
+@pytest.mark.parametrize('timestamp_type', ['TIMESTAMP_LTZ', 'TIMESTAMP_NTZ'])
 def test_csv_infer_schema_timestamp_ntz_v1(spark_tmp_path, date_format, ts_part, timestamp_type):
-    csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
+    run_csv_infer_schema_timestamp_ntz(
+        spark_tmp_path, date_format, ts_part, timestamp_type, 'csv', 'FileSourceScanExec')
 
 @allow_non_gpu('BatchScanExec', 'FileSourceScanExec', 'ProjectExec', 'CollectLimitExec', 'DeserializeToObjectExec')
-@pytest.mark.skip(reason="https://github.com/NVIDIA/spark-rapids/issues/9325")
+@pytest.mark.skipif(is_databricks_runtime(),
+    reason="https://github.com/NVIDIA/spark-rapids/issues/9325")
 @pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in PySpark 341+')
 @pytest.mark.parametrize('date_format', csv_supported_date_formats)
 @pytest.mark.parametrize('ts_part', csv_supported_ts_parts)
-@pytest.mark.parametrize("timestamp_type", [
-    pytest.param('TIMESTAMP_LTZ', marks=pytest.mark.xfail(is_spark_350_or_later(), reason="https://github.com/NVIDIA/spark-rapids/issues/9325")),
-    "TIMESTAMP_NTZ"])
+@pytest.mark.parametrize('timestamp_type', ['TIMESTAMP_LTZ', 'TIMESTAMP_NTZ'])
 def test_csv_infer_schema_timestamp_ntz_v2(spark_tmp_path, date_format, ts_part, timestamp_type):
-    csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
+    run_csv_infer_schema_timestamp_ntz(
+        spark_tmp_path, date_format, ts_part, timestamp_type, '', 'BatchScanExec')
 
 def csv_infer_schema_timestamp_ntz(spark_tmp_path, date_format, ts_part, timestamp_type, v1_enabled_list, cpu_scan_class):
     full_format = date_format + ts_part

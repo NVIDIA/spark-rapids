@@ -19,7 +19,7 @@ package com.nvidia.spark.rapids.timezone
 import java.io.File
 import java.sql.Timestamp
 import java.time.{Instant, LocalDateTime, ZoneId, ZoneOffset}
-import java.util.{Random, TimeZone}
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 import scala.collection.JavaConverters._
@@ -33,7 +33,7 @@ import org.apache.orc.impl.{RecordReaderImpl, WriterImpl}
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
+import org.apache.spark.sql.types.{IntegerType, StructField, StructType, TimestampType}
 
 /**
  * Test suite for ORC reader/writer timezones.
@@ -43,6 +43,8 @@ import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
  *   - `America/New_York`
  *   - `America/Los_Angeles`
  *   - `Asia/Shanghai`
+ *   - `Europe/Paris`
+ *   - `Pacific/Port_Moresby`
  *   - `US/Pacific` (alias of `America/Los_Angeles`)
  *   - `PST` (legacy short ID)
  *
@@ -57,7 +59,8 @@ import org.apache.spark.sql.types.{StructField, StructType, TimestampType}
  * which also resets TimeZone.getDefault().
  *
  * Run it manually with:
- *   mvn test -DwildcardSuites=com.nvidia.spark.rapids.OrcTimezoneSuite -Dbuildver=xxx
+ *   mvn package -pl tests -am -Dbuildver=xxx \
+ *     -DwildcardSuites=com.nvidia.spark.rapids.timezone.OrcTimezoneSuite
  *
  * Note: use `orc-tool meta -t orc_file` to view the timezone in each stripe metadata.
  * Each stripe has a timezone in its metadata.
@@ -84,9 +87,15 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
     assert(error.getMessage.contains("Not/AZone"))
   }
 
-  private val RandomRowCount = 4096L
   // Exact Asia/Shanghai writer=reader reproducer for the ORC epoch borrow correction.
   private val ShanghaiEpochBorrowTsUs = -7713116127L
+  // Exact pre-first-transition values from non-UTC schema-evolution failures.
+  private val newYorkHistoricalTsUs = -2957649381472612L
+  private val shanghaiHistoricalTsUs = -3649379812521628L
+  // Exact CPU value from #15895, inside New York's 1883 LMT-to-EST transition window.
+  private val newYorkLmtTransitionTsUs = -2717655338076025L
+  // Exercises a zone whose legacy TimeZone has no transitions but whose ZoneRules has LMT.
+  private val portMoresbyHistoricalTsUs = -3155673600000000L
 
   // Includes legacy/alias IDs ("US/Pacific", "PST") alongside canonical region IDs to
   // exercise the read path against the kinds of writer-timezone strings ORC footers can
@@ -97,6 +106,8 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
     "America/New_York",
     "America/Los_Angeles",
     "Asia/Shanghai",
+    "Europe/Paris",
+    "Pacific/Port_Moresby",
     "US/Pacific",
     "PST"
   )
@@ -108,13 +119,22 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
     LocalDateTime.of(9999, 12, 31, 23, 59, 59).toEpochSecond(ZoneOffset.UTC) *
       TimeUnit.SECONDS.toMicros(1) + 999999L
 
-  // 2024 DST transitions for the two canonical DST zones in the test matrix.
+  // 2024 DST transitions for the three canonical DST zones in the test matrix.
   private val DstTransitions = Seq(
     Instant.parse("2024-03-10T07:00:00Z"), // America/New_York spring forward
     Instant.parse("2024-11-03T06:00:00Z"), // America/New_York fall back
     Instant.parse("2024-03-10T10:00:00Z"), // America/Los_Angeles spring forward
-    Instant.parse("2024-11-03T09:00:00Z")  // America/Los_Angeles fall back
+    Instant.parse("2024-11-03T09:00:00Z"), // America/Los_Angeles fall back
+    Instant.parse("2024-03-31T01:00:00Z"), // Europe/Paris spring forward
+    Instant.parse("2024-10-27T01:00:00Z")  // Europe/Paris fall back
   )
+
+  private val ParisFirstTransitionLocalUs = {
+    val paris = ZoneId.of("Europe/Paris")
+    val firstTransitionMs = paris.getRules.getTransitions.get(0).getInstant.toEpochMilli
+    TimeUnit.MILLISECONDS.toMicros(
+      firstTransitionMs + TimeZone.getTimeZone(paris.getId).getRawOffset)
+  }
 
   private val ExplicitTimestampMicros = {
     val dstBoundaries = DstTransitions.flatMap { transition =>
@@ -122,7 +142,18 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
         TimeUnit.NANOSECONDS.toMicros(transition.getNano)
       Seq(atTransition - 1L, atTransition, atTransition + 1L)
     }
-    Seq(ShanghaiEpochBorrowTsUs, minTs, maxTs) ++ dstBoundaries
+    val firstTransitionBoundaries = Seq(
+      ParisFirstTransitionLocalUs - 1L,
+      ParisFirstTransitionLocalUs,
+      ParisFirstTransitionLocalUs + 1L)
+    Seq(
+      newYorkHistoricalTsUs,
+      shanghaiHistoricalTsUs,
+      newYorkLmtTransitionTsUs,
+      portMoresbyHistoricalTsUs,
+      ShanghaiEpochBorrowTsUs,
+      minTs,
+      maxTs) ++ dstBoundaries ++ firstTransitionBoundaries
   }
 
   private def setSessionTimeZone(spark: SparkSession, tzId: String): Unit = {
@@ -152,13 +183,8 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
         |  CAST(NULL AS ARRAY<TIMESTAMP>)) AS array_ts""".stripMargin)
   }
 
-  private def fileDataFrame(
-      spark: SparkSession,
-      random: Random,
-      idOffset: Long = 0L): DataFrame = {
-    val randomMicros = random.longs(RandomRowCount, minTs, maxTs).toArray
-    timestampDataFrame(spark, ExplicitTimestampMicros ++ randomMicros, idOffset)
-  }
+  private def fileDataFrame(spark: SparkSession, idOffset: Long = 0L): DataFrame =
+    timestampDataFrame(spark, ExplicitTimestampMicros, idOffset)
 
   private val v1SourceLists = Seq("orc", "")
 
@@ -167,8 +193,8 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
       .set("spark.sql.sources.useV1SourceList", v1SourceList)
   }
 
-  private def writeFile(spark: SparkSession, outputPath: File, random: Random): Unit = {
-    fileDataFrame(spark, random)
+  private def writeFile(spark: SparkSession, outputPath: File): Unit = {
+    fileDataFrame(spark)
       .coalesce(1)
       .write
       .mode("overwrite")
@@ -241,6 +267,128 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
     "bigint" -> Seq("NULL", "-1", "0", "1593604800"),
     "float" -> Seq("NULL", "-0.25", "0.0", "1593604800.25"),
     "double" -> Seq("NULL", "-0.25", "0.0", "1593604800.25"))
+
+  private case class TimestampSchemaEvolutionCase(sourceType: String, values: Seq[String])
+
+  private val denseIntegralSeconds = -64L to 64L
+  private val denseEpochSeconds = -32L to 32L
+  private val denseEpochTimestampMicros = denseEpochSeconds.flatMap { seconds =>
+    val micros = TimeUnit.SECONDS.toMicros(seconds)
+    Seq(micros - 1L, micros, micros + 1L)
+  }
+  private val denseFractionalSeconds = denseEpochSeconds.flatMap { seconds =>
+    Seq(s"$seconds.0", s"$seconds.25", s"$seconds.75")
+  }
+
+  private val timestampSchemaEvolutionCases = Seq(
+    TimestampSchemaEvolutionCase("timestamp",
+      (Seq("NULL") ++ (ExplicitTimestampMicros ++ denseEpochTimestampMicros)
+        .map(micros => s"timestamp_micros(${micros}L)")).distinct),
+    TimestampSchemaEvolutionCase("bigint",
+      (Seq(
+        "NULL",
+        Math.floorDiv(newYorkHistoricalTsUs, TimeUnit.SECONDS.toMicros(1)).toString,
+        Math.floorDiv(shanghaiHistoricalTsUs, TimeUnit.SECONDS.toMicros(1)).toString,
+        Math.floorDiv(portMoresbyHistoricalTsUs, TimeUnit.SECONDS.toMicros(1)).toString,
+        "-2208988800", // 1900-01-01T00:00:00Z, before Asia/Shanghai's first transition
+        Int.MinValue.toString,
+        Int.MaxValue.toString,
+        "514952012",
+        "1710037800", // 2024-03-10 02:30:00, inside the America/New_York DST gap
+        "1730597400") ++ denseIntegralSeconds.map(_.toString)).distinct),
+    TimestampSchemaEvolutionCase("float",
+      (Seq(
+        "NULL",
+        "-2208988800.0",
+        "514952012.0",
+        "1710037800.0",
+        "1730597400.0",
+        "-0.0015",
+        "-0.0005",
+        "0.0005",
+        "0.0015") ++ denseFractionalSeconds).distinct),
+    TimestampSchemaEvolutionCase("double",
+      (Seq(
+        "NULL",
+        "-8589934591.999999",
+        "-7953731124.723491",
+        "-3649379812.521628",
+        "-2957649381.472612",
+        "-2208988800.0",
+        "514952012.0",
+        "1710037799.999999", // America/New_York DST gap - 1 microsecond
+        "1710037800.0",
+        "1710037800.000001",
+        "1730597399.999999", // America/New_York DST overlap - 1 microsecond
+        "1730597400.0",
+        "1730597400.000001",
+        "-0.0015",
+        "-0.0005",
+        "0.0005",
+        "0.0015") ++ denseFractionalSeconds).distinct))
+
+  // Covers same zones, aliases, both UTC directions, and cross-region non-UTC conversions.
+  private val timestampSchemaEvolutionZonePairs = Seq(
+    "UTC" -> "UTC",
+    "America/New_York" -> "America/New_York",
+    "Asia/Shanghai" -> "Asia/Shanghai",
+    "Europe/Paris" -> "Europe/Paris",
+    "America/Los_Angeles" -> "US/Pacific",
+    "US/Pacific" -> "PST",
+    "UTC" -> "America/New_York",
+    "America/New_York" -> "UTC",
+    "UTC" -> "Asia/Shanghai",
+    "Asia/Shanghai" -> "UTC",
+    "UTC" -> "Pacific/Port_Moresby",
+    "UTC" -> "Europe/Paris",
+    "Europe/Paris" -> "UTC",
+    "America/New_York" -> "Asia/Shanghai",
+    "Asia/Shanghai" -> "America/New_York")
+
+  private def timestampSchemaEvolutionDataFrame(
+      spark: SparkSession,
+      testCase: TimestampSchemaEvolutionCase): DataFrame = {
+    val rows = testCase.values.zipWithIndex.map { case (value, id) => s"($id, $value)" }
+    spark.sql(
+      s"""SELECT id, CAST(value AS ${testCase.sourceType}) AS ts
+         |FROM VALUES ${rows.mkString(", ")} AS t(id, value)""".stripMargin)
+  }
+
+  Seq(false, true).foreach { useChunkedReader =>
+    test(s"all-null ORC timestamps stay on the GPU, chunked=$useChunkedReader") {
+      val originalTimeZone = TimeZone.getDefault
+      val conf = baseConf("orc")
+        .set(RapidsConf.CHUNKED_READER.key, useChunkedReader.toString)
+
+      try {
+        withTempPath { fileRoot =>
+          withCpuSparkSession(spark => {
+            setSessionTimeZone(spark, "UTC")
+            spark.range(4).selectExpr("CAST(NULL AS TIMESTAMP) AS ts")
+              .write.orc(fileRoot.getCanonicalPath)
+          }, conf = conf)
+
+          val (fromCpu, fromGpu) = runOnCpuAndGpu(
+            spark => {
+              setSessionTimeZone(spark, "Europe/Paris")
+              spark.read.orc(fileRoot.getCanonicalPath)
+            },
+            identity,
+            conf = conf,
+            repart = 0,
+            skipCanonicalizationCheck = true,
+            existClasses = "GpuFileSourceScanExec")
+          compareResults(
+            sort = false,
+            floatEpsilon = 0.0,
+            fromCpu = fromCpu,
+            fromGpu = fromGpu)
+        }
+      } finally {
+        TimeZone.setDefault(originalTimeZone)
+      }
+    }
+  }
 
   test("skip writer timezone validation without a timestamp projection") {
     val originalTimeZone = TimeZone.getDefault
@@ -340,6 +488,54 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
     }
   }
 
+  for {
+    testCase <- timestampSchemaEvolutionCases
+    useChunkedReader <- Seq(false, true)
+  } {
+    test(s"schema evolution matrix from ${testCase.sourceType} to timestamp, " +
+        s"chunked=$useChunkedReader") {
+      val originalTimeZone = TimeZone.getDefault
+      val conf = baseConf("orc")
+        .set(RapidsConf.CHUNKED_READER.key, useChunkedReader.toString)
+      val readSchema = StructType(Seq(
+        StructField("id", IntegerType),
+        StructField("ts", TimestampType)))
+
+      try {
+        timestampSchemaEvolutionZonePairs.foreach { case (writerTimeZone, readerTimeZone) =>
+          withClue(s"writerTimezone=$writerTimeZone readerTimezone=$readerTimeZone " +
+              s"sourceType=${testCase.sourceType}") {
+            withTempPath { fileRoot =>
+              withCpuSparkSession(spark => {
+                setSessionTimeZone(spark, writerTimeZone)
+                timestampSchemaEvolutionDataFrame(spark, testCase)
+                  .write.orc(fileRoot.getCanonicalPath)
+              }, conf = conf)
+
+              val (fromCpu, fromGpu) = runOnCpuAndGpu(
+                spark => {
+                  setSessionTimeZone(spark, readerTimeZone)
+                  spark.read.schema(readSchema).orc(fileRoot.getCanonicalPath)
+                },
+                _.orderBy("id"),
+                conf = conf,
+                repart = 0,
+                skipCanonicalizationCheck = true,
+                existClasses = "GpuFileSourceScanExec")
+              compareResults(
+                sort = false,
+                floatEpsilon = 0.0,
+                fromCpu = fromCpu,
+                fromGpu = fromGpu)
+            }
+          }
+        }
+      } finally {
+        TimeZone.setDefault(originalTimeZone)
+      }
+    }
+  }
+
   Seq(false, true).foreach { useChunkedReader =>
     test(s"coalescing files with different writer timezones, chunked=$useChunkedReader") {
       val originalTimeZone = TimeZone.getDefault
@@ -356,13 +552,13 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
           val losAngelesPath = new File(fileRoot, "los-angeles")
           withCpuSparkSession(spark => {
             setSessionTimeZone(spark, "UTC")
-            fileDataFrame(spark, new Random(1L))
+            fileDataFrame(spark)
               .coalesce(1)
               .write
               .orc(utcPath.getCanonicalPath)
 
             setSessionTimeZone(spark, "America/Los_Angeles")
-            fileDataFrame(spark, new Random(2L), idOffset = RandomRowCount * 2)
+            fileDataFrame(spark, idOffset = ExplicitTimestampMicros.length)
               .coalesce(1)
               .write
               .orc(losAngelesPath.getCanonicalPath)
@@ -447,9 +643,6 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
     val dsLabel = if (v1SourceList == "orc") "v1" else "v2"
     test(s"ORC timezone matrix ($dsLabel) for writer timezone $writerTimeZone") {
       val originalTimeZone = TimeZone.getDefault
-      // Use a fixed seed for reproducibility; tests must not be non-deterministic.
-      val runSeed = 42L
-      val random = new Random(runSeed)
       val conf = baseConf(v1SourceList)
       val existClass = if (v1SourceList == "orc") "GpuFileSourceScanExec" else "GpuBatchScan"
 
@@ -457,7 +650,7 @@ class OrcTimezoneSuite extends SparkQueryCompareTestSuite {
         withTempPath { fileRoot =>
           withCpuSparkSession(spark => {
             setSessionTimeZone(spark, writerTimeZone)
-            writeFile(spark, fileRoot, random)
+            writeFile(spark, fileRoot)
           }, conf = conf)
 
           timezones.foreach { readerTimeZone =>

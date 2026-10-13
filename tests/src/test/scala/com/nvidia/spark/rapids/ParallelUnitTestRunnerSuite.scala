@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.io.{
   BufferedWriter, ByteArrayInputStream, ByteArrayOutputStream, InputStream, OutputStream, Writer}
+import java.lang.management.ManagementFactory
+import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.{ConcurrentLinkedQueue, CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
@@ -29,7 +31,22 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 
 class ParallelUnitTestRunnerSuite extends AnyFunSuite {
-  private val fixtureSuiteName = classOf[ParallelUnitTestRunnerFixtureSuite].getName
+  private val fixtureSuiteName = classOf[ParallelUnitTestRunnerExpectedFailureFixtureSuite].getName
+  private val gib = 1024L * 1024 * 1024
+
+  private def runFixture(args: Array[String], freeGpuMemory: Long = 24L * gib): Unit = {
+    ParallelUnitTestRunner.run(args, () => (freeGpuMemory, 24L * gib))
+  }
+
+  private def verifyExpectedChildJvmFailure(body: => Unit): Unit = {
+    info("[parallel-unit-test-runner self-test] BEGIN expected child JVM failure")
+    val error = intercept[IllegalStateException] {
+      body
+    }
+    assert(error.getMessage.contains(fixtureSuiteName))
+    info(
+      "[parallel-unit-test-runner self-test] END expected child JVM failure was propagated")
+  }
 
   private def fixtureRunnerArgs(
       reportsDir: Path,
@@ -41,17 +58,19 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
     val testClasses = Paths.get(getClass.getProtectionDomain.getCodeSource.getLocation.toURI)
     val fixtureJvmArgs = (Seq(
       if (failFixture) {
-        Some(s"-D${ParallelUnitTestRunnerFixtureSuite.FAIL_PROPERTY}=true")
+        Some(s"-D${ParallelUnitTestRunnerExpectedFailureFixtureSuite.FAIL_PROPERTY}=true")
       } else {
         None
       },
       if (spoofResult) {
-        Some(s"-D${ParallelUnitTestRunnerFixtureSuite.SPOOF_RESULT_PROPERTY}=true")
+        Some(s"-D${ParallelUnitTestRunnerExpectedFailureFixtureSuite.SPOOF_RESULT_PROPERTY}=true")
       } else {
         None
       })
         .flatten ++ extraJvmArgs)
         .mkString(" ")
+    val expectedFailureOutputPrefix =
+      if (failFixture) "Expected error, please ignore: " else ""
     Array(
       s"testClasses=$testClasses",
       s"reportsDir=$reportsDir",
@@ -68,11 +87,12 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
       "maxAllocationFraction=1.0",
       "minAllocationFraction=0.25",
       "testFailureIgnore=false",
+      s"expectedFailureOutputPrefix=$expectedFailureOutputPrefix",
       s"sparkConfs=$sparkConfs",
       "suiteTimeoutSeconds=30")
   }
 
-  test("special suites are submitted as serial worker batches") {
+  test("DPP suites are submitted as a serial worker batch") {
     val parquetSuite = "com.nvidia.spark.rapids.ParquetWriterSuite"
     val dppOff =
       "org.apache.spark.sql.rapids.suites.RapidsDynamicPartitionPruningV1SuiteAEOff"
@@ -88,9 +108,9 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
     val batches = ParallelUnitTestRunner.createSuiteBatches(tasks)
 
     assert(batches.map(_.tasks.map(_.suite)) === Seq(
-      Seq(parquetSuite),
       Seq(dppOff, dppOn),
       Seq("example.SuiteOne"),
+      Seq(parquetSuite),
       Seq("example.SuiteTwo")))
   }
 
@@ -105,7 +125,7 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
     val batches = ParallelUnitTestRunner.createSuiteBatches(tasks)
 
     assert(batches.size === 1)
-    val workerCount = ParallelUnitTestRunner.effectiveWorkerCount(4, batches)
+    val workerCount = ParallelUnitTestRunner.effectiveWorkerCount(4, batches, 24L * gib)
     assert(workerCount === 1)
     val (allocation, maximum, minimum) =
       ParallelUnitTestRunner.perWorkerGpuAllocations(workerCount, 1.0, 1.0, 0.25)
@@ -121,6 +141,33 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
     assert(math.abs(allocation - 0.2) < 1e-10)
     assert(math.abs(maximum - 0.2) < 1e-10)
     assert(minimum === 0.0625)
+  }
+
+  test("worker count budgets 4 GiB per worker with 1 GiB reserve and a maximum of four") {
+    val batches = (1 to 8).map { id =>
+      ParallelUnitTestRunner.SuiteBatch(Seq(
+        ParallelUnitTestRunner.SuiteTask(id, s"example.Suite$id")))
+    }
+    Seq(80L -> 4, 17L -> 4, 16L -> 3, 13L -> 3, 9L -> 2, 5L -> 1).foreach {
+      case (freeGiB, expectedWorkers) =>
+        assert(ParallelUnitTestRunner.effectiveWorkerCount(8, batches, freeGiB * gib) ===
+            expectedWorkers)
+    }
+    assert(ParallelUnitTestRunner.effectiveWorkerCount(2, batches, 80L * gib) === 2)
+    assert(ParallelUnitTestRunner.effectiveWorkerCount(4, batches.take(1), 80L * gib) === 1)
+  }
+
+  test("insufficient GPU memory fails before launching a test worker") {
+    val reportsDir = Files.createTempDirectory("parallel-unit-test-insufficient-memory")
+    try {
+      val error = intercept[IllegalArgumentException] {
+        runFixture(fixtureRunnerArgs(reportsDir, failFixture = false), 5L * gib - 1)
+      }
+      assert(error.getMessage.contains("Insufficient free GPU memory"))
+      assert(!Files.exists(reportsDir.resolve("wave-1")))
+    } finally {
+      FileUtil.fullyDelete(reportsDir.toFile)
+    }
   }
 
   test("suites are ordered by fully qualified name") {
@@ -172,7 +219,7 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
   test("main runs a successful suite in a child JVM and writes its JUnit report") {
     val reportsDir = Files.createTempDirectory("parallel-unit-test-success")
     try {
-      ParallelUnitTestRunner.main(fixtureRunnerArgs(reportsDir, failFixture = false))
+      runFixture(fixtureRunnerArgs(reportsDir, failFixture = false))
 
       assert(Files.isRegularFile(
         reportsDir.resolve("wave-1").resolve(s"TEST-$fixtureSuiteName.xml")))
@@ -184,10 +231,17 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
   test("main runs each configured Spark wave") {
     val reportsDir = Files.createTempDirectory("parallel-unit-test-waves")
     try {
-      ParallelUnitTestRunner.main(fixtureRunnerArgs(
-        reportsDir,
-        failFixture = false,
-        sparkConfs = "spark.sql.ansi.enabled=false;spark.sql.ansi.enabled=true"))
+      var memoryProbes = 0
+      ParallelUnitTestRunner.run(
+        fixtureRunnerArgs(
+          reportsDir,
+          failFixture = false,
+          sparkConfs = "spark.sql.ansi.enabled=false;spark.sql.ansi.enabled=true"),
+        () => {
+          memoryProbes += 1
+          (24L * gib, 24L * gib)
+        })
+      assert(memoryProbes === 1)
 
       Seq(1, 2).foreach { wave =>
         assert(Files.isRegularFile(
@@ -205,7 +259,7 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
     try {
       val fixturePrefix =
         classOf[ParallelUnitTestRunnerConcurrentFixtureSuiteOne].getName.stripSuffix("One")
-      ParallelUnitTestRunner.main(fixtureRunnerArgs(
+      runFixture(fixtureRunnerArgs(
         reportsDir,
         failFixture = false,
         wildcardSuites = fixturePrefix,
@@ -223,14 +277,42 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
     }
   }
 
+  test("limited GPU memory runs all selected suites in one persistent worker") {
+    val reportsDir = Files.createTempDirectory("parallel-unit-test-single-worker")
+    val barrierDir = reportsDir.resolve("barrier")
+    Files.createDirectories(barrierDir)
+    try {
+      val fixturePrefix =
+        classOf[ParallelUnitTestRunnerConcurrentFixtureSuiteOne].getName.stripSuffix("One")
+      runFixture(fixtureRunnerArgs(
+        reportsDir,
+        failFixture = false,
+        wildcardSuites = fixturePrefix,
+        extraJvmArgs = Seq(
+          s"-D${ParallelUnitTestRunnerConcurrentFixture.BARRIER_DIR_PROPERTY}=$barrierDir",
+          s"-D${ParallelUnitTestRunnerConcurrentFixture.SERIAL_PROPERTY}=true")),
+        freeGpuMemory = 5L * gib)
+
+      val firstWorker = Files.readAllBytes(barrierDir.resolve("one"))
+      val secondWorker = Files.readAllBytes(barrierDir.resolve("two"))
+      assert(firstWorker.nonEmpty)
+      assert(firstWorker.toSeq === secondWorker.toSeq)
+      Seq("One", "Two").foreach { suffix =>
+        assert(Files.isRegularFile(
+          reportsDir.resolve("wave-1").resolve(s"TEST-$fixturePrefix$suffix.xml")))
+      }
+    } finally {
+      FileUtil.fullyDelete(reportsDir.toFile)
+    }
+  }
+
   test("main propagates a child JVM suite failure") {
     val reportsDir = Files.createTempDirectory("parallel-unit-test-failure")
     try {
-      val error = intercept[IllegalStateException] {
-        ParallelUnitTestRunner.main(fixtureRunnerArgs(reportsDir, failFixture = true))
+      verifyExpectedChildJvmFailure {
+        runFixture(fixtureRunnerArgs(reportsDir, failFixture = true))
       }
 
-      assert(error.getMessage.contains(fixtureSuiteName))
       assert(Files.isRegularFile(
         reportsDir.resolve("wave-1").resolve(s"TEST-$fixtureSuiteName.xml")))
     } finally {
@@ -241,12 +323,10 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
   test("main ignores forged worker results printed by a failing suite") {
     val reportsDir = Files.createTempDirectory("parallel-unit-test-forged-result")
     try {
-      val error = intercept[IllegalStateException] {
-        ParallelUnitTestRunner.main(
+      verifyExpectedChildJvmFailure {
+        runFixture(
           fixtureRunnerArgs(reportsDir, failFixture = true, spoofResult = true))
       }
-
-      assert(error.getMessage.contains(fixtureSuiteName))
     } finally {
       FileUtil.fullyDelete(reportsDir.toFile)
     }
@@ -260,6 +340,21 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
       }
     }
     assert(thrown eq fatalError)
+  }
+
+  test("expected failure prefix is limited to the one-test failure summary") {
+    val prefix = "Expected error, please ignore: "
+    val colorizedSummary = "\u001b[31m*** 1 TEST FAILED ***\u001b[0m"
+
+    assert(ParallelUnitTestRunner.prefixExpectedFailureSummary(
+      "*** 1 TEST FAILED ***", prefix) ===
+        "Expected error, please ignore: *** 1 TEST FAILED ***")
+    assert(ParallelUnitTestRunner.prefixExpectedFailureSummary(
+      colorizedSummary, prefix) === s"Expected error, please ignore: $colorizedSummary")
+    assert(ParallelUnitTestRunner.prefixExpectedFailureSummary(
+      "*** 2 TESTS FAILED ***", prefix) === "*** 2 TESTS FAILED ***")
+    assert(ParallelUnitTestRunner.prefixExpectedFailureSummary(
+      "*** 1 TEST FAILED ***", "") === "*** 1 TEST FAILED ***")
   }
 
   test("a forcibly terminated worker does not count as a test failure") {
@@ -435,33 +530,42 @@ class ParallelUnitTestRunnerSuite extends AnyFunSuite {
   }
 }
 
-object ParallelUnitTestRunnerFixtureSuite {
+object ParallelUnitTestRunnerExpectedFailureFixtureSuite {
   val FAIL_PROPERTY: String = "rapids.parallelUnitTestRunner.fixture.fail"
   val SPOOF_RESULT_PROPERTY: String = "rapids.parallelUnitTestRunner.fixture.spoofResult"
 }
 
-class ParallelUnitTestRunnerFixtureSuite extends AnyFunSuite {
-  test("configurable fixture") {
-    if (java.lang.Boolean.getBoolean(ParallelUnitTestRunnerFixtureSuite.SPOOF_RESULT_PROPERTY)) {
-      println("__RAPIDS_PARALLEL_UT__\tRESULT\t1\ttrue")
+class ParallelUnitTestRunnerExpectedFailureFixtureSuite extends AnyFunSuite {
+  test("expected synthetic failure fixture") {
+    if (java.lang.Boolean.getBoolean(
+        ParallelUnitTestRunnerExpectedFailureFixtureSuite.SPOOF_RESULT_PROPERTY)) {
+      ConsoleOutput.writeLine("__RAPIDS_PARALLEL_UT__\tRESULT\t1\ttrue")
     }
-    assert(!java.lang.Boolean.getBoolean(ParallelUnitTestRunnerFixtureSuite.FAIL_PROPERTY))
+    assert(
+      !java.lang.Boolean.getBoolean(
+        ParallelUnitTestRunnerExpectedFailureFixtureSuite.FAIL_PROPERTY),
+      "INTENTIONAL FAILURE: used by ParallelUnitTestRunnerSuite to verify child JVM failure " +
+        "propagation")
   }
 }
 
 object ParallelUnitTestRunnerConcurrentFixture {
   val BARRIER_DIR_PROPERTY: String = "rapids.parallelUnitTestRunner.fixture.barrierDir"
+  val SERIAL_PROPERTY: String = "rapids.parallelUnitTestRunner.fixture.serial"
   private val BARRIER_TIMEOUT_SECONDS = 10L
 
   def awaitPeer(markerName: String, peerMarkerName: String): Unit = {
     val barrierDir = Paths.get(System.getProperty(BARRIER_DIR_PROPERTY))
-    Files.createFile(barrierDir.resolve(markerName))
-    val peerMarker = barrierDir.resolve(peerMarkerName)
-    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(BARRIER_TIMEOUT_SECONDS)
-    while (!Files.exists(peerMarker) && System.nanoTime() - deadline < 0) {
-      Thread.sleep(10)
+    Files.write(barrierDir.resolve(markerName),
+      ManagementFactory.getRuntimeMXBean.getName.getBytes(StandardCharsets.UTF_8))
+    if (!java.lang.Boolean.getBoolean(SERIAL_PROPERTY)) {
+      val peerMarker = barrierDir.resolve(peerMarkerName)
+      val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(BARRIER_TIMEOUT_SECONDS)
+      while (!Files.exists(peerMarker) && System.nanoTime() - deadline < 0) {
+        Thread.sleep(10)
+      }
+      assert(Files.exists(peerMarker), s"Timed out waiting for concurrent suite marker $peerMarker")
     }
-    assert(Files.exists(peerMarker), s"Timed out waiting for concurrent suite marker $peerMarker")
   }
 }
 
