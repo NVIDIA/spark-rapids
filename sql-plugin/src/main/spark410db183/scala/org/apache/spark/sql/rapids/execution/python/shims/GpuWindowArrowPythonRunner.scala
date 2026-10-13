@@ -16,9 +16,6 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "410db183"}
-{"spark": "411"}
-{"spark": "412"}
-{"spark": "413"}
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
@@ -33,7 +30,7 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * Python runner for Window UDFs in Spark 4.1.x.
+ * Python runner for Window UDFs in DBR 18.3.
  * 
  * In Spark 4.1.x, the Python worker uses GroupPandasUDFSerializer for SQL_WINDOW_AGG_PANDAS_UDF,
  * which expects the grouped protocol:
@@ -60,6 +57,9 @@ class GpuWindowArrowPythonRunner(
   extends GpuBasePythonRunner[ColumnarBatch](funcs.map(_._1), evalType, argOffsets,
     jobArtifactUUID) with GpuArrowPythonOutput with GpuPythonRunnerCommon {
 
+  // BasePythonRunner writes runnerConf and evalConf before the UDF command.
+  override def runnerConf: Map[String, String] = super.runnerConf ++ conf
+
   protected override def newWriter(
       env: SparkEnv,
       worker: PythonWorker,
@@ -76,7 +76,8 @@ class GpuWindowArrowPythonRunner(
       }
 
       protected override def writeCommand(dataOut: DataOutputStream): Unit = {
-        arrowWriter.writeCommand(dataOut, conf)
+        WritePythonUDFUtils.writeUDFs(dataOut, funcs, argOffsets, argNames,
+          udfLogMaxEntries = udfLogMaxEntries, udfLogLevel = udfLogLevel)
       }
 
       override def writeNextInputToStream(dataOut: DataOutputStream): Boolean = {

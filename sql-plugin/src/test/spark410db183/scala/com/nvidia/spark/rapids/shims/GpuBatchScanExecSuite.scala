@@ -30,13 +30,15 @@ import org.scalatestplus.mockito.MockitoSugar.mock
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, DynamicPruningExpression,
-  EqualTo, Literal}
+  Literal, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.physical.KeyedPartitioning
 import org.apache.spark.sql.connector.catalog.{Table, TableCapability}
 import org.apache.spark.sql.connector.expressions.NamedReference
 import org.apache.spark.sql.connector.expressions.filter.Predicate
 import org.apache.spark.sql.connector.read.{Batch, HasPartitionKey, InputPartition,
   PartitionReader, PartitionReaderFactory, SupportsRuntimeV2Filtering}
+import org.apache.spark.sql.execution.{BaseSubqueryExec, InSubqueryExec}
+import org.apache.spark.sql.execution.datasources.rapids.DataSourceStrategyUtils
 import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 
 class GpuBatchScanExecSuite extends AnyFunSuite with BeforeAndAfterAll with FQSuiteName {
@@ -140,10 +142,18 @@ class GpuBatchScanExecSuite extends AnyFunSuite with BeforeAndAfterAll with FQSu
       TestPartition(1, "one-b"))
     val scan = new FilteringGpuScan(initial, filtered)
 
+    val runtimeFilter = InSubqueryExec(
+      child = key,
+      plan = mock[BaseSubqueryExec],
+      exprId = NamedExpression.newExprId,
+      result = Array[Any](1, 3))
+    assert(runtimeFilter.values.isDefined)
+    assert(DataSourceStrategyUtils.translateRuntimeFilter(runtimeFilter).isDefined)
+
     val exec = GpuBatchScanExec(
       output = Seq(key),
       scan = scan,
-      runtimeFilters = Seq(DynamicPruningExpression(EqualTo(key, Literal(1)))),
+      runtimeFilters = Seq(DynamicPruningExpression(runtimeFilter)),
       ordering = None,
       table = TestTable,
       keyGroupedPartitioning = Some(Seq(key)))

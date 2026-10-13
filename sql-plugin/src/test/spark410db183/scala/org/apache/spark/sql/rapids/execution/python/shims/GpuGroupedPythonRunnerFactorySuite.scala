@@ -22,13 +22,40 @@ package org.apache.spark.sql.rapids.execution.python.shims
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
 
 import com.nvidia.spark.rapids.FQSuiteName
+import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.api.python.{PythonEvalType, PythonWorkerUtils}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 
-class GpuGroupedPythonRunnerFactorySuite extends AnyFunSuite with FQSuiteName {
+class GpuGroupedPythonRunnerFactorySuite
+    extends AnyFunSuite with BeforeAndAfterAll with FQSuiteName {
+  private var spark: SparkSession = _
+
+  override def beforeAll(): Unit = {
+    super.beforeAll()
+    spark = SparkSession.builder()
+      .master("local[1]")
+      .appName("GpuGroupedPythonRunnerFactorySuite")
+      .config("spark.ui.enabled", "false")
+      .config("spark.connect.grpc.binding.port", "0")
+      .getOrCreate()
+  }
+
+  override def afterAll(): Unit = {
+    try {
+      if (spark != null) {
+        spark.stop()
+      }
+      SparkSession.clearActiveSession()
+      SparkSession.clearDefaultSession()
+    } finally {
+      super.afterAll()
+    }
+  }
+
   private val zeroConfKey =
     "spark.databricks.execution.pandasZeroConfConversion.groupbyApply.enabled"
   private val maxBytesKey =
@@ -100,13 +127,14 @@ class GpuGroupedPythonRunnerFactorySuite extends AnyFunSuite with FQSuiteName {
       argOffsets = Array.empty,
       pythonInSchema = new StructType(),
       timeZoneId = "UTC",
-      conf = Map.empty,
+      conf = Map("framingTestKey" -> "framingTestValue"),
       maxBatchSize = 1024,
       pythonOutSchema = new StructType(),
       udfLogMaxEntries = 37,
       udfLogLevel = "INFO")
     assert(arrowRunner.udfLogMaxEntries === 37)
     assert(arrowRunner.udfLogLevel === "INFO")
+    assert(arrowRunner.runnerConf("framingTestKey") === "framingTestValue")
 
     val coGroupedRunner = new GpuCoGroupedArrowPythonRunner(
       funcs = Seq.empty,
@@ -115,13 +143,14 @@ class GpuGroupedPythonRunnerFactorySuite extends AnyFunSuite with FQSuiteName {
       leftSchema = new StructType(),
       rightSchema = new StructType(),
       timeZoneId = "UTC",
-      conf = Map.empty,
+      conf = Map("framingTestKey" -> "framingTestValue"),
       batchSize = 1024,
       pythonOutSchema = new StructType(),
       udfLogMaxEntries = 37,
       udfLogLevel = "INFO")
     assert(coGroupedRunner.udfLogMaxEntries === 37)
     assert(coGroupedRunner.udfLogLevel === "INFO")
+    assert(coGroupedRunner.runnerConf("framingTestKey") === "framingTestValue")
   }
 
   test("Python UDF logging configuration is serialized to the worker") {
