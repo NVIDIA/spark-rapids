@@ -268,8 +268,10 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     }.when(tx).close()
     when(tx.peerExecutorId()).thenReturn(peerId)
     when(tx.getStatus).thenReturn(TransactionStatus.Success)
+    // the message can be taken once, as from a UCX transaction
     when(tx.releaseMessage()).thenReturn(new MetadataTransportBuffer(
       new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferRequest(peerId, tableIds))))
+      .thenThrow(new NoSuchElementException("None.get"))
     tx
   }
 

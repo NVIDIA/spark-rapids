@@ -110,8 +110,10 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   /** A transfer request for several tables. */
   private def makeTx(tableIds: Seq[Int]): Transaction = {
     val tx = mock[Transaction]
+    // the message can be taken once, as from a UCX transaction
     when(tx.releaseMessage()).thenReturn(new MetadataTransportBuffer(
       new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferRequest(0, tableIds))))
+      .thenThrow(new NoSuchElementException("None.get"))
     tx
   }
 
