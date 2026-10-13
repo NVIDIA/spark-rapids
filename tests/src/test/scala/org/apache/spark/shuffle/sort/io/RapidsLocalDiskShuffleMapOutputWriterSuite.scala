@@ -66,13 +66,10 @@ class RapidsLocalDiskShuffleMapOutputWriterSuite extends AnyFunSuite with Mockit
   }
 
   test("transfer-to shuffle retains records with RAPIDS local disk IO") {
-    val shimVersion = ShimLoader.getShimVersion
-    val shuffleManagerClass =
-      s"com.nvidia.spark.rapids.spark${shimVersion.toString.replace(".", "")}.RapidsShuffleManager"
     val conf = new SparkConf(false)
       .setMaster("local[2]")
       .setAppName("RapidsLocalDiskShuffleMapOutputWriterSuite")
-      .set("spark.shuffle.manager", shuffleManagerClass)
+      .set("spark.shuffle.manager", ShimLoader.getRapidsShuffleManagerClass)
       .set("spark.shuffle.sort.io.plugin.class", classOf[RapidsLocalDiskShuffleDataIO].getName)
       .set("spark.file.transferTo", "true")
       .set("spark.ui.enabled", "false")
