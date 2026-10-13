@@ -17,13 +17,13 @@ from typing import Callable, Dict, Optional
 
 import pytest
 import pyspark.sql.functions as F
-from pyspark.sql.types import ArrayType, BinaryType
+from pyspark.sql.types import ArrayType, BinaryType, TimestampType
 
 from asserts import (assert_cpu_and_gpu_are_equal_collect_with_capture,
                      assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect,
                      assert_gpu_fallback_collect, assert_gpu_fallback_write, collect_plan_nodes)
 from conftest import is_iceberg_remote_catalog, spark_jvm
-from data_gen import gen_df, copy_and_update, long_gen, RepeatSeqGen, TimestampGen
+from data_gen import gen_df, copy_and_update, long_gen, RepeatSeqGen
 from iceberg import (create_iceberg_table,
                      iceberg_base_table_cols,
                      iceberg_gens_list, iceberg_full_gens_list,
@@ -152,10 +152,12 @@ def test_ctas_gpu_timestamp_uses_iceberg_micros_and_has_metrics(
     def timestamp_df(spark):
         return gen_df(spark, [
             ("unique_id", long_gen),
-            ("sale_datetime", TimestampGen(
-                start=datetime(1000, 1, 1, tzinfo=timezone.utc),
-                end=datetime(2000, 1, 1, tzinfo=timezone.utc),
-                nullable=False))
+            ("sale_datetime", RepeatSeqGen([
+                datetime(1000, 1, 1, tzinfo=timezone.utc),
+                datetime(1582, 10, 4, tzinfo=timezone.utc),
+                datetime(1582, 10, 15, tzinfo=timezone.utc),
+                datetime(2000, 1, 1, tzinfo=timezone.utc)
+            ], data_type=TimestampType()))
         ], length=200)
 
     def assert_gpu_ctas(_cpu_plan, plan):
@@ -184,8 +186,11 @@ def test_ctas_gpu_timestamp_uses_iceberg_micros_and_has_metrics(
             planned_files.close()
 
         assert data_files, f"no files found in {gpu_table}"
+        data_file_paths = []
         for data_file in data_files:
-            physical_schema = read_parquet_schema(spark, data_file.path())
+            data_file_path = data_file.path()
+            data_file_paths.append(data_file_path)
+            physical_schema = read_parquet_schema(spark, data_file_path)
             assert "int64 sale_datetime (TIMESTAMP(MICROS,true)) = 2" in physical_schema
             assert "int96 sale_datetime" not in physical_schema.lower()
             metrics = {
@@ -197,6 +202,10 @@ def test_ctas_gpu_timestamp_uses_iceberg_micros_and_has_metrics(
             for metric_name, metric in metrics.items():
                 assert metric is not None and metric.containsKey(2), \
                     f"field ID 2 missing from {metric_name}: {metric}"
+
+        iceberg_rows = spark.table(gpu_table).collect()
+        parquet_rows = spark.read.parquet(*data_file_paths).collect()
+        assert_equal_with_local_sort(iceberg_rows, parquet_rows)
 
     with_cpu_session(assert_timestamp_file_metadata, conf=conf)
 
