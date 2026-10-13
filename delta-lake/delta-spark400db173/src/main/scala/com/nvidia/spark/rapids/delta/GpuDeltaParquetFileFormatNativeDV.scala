@@ -108,7 +108,62 @@ private object DeletionVectorOutputColumns {
   }
 }
 
-private[delta] object LowShuffleMergeRowIndexes {
+private object LowShuffleMergeRowIndexes {
+  /** Includes the temporary index chunks held while concatenating a batch. */
+  def maxBatchRows(
+      readSchema: StructType,
+      partitionSchema: StructType,
+      maxReadBatchSizeRows: Int,
+      maxBatchSizeBytes: Long): Int = {
+    val batchSchema = StructType(readSchema.fields ++ partitionSchema.fields)
+    var low = 1L
+    var high = math.max(1, maxReadBatchSizeRows).toLong
+    while (low < high) {
+      val mid = low + (high - low + 1) / 2
+      val estimatedBytes = GpuBatchUtils.estimateGpuMemory(batchSchema, mid) +
+        mid * LongType.defaultSize
+      if (estimatedBytes <= maxBatchSizeBytes) {
+        low = mid
+      } else {
+        high = mid - 1
+      }
+    }
+    low.toInt
+  }
+
+  /** Splits on CPU, retaining file-relative offsets even when a batch ends inside a row group. */
+  def batchRanges(
+      rowGroupRanges: Array[(Long, Int)],
+      maxBatchRows: Int): Iterator[Array[(Long, Int)]] = {
+    require(maxBatchRows > 0, "Row-index batches must contain at least one row")
+    new Iterator[Array[(Long, Int)]] {
+      private val groups = rowGroupRanges.iterator.filter(_._2 > 0).buffered
+      private var consumedRows = 0
+
+      override def hasNext: Boolean = groups.hasNext
+
+      override def next(): Array[(Long, Int)] = {
+        if (!hasNext) {
+          throw new NoSuchElementException("No more row-index ranges")
+        }
+        val batch = ArrayBuffer.empty[(Long, Int)]
+        var batchRows = 0
+        while (groups.hasNext && batchRows < maxBatchRows) {
+          val (offset, numRows) = groups.head
+          val rows = math.min(numRows - consumedRows, maxBatchRows - batchRows)
+          batch += ((offset + consumedRows, rows))
+          batchRows += rows
+          consumedRows += rows
+          if (consumedRows == numRows) {
+            groups.next()
+            consumedRows = 0
+          }
+        }
+        batch.toArray
+      }
+    }
+  }
+
   /** Builds already flattened file-relative row-group sequences; the caller owns the result. */
   def buildColumn(rowGroupRanges: Array[(Long, Int)]): ColumnVector = {
     val rowIndexChunks = rowGroupRanges.safeMap { case (offset, numRows) =>
@@ -240,9 +295,10 @@ case class GpuDeltaParquetFileFormatNativeDV(
    * their corresponding physical column names. This is necessary as the Parquet files will use
    * physical column names, and the requested schema pushed down in the Parquet reader will also use
    * physical column names.
+   * File-relative row-group offsets survive filtering and splitting, including low-shuffle scans.
    */
   private def prepareFiltersForRead(filters: Seq[Filter]): Seq[Filter] = {
-    if (lowShuffleMergeScan || !optimizationsEnabled) {
+    if (!optimizationsEnabled) {
       Seq.empty
     } else if (columnMappingMode != NoMapping) {
       val physicalNameMap = DeltaColumnMapping.getLogicalNameToPhysicalNameMap(referenceSchema)
@@ -259,7 +315,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
 
   override def isSplitable(sparkSession: SparkSession,
       options: Map[String, String],
-      path: Path): Boolean = !lowShuffleMergeScan && optimizationsEnabled
+      path: Path): Boolean = optimizationsEnabled
 
   def hasTablePath: Boolean = tablePath.isDefined
 
@@ -845,9 +901,9 @@ case class GpuDeltaParquetFileFormatNativeDV(
 
     /**
      * Builds the file-relative row-index column when no physical Parquet columns are requested.
-     * Low-shuffle discovery disables splitting and predicate pushdown, but combined metadata can
-     * still contain several files. Each file therefore contributes its own row-group sequences,
-     * and the sequences are concatenated in the same order as the multithreaded reader metadata.
+     * Row-group offsets stay file-relative after splitting and predicate pushdown. Combined
+     * metadata can contain several files, so each file contributes its own row-group sequences,
+     * concatenated in the same order as the multithreaded reader metadata.
      */
     private def metadataOnlyBatches(
         metadata: DeltaParquetHostMemoryEmptyMetaData): Iterator[ColumnarBatch] = {
@@ -861,34 +917,59 @@ case class GpuDeltaParquetFileFormatNativeDV(
       val rowGroupRanges = rowGroupMetadata.flatMap { info =>
         info.rowGroupOffsets.zip(info.rowGroupNumRows).filter(_._2 > 0)
       }
-      val partitionRowsAndValues = metadata.allPartValues.map(_.unzip)
-      RmmRapidsRetryIterator.withRetryNoSplit {
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        withResource(LowShuffleMergeRowIndexes.buildColumn(rowGroupRanges)) { indexes =>
-          require(indexes.getRowCount == metadata.numRows,
-            s"Generated ${indexes.getRowCount} row indexes for ${metadata.numRows} input rows")
-          val numRows = Math.toIntExact(indexes.getRowCount)
-          val columns = metadata.readSchema.fields.zipWithIndex.safeMap { case (field, index) =>
-            if (outputColumns.rowIndexColumn.contains(index)) {
-              GpuColumnVector.from(indexes.incRefCount(), field.dataType)
-                .asInstanceOf[SparkVector]
-            } else {
-              GpuColumnVector.fromNull(numRows, field.dataType).asInstanceOf[SparkVector]
+      val totalRows = rowGroupRanges.iterator.map(_._2.toLong).sum
+      require(totalRows == metadata.numRows,
+        s"Row-group metadata contains $totalRows rows for ${metadata.numRows} input rows")
+      if (totalRows == 0) {
+        EmptyGpuColumnarBatchIterator
+      } else {
+        // Snapshot CPU metadata before readBatches closes the serialized deletion vectors.
+        val schema = metadata.readSchema
+        val partitionRowsAndValues = metadata.allPartValues.getOrElse(
+          Array((totalRows, metadata.partitionedFile.partitionValues)))
+        require(partitionRowsAndValues.iterator.map(_._1).sum == totalRows,
+          "Partition row counts must match row-group metadata")
+        val parts = partitionRowsAndValues.iterator.filter(_._1 > 0).buffered
+        var consumedPartRows = 0L
+        val byteLimit = math.min(maxGpuColumnSizeBytes,
+          math.min(maxReadBatchSizeBytes, targetBatchSizeBytes))
+        val batchRowLimit = LowShuffleMergeRowIndexes.maxBatchRows(
+          schema, partitionSchema, maxReadBatchSizeRows, byteLimit)
+        LowShuffleMergeRowIndexes.batchRanges(rowGroupRanges, batchRowLimit).flatMap { ranges =>
+          val numRows = ranges.iterator.map(_._2).sum
+          val batchPartitions = ArrayBuffer.empty[(Long, InternalRow)]
+          var remainingRows = numRows.toLong
+          while (remainingRows > 0) {
+            val (partRows, value) = parts.head
+            val rows = math.min(remainingRows, partRows - consumedPartRows)
+            batchPartitions += ((rows, value))
+            remainingRows -= rows
+            consumedPartRows += rows
+            if (consumedPartRows == partRows) {
+              parts.next()
+              consumedPartRows = 0
             }
           }
-          val batch = closeOnExcept(columns) { _ =>
-            new ColumnarBatch(columns, numRows)
-          }
-          // The partition helpers take ownership of batch, including on failure.
-          partitionRowsAndValues match {
-            case Some((rowsPerPartition, partitionValues)) =>
+          val (rowsPerPartition, partitionValues) = batchPartitions.toArray.unzip
+          // CPU iterator progress is outside the retry; every attempt rebuilds only this batch.
+          RmmRapidsRetryIterator.withRetryNoSplit {
+            GpuSemaphore.acquireIfNecessary(TaskContext.get())
+            withResource(LowShuffleMergeRowIndexes.buildColumn(ranges)) { indexes =>
+              val columns = schema.fields.zipWithIndex.safeMap { case (field, index) =>
+                if (outputColumns.rowIndexColumn.contains(index)) {
+                  GpuColumnVector.from(indexes.incRefCount(), field.dataType)
+                    .asInstanceOf[SparkVector]
+                } else {
+                  GpuColumnVector.fromNull(numRows, field.dataType).asInstanceOf[SparkVector]
+                }
+              }
+              val batch = closeOnExcept(columns) { _ =>
+                new ColumnarBatch(columns, numRows)
+              }
+              // This helper owns batch on success and failure, and retries lazy partition columns.
               BatchWithPartitionDataUtils.addPartitionValuesToBatch(
-                batch, rowsPerPartition, partitionValues, partitionSchema,
-                maxGpuColumnSizeBytes)
-            case None =>
-              BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(
-                batch, metadata.partitionedFile.partitionValues,
-                partitionSchema, maxGpuColumnSizeBytes)
+                batch, rowsPerPartition, partitionValues, partitionSchema, maxGpuColumnSizeBytes)
+            }
           }
         }
       }

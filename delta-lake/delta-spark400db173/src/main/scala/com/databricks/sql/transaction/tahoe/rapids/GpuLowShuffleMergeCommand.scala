@@ -1026,8 +1026,10 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
       relation: HadoopFsRelation,
       dataSchema: StructType,
       rowIndexColumnName: String): HadoopFsRelation = {
+    // The legacy PERFILE reader counts rows from zero and requires whole-file reads.
+    // Native readers preserve file-relative offsets through filtering and splitting.
     val fileFormat = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-      .copy(optimizationsEnabled = false)
+      .copy(optimizationsEnabled = !context.rapidsConf.isParquetPerFileReadEnabled)
     relation.copy(
       dataSchema = dataSchema,
       fileFormat = fileFormat,

@@ -20,7 +20,6 @@ import pytest
 from conftest import is_databricks_runtime
 from delta_lake_merge_common import *
 from marks import *
-from parquet_test_utils import parquet_row_group_midpoints
 from pyspark.sql.types import *
 from spark_session import is_databricks_version, spark_version
 
@@ -194,33 +193,36 @@ def test_delta_low_shuffle_merge_multiple_row_groups(
         "spark.databricks.delta.optimizeWrite.enabled": "false",
         "spark.databricks.delta.autoCompact.enabled": "false",
         "spark.sql.files.minPartitionNum": "1",
-        "spark.sql.files.maxPartitionNum": "1",
+        "spark.sql.files.maxPartitionBytes": "65536",
         "spark.sql.files.openCostInBytes": "1",
+        "spark.sql.parquet.filterPushdown": "true",
         "parquet.block.size": "16384",
+        "spark.rapids.sql.reader.batchSizeRows": "512",
+        "spark.rapids.sql.reader.batchSizeBytes": "8192",
+        "spark.rapids.sql.batchSizeBytes": "8192",
         "spark.rapids.sql.format.parquet.multiThreadedRead.maxNumFilesParallel": "16"})
     data_path = spark_tmp_path + "/DELTA_DATA"
     src_table = spark_tmp_table_factory.get()
 
     def setup(spark):
-        # Exceed the Parquet writer's buffered-row checks before closing each file.
-        data = spark.range(49152, numPartitions=1).withColumn("p", f.pmod("id", f.lit(3))) \
-            .withColumn("payload", f.sha2(f.col("id").cast("string"), 256))
+        # Four input partitions each write two files per Delta partition, with several row groups.
+        data = spark.range(49152, numPartitions=4).withColumn("p", f.pmod("id", f.lit(3))) \
+            .withColumn("payload", f.sha2(f.col("id").cast("string"), 256)) \
+            .sortWithinPartitions("p", "id")
         for run in ["CPU", "GPU"]:
             data.write.format("delta").partitionBy("p") \
                 .option("delta.enableDeletionVectors", "false") \
-                .option("maxRecordsPerFile", 8192).option("parquet.block.size", 16384) \
+                .option("maxRecordsPerFile", 2048).option("parquet.block.size", 16384) \
                 .option("parquet.enable.dictionary", "false") \
                 .option("compression", "uncompressed").save(data_path + "/" + run)
-        files = read_delta_path(spark, data_path + "/CPU").inputFiles()
-        assert len(files) >= 6, f"Expected multiple files per partition: {files}"
-        for path in files:
-            assert len(parquet_row_group_midpoints(spark, path)) > 1, path
-        spark.range(1, numPartitions=1).withColumn("p", f.lit(1)) \
+        # Read two Delta partitions during discovery and leave the third untouched.
+        spark.range(2, numPartitions=1).withColumn("p", f.col("id")) \
             .createOrReplaceTempView(src_table)
 
     with_cpu_session(setup, conf=conf)
     # Referencing only p prunes all physical columns from touched-file discovery.
-    condition = "t.p = s.p" if metadata_only else "t.p = s.p AND pmod(t.id, 2) = 0"
+    condition = "t.p = s.p" if metadata_only else \
+        "t.p = s.p AND t.id >= 32768 AND t.id < 40960 AND pmod(t.id, 2) = 0"
 
     def do_merge(spark, path):
         return spark.sql(
