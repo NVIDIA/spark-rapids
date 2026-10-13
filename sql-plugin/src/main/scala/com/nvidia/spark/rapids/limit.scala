@@ -332,9 +332,12 @@ object GpuTopN {
                 sortAndTakeNClose(limit, sorter, inputCb, sortTime)
               } else { // pending is not empty
                 val totalSize = attempt.sizeInBytes + pending.get.sizeInBytes
-                // A rows-only batch has no bytes to show how many rows it holds, and slicing
-                // one costs nothing, so slice it first too.
-                val tmpCb = if (totalSize > Int.MaxValue || inputCb.numCols() == 0) {
+                val tmpCb = if (inputCb.numCols() == 0) {
+                  // A rows-only batch has no bytes to bound its rows, so keep only the rows the
+                  // limit can still take. Pending holds at most limit rows, so this is not
+                  // negative, and the concatenation stays within the limit.
+                  sortAndTakeNClose(limit - pending.get.numRows(), sorter, inputCb, sortTime)
+                } else if (totalSize > Int.MaxValue) {
                   // The intermediate size is likely big enough we don't want to risk an overflow,
                   // so sort/slice before we concat and sort/slice again.
                   sortAndTakeNClose(limit, sorter, inputCb, sortTime)
