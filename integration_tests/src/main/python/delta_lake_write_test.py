@@ -340,6 +340,43 @@ def test_delta_write_round_trip_managed(spark_tmp_table_factory, enable_deletion
     assert_delta_history_equal(conf, cpu_table, gpu_table)
 
 
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_databricks143(), reason="DBR 14.3 V2 Delta create-table path")
+def test_delta_db143_managed_create_or_replace(spark_tmp_table_factory):
+    conf = copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.sources.partitionOverwriteMode": "dynamic"
+    })
+    cpu_table = spark_tmp_table_factory.get() + '_cpu'
+    gpu_table = spark_tmp_table_factory.get() + '_gpu'
+
+    def create_or_replace(spark, table):
+        spark.sql(
+            f"CREATE TABLE {table} USING DELTA PARTITIONED BY (part) AS "
+            "SELECT id, CAST(id % 2 AS INT) AS part, 'initial' AS value FROM range(4)")
+        spark.sql(
+            f"CREATE OR REPLACE TABLE {table} USING DELTA PARTITIONED BY (part) AS "
+            "SELECT id, CAST(id % 2 AS INT) AS part, 'replaced' AS value "
+            "FROM range(2, 6) WHERE id % 2 = 0")
+
+    with_cpu_session(lambda spark: create_or_replace(spark, cpu_table), conf=conf)
+    assert_rapids_delta_write(
+        lambda spark: create_or_replace(spark, gpu_table), conf=conf,
+        expected_command="GpuAtomicReplaceTableAsSelectExec", require_non_empty=True)
+
+    def table_state(spark, table):
+        rows = spark.table(table).orderBy("id").collect()
+        detail = spark.sql(f"DESCRIBE DETAIL {table}").select(
+            "format", "partitionColumns").first().asDict(recursive=True)
+        return rows, detail
+
+    cpu_state = with_cpu_session(lambda spark: table_state(spark, cpu_table), conf=conf)
+    gpu_state = with_cpu_session(lambda spark: table_state(spark, gpu_table), conf=conf)
+    assert_equal(cpu_state, gpu_state)
+    assert_delta_history_equal(conf, cpu_table, gpu_table)
+
+
 @allow_non_gpu('AppendDataExecV1', 'AtomicCreateTableAsSelectExec',
                'AtomicReplaceTableAsSelectExec',
                *delta_meta_allow)
