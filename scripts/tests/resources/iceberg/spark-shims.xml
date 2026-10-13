@@ -21,9 +21,71 @@ limitations under the License.
     <spark354.version>3.5.4</spark354.version>
     <spark355.version>3.5.5</spark355.version>
     <spark356.version>3.5.6</spark356.version>
+    <spark357.version>3.5.7</spark357.version>
     <spark401.version>4.0.1</spark401.version>
     <spark420.version>4.2.0</spark420.version>
     <spark500.version>5.0.0-SNAPSHOT</spark500.version>
-    <iceberg.version>1.6.1</iceberg.version>
+    <iceberg.16x.version>1.6.1</iceberg.16x.version>
+    <iceberg.19x.version>1.9.2</iceberg.19x.version>
+    <iceberg.110x.version>1.10.1</iceberg.110x.version>
   </properties>
+  <profiles>
+    <profile>
+      <id>release350</id>
+      <properties><spark.version>${spark350.version}</spark.version></properties>
+      <modules><module>iceberg/iceberg-1-6-x</module></modules>
+    </profile>
+    <profile>
+      <id>release351</id>
+      <properties><spark.version>${spark351.version}</spark.version></properties>
+      <modules><module>iceberg/iceberg-1-6-x</module></modules>
+    </profile>
+    <profile>
+      <id>release354</id>
+      <properties><spark.version>${spark354.version}</spark.version></properties>
+      <modules>
+        <module>iceberg/iceberg-1-9-x</module>
+        <module>iceberg/iceberg-1-10-x</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>release355</id>
+      <properties><spark.version>${spark355.version}</spark.version></properties>
+      <modules>
+        <module>iceberg/iceberg-1-9-x</module>
+        <module>iceberg/iceberg-1-10-x</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>release356</id>
+      <properties><spark.version>${spark356.version}</spark.version></properties>
+      <modules>
+        <module>iceberg/iceberg-1-9-x</module>
+        <module>iceberg/iceberg-1-10-x</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>release357</id>
+      <properties><spark.version>${spark357.version}</spark.version></properties>
+      <modules>
+        <module>iceberg/iceberg-1-9-x</module>
+        <module>iceberg/iceberg-1-10-x</module>
+      </modules>
+    </profile>
+    <profile>
+      <id>release401</id>
+      <properties><spark.version>${spark401.version}</spark.version></properties>
+      <modules><module>iceberg/iceberg-1-10-x</module></modules>
+    </profile>
+    <profile>
+      <id>release420</id>
+      <properties><spark.version>${spark420.version}</spark.version></properties>
+      <modules><module>iceberg/iceberg-stub</module></modules>
+    </profile>
+    <profile>
+      <id>sparkMaster</id>
+      <properties><spark.version>${spark500.version}</spark.version></properties>
+      <modules><module>iceberg/iceberg-stub</module></modules>
+    </profile>
+  </profiles>
 </project>

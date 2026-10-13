@@ -24,6 +24,11 @@
           "version": "3.5.6",
           "supported": false,
           "reason": "Iceberg 1.6.x is not packaged for this Spark shim"
+        },
+        {
+          "version": "3.5.7",
+          "supported": false,
+          "reason": "Iceberg 1.6.x is not packaged for this Spark shim"
         }
       ]
     },
@@ -40,6 +45,10 @@
         {
           "version": "3.5.6",
           "supported": true
+        },
+        {
+          "version": "3.5.7",
+          "supported": true
         }
       ]
     },
@@ -52,6 +61,10 @@
       "spark_versions": [
         {
           "version": "3.5.6",
+          "supported": true
+        },
+        {
+          "version": "3.5.7",
           "supported": true
         },
         {

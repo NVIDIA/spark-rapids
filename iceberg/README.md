@@ -29,11 +29,23 @@ release that Iceberg builds and tests against. As specified in
 as the minimum baseline for this test matrix. This is a cudf-spark test policy; the upstream
 dependency pin does not itself declare a minimum compatible Spark patch.
 
+The standard-library JSON decoder constructs the `SparkSupport`, `IcebergSupport`, and
+`IcebergVersionMatrix` dataclasses directly using an `object_hook`. Field metadata maps the
+JSON names to their dataclass fields, and construction validates each record.
+
 The `spark_versions` list is computed from the `spark*.version` properties in
-`scala2.13/pom.xml`.
+`scala2.13/pom.xml` and checked against the inferred Maven packaging combinations.
 For each family in `upstream_minimums`, it contains every cudf-spark shim whose patch version is
 greater than or equal to the baseline. A shim is marked as supported when cudf-spark
-packages the corresponding Iceberg integration module. Shims at or above the baseline that
+packages the corresponding Iceberg runtime. The reader resolves each release profile's
+`spark.version`, follows its included `iceberg/` modules, and reads their
+`org.apache.iceberg:iceberg-spark-runtime-*` dependency versions. Runtime property references
+use the parent, profile, and module properties. For example, `release357` includes
+`iceberg-1-9-x` and `iceberg-1-10-x`, whose runtime dependencies resolve to Iceberg 1.9.2 and
+1.10.1; both are eligible for Spark 3.5.7. The stub contributes no runtime.
+
+Validation rejects a `supported` flag that disagrees with this inference, or a packaged
+runtime version missing from the matrix. Shims at or above the baseline that
 are not packaged remain in the list with `supported` set to `false` and an explanation in
 `reason`. Maven release profiles determine packaging; packaging alone does not select a
 combination for this test matrix.
@@ -72,8 +84,9 @@ python3 scripts/get_iceberg_versions.py validate-requested \
 
 Run these commands from the repository root. Each subcommand accepts `--matrix` and
 `--pom` to override the default input files, and `--help` describes its arguments.
-`validate` reads both input files and checks the JSON schema, unique version entries,
-unsupported-entry reasons, and POM-derived Spark mappings. It produces no output and
+`validate` reads the JSON, parent POM, and included Iceberg module POMs. It checks the schema,
+unique version entries, unsupported-entry reasons, and inferred Spark × Iceberg combinations
+after applying the minimum baselines. It produces no output and
 returns status 0 only when validation succeeds; input and validation failures report an
 error on stderr and return status 1. The other commands run the same matrix validation
 before printing space-separated versions for shell callers; `validate-requested` accepts
