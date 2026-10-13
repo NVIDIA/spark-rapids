@@ -368,7 +368,7 @@ def test_delta_db143_managed_create_or_replace(spark_tmp_table_factory):
     def table_state(spark, table):
         rows = spark.table(table).orderBy("id").collect()
         detail = spark.sql(f"DESCRIBE DETAIL {table}").select(
-            "format", "partitionColumns").first().asDict(recursive=True)
+            "format", "partitionColumns").first()
         return rows, detail
 
     cpu_state = with_cpu_session(lambda spark: table_state(spark, cpu_table), conf=conf)
