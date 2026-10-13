@@ -3238,40 +3238,6 @@ def test_min_max_binary(values, grouped, aqe_enabled, batch_size):
         'spark.rapids.sql.batchSizeBytes': batch_size,
         'spark.sql.adaptive.enabled': aqe_enabled})
 
-@pytest.mark.parametrize('batch_size', ['250', '1g'], ids=['multiple_batches', 'single_batch'])
-@pytest.mark.parametrize('with_count', [False, True], ids=['binary_min_max', 'mixed_aggregates'])
-def test_min_max_binary_single_buffer_merge(batch_size, with_count):
-    def do_it(spark):
-        rows = [(value,) for _ in range(256)
-                for value in [b'', b'\x00', b'\x80', b'\xff', None]]
-        schema = StructType([StructField('value', BinaryType(), True)])
-        df = spark.createDataFrame(spark.sparkContext.parallelize(rows, 2), schema)
-        aggs = [f.min('value'), f.max('value')]
-        if with_count:
-            aggs.append(f.count('value'))
-        return df.agg(*aggs)
-
-    def check_plan(cpu_plan, gpu_plan):
-        partials = [node for node in collect_plan_nodes(gpu_plan)
-                    if node.getClass().getSimpleName() == 'GpuHashAggregateExec'
-                    and str(node.aggregateExpressions().head().mode()) == 'Partial']
-        assert len(partials) == 1
-        partial = partials[0]
-        tasks = plan_metric(partial, 'numOutputBatches')
-        operations = plan_metric(partial, 'NUM_AGGS')
-        assert tasks == 2
-        if batch_size == '1g':
-            assert operations == tasks * (2 if with_count else 1)
-        else:
-            assert operations > tasks
-
-    assert_cpu_and_gpu_are_equal_collect_with_capture(do_it,
-        exist_classes='GpuHashAggregateExec',
-        conf={'spark.rapids.sql.batchSizeBytes': batch_size,
-              'spark.rapids.sql.metrics.level': 'DEBUG',
-              'spark.sql.adaptive.enabled': 'false'},
-        gpu_plan_assertion=check_plan)
-
 # Some Spark implementations will optimize this aggregation as a
 # complete aggregation (i.e.: only one aggregation node in the plan)
 @ignore_order(local=True)

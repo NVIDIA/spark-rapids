@@ -43,7 +43,7 @@ import org.apache.spark.sql.catalyst.util.truncatedString
 import org.apache.spark.sql.execution.{ExplainUtils, SortExec, SparkPlan}
 import org.apache.spark.sql.execution.aggregate.{BaseAggregateExec, HashAggregateExec, ObjectHashAggregateExec, SortAggregateExec}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression, GpuMax, GpuMin}
+import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, GpuAggregateExpression}
 import org.apache.spark.sql.rapids.execution.{GpuBatchSubPartitioner, GpuShuffleMeta, TrampolineUtil}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -927,14 +927,6 @@ class GpuMergeAggregateIterator(
 )
   extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   private[this] val isReductionOnly = groupingExpressions.isEmpty
-  private[this] lazy val hasOnlyBinaryMinMax = aggregateExpressions.nonEmpty &&
-    aggregateExpressions.forall { expr =>
-      expr.aggregateFunction match {
-        case agg: GpuMin => agg.dataType == BinaryType
-        case agg: GpuMax => agg.dataType == BinaryType
-        case _ => false
-      }
-    }
   private[this] val targetMergeBatchSize = computeTargetMergeBatchSize(configuredTargetBatchSize)
 
   private[this] val defaultHashBucketNum = 16
@@ -981,12 +973,8 @@ class GpuMergeAggregateIterator(
           return generateEmptyReductionBatch()
         } else {
           hasReductionOnlyBatch = false
-          // Merging a single binary min/max buffer is an identity operation.
-          val concat = if (batches.size == 1 && hasOnlyBinaryMinMax) {
-            batches.head
-          } else {
+          val concat =
             AggregateUtils.concatenateAndMergeWithRetry(batches, metrics, concatAndMergeHelper)
-          }
           return withRetryNoSplit(concat)(_.getColumnarBatch())
         }
       }
