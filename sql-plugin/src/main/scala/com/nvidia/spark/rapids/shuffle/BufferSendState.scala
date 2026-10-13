@@ -180,8 +180,11 @@ class BufferSendState(
   /**
    * Ends this state once: the first outcome is final, and later calls return false and do
    * nothing. It releases the acquired buffers, the bounce buffers and the request transaction,
-   * attempting each even if releasing another failed. It logs a failure to release, and
-   * rethrows one that must end the send loop (see `BufferSendState.endsSendLoop`).
+   * attempting each even if releasing another failed. A failure to release that must end the
+   * send loop (see `BufferSendState.endsSendLoop`) is rethrown for its caller to log: the send
+   * loop ends with it, while the transport's callback wrapper, on a send's callback, and the
+   * sweep at transport close log and contain it. Any other failure to release is logged here
+   * and contained.
    *
    * While a send of this state is in flight only that send's callback may call this, or the
    * server's sweep once the transport has stopped, because the transport can still read the
@@ -213,10 +216,11 @@ class BufferSendState(
       // outside this state's monitor, since closing a transaction is a call into the transport
       release(transaction.close())
       if (error != null) {
-        logError(s"Error while releasing a BufferSendState that ended with $result", error)
         if (BufferSendState.endsSendLoop(error)) {
+          // not logged here: whoever catches it logs it
           throw error
         }
+        logError(s"Error while releasing a BufferSendState that ended with $result", error)
       }
     }
     first

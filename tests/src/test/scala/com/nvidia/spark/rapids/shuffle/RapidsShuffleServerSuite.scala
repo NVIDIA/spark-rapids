@@ -20,13 +20,18 @@ import java.io.{FileNotFoundException, IOException}
 import java.nio.ByteBuffer
 
 import ai.rapids.cudf.{Cuda, CudaFatalException, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.{MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
+import com.nvidia.spark.rapids.{LogCaptureUtils, MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.shuffle.ucx.{UCX, UCXActiveMessage, UCXServerConnection,
+  UCXShuffleTransport}
 import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
-import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.{any, anyLong}
 import org.mockito.Mockito._
+import org.mockito.invocation.InvocationOnMock
+import org.mockito.stubbing.Answer
+import org.openucx.jucx.UcxCallback
 
 import org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException
 import org.apache.spark.storage.ShuffleBlockBatchId
@@ -828,6 +833,67 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("a fatal error from a send's callback stays in the UCX callback wrapper, logged once") {
+    // A callback's releases make no CUDA call, so the error is injected through the request's
+    // close. The send goes through the real UCX server connection and transaction: only UCX is
+    // mocked, to capture the completion callback it would call on its progress thread.
+    val fatal = cudaFatal()
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val requestTx = makeTx(1)
+    doThrow(fatal).when(requestTx).close()
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handle = makeHandle(tableMeta, () => mock[DeviceMemoryBuffer])
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+      val ucx = mock[UCX]
+      val connection = spy(new UCXServerConnection(ucx, mock[UCXShuffleTransport]))
+      var sendTx: Transaction = null
+      doAnswer(new Answer[Transaction] {
+        override def answer(invocation: InvocationOnMock): Transaction = {
+          sendTx = invocation.callRealMethod().asInstanceOf[Transaction]
+          sendTx
+        }
+      }).when(connection).send(anyLong(), any[MessageType.Value](), anyLong(),
+        any[MemoryBuffer](), any[TransactionCallback]())
+      val server = newServer(requestHandler, connection)
+
+      val state = new BufferSendState(requestTx, sendBuffer, requestHandler, null)
+      server.doHandleTransferRequest(Seq(state))
+      val completion = ArgumentCaptor.forClass(classOf[UcxCallback])
+      verify(ucx, times(1)).sendActiveMessage(
+        anyLong(), any[UCXActiveMessage](), any[MemoryBuffer](), completion.capture())
+      val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[BufferSendState].getName)) {
+        // returns normally: the error does not reach the progress thread's own catch
+        completion.getValue.onSuccess(null)
+      }
+
+      assertResult(TransactionStatus.Error)(sendTx.getStatus)
+      // the state still ended once, and released what it held
+      assertResult(Some(BufferSendState.Completed))(state.endedWith)
+      verify(requestTx, times(1)).respond(any(), any())
+      verify(sendBuffer, times(1)).close()
+      verify(requestTx, times(1)).close()
+      assertResult(0)(server.inFlightCount)
+      // logged once, by the wrapper that contains it
+      assertResult(1)(logs.count(_.startsWith("Detected an exception from user code")))
+      assertResult(0)(logs.count(_.startsWith(releaseErrorLog)))
+    }
+  }
+
+  private val releaseErrorLog = "Error while releasing a BufferSendState"
+
+  /** Runs `body`, returning what was logged while it ran with its result. */
+  private def withLogs[T](body: => T): (Array[String], T) = {
+    var result: Option[T] = None
+    val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[BufferSendState].getName)) {
+      result = Some(body)
+    }
+    (logs, result.get)
+  }
+
   private def cudaFatal(): CudaFatalException = {
     // its constructors are not public
     val constructor =
@@ -896,19 +962,24 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
 
   test("a fatal CUDA error found while cleaning up after another failure still ends the loop") {
     val fatal = cudaFatal()
-    val (failure, states, buffers, txs, releases, serverConnection) = cleanupAfterFailure(fatal)
+    val (logs, (failure, states, buffers, txs, releases, serverConnection)) =
+      withLogs(cleanupAfterFailure(fatal))
     assert(failure.isInstanceOf[IllegalStateException])
     assertResult("release failed in test")(failure.getMessage)
     assert(failure.getSuppressed.contains(fatal))
     assert(!Thread.interrupted())
     assertEndedOnce(states, buffers, txs, releases, serverConnection)
+    // rethrown, so left to whoever ends the loop with it to log
+    assertResult(0)(logs.count(_.startsWith(releaseErrorLog)))
   }
 
   test("an ordinary failure while cleaning up after another one does not end the loop") {
-    val (failure, states, buffers, txs, releases, serverConnection) =
-      cleanupAfterFailure(new IllegalStateException("second release failed in test"))
+    val (logs, (failure, states, buffers, txs, releases, serverConnection)) =
+      withLogs(cleanupAfterFailure(new IllegalStateException("second release failed in test")))
     assert(failure == null)
     assertEndedOnce(states, buffers, txs, releases, serverConnection)
+    // contained, so logged where it is contained
+    assertResult(1)(logs.count(_.startsWith(releaseErrorLog)))
   }
 
   test("a fatal CUDA error from the recovery synchronization still ends the loop") {
