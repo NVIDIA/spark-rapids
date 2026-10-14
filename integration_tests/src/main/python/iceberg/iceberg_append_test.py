@@ -558,6 +558,7 @@ def test_insert_into_partitioned_table_fanout_enabled(format_version, spark_tmp_
 @pytest.mark.parametrize("table_codec,expected_codec", [
     (None, "zstd"),     # No override: Iceberg's default (zstd) must win on GPU too.
     ("zstd", "zstd"),
+    ("gzip", "gzip"),
     ("uncompressed", "uncompressed")])
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_into_table_honors_iceberg_compression_codec(format_version,
@@ -593,14 +594,13 @@ def test_insert_into_table_honors_iceberg_compression_codec(format_version,
         lambda spark: assert_iceberg_files_use_codec(spark, table_name, expected_codec))
 
 
-# cuDF's Parquet writer only supports uncompressed/snappy/zstd. A table whose Iceberg-resolved
-# codec is something else (e.g. gzip, a valid Iceberg codec) must fall back to the CPU at plan
+# A table whose Iceberg-resolved codec is unsupported (e.g. lz4) must fall back to the CPU at plan
 # time rather than reaching prepareWrite and failing at execution. Regression for #14905.
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec', 'ShuffleExchangeExec', 'ProjectExec')
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
-@pytest.mark.parametrize("codec", ["gzip", "lz4"])
+@pytest.mark.parametrize("codec", ["lz4"])
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_into_table_falls_back_on_unsupported_codec(format_version, spark_tmp_table_factory, codec):
     table_name = get_full_table_name(spark_tmp_table_factory)

@@ -199,6 +199,7 @@ object GpuParquetFileFormat {
     compressionType match {
       case "NONE" | "UNCOMPRESSED" => Some(CompressionType.NONE)
       case "SNAPPY" => Some(CompressionType.SNAPPY)
+      case "GZIP" => Some(CompressionType.GZIP)
       case "ZSTD" => Some(CompressionType.ZSTD)
       case _ => None
     }

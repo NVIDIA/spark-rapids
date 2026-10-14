@@ -435,8 +435,7 @@ def schema_to_ddl(spark, schema):
 _BASE_TBLPROPS = {'write.spark.fanout.enabled': False}
 
 # Older Iceberg REST clients, including 1.6.x, do not apply catalog table-default
-# properties when creating a table. Apply supported codecs directly to REST test
-# tables so writes do not fall back to gzip and then to CPU.
+# properties when creating a table. Set zstd directly to preserve the test codec.
 if is_iceberg_rest_catalog():
     _BASE_TBLPROPS.update({
         'write.parquet.compression-codec': 'zstd',
