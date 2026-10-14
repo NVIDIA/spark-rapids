@@ -20,15 +20,18 @@ spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.rapids.execution.python.shims
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
+import java.util.Collections
 
 import com.nvidia.spark.rapids.FQSuiteName
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 
-import org.apache.spark.api.python.{PythonEvalType, PythonWorkerUtils}
+import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType, PythonWorkerUtils,
+  SimplePythonFunction}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.util.CollectionAccumulator
 
 class GpuGroupedPythonRunnerFactorySuite
     extends AnyFunSuite with BeforeAndAfterAll with FQSuiteName {
@@ -78,6 +81,22 @@ class GpuGroupedPythonRunnerFactorySuite
     }
   }
 
+  // Constructor-only fixtures: no Python worker is started.
+  private def runnerFunctions: Seq[(ChainedPythonFunctions, Long)] = {
+    val function = new SimplePythonFunction(
+      Array.emptyByteArray,
+      Collections.emptyMap[String, String](),
+      Collections.emptyList[String](),
+      "python",
+      "3",
+      Collections.emptyList(),
+      new CollectionAccumulator[Array[Byte]]())
+    Seq(ChainedPythonFunctions(Seq(function)) -> 0L)
+  }
+
+  // One zero-argument function matches the empty input schemas used below.
+  private def runnerArgOffsets: Array[Array[Int]] = Array(Array.emptyIntArray)
+
   private def getRunner(
       zeroConfEnabled: Boolean,
       arrowSlicingEnabled: Boolean,
@@ -92,8 +111,8 @@ class GpuGroupedPythonRunnerFactorySuite
 
     GpuGroupedPythonRunnerFactory(
       conf,
-      chainedFunc = Seq.empty,
-      argOffsets = Array.empty,
+      chainedFunc = runnerFunctions,
+      argOffsets = runnerArgOffsets,
       dedupAttrs = new StructType(),
       pythonOutputSchema = new StructType(),
       evalType = PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF).getRunner()
@@ -122,9 +141,9 @@ class GpuGroupedPythonRunnerFactorySuite
 
   test("non-grouped runners retain Python UDF logging configuration") {
     val arrowRunner = new GpuArrowPythonRunner(
-      funcs = Seq.empty,
+      funcs = runnerFunctions,
       evalType = PythonEvalType.SQL_SCALAR_PANDAS_UDF,
-      argOffsets = Array.empty,
+      argOffsets = runnerArgOffsets,
       pythonInSchema = new StructType(),
       timeZoneId = "UTC",
       conf = Map("framingTestKey" -> "framingTestValue"),
@@ -137,9 +156,9 @@ class GpuGroupedPythonRunnerFactorySuite
     assert(arrowRunner.runnerConf("framingTestKey") === "framingTestValue")
 
     val coGroupedRunner = new GpuCoGroupedArrowPythonRunner(
-      funcs = Seq.empty,
+      funcs = runnerFunctions,
       evalType = PythonEvalType.SQL_COGROUPED_MAP_PANDAS_UDF,
-      argOffsets = Array.empty,
+      argOffsets = runnerArgOffsets,
       leftSchema = new StructType(),
       rightSchema = new StructType(),
       timeZoneId = "UTC",
