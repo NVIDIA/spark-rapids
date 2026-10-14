@@ -56,20 +56,23 @@ when selection or initialization fails.
 
 ## Artifact roles
 
-The private repository contains a standalone Maven subproject with three Java 8 artifacts. They do
+The private repository contains a standalone Maven subproject with four Java 8 artifacts. They do
 not inherit the private repository's Spark shim, Scala, or classified-output build settings:
 
 | Artifact | Role | Dependency direction |
 | --- | --- | --- |
 | `cudf-spark-history-metrics-api` | Planning contract, governed production catalog, no-op store, installation/registration holder, and provider SPI | Consumer-facing base with no Spark or Scala dependency |
-| `cudf-spark-history-metrics-local` | Optional SQLite-backed provider with isolated memory and durable local-file modes | Depends on the metrics API and exposes SQLite JDBC as a runtime dependency; has no Spark or Scala dependency |
+| `cudf-spark-history-metrics-relational-core` | Database-neutral relational history semantics | Depends on the metrics API |
+| `cudf-spark-history-metrics-local` | SQLite-backed provider with isolated memory and durable local-file modes | Depends on the metrics API, relational core and SQLite JDBC; has no Spark or Scala dependency |
 | `cudf-spark-history-metrics-tck` | Reusable provider-conformance fixtures and suites | Test dependency for provider implementations |
 
-Use artifacts built from a compatible private-project revision. The three unsuffixed, unclassified
-artifacts are built once from their standalone subproject and shared by both Scala builds. Depending
-on the API leaves `MetricStores.current()` on its non-null no-op implementation. The local provider
-is not a normal SQL plugin dependency and is not included merely because the RAPIDS plugin is
-present.
+Use artifacts built from a compatible private-project revision. The unsuffixed, unclassified
+artifacts are built once from their standalone subproject and shared by both Scala builds. The RAPIDS
+distribution bundles the API, local provider, relational core and SQLite JDBC runtime, including its
+native libraries and service metadata. The TCK is test support and is not bundled. No additional
+history jars are required to use the bundled local provider. Packaging does not enable it:
+`MetricStores.current()` remains on its non-null no-op implementation until a provider is selected
+and successfully initialized.
 
 The history project belongs to neither private Scala reactor. Private developers verify or install it
 directly with `mvn -f history-metrics/pom.xml clean verify` or `clean install`.
@@ -80,16 +83,16 @@ Spark shim and Scala matrices. Both public Scala builds then resolve the same ex
 unique snapshot coordinate so an older local or remote snapshot cannot satisfy the dependency
 silently.
 
-The local artifact is thin and does not shade SQLite native libraries. Its qualified MVP runtime
-dependency is `org.xerial:sqlite-jdbc:3.53.4.0`. Normal dependency resolution, including
-`--packages`, supplies it transitively. A deployment using only `--jars` must put both the local
-provider jar and that SQLite JDBC artifact on the driver classpath.
+The standalone local artifact is thin. Its qualified MVP runtime dependency is
+`org.xerial:sqlite-jdbc:3.53.4.0`. The RAPIDS distribution packages that dependency without relocating
+its JNI classes or native-library resources. Applications using the standalone provider outside the
+RAPIDS distribution must resolve its runtime dependencies themselves.
 
 ## Select and configure the local provider
 
 `spark.rapids.sql.history.metrics.provider` selects a provider by its case-insensitive service name.
-The default value `none` keeps the built-in no-op store. To select the local provider, add its
-separate jar and runtime dependency to the driver classpath and set:
+The default value `none` keeps the built-in no-op store without loading a provider. To select the
+bundled local provider, set:
 
 ```
 spark.rapids.sql.history.metrics.provider=local
@@ -102,7 +105,7 @@ The API does not filter it or define keys for other providers. It has no direct 
 dependency, so the same artifact is binary-compatible with the Scala 2.12 and 2.13 distributions.
 Provider jars must not bundle Spark or the history metrics API.
 
-Providers may be placed in the application jar or supplied before driver startup through `--jars`,
+Custom providers may be placed in the application jar or supplied before driver startup through `--jars`,
 `spark.jars`, `--packages`, `--driver-class-path`, `spark.driver.extraClassPath`, or an
 equivalent cluster library mechanism. The provider and RAPIDS distribution must be visible through
 compatible driver class loaders. In particular, do not put the provider only on the parent driver

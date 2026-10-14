@@ -1184,7 +1184,6 @@
         <guava.cdh.version>30.0-jre</guava.cdh.version>
         <arrow.cdh.version>2.0.0</arrow.cdh.version>
         <slf4j.version>1.7.30</slf4j.version>
-        <log4j.version>2.17.2</log4j.version>
         <flatbuffers.java.version>1.11.0</flatbuffers.java.version>
         <hadoop.client.version>3.3.1</hadoop.client.version>
         <scala.local-lib.path>org/scala-lang/scala-library/${scala.version}/scala-library-${scala.version}.jar</scala.local-lib.path>
@@ -1310,11 +1309,6 @@
                 <groupId>org.openucx</groupId>
                 <artifactId>jucx</artifactId>
                 <version>${ucx.version}</version>
-            </dependency>
-            <dependency>
-              <groupId>org.apache.logging.log4j</groupId>
-              <artifactId>log4j-api</artifactId>
-              <version>${log4j.version}</version>
             </dependency>
             <dependency>
               <groupId>org.slf4j</groupId>

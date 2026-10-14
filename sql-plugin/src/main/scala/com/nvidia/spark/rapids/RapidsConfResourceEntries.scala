@@ -388,7 +388,9 @@ val GPU_COREDUMP_PIPE_PATTERN = conf("spark.rapids.gpu.coreDump.pipePattern")
 
   val HISTORY_METRICS_PROVIDER = conf("spark.rapids.sql.history.metrics.provider")
     .doc("Selects the driver-side history metrics provider by name. The default 'none' uses " +
-      "the built-in no-op store. Other providers must be present on the driver classpath.")
+      "the built-in no-op store. The local SQLite provider is bundled; other providers " +
+      "must be present on the driver classpath.")
+    .sinceVersion(ConfVersionInfo.UNRELEASED_VERSION)
     .startupOnly()
     .stringConf
     .checkValue(v => v.trim.nonEmpty, "History metrics provider name must not be empty")
