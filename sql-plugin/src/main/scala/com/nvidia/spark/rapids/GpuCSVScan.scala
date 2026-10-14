@@ -223,8 +223,20 @@ object GpuCSVScan extends Logging {
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
 
-      // CORRECTED parses a date directly to epoch days, so the session timezone has no effect.
-      // Keep the conservative non-UTC fallback for all other parser policies.
+      // For date type, whether the timezone needs to be checked depends on the time parser policy.
+      //
+      // In CSV, Spark's UnivocityParser uses DateFormatter to parse a string as DateType. Under
+      // CORRECTED, DateFormatter parses directly to proleptic Gregorian epoch days. It does not
+      // convert through java.util.Date, so the session timezone has no effect.
+      //
+      // Under LEGACY, DateFormatter uses LegacyFastDateFormatter, which is based on Apache Commons
+      // FastDateFormat. It parses into java.util.Date based on the JVM default timezone, then
+      // converts it to java.sql.Date. Spark's date conversion utilities finally rebase Julian days
+      // to proleptic Gregorian days considering the offset to UTC, so timezone can affect the
+      // result.
+      //
+      // EXCEPTION may also invoke the legacy formatter when comparing parser behavior. Therefore,
+      // keep the conservative non-UTC fallback for LEGACY and EXCEPTION.
       if (GpuOverrides.getTimeParserPolicy != CorrectedTimeParserPolicy &&
           !GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
