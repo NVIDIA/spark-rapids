@@ -1214,14 +1214,21 @@ object UCX {
     }
   }
 
+  // builds the completion of each send; a test stands in for it
+  private val newCompletion: UcxCallback => SendCompletion = new SendCompletion(_)
+
   /**
    * Runs the task of one send, which allocates its header and hands the send to JUCX with the
    * given completion. If the task throws, the send's failure is reported once, so that its
    * transaction completes, and the error is rethrown for the progress thread to log. The real
    * case is an `OutOfMemoryError` allocating the header, hence the catch of `Throwable`.
+   * @param completionOf builds the send's completion
    */
-  private[shuffle] def sendOrReport(cb: UcxCallback)(send: SendCompletion => Unit): Unit = {
-    val completion = new SendCompletion(cb)
+  private[shuffle] def sendOrReport(
+      cb: UcxCallback,
+      completionOf: UcxCallback => SendCompletion = newCompletion)(
+      send: SendCompletion => Unit): Unit = {
+    val completion = completionOf(cb)
     try {
       send(completion)
     } catch {
