@@ -1486,6 +1486,31 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("close does not wait for an error reply whose send threw") {
+    val requestTx = makeTx(1)
+    doThrow(new IllegalStateException("respond failed in test"))
+      .when(requestTx).respond(any(), any())
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    withGoneStateOnSendLoop(requestTx, sendBuffer) { (server, state, replies) =>
+      server.addToContinueQueue(Seq(state))
+      verify(requestTx, timeout(TimeUnit.SECONDS.toMillis(awaitSeconds))).close()
+      // close waits for the replies the server let through, so it runs where a hang fails it
+      val closer = Executors.newSingleThreadExecutor()
+      val closed = new CountDownLatch(1)
+      try {
+        closer.execute(() => {
+          server.close()
+          closed.countDown()
+        })
+        assert(closed.await(awaitSeconds, TimeUnit.SECONDS),
+          "close kept waiting for an error reply whose send threw")
+      } finally {
+        closer.shutdownNow()
+      }
+      replies.synchronized(replies.foreach(reply => verify(reply, times(1)).close()))
+    }
+  }
+
   test("a missing-output warning names the first requests and counts the rest") {
     def request(executorId: Long): (Long, Long) = (executorId, executorId << 8)
     def named(executorId: Long): String =
