@@ -164,4 +164,18 @@ fi
 printf '{"phase":"FAILED","runtime":"%s","reason":"%s"}\n' "$1" "$reason" > "$status_file"
 printf 'Spark readiness %s: FAILED (%s, spark exit=%s, log exit=%s)\n' \
     "$1" "$reason" "${statuses[0]}" "${statuses[1]}"
+printf '%s\n' \
+    'This pre-test probe runs a simple Spark job with the cuDF-Spark plugin disabled.' \
+    'Product tests for this runtime have not started; this is not a product-test failure.'
+if [[ "$reason" == SPARK_STARTUP_UNCLASSIFIED ]]; then
+    printf '%s\n' \
+        'No known infrastructure error signature was identified; the cause is still unclassified.' \
+        'Check the Spark error and log-write status above, then JVM/heap settings, runtime configuration, and host resources.'
+else
+    printf '%s\n' \
+        'A host filesystem error signature was detected; inspect the disk and I/O diagnostics above.'
+fi
+printf '%s\n' \
+    'This result alone does not implicate PR product code or prove a cloud-provider fault; CI/setup/probe changes may still be relevant.' \
+    'For support, include the Spark error, UTC time, cloud instance identity/IPs, and host/JVM diagnostics printed above.'
 exit 1
