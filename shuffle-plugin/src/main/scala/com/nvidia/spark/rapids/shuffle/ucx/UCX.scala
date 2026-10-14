@@ -1123,8 +1123,8 @@ object UCX {
   // at -100, and -200 is an unknown executor. A literal, since UcsConstants loads the natives.
   private[shuffle] val SEND_TASK_FAILED = -201
 
-  // What a send task reports when it failed before it could build its completion, as when the
-  // heap ran out: fixed text, since text built from the error would allocate.
+  // What a send task reports when the heap ran out, before it could build its completion or
+  // while it built text from the error: fixed text, since that text would allocate.
   private val SEND_TASK_FAILED_TEXT = "The send could not be handed to UCX"
 
   /**
@@ -1182,12 +1182,18 @@ object UCX {
      */
     private[ucx] def reportThrow(error: Throwable): Unit = {
       if (!ended && !taken && !(handedOff && error.isInstanceOf[VirtualMachineError])) {
+        val text = try {
+          s"$SEND_TASK_FAILED_TEXT: $error"
+        } catch {
+          // the heap ran out again, as it may have for the error itself
+          case _: OutOfMemoryError => SEND_TASK_FAILED_TEXT
+        }
         ended = true
         val status = error match {
           case e: UcxException if e.getStatus < 0 => e.getStatus
           case _ => SEND_TASK_FAILED
         }
-        cb.onError(status, s"The send could not be handed to UCX: $error")
+        cb.onError(status, text)
       }
     }
   }
