@@ -550,20 +550,28 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
   private def sendActiveMessage(executorId: Long, am: UCXActiveMessage,
       dataAddress: Long, dataSize: Long, cb: UcxCallback, isGpu: Boolean): Unit = {
-    onWorkerThreadAsync(() => {
+    // Built here, where a throw is a send that never started, so that the task allocates nothing
+    // on the progress thread before the catch that reports its failure.
+    val send: UCX.SendCompletion => Unit = completion => {
       val endpoint = endpointManager.getEndpointByExecutorId(executorId)
       if (endpoint == null) {
-        cb.onError(-200,
+        completion.onError(-200,
           s"Trying to send a message to an executor that doesn't exist $executorId")
       } else {
-        sendActiveMessage(endpoint, am, dataAddress, dataSize, cb, isGpu)
+        sendOnEndpoint(endpoint, am, dataAddress, dataSize, completion, isGpu)
       }
-    })
+    }
+    onWorkerThreadAsync(() => UCX.sendOrReport(cb)(send))
   }
 
   private def sendActiveMessage(ep: UcpEndpoint, am: UCXActiveMessage,
                                 dataAddress: Long, dataSize: Long,
                                 cb: UcxCallback, isGpu: Boolean): Unit = {
+    UCX.sendOrReport(cb)(sendOnEndpoint(ep, am, dataAddress, dataSize, _, isGpu))
+  }
+
+  private def sendOnEndpoint(ep: UcpEndpoint, am: UCXActiveMessage,
+      dataAddress: Long, dataSize: Long, completion: UCX.SendCompletion, isGpu: Boolean): Unit = {
     val flags = if (am.forceRndv) {
       UcpConstants.UCP_AM_SEND_FLAG_RNDV
     } else {
@@ -577,7 +585,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     }
 
     withResource(new NvtxRange("AM Send", NvtxColor.GREEN)) { _ =>
-      UCX.sendTask(am.header, cb, () => new UcpRequestParams().setMemoryType(memType)) {
+      UCX.sendTask(am.header, completion,
+          () => new UcpRequestParams().setMemoryType(memType)) {
         (headerAddress, params, completion) =>
           ep.sendAmNonBlocking(
             am.activeMessageId,
@@ -1185,9 +1194,11 @@ object UCX {
   }
 
   /**
-   * The task of one send: it allocates the send's header, then hands the send to JUCX through
-   * `send`, with the header's address, what `prepare` built and the completion to give JUCX.
+   * The task of one send, run inside `sendOrReport`: it allocates the send's header, then hands
+   * the send to JUCX through `send`, with the header's address, what `prepare` built and the
+   * completion to give JUCX.
    * @param header the active message's header value
+   * @param completion the send's completion, from `sendOrReport`
    * @param prepare builds what the send needs besides its header, such as its request
    *                parameters
    * @param allocate allocates the header; a test stands in for the direct allocation
@@ -1195,27 +1206,25 @@ object UCX {
    */
   private[shuffle] def sendTask[P](
       header: Long,
-      cb: UcxCallback,
+      completion: SendCompletion,
       prepare: () => P,
       allocate: Int => ByteBuffer = ByteBuffer.allocateDirect,
       addressOf: ByteBuffer => Long = TransportUtils.getAddress)(
       send: SendToJucx[P]): Unit = {
-    sendOrReport(cb) { completion =>
-      // This isn't coming from the pool right now because it would be a bit of a
-      // waste to get a larger hard-partitioned buffer just for 8 bytes.
-      // TODO: since we no longer have metadata limits, the pool can be managed using the
-      //   address-space allocator, so we should obtain this direct buffer from that pool
-      val buffer = allocate(ACTIVE_MESSAGE_HEADER_SIZE.toInt)
-      completion.header = buffer
-      buffer.putLong(header)
-      buffer.rewind()
-      // all that can fail before JUCX is called comes before the hand-off, so that it is
-      // reported: taking the address boxes it, and nothing after the hand-off allocates
-      val address = addressOf(buffer)
-      val prepared = prepare()
-      completion.handOff()
-      send(address, prepared, completion)
-    }
+    // This isn't coming from the pool right now because it would be a bit of a
+    // waste to get a larger hard-partitioned buffer just for 8 bytes.
+    // TODO: since we no longer have metadata limits, the pool can be managed using the
+    //   address-space allocator, so we should obtain this direct buffer from that pool
+    val buffer = allocate(ACTIVE_MESSAGE_HEADER_SIZE.toInt)
+    completion.header = buffer
+    buffer.putLong(header)
+    buffer.rewind()
+    // all that can fail before JUCX is called comes before the hand-off, so that it is
+    // reported: taking the address boxes it, and nothing after the hand-off allocates
+    val address = addressOf(buffer)
+    val prepared = prepare()
+    completion.handOff()
+    send(address, prepared, completion)
   }
 
   // builds the completion of each send; a test stands in for it

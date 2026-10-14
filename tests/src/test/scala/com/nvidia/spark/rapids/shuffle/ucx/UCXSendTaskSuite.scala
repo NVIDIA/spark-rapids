@@ -133,7 +133,7 @@ class UCXSendTaskSuite extends AnyFunSuite {
     val ended = new Ended
     var header: ByteBuffer = null
     var sent: (Long, String, Long) = null
-    UCX.sendTask(0x1234L, ended, () => "params",
+    UCX.sendOrReport(ended)(UCX.sendTask(0x1234L, _, () => "params",
         allocate = size => {
           header = ByteBuffer.allocateDirect(size)
           header
@@ -144,7 +144,7 @@ class UCXSendTaskSuite extends AnyFunSuite {
         }) { (address, prepared, completion) =>
       sent = (address, prepared, header.getLong(0))
       completion.onSuccess(null)
-    }
+    })
     assertResult((42L, "params", 0x1234L))(sent)
     assertResult(Seq("success"))(ended.calls)
   }
@@ -153,8 +153,8 @@ class UCXSendTaskSuite extends AnyFunSuite {
     val ended = new Ended
     val oom = new OutOfMemoryError("Direct buffer memory")
     var called = false
-    val thrown = intercept[OutOfMemoryError](UCX.sendTask(1L, ended, () => (),
-      allocate = _ => throw oom)((_, _, _) => called = true))
+    val thrown = intercept[OutOfMemoryError](UCX.sendOrReport(ended)(UCX.sendTask(1L, _,
+      () => (), allocate = _ => throw oom)((_, _, _) => called = true)))
     assert(thrown eq oom)
     assert(!called)
     assertResult(1)(ended.calls.size)
@@ -164,8 +164,8 @@ class UCXSendTaskSuite extends AnyFunSuite {
     val ended = new Ended
     val oom = new OutOfMemoryError("Java heap space")
     var called = false
-    val thrown = intercept[OutOfMemoryError](
-      UCX.sendTask[Unit](1L, ended, () => throw oom)((_, _, _) => called = true))
+    val thrown = intercept[OutOfMemoryError](UCX.sendOrReport(ended)(
+      UCX.sendTask[Unit](1L, _, () => throw oom)((_, _, _) => called = true)))
     assert(thrown eq oom)
     assert(!called)
     assertResult(1)(ended.calls.size)
@@ -177,8 +177,8 @@ class UCXSendTaskSuite extends AnyFunSuite {
     val ended = new Ended
     val oom = new OutOfMemoryError("Java heap space")
     var called = false
-    val thrown = intercept[OutOfMemoryError](UCX.sendTask(1L, ended, () => (),
-      addressOf = _ => throw oom)((_, _, _) => called = true))
+    val thrown = intercept[OutOfMemoryError](UCX.sendOrReport(ended)(UCX.sendTask(1L, _,
+      () => (), addressOf = _ => throw oom)((_, _, _) => called = true)))
     assert(thrown eq oom)
     assert(!called)
     assertResult(1)(ended.calls.size)
