@@ -171,7 +171,7 @@ void databricksTest(String clusterId) {
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
     // TODO(#16281): Re-enable DBR 18.3 integration tests and remove readiness-only activation.
     def readinessOnly = env.DB_RUNTIME == '18.3'
-    def stageName = readinessOnly ? "Readiness only against $SPARK_MAJOR DB" :
+    def stageName = readinessOnly ? "Compile only against ${SPARK_MAJOR}DB" :
         "Test against $SPARK_MAJOR DB"
     try {
         stage(stageName) {
