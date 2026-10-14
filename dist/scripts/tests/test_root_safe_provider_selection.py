@@ -32,6 +32,7 @@ OLDER_ONLY = "org/apache/iceberg/OlderOnly.class"
 NEWER_IMPL = "org/apache/iceberg/NewerImpl.class"
 OLDER_IMPL = "org/apache/iceberg/OlderImpl.class"
 PRIVATE_BUILD_INFO = "cudf-spark-private-version-info.properties"
+BUILD_INFO_EVENT = "com/nvidia/spark/rapids/SparkRapidsBuildInfoEvent.class"
 
 
 def write_jar(path, entries):
@@ -49,7 +50,9 @@ def artifact_path(base_dir, artifact, buildver):
 
 def create_artifacts(base_dir):
     for buildver in ("353", "413"):
-        write_jar(artifact_path(base_dir, "sql-plugin-api", buildver), {})
+        write_jar(artifact_path(base_dir, "sql-plugin-api", buildver), {
+            BUILD_INFO_EVENT: b"runtime-independent-build-info-event",
+        })
 
     write_jar(artifact_path(base_dir, "iceberg-common", "413"), {
         SHARED: b"module-shared-413",
@@ -169,6 +172,9 @@ class RootSafeProviderSelectionTest(unittest.TestCase):
 
     def assert_provider_selection(self, target_dir):
         parallel_world = target_dir / "parallel-world"
+        self.assertEqual(
+            b"runtime-independent-build-info-event",
+            read_bytes(parallel_world, BUILD_INFO_EVENT))
         self.assertEqual(b"aggregator-shared-413", read_bytes(parallel_world, SHARED))
         self.assertEqual(b"aggregator-newer-only", read_bytes(parallel_world, NEWER_ONLY))
         self.assertEqual(b"aggregator-older-only", read_bytes(parallel_world, OLDER_ONLY))
@@ -202,7 +208,7 @@ class RootSafeProviderSelectionTest(unittest.TestCase):
         result = subprocess.run([str(BINARY_DEDUPE)], cwd=target_dir, env=env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 universal_newlines=True)
-        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        return result
 
     def assert_final_layout(self, target_dir):
         parallel_world = target_dir / "parallel-world"
@@ -224,7 +230,8 @@ class RootSafeProviderSelectionTest(unittest.TestCase):
             with self.subTest(assembler=name):
                 target_dir = assemble()
                 self.assert_provider_selection(target_dir)
-                self.run_dedupe(target_dir)
+                result = self.run_dedupe(target_dir)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assert_final_layout(target_dir)
 
     def test_rejects_mixed_private_revisions_for_both_assemblers(self):
@@ -262,6 +269,18 @@ class RootSafeProviderSelectionTest(unittest.TestCase):
                         target_name="conventional-%s-target" % missing_key)
 
                 create_artifacts(self.project_dir)
+
+    def test_dedupe_rejects_runtime_dependent_build_info_event(self):
+        target_dir = self.assemble_standard()
+        event = target_dir / "parallel-world" / "spark353" / BUILD_INFO_EVENT
+        event.write_bytes(b"runtime-dependent-build-info-event")
+
+        result = self.run_dedupe(target_dir)
+
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn(
+            "%s is not bitwise-identical across shims" % BUILD_INFO_EVENT,
+            result.stderr)
 
 
 if __name__ == "__main__":
