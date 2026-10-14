@@ -2040,6 +2040,49 @@ def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
     # there's no guarantees on the task partitioning due to random sampling.
 
 
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_oss_delta_lake_42_or_43(), reason="Requires Delta 4.2+ CDF writes")
+@pytest.mark.parametrize("operation", ["add_only", "remove_only"])
+def test_delta_cdf_non_data_changing_write(spark_tmp_path, operation):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = copy_and_update(_delta_confs, {
+        "spark.databricks.delta.autoCompact.enabled": "false",
+        "spark.databricks.delta.optimizeWrite.enabled": "false"
+    })
+
+    def data(spark):
+        return gen_df(spark, [("id", long_gen)], length=16).coalesce(1)
+
+    def setup_tables(spark):
+        for path in [data_path + "/CPU", data_path + "/GPU"]:
+            data(spark).write.format("delta").option("delta.enableChangeDataFeed", "true") \
+                .option("delta.enableDeletionVectors", "false").save(path)
+
+    def write(spark, path):
+        # dataChange=false is a caller assertion; these deliberately isolated commits
+        # exercise add-only/remove-only action handling, not logical rearrangement.
+        df = data(spark) if operation == "add_only" else data(spark).limit(0)
+        mode = "append" if operation == "add_only" else "overwrite"
+        df.write.format("delta").mode(mode).option("dataChange", "false").save(path)
+
+    with_cpu_session(setup_tables, conf=conf)
+    assert_gpu_and_cpu_writes_are_equal_collect(write, read_delta_path, data_path, conf=conf)
+
+    def check(spark):
+        cdf_results = []
+        for path in [data_path + "/CPU", data_path + "/GPU"]:
+            cdf_results.append(assert_delta_non_data_changing_commit(
+                spark, path, {"add"} if operation == "add_only" else {"remove"}))
+            assert spark.read.format("delta").load(path).count() == \
+                (32 if operation == "add_only" else 0)
+        assert_equal(*cdf_results)
+        assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path)
+
+    with_cpu_session(check, conf=conf)
+
+
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
 @delta_lake
 @ignore_order
