@@ -125,7 +125,11 @@ class GpuSparkPositionDeltaWrite(cpu: DeltaWrite)
     val dataSparkTypeWithFieldIds = GpuSparkPositionDeltaWrite.dataWriterSparkTypeFor(
       command, context)
 
-    // Iceberg timestamps use int64 microseconds regardless of Spark's Parquet timestamp config.
+    // Iceberg's Parquet writers always encode timestamps as INT64 microseconds and preserve
+    // proleptic-Gregorian values; they do not inherit Spark's Parquet timestamp or rebase settings.
+    // The GPU path reuses Spark's Parquet writer, so force the equivalent physical type and rebase
+    // mode here. Otherwise, session settings such as INT96 or LEGACY would change Iceberg's file
+    // semantics.
     val outputWriterFactory = new GpuParquetFileFormat().prepareWriteWithTimestampOverrides(
       SparkSession.active,
       job,
