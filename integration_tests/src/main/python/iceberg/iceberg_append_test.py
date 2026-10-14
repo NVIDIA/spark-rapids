@@ -590,8 +590,15 @@ def test_insert_into_table_honors_iceberg_compression_codec(format_version,
             f"INSERT INTO {table_name} SELECT id, CAST(id AS STRING) FROM range(20000)").collect(),
         conf=conf)
 
-    with_cpu_session(
-        lambda spark: assert_iceberg_files_use_codec(spark, table_name, expected_codec))
+    def verify_output(spark):
+        assert_iceberg_files_use_codec(spark, table_name, expected_codec)
+        if table_codec == "gzip":
+            expected = spark.range(20000).selectExpr(
+                "CAST(id AS INT) AS id", "CAST(id AS STRING) AS name").collect()
+            actual = spark.table(table_name).collect()
+            assert_equal_with_local_sort(expected, actual)
+
+    with_cpu_session(verify_output)
 
 
 # A table whose Iceberg-resolved codec is unsupported (e.g. lz4) must fall back to the CPU at plan
