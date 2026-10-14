@@ -29,9 +29,10 @@ import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shuffle._
 import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
-import org.mockito.ArgumentMatchers
+import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong, contains, isNull}
 import org.mockito.Mockito._
+import org.openucx.jucx.UcxCallback
 
 import org.apache.spark.shuffle.rapids.RapidsShuffleFetchFailedException
 import org.apache.spark.storage.{BlockId, BlockManagerId}
@@ -50,7 +51,7 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
 
   /** A client of executor 2 whose requests are answered by the test rather than sent. */
   private class Requester {
-    private val ucx = mock[UCX]
+    val ucx: UCX = mock[UCX]
     private val txIds = new AtomicLong()
     when(ucx.getNextTransactionId).thenAnswer(_ => txIds.incrementAndGet())
     private val unanswered = new LinkedBlockingQueue[UCXAmCallback]()
@@ -182,6 +183,34 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       requester.answer(ShuffleMetadata.buildTransferErrorResponse(Seq(2), reason))
       verify(state, times(1)).close()
       assertResult(1)(closes.get)
+    }
+  }
+
+  test("a transfer request whose send task throws fails its readers") {
+    RmmSpark.removeAllCurrentThreadAssociation()
+    val requester = new Requester
+    val (first, second) = (reader(), reader())
+    val requests = Seq(
+      PendingTransferRequest(requester.client, tableMeta(1, 1000), first),
+      PendingTransferRequest(requester.client, tableMeta(2, 2000), second))
+    withBounceBuffer(4096) { bounceBuffer =>
+      requester.client.doIssueBufferReceives(
+        new BufferReceiveState(123L, bounceBuffer, requests, () => ()))
+      val send = ArgumentCaptor.forClass(classOf[UcxCallback])
+      verify(requester.ucx, times(1)).sendActiveMessage(
+        anyLong(), any[UCXActiveMessage](), any[ByteBuffer](), send.capture())
+
+      // the request's task, on the progress thread, cannot allocate the send's header
+      val oom = new OutOfMemoryError("Direct buffer memory")
+      intercept[OutOfMemoryError](UCX.sendOrReport(send.getValue)(_ => throw oom))
+
+      // Each reader is told, rather than waiting until it times out. The receive state stays,
+      // as it does for any transfer request whose own send fails (#7545).
+      Seq(first, second).foreach { handler =>
+        verify(handler, times(1)).transferError(contains("Direct buffer memory"), isNull())
+      }
+      // and the response that will not come is no longer waited for
+      verify(requester.ucx, times(1)).unregisterResponseHandler(any())
     }
   }
 

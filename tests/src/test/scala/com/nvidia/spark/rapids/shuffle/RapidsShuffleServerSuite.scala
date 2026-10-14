@@ -907,6 +907,90 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("a data send whose send task throws ends its state, which leaves the in-flight set") {
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val requestTx = makeTx(1)
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handle = makeHandle(tableMeta, () => mock[DeviceMemoryBuffer])
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+      // the real UCX server connection and transaction, with UCX mocked to capture the callback
+      // that the send's task gets
+      val ucx = mock[UCX]
+      val server = newServer(requestHandler,
+        new UCXServerConnection(ucx, mock[UCXShuffleTransport]))
+      val state = new BufferSendState(requestTx, sendBuffer, requestHandler, null)
+      server.doHandleTransferRequest(Seq(state))
+      val send = ArgumentCaptor.forClass(classOf[UcxCallback])
+      verify(ucx, times(1)).sendActiveMessage(
+        anyLong(), any[UCXActiveMessage](), any[MemoryBuffer](), send.capture())
+      assertResult(1)(server.inFlightCount)
+      assertResult(None)(state.endedWith)
+
+      // the task, on the progress thread, cannot allocate the send's header
+      val oom = new OutOfMemoryError("Direct buffer memory")
+      intercept[OutOfMemoryError](UCX.sendOrReport(send.getValue)(_ => throw oom))
+
+      assertResult(Some(BufferSendState.SendFailed))(state.endedWith)
+      assertResult(0)(server.inFlightCount)
+      verify(sendBuffer, times(1)).close()
+      verify(requestTx, times(1)).close()
+      // a failed data send gets no reply
+      verify(requestTx, never()).respond(any(), any())
+    }
+  }
+
+  test("an error reply whose send task throws is released once") {
+    val ucx = mock[UCX]
+    val connection = new UCXServerConnection(ucx, mock[UCXShuffleTransport])
+    val requestTx = makeTx(1)
+    doAnswer(new Answer[Transaction] {
+      override def answer(invocation: InvocationOnMock): Transaction =
+        connection.send(2L, MessageType.TransferRequest, 0L,
+          invocation.getArgument[ByteBuffer](0), invocation.getArgument[TransactionCallback](1))
+    }).when(requestTx).respond(any(), any())
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      // the buffer is gone, so that the request ends with an error reply
+      val handle = makeHandle(tableMeta,
+        () => throw new FileNotFoundException("spill file deleted in test"))
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+      when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(1),
+        ArgumentMatchers.eq(handle))).thenReturn(true)
+      val server = newServer(requestHandler, mock[ServerConnection])
+      val replies = new ArrayBuffer[RefCountedDirectByteBuffer]()
+      val state = spy(new BufferSendState(
+        requestTx, makeSendBuffer(mock[DeviceMemoryBuffer]), requestHandler, null))
+      doAnswer(new Answer[RefCountedDirectByteBuffer] {
+        override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
+          val reply = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
+          replies += reply
+          reply
+        }
+      }).when(state).getErrorResponse(any())
+
+      server.doHandleTransferRequest(Seq(state))
+      val send = ArgumentCaptor.forClass(classOf[UcxCallback])
+      verify(ucx, times(1)).sendActiveMessage(
+        anyLong(), any[UCXActiveMessage](), any[ByteBuffer](), send.capture())
+      assertResult(1)(replies.size)
+      verify(replies.head, never()).close()
+
+      // the reply's task, on the progress thread, cannot allocate the send's header
+      val oom = new OutOfMemoryError("Direct buffer memory")
+      intercept[OutOfMemoryError](UCX.sendOrReport(send.getValue)(_ => throw oom))
+
+      assertResult(Some(BufferSendState.MissingOutput))(state.endedWith)
+      verify(replies.head, times(1)).close()
+      verify(requestTx, times(1)).close()
+    }
+  }
+
   private val releaseErrorLog = "Error while releasing a BufferSendState"
 
   /** Runs `body`, returning what was logged while it ran with its result. */
