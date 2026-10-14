@@ -21,7 +21,7 @@ from conftest import is_not_utc
 from data_gen import *
 from pyspark import StorageLevel
 import pyspark.sql.functions as f
-from spark_session import with_cpu_session, with_gpu_session
+from spark_session import is_before_spark_341, with_cpu_session, with_gpu_session
 from join_test import create_df
 from marks import incompat, allow_non_gpu, ignore_order, disable_ansi_mode, inject_oom
 import pyspark.mllib.linalg as mllib
@@ -455,6 +455,45 @@ def test_cached_groupby_sum_version_specific(enable_vectorized_conf):
 
 _pcbs_serializer = 'com.nvidia.spark.ParquetCachedBatchSerializer'
 _pcbs_enabled = os.environ.get('PYSP_TEST_spark_sql_cache_serializer', '') == _pcbs_serializer
+
+@pytest.mark.skipif(not _pcbs_enabled,
+    reason="requires PCBS lane: "
+           "PYSP_TEST_spark_sql_cache_serializer=com.nvidia.spark.ParquetCachedBatchSerializer")
+@pytest.mark.skipif(is_before_spark_341(), reason='`TIMESTAMP_NTZ` is only supported in Spark 3.4+')
+@allow_non_gpu('ColumnarToRowExec')
+def test_cache_pcbs_cpu_columnar_read_to_gpu():
+    def func(spark):
+        cached = spark.range(10).selectExpr(
+            "cast(id as string) as s",
+            "make_timestamp_ntz(2026, 1, 1, 0, 0, id) as ts").cache()
+        cached.count()
+        return cached.groupBy('s').count()
+
+    conf = {
+        'spark.rapids.sql.exec.InMemoryTableScanExec': 'true',
+        'spark.sql.adaptive.enabled': 'false'
+    }
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        func, exist_classes='HostColumnarToGpu', conf=conf)
+
+
+@pytest.mark.skipif(not _pcbs_enabled,
+    reason="requires PCBS lane: "
+           "PYSP_TEST_spark_sql_cache_serializer=com.nvidia.spark.ParquetCachedBatchSerializer")
+def test_cache_pcbs_cpu_columnar_read_from_cached_dataframe():
+    def func(spark):
+        cached = spark.range(10).selectExpr('id', 'cast(id as string) as s').cache()
+        assert cached.count() == 10
+        assert [row.s for row in cached.collect()] == [str(i) for i in range(10)]
+        assert [row.s for row in cached.select('s').collect()] == [str(i) for i in range(10)]
+
+        derived = cached.select('s').cache()
+        # With AQE disabled, building this cache consumes the first cache's columnar output.
+        assert derived.count() == 10
+        return [row.s for row in derived.select('s').collect()]
+
+    result = with_cpu_session(func, conf={'spark.sql.adaptive.enabled': 'false'})
+    assert_equal(result, [str(i) for i in range(10)])
 
 # Each builder makes a single-partition frame (stable order) whose cached output carries NullType.
 _nulltype_cache_builders = {

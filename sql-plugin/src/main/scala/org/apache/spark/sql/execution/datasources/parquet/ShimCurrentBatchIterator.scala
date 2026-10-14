@@ -24,7 +24,8 @@ import scala.collection.JavaConverters._
 import com.nvidia.spark.CurrentBatchIterator
 import com.nvidia.spark.rapids.parquet.ParquetCachedBatch
 import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
-import com.nvidia.spark.rapids.shims.parquet.ParquetTimestampNTZShims
+import com.nvidia.spark.rapids.shims.parquet.{ParquetLegacyNanoAsLongShims,
+  ParquetTimestampNTZShims}
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.ParquetReadOptions
 import org.apache.parquet.column.page.PageReadStore
@@ -73,6 +74,7 @@ class ShimCurrentBatchIterator(
   config.setBoolean(SQLConf.PARQUET_INT96_AS_TIMESTAMP.key, false)
   config.setBoolean(SQLConf.CASE_SENSITIVE.key, false)
   ParquetTimestampNTZShims.setupTimestampNTZConfig(config, conf)
+  ParquetLegacyNanoAsLongShims.setupLegacyParquetNanosAsLongForPCBS(config)
   val parquetColumn = new ParquetToSparkSchemaConverter(config)
       .convertParquetColumn(reqParquetSchemaInCacheOrder, Option.empty)
 
