@@ -212,6 +212,12 @@ def test_delta_low_shuffle_merge_schema_evolution(
             "WHEN MATCHED THEN UPDATE SET *").collect()
 
     assert_gpu_and_cpu_writes_are_equal_collect(do_merge, read_delta_path, data_path, conf=conf)
+    if use_cdf:
+        changes = [with_cpu_session(
+            lambda spark, run=run: read_delta_path_with_cdf(
+                spark, data_path + "/" + run).collect(), conf=conf)
+            for run in ["CPU", "GPU"]]
+        assert_equal_with_local_sort(*changes)
 
 
 @allow_non_gpu(*delta_meta_allow)
