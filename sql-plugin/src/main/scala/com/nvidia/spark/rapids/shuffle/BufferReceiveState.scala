@@ -108,6 +108,9 @@ class BufferReceiveState(
   // why the server failed this request, until the state ends
   private[this] var serverFailure: String = null
 
+  // set by close, after which a failure the server reports later has nothing left to end
+  private[this] var closed = false
+
   def getBufferWhenReady(finalizeCb: TransportBuffer => Unit, size: Long): Unit =
     synchronized {
       require(transportBuffer.getLength() >= size,
@@ -128,6 +131,7 @@ class BufferReceiveState(
   def getRequests: Seq[PendingTransferRequest] = requests
 
   override def close(): Unit = synchronized {
+    closed = true
     if (bounceBuffer != null) {
       bounceBuffer.close()
     }
@@ -162,12 +166,12 @@ class BufferReceiveState(
   }
 
   /**
-   * Ends this state if the server failed its request and no window is left to consume: until
-   * then, UCX can still write into the bounce buffer. The one caller that ends it gets the
-   * failure, and releases the state.
+   * Ends this state if the server failed its request, no window is left to consume, and nothing
+   * closed it already: until then, UCX can still write into the bounce buffer. The one caller
+   * that ends it gets the failure, and releases the state.
    */
   def takeFailure(): Option[FailedTransfer] = synchronized {
-    if (serverFailure != null && toConsume == 0) {
+    if (serverFailure != null && toConsume == 0 && !closed) {
       val failure = FailedTransfer(serverFailure, requests.drop(received))
       serverFailure = null
       Some(failure)

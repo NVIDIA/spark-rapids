@@ -316,11 +316,13 @@ class RapidsShuffleClient(
               val error = transferResponse.error()
               if (error != null) {
                 // read before the response's buffer is released
-                val failed = (0 until transferResponse.responsesLength()).map { r =>
-                  transferResponse.responses(r).bufferId()
-                }
+                val failedCount = transferResponse.responsesLength()
+                val named = (0 until math.min(failedCount, RapidsShuffleClient.MAX_BUFFERS_NAMED))
+                  .map(r => transferResponse.responses(r).bufferId())
+                val more =
+                  if (failedCount > named.size) s" and ${failedCount - named.size} more" else ""
                 val buffers =
-                  if (failed.isEmpty) "" else s" for shuffle buffers ${failed.mkString(", ")}"
+                  if (named.isEmpty) "" else s" for shuffle buffers ${named.mkString(", ")}$more"
                 asyncOnCopyThread(HandleTransferFailure(toIssue,
                   s"Executor ${connection.getPeerExecutorId} failed the transfer request" +
                     s"$buffers: ${error.reason()}"))
@@ -527,4 +529,9 @@ class RapidsShuffleClient(
     // completed, but it will also remove `handler` from internal tracking in `transport`.
     transport.cancelPending(handler)
   }
+}
+
+object RapidsShuffleClient {
+  // how many failed buffers a reader's error names before it only counts the rest
+  private val MAX_BUFFERS_NAMED = 5
 }
