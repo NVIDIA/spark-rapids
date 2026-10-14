@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.io.{FileNotFoundException, IOException}
 import java.nio.ByteBuffer
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, Executors, TimeUnit}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -30,7 +30,7 @@ import com.nvidia.spark.rapids.shuffle.ucx.{UCX, UCXActiveMessage, UCXServerConn
   UCXShuffleTransport}
 import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
-import org.mockito.ArgumentMatchers.{any, anyLong}
+import org.mockito.ArgumentMatchers.{any, anyInt, anyLong}
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
@@ -1200,6 +1200,85 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       txs.foreach(tx => verify(tx, times(1)).close())
       // the reply's callback threw nothing into the transport's callback wrapper
       assertResult(0)(logs.count(_.startsWith("Detected an exception from user code")))
+    }
+  }
+
+  private val awaitSeconds = 30L
+
+  /**
+   * Starts a server whose send loop runs on a thread of its own, hands it a transfer request as
+   * the transport would, and closes it while the request handler holds the request's lookup or
+   * preparation: past the close's bounded wait for the loop, and past the transport's close,
+   * after which UCX's progress thread runs no more sends. Only then does the held work fail.
+   * @param held counted down by the request handler once it holds the send loop
+   * @param mayFail counted down once the held lookup or preparation may fail
+   */
+  private def failAfterClose(
+      requestHandler: RapidsShuffleRequestHandler,
+      held: CountDownLatch,
+      mayFail: CountDownLatch): (Transaction, SendBounceBuffers) = {
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    when(mockTransport.tryGetSendBounceBuffers(anyLong(), anyInt())).thenReturn(Seq(sendBuffer))
+    val request = makeTx(1)
+    when(request.getStatus).thenReturn(TransactionStatus.Success)
+    val serverConnection = mock[ServerConnection]
+    val requestCallbacks = new ConcurrentHashMap[MessageType.Value, TransactionCallback]()
+    doAnswer(new Answer[Unit] {
+      override def answer(invocation: InvocationOnMock): Unit =
+        requestCallbacks.put(invocation.getArgument[MessageType.Value](0),
+          invocation.getArgument[TransactionCallback](1))
+    }).when(serverConnection).registerRequestHandler(any(), any())
+    val sendLoop = Executors.newSingleThreadExecutor()
+    val server = new RapidsShuffleServer(mockTransport, serverConnection,
+      RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"), requestHandler, mockExecutor,
+      sendLoop, mockConf)
+    try {
+      server.start()
+      requestCallbacks.get(MessageType.TransferRequest)(request)
+      assert(held.await(awaitSeconds, TimeUnit.SECONDS), "the send loop never took the request")
+      server.close()
+      // as the transport does once UCX's progress thread has stopped
+      server.releaseAbandoned(transportStopped = true)
+      mayFail.countDown()
+      verify(request, timeout(TimeUnit.SECONDS.toMillis(awaitSeconds))).close()
+    } finally {
+      mayFail.countDown()
+      sendLoop.shutdownNow()
+    }
+    (request, sendBuffer)
+  }
+
+  test("a lookup that fails after the server closed gets no error reply") {
+    val (held, mayFail) = (new CountDownLatch(1), new CountDownLatch(1))
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenAnswer { _ =>
+      held.countDown()
+      mayFail.await(awaitSeconds, TimeUnit.SECONDS)
+      throw new IllegalStateException("lookup failed in test")
+    }
+    val (request, sendBuffer) = failAfterClose(requestHandler, held, mayFail)
+    // nothing would send a reply, or release it and its transaction
+    verify(request, never()).respond(any(), any())
+    verify(request, times(1)).close()
+    verify(sendBuffer, times(1)).close()
+  }
+
+  test("a preparation that fails after the server closed gets no error reply") {
+    val (held, mayFail) = (new CountDownLatch(1), new CountDownLatch(1))
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handle = makeHandle(tableMeta, () => {
+        held.countDown()
+        mayFail.await(awaitSeconds, TimeUnit.SECONDS)
+        throw new IllegalStateException("preparation failed in test")
+      })
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+      val (request, sendBuffer) = failAfterClose(requestHandler, held, mayFail)
+      verify(request, never()).respond(any(), any())
+      verify(request, times(1)).close()
+      verify(sendBuffer, times(1)).close()
     }
   }
 
