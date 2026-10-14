@@ -17,16 +17,19 @@
 package com.nvidia.spark.rapids.shuffle.ucx
 
 import java.nio.ByteBuffer
-import java.util.concurrent.{LinkedBlockingQueue, TimeUnit}
+import java.util.concurrent.{ConcurrentHashMap, Executors, LinkedBlockingQueue, TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicReference}
 
 import scala.collection.mutable.ArrayBuffer
 
-import com.nvidia.spark.rapids.{MetaUtils, ShuffleMetadata}
+import ai.rapids.cudf.DeviceMemoryBuffer
+import com.nvidia.spark.rapids.{MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shuffle._
-import org.mockito.ArgumentMatchers.{any, contains, isNull}
+import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
+import org.mockito.ArgumentMatchers
+import org.mockito.ArgumentMatchers.{any, anyInt, anyLong, contains, isNull}
 import org.mockito.Mockito._
 
 import org.apache.spark.shuffle.rapids.RapidsShuffleFetchFailedException
@@ -233,6 +236,190 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       assert(bounceBuffers.forall(_.isClosed))
       assertResult(1)(closes.get)
     } finally {
+      RmmSpark.taskDone(taskId)
+      bounceBuffers.filterNot(_.isClosed).foreach(_.close())
+    }
+  }
+
+  /**
+   * A clock that a server's OOM backoff advances and a reader waits on. When the clock passes
+   * the end of the reader's wait, `advance` returns only once the reader has given up, so that
+   * whatever the server does next reaches the reader after its wait ended, as it would in time.
+   */
+  private class SharedClock {
+    private[this] var now = 0L
+    private[this] var waitEnds = Long.MaxValue
+    private[this] var waiting = false
+
+    def nanos: Long = synchronized(now)
+
+    def advance(nanos: Long): Unit = synchronized {
+      now += nanos
+      notifyAll()
+      val giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(awaitSeconds)
+      while (waiting && now >= waitEnds && System.nanoTime() < giveUpAt) {
+        wait(10)
+      }
+    }
+
+    /** Waits on this clock until `poll` returns a result, for at most `timeoutNanos`. */
+    def await[R](timeoutNanos: Long)(poll: => Option[R]): Option[R] = {
+      val ends = synchronized {
+        waitEnds = now + timeoutNanos
+        waiting = true
+        notifyAll()
+        waitEnds
+      }
+      try {
+        var result = poll
+        while (result.isEmpty && nanos < ends) {
+          synchronized(wait(10))
+          result = poll
+        }
+        result
+      } finally {
+        synchronized {
+          waiting = false
+          notifyAll()
+        }
+      }
+    }
+
+    /** Blocks until a reader is waiting on this clock. */
+    def awaitReader(): Unit = synchronized {
+      val giveUpAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(awaitSeconds)
+      while (!waiting && System.nanoTime() < giveUpAt) {
+        wait(10)
+      }
+      assert(waiting, "the reader is not waiting")
+    }
+  }
+
+  test("a reader waiting through a persistent OOM gets the error reply before its wait ends") {
+    // The server and the reader wait the same length, spark.network.timeout, on one clock. The
+    // reader starts waiting before its request reaches the server, and every attempt to
+    // prepare the request's buffers runs out of GPU memory.
+    val timeoutSeconds = 30L
+    val clock = new SharedClock
+    val requester = new Requester
+    val bounceBuffers = new ArrayBuffer[BounceBuffer]()
+    val states = new ArrayBuffer[BufferReceiveState]()
+    when(mockTransport.makeClient(any())).thenReturn(requester.client)
+    doAnswer { invocation =>
+      val bounceBuffer = getBounceBuffer(4096)
+      bounceBuffers += bounceBuffer
+      val state = spy(new BufferReceiveState(123L, bounceBuffer,
+        invocation.getArgument[Seq[PendingTransferRequest]](0), () => ()))
+      states += state
+      requester.client.issueBufferReceives(state)
+      null
+    }.when(mockTransport).queuePending(any())
+
+    // the server's side: the requested buffers, which never fit in GPU memory
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    Seq(1 -> 1000L, 2 -> 2000L).foreach { case (id, size) =>
+      val handle = mock[SpillableDeviceBufferHandle]
+      when(handle.sizeInBytes).thenReturn(size)
+      when(handle.materialize()).thenAnswer(_ =>
+        throw new OutOfMemoryError("GPU allocation failed in test"))
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(id)))
+        .thenReturn(RapidsShuffleHandle(handle, tableMeta(id, size)))
+    }
+    val sendBuffer = mock[SendBounceBuffers]
+    val bounceBuffer = mock[BounceBuffer]
+    val bounceMemory = mock[DeviceMemoryBuffer]
+    when(bounceBuffer.buffer).thenReturn(bounceMemory)
+    when(bounceMemory.getLength).thenReturn(4096L)
+    when(sendBuffer.bounceBufferSize).thenReturn(4096)
+    when(sendBuffer.hostBounceBuffer).thenReturn(None)
+    when(sendBuffer.deviceBounceBuffer).thenReturn(bounceBuffer)
+    when(mockTransport.tryGetSendBounceBuffers(anyLong(), anyInt())).thenReturn(Seq(sendBuffer))
+
+    // the request as it reaches the server, whose reply goes to the requester when it is sent
+    val replySentAt = new AtomicLong(-1L)
+    val request = mock[Transaction]
+    when(request.peerExecutorId()).thenReturn(1L)
+    when(request.getStatus).thenReturn(TransactionStatus.Success)
+    when(request.releaseMessage()).thenReturn(new MetadataTransportBuffer(
+      new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferRequest(0, Seq(1, 2)))))
+    doAnswer { invocation =>
+      replySentAt.set(clock.nanos)
+      // a copy, as the requester's own receive buffer would be
+      val sent = invocation.getArgument[ByteBuffer](0)
+      val reply = ByteBuffer.allocateDirect(sent.remaining())
+      reply.put(sent.duplicate())
+      reply.flip()
+      requester.answer(reply)
+      val responseTx = mock[Transaction]
+      when(responseTx.getStatus).thenReturn(TransactionStatus.Success)
+      invocation.getArgument[TransactionCallback](1)(responseTx)
+      responseTx
+    }.when(request).respond(any(), any())
+
+    val serverConnection = mock[ServerConnection]
+    val requestCallbacks = new ConcurrentHashMap[MessageType.Value, TransactionCallback]()
+    doAnswer { invocation =>
+      requestCallbacks.put(invocation.getArgument[MessageType.Value](0),
+        invocation.getArgument[TransactionCallback](1))
+      null
+    }.when(serverConnection).registerRequestHandler(any(), any())
+    val sendLoop = Executors.newSingleThreadExecutor()
+    val server = new RapidsShuffleServer(mockTransport, serverConnection,
+      RapidsShuffleTestHelper.makeMockBlockManager("1", "1"), requestHandler, mockExecutor,
+      sendLoop, mockConf) {
+      override private[shuffle] def currentTimeNanos(): Long = clock.nanos
+      override private[shuffle] def oomRetryTimeoutNanos: Long =
+        TimeUnit.SECONDS.toNanos(timeoutSeconds)
+      override private[shuffle] def waitBeforeOomRetry(backoffMillis: Long): Unit =
+        clock.advance(TimeUnit.MILLISECONDS.toNanos(backoffMillis))
+    }
+
+    val taskId = 1L
+    val blocks: collection.Seq[(BlockId, Long, Int)] =
+      RapidsShuffleTestHelper.getShuffleBlocks.toSeq
+    val iterator = new RapidsShuffleIterator(
+      RapidsShuffleTestHelper.makeMockBlockManager("2", "2"), mockConf, mockTransport,
+      Array[(BlockManagerId, collection.Seq[(BlockId, Long, Int)])](
+        (RapidsShuffleTestHelper.makeMockBlockManager("1", "1"), blocks)),
+      testMetricsUpdater, Array.empty, taskId, mockCatalog, timeoutSeconds) {
+      override def pollForResult(timeoutSeconds: Long): Option[ShuffleClientResult] =
+        clock.await(TimeUnit.SECONDS.toNanos(timeoutSeconds))(super.pollForResult(0))
+    }
+    val failure = new AtomicReference[Throwable]()
+    val readerThread = new Thread(() => {
+      RmmSpark.currentThreadIsDedicatedToTask(taskId)
+      try {
+        iterator.next()
+      } catch {
+        case t: Throwable => failure.set(t)
+      }
+    }, "shuffle-reader")
+    readerThread.setDaemon(true)
+    try {
+      server.start()
+      readerThread.start()
+      requester.answer(
+        ShuffleMetadata.buildMetaResponse(Seq(tableMeta(1, 1000), tableMeta(2, 2000))))
+      clock.awaitReader()
+      // the request reaches the server a second after the reader started waiting
+      clock.advance(TimeUnit.SECONDS.toNanos(1))
+      requestCallbacks.get(MessageType.TransferRequest)(request)
+      readerThread.join(TimeUnit.SECONDS.toMillis(awaitSeconds))
+
+      assert(failure.get.isInstanceOf[RapidsShuffleFetchFailedException],
+        s"the reader ended with ${failure.get}, and the server replied at " +
+          s"${TimeUnit.NANOSECONDS.toMillis(replySentAt.get)} ms of a " +
+          s"${timeoutSeconds * 1000} ms wait")
+      assert(failure.get.getMessage.contains(
+        RapidsShuffleServer.failureReason(BufferSendState.OomExpired)))
+      // the server kept retrying for most of the reader's wait before it gave up
+      assert(replySentAt.get >= TimeUnit.SECONDS.toNanos(timeoutSeconds) / 2)
+      assertResult(1)(states.size)
+      verify(states.head, times(1)).close()
+      assert(bounceBuffers.forall(_.isClosed))
+    } finally {
+      server.close()
+      sendLoop.shutdownNow()
       RmmSpark.taskDone(taskId)
       bounceBuffers.filterNot(_.isClosed).foreach(_.close())
     }
