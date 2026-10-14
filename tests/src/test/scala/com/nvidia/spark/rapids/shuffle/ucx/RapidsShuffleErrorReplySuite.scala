@@ -17,7 +17,8 @@
 package com.nvidia.spark.rapids.shuffle.ucx
 
 import java.nio.ByteBuffer
-import java.util.concurrent.{ConcurrentHashMap, Executors, LinkedBlockingQueue, TimeUnit}
+import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, Executors, LinkedBlockingQueue,
+  TimeUnit}
 import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicReference}
 
 import scala.collection.mutable.ArrayBuffer
@@ -337,6 +338,7 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
 
     // the request as it reaches the server, whose reply goes to the requester when it is sent
     val replySentAt = new AtomicLong(-1L)
+    val replied = new CountDownLatch(1)
     val request = mock[Transaction]
     when(request.peerExecutorId()).thenReturn(1L)
     when(request.getStatus).thenReturn(TransactionStatus.Success)
@@ -344,6 +346,7 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferRequest(0, Seq(1, 2)))))
     doAnswer { invocation =>
       replySentAt.set(clock.nanos)
+      replied.countDown()
       // a copy, as the requester's own receive buffer would be
       val sent = invocation.getArgument[ByteBuffer](0)
       val reply = ByteBuffer.allocateDirect(sent.remaining())
@@ -405,6 +408,8 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       clock.advance(TimeUnit.SECONDS.toNanos(1))
       requestCallbacks.get(MessageType.TransferRequest)(request)
       readerThread.join(TimeUnit.SECONDS.toMillis(awaitSeconds))
+      // a reply that comes after the reader gave up is still sent, and says when
+      assert(replied.await(awaitSeconds, TimeUnit.SECONDS), "the server never replied")
 
       assert(failure.get.isInstanceOf[RapidsShuffleFetchFailedException],
         s"the reader ended with ${failure.get}, and the server replied at " +
