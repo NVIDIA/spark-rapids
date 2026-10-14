@@ -65,6 +65,18 @@ class UCXSendTaskSuite extends AnyFunSuite {
     assert(!ended.calls.head.contains("Java heap space"))
   }
 
+  test("a send task whose report cannot describe the error still reports it") {
+    val ended = new Ended
+    // the heap ran out for the task, and again for the text of its report
+    val oom = new OutOfMemoryError("Java heap space") {
+      override def toString: String = throw new OutOfMemoryError("Java heap space")
+    }
+    val thrown = intercept[OutOfMemoryError](UCX.sendOrReport(ended)(_ => throw oom))
+    assert(thrown eq oom)
+    assertResult(1)(ended.calls.size)
+    assert(ended.calls.head.startsWith(s"error ${UCX.SEND_TASK_FAILED}: "))
+  }
+
   test("a send that UCX failed at once, before JUCX threw, is reported once") {
     // JUCX 1.22 calls the callback for an immediate error, then the exception reaches Java
     val ended = new Ended
