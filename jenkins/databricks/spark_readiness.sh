@@ -33,9 +33,10 @@ diagnostic() {
     timeout --kill-after=2s 10s "$@" || printf 'Diagnostic unavailable: %s\n' "$1"
 }
 
-print_host_diagnostics() {
+# Isolate shell errors and state changes from the actual readiness check.
+print_host_diagnostics() (
     printf '\nSpark readiness: pre-test host diagnostics\n'
-    date -u '+UTC: %Y-%m-%dT%H:%M:%SZ'
+    diagnostic date -u '+UTC: %Y-%m-%dT%H:%M:%SZ'
     diagnostic uname -a
     diagnostic cat /etc/os-release
     diagnostic hostname -I
@@ -44,8 +45,8 @@ print_host_diagnostics() {
     diagnostic uptime
     printf 'SPARK_HOME=%s JAVA_HOME=%s DATABRICKS_RUNTIME_VERSION=%s\n' \
         "${SPARK_HOME:-unset}" "${JAVA_HOME:-unset}" "${DATABRICKS_RUNTIME_VERSION:-unset}"
-    if [[ -r "${SPARK_HOME:-}/VERSION" ]]; then
-        head -n 1 "$SPARK_HOME/VERSION"
+    if [[ -n "${SPARK_HOME:-}" && -r "$SPARK_HOME/VERSION" ]]; then
+        diagnostic head -n 1 "$SPARK_HOME/VERSION"
     fi
     diagnostic free -m
     diagnostic vmstat 1 3
@@ -60,7 +61,7 @@ print_host_diagnostics() {
         /sys/fs/cgroup/memory/memory.{limit_in_bytes,usage_in_bytes,max_usage_in_bytes,failcnt}; do
         if [[ -r "$counter" ]]; then
             printf '%s:\n' "$counter"
-            cat "$counter"
+            diagnostic cat "$counter"
         fi
     done
     diagnostic nvidia-smi \
@@ -110,10 +111,22 @@ except Exception as error:
     except Exception as error:
         print("AWS instance metadata unavailable (%s)" % type(error).__name__, flush=True)
 PY
-}
+)
 
 # Console-only and best effort: diagnostics must not affect readiness or trigger retries.
-print_host_diagnostics 2>&1 || echo 'Readiness host diagnostics incomplete'
+if ! print_host_diagnostics 2>&1; then
+    printf 'Readiness host diagnostics incomplete; continuing\n' || :
+fi
+
+# -X options are JVM-specific. If the bounded capability check fails, keep the
+# original options instead of making optional diagnostics a readiness failure.
+readiness_jvm_options="${SPARK_SUBMIT_OPTS:-}"
+if timeout --kill-after=2s 10s "${JAVA_HOME:+$JAVA_HOME/bin/}java" \
+    -XshowSettings:vm -showversion -version >/dev/null 2>&1; then
+    readiness_jvm_options+=' -XshowSettings:vm -showversion'
+else
+    printf 'Readiness JVM diagnostics unavailable; keeping original JVM options\n' || :
+fi
 printf 'Spark readiness %s: starting plugin-free check (master=%s, timeout=10m)\n' "$1" "$master"
 printf '{"phase":"STARTING","runtime":"%s"}\n' "$1" > "$status_file"
 
@@ -121,7 +134,7 @@ printf '{"phase":"STARTING","runtime":"%s"}\n' "$1" > "$status_file"
 set +e
 # Print the actual driver JVM's version and maximum heap without changing its heap
 # or replacing existing JVM options. Do not enable Spark's full command/configuration dumps.
-SPARK_SUBMIT_OPTS="${SPARK_SUBMIT_OPTS:-} -XshowSettings:vm -showversion" \
+SPARK_SUBMIT_OPTS="$readiness_jvm_options" \
 timeout --kill-after=30s 10m "${SPARK_HOME:?}/bin/spark-shell" \
     --master "$master" \
     --conf spark.plugins= \
