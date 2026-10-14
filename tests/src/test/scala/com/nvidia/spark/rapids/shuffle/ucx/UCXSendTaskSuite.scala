@@ -114,6 +114,22 @@ class UCXSendTaskSuite extends AnyFunSuite {
     assertResult(Seq("success"))(ended.calls)
   }
 
+  test("a throw after JUCX took the send is left to the send's own callback") {
+    // as when closing the send's NVTX range fails, once JUCX returned with the send in flight
+    val ended = new Ended
+    var pending: UCX.SendCompletion = null
+    val failure = new IllegalStateException("closing the send's range failed in test")
+    val thrown = intercept[IllegalStateException](UCX.sendOrReport(ended) { completion =>
+      UCX.sendTask(1L, completion, () => ())((_, _, inFlight) => pending = inFlight)
+      throw failure
+    })
+    assert(thrown eq failure)
+    // UCX may read the send's buffers until it calls back, so nothing may say the send ended
+    assert(ended.calls.isEmpty)
+    pending.onSuccess(null)
+    assertResult(Seq("success"))(ended.calls)
+  }
+
   test("a callback after the task's error was reported is dropped") {
     val ended = new Ended
     var pending: UCX.SendCompletion = null
