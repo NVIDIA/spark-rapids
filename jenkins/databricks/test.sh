@@ -169,10 +169,13 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
         upstream_java_env=()
         if [[ "$UPSTREAM_SPARK_VERSION" == "3.5.0" ]]; then
             upstream_java_home=""
-            for candidate in /usr/lib/jvm/zulu17 /usr/lib/jvm/java-17-openjdk-*; do
-                if [[ -x "$candidate/bin/java" ]]; then
-                    upstream_java_home="$candidate"
-                    break
+            for candidate in "${JAVA_HOME:-}" /usr/lib/jvm/zulu17 /usr/lib/jvm/java-17-openjdk-*; do
+                if [[ -n "$candidate" && -x "$candidate/bin/java" ]]; then
+                    candidate_version=$("$candidate/bin/java" -XshowSettings:properties -version 2>&1) || continue
+                    if [[ "$candidate_version" =~ java\.specification\.version[[:space:]]*=[[:space:]]*17([[:space:]]|$) ]]; then
+                        upstream_java_home="$candidate"
+                        break
+                    fi
                 fi
             done
             if [[ -z "$upstream_java_home" ]]; then
@@ -184,7 +187,7 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
         # The same CI-only hook checks upstream Spark; local runs leave it unset.
         if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
             env "${upstream_java_env[@]}" \
-            SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
+            "SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX}" \
                 bash "$SPARK_STARTUP_CHECK" upstream
         fi
         if [[ "$SPARK_READINESS_ONLY" == "1" ]]; then
@@ -192,7 +195,7 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             exit 0
         fi
         env "${upstream_java_env[@]}" \
-        SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
+        "SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX}" \
         SPARK_SHELL_SMOKE_TEST=1 \
         PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${UPSTREAM_SHIM_VER}.RapidsShuffleManager \
             bash integration_tests/run_pyspark_from_build.sh
