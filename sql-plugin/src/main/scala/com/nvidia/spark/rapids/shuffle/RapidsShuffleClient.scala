@@ -400,6 +400,7 @@ class RapidsShuffleClient(
    */
   def doHandleBounceBufferReceive(tx: Transaction, 
       bufferReceiveState: BufferReceiveState): Unit = {
+    var windowConsumed = false
     try {
       withResource(tx) { _ =>
         tx.getStatus match {
@@ -435,8 +436,7 @@ class RapidsShuffleClient(
               } else {
                 logDebug(s"BufferReceiveState: " +
                   s"${TransportUtils.toHex(bufferReceiveState.id)} is NOT done, continuing.")
-                // a request that the server failed while this window was on its way ends here
-                bufferReceiveState.takeFailure().foreach(endFailedTransfer(bufferReceiveState, _))
+                windowConsumed = true
               }
             }
           case TransactionStatus.Error =>
@@ -453,6 +453,11 @@ class RapidsShuffleClient(
             s"${TransportUtils.toHex(bufferReceiveState.id)}", t)
         }
     }
+    if (windowConsumed) {
+      // A request that the server failed while this window was on its way ends here, outside
+      // the catch above, which would close the state a second time.
+      endIfFailed(bufferReceiveState, bufferReceiveState.takeFailure())
+    }
   }
 
   /**
@@ -461,10 +466,15 @@ class RapidsShuffleClient(
    */
   private[this] def doHandleTransferFailure(
       bufferReceiveState: BufferReceiveState,
-      reason: String): Unit = {
+      reason: String): Unit =
+    endIfFailed(bufferReceiveState, bufferReceiveState.serverFailed(reason))
+
+  /** Ends a receive state with the failure `failure` hands over, if it does, logging an error. */
+  private[this] def endIfFailed(
+      bufferReceiveState: BufferReceiveState,
+      failure: => Option[FailedTransfer]): Unit = {
     try {
-      bufferReceiveState.serverFailed(reason)
-        .foreach(endFailedTransfer(bufferReceiveState, _))
+      failure.foreach(endFailedTransfer(bufferReceiveState, _))
     } catch {
       case NonFatal(t) =>
         logError(s"Error while ending BRS ${TransportUtils.toHex(bufferReceiveState.id)}, " +
