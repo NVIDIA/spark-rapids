@@ -169,10 +169,15 @@ void databricksBuild(String clusterId) {
 
 void databricksTest(String clusterId) {
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
+    // TODO(#16281): Re-enable DBR 18.3 integration tests and remove readiness-only activation.
+    def readinessOnly = env.DB_RUNTIME == '18.3'
+    def stageName = readinessOnly ? "Readiness only against $SPARK_MAJOR DB" :
+        "Test against $SPARK_MAJOR DB"
     try {
-        // TODO: Re-enable DBR 18.3 integration tests after the outstanding failures are fixed.
-        if (env.DB_RUNTIME != '18.3') {
-            stage("Test against $SPARK_MAJOR DB") {
+        stage(stageName) {
+            def readinessEnvs = readinessOnly ?
+                ["EXTRA_ENVS=${env.EXTRA_ENVS},SPARK_READINESS_ONLY=1"] : []
+            withEnv(readinessEnvs) {
                 withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
                     def TEST_PARAMS = DbUtils.getParameters(this, 'TEST', "-c $clusterId")
                     sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
@@ -180,7 +185,9 @@ void databricksTest(String clusterId) {
             }
         }
     } finally {
-        common.publishPytestResult(this, "Test against $SPARK_MAJOR DB")
+        if (!readinessOnly) {
+            common.publishPytestResult(this, "Test against $SPARK_MAJOR DB")
+        }
     }
 }
 

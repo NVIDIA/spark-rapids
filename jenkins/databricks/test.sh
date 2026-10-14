@@ -49,6 +49,19 @@ set -ex
 #   CI_PART2 includes nightly resource-consuming tests to keep the split runtimes closer.
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 
+# CI-only: keep startup checks active while DBR 18.3 product tests are disabled (#16281).
+SPARK_READINESS_ONLY=${SPARK_READINESS_ONLY:-0}
+if [[ "$SPARK_READINESS_ONLY" == "1" ]]; then
+    if [[ -z "${SPARK_STARTUP_CHECK:-}" ]]; then
+        echo "Readiness-only mode requires the CI Spark readiness hook" >&2
+        exit 1
+    fi
+    case "$TEST_MODE" in
+        DEFAULT|CI_PART1|CI_PART2) ;;
+        *) echo "Readiness-only mode does not support TEST_MODE=$TEST_MODE" >&2; exit 1 ;;
+    esac
+fi
+
 # CI_PART2 untars the spark-rapids tgz built by C1_PART1 instead of rebuilding it
 PLUGIN_BUILT_TGZ=${PLUGIN_BUILT_TGZ:-"$1"}
 if [[ "$TEST_MODE" == "CI_PART2"  && -z "$LOCAL_JAR_PATH" && -f "$PLUGIN_BUILT_TGZ" ]]; then
@@ -85,6 +98,12 @@ WITH_DEFAULT_UPSTREAM_SHIM=${WITH_DEFAULT_UPSTREAM_SHIM:-1}
 # Leave SPARK_STARTUP_CHECK unset for local usage; ordinary callers keep their existing behavior.
 if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
     bash "$SPARK_STARTUP_CHECK" databricks
+fi
+
+if [[ "$SPARK_READINESS_ONLY" == "1" &&
+      ("$TEST_MODE" == "CI_PART2" || "$WITH_DEFAULT_UPSTREAM_SHIM" == "0") ]]; then
+    echo "Required Spark readiness checks completed; product tests remain disabled"
+    exit 0
 fi
 
 IS_SPARK_321_OR_LATER=0
@@ -149,6 +168,10 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
         if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
             SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
                 bash "$SPARK_STARTUP_CHECK" upstream
+        fi
+        if [[ "$SPARK_READINESS_ONLY" == "1" ]]; then
+            echo "Required Spark readiness checks completed; product tests remain disabled"
+            exit 0
         fi
         SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
         SPARK_SHELL_SMOKE_TEST=1 \
