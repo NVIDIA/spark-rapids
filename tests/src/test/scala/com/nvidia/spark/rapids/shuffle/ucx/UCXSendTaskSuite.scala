@@ -50,6 +50,21 @@ class UCXSendTaskSuite extends AnyFunSuite {
     assert(ended.calls.head.contains("Direct buffer memory"))
   }
 
+  test("a send task whose completion cannot be built reports through the sender's callback") {
+    val ended = new Ended
+    // what building the completion throws when the Java heap runs out
+    val oom = new OutOfMemoryError("Java heap space")
+    var ran = false
+    val thrown = intercept[OutOfMemoryError](
+      UCX.sendOrReport(ended, _ => throw oom)(_ => ran = true))
+    assert(thrown eq oom)
+    assert(!ran)
+    assertResult(1)(ended.calls.size)
+    assert(ended.calls.head.startsWith(s"error ${UCX.SEND_TASK_FAILED}: "))
+    // fixed text, since text built from the error would allocate
+    assert(!ended.calls.head.contains("Java heap space"))
+  }
+
   test("a send that UCX failed at once, before JUCX threw, is reported once") {
     // JUCX 1.22 calls the callback for an immediate error, then the exception reaches Java
     val ended = new Ended
