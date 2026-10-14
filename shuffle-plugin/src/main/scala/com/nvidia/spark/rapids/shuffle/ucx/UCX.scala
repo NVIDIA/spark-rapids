@@ -1197,9 +1197,12 @@ object UCX {
       completion.header = buffer
       buffer.putLong(header)
       buffer.rewind()
+      // all that can fail before JUCX is called comes before the hand-off, so that it is
+      // reported: taking the address boxes it
+      val address = addressOf(buffer)
       val prepared = prepare()
       completion.handOff()
-      send(addressOf(buffer), prepared, completion)
+      send(address, prepared, completion)
     }
   }
 
