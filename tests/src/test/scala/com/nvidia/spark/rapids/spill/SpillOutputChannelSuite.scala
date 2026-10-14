@@ -194,16 +194,21 @@ class SpillOutputChannelSuite extends AnyFunSuite {
       assert(failure.get().isInstanceOf[ClosedByInterruptException])
       assert(!file.isOpen)
     } finally {
-      resume.set(true)
-      if (!writer.isAlive && !killer.isAlive) {
-        try {
-          channel.close()
-        } catch {
-          case _: IOException => ()
-        }
+      try {
         file.close()
+      } finally {
+        resume.set(true)
+        killer.join(5000)
+        writer.join(5000)
+        if (!writer.isAlive && !killer.isAlive) {
+          try {
+            channel.close()
+          } catch {
+            case _: IOException => ()
+          }
+        }
+        Files.deleteIfExists(path)
       }
-      Files.deleteIfExists(path)
     }
   }
 }
