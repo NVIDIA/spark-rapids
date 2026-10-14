@@ -1142,7 +1142,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("an error reply is released once, whether its send fails or cannot start") {
+  test("an error reply is released and logged once, whether its send fails or cannot start") {
     // The first reply goes through the real UCX server connection and transaction, with only UCX
     // mocked, so that its failed send reaches the reply's callback as UCX reports it.
     val ucx = mock[UCX]
@@ -1185,7 +1185,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         state
       }
 
-      val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[BufferSendState].getName)) {
+      val logs = LogCaptureUtils.captureLogsFrom(
+          Seq(classOf[BufferSendState].getName, classOf[UCXServerConnection].getName)) {
         server.doHandleTransferRequest(states)
         val completion = ArgumentCaptor.forClass(classOf[UcxCallback])
         verify(ucx, times(1)).sendActiveMessage(
@@ -1200,6 +1201,9 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       txs.foreach(tx => verify(tx, times(1)).close())
       // the reply's callback threw nothing into the transport's callback wrapper
       assertResult(0)(logs.count(_.startsWith("Detected an exception from user code")))
+      // the failed send is logged by the connection that saw it fail, and only there
+      assertResult(1)(logs.count(_.contains("the peer is gone in test")))
+      assertResult(1)(logs.count(_.startsWith("Unable to send an error reply")))
     }
   }
 
