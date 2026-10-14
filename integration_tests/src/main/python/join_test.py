@@ -1100,11 +1100,8 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
         'spark.sql.autoBroadcastJoinThreshold': '1',
     })
 
-# A null-safe equality with a literal leaves one side of the join with no columns. With the
-# exchange of that side on the GPU, its rows-only batches are hash partitioned there. A bigint
-# key sends them to partition 1 of 4, not 0, and partitions stay uncoalesced so a wrong partition
-# loses matches. Full outer joins, and left outer joins over a much larger build side, still
-# fail later, in the hash join itself.
+# Tests a GPU hash exchange of rows-only batches: the null-safe join on a literal leaves the
+# right side with no columns.
 @shuffle_test
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['LeftOuter', 'LeftAnti'], ids=idfn)
@@ -1118,9 +1115,7 @@ def test_null_safe_literal_key_join_rows_only_exchange(join_type):
         'spark.sql.adaptive.autoBroadcastJoinThreshold': '-1',
         'spark.sql.adaptive.coalescePartitions.enabled': 'false'})
 
-# A null-safe equality with a literal leaves the build side with no columns, which reaches the
-# hash joins as several rows-only batches. A GPU exchange of that side fails earlier, so the
-# shuffles stay on the CPU.
+# Tests the GPU hash join on rows-only build batches that come from a CPU shuffle.
 @allow_non_gpu('ShuffleExchangeExec', 'HashPartitioning', 'Coalesce', 'IsNull')
 @ignore_order(local=True)
 @pytest.mark.parametrize('join_type', ['LeftOuter', 'LeftAnti'], ids=idfn)

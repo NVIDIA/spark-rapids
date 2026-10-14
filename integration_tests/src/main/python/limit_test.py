@@ -102,8 +102,7 @@ def test_order_by_offset_with_limit(limit, offset, data_gen, batch_size):
     assert_gpu_and_cpu_are_equal_collect(spark_df, conf={'spark.rapids.sql.batchSizeBytes': batch_size})
 
 
-# Each route gives one task several batches. PERFILE reads each file into a batch of its own,
-# and the file settings put every file in one task. The batch size splits one range partition.
+# Settings that give one GpuTopN task several input batches.
 _zero_column_topn_routes = {
     'perfile': {'spark.rapids.sql.format.parquet.reader.type': 'PERFILE',
                 'spark.sql.files.maxPartitionBytes': '2g',
@@ -112,8 +111,7 @@ _zero_column_topn_routes = {
     'small_batches': {'spark.rapids.sql.batchSizeBytes': '8000'}}
 
 def _assert_zero_column_topn(cpu_plan, gpu_plan):
-    """Each task's GpuTopN outputs one batch, so more batches in than out means some task fed it
-    two or more, which is what reaches the concatenation."""
+    """Asserts a GpuTopN over a zero-column child that got several batches in one task."""
     topns = [node for node in collect_plan_nodes(gpu_plan)
              if node.getClass().getSimpleName() == 'GpuTopN'
              and node.children().apply(0).output().isEmpty()]

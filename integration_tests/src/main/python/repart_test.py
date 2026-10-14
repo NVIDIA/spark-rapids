@@ -365,14 +365,14 @@ _zero_column_exchange_conf = {'spark.sql.adaptive.enabled': False,
                               'spark.rapids.sql.metrics.level': 'DEBUG'}
 
 def _zero_column_exchanges(plan, partitioning):
-    """gpuOutputPartitioning, not outputPartitioning: the latter is the CPU partitioning."""
+    """GPU shuffle exchanges with a zero-column child and the given GPU partitioning."""
     return [node for node in collect_plan_nodes(plan)
             if node.getClass().getSimpleName() == "GpuShuffleExchangeExec"
             and node.gpuOutputPartitioning().getClass().getSimpleName() == partitioning
             and node.children().apply(0).output().isEmpty()]
 
 def _assert_zero_column_exchange(partitioning):
-    """The rows > 0 check matters: a plan that produces no rows never reaches the partitioner."""
+    """Asserts a GPU exchange with the given partitioning over a zero-column child with rows."""
     def assert_plan(cpu_plan, plan):
         exchanges = _zero_column_exchanges(plan, partitioning)
         assert exchanges, \
@@ -428,8 +428,7 @@ def test_range_partition_zero_column_skewed_resample():
 @pytest.mark.parametrize('num_parts', [4, 200])
 @pytest.mark.parametrize('by_partition', [False, True], ids=['count', 'by_partition'])
 def test_hash_partition_zero_column_literal_key(num_parts, by_partition):
-    # Grouping by spark_partition_id() checks which partition the rows went to, not only how
-    # many arrived. Neither partition count sends a long 1 to partition 0.
+    # by_partition also checks which partition the rows land in, not just how many arrive.
     def do_it(spark):
         df = (spark.range(0, 4000, 1, 4).select(f.col('id').alias('payload'))
               .select(f.lit(1).cast('long').alias('k'), f.col('payload'))

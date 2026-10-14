@@ -94,7 +94,7 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
 
   test("GPU topn over rows-only batches keeps the rows the CPU keeps") {
     Seq(
-      (Seq(1000, 1000), 5, 0), // two batches in one task, as in the issue
+      (Seq(1000, 1000), 5, 0), // two batches in one task
       (Seq.fill(5)(1000), 5, 2),
       (Seq(3, 4), 20, 0), // the limit exceeds the rows
       (Seq(3, 4), 20, 5),
@@ -103,7 +103,7 @@ class LimitRetrySuite extends RmmSparkRetrySuiteBase {
       (Seq(0, 0), 5, 0),
       (Seq(1000), 5, 0),
       (Seq(10, Int.MaxValue - 5), 10, 0), // the two inputs together pass Int.MaxValue rows
-      // So do the most rows a limit of 2^30 keeps from each of two inputs.
+      // Each input alone fills a limit of 2^30.
       (Seq(1 << 30, 1 << 30), 1 << 30, 0),
       (Seq(1 << 30, 1 << 30), 1 << 30, 7),
       // The largest limit Spark 3.5 plans as a top-k, under topKSortFallbackThreshold.

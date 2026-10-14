@@ -236,8 +236,8 @@ object GpuTopN {
       b: ColumnarBatch,
       concatTime: GpuMetric): ColumnarBatch = {
     NvtxIdWithMetrics(NvtxRegistry.READ_N_CONCAT, concatTime) {
-      if (a.numCols() == 0 && b.numCols() == 0) {
-        // Rows-only batches have no cuDF Table, so they concatenate by row count.
+      if (a.numCols() == 0) {
+        // Rows-only batches concatenate by row count.
         ConcatAndConsumeAll.buildNonEmptyBatchFromTypes(Array(a, b), Array.empty)
       } else {
         val dataTypes = GpuColumnVector.extractTypes(b)
@@ -333,9 +333,7 @@ object GpuTopN {
               } else { // pending is not empty
                 val totalSize = attempt.sizeInBytes + pending.get.sizeInBytes
                 val tmpCb = if (inputCb.numCols() == 0) {
-                  // A rows-only batch has no bytes to bound its rows, so keep only the rows the
-                  // limit can still take. Pending holds at most limit rows, so this is not
-                  // negative, and the concatenation stays within the limit.
+                  // A rows-only batch has no size to check, so take only the rows still needed.
                   sortAndTakeNClose(limit - pending.get.numRows(), sorter, inputCb, sortTime)
                 } else if (totalSize > Int.MaxValue) {
                   // The intermediate size is likely big enough we don't want to risk an overflow,

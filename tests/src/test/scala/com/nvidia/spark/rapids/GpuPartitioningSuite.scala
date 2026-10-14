@@ -337,7 +337,7 @@ class GpuPartitioningSuite extends AnyFunSuite with BeforeAndAfterEach {
       GpuShuffleEnv.init(new RapidsConf(conf))
       val gp = GpuHashPartitioning(Seq(RowIndexKey()), 4)
       val numRows = 1000
-      // The same rows with a column to carry take the Table path, which sets the expectation.
+      // The expected offsets: the same rows partitioned with one column.
       val withColumn = withResource(Scalar.fromInt(0)) { zero =>
         GpuColumnVector.from(ColumnVector.sequence(zero, numRows), IntegerType)
       }
