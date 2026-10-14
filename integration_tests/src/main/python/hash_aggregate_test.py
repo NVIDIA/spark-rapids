@@ -3220,7 +3220,9 @@ def test_min_max_in_groupby_and_reduction(data_gen):
     [b'\x80', b'\x80\x00', b'\x80\x00\xff', b'\x80\x01', None],
     [b'', b'\x00', b'\xff', None],
     [None],
-    []], ids=['unsigned', 'prefix', 'empty_binary', 'all_null', 'empty_input'])
+    # AQE may replace an empty grouped result with Spark's EmptyRelationExec.
+    pytest.param([], marks=allow_non_gpu('EmptyRelationExec'))],
+    ids=['unsigned', 'prefix', 'empty_binary', 'all_null', 'empty_input'])
 @pytest.mark.parametrize('grouped', [False, True], ids=['reduction', 'groupby'])
 @pytest.mark.parametrize('aqe_enabled', ['false', 'true'], ids=['no_aqe', 'aqe'])
 @pytest.mark.parametrize('batch_size', ['250', '1g'], ids=['small_batches', 'single_batch'])
