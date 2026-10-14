@@ -150,7 +150,7 @@ class UCXSendTaskSuite extends AnyFunSuite {
     val oom = new OutOfMemoryError("Java heap space")
     var called = false
     val thrown = intercept[OutOfMemoryError](
-      UCX.sendTask(1L, ended, () => throw oom)((_, _, _) => called = true))
+      UCX.sendTask[Unit](1L, ended, () => throw oom)((_, _, _) => called = true))
     assert(thrown eq oom)
     assert(!called)
     assertResult(1)(ended.calls.size)
