@@ -142,8 +142,8 @@ class BufferSendState(
   private[this] var blocksIssued = 0
 
   // The materialization OOMs of this transfer request are retried until `retryNanos` after it
-  // arrived, however its windows went, so that its reader, which started waiting before the
-  // request was sent, is still waiting for the error reply. A successful preparation by this
+  // arrived, however its windows went, so that a reader that started waiting shortly before the
+  // request was sent is still waiting for the error reply. A successful preparation by this
   // state starts the count of attempts, and so the backoff, over. Results from other
   // BufferSendState instances that happen to share a server batch do not affect either.
   private[this] var oomRetryAttempts: Int = 0

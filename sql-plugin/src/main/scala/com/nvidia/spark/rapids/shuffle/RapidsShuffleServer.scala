@@ -916,9 +916,11 @@ object RapidsShuffleServer {
   // how long close() waits for the send loop to exit
   private val CLOSE_WAIT_MILLIS = 500L
 
-  // how much sooner than its reader's wait a request's OOM retries end, for the error reply to
-  // reach the reader: it covers the time from the reader starting to wait to the request
-  // arriving, the retry pass that finds the end, and the reply's delivery
+  // How much sooner than its reader's wait a request's OOM retries end, for the error reply to
+  // reach the reader first. It covers the time from the reader starting to wait to the request
+  // arriving, the retry pass that finds the end, and the reply's delivery. A request that waited
+  // longer than that in its requester's queue, which the server cannot see, still arrives too
+  // late, and its reader times out as before.
   private val OOM_REPLY_MARGIN_NANOS = TimeUnit.SECONDS.toNanos(10)
 
   /**
