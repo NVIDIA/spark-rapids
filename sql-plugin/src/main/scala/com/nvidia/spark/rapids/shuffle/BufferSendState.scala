@@ -55,12 +55,14 @@ import org.apache.spark.shuffle.rapids.{RapidsShuffleSendPrepareException,
  *                          buffer also
  * @param requestHandler - impl of trait that interfaces to the catalog
  * @param serverStream - CUDA stream to use for copies.
+ * @param requestArrivalNanos when the request arrived, on the server's clock
  */
 class BufferSendState(
     transaction: Transaction,
     sendBounceBuffers: SendBounceBuffers,
     requestHandler: RapidsShuffleRequestHandler,
-    serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM)
+    serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM,
+    requestArrivalNanos: Long = System.nanoTime())
     extends AutoCloseable with Logging {
 
   class SendBlock(val tableId: Int, val bufferHandle: RapidsShuffleHandle) extends BlockWithSize {
@@ -139,21 +141,24 @@ class BufferSendState(
   private[this] var blocksPrepared = 0
   private[this] var blocksIssued = 0
 
-  // A retry window belongs to this transfer request. Its first materialization OOM starts an
-  // episode, and only a successful preparation by this state resets the episode. Results from
-  // other BufferSendState instances that happen to share a server batch do not affect it.
-  private[this] var oomRetryStartNanos: Option[Long] = None
+  // The materialization OOMs of this transfer request are retried until `retryNanos` after it
+  // arrived, however its windows went, so that its reader, which started waiting before the
+  // request was sent, is still waiting for the error reply. A successful preparation by this
+  // state starts the count of attempts, and so the backoff, over. Results from other
+  // BufferSendState instances that happen to share a server batch do not affect either.
   private[this] var oomRetryAttempts: Int = 0
 
+  /**
+   * Records a materialization OOM of this state's current window.
+   * @param retryNanos how long after the request arrived its OOMs are retried
+   * @return the attempt that retries it, counted from the last successful preparation, or
+   *         None if the request is past its retries
+   */
   private[shuffle] def recordOomAndGetRetryAttempt(
       nowNanos: Long,
-      timeoutNanos: Long): Option[Int] =
+      retryNanos: Long): Option[Int] =
     synchronized {
-      val startNanos = oomRetryStartNanos.getOrElse {
-        oomRetryStartNanos = Some(nowNanos)
-        nowNanos
-      }
-      if (nowNanos - startNanos < timeoutNanos) {
+      if (nowNanos - requestArrivalNanos < retryNanos) {
         oomRetryAttempts += 1
         Some(oomRetryAttempts)
       } else {
@@ -161,11 +166,8 @@ class BufferSendState(
       }
     }
 
-  private[shuffle] def resetOomRetryWindow(): Unit = synchronized {
-    if (oomRetryStartNanos.isDefined) {
-      oomRetryStartNanos = None
-      oomRetryAttempts = 0
-    }
+  private[shuffle] def resetOomRetryAttempts(): Unit = synchronized {
+    oomRetryAttempts = 0
   }
 
   def getRequestTransaction: Transaction = synchronized {
@@ -386,7 +388,7 @@ class BufferSendState(
         s" [peer_executor_id=${transaction.peerExecutorId()}]")
 
     // Preparing this state's next send ends its continuous materialization-OOM episode.
-    resetOomRetryWindow()
+    resetOomRetryAttempts()
     buffsToSend
   }
 

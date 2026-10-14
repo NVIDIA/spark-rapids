@@ -18,6 +18,7 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.io.{FileNotFoundException, IOException}
 import java.nio.ByteBuffer
+import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -373,7 +374,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("when GPU OOM prevents all sends, stop the request at the shuffle fetch timeout") {
+  test("when GPU OOM prevents all sends, stop the request when its OOM retries end") {
     val mockSendBuffer = mock[SendBounceBuffers]
     val mockDeviceBounceBuffer = mock[BounceBuffer]
     val mockDeviceMemoryBuffer = mock[DeviceMemoryBuffer]
@@ -420,7 +421,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         override private[shuffle] def waitBeforeOomRetry(backoffMillis: Long): Unit = {}
       })
 
-      val bss = new BufferSendState(mockTransaction, mockSendBuffer, mockRequestHandler, null)
+      val bss = new BufferSendState(mockTransaction, mockSendBuffer, mockRequestHandler, null,
+        requestArrivalNanos = 0L)
       assertResult(10L)(server.oomRetryBackoffMillis(1))
       assertResult(20L)(server.oomRetryBackoffMillis(2))
       assertResult(100L)(server.oomRetryBackoffMillis(5))
@@ -448,7 +450,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("successful preparation resets the OOM retry window on the same send state") {
+  test("successful preparation restarts the OOM backoff, not the request's retry deadline") {
     val sendBuffer = mock[SendBounceBuffers]
     val deviceBounceBuffer = mock[BounceBuffer]
     val deviceMemoryBuffer = mock[DeviceMemoryBuffer]
@@ -477,14 +479,26 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         .thenReturn(RapidsShuffleHandle(handle, tableMeta))
 
       withResource(new BufferSendState(
-        mockTransaction, sendBuffer, requestHandler, null)) { bss =>
-        assertResult(Some(1))(bss.recordOomAndGetRetryAttempt(0L, 10L))
+        mockTransaction, sendBuffer, requestHandler, null, requestArrivalNanos = 0L)) { bss =>
+        assertResult(Some(1))(bss.recordOomAndGetRetryAttempt(5L, 10L))
+        assertResult(Some(2))(bss.recordOomAndGetRetryAttempt(6L, 10L))
         withResource(bss.getBufferToSend()) { _ => }
 
-        // This is a new OOM episode. If resetOomRetryWindow were a no-op or its successful
-        // preparation call site were removed, the old window would expire at this timestamp.
-        assertResult(Some(1))(bss.recordOomAndGetRetryAttempt(10L, 10L))
+        // A new OOM episode backs off from its first attempt again. If resetOomRetryAttempts
+        // were a no-op or its successful preparation call site were removed, this would be the
+        // third attempt.
+        assertResult(Some(1))(bss.recordOomAndGetRetryAttempt(9L, 10L))
+        // The request's retries still end when they would have: a reader that started waiting
+        // before the request arrived saw none of this progress.
+        assertResult(None)(bss.recordOomAndGetRetryAttempt(10L, 10L))
       }
+      // a reader's wait less 10 seconds, or less half of it if it is shorter than 20 seconds
+      assertResult(TimeUnit.SECONDS.toNanos(110))(
+        RapidsShuffleServer.oomRetryNanos(TimeUnit.SECONDS.toNanos(120)))
+      assertResult(TimeUnit.SECONDS.toNanos(10))(
+        RapidsShuffleServer.oomRetryNanos(TimeUnit.SECONDS.toNanos(20)))
+      assertResult(TimeUnit.SECONDS.toNanos(5))(
+        RapidsShuffleServer.oomRetryNanos(TimeUnit.SECONDS.toNanos(10)))
     }
   }
 
@@ -534,12 +548,14 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         override private[shuffle] def waitBeforeOomRetry(backoffMillis: Long): Unit = {}
       })
 
-      val bssA = new BufferSendState(makeTx(1L), sendBufferA, requestHandler, null)
+      val bssA = new BufferSendState(makeTx(1L), sendBufferA, requestHandler, null,
+        requestArrivalNanos = 0L)
       server.doHandleTransferRequest(Seq(bssA))
       verify(server, times(1)).addToContinueQueue(Seq(bssA))
 
       nowNanos = 10L
-      val bssB = new BufferSendState(makeTx(2L), sendBufferB, requestHandler, null)
+      val bssB = new BufferSendState(makeTx(2L), sendBufferB, requestHandler, null,
+        requestArrivalNanos = 10L)
       server.doHandleTransferRequest(Seq(bssA, bssB))
 
       verify(sendBufferA, times(1)).close()
@@ -598,7 +614,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       })
 
       val oomState = new BufferSendState(
-        mockTransaction, sendBuffer, requestHandler, null)
+        mockTransaction, sendBuffer, requestHandler, null, requestArrivalNanos = 0L)
       server.doHandleTransferRequest(Seq(oomState))
       verify(server, times(1)).addToContinueQueue(Seq(oomState))
 

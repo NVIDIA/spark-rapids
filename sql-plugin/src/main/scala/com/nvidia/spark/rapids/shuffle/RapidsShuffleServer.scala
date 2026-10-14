@@ -128,6 +128,11 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
   private[shuffle] def currentTimeNanos(): Long = System.nanoTime()
 
+  /**
+   * How long a reader waits for its next batch, `spark.network.timeout`. The sends of a request
+   * retry a materialization OOM until `RapidsShuffleServer.oomRetryNanos` of it have passed
+   * since the request arrived, so that the error reply reaches a reader still waiting.
+   */
   private[shuffle] def oomRetryTimeoutNanos: Long =
     TimeUnit.SECONDS.toNanos(GpuShuffleEnv.shuffleFetchTimeoutSeconds)
 
@@ -341,7 +346,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         pendingTransfer.tx,
         sendBounceBuffers,
         pendingTransfer.requestHandler,
-        serverStream))
+        serverStream,
+        pendingTransfer.arrivalNanos))
     } catch {
       case NonFatal(t) =>
         val gone = isOutputGone(t)
@@ -451,7 +457,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           case MessageType.MetadataRequest =>
             asyncOrBlock(HandleMeta(tx))
           case MessageType.TransferRequest =>
-            val pendingTransfer = PendingTransferResponse(tx, requestHandler)
+            val pendingTransfer = PendingTransferResponse(tx, requestHandler, currentTimeNanos())
             val queued = bssExec.synchronized {
               if (started) {
                 pendingTransfersQueue.add(pendingTransfer)
@@ -473,7 +479,11 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     })
   }
 
-  case class PendingTransferResponse(tx: Transaction, requestHandler: RapidsShuffleRequestHandler)
+  /** A transfer request waiting for send bounce buffers, and when it arrived. */
+  case class PendingTransferResponse(
+      tx: Transaction,
+      requestHandler: RapidsShuffleRequestHandler,
+      arrivalNanos: Long)
 
   /**
    * Handles the very first message that a client will send, in order to request Table/Buffer info.
@@ -632,9 +642,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         val oomFailures = failures.filter(f => isMaterializationOom(f._2))
         val oomDecisions = if (oomFailures.nonEmpty) {
           val nowNanos = currentTimeNanos()
-          val timeoutNanos = oomRetryTimeoutNanos
+          val retryNanos = RapidsShuffleServer.oomRetryNanos(oomRetryTimeoutNanos)
           oomFailures.map { case (state, error) =>
-            (state, error, state.recordOomAndGetRetryAttempt(nowNanos, timeoutNanos))
+            (state, error, state.recordOomAndGetRetryAttempt(nowNanos, retryNanos))
           }
         } else {
           Seq.empty
@@ -645,7 +655,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           stopOomRetries(
             expiredOom.map(_._1),
             expiredOom.map(_._2),
-            "The per-send OOM retry window derived from spark.network.timeout expired.")
+            "The OOM retries of their requests ended, before their readers' " +
+                "spark.network.timeout would.")
         }
 
         val retryableOomStates = retryableOom.map(_._1).toSet
@@ -901,6 +912,19 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 object RapidsShuffleServer {
   // how long close() waits for the send loop to exit
   private val CLOSE_WAIT_MILLIS = 500L
+
+  // how much sooner than its reader's wait a request's OOM retries end, for the error reply to
+  // reach the reader: it covers the time from the reader starting to wait to the request
+  // arriving, the retry pass that finds the end, and the reply's delivery
+  private val OOM_REPLY_MARGIN_NANOS = TimeUnit.SECONDS.toNanos(10)
+
+  /**
+   * How long after its request arrived a send may retry a materialization OOM, given how long
+   * the reader waits: that wait less a margin of 10 seconds, or of half the wait if it is
+   * shorter than 20 seconds.
+   */
+  private[shuffle] def oomRetryNanos(readerWaitNanos: Long): Long =
+    readerWaitNanos - math.min(OOM_REPLY_MARGIN_NANOS, readerWaitNanos / 2)
 
   /** Why a transfer request ended with `outcome`, in the error reply its requester gets. */
   private[shuffle] def failureReason(outcome: BufferSendState.Outcome): String = outcome match {
