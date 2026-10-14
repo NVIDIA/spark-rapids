@@ -321,7 +321,8 @@ def test_delta_43_variant_shredding_fallback(spark_tmp_table_factory, write_mode
 
 
 # unsupported WriteIntoDeltaCommand tracked by https://github.com/NVIDIA/spark-rapids/issues/11169
-@allow_non_gpu_conditional(is_databricks_runtime(), "DataWritingCommandExec, WriteFilesExec")
+@allow_non_gpu_conditional(
+    is_databricks_runtime(), "AppendDataExecV1, DataWritingCommandExec, WriteFilesExec")
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
