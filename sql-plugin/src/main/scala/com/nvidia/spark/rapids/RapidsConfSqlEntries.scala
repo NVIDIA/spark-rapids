@@ -29,6 +29,15 @@ private[rapids] trait RapidsConfSqlEntries extends RapidsConfResourceEntries {
     .booleanConf
     .createWithDefault(true)
 
+  val RANGE_PARTITIONING_SAMPLE_KEYS_ONLY =
+    conf("spark.rapids.sql.rangePartitioning.sampleKeysOnly")
+      .doc("When enabled, range partitioning collects range boundaries from only the columns " +
+        "needed to compute the range keys when the input plan can be safely pruned. Disable " +
+        "this to collect boundaries from the original full-width GPU input.")
+      .internal()
+      .booleanConf
+      .createWithDefault(true)
+
   val SQL_MODE = conf("spark.rapids.sql.mode")
     .doc("Set the mode for the cuDF plugin. The supported modes are explainOnly and " +
          "executeOnGPU. This config can not be changed at runtime, you must restart the " +
@@ -614,6 +623,16 @@ private[rapids] trait RapidsConfSqlEntries extends RapidsConfResourceEntries {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_ORC_DATE_WRITE = conf("spark.rapids.sql.format.orc.write.dateType.enabled")
+    .doc("When set to true, allows GPU ORC writes containing DATE columns, including nested " +
+      "DATE columns. The cuDF ORC writer does not record calendar metadata, so this is safe " +
+      "only when every DATE value written is on or after 1582-10-15. The plugin does not " +
+      "validate the values; the application must guarantee this range. By default, these " +
+      "writes fall back to the CPU writer.")
+    .sinceVersion("26.10.0")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_ORC_BOOL = conf("spark.rapids.sql.format.orc.write.boolType.enabled")
     .doc("When set to false disables boolean columns for ORC writes. " +
       "Set to true if you want to experiment. " +
@@ -858,39 +877,6 @@ private[rapids] trait RapidsConfSqlEntries extends RapidsConfResourceEntries {
     .doc("When set to false disables Iceberg write acceleration")
     .booleanConf
     .createWithDefault(true)
-
-  val ICEBERG_S3_ASYNC_MAX_CONCURRENCY =
-    conf("spark.rapids.iceberg.s3.async.max-concurrency")
-      .doc("Max concurrent connections for the AwsCrtAsyncHttpClient used by the " +
-        "cuDF plugin Iceberg S3 byte-range reader. Used only when the Iceberg " +
-        "FileIO property `s3.crt.max-concurrency` is not set.")
-      .startupOnly()
-      .integerConf
-      .createWithDefault(200)
-
-  val ICEBERG_S3_ASYNC_CONNECTION_MAX_IDLE_MS =
-    conf("spark.rapids.iceberg.s3.async.connection-max-idle-time-ms")
-      .doc("Connection-max-idle-time (ms) for the AwsCrtAsyncHttpClient used by the " +
-        "cuDF plugin Iceberg S3 byte-range reader. No equivalent Iceberg property.")
-      .startupOnly()
-      .longConf
-      .createWithDefault(5L * 60 * 1000)
-
-  val ICEBERG_S3_ASYNC_TCP_KEEPALIVE_INTERVAL_MS =
-    conf("spark.rapids.iceberg.s3.async.tcp-keepalive-interval-ms")
-      .doc("TCP keep-alive probe interval (ms) for the AwsCrtAsyncHttpClient used by " +
-        "the cuDF plugin Iceberg S3 byte-range reader. No equivalent Iceberg property.")
-      .startupOnly()
-      .longConf
-      .createWithDefault(60L * 1000)
-
-  val ICEBERG_S3_ASYNC_TCP_KEEPALIVE_TIMEOUT_MS =
-    conf("spark.rapids.iceberg.s3.async.tcp-keepalive-timeout-ms")
-      .doc("TCP keep-alive probe timeout (ms) for the AwsCrtAsyncHttpClient used by " +
-        "the cuDF plugin Iceberg S3 byte-range reader. No equivalent Iceberg property.")
-      .startupOnly()
-      .longConf
-      .createWithDefault(30L * 1000)
 
   val ENABLE_HIVE_TEXT: ConfEntryWithDefault[Boolean] =
     conf("spark.rapids.sql.format.hive.text.enabled")

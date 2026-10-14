@@ -88,11 +88,12 @@ object GpuOrcFileFormat extends Logging {
     val hasDates = types.exists { dataType =>
       TrampolineUtil.dataTypeExistsRecursively(dataType, _.isInstanceOf[DateType])
     }
-    if (hasDates) {
+    if (hasDates && !meta.conf.isOrcDateWriteEnabled) {
       // The cuDF writer does not emit ORC calendar metadata. Without it, readers choose the
       // calendar from orc.proleptic.gregorian.default and can reinterpret pre-1582 dates.
       meta.willNotWorkOnGpu("Writing ORC dates is not supported on GPU because the cuDF " +
-        "writer does not emit calendar metadata")
+        "writer does not emit calendar metadata. To allow writes when every DATE value is " +
+        "on or after 1582-10-15, set " + RapidsConf.ENABLE_ORC_DATE_WRITE.key + " to true")
     }
 
     if (types.exists(GpuOverrides.isOrContainsTimestamp) &&
@@ -257,6 +258,11 @@ class GpuOrcWriter(
     fileIO: RapidsFileIO)
   extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, true,
     statsTrackers, debugOutputPath, holdGpuBetweenBatches, useAsyncWrite, fileIO) {
+
+  // Encoding-phase GPU OOMs can be retried, but cuDF also allocates for statistics after
+  // writing stripes to the sink. A late OOM can still replay an advanced ORC writer, as before
+  // this change, because the JNI buffer count cannot detect unflushed native state changes.
+  override protected def canRetryGpuOomFromNativeWrite: Boolean = true
 
   override val tableWriter: TableWriter = {
     val builder = SchemaUtils

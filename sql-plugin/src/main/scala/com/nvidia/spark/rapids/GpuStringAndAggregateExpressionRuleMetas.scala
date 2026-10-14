@@ -578,6 +578,10 @@ case class PercentileRuleMeta(
     r: DataFromReplacementRule)
   extends TypedImperativeAggExprMeta[Percentile](c, conf, p, r) {
   override def tagAggForGpu(): Unit = {
+    if (c.reverse) {
+      willNotWorkOnGpu("exact percentile with descending ordering is not supported on GPU")
+    }
+
     // Check if the input percentage can be supported on GPU.
     GpuOverrides.extractLit(childExprs(1).wrapped.asInstanceOf[Expression]) match {
       case None =>
