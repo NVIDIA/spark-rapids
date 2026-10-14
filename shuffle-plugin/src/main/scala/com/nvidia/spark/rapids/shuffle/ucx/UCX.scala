@@ -1136,10 +1136,16 @@ object UCX {
     private[ucx] var header: ByteBuffer = _
     private[this] var ended = false
     private[this] var handedOff = false
+    private[this] var taken = false
 
     /** Marks the point after which UCX may own the send, just before the send enters JUCX. */
     private[shuffle] def handOff(): Unit = {
       handedOff = true
+    }
+
+    /** Marks that JUCX returned with the send, which UCX now owns and ends through this. */
+    private[shuffle] def tookSend(): Unit = {
+      taken = true
     }
 
     override def onSuccess(request: UcpRequest): Unit = {
@@ -1171,10 +1177,11 @@ object UCX {
      * how the send ended, as after an immediate UCX error, which JUCX reports before it throws.
      * A JVM error after the hand-off is not reported either: JUCX can run out of heap after UCX
      * took the send, which then calls back itself and may read the send's buffers until then.
-     * The header is left to the collector, since UCX may still read it.
+     * Nor is anything thrown once JUCX returned with the send. The header is left to the
+     * collector, since UCX may still read it.
      */
     private[ucx] def reportThrow(error: Throwable): Unit = {
-      if (!ended && !(handedOff && error.isInstanceOf[VirtualMachineError])) {
+      if (!ended && !taken && !(handedOff && error.isInstanceOf[VirtualMachineError])) {
         ended = true
         val status = error match {
           case e: UcxException if e.getStatus < 0 => e.getStatus
@@ -1225,6 +1232,8 @@ object UCX {
     val prepared = prepare()
     completion.handOff()
     send(address, prepared, completion)
+    // the caller's cleanup, such as closing its NVTX range, still runs inside the catch
+    completion.tookSend()
   }
 
   // builds the completion of each send; a test stands in for it
