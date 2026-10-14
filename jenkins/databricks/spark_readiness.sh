@@ -28,10 +28,12 @@ log_file="$directory/spark-readiness-$1.log"
 printf 'Spark readiness %s: starting plugin-free check (master=%s, timeout=10m)\n' "$1" "$master"
 printf '{"phase":"STARTING","runtime":"%s"}\n' "$1" > "$status_file"
 
+# DBR 18.3 Scala compiler initialization can exhaust the default 1 GiB driver heap.
 # spark-shell may exit zero after an initialization error; also require the completed job marker.
 set +e
 timeout --kill-after=30s 10m "${SPARK_HOME:?}/bin/spark-shell" \
     --master "$master" \
+    --driver-memory 4g \
     --conf spark.plugins= \
     --conf spark.shuffle.manager=sort \
     --conf spark.deploy.maxExecutorRetries=0 \
