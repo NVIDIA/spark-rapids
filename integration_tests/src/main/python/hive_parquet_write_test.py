@@ -181,6 +181,7 @@ def test_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_
     _check_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, comp_type)
 
 
+# Keep GZIP separate so the non-UTC fallback allowance above cannot mask CPU writes.
 @ignore_order(local=True)
 def test_write_gzip_parquet_into_hive_table(spark_tmp_table_factory):
     _check_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, 'GZIP')
@@ -190,6 +191,7 @@ def _check_write_compressed_parquet_into_hive_table(spark_tmp_table_factory, com
     # Generate hive table in Parquet format
     def gen_table(spark):
         data_table = spark_tmp_table_factory.get()
+        # Use enough simple rows for cuDF to emit GZIP rather than uncompressed chunks.
         if comp_type == 'GZIP':
             spark.range(20000).selectExpr(
                 "CAST(id % 100 AS INT) AS _c0", "CAST(id % 10 AS STRING) AS _c1") \

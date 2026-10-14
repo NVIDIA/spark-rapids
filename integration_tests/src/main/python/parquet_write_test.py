@@ -271,6 +271,7 @@ def test_compress_write_round_trip(spark_tmp_path, compress):
     data_path = spark_tmp_path + '/PARQUET_DATA'
     all_confs = {'spark.sql.parquet.compression.codec': compress}
     def write_data(spark, path):
+        # The usual small input may leave GZIP chunks uncompressed in the footer.
         data = spark.range(20000).selectExpr("id % 100 AS a", "id % 10 AS b") \
             if compress == 'gzip' else binary_op_df(spark, long_gen)
         data.coalesce(1).write.parquet(path)
