@@ -36,8 +36,10 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
@@ -108,7 +110,44 @@ public final class SparkRapidsJarTool {
   }
 
   private static void extractNativeDependency(String[] args) throws IOException {
-    NativeDepUtil.main(args);
+    String os = System.getProperty("os.name");
+    String hostArchitecture = System.getProperty("os.arch");
+    String packagedArchitecture;
+    try (JarFile jar = new JarFile(getJarPath())) {
+      packagedArchitecture = selectNativeArchitecture(
+          nativeLibrariesByArchitecture(jar, os), args[1], hostArchitecture);
+    }
+    if (hostArchitecture.equals(packagedArchitecture)) {
+      NativeDepUtil.main(args);
+    } else {
+      System.setProperty("os.arch", packagedArchitecture);
+      try {
+        NativeDepUtil.main(args);
+      } finally {
+        System.setProperty("os.arch", hostArchitecture);
+      }
+    }
+  }
+
+  static String selectNativeArchitecture(Map<String, Set<String>> librariesByArchitecture,
+      String library, String hostArchitecture) throws IOException {
+    Set<String> candidates = new TreeSet<>();
+    for (Map.Entry<String, Set<String>> entry : librariesByArchitecture.entrySet()) {
+      if (entry.getValue().contains(library)) {
+        candidates.add(entry.getKey());
+      }
+    }
+    if (candidates.contains(hostArchitecture)) {
+      return hostArchitecture;
+    }
+    if (candidates.size() == 1) {
+      return candidates.iterator().next();
+    }
+    if (candidates.isEmpty()) {
+      throw new IOException("Native library not packaged: " + library);
+    }
+    throw new IOException("Native library " + library + " is packaged for multiple " +
+        "architectures: " + candidates);
   }
 
   private static void printBuildInfo(PrintStream out) throws IOException {
@@ -353,49 +392,57 @@ public final class SparkRapidsJarTool {
 
   private static void printNativeLibraries(JarFile jar, PrintStream out) {
     String os = System.getProperty("os.name");
-    String arch = System.getProperty("os.arch");
-    String resourcePrefix = arch + "/" + os + "/";
+    Map<String, Set<String>> librariesByArchitecture = nativeLibrariesByArchitecture(jar, os);
+    if (librariesByArchitecture.isEmpty()) {
+      out.println((nativeExtractorAvailable(jar) ? "Extractable" : "Packaged") +
+          " native libraries (" + os + "):");
+      out.println("  (none found)");
+      return;
+    }
+    boolean extractionAvailable = nativeExtractorAvailable(jar);
+    for (Map.Entry<String, Set<String>> entry : librariesByArchitecture.entrySet()) {
+      out.println((extractionAvailable ? "Extractable" : "Packaged") +
+          " native libraries (" + entry.getKey() + "/" + os + "):");
+      for (String library : entry.getValue()) {
+        out.println("  " + library);
+      }
+      out.println();
+    }
+    if (extractionAvailable) {
+      out.println("Extract one with:");
+      out.println("  java -jar <dist.jar> extract <library-name> <destination>");
+    } else {
+      out.println("Native extraction unavailable: missing " + NATIVE_DEP_UTIL);
+    }
+  }
+
+  static Map<String, Set<String>> nativeLibrariesByArchitecture(JarFile jar, String os) {
     String mappedExample = System.mapLibraryName("example");
     int exampleIndex = mappedExample.indexOf("example");
     String libraryPrefix = mappedExample.substring(0, exampleIndex);
     String librarySuffix = mappedExample.substring(exampleIndex + "example".length());
-    Set<String> libraries = new TreeSet<>();
+    Map<String, Set<String>> librariesByArchitecture = new TreeMap<>();
 
     Enumeration<JarEntry> entries = jar.entries();
     while (entries.hasMoreElements()) {
       String name = entries.nextElement().getName();
-      if (!name.startsWith(resourcePrefix)) {
+      int architectureEnd = name.indexOf('/');
+      if (architectureEnd < 1 || !name.startsWith(os + "/", architectureEnd + 1)) {
         continue;
       }
-      String fileName = name.substring(resourcePrefix.length());
+      String fileName = name.substring(architectureEnd + os.length() + 2);
       if (fileName.endsWith(CHUNK_MANIFEST_SUFFIX)) {
         fileName = fileName.substring(0, fileName.length() - CHUNK_MANIFEST_SUFFIX.length());
       }
       if (!fileName.contains("/") && fileName.startsWith(libraryPrefix) &&
           fileName.endsWith(librarySuffix)) {
-        libraries.add(fileName.substring(libraryPrefix.length(),
-            fileName.length() - librarySuffix.length()));
+        String architecture = name.substring(0, architectureEnd);
+        librariesByArchitecture.computeIfAbsent(architecture, ignored -> new TreeSet<>())
+            .add(fileName.substring(libraryPrefix.length(),
+                fileName.length() - librarySuffix.length()));
       }
     }
-
-    boolean extractionAvailable = nativeExtractorAvailable(jar);
-    out.println((extractionAvailable ? "Extractable" : "Packaged") +
-        " native libraries (" + arch + "/" + os + "):");
-    if (libraries.isEmpty()) {
-      out.println("  (none found)");
-    } else {
-      for (String library : libraries) {
-        out.println("  " + library);
-      }
-      if (extractionAvailable) {
-        out.println();
-        out.println("Extract one with:");
-        out.println("  java -jar <dist.jar> extract <library-name> <destination>");
-      } else {
-        out.println();
-        out.println("Native extraction unavailable: missing " + NATIVE_DEP_UTIL);
-      }
-    }
+    return librariesByArchitecture;
   }
 
   private static void printUsage(PrintStream out, boolean extractionAvailable) {

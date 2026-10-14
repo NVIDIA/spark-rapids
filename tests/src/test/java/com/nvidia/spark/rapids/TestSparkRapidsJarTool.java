@@ -24,8 +24,11 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.jar.JarFile;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
@@ -95,6 +98,34 @@ public class TestSparkRapidsJarTool {
 
     assertNotEquals(checksum(baseJar), checksum(invalidExtensionJar));
     assertNotEquals(checksum(baseJar), checksum(misleadingDirectoryJar));
+  }
+
+  @Test
+  public void testNativeLibraryArchitectureSelection() throws IOException {
+    Path jarPath = tempDir.resolve("native-libraries.jar");
+    Map<String, byte[]> jarEntries = new LinkedHashMap<>();
+    jarEntries.put("amd64/Linux/libcudfjni.so", new byte[] {1});
+    jarEntries.put("aarch64/Linux/libcudfjni.so.chunks.properties", new byte[] {2});
+    jarEntries.put("aarch64/Linux/libcudfjni.so.chunks/00000", new byte[] {3});
+    jarEntries.put("aarch64/Linux/libcudf.so.chunks.properties", new byte[] {4});
+    jarEntries.put("amd64/Windows/cudfjni.dll", new byte[] {5});
+    writeJar(jarPath, jarEntries, false, 1_600_000_000_000L);
+
+    try (JarFile jar = new JarFile(jarPath.toFile())) {
+      Map<String, Set<String>> libraries =
+          SparkRapidsJarTool.nativeLibrariesByArchitecture(jar, "Linux");
+      assertEquals(new TreeSet<>(Arrays.asList("amd64", "aarch64")), libraries.keySet());
+      assertEquals(new TreeSet<>(Arrays.asList("cudfjni")), libraries.get("amd64"));
+      assertEquals(new TreeSet<>(Arrays.asList("cudf", "cudfjni")), libraries.get("aarch64"));
+      assertEquals("amd64", SparkRapidsJarTool.selectNativeArchitecture(
+          libraries, "cudfjni", "amd64"));
+      assertEquals("aarch64", SparkRapidsJarTool.selectNativeArchitecture(
+          libraries, "cudf", "amd64"));
+      assertThrows(IOException.class, () -> SparkRapidsJarTool.selectNativeArchitecture(
+          libraries, "cudfjni", "unknown"));
+      assertThrows(IOException.class, () -> SparkRapidsJarTool.selectNativeArchitecture(
+          libraries, "missing", "amd64"));
+    }
   }
 
   private static Map<String, byte[]> entries(

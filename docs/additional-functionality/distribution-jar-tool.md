@@ -35,5 +35,8 @@ To extract a bundled native library, specify its name and destination path:
 java -jar <dist.jar> extract <library-name> <destination>
 ```
 
-Running the JAR without arguments lists the native library names available for the current
-operating system and architecture. Run `java -jar <dist.jar> help` to show all commands.
+Running the JAR without arguments lists the native library names and architectures packaged
+for the current operating system. Extraction uses the host architecture when available, or
+the sole packaged architecture otherwise. If multiple non-host architectures contain the
+requested library, extraction fails rather than choosing one arbitrarily. Run
+`java -jar <dist.jar> help` to show all commands.
