@@ -19,7 +19,7 @@ public final class TransferResponse extends Table {
 
   /**
    * array of buffer responses, one for each requested, or in an error reply one for each
-   * requested buffer the server will not send
+   * requested buffer the server will not send, when it could read which those are
    */
   public BufferTransferResponse responses(int j) { return responses(new BufferTransferResponse(), j); }
   public BufferTransferResponse responses(BufferTransferResponse obj, int j) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }

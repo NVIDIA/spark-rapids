@@ -41,7 +41,7 @@ table BufferTransferResponse {
 /// Flat buffer for Rapids UCX Shuffle Transfer Response.
 table TransferResponse {
   /// array of buffer responses, one for each requested, or in an error reply one for each
-  /// requested buffer the server will not send
+  /// requested buffer the server will not send, when it could read which those are
   responses: [BufferTransferResponse];
 
   /// set when the server failed the request
