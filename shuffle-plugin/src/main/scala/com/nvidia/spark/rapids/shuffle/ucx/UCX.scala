@@ -1173,6 +1173,14 @@ object UCX {
   }
 
   /**
+   * Hands one send to JUCX. Its own interface rather than a `Function3`, whose `apply` takes
+   * objects, so that the header's address is not boxed, which allocates, after the hand-off.
+   */
+  private[shuffle] trait SendToJucx[P] {
+    def apply(headerAddress: Long, prepared: P, completion: SendCompletion): Unit
+  }
+
+  /**
    * The task of one send: it allocates the send's header, then hands the send to JUCX through
    * `send`, with the header's address, what `prepare` built and the completion to give JUCX.
    * @param header the active message's header value
@@ -1187,7 +1195,7 @@ object UCX {
       prepare: () => P,
       allocate: Int => ByteBuffer = ByteBuffer.allocateDirect,
       addressOf: ByteBuffer => Long = TransportUtils.getAddress)(
-      send: (Long, P, SendCompletion) => Unit): Unit = {
+      send: SendToJucx[P]): Unit = {
     sendOrReport(cb) { completion =>
       // This isn't coming from the pool right now because it would be a bit of a
       // waste to get a larger hard-partitioned buffer just for 8 bytes.
@@ -1198,7 +1206,7 @@ object UCX {
       buffer.putLong(header)
       buffer.rewind()
       // all that can fail before JUCX is called comes before the hand-off, so that it is
-      // reported: taking the address boxes it
+      // reported: taking the address boxes it, and nothing after the hand-off allocates
       val address = addressOf(buffer)
       val prepared = prepare()
       completion.handOff()
