@@ -64,6 +64,55 @@ print_host_diagnostics() (
             diagnostic cat "$counter"
         fi
     done
+    # Root counters alone miss child-cgroup limits. Match memberships to visible
+    # controller mounts, accounting for mounts rooted at a cgroup subtree.
+    diagnostic python3 - <<'PY'
+from pathlib import Path, PurePosixPath
+import re
+
+try:
+    memberships = Path("/proc/self/cgroup").read_text().splitlines()
+    mounts = Path("/proc/self/mountinfo").read_text().splitlines()
+except OSError as error:
+    print("Current cgroup counters unavailable (%s)" % type(error).__name__, flush=True)
+    raise SystemExit(0)
+
+groups = {}
+for membership in memberships:
+    _, controllers, group = membership.split(":", 2)
+    groups.update((controller, group) for controller in controllers.split(","))
+
+counters = ("cpu.max", "cpu.stat", "cpu.cfs_quota_us", "cpu.cfs_period_us",
+            "cpuset.cpus", "cpuset.cpus.effective", "memory.max", "memory.current",
+            "memory.peak", "memory.events", "memory.limit_in_bytes",
+            "memory.usage_in_bytes", "memory.max_usage_in_bytes", "memory.failcnt")
+for mount in mounts:
+    fields, filesystem = mount.split(" - ", 1)
+    kind, _, options = filesystem.split()[:3]
+    if kind not in ("cgroup", "cgroup2"):
+        continue
+    root, target = [re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), field)
+                    for field in fields.split()[3:5]]
+    controllers = {""} if kind == "cgroup2" else set(options.split(",")) & {"cpu", "cpuset", "memory"}
+    for group in {groups[name] for name in controllers if name in groups}:
+        try:
+            relative = PurePosixPath(group).relative_to(root)
+        except ValueError:
+            continue
+        if ".." in relative.parts:
+            continue
+        current = Path(target) / relative
+        print("Current %s group: %s (mount root: %s)" % (kind, current, root), flush=True)
+        for name in counters:
+            counter = current / name
+            try:
+                value = counter.read_text().strip()
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                value = "unavailable (%s)" % type(error).__name__
+            print("%s:\n%s" % (counter, value), flush=True)
+PY
     diagnostic nvidia-smi \
         --query-gpu=index,name,uuid,driver_version,memory.total,memory.used,utilization.gpu \
         --format=csv
