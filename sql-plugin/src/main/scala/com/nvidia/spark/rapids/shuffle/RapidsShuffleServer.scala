@@ -423,10 +423,13 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   /**
    * The error reply for a request that ended with `outcome` because of `cause`: none when `cause`
    * ends the send loop, since the executor then exits and the requester hears of it when its
-   * connection closes.
+   * connection closes, and none once the server is closing. The transport closes after the
+   * server, and a reply queued after UCX's progress thread stopped would never be sent, nor
+   * would it or its transaction be released. A lookup or a preparation can fail that late,
+   * since neither close waits for it without bound.
    */
   private def errorReply(outcome: BufferSendState.Outcome, cause: Throwable): Option[String] =
-    if (BufferSendState.endsSendLoop(cause)) None
+    if (BufferSendState.endsSendLoop(cause) || !started) None
     else Some(RapidsShuffleServer.failureReason(outcome))
 
   private def closeQuietly(what: String, resource: AutoCloseable): Unit = {
