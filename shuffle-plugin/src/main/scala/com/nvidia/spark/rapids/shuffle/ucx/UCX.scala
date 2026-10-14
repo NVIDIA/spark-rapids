@@ -23,7 +23,7 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.mutable.ArrayBuffer
-import scala.util.control.NonFatal
+import scala.util.control.{ControlThrowable, NonFatal}
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
@@ -1124,32 +1124,88 @@ object UCX {
   private[shuffle] val SEND_TASK_FAILED = -201
 
   /**
-   * The callback of one send: it passes the send's outcome to the sender's callback, and frees
-   * the send's header, which UCX may read until it calls back.
+   * The callback of one send: it passes the send's outcome to the sender's callback at most
+   * once, and frees the send's header, which UCX may read until it calls back. It is used on the
+   * progress thread only.
    */
   private[shuffle] final class SendCompletion(cb: UcxCallback) extends UcxCallback {
     private[ucx] var header: ByteBuffer = _
+    private[this] var ended = false
+    private[this] var handedOff = false
 
     /** Marks the point after which UCX may own the send, just before the send enters JUCX. */
-    private[shuffle] def handOff(): Unit = {}
+    private[shuffle] def handOff(): Unit = {
+      handedOff = true
+    }
 
     override def onSuccess(request: UcpRequest): Unit = {
-      cb.onSuccess(request)
-      RapidsStorageUtils.dispose(header)
+      val first = !ended
+      ended = true
+      try {
+        if (first) {
+          cb.onSuccess(request)
+        }
+      } finally {
+        RapidsStorageUtils.dispose(header)
+      }
     }
 
     override def onError(ucsStatus: Int, errorMsg: String): Unit = {
-      cb.onError(ucsStatus, errorMsg)
-      RapidsStorageUtils.dispose(header)
+      val first = !ended
+      ended = true
+      try {
+        if (first) {
+          cb.onError(ucsStatus, errorMsg)
+        }
+      } finally {
+        RapidsStorageUtils.dispose(header)
+      }
+    }
+
+    /**
+     * Reports what the send task threw as the send's failure, unless the sender already heard
+     * how the send ended, as after an immediate UCX error, which JUCX reports before it throws.
+     * A JVM error after the hand-off is not reported either: JUCX can run out of heap after UCX
+     * took the send, which then calls back itself and may read the send's buffers until then.
+     * The header is left to the collector, since UCX may still read it.
+     */
+    private[ucx] def reportThrow(error: Throwable): Unit = {
+      if (!ended && !(handedOff && error.isInstanceOf[VirtualMachineError])) {
+        ended = true
+        val status = error match {
+          case e: UcxException if e.getStatus < 0 => e.getStatus
+          case _ => SEND_TASK_FAILED
+        }
+        cb.onError(status, s"The send could not be handed to UCX: $error")
+      }
     }
   }
 
   /**
    * Runs the task of one send, which allocates its header and hands the send to JUCX with the
-   * given completion.
+   * given completion. If the task throws, the send's failure is reported once, so that its
+   * transaction completes, and the error is rethrown for the progress thread to log. The real
+   * case is an `OutOfMemoryError` allocating the header, hence the catch of `Throwable`.
    */
-  private[shuffle] def sendOrReport(cb: UcxCallback)(send: SendCompletion => Unit): Unit =
-    send(new SendCompletion(cb))
+  private[shuffle] def sendOrReport(cb: UcxCallback)(send: SendCompletion => Unit): Unit = {
+    val completion = new SendCompletion(cb)
+    try {
+      send(completion)
+    } catch {
+      case c: ControlThrowable => throw c
+      case t: Throwable =>
+        try {
+          completion.reportThrow(t)
+        } catch {
+          case e: Throwable if e ne t =>
+            if (e.isInstanceOf[InterruptedException]) {
+              Thread.currentThread().interrupt()
+            }
+            t.addSuppressed(e)
+        }
+        throw t
+    }
+  }
 
   def formatAmIdAndHeader(activeMessageId: Int, header: Long) =
     s"[amId=${TransportUtils.toHex(activeMessageId)}, hdr=${TransportUtils.toHex(header)}]"
