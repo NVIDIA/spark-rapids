@@ -164,8 +164,26 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             tar xf "/tmp/$JAR_FILE_NAME" -C $HOME
             rm -f "/tmp/$JAR_FILE_NAME"
         fi
+        # Spark 3.5.0 bundles Scala 2.13.8, whose compiler is incompatible with JDK 21.
+        # Keep JDK 17 scoped to upstream processes; native Databricks uses its own JDK.
+        upstream_java_env=()
+        if [[ "$UPSTREAM_SPARK_VERSION" == "3.5.0" ]]; then
+            upstream_java_home=""
+            for candidate in /usr/lib/jvm/zulu17 /usr/lib/jvm/java-17-openjdk-*; do
+                if [[ -x "$candidate/bin/java" ]]; then
+                    upstream_java_home="$candidate"
+                    break
+                fi
+            done
+            if [[ -z "$upstream_java_home" ]]; then
+                echo "Upstream Spark 3.5.0 requires an installed JDK 17" >&2
+                exit 1
+            fi
+            upstream_java_env=("JAVA_HOME=$upstream_java_home" "PATH=$upstream_java_home/bin:$PATH")
+        fi
         # The same CI-only hook checks upstream Spark; local runs leave it unset.
         if [[ -n "${SPARK_STARTUP_CHECK:-}" ]]; then
+            env "${upstream_java_env[@]}" \
             SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
                 bash "$SPARK_STARTUP_CHECK" upstream
         fi
@@ -173,6 +191,7 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             echo "Required Spark readiness checks completed; product tests remain disabled"
             exit 0
         fi
+        env "${upstream_java_env[@]}" \
         SPARK_HOME=$HOME/spark-${UPSTREAM_SPARK_VERSION}-bin-hadoop3${UPSTREAM_SPARK_SCALA_SUFFIX} \
         SPARK_SHELL_SMOKE_TEST=1 \
         PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${UPSTREAM_SHIM_VER}.RapidsShuffleManager \
