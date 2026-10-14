@@ -167,6 +167,57 @@ def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, us
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not is_databricks_version(17, 3),
+                    reason="DBR 17.3 low-shuffle schema evolution regression")
+@pytest.mark.parametrize("use_cdf", [False, True], ids=idfn)
+@pytest.mark.parametrize("multiple_columns", [False, True], ids=idfn)
+def test_delta_low_shuffle_merge_schema_evolution(
+        spark_tmp_path, spark_tmp_table_factory, use_cdf, multiple_columns):
+    conf = copy_and_update(delta_merge_enabled_conf, {
+        "spark.databricks.delta.schema.autoMerge.enabled": "true",
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false"})
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    src_table = spark_tmp_table_factory.get()
+    added_gens = [("extra_col", IntegerGen(
+        min_val=-1000000, max_val=1000000, nullable=False, special_cases=[]))]
+    if multiple_columns:
+        added_gens.append(("extra_num", LongGen(
+            min_val=-1000000, max_val=1000000, nullable=False, special_cases=[])))
+
+    def generated_df(spark):
+        return gen_df(
+            spark,
+            [("id", UniqueLongGen(nullable=False)),
+             ("value", IntegerGen(
+                 min_val=-1000000, max_val=1000000, nullable=False, special_cases=[]))] + added_gens,
+            length=128, num_slices=1)
+
+    def dest_table_func(spark):
+        # Updated and untouched rows must share a file to exercise the unmodified-row branch.
+        return generated_df(spark).select("id", "value")
+
+    def src_table_func(spark):
+        return generated_df(spark).where(f.pmod("id", f.lit(4)) == 0) \
+            .withColumn("value", f.col("value") + f.lit(1))
+
+    def setup(spark):
+        setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, False)
+        src_table_func(spark).createOrReplaceTempView(src_table)
+
+    with_cpu_session(setup, conf=conf)
+
+    def do_merge(spark, path):
+        return spark.sql(
+            f"MERGE INTO delta.`{path}` t USING {src_table} s ON t.id = s.id "
+            "WHEN MATCHED THEN UPDATE SET *").collect()
+
+    assert_gpu_and_cpu_writes_are_equal_collect(do_merge, read_delta_path, data_path, conf=conf)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_version(17, 3),
                     reason="DBR 17.3 low-shuffle NOT MATCHED BY SOURCE support")
 @pytest.mark.parametrize("use_cdf", [False, True], ids=idfn)
 def test_delta_low_shuffle_merge_not_matched_by_source(
