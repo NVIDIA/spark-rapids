@@ -33,7 +33,7 @@ get_shuffle_shim() {
 
 # Run shuffle integration test
 # Arguments:
-#   $1 - shuffle mode: "UCX" or "MULTITHREADED"
+#   $1 - shuffle mode: "UCX", "MULTITHREADED", or "CACHE_ONLY"
 #   $2 - path to run_pyspark_from_build.sh (e.g., "./run_pyspark_from_build.sh" or "./integration_tests/run_pyspark_from_build.sh")
 #   $3 - (optional) "premerge" to use premerge-specific configs (memory limits, TEST_PARALLEL=0, etc.)
 #   $4 - (optional) Spark version for shuffle shim. Defaults to $SPARK_VER.
@@ -83,9 +83,20 @@ invoke_shuffle_integration_test() {
         env_vars+="PYSP_TEST_spark_rapids_shuffle_mode=MULTITHREADED "
         env_vars+="PYSP_TEST_spark_rapids_shuffle_multiThreaded_writer_threads=2 "
         env_vars+="PYSP_TEST_spark_rapids_shuffle_multiThreaded_reader_threads=2 "
+    elif [[ "$shuffle_mode" == "CACHE_ONLY" ]]; then
+        # Keep cached shuffle blocks in the driver's local executor.
+        env_vars+="PYSP_TEST_spark_rapids_shuffle_mode=CACHE_ONLY "
+        env_vars+="PYSP_TEST_spark_master=local[4,1] "
     else
-        echo "ERROR: Unknown shuffle mode: $shuffle_mode (expected UCX or MULTITHREADED)"
+        echo "ERROR: Unknown shuffle mode: $shuffle_mode (expected UCX, MULTITHREADED, or CACHE_ONLY)"
         return 1
+    fi
+
+    if [[ "$(printf '%s\n' "4.2.0" "${spark_ver%-SNAPSHOT}" | sort -V | head -n1)" == "4.2.0" &&
+          ( "$shuffle_mode" == "UCX" || "$shuffle_mode" == "CACHE_ONLY" ) ]]; then
+        # Disable unsupported checksums so GPU shuffle tests do not fall back to sort shuffle.
+        env_vars+="PYSP_TEST_spark_sql_shuffle_orderIndependentChecksum_enabled=false "
+        env_vars+="PYSP_TEST_spark_sql_shuffle_orderIndependentChecksum_enableFullRetryOnMismatch=false "
     fi
 
     # Execute the test

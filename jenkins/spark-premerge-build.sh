@@ -174,6 +174,9 @@ rapids_shuffle_smoke_test() {
 
     $SPARK_HOME/sbin/spark-daemon.sh stop org.apache.spark.deploy.worker.Worker 1
     $SPARK_HOME/sbin/stop-master.sh
+
+    # using CACHE_ONLY shuffle in local mode
+    invoke_shuffle_integration_test CACHE_ONLY ./integration_tests/run_pyspark_from_build.sh premerge $SPARK_VER
 }
 
 run_iceberg_version_detect_tests() {
