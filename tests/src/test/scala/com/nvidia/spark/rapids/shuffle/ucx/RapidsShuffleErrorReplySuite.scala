@@ -346,7 +346,6 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferRequest(0, Seq(1, 2)))))
     doAnswer { invocation =>
       replySentAt.set(clock.nanos)
-      replied.countDown()
       // a copy, as the requester's own receive buffer would be
       val sent = invocation.getArgument[ByteBuffer](0)
       val reply = ByteBuffer.allocateDirect(sent.remaining())
@@ -356,6 +355,8 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       val responseTx = mock[Transaction]
       when(responseTx.getStatus).thenReturn(TransactionStatus.Success)
       invocation.getArgument[TransactionCallback](1)(responseTx)
+      // the requester handled the reply on its copy thread, here inline, and released its state
+      replied.countDown()
       responseTx
     }.when(request).respond(any(), any())
 
@@ -408,7 +409,8 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       clock.advance(TimeUnit.SECONDS.toNanos(1))
       requestCallbacks.get(MessageType.TransferRequest)(request)
       readerThread.join(TimeUnit.SECONDS.toMillis(awaitSeconds))
-      // a reply that comes after the reader gave up is still sent, and says when
+      // a reply that comes after the reader gave up is still sent, and says when; the reader
+      // can wake before the requester has closed the receive state, so this waits for that too
       assert(replied.await(awaitSeconds, TimeUnit.SECONDS), "the server never replied")
 
       assert(failure.get.isInstanceOf[RapidsShuffleFetchFailedException],
