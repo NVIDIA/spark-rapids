@@ -438,15 +438,11 @@ object BufferSendState extends Logging {
       reply: => RefCountedDirectByteBuffer): Unit = {
     try {
       val response = reply
-      try {
-        val queued = gate.queueIfOpen {
+      val queued = try {
+        gate.queueIfOpen {
           request.respond(response.acquire(), withResource(_) { _ =>
             response.close()
           })
-        }
-        if (!queued) {
-          logDebug(s"Not sending an error reply to $request: the server closed")
-          response.close()
         }
       } catch {
         // A respond that throws queued nothing, so its callback will not release the reply. A
@@ -454,6 +450,10 @@ object BufferSendState extends Logging {
         case NonFatal(t) =>
           response.safeClose(t)
           throw t
+      }
+      if (!queued) {
+        logDebug(s"Not sending an error reply to $request: the server closed")
+        response.close()
       }
     } catch {
       case NonFatal(t) => logError("Unable to send an error reply, so the requester will " +
