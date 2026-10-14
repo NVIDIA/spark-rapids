@@ -38,7 +38,6 @@ import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.{LongType, StructField, StructType, VariantType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 import org.apache.spark.storage.StorageLevel.MEMORY_ONLY
-import org.apache.spark.types.variant.VariantBuilder
 
 class CachedBatchWriterVariantSuite extends SparkQueryCompareTestSuite {
   import CachedBatchWriterVariantSuite._
@@ -52,11 +51,16 @@ class CachedBatchWriterVariantSuite extends SparkQueryCompareTestSuite {
       AttributeReference("v", VariantType, nullable = false)())
     // The CPU session sends the columnar entry to the CPU writer whatever the GPU supports.
     withCpuSparkSession(spark => {
+      // Spark's parse_json makes the Variant values, as no builder API exists on every runtime.
+      val sources = spark.range(0, numRows, 1, 1).selectExpr("id",
+        """parse_json(format_string('{"id": %d, "s": "%04d"}', id, id))""")
+        .queryExecution.executedPlan.executeCollect()
+        .map(r => (r.getLong(0), r.getVariant(1).getValue, r.getVariant(1).getMetadata))
       val ser = new ParquetCachedBatchSerializer
       val conf = TrampolineUtil.getSparkConf(spark)
       // A ColumnarBatch is not serializable, so the task builds its own.
-      val input = spark.sparkContext.parallelize(0 until numRows, 1)
-        .mapPartitions(ids => Iterator(variantBatch(ids.toList)))
+      val input = spark.sparkContext.parallelize(Seq(0), 1)
+        .mapPartitions(_ => Iterator(variantBatch(sources)))
       val cached = ser.convertColumnarBatchToCachedBatch(input, attrs, MEMORY_ONLY, conf)
         .collect().toList
       assert(cached.length > 2, "the rows should span several batches")
@@ -64,11 +68,10 @@ class CachedBatchWriterVariantSuite extends SparkQueryCompareTestSuite {
         spark.sparkContext.parallelize(cached, numSlices = 1), attrs, attrs, conf)
         .map(_.copy()).collect()
       assert(decoded.length == numRows)
-      decoded.zipWithIndex.foreach { case (row, id) =>
-        val expected = variantOf(id)
+      decoded.zip(sources).foreach { case (row, (id, value, metadata)) =>
         val actual = row.getVariant(1)
         assert((row.getLong(0), actual.getValue.toSeq, actual.getMetadata.toSeq) ==
-          (id.toLong, expected.getValue.toSeq, expected.getMetadata.toSeq))
+          (id, value.toSeq, metadata.toSeq))
       }
     }, new SparkConf().set(RapidsConf.GPU_BATCH_SIZE_BYTES.key, "16k"))
   }
@@ -78,17 +81,13 @@ object CachedBatchWriterVariantSuite {
   private val schema = StructType(Seq(StructField("id", LongType, nullable = false),
     StructField("v", VariantType, nullable = false)))
 
-  private def variantOf(id: Int) =
-    VariantBuilder.parseJson(s"""{"id": $id, "s": "${"%04d".format(id)}"}""", false)
-
-  private def variantBatch(ids: Seq[Int]): ColumnarBatch = {
-    val cols = OnHeapColumnVector.allocateColumns(ids.length, schema)
-    ids.zipWithIndex.foreach { case (id, i) =>
-      val variant = variantOf(id)
-      cols(0).putLong(i, id.toLong)
-      cols(1).getChild(0).putByteArray(i, variant.getValue)
-      cols(1).getChild(1).putByteArray(i, variant.getMetadata)
+  private def variantBatch(rows: Seq[(Long, Array[Byte], Array[Byte])]): ColumnarBatch = {
+    val cols = OnHeapColumnVector.allocateColumns(rows.length, schema)
+    rows.zipWithIndex.foreach { case ((id, value, metadata), i) =>
+      cols(0).putLong(i, id)
+      cols(1).getChild(0).putByteArray(i, value)
+      cols(1).getChild(1).putByteArray(i, metadata)
     }
-    new ColumnarBatch(Array[ColumnVector](cols: _*), ids.length)
+    new ColumnarBatch(Array[ColumnVector](cols: _*), rows.length)
   }
 }
