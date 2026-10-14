@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.shuffle.ucx
 
+import java.nio.ByteBuffer
+
 import scala.collection.mutable.ArrayBuffer
 
 import org.openucx.jucx.{UcxCallback, UcxException}
@@ -109,6 +111,61 @@ class UCXSendTaskSuite extends AnyFunSuite {
     assertResult(1)(ended.calls.size)
     pending.onSuccess(null)
     pending.onError(-25, "a late error in test")
+    assertResult(1)(ended.calls.size)
+  }
+
+  test("a send task hands JUCX its header's address, what it prepared and the completion") {
+    val ended = new Ended
+    var header: ByteBuffer = null
+    var sent: (Long, String, Long) = null
+    UCX.sendTask(0x1234L, ended, () => "params",
+        allocate = size => {
+          header = ByteBuffer.allocateDirect(size)
+          header
+        },
+        addressOf = buffer => {
+          assert(buffer eq header)
+          42L
+        }) { (address, prepared, completion) =>
+      sent = (address, prepared, header.getLong(0))
+      completion.onSuccess(null)
+    }
+    assertResult((42L, "params", 0x1234L))(sent)
+    assertResult(Seq("success"))(ended.calls)
+  }
+
+  test("a send task whose header cannot be allocated reports it once") {
+    val ended = new Ended
+    val oom = new OutOfMemoryError("Direct buffer memory")
+    var called = false
+    val thrown = intercept[OutOfMemoryError](UCX.sendTask(1L, ended, () => (),
+      allocate = _ => throw oom)((_, _, _) => called = true))
+    assert(thrown eq oom)
+    assert(!called)
+    assertResult(1)(ended.calls.size)
+  }
+
+  test("a send task whose request parameters cannot be built reports it once") {
+    val ended = new Ended
+    val oom = new OutOfMemoryError("Java heap space")
+    var called = false
+    val thrown = intercept[OutOfMemoryError](
+      UCX.sendTask(1L, ended, () => throw oom)((_, _, _) => called = true))
+    assert(thrown eq oom)
+    assert(!called)
+    assertResult(1)(ended.calls.size)
+  }
+
+  test("a send task that cannot take its header's address reports it once") {
+    // Taking the address boxes it, which can run out of heap before JUCX is called, so UCX
+    // never has the send and nothing else would end it.
+    val ended = new Ended
+    val oom = new OutOfMemoryError("Java heap space")
+    var called = false
+    val thrown = intercept[OutOfMemoryError](UCX.sendTask(1L, ended, () => (),
+      addressOf = _ => throw oom)((_, _, _) => called = true))
+    assert(thrown eq oom)
+    assert(!called)
     assertResult(1)(ended.calls.size)
   }
 
