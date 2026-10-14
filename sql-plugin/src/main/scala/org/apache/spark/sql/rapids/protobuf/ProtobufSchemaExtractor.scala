@@ -68,7 +68,7 @@ object ProtobufSchemaExtractor {
         enumsAsInts)
     }
 
-    val defaultValue = fieldDescriptor.defaultValueResult match {
+    val defaultValue = fieldDescriptor.explicitDefaultValue match {
       case Right(value) =>
         // Spark emits null for an absent enum unless its descriptor declares an explicit default.
         value

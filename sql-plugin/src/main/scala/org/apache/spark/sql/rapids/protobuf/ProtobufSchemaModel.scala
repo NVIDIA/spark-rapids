@@ -20,85 +20,9 @@ import java.util.Arrays
 
 import org.apache.spark.sql.types.DataType
 
-sealed trait ProtobufDescriptorSource
-
-object ProtobufDescriptorSource {
-  final case class DescriptorPath(path: String) extends ProtobufDescriptorSource
-  final case class DescriptorBytes(bytes: Array[Byte]) extends ProtobufDescriptorSource {
-    override def equals(other: Any): Boolean = other match {
-      case DescriptorBytes(otherBytes) => Arrays.equals(bytes, otherBytes)
-      case _ => false
-    }
-
-    override def hashCode(): Int = Arrays.hashCode(bytes)
-  }
-}
-
-final case class ProtobufExprInfo(
-    messageName: String,
-    descriptorSource: ProtobufDescriptorSource,
-    options: Map[String, String])
-
 final case class ProtobufPlannerOptions(
     enumsAsInts: Boolean,
     failOnErrors: Boolean)
-
-sealed trait ProtobufDefaultValue
-
-object ProtobufDefaultValue {
-  final case class BoolValue(value: Boolean) extends ProtobufDefaultValue
-  final case class IntValue(value: Long) extends ProtobufDefaultValue
-  final case class FloatValue(value: Float) extends ProtobufDefaultValue
-  final case class DoubleValue(value: Double) extends ProtobufDefaultValue
-  final case class StringValue(value: String) extends ProtobufDefaultValue
-  final case class BinaryValue(value: Array[Byte]) extends ProtobufDefaultValue {
-    override def equals(other: Any): Boolean = other match {
-      case BinaryValue(otherBytes) => Arrays.equals(value, otherBytes)
-      case _ => false
-    }
-
-    override def hashCode(): Int = Arrays.hashCode(value)
-  }
-  final case class EnumValue(number: Int, name: String) extends ProtobufDefaultValue
-}
-
-final case class ProtobufEnumValue(number: Int, name: String)
-
-final case class ProtobufEnumMetadata(values: Seq[ProtobufEnumValue]) {
-  private lazy val valuesByNumber = values.sortBy(_.number)
-
-  lazy val hasAliases: Boolean = valuesByNumber
-    .sliding(2)
-    .exists(pair => pair.length == 2 && pair.head.number == pair.last.number)
-  lazy val validValues: Array[Int] = valuesByNumber.map(_.number).toArray
-  lazy val orderedNames: Array[Array[Byte]] =
-    valuesByNumber.map(_.name.getBytes("UTF-8")).toArray
-  lazy val namesByNumber: Map[Int, String] = valuesByNumber.map(v => v.number -> v.name).toMap
-
-  def enumDefault(number: Int): ProtobufDefaultValue.EnumValue = {
-    val name = namesByNumber.getOrElse(number, number.toString)
-    ProtobufDefaultValue.EnumValue(number, name)
-  }
-}
-
-trait ProtobufMessageDescriptor {
-  def syntax: String
-  def javaStringCheckUtf8: Boolean = false
-  def findField(name: String): Option[ProtobufFieldDescriptor]
-}
-
-trait ProtobufFieldDescriptor {
-  def name: String
-  def fieldNumber: Int
-  def protoTypeName: String
-  def isRepeated: Boolean
-  def isRequired: Boolean
-  def isInOneof: Boolean
-  def defaultValueResult: Either[String, Option[ProtobufDefaultValue]]
-  def enumMetadata: Option[ProtobufEnumMetadata]
-  def messageDescriptor: Option[ProtobufMessageDescriptor]
-  def referencedTypeSyntax: Option[String]
-}
 
 final case class ProtobufFieldInfo(
     fieldNumber: Int,
