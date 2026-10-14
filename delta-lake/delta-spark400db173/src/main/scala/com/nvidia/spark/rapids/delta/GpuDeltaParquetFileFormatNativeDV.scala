@@ -204,8 +204,8 @@ case class GpuDeltaParquetFileFormatNativeDV(
     isCDCRead: Boolean = false
 ) extends GpuDeltaParquetFileFormatBase with Logging {
 
-  private val lowShuffleMergeScan =
-    GpuDeltaParquetFileFormat.isLowShuffleMergeScan(relation.options)
+  private val lowShuffleMergeDiscoveryScan =
+    GpuDeltaParquetFileFormat.isLowShuffleMergeDiscoveryScan(relation.options)
   private val lowShuffleMergeRowIndexColumn = relation.options.getOrElse(
     GpuDeltaParquetFileFormat.LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION, METADATA_ROW_IDX_COL)
 
@@ -245,7 +245,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
   override def prepareSchema(inputSchema: StructType): StructType = {
     // Match the discovery column's exact collision-safe name. It is synthetic and has no
     // physical column mapping; similarly named user columns still need normal mapping.
-    val rowIndexOrdinal = if (lowShuffleMergeScan) {
+    val rowIndexOrdinal = if (lowShuffleMergeDiscoveryScan) {
       inputSchema.fields.indexWhere(_.name == lowShuffleMergeRowIndexColumn)
     } else {
       -1
@@ -716,10 +716,10 @@ case class GpuDeltaParquetFileFormatNativeDV(
     // Low-shuffle target scans need a file-relative row index. The multithreaded reader keeps
     // per-file row-group metadata, while the coalescing reader loses those file boundaries.
     override val canUseCoalesceFilesReader: Boolean =
-      !lowShuffleMergeScan && rapidsConf.isParquetCoalesceFileReadEnabled &&
+      !lowShuffleMergeDiscoveryScan && rapidsConf.isParquetCoalesceFileReadEnabled &&
         !(queryUsesInputFile || ignoreCorruptFiles)
     override val canUseMultiThreadReader: Boolean =
-      lowShuffleMergeScan || rapidsConf.isParquetMultiThreadReadEnabled
+      lowShuffleMergeDiscoveryScan || rapidsConf.isParquetMultiThreadReadEnabled
 
     logDebug("Using GpuDeltaParquetMultiFilePartitionReaderFactory for multi-threaded Parquet " +
       "reading with deletion vectors")
@@ -876,7 +876,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
       partitionSchema, poolConf, maxNumFileProcessed, ignoreMissingFiles, ignoreCorruptFiles,
       useFieldId, queryUsesInputFile, keepReadsInOrder, combineConf) {
 
-    private val outputColumns = if (lowShuffleMergeScan) {
+    private val outputColumns = if (lowShuffleMergeDiscoveryScan) {
       DeletionVectorOutputColumns.fromSchema(readDataSchema, lowShuffleMergeRowIndexColumn)
     } else {
       DeletionVectorOutputColumns()
@@ -907,7 +907,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
      */
     private def metadataOnlyBatches(
         metadata: DeltaParquetHostMemoryEmptyMetaData): Iterator[ColumnarBatch] = {
-      require(lowShuffleMergeScan,
+      require(lowShuffleMergeDiscoveryScan,
         "Row-index-only reads are supported only for low-shuffle merge discovery")
       val rowGroupMetadata = metadata.dvMetadata.flatMap(_.peekDvInfos)
       rowGroupMetadata.foreach { info =>

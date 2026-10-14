@@ -186,6 +186,41 @@ def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, us
 @ignore_order
 @pytest.mark.skipif(not is_databricks_version(17, 3), reason="DBR 17.3 reader routing")
 @pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
+@pytest.mark.parametrize("dv_predicate_pushdown,use_metadata_row_index",
+                         [(True, True), (False, True), (True, False), (False, False)], ids=idfn)
+def test_delta_low_shuffle_merge_rewrite_with_dv_settings(
+        spark_tmp_path, spark_tmp_table_factory, reader_type,
+        dv_predicate_pushdown, use_metadata_row_index):
+    conf = copy_and_update(_delta_merge_conf(reader_type), {
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled":
+            str(dv_predicate_pushdown),
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex":
+            str(use_metadata_row_index),
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false"})
+
+    def dest_table_func(spark):
+        return spark.range(100, numPartitions=1).withColumn("value", f.col("id"))
+
+    def src_table_func(spark):
+        return spark.range(15, numPartitions=1).withColumn("value", f.col("id") + 1000)
+
+    # Temporary-DV filtering is required for the rewrite regardless of the general DV settings.
+    # Updating 15 rows must leave the same 100-row final table on CPU and GPU.
+    assert_delta_sql_merge_collect(
+        spark_tmp_path, spark_tmp_table_factory,
+        use_cdf=False, enable_deletion_vectors=False,
+        src_table_func=src_table_func, dest_table_func=dest_table_func,
+        merge_sql="MERGE INTO {dest_table} t USING {src_table} s ON t.id = s.id "
+                  "WHEN MATCHED THEN UPDATE SET t.value = s.value",
+        compare_logs=False, conf=conf, assert_func=_assert_collect_with_counters)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_version(17, 3), reason="DBR 17.3 reader routing")
+@pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
 @pytest.mark.parametrize("metadata_only", [False, True], ids=idfn)
 def test_delta_low_shuffle_merge_multiple_row_groups(
         spark_tmp_path, spark_tmp_table_factory, reader_type, metadata_only):

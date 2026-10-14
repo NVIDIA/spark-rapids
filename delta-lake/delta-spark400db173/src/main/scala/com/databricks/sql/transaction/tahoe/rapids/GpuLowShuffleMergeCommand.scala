@@ -1034,7 +1034,7 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
       dataSchema = dataSchema,
       fileFormat = fileFormat,
       options = relation.options +
-        (GpuDeltaParquetFileFormat.LOW_SHUFFLE_MERGE_SCAN_OPTION -> "true") +
+        (GpuDeltaParquetFileFormat.LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION -> "true") +
         (GpuDeltaParquetFileFormat.LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION ->
           rowIndexColumnName))(
       context.spark)
