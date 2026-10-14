@@ -18,6 +18,7 @@ package com.databricks.sql.transaction.tahoe.rapids
 
 import scala.collection.mutable
 
+import ai.rapids.cudf.HostColumnVector
 import com.databricks.sql.transaction.tahoe.OptimisticTransaction
 import com.databricks.sql.transaction.tahoe.actions.{AddFile, FileAction, RemoveFile}
 import com.databricks.sql.transaction.tahoe.commands.{
@@ -31,6 +32,7 @@ import com.databricks.sql.transaction.tahoe.deletionvectors.{RoaringBitmapArray,
 import com.databricks.sql.transaction.tahoe.util.{Utils => DeltaUtils}
 import com.nvidia.spark.rapids.{GpuColumnarToRowExec, GpuColumnVector, GpuExec, GpuSemaphore}
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -163,24 +165,35 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
           val partialBitmaps = plan.executeColumnar().mapPartitions { batches =>
             val bitmaps = mutable.HashMap.empty[Long, PartialBitmap]
             batches.foreach { batch =>
-              withResource(batch) { gpuBatch =>
-                val columns = GpuColumnVector.extractBases(gpuBatch)
-                require(columns.length == 2, "DELETE bitmap scan must return file ID and row index")
-                withResource(columns(0).copyToHost()) { ids =>
-                  withResource(columns(1).copyToHost()) { indexes =>
-                    GpuSemaphore.releaseIfNecessary(TaskContext.get())
-                    for (row <- 0 until gpuBatch.numRows()) {
-                      require(!ids.isNull(row),
-                        "A matched DELETE file was absent from the candidate-file map")
-                      require(!indexes.isNull(row),
-                        "The DELETE scan produced a null physical row index")
-                      val fileId = ids.getLong(row)
-                      require(fileId >= 0 && fileId < fileCount,
-                        s"Invalid DELETE file ID: $fileId")
-                      bitmaps.getOrElseUpdate(fileId, new PartialBitmap()).add(
-                        indexes.getLong(row))
-                    }
-                  }
+              var hostColumns = Array.empty[HostColumnVector]
+              val rowCount = try {
+                withResource(batch) { gpuBatch =>
+                  val columns = GpuColumnVector.extractBases(gpuBatch)
+                  require(columns.length == 2,
+                    "DELETE bitmap scan must return file ID and row index")
+                  hostColumns = columns.safeMap(_.copyToHost())
+                  gpuBatch.numRows()
+                }
+              } catch {
+                case t: Throwable =>
+                  hostColumns.safeClose(t)
+                  throw t
+              }
+              // Only host columns remain when another task can acquire the GPU semaphore.
+              withResource(hostColumns) { copiedColumns =>
+                GpuSemaphore.releaseIfNecessary(TaskContext.get())
+                val ids = copiedColumns(0)
+                val indexes = copiedColumns(1)
+                for (row <- 0 until rowCount) {
+                  require(!ids.isNull(row),
+                    "A matched DELETE file was absent from the candidate-file map")
+                  require(!indexes.isNull(row),
+                    "The DELETE scan produced a null physical row index")
+                  val fileId = ids.getLong(row)
+                  require(fileId >= 0 && fileId < fileCount,
+                    s"Invalid DELETE file ID: $fileId")
+                  bitmaps.getOrElseUpdate(fileId, new PartialBitmap()).add(
+                    indexes.getLong(row))
                 }
               }
             }
