@@ -24,7 +24,8 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicReference}
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.DeviceMemoryBuffer
-import com.nvidia.spark.rapids.{MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
+import com.nvidia.spark.rapids.{LogCaptureUtils, MetaUtils, RapidsShuffleHandle,
+  ShuffleMetadata}
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.jni.RmmSpark
 import com.nvidia.spark.rapids.shuffle._
@@ -156,6 +157,38 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       // the delivered table's bytes come back with its batch, the failed one's with the reply
       verify(mockTransport, times(1)).doneBytesInFlight(512L)
       verify(mockTransport, times(1)).doneBytesInFlight(1024L)
+    }
+  }
+
+  test("a reader that throws while a deferred error reply ends the state is logged, and the " +
+      "state closes once") {
+    RmmSpark.removeAllCurrentThreadAssociation()
+    val requester = new Requester
+    val (delivered, failed) = (reader(), reader())
+    doThrow(new IllegalStateException("reader failed in test"))
+      .when(failed).transferError(any(), any())
+    val requests = Seq(
+      PendingTransferRequest(requester.client, tableMeta(1, 512), delivered),
+      PendingTransferRequest(requester.client, tableMeta(2, 1024), failed))
+    val closes = new AtomicInteger()
+    withBounceBuffer(1024) { bounceBuffer =>
+      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
+        () => closes.incrementAndGet()))
+      requester.client.doIssueBufferReceives(state)
+      state.getBufferWhenReady(_ => (), 1024)
+      requester.answer(ShuffleMetadata.buildTransferErrorResponse(Seq(2), reason))
+      val windowReceived = mock[Transaction]
+      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+
+      // the copy thread consumes the window, then ends the state the server failed
+      val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[RapidsShuffleClient].getName)) {
+        requester.client.doHandleBounceBufferReceive(windowReceived, state)
+      }
+
+      verify(state, times(1)).close()
+      assert(bounceBuffer.isClosed)
+      assertResult(1)(closes.get)
+      assertResult(1)(logs.count(_.startsWith("Error while ending BRS")))
     }
   }
 
