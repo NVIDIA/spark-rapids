@@ -577,26 +577,17 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     }
 
     withResource(new NvtxRange("AM Send", NvtxColor.GREEN)) { _ =>
-      UCX.sendOrReport(cb) { completion =>
-        // This isn't coming from the pool right now because it would be a bit of a
-        // waste to get a larger hard-partitioned buffer just for 8 bytes.
-        // TODO: since we no longer have metadata limits, the pool can be managed using the
-        //   address-space allocator, so we should obtain this direct buffer from that pool
-        val header = ByteBuffer.allocateDirect(UCX.ACTIVE_MESSAGE_HEADER_SIZE.toInt)
-        completion.header = header
-        header.putLong(am.header)
-        header.rewind()
-        val params = new UcpRequestParams().setMemoryType(memType)
-        completion.handOff()
-        ep.sendAmNonBlocking(
-          am.activeMessageId,
-          TransportUtils.getAddress(header),
-          UCX.ACTIVE_MESSAGE_HEADER_SIZE,
-          dataAddress,
-          dataSize,
-          flags,
-          completion,
-          params)
+      UCX.sendTask(am.header, cb, () => new UcpRequestParams().setMemoryType(memType)) {
+        (headerAddress, params, completion) =>
+          ep.sendAmNonBlocking(
+            am.activeMessageId,
+            headerAddress,
+            UCX.ACTIVE_MESSAGE_HEADER_SIZE,
+            dataAddress,
+            dataSize,
+            flags,
+            completion,
+            params)
       }
     }
   }
@@ -1178,6 +1169,37 @@ object UCX {
         }
         cb.onError(status, s"The send could not be handed to UCX: $error")
       }
+    }
+  }
+
+  /**
+   * The task of one send: it allocates the send's header, then hands the send to JUCX through
+   * `send`, with the header's address, what `prepare` built and the completion to give JUCX.
+   * @param header the active message's header value
+   * @param prepare builds what the send needs besides its header, such as its request
+   *                parameters
+   * @param allocate allocates the header; a test stands in for the direct allocation
+   * @param addressOf the native address of a direct buffer; a test stands in for it too
+   */
+  private[shuffle] def sendTask[P](
+      header: Long,
+      cb: UcxCallback,
+      prepare: () => P,
+      allocate: Int => ByteBuffer = ByteBuffer.allocateDirect,
+      addressOf: ByteBuffer => Long = TransportUtils.getAddress)(
+      send: (Long, P, SendCompletion) => Unit): Unit = {
+    sendOrReport(cb) { completion =>
+      // This isn't coming from the pool right now because it would be a bit of a
+      // waste to get a larger hard-partitioned buffer just for 8 bytes.
+      // TODO: since we no longer have metadata limits, the pool can be managed using the
+      //   address-space allocator, so we should obtain this direct buffer from that pool
+      val buffer = allocate(ACTIVE_MESSAGE_HEADER_SIZE.toInt)
+      completion.header = buffer
+      buffer.putLong(header)
+      buffer.rewind()
+      val prepared = prepare()
+      completion.handOff()
+      send(addressOf(buffer), prepared, completion)
     }
   }
 
