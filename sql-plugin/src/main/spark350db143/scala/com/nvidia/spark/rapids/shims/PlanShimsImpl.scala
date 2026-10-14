@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 /*** spark-rapids-shim-json-lines
 {"spark": "350db143"}
 {"spark": "400"}
@@ -30,6 +29,7 @@
 {"spark": "420"}
 {"spark": "500"}
 spark-rapids-shim-json-lines ***/
+
 package com.nvidia.spark.rapids.shims
 
 import com.nvidia.spark.rapids.{GpuAlias, PlanShims}

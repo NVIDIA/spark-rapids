@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /*** spark-rapids-shim-json-lines
 {"spark": "330"}
 {"spark": "330db"}
@@ -48,6 +47,7 @@
 {"spark": "411"}
 {"spark": "412"}
 spark-rapids-shim-json-lines ***/
+
 package org.apache.spark.sql.rapids.shims
 
 object CreateNamedStructShims {

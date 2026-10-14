@@ -13,12 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /*** spark-rapids-shim-json-lines
 {"spark": "410db183"}
 {"spark": "420"}
 {"spark": "500"}
 spark-rapids-shim-json-lines ***/
+
 package org.apache.spark.sql.rapids.shims
 
 import org.apache.spark.sql.errors.QueryCompilationErrors

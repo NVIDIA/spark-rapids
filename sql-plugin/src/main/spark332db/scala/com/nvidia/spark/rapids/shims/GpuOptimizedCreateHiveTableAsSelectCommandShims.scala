@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 /*** spark-rapids-shim-json-lines
 {"spark": "332db"}
 {"spark": "340"}
@@ -46,6 +45,7 @@
 {"spark": "420"}
 {"spark": "500"}
 spark-rapids-shim-json-lines ***/
+
 package com.nvidia.spark.rapids.shims
 
 import java.util.Locale
