@@ -1114,6 +1114,10 @@ object UCX {
   // at -100, and -200 is an unknown executor. A literal, since UcsConstants loads the natives.
   private[shuffle] val SEND_TASK_FAILED = -201
 
+  // What a send task reports when it failed before it could build its completion, as when the
+  // heap ran out: fixed text, since text built from the error would allocate.
+  private val SEND_TASK_FAILED_TEXT = "The send could not be handed to UCX"
+
   /**
    * The callback of one send: it passes the send's outcome to the sender's callback at most
    * once, and frees the send's header, which UCX may read until it calls back. It is used on the
@@ -1221,21 +1225,29 @@ object UCX {
    * Runs the task of one send, which allocates its header and hands the send to JUCX with the
    * given completion. If the task throws, the send's failure is reported once, so that its
    * transaction completes, and the error is rethrown for the progress thread to log. The real
-   * case is an `OutOfMemoryError` allocating the header, hence the catch of `Throwable`.
+   * case is an `OutOfMemoryError` allocating the header, hence the catch of `Throwable`. Nothing
+   * allocates before the catch: the completion is built inside it, and a failure to build it is
+   * reported through `cb`.
    * @param completionOf builds the send's completion
    */
   private[shuffle] def sendOrReport(
       cb: UcxCallback,
       completionOf: UcxCallback => SendCompletion = newCompletion)(
       send: SendCompletion => Unit): Unit = {
-    val completion = completionOf(cb)
+    var completion: SendCompletion = null
     try {
+      completion = completionOf(cb)
       send(completion)
     } catch {
       case c: ControlThrowable => throw c
       case t: Throwable =>
         try {
-          completion.reportThrow(t)
+          if (completion != null) {
+            completion.reportThrow(t)
+          } else {
+            // JUCX never had this send, so nothing else reports it
+            cb.onError(SEND_TASK_FAILED, SEND_TASK_FAILED_TEXT)
+          }
         } catch {
           case e: Throwable if e ne t =>
             if (e.isInstanceOf[InterruptedException]) {
