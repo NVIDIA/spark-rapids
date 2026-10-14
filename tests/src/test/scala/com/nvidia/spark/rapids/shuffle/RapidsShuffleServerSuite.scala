@@ -1370,6 +1370,122 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  /**
+   * Runs `body` with a server whose send loop runs on a thread of its own, and a send state for
+   * table 1, whose buffer is gone, so that the loop ends it with an error reply. `body` gets the
+   * server, the state, and the error replies the state builds, which it reads under their lock.
+   */
+  private def withGoneStateOnSendLoop(requestTx: Transaction, sendBuffer: SendBounceBuffers)(
+      body: (RapidsShuffleServer, BufferSendState, ArrayBuffer[RefCountedDirectByteBuffer]) =>
+        Unit): Unit = {
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handle = makeHandle(tableMeta,
+        () => throw new FileNotFoundException("spill file deleted in test"))
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+      when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(1),
+        ArgumentMatchers.eq(handle))).thenReturn(true)
+      val replies = new ArrayBuffer[RefCountedDirectByteBuffer]()
+      val state = spy(new BufferSendState(requestTx, sendBuffer, requestHandler, null))
+      doAnswer(new Answer[RefCountedDirectByteBuffer] {
+        override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
+          val reply = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
+          replies.synchronized(replies += reply)
+          reply
+        }
+      }).when(state).getErrorResponse(any())
+      val sendLoop = Executors.newSingleThreadExecutor()
+      try {
+        val server = new RapidsShuffleServer(mockTransport, mock[ServerConnection],
+          RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"), requestHandler, mockExecutor,
+          sendLoop, mockConf)
+        body(server, state, replies)
+      } finally {
+        sendLoop.shutdownNow()
+      }
+    }
+  }
+
+  test("an error reply decided before the server closed is not queued after the transport " +
+      "closed") {
+    // Releasing the state's bounce buffers, after its reply was decided and before it is
+    // queued, holds the send loop until the server and the transport have closed.
+    val (holding, mayResume) = (new CountDownLatch(1), new CountDownLatch(1))
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    doAnswer(new Answer[Unit] {
+      override def answer(invocation: InvocationOnMock): Unit = {
+        holding.countDown()
+        mayResume.await(awaitSeconds, TimeUnit.SECONDS)
+      }
+    }).when(sendBuffer).close()
+    val requestTx = makeTx(1)
+    withGoneStateOnSendLoop(requestTx, sendBuffer) { (server, state, replies) =>
+      try {
+        server.addToContinueQueue(Seq(state))
+        assert(holding.await(awaitSeconds, TimeUnit.SECONDS), "the send loop never ended the state")
+        server.close()
+        // as the transport does once UCX's progress thread has stopped, after which nothing
+        // queued for it runs
+        server.releaseAbandoned(transportStopped = true)
+      } finally {
+        mayResume.countDown()
+      }
+      verify(requestTx, timeout(TimeUnit.SECONDS.toMillis(awaitSeconds))).close()
+      // the reply never reached the stopped transport, and nothing built for it is held
+      verify(requestTx, never()).respond(any(), any())
+      replies.synchronized(replies.foreach(reply => verify(reply, times(1)).close()))
+      assertResult(Some(BufferSendState.MissingOutput))(state.endedWith)
+      verify(sendBuffer, times(1)).close()
+      verify(requestTx, times(1)).close()
+    }
+  }
+
+  test("close waits for an error reply that is being queued, which then precedes the " +
+      "transport's close") {
+    val (queueing, mayQueue) = (new CountDownLatch(1), new CountDownLatch(1))
+    val requestTx = makeTx(1)
+    // the reply's send holds the send loop while the transport queues it
+    doAnswer(new Answer[Transaction] {
+      override def answer(invocation: InvocationOnMock): Transaction = {
+        queueing.countDown()
+        mayQueue.await(awaitSeconds, TimeUnit.SECONDS)
+        null
+      }
+    }).when(requestTx).respond(any(), any())
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    withGoneStateOnSendLoop(requestTx, sendBuffer) { (server, state, replies) =>
+      val closer = Executors.newSingleThreadExecutor()
+      val closed = new CountDownLatch(1)
+      try {
+        server.addToContinueQueue(Seq(state))
+        assert(queueing.await(awaitSeconds, TimeUnit.SECONDS), "the reply was never sent")
+        closer.execute(() => {
+          server.close()
+          closed.countDown()
+        })
+        // longer than close's bounded wait for the send loop
+        assert(!closed.await(2, TimeUnit.SECONDS),
+          "close returned while an error reply it let through was still being queued")
+      } finally {
+        mayQueue.countDown()
+        closer.shutdown()
+      }
+      assert(closed.await(awaitSeconds, TimeUnit.SECONDS), "close never returned")
+      val callback = ArgumentCaptor.forClass(classOf[TransactionCallback])
+      verify(requestTx, times(1)).respond(any(), callback.capture())
+      // the queued reply is the transport's, and its callback releases it
+      callback.getValue.apply(mock[Transaction])
+      replies.synchronized {
+        assertResult(1)(replies.size)
+        verify(replies.head, times(1)).close()
+      }
+      verify(sendBuffer, times(1)).close()
+      verify(requestTx, timeout(TimeUnit.SECONDS.toMillis(awaitSeconds))).close()
+    }
+  }
+
   test("a missing-output warning names the first requests and counts the rest") {
     def request(executorId: Long): (Long, Long) = (executorId, executorId << 8)
     def named(executorId: Long): String =
