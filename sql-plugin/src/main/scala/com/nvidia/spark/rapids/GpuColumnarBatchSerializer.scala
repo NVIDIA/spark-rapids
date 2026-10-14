@@ -707,9 +707,46 @@ object KudoSerializedTableColumn {
     java.lang.Boolean.getBoolean("ai.rapids.kudo.debug.ser.checkSchema")
 }
 
-class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
+class KudoSerializedBatchIterator(input: DataInputStream, deserTime: GpuMetric)
   extends BaseSerializedTableIterator {
+  private class CountingInputStream(underlying: InputStream) extends InputStream {
+    private var bytesConsumed = 0L
+
+    def position: Long = bytesConsumed
+
+    override def read(): Int = {
+      val value = underlying.read()
+      if (value >= 0) {
+        bytesConsumed += 1
+      }
+      value
+    }
+
+    override def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
+      val count = underlying.read(bytes, offset, length)
+      if (count > 0) {
+        bytesConsumed += count
+      }
+      count
+    }
+
+    override def read(bytes: Array[Byte]): Int = read(bytes, 0, bytes.length)
+
+    override def skip(length: Long): Long = {
+      val skipped = underlying.skip(length)
+      bytesConsumed += skipped
+      skipped
+    }
+
+    override def available(): Int = underlying.available()
+
+    override def close(): Unit = underlying.close()
+  }
+
+  private[this] val countingInput = new CountingInputStream(input)
+  private[this] val dIn = new DataInputStream(countingInput)
   private[this] var nextHeader: Option[KudoTableHeader] = None
+  private[this] var previousHeader: Option[(Long, KudoTableHeader)] = None
   private[this] var streamClosed: Boolean = false
 
   // When KudoSerializedBatchIterator is often handling small kudo tables, it is more efficient
@@ -744,9 +781,24 @@ class KudoSerializedBatchIterator(dIn: DataInputStream, deserTime: GpuMetric)
     } else {
       if (nextHeader.isEmpty) {
         NvtxRegistry.READ_HEADER {
-          val header = Option(KudoTableHeader.readFrom(dIn).orElse(null))
+          val headerOffset = countingInput.position
+          val header = try {
+            Option(KudoTableHeader.readFrom(dIn).orElse(null))
+          } catch {
+            case error: IllegalStateException =>
+              val previous = previousHeader.map { case (offset, prior) =>
+                val expectedNextOffset = offset + prior.getSerializedSize + prior.getTotalDataLen
+                s"previousHeaderOffset=$offset, previousRows=${prior.getNumRows}, " +
+                  s"previousColumns=${prior.getNumColumns}, " +
+                  s"previousBodyBytes=${prior.getTotalDataLen}, " +
+                  s"expectedNextHeaderOffset=$expectedNextOffset"
+              }.getOrElse("no previous header")
+              throw new IllegalStateException(
+                s"Kudo header read failed at decompressedOffset=$headerOffset, $previous", error)
+          }
           if (header.isDefined) {
             nextHeader = header
+            previousHeader = header.map(headerOffset -> _)
           } else {
             dIn.close()
             sharedBuffer.foreach(_.close())

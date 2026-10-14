@@ -1317,10 +1317,22 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
         origStream: AutoCloseable)
       extends Iterator[(Any, Any)] with AutoCloseable {
 
+      private var batchesRead = 0L
+
+      private def peekNextBatchSize(): Long = {
+        try {
+          batchIter.peekNextBatchSize().getOrElse(0L)
+        } catch {
+          case error: IllegalStateException =>
+            throw new IllegalStateException(
+              s"Shuffle block $blockId failed after $batchesRead batches", error)
+        }
+      }
+
       private var nextBatchSize = {
         var success = false
         try {
-          val res = batchIter.peekNextBatchSize().getOrElse(0L)
+          val res = peekNextBatchSize()
           success = true
           res
         } finally {
@@ -1338,9 +1350,10 @@ abstract class RapidsShuffleThreadedReaderBase[K, C](
 
       override def next(): (Any, Any) = {
         val nextBatch = batchIter.next()
+        batchesRead += 1
         var success = false
         try {
-          nextBatchSize = batchIter.peekNextBatchSize().getOrElse(0L)
+          nextBatchSize = peekNextBatchSize()
           success = true
           nextBatch
         } finally {
