@@ -220,13 +220,13 @@ class BufferSendState(
    * While a send of this state is in flight only that send's callback may call this, or the
    * server's sweep once the transport has stopped, because the transport can still read the
    * bounce buffer until then.
-   * @param errorReply why the request failed, to answer its requester with an error reply
-   *                   before the request transaction closes; none sends no reply
+   * @param errorReply the error reply to answer the requester with before the request
+   *                   transaction closes; none sends no reply
    * @return true if this call ended the state
    */
   def finish(
       result: BufferSendState.Outcome,
-      errorReply: Option[String] = None): Boolean = {
+      errorReply: Option[BufferSendState.ErrorReply] = None): Boolean = {
     val first = synchronized {
       val isFirst = outcome == null
       if (isFirst) {
@@ -252,8 +252,8 @@ class BufferSendState(
       // connection closes. Replying and closing the transaction are calls into the transport,
       // so they run outside this state's monitor.
       if (error == null || !BufferSendState.endsSendLoop(error)) {
-        errorReply.foreach(reason => BufferSendState.sendErrorReply(transaction,
-          getErrorResponse(reason)))
+        errorReply.foreach(reply => BufferSendState.sendErrorReply(transaction, reply.gate,
+          getErrorResponse(reply.reason)))
       }
       release(transaction.close())
       if (error != null) {
@@ -413,20 +413,41 @@ private[shuffle] class BufferLookupException(val tableIds: Seq[Int], cause: Thro
 
 object BufferSendState extends Logging {
   /**
-   * Answers a failed transfer request with an error reply, and releases the reply: its send's
-   * callback does, whatever the status, or this does when the send cannot start. A reply that
-   * cannot be sent is logged, by the connection when its send fails and here when it cannot
-   * start, and its requester waits until it times out, as with no reply.
+   * Lets a server queue its error replies only while it is open. The server shuts it before the
+   * transport closes, and waits for the replies it let through to be queued, so that each one is
+   * queued ahead of the transport's close, after which UCX's progress thread runs nothing.
+   */
+  private[shuffle] trait ReplyGate {
+    /** Runs `queue`, which queues a reply, and returns true if the server is open; else false. */
+    def queueIfOpen(queue: => Unit): Boolean
+  }
+
+  /** An error reply: why the request failed, and the gate of the server that answers it. */
+  private[shuffle] case class ErrorReply(reason: String, gate: ReplyGate)
+
+  /**
+   * Answers a failed transfer request with an error reply, through `gate`, and releases the
+   * reply: its send's callback does, whatever the status, or this does when the send cannot
+   * start or the gate is shut. A reply that cannot be sent is logged, by the connection when its
+   * send fails and here when it cannot start, and its requester waits until it times out, as
+   * with no reply.
    */
   private[shuffle] def sendErrorReply(
       request: Transaction,
+      gate: ReplyGate,
       reply: => RefCountedDirectByteBuffer): Unit = {
     try {
       val response = reply
       try {
-        request.respond(response.acquire(), withResource(_) { _ =>
+        val queued = gate.queueIfOpen {
+          request.respond(response.acquire(), withResource(_) { _ =>
+            response.close()
+          })
+        }
+        if (!queued) {
+          logDebug(s"Not sending an error reply to $request: the server closed")
           response.close()
-        })
+        }
       } catch {
         // A respond that throws queued nothing, so its callback will not release the reply. A
         // fatal error can come after the send was queued, and then the reply is left alone.

@@ -126,6 +126,38 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   @volatile private[this] var started = true
 
+  // The error replies `replyGate` let through that are still being queued. Guarded by the
+  // `bssExec` monitor, with `started`, so that close can wait for them.
+  private[this] var repliesQueueing = 0
+
+  /**
+   * Lets an error reply be queued only while the server is open. The transport closes after the
+   * server, and UCX's progress thread runs nothing queued after the transport's close, so a reply
+   * queued then would never be sent, nor would it or its transaction be released. Close waits
+   * for a reply let through here to be queued, which takes no blocking call.
+   */
+  private[this] object replyGate extends BufferSendState.ReplyGate {
+    override def queueIfOpen(queue: => Unit): Boolean = {
+      val open = bssExec.synchronized {
+        if (started) {
+          repliesQueueing += 1
+        }
+        started
+      }
+      if (open) {
+        try {
+          queue
+        } finally {
+          bssExec.synchronized {
+            repliesQueueing -= 1
+            bssExec.notifyAll()
+          }
+        }
+      }
+      open
+    }
+  }
+
   private[shuffle] def currentTimeNanos(): Long = System.nanoTime()
 
   /**
@@ -368,9 +400,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             case _ => Seq.empty
           }
           errorReply(if (gone) BufferSendState.MissingOutput else BufferSendState.Failed, t)
-            .foreach { reason =>
-              BufferSendState.sendErrorReply(pendingTransfer.tx, new RefCountedDirectByteBuffer(
-                ShuffleMetadata.buildTransferErrorResponse(requested, reason)))
+            .foreach { reply =>
+              BufferSendState.sendErrorReply(pendingTransfer.tx, reply.gate,
+                new RefCountedDirectByteBuffer(
+                  ShuffleMetadata.buildTransferErrorResponse(requested, reply.reason)))
             }
         }
         closeQuietly("a transfer request", pendingTransfer.tx)
@@ -423,14 +456,15 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   /**
    * The error reply for a request that ended with `outcome` because of `cause`: none when `cause`
    * ends the send loop, since the executor then exits and the requester hears of it when its
-   * connection closes, and none once the server is closing. The transport closes after the
-   * server, and a reply queued after UCX's progress thread stopped would never be sent, nor
-   * would it or its transaction be released. A lookup or a preparation can fail that late,
-   * since neither close waits for it without bound.
+   * connection closes, and none once the server is closing, which saves building one that
+   * `replyGate` would not let through. A lookup or a preparation can fail that late, since
+   * neither close waits for it without bound.
    */
-  private def errorReply(outcome: BufferSendState.Outcome, cause: Throwable): Option[String] =
+  private def errorReply(
+      outcome: BufferSendState.Outcome,
+      cause: Throwable): Option[BufferSendState.ErrorReply] =
     if (BufferSendState.endsSendLoop(cause) || !started) None
-    else Some(RapidsShuffleServer.failureReason(outcome))
+    else Some(BufferSendState.ErrorReply(RapidsShuffleServer.failureReason(outcome), replyGate))
 
   private def closeQuietly(what: String, resource: AutoCloseable): Unit = {
     try {
@@ -868,6 +902,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     bssExec.synchronized {
       started = false
       bssExec.notifyAll()
+      // so that each error reply let through is queued before the transport closes
+      while (repliesQueueing > 0) {
+        bssExec.wait()
+      }
     }
     // The loop ends what is still queued as it exits. The wait is bounded, because a pass can
     // be stuck in a CUDA synchronization.
