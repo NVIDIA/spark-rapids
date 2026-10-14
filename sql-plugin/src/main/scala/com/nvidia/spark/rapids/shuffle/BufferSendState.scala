@@ -415,7 +415,8 @@ object BufferSendState extends Logging {
   /**
    * Answers a failed transfer request with an error reply, and releases the reply: its send's
    * callback does, whatever the status, or this does when the send cannot start. A reply that
-   * cannot be sent is logged, and its requester waits until it times out, as with no reply.
+   * cannot be sent is logged, by the connection when its send fails and here when it cannot
+   * start, and its requester waits until it times out, as with no reply.
    */
   private[shuffle] def sendErrorReply(
       request: Transaction,
@@ -423,12 +424,8 @@ object BufferSendState extends Logging {
     try {
       val response = reply
       try {
-        request.respond(response.acquire(), withResource(_) { responseTx =>
-          withResource(response) { _ =>
-            if (responseTx.getStatus != TransactionStatus.Success) {
-              logError(s"Error while sending an error reply: ${responseTx.getErrorMessage}")
-            }
-          }
+        request.respond(response.acquire(), withResource(_) { _ =>
+          response.close()
         })
       } catch {
         // A respond that throws queued nothing, so its callback will not release the reply. A
