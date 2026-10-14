@@ -564,14 +564,6 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   private def sendActiveMessage(ep: UcpEndpoint, am: UCXActiveMessage,
                                 dataAddress: Long, dataSize: Long,
                                 cb: UcxCallback, isGpu: Boolean): Unit = {
-    // This isn't coming from the pool right now because it would be a bit of a
-    // waste to get a larger hard-partitioned buffer just for 8 bytes.
-    // TODO: since we no longer have metadata limits, the pool can be managed using the
-    //   address-space allocator, so we should obtain this direct buffer from that pool
-    val header = ByteBuffer.allocateDirect(UCX.ACTIVE_MESSAGE_HEADER_SIZE.toInt)
-    header.putLong(am.header)
-    header.rewind()
-
     val flags = if (am.forceRndv) {
       UcpConstants.UCP_AM_SEND_FLAG_RNDV
     } else {
@@ -585,24 +577,27 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     }
 
     withResource(new NvtxRange("AM Send", NvtxColor.GREEN)) { _ =>
-      ep.sendAmNonBlocking(
-        am.activeMessageId,
-        TransportUtils.getAddress(header),
-        UCX.ACTIVE_MESSAGE_HEADER_SIZE,
-        dataAddress,
-        dataSize,
-        flags,
-        new UcxCallback {
-          override def onSuccess(request: UcpRequest): Unit = {
-            cb.onSuccess(request)
-            RapidsStorageUtils.dispose(header)
-          }
-
-          override def onError(ucsStatus: Int, errorMsg: String): Unit = {
-            cb.onError(ucsStatus, errorMsg)
-            RapidsStorageUtils.dispose(header)
-          }
-        }, memType)
+      UCX.sendOrReport(cb) { completion =>
+        // This isn't coming from the pool right now because it would be a bit of a
+        // waste to get a larger hard-partitioned buffer just for 8 bytes.
+        // TODO: since we no longer have metadata limits, the pool can be managed using the
+        //   address-space allocator, so we should obtain this direct buffer from that pool
+        val header = ByteBuffer.allocateDirect(UCX.ACTIVE_MESSAGE_HEADER_SIZE.toInt)
+        completion.header = header
+        header.putLong(am.header)
+        header.rewind()
+        val params = new UcpRequestParams().setMemoryType(memType)
+        completion.handOff()
+        ep.sendAmNonBlocking(
+          am.activeMessageId,
+          TransportUtils.getAddress(header),
+          UCX.ACTIVE_MESSAGE_HEADER_SIZE,
+          dataAddress,
+          dataSize,
+          flags,
+          completion,
+          params)
+      }
     }
   }
 
@@ -1123,6 +1118,38 @@ object UCX {
 
   // We include a header with this size in our active messages
   private val ACTIVE_MESSAGE_HEADER_SIZE = 8L
+
+  // The status a send task reports when it throws before UCX takes the send. UCS statuses end
+  // at -100, and -200 is an unknown executor. A literal, since UcsConstants loads the natives.
+  private[shuffle] val SEND_TASK_FAILED = -201
+
+  /**
+   * The callback of one send: it passes the send's outcome to the sender's callback, and frees
+   * the send's header, which UCX may read until it calls back.
+   */
+  private[shuffle] final class SendCompletion(cb: UcxCallback) extends UcxCallback {
+    private[ucx] var header: ByteBuffer = _
+
+    /** Marks the point after which UCX may own the send, just before the send enters JUCX. */
+    private[shuffle] def handOff(): Unit = {}
+
+    override def onSuccess(request: UcpRequest): Unit = {
+      cb.onSuccess(request)
+      RapidsStorageUtils.dispose(header)
+    }
+
+    override def onError(ucsStatus: Int, errorMsg: String): Unit = {
+      cb.onError(ucsStatus, errorMsg)
+      RapidsStorageUtils.dispose(header)
+    }
+  }
+
+  /**
+   * Runs the task of one send, which allocates its header and hands the send to JUCX with the
+   * given completion.
+   */
+  private[shuffle] def sendOrReport(cb: UcxCallback)(send: SendCompletion => Unit): Unit =
+    send(new SendCompletion(cb))
 
   def formatAmIdAndHeader(activeMessageId: Int, header: Long) =
     s"[amId=${TransportUtils.toHex(activeMessageId)}, hdr=${TransportUtils.toHex(header)}]"
