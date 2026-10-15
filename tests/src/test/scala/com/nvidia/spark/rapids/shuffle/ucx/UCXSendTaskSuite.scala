@@ -77,6 +77,17 @@ class UCXSendTaskSuite extends AnyFunSuite {
     assert(ended.calls.head.startsWith(s"error ${UCX.SEND_TASK_FAILED}: "))
   }
 
+  test("a send task whose error cannot describe itself still reports it") {
+    val ended = new Ended
+    val failure = new IllegalStateException("a send failure in test") {
+      override def toString: String = throw new IllegalStateException("its text failed in test")
+    }
+    val thrown = intercept[IllegalStateException](UCX.sendOrReport(ended)(_ => throw failure))
+    assert(thrown eq failure)
+    assertResult(1)(ended.calls.size)
+    assert(ended.calls.head.startsWith(s"error ${UCX.SEND_TASK_FAILED}: "))
+  }
+
   test("a send that UCX failed at once, before JUCX threw, is reported once") {
     // JUCX 1.22 calls the callback for an immediate error, then the exception reaches Java
     val ended = new Ended
