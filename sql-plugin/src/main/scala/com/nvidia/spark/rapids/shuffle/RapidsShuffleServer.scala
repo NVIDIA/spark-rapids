@@ -126,8 +126,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   @volatile private[this] var started = true
 
-  // The error replies `replyGate` let through that are still being queued. Guarded by the
-  // `bssExec` monitor, with `started`, so that close can wait for them.
+  // The replies, error replies and transfer responses, that `replyGate` let through and that
+  // are still being queued. Guarded by the `bssExec` monitor, with `started`, so that close can
+  // wait for them.
   private[this] var repliesQueueing = 0
 
   /**
@@ -149,7 +150,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         } finally {
           bssExec.synchronized {
             repliesQueueing -= 1
-            bssExec.notifyAll()
+            // only a closing server waits for the count, so the send loop is not woken here
+            if (!started && repliesQueueing == 0) {
+              bssExec.notifyAll()
+            }
           }
         }
       }
@@ -863,24 +867,32 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
             s"${bufferSendState.peerExecutorId} with $buffersToSend")
 
           // send the transfer response
-          try {
-            requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
-              withResource(transferResponse) { _ =>
-                responseTx.getStatus match {
-                  case TransactionStatus.Cancelled | TransactionStatus.Error =>
-                    logError(s"Error while handling TransferResponse: " +
-                      s"${responseTx.getErrorMessage}")
-                  case _ =>
+          val queued = try {
+            replyGate.queueIfOpen {
+              requestTx.respond(transferResponse.acquire(), withResource(_) { responseTx =>
+                withResource(transferResponse) { _ =>
+                  responseTx.getStatus match {
+                    case TransactionStatus.Cancelled | TransactionStatus.Error =>
+                      logError(s"Error while handling TransferResponse: " +
+                        s"${responseTx.getErrorMessage}")
+                    case _ =>
+                  }
                 }
-              }
-            })
+              })
+            }
           } catch {
             case t: Throwable =>
               // a respond that throws queued nothing, so its callback will not release this
               closeQuietly("a transfer response", transferResponse)
               throw t
           }
-          outcome = BufferSendState.Completed
+          if (queued) {
+            outcome = BufferSendState.Completed
+          } else {
+            // the server closed after the check above
+            closeQuietly("a transfer response", transferResponse)
+            outcome = BufferSendState.ServerClosed
+          }
         } finally {
           logDebug(s"Buffer send state " +
             s"${TransportUtils.toHex(bufferSendState.getPeerBufferReceiveHeader)} " +
@@ -901,7 +913,7 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     bssExec.synchronized {
       started = false
       bssExec.notifyAll()
-      // so that each error reply let through is queued before the transport closes
+      // so that each reply let through is queued before the transport closes
       while (repliesQueueing > 0) {
         bssExec.wait()
       }

@@ -413,9 +413,10 @@ private[shuffle] class BufferLookupException(val tableIds: Seq[Int], cause: Thro
 
 object BufferSendState extends Logging {
   /**
-   * Lets a server queue its error replies only while it is open. The server shuts it before the
-   * transport closes, and waits for the replies it let through to be queued, so that each one is
-   * queued ahead of the transport's close, after which UCX's progress thread runs nothing.
+   * Lets a server queue its replies, error replies and transfer responses, only while it is
+   * open. The server shuts it before the transport closes, and waits for the replies it let
+   * through to be queued, so that each one is queued ahead of the transport's close, after
+   * which UCX's progress thread runs nothing.
    */
   private[shuffle] trait ReplyGate {
     /** Runs `queue`, which queues a reply, and returns true if the server is open; else false. */
