@@ -27,7 +27,7 @@ import scala.util.control.{ControlThrowable, NonFatal}
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
-import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.ThreadFactoryBuilder
 import com.nvidia.spark.rapids.jni.RmmSpark
@@ -584,7 +584,10 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       UcsConstants.MEMORY_TYPE.UCS_MEMORY_TYPE_HOST
     }
 
-    withResource(new NvtxRange("AM Send", NvtxColor.GREEN)) { _ =>
+    // A failure to close the range joins an error in flight, which decides whether the send's
+    // failure is reported, rather than replacing it.
+    val range = new NvtxRange("AM Send", NvtxColor.GREEN)
+    closeOnExcept(range) { _ =>
       UCX.sendTask(am.header, completion,
           () => new UcpRequestParams().setMemoryType(memType)) {
         (headerAddress, params, completion) =>
@@ -599,6 +602,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
             params)
       }
     }
+    range.close()
   }
 
   def getServerConnection: UCXServerConnection = serverConnection
