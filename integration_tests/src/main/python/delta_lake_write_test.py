@@ -191,6 +191,7 @@ def test_delta_write_round_trip_after_type_widening(
 def test_delta_db173_path_write_aqe_gpu_stub(spark_tmp_path, aqe_enabled, empty_input):
     conf = copy_and_update(writer_confs, delta_writes_enabled_conf, {
         "spark.sql.adaptive.enabled": str(aqe_enabled).lower(),
+        "spark.sql.classic.shuffleDependency.fileCleanup.enabled": "true",
         "spark.databricks.delta.optimizeWrite.enabled": "false",
         "spark.databricks.delta.autoCompact.enabled": "false",
     })
@@ -210,11 +211,28 @@ def test_delta_db173_path_write_aqe_gpu_stub(spark_tmp_path, aqe_enabled, empty_
             .option("delta.enableDeletionVectors", "false").save(path)
 
     with_cpu_session(lambda spark: write_delta(spark, cpu_path), conf=conf)
-    # AQE must replace the outer Delta write placeholder as well as its child stages.
-    assert_rapids_delta_write(
-        lambda spark: write_delta(spark, gpu_path), conf=conf,
-        required_gpu_classes=["GpuRapidsDeltaWriteExec"],
-        forbidden_cpu_fallback_classes=["RapidsDeltaWriteExec"], require_non_empty=True)
+    # Inspect the write's own AQE context so metadata queries cannot satisfy these checks.
+    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    callback.startCapture()
+    try:
+        with_gpu_session(lambda spark: write_delta(spark, gpu_path), conf=conf)
+        plans = callback.getResultsWithTimeout(10000)
+        assert len(plans) > 0, "No execution plans captured for Delta write"
+        writes = [node for plan in plans for node in collect_plan_nodes(plan)
+                  if node.getClass().getSimpleName() == "GpuRapidsDeltaWriteExec"]
+        assert writes, "GpuRapidsDeltaWriteExec was not executed"
+        assert not any(callback.didFallBack(plan, "RapidsDeltaWriteExec") for plan in plans), \
+            "Delta write used CPU RapidsDeltaWriteExec"
+        if aqe_enabled:
+            adaptive_plans = [node for write in writes for node in collect_plan_nodes(write)
+                              if node.getClass().getSimpleName() == "AdaptiveSparkPlanExec"]
+            if not empty_input:
+                assert adaptive_plans, "Delta write did not execute an adaptive child"
+            for adaptive in adaptive_plans:
+                assert adaptive.context().qe().shuffleCleanupMode().toString() == \
+                    "RemoveShuffleFiles", "Delta write did not preserve shuffle cleanup mode"
+    finally:
+        callback.endCapture()
 
     def read_rows(spark, path):
         return [tuple(row) for row in spark.read.format("delta").load(path)
