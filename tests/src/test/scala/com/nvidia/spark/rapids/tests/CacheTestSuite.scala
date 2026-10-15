@@ -81,6 +81,24 @@ class CacheTestSuite extends SparkQueryCompareTestSuite {
     testCache(getMultiNestedDF(NullType))
   }
 
+  Seq(
+    "struct" ->
+      "array(named_struct('s', cast(id as string)), cast(null as struct<s:string>))",
+    "array" ->
+      "array(array(cast(id as string)), cast(null as array<string>))",
+    "map" ->
+      "array(map('s', cast(id as string)), cast(null as map<string,string>))"
+  ).foreach { case (nestedType, nestedExpr) =>
+    test(s"array with null $nestedType element and unsupported column") {
+      testCache { spark: SparkSession =>
+        spark.range(2).selectExpr(
+          "id",
+          "make_interval(0, 0, 0, 0, 0, 0, id) as iv",
+          s"$nestedExpr as a")
+      }
+    }
+  }
+
 /** Helper functions  */
 
   def testCache(f: SparkSession => DataFrame): Unit = {
