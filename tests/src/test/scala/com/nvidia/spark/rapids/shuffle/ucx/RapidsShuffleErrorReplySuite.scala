@@ -192,6 +192,35 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("a window whose transaction fails to close, with a deferred error reply, closes the " +
+      "state once") {
+    RmmSpark.removeAllCurrentThreadAssociation()
+    val requester = new Requester
+    val (delivered, failed) = (reader(), reader())
+    val requests = Seq(
+      PendingTransferRequest(requester.client, tableMeta(1, 512), delivered),
+      PendingTransferRequest(requester.client, tableMeta(2, 1024), failed))
+    val closes = new AtomicInteger()
+    withBounceBuffer(1024) { bounceBuffer =>
+      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
+        () => closes.incrementAndGet()))
+      requester.client.doIssueBufferReceives(state)
+      state.getBufferWhenReady(_ => (), 1024)
+      requester.answer(ShuffleMetadata.buildTransferErrorResponse(Seq(2), reason))
+      val windowReceived = mock[Transaction]
+      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+      doThrow(new IllegalStateException("closing the window failed in test"))
+        .when(windowReceived).close()
+
+      // the window's own failure path closes the state, so the server's failure ends nothing
+      requester.client.doHandleBounceBufferReceive(windowReceived, state)
+
+      verify(state, times(1)).close()
+      assert(bounceBuffer.isClosed)
+      assertResult(1)(closes.get)
+    }
+  }
+
   test("an error reply after the requester ended the state itself releases nothing again") {
     RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
