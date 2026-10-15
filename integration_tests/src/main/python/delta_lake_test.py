@@ -27,7 +27,7 @@ from parquet_test_utils import parquet_row_group_midpoints
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
     is_spark_320_or_later, is_spark_340_or_later, is_spark_350_or_later, \
     supports_delta_lake_deletion_vectors, is_spark_412_or_later, \
-    gpu_supports_delta_dv_scan, is_before_spark_353, is_databricks173_or_later
+    gpu_supports_delta_dv_scan, is_before_spark_353, is_databricks173_or_later, spark_jvm
 
 _conf = {'spark.rapids.sql.explain': 'ALL'}
 
@@ -241,7 +241,8 @@ def test_delta_cdf_read_stays_columnar(spark_tmp_path, column_mapping):
         conf=conf)
 
 
-@allow_non_gpu("RDDScanExec", *delta_meta_allow)
+# AQE can replace the final aggregate over an empty CDF with EmptyRelationExec.
+@allow_non_gpu("RDDScanExec", "EmptyRelationExec", *delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
 @pytest.mark.skipif(is_databricks_runtime(), reason="OSS Delta CDF test")
@@ -281,11 +282,22 @@ def test_delta_cdf_optimize_range_preserves_attributes(
         Row(version=0, change="insert", count=10) if project_and_filter else
         Row(_commit_version=0, _change_type="insert", count=20)]
     assert with_cpu_session(lambda spark: read_cdf(spark).collect(), conf=conf) == expected
+
+    def assert_gpu_plan(cpu_plan, gpu_plan):
+        # Check conversion before AQE replaces an empty aggregate with an empty relation.
+        if gpu_plan.getClass().getSimpleName() == "AdaptiveSparkPlanExec":
+            gpu_plan = gpu_plan.initialPlan()
+        callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+        callback.assertContains(gpu_plan, "GpuHashAggregateExec")
+        callback.assertNotContain(gpu_plan, "RowDataSourceScanExec")
+        if not optimize_only:
+            callback.assertContains(gpu_plan, "GpuFileSourceScanExec")
+
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         read_cdf,
-        exist_classes="GpuHashAggregateExec",
         non_exist_classes="RowDataSourceScanExec",
-        conf=conf)
+        conf=conf,
+        gpu_plan_assertion=assert_gpu_plan)
 
 
 def _test_delta_deletion_vector_read_with_cdf(
