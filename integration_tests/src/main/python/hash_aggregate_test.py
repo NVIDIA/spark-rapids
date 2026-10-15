@@ -1725,9 +1725,6 @@ _exact_percentile_strict_skip_reason = \
     f'{_exact_percentile_issue}: Spark 5 exact percentile coverage uses the Spark 500 variant'
 _exact_percentile_tolerance_reason = \
     f'{_exact_percentile_issue}: Spark 5 exact percentile result tolerance'
-_exact_percentile_fallback_classes = (
-    'ObjectHashAggregateExec', 'SortAggregateExec', 'ShuffleExchangeExec', 'HashPartitioning',
-    'AggregateExpression', 'Alias', 'Cast', 'Literal', 'ProjectExec', 'Percentile')
 
 @pytest.mark.skipif(is_spark_500_or_later(),
                     reason=_exact_percentile_strict_skip_reason)
@@ -1752,14 +1749,32 @@ def test_exact_percentile_endpoint_delta_reduction_spark500():
             [(-math.inf,), (10.0,)], 'val double')
         .selectExpr('percentile(val, 0.2)'))
 
-@allow_non_gpu(*_exact_percentile_fallback_classes)
-def test_exact_percentile_descending_fallback():
-    assert_gpu_fallback_collect(
-        lambda spark: spark.sql("""
-            SELECT percentile_cont(0.1) WITHIN GROUP (ORDER BY v DESC)
-            FROM VALUES (0.0D), (100.0D) AS t(v)
-            """),
-        'Percentile')
+def test_exact_percentile_descending():
+    data = [(0.0,), (100.0,), (None,)]
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data, 'val double')
+        .selectExpr(
+            'percentile_cont(0.0) WITHIN GROUP (ORDER BY val DESC)',
+            'percentile_cont(0.1) WITHIN GROUP (ORDER BY val DESC)',
+            'percentile_cont(1.0) WITHIN GROUP (ORDER BY val DESC)'))
+
+@ignore_order(local=True)
+def test_exact_percentile_descending_groupby():
+    data = [
+        (0, -math.inf), (0, 10.0), (0, None),
+        (1, 10.0), (1, math.inf), (1, None),
+        (2, 1.0), (2, math.nan), (2, None),
+        (3, 0.0), (3, 100.0), (3, 100.0)]
+    schema = StructType([
+        StructField('key', IntegerType(), nullable=False),
+        StructField('val', DoubleType(), nullable=True)])
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.createDataFrame(data, schema)
+        .groupby('key')
+        .agg(
+            f.expr('percentile_cont(0.0) WITHIN GROUP (ORDER BY val DESC)'),
+            f.expr('percentile_cont(0.2) WITHIN GROUP (ORDER BY val DESC)'),
+            f.expr('percentile_cont(1.0) WITHIN GROUP (ORDER BY val DESC)')))
 
 def test_exact_percentile_null_frequency():
     data = [(10.0, 1), (20.0, None), (None, -1), (30.0, 0)]

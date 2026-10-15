@@ -16,18 +16,24 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import java.io.IOException
+import java.io.{FileNotFoundException, IOException}
 import java.nio.ByteBuffer
 
-import ai.rapids.cudf.{DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.{MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
+import ai.rapids.cudf.{Cuda, CudaFatalException, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
+import com.nvidia.spark.rapids.{LogCaptureUtils, MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
+import com.nvidia.spark.rapids.shuffle.ucx.{UCX, UCXActiveMessage, UCXServerConnection,
+  UCXShuffleTransport}
 import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
-import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.{any, anyLong}
 import org.mockito.Mockito._
+import org.mockito.invocation.InvocationOnMock
+import org.mockito.stubbing.Answer
+import org.openucx.jucx.UcxCallback
 
+import org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException
 import org.apache.spark.storage.ShuffleBlockBatchId
 
 class MockRapidsShuffleRequestHandler(mockBuffers: Seq[RapidsShuffleHandle])
@@ -81,6 +87,53 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         }
       }
     }
+  }
+
+  /** Mocked send bounce buffers of 1024 bytes whose slices are `slice`. */
+  private def makeSendBuffer(slice: DeviceMemoryBuffer): SendBounceBuffers = {
+    val sendBuffer = mock[SendBounceBuffers]
+    val bounceBuffer = mock[BounceBuffer]
+    val bounceMemory = mock[DeviceMemoryBuffer]
+    when(bounceBuffer.buffer).thenReturn(bounceMemory)
+    when(bounceMemory.getLength).thenReturn(1024L)
+    when(bounceMemory.slice(ArgumentMatchers.anyLong(), ArgumentMatchers.anyLong()))
+      .thenReturn(slice)
+    when(sendBuffer.bounceBufferSize).thenReturn(1024)
+    when(sendBuffer.hostBounceBuffer).thenReturn(None)
+    when(sendBuffer.deviceBounceBuffer).thenReturn(bounceBuffer)
+    sendBuffer
+  }
+
+  /** A transfer request for one table. */
+  private def makeTx(tableId: Int): Transaction = makeTx(Seq(tableId))
+
+  /** A transfer request for several tables. */
+  private def makeTx(tableIds: Seq[Int]): Transaction = {
+    val tx = mock[Transaction]
+    when(tx.releaseMessage()).thenReturn(new MetadataTransportBuffer(
+      new RefCountedDirectByteBuffer(ShuffleMetadata.buildTransferRequest(0, tableIds))))
+    tx
+  }
+
+  /** A handle whose materialization answers with `materialize`. */
+  private def makeHandle(tableMeta: TableMeta, materialize: () => DeviceMemoryBuffer)
+      : RapidsShuffleHandle = {
+    val handle = mock[SpillableDeviceBufferHandle]
+    when(handle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
+    when(handle.materialize()).thenAnswer(_ => materialize())
+    RapidsShuffleHandle(handle, tableMeta)
+  }
+
+  private def newServer(requestHandler: RapidsShuffleRequestHandler,
+      serverConnection: ServerConnection): RapidsShuffleServer = {
+    spy(new RapidsShuffleServer(
+      mockTransport,
+      serverConnection,
+      RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+      requestHandler,
+      mockExecutor,
+      mockBssExecutor,
+      mockConf))
   }
 
   test("sending tables that fit within one bounce buffer") {
@@ -243,7 +296,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("when we fail to prepare a send, throw if nothing can be handled") {
+  test("when we fail to prepare a send, end the request if nothing can be handled") {
     val mockSendBuffer = mock[SendBounceBuffers]
     val mockDeviceBounceBuffer = mock[BounceBuffer]
     val mockDeviceMemoryBuffer = mock[DeviceMemoryBuffer]
@@ -297,23 +350,16 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       server.start()
 
       val bss = new BufferSendState(mockTransaction, mockSendBuffer, mockRequestHandler, null)
-      // if nothing else can be handled, we throw
-      assertThrows[IllegalStateException] {
-        try {
-          server.doHandleTransferRequest(Seq(bss))
-        } catch {
-          case e: Throwable =>
-            assertResult(1)(e.getSuppressed.length)
-            assertResult(ex)(e.getSuppressed()(0).getCause)
-            throw e
-        }
-      }
+      // if nothing else can be handled, the request ends rather than the send loop
+      server.doHandleTransferRequest(Seq(bss))
+      assertResult(Some(BufferSendState.Failed))(bss.endedWith)
 
       // since nothing could be handled, we don't try again
       verify(server, times(0)).addToContinueQueue(any())
 
-      // bounce buffers are freed
+      // bounce buffers are freed, and the request transaction is closed, once
       verify(mockSendBuffer, times(1)).close()
+      verify(mockTransaction, times(1)).close()
 
       verify(mockRequestHandler, times(1))
         .getShuffleHandle(ArgumentMatchers.eq(1))
@@ -389,6 +435,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(mockHandleThatThrows, times(2)).materialize()
       verify(mockMaterialized, times(2)).close()
       verify(mockSendBuffer, times(1)).close()
+      assertResult(Some(BufferSendState.OomExpired))(bss.endedWith)
+      verify(mockTransaction, times(1)).close()
     }
   }
 
@@ -489,6 +537,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(sendBufferA, times(1)).close()
       verify(sendBufferB, times(0)).close()
       verify(server, times(1)).addToContinueQueue(Seq(bssB))
+      assertResult(Some(BufferSendState.OomExpired))(bssA.endedWith)
+      assertResult(None)(bssB.endedWith)
     }
   }
 
@@ -669,5 +719,403 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         }
       }
     }
+  }
+
+  test("when a buffer is gone from the catalog, end its request instead of retrying it") {
+    val sendBuffer = mock[SendBounceBuffers]
+    val deviceBounceBuffer = mock[BounceBuffer]
+    when(deviceBounceBuffer.buffer).thenReturn(mock[DeviceMemoryBuffer])
+    when(sendBuffer.bounceBufferSize).thenReturn(1024)
+    when(sendBuffer.hostBounceBuffer).thenReturn(None)
+    when(sendBuffer.deviceBounceBuffer).thenReturn(deviceBounceBuffer)
+
+    val request = ShuffleMetadata.buildTransferRequest(0, Seq(1))
+    when(mockTransaction.releaseMessage()).thenReturn(
+      new MetadataTransportBuffer(new RefCountedDirectByteBuffer(request)))
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handle = mock[SpillableDeviceBufferHandle]
+      when(handle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
+      // a disk-spilled buffer whose spill file the unregister deleted
+      when(handle.materialize()).thenAnswer(_ => {
+        throw new FileNotFoundException("spill file deleted in test")
+      })
+      val rapidsHandle = RapidsShuffleHandle(handle, tableMeta)
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(rapidsHandle)
+      when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(1),
+        ArgumentMatchers.eq(rapidsHandle))).thenReturn(true)
+
+      val server = spy(new RapidsShuffleServer(
+        mockTransport,
+        mock[ServerConnection],
+        RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+        requestHandler,
+        mockExecutor,
+        mockBssExecutor,
+        mockConf))
+
+      val bss = new BufferSendState(mockTransaction, sendBuffer, requestHandler, null)
+      server.doHandleTransferRequest(Seq(bss))
+
+      assertResult(Some(BufferSendState.MissingOutput))(bss.endedWith)
+      verify(server, times(0)).addToContinueQueue(any())
+      verify(sendBuffer, times(1)).close()
+      verify(mockTransaction, times(1)).close()
+    }
+  }
+
+  test("a slice that fails to close after its send leaves its state to the send's callback") {
+    // the slice of the state that is sent fails to close once its send returned
+    val sentSlice = mock[DeviceMemoryBuffer]
+    doThrow(new IllegalStateException("slice close failed in test")).when(sentSlice).close()
+    val sentBuffer = makeSendBuffer(sentSlice)
+    val retriedBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val sentTx = makeTx(1)
+    val retriedTx = makeTx(2)
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val sentHandle = mock[SpillableDeviceBufferHandle]
+      when(sentHandle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
+      when(sentHandle.materialize()).thenReturn(mock[DeviceMemoryBuffer])
+      // fails to prepare for a reason that is not classified, so it would be retried
+      val retriedHandle = mock[SpillableDeviceBufferHandle]
+      when(retriedHandle.sizeInBytes).thenReturn(tableMeta.bufferMeta().size())
+      when(retriedHandle.materialize()).thenAnswer(_ => {
+        throw new IOException("mmap failed in test")
+      })
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1)))
+        .thenReturn(RapidsShuffleHandle(sentHandle, tableMeta))
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(2)))
+        .thenReturn(RapidsShuffleHandle(retriedHandle, tableMeta))
+
+      val serverConnection = mock[ServerConnection]
+      val callback = ArgumentCaptor.forClass(classOf[TransactionCallback])
+      when(serverConnection.send(
+        any(), any(), any(), any[MemoryBuffer](), callback.capture())).thenReturn(mock[Transaction])
+
+      val server = spy(new RapidsShuffleServer(
+        mockTransport,
+        serverConnection,
+        RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+        requestHandler,
+        mockExecutor,
+        mockBssExecutor,
+        mockConf))
+
+      val sent = new BufferSendState(sentTx, sentBuffer, requestHandler, null)
+      val retried = new BufferSendState(retriedTx, retriedBuffer, requestHandler, null)
+      server.doHandleTransferRequest(Seq(sent, retried))
+
+      // the failure came after the send returned, so the transport may still read the buffer
+      assertResult(None)(sent.endedWith)
+      verify(sentBuffer, times(0)).close()
+      assertResult(1)(server.inFlightCount)
+      // the state that had not been sent ends in that pass, and is never queued to retry
+      assertResult(Some(BufferSendState.Failed))(retried.endedWith)
+      verify(retriedBuffer, times(1)).close()
+      verify(retriedTx, times(1)).close()
+      verify(server, times(0)).addToContinueQueue(any())
+
+      val done = mock[Transaction]
+      when(done.getStatus).thenReturn(TransactionStatus.Success)
+      callback.getValue.asInstanceOf[TransactionCallback](done)
+      assertResult(Some(BufferSendState.Completed))(sent.endedWith)
+      verify(sentTx, times(1)).respond(any(), any())
+      verify(sentBuffer, times(1)).close()
+      verify(sentTx, times(1)).close()
+      assertResult(0)(server.inFlightCount)
+    }
+  }
+
+  test("a fatal error from a send's callback stays in the UCX callback wrapper, logged once") {
+    // A callback's releases make no CUDA call, so the error is injected through the request's
+    // close. The send goes through the real UCX server connection and transaction: only UCX is
+    // mocked, to capture the completion callback it would call on its progress thread.
+    val fatal = cudaFatal()
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val requestTx = makeTx(1)
+    doThrow(fatal).when(requestTx).close()
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handle = makeHandle(tableMeta, () => mock[DeviceMemoryBuffer])
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+      val ucx = mock[UCX]
+      val connection = spy(new UCXServerConnection(ucx, mock[UCXShuffleTransport]))
+      var sendTx: Transaction = null
+      doAnswer(new Answer[Transaction] {
+        override def answer(invocation: InvocationOnMock): Transaction = {
+          sendTx = invocation.callRealMethod().asInstanceOf[Transaction]
+          sendTx
+        }
+      }).when(connection).send(anyLong(), any[MessageType.Value](), anyLong(),
+        any[MemoryBuffer](), any[TransactionCallback]())
+      val server = newServer(requestHandler, connection)
+
+      val state = new BufferSendState(requestTx, sendBuffer, requestHandler, null)
+      server.doHandleTransferRequest(Seq(state))
+      val completion = ArgumentCaptor.forClass(classOf[UcxCallback])
+      verify(ucx, times(1)).sendActiveMessage(
+        anyLong(), any[UCXActiveMessage](), any[MemoryBuffer](), completion.capture())
+      val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[BufferSendState].getName)) {
+        // returns normally: the error does not reach the progress thread's own catch
+        completion.getValue.onSuccess(null)
+      }
+
+      assertResult(TransactionStatus.Error)(sendTx.getStatus)
+      // the state still ended once, and released what it held
+      assertResult(Some(BufferSendState.Completed))(state.endedWith)
+      verify(requestTx, times(1)).respond(any(), any())
+      verify(sendBuffer, times(1)).close()
+      verify(requestTx, times(1)).close()
+      assertResult(0)(server.inFlightCount)
+      // logged once, by the wrapper that contains it
+      assertResult(1)(logs.count(_.startsWith("Detected an exception from user code")))
+      assertResult(0)(logs.count(_.startsWith(releaseErrorLog)))
+    }
+  }
+
+  private val releaseErrorLog = "Error while releasing a BufferSendState"
+
+  /** Runs `body`, returning what was logged while it ran with its result. */
+  private def withLogs[T](body: => T): (Array[String], T) = {
+    var result: Option[T] = None
+    val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[BufferSendState].getName)) {
+      result = Some(body)
+    }
+    (logs, result.get)
+  }
+
+  private def cudaFatal(): CudaFatalException = {
+    // its constructors are not public
+    val constructor =
+      classOf[CudaFatalException].getDeclaredConstructor(classOf[String], classOf[Int])
+    constructor.setAccessible(true)
+    constructor.newInstance("an illegal memory access in test", Int.box(700))
+  }
+
+  /**
+   * Three states that all prepare: the first one's two buffers, the second one's buffer and the
+   * third one's. Releasing the first state's first buffer throws an ordinary error, which starts
+   * the pass's cleanup, and releasing the second state's buffer, during that cleanup, throws
+   * `secondReleaseError`.
+   */
+  private def cleanupAfterFailure(secondReleaseError: Throwable)
+      : (Throwable, Seq[BufferSendState], Seq[SendBounceBuffers], Seq[Transaction],
+        Seq[DeviceMemoryBuffer], ServerConnection) = {
+    val firstRelease = mock[DeviceMemoryBuffer]
+    doThrow(new IllegalStateException("release failed in test")).when(firstRelease).close()
+    val otherRelease = mock[DeviceMemoryBuffer]
+    val secondRelease = mock[DeviceMemoryBuffer]
+    doThrow(secondReleaseError).when(secondRelease).close()
+    val thirdRelease = mock[DeviceMemoryBuffer]
+    val buffers = Seq.fill(3)(makeSendBuffer(mock[DeviceMemoryBuffer]))
+    val txs = Seq(makeTx(Seq(1, 3)), makeTx(2), makeTx(4))
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handles = Seq(1 -> firstRelease, 3 -> otherRelease, 2 -> secondRelease,
+        4 -> thirdRelease).map { case (id, buffer) => id -> makeHandle(tableMeta, () => buffer) }
+      handles.foreach { case (id, handle) =>
+        when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(id))).thenReturn(handle)
+      }
+      val serverConnection = mock[ServerConnection]
+      val server = newServer(requestHandler, serverConnection)
+      val states = buffers.zip(txs).map { case (buffer, tx) =>
+        new BufferSendState(tx, buffer, requestHandler, null)
+      }
+      val failure = try {
+        server.doHandleTransferRequest(states)
+        null
+      } catch {
+        case t: Throwable => t
+      }
+      (failure, states, buffers, txs, Seq(firstRelease, otherRelease, secondRelease, thirdRelease),
+        serverConnection)
+    }
+  }
+
+  private def assertEndedOnce(
+      states: Seq[BufferSendState],
+      buffers: Seq[SendBounceBuffers],
+      txs: Seq[Transaction],
+      releases: Seq[DeviceMemoryBuffer],
+      serverConnection: ServerConnection): Unit = {
+    states.foreach(state => assertResult(Some(BufferSendState.Failed))(state.endedWith))
+    buffers.foreach(buffer => verify(buffer, times(1)).close())
+    txs.foreach(tx => verify(tx, times(1)).close())
+    // every materialized buffer is released once, including the one after a release that threw
+    releases.foreach(release => verify(release, times(1)).close())
+    verify(serverConnection, times(0)).send(
+      any(), any(), any(), any[MemoryBuffer](), any[TransactionCallback]())
+  }
+
+  test("a fatal CUDA error found while cleaning up after another failure still ends the loop") {
+    val fatal = cudaFatal()
+    val (logs, (failure, states, buffers, txs, releases, serverConnection)) =
+      withLogs(cleanupAfterFailure(fatal))
+    assert(failure.isInstanceOf[IllegalStateException])
+    assertResult("release failed in test")(failure.getMessage)
+    assert(failure.getSuppressed.contains(fatal))
+    assert(!Thread.interrupted())
+    assertEndedOnce(states, buffers, txs, releases, serverConnection)
+    // rethrown, so left to whoever ends the loop with it to log
+    assertResult(0)(logs.count(_.startsWith(releaseErrorLog)))
+  }
+
+  test("an ordinary failure while cleaning up after another one does not end the loop") {
+    val (logs, (failure, states, buffers, txs, releases, serverConnection)) =
+      withLogs(cleanupAfterFailure(new IllegalStateException("second release failed in test")))
+    assert(failure == null)
+    assertEndedOnce(states, buffers, txs, releases, serverConnection)
+    // contained, so logged where it is contained
+    assertResult(1)(logs.count(_.startsWith(releaseErrorLog)))
+  }
+
+  test("a fatal CUDA error from the recovery synchronization still ends the loop") {
+    val fatal = cudaFatal()
+    val buffers = Seq.fill(2)(makeSendBuffer(mock[DeviceMemoryBuffer]))
+    val txs = Seq(makeTx(1), makeTx(2))
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      // both fail to prepare for an ordinary reason, so the pass fails fast before its own sync
+      val handles = Seq(1, 2).map { id =>
+        id -> makeHandle(tableMeta, () => throw new IOException("mmap failed in test"))
+      }
+      handles.foreach { case (id, handle) =>
+        when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(id))).thenReturn(handle)
+      }
+      val serverConnection = mock[ServerConnection]
+      val server = newServer(requestHandler, serverConnection)
+      val stream = mock[Cuda.Stream]
+      doThrow(fatal).when(stream).sync()
+      doReturn(stream, Nil: _*).when(server).serverStream
+
+      val states = buffers.zip(txs).map { case (buffer, tx) =>
+        new BufferSendState(tx, buffer, requestHandler, null)
+      }
+      val failure = intercept[IllegalStateException] {
+        server.doHandleTransferRequest(states)
+      }
+
+      assert(failure.getMessage.startsWith("Unable to prepare any sends."))
+      assert(failure.getSuppressed.contains(fatal))
+      assert(!Thread.interrupted())
+      verify(stream, times(1)).sync()
+      states.foreach(state => assertResult(Some(BufferSendState.Failed))(state.endedWith))
+      buffers.foreach(buffer => verify(buffer, times(1)).close())
+      txs.foreach(tx => verify(tx, times(1)).close())
+      verify(server, times(0)).addToContinueQueue(any())
+    }
+  }
+
+  test("an interrupted preparation ends the loop and keeps the thread's interrupt") {
+    val healthySlice = mock[DeviceMemoryBuffer]
+    val healthyBuffer = makeSendBuffer(healthySlice)
+    val interruptedBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val healthyTx = makeTx(1)
+    val interruptedTx = makeTx(2)
+
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val materialized = mock[DeviceMemoryBuffer]
+      val healthyHandle = makeHandle(tableMeta, () => materialized)
+      // as a disk-spilled buffer does when its wait for a host spill bounce buffer is interrupted
+      val interruptedHandle =
+        makeHandle(tableMeta, () => throw new InterruptedException("in test"))
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(healthyHandle)
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(2))).thenReturn(interruptedHandle)
+      val serverConnection = mock[ServerConnection]
+      val server = newServer(requestHandler, serverConnection)
+
+      val healthy = new BufferSendState(healthyTx, healthyBuffer, requestHandler, null)
+      val interrupted = new BufferSendState(interruptedTx, interruptedBuffer, requestHandler, null)
+      var interruptKept = false
+      val failure = try {
+        intercept[RapidsShuffleSendPrepareException] {
+          server.doHandleTransferRequest(Seq(healthy, interrupted))
+        }
+      } finally {
+        // cleared here, so that a failure above cannot leave this thread interrupted
+        interruptKept = Thread.interrupted()
+      }
+
+      assert(interruptKept)
+      assert(failure.getCause.isInstanceOf[InterruptedException])
+      assertResult(Some(BufferSendState.Failed))(healthy.endedWith)
+      assertResult(Some(BufferSendState.Failed))(interrupted.endedWith)
+      verify(healthyBuffer, times(1)).close()
+      verify(interruptedBuffer, times(1)).close()
+      // the healthy state's window was prepared but never sent, so the pass closes its slice
+      verify(healthySlice, times(1)).close()
+      verify(server, times(0)).addToContinueQueue(any())
+      verify(serverConnection, times(0)).send(
+        any(), any(), any(), any[MemoryBuffer](), any[TransactionCallback]())
+    }
+  }
+
+  test("an interrupted OOM backoff ends the request and keeps the thread's interrupt") {
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    val tx = makeTx(1)
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handle = makeHandle(tableMeta,
+        () => throw new OutOfMemoryError("GPU allocation failed in test"))
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+      val server = spy(new RapidsShuffleServer(
+        mockTransport,
+        mock[ServerConnection],
+        RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"),
+        requestHandler,
+        mockExecutor,
+        mockBssExecutor,
+        mockConf) {
+        override private[shuffle] def oomRetryTimeoutNanos: Long = Long.MaxValue
+        override private[shuffle] def waitBeforeOomRetry(backoffMillis: Long): Unit =
+          throw new InterruptedException("backoff interrupted in test")
+      })
+
+      val bss = new BufferSendState(tx, sendBuffer, requestHandler, null)
+      var interruptKept = false
+      try {
+        intercept[InterruptedException] {
+          server.doHandleTransferRequest(Seq(bss))
+        }
+      } finally {
+        interruptKept = Thread.interrupted()
+      }
+
+      assert(interruptKept)
+      assertResult(Some(BufferSendState.Failed))(bss.endedWith)
+      verify(sendBuffer, times(1)).close()
+      verify(tx, times(1)).close()
+      verify(server, times(0)).addToContinueQueue(any())
+    }
+  }
+
+  test("a missing-output warning names the first requests and counts the rest") {
+    def request(executorId: Long): (Long, Long) = (executorId, executorId << 8)
+    def named(executorId: Long): String =
+      s"executor $executorId header ${TransportUtils.toHex(executorId << 8)}"
+    assertResult(s"${named(1)}, ${named(2)}")(
+      RapidsShuffleServer.describeRequests(Seq(request(1), request(2))))
+    assertResult((1L to 5L).map(named).mkString(", ") + " and 2 more")(
+      RapidsShuffleServer.describeRequests((1L to 7L).map(request)))
   }
 }
