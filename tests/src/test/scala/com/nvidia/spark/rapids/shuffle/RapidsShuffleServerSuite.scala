@@ -1433,9 +1433,12 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         mayResume.countDown()
       }
       verify(requestTx, timeout(TimeUnit.SECONDS.toMillis(awaitSeconds))).close()
-      // the reply never reached the stopped transport, and nothing built for it is held
+      // the reply, decided before close, never reached the stopped transport and is released
       verify(requestTx, never()).respond(any(), any())
-      replies.synchronized(replies.foreach(reply => verify(reply, times(1)).close()))
+      replies.synchronized {
+        assertResult(1)(replies.size)
+        verify(replies.head, times(1)).close()
+      }
       assertResult(Some(BufferSendState.MissingOutput))(state.endedWith)
       verify(sendBuffer, times(1)).close()
       verify(requestTx, times(1)).close()
@@ -1472,7 +1475,12 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         mayQueue.countDown()
         closer.shutdown()
       }
-      assert(closed.await(awaitSeconds, TimeUnit.SECONDS), "close never returned")
+      try {
+        assert(closed.await(awaitSeconds, TimeUnit.SECONDS), "close never returned")
+      } finally {
+        // a close still waiting is interrupted only once the reply may be queued
+        closer.shutdownNow()
+      }
       val callback = ArgumentCaptor.forClass(classOf[TransactionCallback])
       verify(requestTx, times(1)).respond(any(), callback.capture())
       // the queued reply is the transport's, and its callback releases it
@@ -1486,6 +1494,21 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  /** Closes `server` on a thread of its own, so that a close that never returns fails. */
+  private def assertCloseReturns(server: RapidsShuffleServer, why: String): Unit = {
+    val closer = Executors.newSingleThreadExecutor()
+    val closed = new CountDownLatch(1)
+    try {
+      closer.execute(() => {
+        server.close()
+        closed.countDown()
+      })
+      assert(closed.await(awaitSeconds, TimeUnit.SECONDS), why)
+    } finally {
+      closer.shutdownNow()
+    }
+  }
+
   test("close does not wait for an error reply whose send threw") {
     val requestTx = makeTx(1)
     doThrow(new IllegalStateException("respond failed in test"))
@@ -1494,20 +1517,27 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     withGoneStateOnSendLoop(requestTx, sendBuffer) { (server, state, replies) =>
       server.addToContinueQueue(Seq(state))
       verify(requestTx, timeout(TimeUnit.SECONDS.toMillis(awaitSeconds))).close()
-      // close waits for the replies the server let through, so it runs where a hang fails it
-      val closer = Executors.newSingleThreadExecutor()
-      val closed = new CountDownLatch(1)
-      try {
-        closer.execute(() => {
-          server.close()
-          closed.countDown()
-        })
-        assert(closed.await(awaitSeconds, TimeUnit.SECONDS),
-          "close kept waiting for an error reply whose send threw")
-      } finally {
-        closer.shutdownNow()
+      verify(requestTx, times(1)).respond(any(), any())
+      assertCloseReturns(server, "close kept waiting for an error reply whose send threw")
+      replies.synchronized {
+        assertResult(1)(replies.size)
+        verify(replies.head, times(1)).close()
       }
-      replies.synchronized(replies.foreach(reply => verify(reply, times(1)).close()))
+    }
+  }
+
+  test("close does not wait for an error reply whose send threw a fatal error") {
+    val requestTx = makeTx(1)
+    // the send loop ends on it, and the reply is left alone, since the send may be queued
+    doThrow(new OutOfMemoryError("Java heap space in test"))
+      .when(requestTx).respond(any(), any())
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    withGoneStateOnSendLoop(requestTx, sendBuffer) { (server, state, replies) =>
+      server.addToContinueQueue(Seq(state))
+      verify(requestTx, timeout(TimeUnit.SECONDS.toMillis(awaitSeconds))).respond(any(), any())
+      assertCloseReturns(server,
+        "close kept waiting for an error reply whose send threw a fatal error")
+      replies.synchronized(assertResult(1)(replies.size))
     }
   }
 
