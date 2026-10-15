@@ -116,6 +116,37 @@ class ProtobufSchemaSuite extends AnyFunSuite {
     assert(!enumMeta.hasAliases)
   }
 
+  test("prepared enum schemas do not share mutable metadata arrays") {
+    val enumMeta = ProtobufEnumMetadata(Seq(
+      ProtobufEnumValue(1, "EN"),
+      ProtobufEnumValue(0, "UNKNOWN")))
+    val field = StructField("language", StringType)
+    val info = ProtobufSchemaExtractor.extractFieldInfo(field,
+      FakeFieldDescriptor("language", 1, "ENUM", enumMetadata = Some(enumMeta)),
+      enumsAsInts = false).fold(fail(_), identity)
+
+    def prepareSchema(): FlattenedSchemaArrays = {
+      val flat = ProtobufSchemaValidator.toFlattenedFieldDescriptor(
+        "language", field, info, -1, 0, DType.STRING.getTypeId.getNativeId, isOutput = true)
+        .fold(fail(_), identity)
+      ProtobufSchemaValidator.toFlattenedSchemaArrays(Array(flat))
+    }
+
+    val first = prepareSchema()
+    val second = prepareSchema()
+    first.enumValidValues(0)(0) = 99
+    first.enumNames(0)(0)(0) = 'X'.toByte
+    first.enumNames(0)(1) = "REPLACED".getBytes("UTF-8")
+
+    val third = prepareSchema()
+    for (schema <- Seq(second, third)) {
+      assert(schema.enumValidValues(0).sameElements(Array(0, 1)))
+      assert(schema.enumNames(0).map(new String(_, "UTF-8"))
+        .sameElements(Array("UNKNOWN", "EN")))
+      assert(toJniDescriptor(schema).numFields() == 1)
+    }
+  }
+
   test("extractor records reflection failures as unsupported field info") {
     val msgDesc = FakeMessageDescriptor(
       syntax = "PROTO2",

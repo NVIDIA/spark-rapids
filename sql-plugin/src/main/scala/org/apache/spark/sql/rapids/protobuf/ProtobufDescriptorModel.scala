@@ -92,9 +92,12 @@ final case class ProtobufEnumMetadata(values: Vector[ProtobufEnumValue]) {
   lazy val hasAliases: Boolean = valuesByNumber
     .sliding(2)
     .exists(pair => pair.length == 2 && pair.head.number == pair.last.number)
-  lazy val validValues: Array[Int] = valuesByNumber.map(_.number).toArray
-  lazy val orderedNames: Array[Array[Byte]] =
+  private lazy val validValuesSnapshot: Array[Int] = valuesByNumber.map(_.number).toArray
+  private lazy val orderedNamesSnapshot: Array[Array[Byte]] =
     valuesByNumber.map(_.name.getBytes("UTF-8")).toArray
+
+  def validValues: Array[Int] = validValuesSnapshot.clone()
+  def orderedNames: Array[Array[Byte]] = orderedNamesSnapshot.map(_.clone())
 
   private lazy val namesByNumber: Map[Int, String] =
     values.reverseIterator.map(v => v.number -> v.name).toMap
