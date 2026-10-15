@@ -25,7 +25,8 @@ from iceberg import (
     iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops,
     full_coverage_partition_transforms, assert_iceberg_files_use_codec, supports_iceberg_v3,
     ICEBERG_V3_UNSUPPORTED_REASON, supports_iceberg_row_lineage_inheritance,
-    ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON, row_lineage_df)
+    ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON, iceberg_table_properties_sql,
+    row_lineage_df)
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session
 
@@ -76,7 +77,7 @@ def test_insert_into_unpartitioned_table(format_version, spark_tmp_table_factory
 def test_iceberg_v3_row_lineage_append(spark_tmp_table_factory):
     def setup_iceberg_table(spark, table):
         spark.sql(f"CREATE TABLE {table} (id BIGINT) USING ICEBERG "
-                  f"TBLPROPERTIES ('format-version' = '2')")
+                  f"{iceberg_table_properties_sql('2')}")
         row_lineage_df(spark, start=1).writeTo(table).append()
         spark.sql(
             f"ALTER TABLE {table} SET TBLPROPERTIES ("
