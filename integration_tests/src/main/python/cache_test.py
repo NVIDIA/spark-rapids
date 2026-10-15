@@ -17,7 +17,7 @@ import os
 
 import pytest
 
-from asserts import (assert_gpu_and_cpu_are_equal_collect,
+from asserts import (assert_gpu_and_cpu_are_equal_collect, assert_gpu_fallback_collect,
     assert_cpu_and_gpu_are_equal_collect_with_capture, assert_equal)
 from conftest import is_not_utc
 from data_gen import *
@@ -325,6 +325,7 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
 
     assert_gpu_and_cpu_are_equal_collect(helper)
 
+@allow_non_gpu('InMemoryTableScanExec')
 def test_cache_udt():
     schema = StructType([
         StructField('mllib_v', mllib.VectorUDT(), nullable=True),
@@ -349,14 +350,19 @@ def test_cache_udt():
     def fun(spark):
         df = spark.createDataFrame(spark.sparkContext.parallelize(values), schema)
         df.cache().count()
-        return df.collect()
-    cpu_result = with_cpu_session(fun)
-    gpu_result = with_gpu_session(fun)
-    # assert_gpu_and_cpu_are_equal_collect method doesn't handle UDT so we just write a single
-    # statement here to compare each result with the source values.
-    assert cpu_result == values, "CPU result not equal to source values"
-    assert gpu_result == values, "GPU result not equal to source values"
-    assert cpu_result == gpu_result, "not equal"
+        return df
+
+    def canonicalize(cpu_result, gpu_result):
+        # The generic result comparator does not handle vector UDT values. Check each round trip
+        # against the source first, then give it stable strings for its final CPU/GPU comparison.
+        assert cpu_result == values, "CPU result not equal to source values"
+        assert gpu_result == values, "GPU result not equal to source values"
+        return [repr(row) for row in cpu_result], [repr(row) for row in gpu_result]
+
+    assert_gpu_fallback_collect(
+        fun, 'InMemoryTableScanExec',
+        conf={'spark.sql.adaptive.enabled': 'false'},
+        result_canonicalize_func_before_compare=canonicalize)
 
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
 @ignore_order(local=True)
