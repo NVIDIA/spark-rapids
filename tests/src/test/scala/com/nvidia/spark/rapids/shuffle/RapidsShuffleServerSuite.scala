@@ -1541,6 +1541,131 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  /**
+   * Runs `body` with a server whose send loop runs on a thread of its own and whose one send
+   * state, for table 1, has sent its only window and waits for that send's completion. `prepare`
+   * stubs the spied state before its send. `body` gets the server, the state, and `complete`,
+   * which completes the send successfully on a thread of its own, as UCX's progress thread does.
+   */
+  private def withStateAwaitingCompletion(requestTx: Transaction, sendBuffer: SendBounceBuffers)(
+      prepare: BufferSendState => Unit)(
+      body: (RapidsShuffleServer, BufferSendState, () => java.util.concurrent.Future[_]) =>
+        Unit): Unit = {
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      val handle = makeHandle(tableMeta, () => mock[DeviceMemoryBuffer])
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+      val serverConnection = mock[ServerConnection]
+      val callback = ArgumentCaptor.forClass(classOf[TransactionCallback])
+      when(serverConnection.send(
+        any(), any(), any(), any[MemoryBuffer](), callback.capture())).thenReturn(mock[Transaction])
+      // close waits on the send loop executor's monitor, and a mocked executor's wait() returns
+      // at once, so the loop runs on a real one
+      val sendLoop = Executors.newSingleThreadExecutor()
+      val progressThread = Executors.newSingleThreadExecutor()
+      try {
+        val server = new RapidsShuffleServer(mockTransport, serverConnection,
+          RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"), requestHandler, mockExecutor,
+          sendLoop, mockConf)
+        val state = spy(new BufferSendState(requestTx, sendBuffer, requestHandler, null))
+        prepare(state)
+        server.doHandleTransferRequest(Seq(state))
+        assert(!state.hasMoreSends)
+        val done = mock[Transaction]
+        when(done.getStatus).thenReturn(TransactionStatus.Success)
+        body(server, state, () => progressThread.submit(new Runnable {
+          override def run(): Unit = callback.getValue.apply(done)
+        }))
+      } finally {
+        progressThread.shutdownNow()
+        sendLoop.shutdownNow()
+      }
+    }
+  }
+
+  test("a transfer response decided before the server closed is not queued after the " +
+      "transport closed") {
+    val (holding, mayResume) = (new CountDownLatch(1), new CountDownLatch(1))
+    val responses = new ArrayBuffer[RefCountedDirectByteBuffer]()
+    val requestTx = makeTx(1)
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    withStateAwaitingCompletion(requestTx, sendBuffer) { state =>
+      // building the response, after the server checked that it is open, holds the progress
+      // thread until the server and the transport have closed
+      doAnswer(new Answer[RefCountedDirectByteBuffer] {
+        override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
+          holding.countDown()
+          mayResume.await(awaitSeconds, TimeUnit.SECONDS)
+          val response = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
+          responses.synchronized(responses += response)
+          response
+        }
+      }).when(state).getTransferResponse()
+    } { (server, state, complete) =>
+      val completed = complete()
+      try {
+        assert(holding.await(awaitSeconds, TimeUnit.SECONDS), "the send never completed")
+        server.close()
+        // as the transport does once UCX's progress thread has stopped
+        server.releaseAbandoned(transportStopped = true)
+      } finally {
+        mayResume.countDown()
+      }
+      completed.get(awaitSeconds, TimeUnit.SECONDS)
+      // the response never reached the stopped transport, and is released
+      verify(requestTx, never()).respond(any(), any())
+      responses.synchronized {
+        assertResult(1)(responses.size)
+        verify(responses.head, times(1)).close()
+      }
+      assertResult(Some(BufferSendState.ServerClosed))(state.endedWith)
+      verify(sendBuffer, times(1)).close()
+      verify(requestTx, times(1)).close()
+    }
+  }
+
+  test("close waits for a transfer response that is being queued") {
+    val (queueing, mayQueue) = (new CountDownLatch(1), new CountDownLatch(1))
+    val requestTx = makeTx(1)
+    // the response's send holds the progress thread while the transport queues it
+    doAnswer(new Answer[Transaction] {
+      override def answer(invocation: InvocationOnMock): Transaction = {
+        queueing.countDown()
+        mayQueue.await(awaitSeconds, TimeUnit.SECONDS)
+        null
+      }
+    }).when(requestTx).respond(any(), any())
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    withStateAwaitingCompletion(requestTx, sendBuffer)(_ => ()) { (server, state, complete) =>
+      val completed = complete()
+      val closer = Executors.newSingleThreadExecutor()
+      val closed = new CountDownLatch(1)
+      try {
+        assert(queueing.await(awaitSeconds, TimeUnit.SECONDS), "the response was never sent")
+        closer.execute(() => {
+          server.close()
+          closed.countDown()
+        })
+        assert(!closed.await(2, TimeUnit.SECONDS),
+          "close returned while a transfer response it let through was still being queued")
+      } finally {
+        mayQueue.countDown()
+        closer.shutdown()
+      }
+      try {
+        assert(closed.await(awaitSeconds, TimeUnit.SECONDS), "close never returned")
+      } finally {
+        closer.shutdownNow()
+      }
+      completed.get(awaitSeconds, TimeUnit.SECONDS)
+      verify(requestTx, times(1)).respond(any(), any())
+      assertResult(Some(BufferSendState.Completed))(state.endedWith)
+      verify(requestTx, times(1)).close()
+    }
+  }
+
   test("a missing-output warning names the first requests and counts the rest") {
     def request(executorId: Long): (Long, Long) = (executorId, executorId << 8)
     def named(executorId: Long): String =
