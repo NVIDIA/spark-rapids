@@ -347,8 +347,9 @@ object JsonPartitionReader {
               firstToken += 1
             }
             // Spark emits no rows for an empty root array; it must not become a split-only chunk.
+            // Preserve the BOM so Jackson cannot reinterpret malformed UTF-8 as UTF-16/32.
             val emptyArray = firstToken < end && line(firstToken) == '['.toByte &&
-              isEmptyArray(line, contentOffset, end - contentOffset)
+              isEmptyArray(line, offset, len)
             if (!emptyArray) {
               // Removing a BOM from a root array can make cuDF fail on mixed object/array batches.
               val stripBom = hasBom && (firstToken == end || line(firstToken) == '{'.toByte)

@@ -275,6 +275,24 @@ class JsonScanRetrySuite extends RmmSparkRetrySuiteBase {
     }
   }
 
+  for (maxBytes <- Seq(1L, 1024L * 1024);
+      forceSplit <- Seq(false, true) if maxBytes > 1 || !forceSplit) {
+    test(s"JSON empty-array filtering preserves BOM encoding: bytes=$maxBytes, split=$forceSplit") {
+      // The UTF-8 BOM prevents Jackson from interpreting the NULs as UTF-32LE.
+      val lines = Seq("""{"a":0,"b":"first"}""",
+        "\uFEFF[\u0000\u0000\u0000]\u0000\u0000\u0000",
+        """{"a":1,"b":"last"}""")
+      withReader(lines.mkString("", "\n", "\n"), dataSchema, maxBytes) { reader =>
+        if (forceSplit) {
+          RmmSpark.forceSplitAndRetryOOM(RmmSpark.getCurrentThreadId, 1,
+            RmmSpark.OomInjectionType.GPU.ordinal, 0)
+        }
+        assert(collectReaderRows(reader) == Seq((Some(0), Some("first")),
+          (None, None), (Some(1), Some("last"))))
+      }
+    }
+  }
+
   for ((encoding, name, suffix, retain) <- Seq(
       ("UTF-8", "invalid UTF-8", Array(0x80.toByte), true),
       ("US-ASCII", "non-ASCII", "é".getBytes(StandardCharsets.UTF_8), true),
