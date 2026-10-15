@@ -997,6 +997,106 @@ def test_delta_rtas_truncate_capability(spark_tmp_table_factory):
     assert [row.id for row in gpu_rows] == list(range(10, 20))
 
 
+@allow_non_gpu('DataWritingCommandExec', 'WriteFilesExec', *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime() or not is_spark_400_or_later(),
+                    reason="Requires OSS Delta Lake V1 fallback writers on Spark 4.x")
+@pytest.mark.parametrize("overwrite", [False, True], ids=["append", "overwrite"])
+@pytest.mark.parametrize("use_path, cache_table, partitioned", [
+    (False, False, False),
+    (True, False, False),
+    (False, True, False),
+    (False, False, True),
+    (True, False, True),
+], ids=["catalog", "path", "cached-catalog", "partitioned-catalog", "partitioned-path"])
+def test_delta_sql_insert_v1_write(spark_tmp_table_factory, spark_tmp_path, overwrite,
+                                   use_path, cache_table, partitioned):
+    cpu_table = spark_tmp_table_factory.get()
+    gpu_table = spark_tmp_table_factory.get()
+    confs = copy_and_update(writer_confs, delta_writes_enabled_conf,
+                           {"spark.sql.sources.partitionOverwriteMode": "STATIC"})
+
+    def target(table, suffix):
+        return f"delta.`{spark_tmp_path}/{suffix}`" if use_path else table
+
+    cpu_target = target(cpu_table, "CPU")
+    gpu_target = target(gpu_table, "GPU")
+    initial_rows = [(-1, "initial", 0), (-2, "untouched", 1)] if partitioned else [(-1, "initial")]
+
+    def create_initial_tables(spark):
+        schema = "id BIGINT, payload STRING, part INT" if partitioned else "id BIGINT, payload STRING"
+        partition_clause = "PARTITIONED BY (part)" if partitioned else ""
+        values = "(-1L, 'initial', 0), (-2L, 'untouched', 1)" if partitioned else "(-1L, 'initial')"
+        for table in [cpu_target, gpu_target]:
+            spark.sql(f"CREATE TABLE {table} ({schema}) USING DELTA {partition_clause}")
+            spark.sql(f"INSERT INTO {table} VALUES {values}")
+
+    def insert_rows(spark, table):
+        mode = "OVERWRITE" if overwrite else "INTO"
+        partition_clause = "PARTITION (part = 0)" if partitioned else ""
+        spark.sql(
+            f"INSERT {mode} {table} {partition_clause} "
+            "SELECT id, CAST(id AS STRING) FROM range(1000)")
+
+    def read_rows(spark, table):
+        return spark.table(table).orderBy("id").collect()
+
+    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+
+    def assert_cached_scan(df):
+        plan = df._jdf.queryExecution().executedPlan()
+        assert any(callback.contains(plan, node) for node in
+                   ["InMemoryTableScanExec", "GpuInMemoryTableScanExec"])
+
+    def write_and_read(spark, table, capture_gpu):
+        try:
+            if cache_table:
+                # Keep materialization, write, and reads in one session: with_*_session clears caches.
+                spark.catalog.cacheTable(table)
+                cached_df = spark.table(table)
+                assert [tuple(row) for row in cached_df.orderBy("id").collect()] == initial_rows
+                assert spark.catalog.isCached(table)
+                assert_cached_scan(cached_df)
+
+            if capture_gpu:
+                callback.startCapture()
+                try:
+                    insert_rows(spark, table)
+                    plans = callback.getResultsWithTimeout(10000)
+                    expected_exec = ("GpuOverwriteByExpressionExecV1" if overwrite
+                                     else "GpuAppendDataExecV1")
+                    assert any(callback.contains(plan, expected_exec) for plan in plans), \
+                        f"{expected_exec} was not executed"
+                finally:
+                    callback.endCapture()
+            else:
+                insert_rows(spark, table)
+
+            rows = read_rows(spark, table)
+            if cache_table:
+                assert spark.catalog.isCached(table)
+                fresh_df = spark.table(table)
+                assert_cached_scan(fresh_df)
+                # Both a pre-write DataFrame and a fresh catalog lookup must see the new rows.
+                assert_equal(cached_df.orderBy("id").collect(), rows)
+            return rows
+        finally:
+            if cache_table:
+                spark.catalog.uncacheTable(table)
+
+    with_cpu_session(create_initial_tables, conf=confs)
+    cpu_rows = with_cpu_session(lambda spark: write_and_read(spark, cpu_target, False), conf=confs)
+    gpu_rows = with_gpu_session(lambda spark: write_and_read(spark, gpu_target, True), conf=confs)
+    assert_equal(cpu_rows, gpu_rows)
+    expected = [(i, str(i), 0) if partitioned else (i, str(i)) for i in range(1000)]
+    if not overwrite:
+        expected.extend(initial_rows)
+    elif partitioned:
+        expected.append((-2, "untouched", 1))
+    assert [tuple(row) for row in gpu_rows] == sorted(expected)
+
+
 @pytest.mark.parametrize("version, expected", [
     ("3.4.10", False),
     ("3.5.5", False),
