@@ -243,5 +243,11 @@ class UCXSendTaskSuite extends AnyFunSuite {
     val thrown = intercept[OutOfMemoryError](UCX.sendOrReport(failing)(_ => throw oom))
     assert(thrown eq oom)
     assert(thrown.getSuppressed.exists(_ eq reportFailure))
+
+    // the same when the report goes to the sender's callback, the completion not built
+    val heap = new OutOfMemoryError("Java heap space")
+    val unbuilt = intercept[OutOfMemoryError](UCX.sendOrReport(failing, _ => throw heap)(_ => ()))
+    assert(unbuilt eq heap)
+    assert(unbuilt.getSuppressed.exists(_ eq reportFailure))
   }
 }
