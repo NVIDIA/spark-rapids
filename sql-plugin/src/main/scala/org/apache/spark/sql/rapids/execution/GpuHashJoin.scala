@@ -2698,9 +2698,6 @@ class HashOuterJoinIterator(
       true
     } else {
       finalBatch = getFinalBatch()
-      // Now that we've manifested the final batch, we can close the stream iterator early to free
-      // GPU resources.
-      streamJoinIter.close()
       finalBatch.isDefined
     }
   }
@@ -2729,44 +2726,47 @@ class HashOuterJoinIterator(
 
   private def getFinalBatch(): Option[ColumnarBatch] = {
     NvtxIdWithMetrics(NvtxRegistry.GET_FINAL_BATCH, joinTime) {
-      streamJoinIter.releaseBuiltSideTracker() match {
-        case None => None
-        case Some(tracker) =>
-          val (filteredTable, builtTypes) = withResource(tracker) { _ =>
+      val builtTypes = built.dataTypes
+      val filteredTable = withResource(streamJoinIter) { _ =>
+        streamJoinIter.releaseBuiltSideTracker().map { tracker =>
+          val trackerTable = withResource(tracker) { _ =>
             withResource(tracker.getColumnarBatch()) { trackerBatch =>
-              withResource(GpuColumnVector.from(trackerBatch)) { trackerTab =>
-                val batch = built.getBatch
-                val builtTypes = GpuColumnVector.extractTypes(batch)
-                withResource(GpuColumnVector.from(batch)) { builtTable =>
-                  (builtTable.filter(trackerTab.getColumn(0)), builtTypes)
-                }
-              }
+              GpuColumnVector.from(trackerBatch)
             }
           }
-          // filter returns an owning table. Release the tracker and input table wrappers before
-          // retaining the filtered columns in the output batch.
-          val filteredBatch = withResource(filteredTable) { _ =>
-            GpuColumnVector.from(filteredTable, builtTypes)
-          }
-          // Combine build-side columns with null columns for stream side
-          withResource(filteredBatch) { builtBatch =>
-            val numFilterRows = builtBatch.numRows()
-            if (numFilterRows > 0) {
-              val streamColumns = streamAttributes.safeMap { attr =>
-                GpuColumnVector.fromNull(numFilterRows, attr.dataType)
-              }
-              withResource(new ColumnarBatch(streamColumns.toArray, numFilterRows)) { streamBatch =>
-                buildSide match {
-                  case GpuBuildRight =>
-                    Some(GpuColumnVector.combineColumns(streamBatch, builtBatch))
-                  case GpuBuildLeft =>
-                    Some(GpuColumnVector.combineColumns(builtBatch, streamBatch))
-                }
-              }
-            } else {
-              None
+          withResource(trackerTable) { _ =>
+            withResource(GpuColumnVector.from(built.getBatch)) { builtTable =>
+              builtTable.filter(trackerTable.getColumn(0))
             }
           }
+        }
+      }
+
+      filteredTable.flatMap { filtered =>
+        // filter returns an owning table. Release the stream iterator, tracker, and input table
+        // wrappers before retaining the filtered columns in the output batch.
+        val filteredBatch = withResource(filtered) { _ =>
+          GpuColumnVector.from(filtered, builtTypes)
+        }
+        // Combine build-side columns with null columns for stream side
+        withResource(filteredBatch) { builtBatch =>
+          val numFilterRows = builtBatch.numRows()
+          if (numFilterRows > 0) {
+            val streamColumns = streamAttributes.safeMap { attr =>
+              GpuColumnVector.fromNull(numFilterRows, attr.dataType)
+            }
+            withResource(new ColumnarBatch(streamColumns.toArray, numFilterRows)) { streamBatch =>
+              buildSide match {
+                case GpuBuildRight =>
+                  Some(GpuColumnVector.combineColumns(streamBatch, builtBatch))
+                case GpuBuildLeft =>
+                  Some(GpuColumnVector.combineColumns(builtBatch, streamBatch))
+              }
+            }
+          } else {
+            None
+          }
+        }
       }
     }
   }
