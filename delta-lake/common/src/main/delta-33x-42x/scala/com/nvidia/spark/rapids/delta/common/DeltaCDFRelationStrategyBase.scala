@@ -21,7 +21,7 @@ import org.apache.spark.sql.catalyst.expressions.{Alias, And, Literal}
 import org.apache.spark.sql.catalyst.planning.PhysicalOperation
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, LogicalPlan, Project}
 import org.apache.spark.sql.delta.commands.cdc.CDCReader.DeltaCDFRelation
-import org.apache.spark.sql.execution.{SparkPlan, SparkStrategy}
+import org.apache.spark.sql.execution.{ProjectExec, SparkPlan, SparkStrategy}
 import org.apache.spark.sql.execution.datasources.LogicalRelation
 
 /**
@@ -53,7 +53,22 @@ abstract class DeltaCDFRelationStrategyBase extends SparkStrategy {
         val rewritten = Project(projects,
           Filter(filter, Project(relationOutput, changes.queryExecution.analyzed)))
 
-        Seq(planLater(spark.sessionState.optimizer.execute(rewritten)))
+        val optimized = spark.sessionState.optimizer.execute(rewritten)
+        val child = planLater(optimized)
+        if (optimized.output == rewritten.output) {
+          Seq(child)
+        } else {
+          // Optimizing this subtree can remove redundant aliases and change its output exprIds.
+          // The physical parent still references the original output, so restore it outside the
+          // optimizer while retaining predicate pushdown and column pruning within the CDF read.
+          val output = optimized.output.zip(rewritten.output).map { case (actual, expected) =>
+            Alias(actual, expected.name)(
+              exprId = expected.exprId,
+              qualifier = expected.qualifier,
+              explicitMetadata = Some(expected.metadata))
+          }
+          Seq(ProjectExec(output, child))
+        }
       }
     case _ => Nil
   }

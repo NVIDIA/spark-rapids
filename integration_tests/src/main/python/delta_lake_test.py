@@ -241,6 +241,53 @@ def test_delta_cdf_read_stays_columnar(spark_tmp_path, column_mapping):
         conf=conf)
 
 
+@allow_non_gpu("RDDScanExec", *delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(is_databricks_runtime(), reason="OSS Delta CDF test")
+@pytest.mark.skipif(is_before_spark_353(), reason="GPU CDF reads require OSS Delta 3.3+")
+@pytest.mark.parametrize("aqe_enabled", ["true", "false"])
+@pytest.mark.parametrize("optimize_only", [True, False], ids=["empty_cdf", "nonempty_cdf"])
+@pytest.mark.parametrize("project_and_filter", [False, True], ids=["metadata", "renamed_filtered"])
+def test_delta_cdf_optimize_range_preserves_attributes(
+        spark_tmp_path, aqe_enabled, optimize_only, project_and_filter):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = {"spark.sql.adaptive.enabled": aqe_enabled}
+
+    def setup(spark):
+        spark.range(20).repartition(2).write.format("delta") \
+            .option("delta.enableChangeDataFeed", "true").save(data_path)
+        spark.sql(f"OPTIMIZE delta.`{data_path}`").collect()
+        history = spark.sql(f"DESCRIBE HISTORY delta.`{data_path}` LIMIT 1").first()
+        assert history.operation == "OPTIMIZE"
+        assert int(history.operationMetrics["numRemovedFiles"]) == 2
+        return history.version
+
+    optimize_version = with_cpu_session(setup, conf=conf)
+
+    def read_cdf(spark):
+        changes = spark.read.format("delta") \
+            .option("readChangeFeed", "true") \
+            .option("startingVersion", optimize_version if optimize_only else 0) \
+            .option("endingVersion", optimize_version).load(data_path)
+        if project_and_filter:
+            # Preserve pushed predicates and reordered/renamed outputs as well as metadata IDs.
+            return changes.where("id >= 10 AND _change_type = 'insert'") \
+                .selectExpr("_change_type AS change", "_commit_version AS version") \
+                .groupBy("version", "change").count()
+        return changes.groupBy("_commit_version", "_change_type").count()
+
+    expected = [] if optimize_only else [
+        Row(version=0, change="insert", count=10) if project_and_filter else
+        Row(_commit_version=0, _change_type="insert", count=20)]
+    assert with_cpu_session(lambda spark: read_cdf(spark).collect(), conf=conf) == expected
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        read_cdf,
+        exist_classes="GpuHashAggregateExec",
+        non_exist_classes="RowDataSourceScanExec",
+        conf=conf)
+
+
 def _test_delta_deletion_vector_read_with_cdf(
         spark_tmp_path, chunk_size, parquet_reader_type, expect_fallback):
     data_path = spark_tmp_path + "/DELTA_DATA"
