@@ -2251,3 +2251,98 @@ def test_delta_compaction(spark_tmp_path, enable_deletion_vectors):
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
         conf=_delta_confs)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not is_databricks173_or_later(), reason="DBR 17.3 Delta write AQE planning")
+@pytest.mark.parametrize("operation,aqe_enabled,optimize_write", [
+    pytest.param("update_literal", True, False, id="update-literal"),
+    pytest.param("update_subquery", True, False, id="update-subquery"),
+    pytest.param("merge", True, True, id="merge-optimized"),
+    pytest.param("merge", True, False, id="merge-unoptimized"),
+    pytest.param("merge", False, True, id="merge-no-aqe"),
+])
+def test_delta_db173_dml_aqe_gpu_stub(
+        spark_tmp_path, operation, aqe_enabled, optimize_write):
+    conf = copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.adaptive.enabled": str(aqe_enabled).lower(),
+        "spark.sql.shuffle.partitions": "4",
+        "spark.databricks.delta.optimizeWrite.enabled": str(optimize_write).lower(),
+        "spark.databricks.delta.autoCompact.enabled": "false",
+        "spark.rapids.sql.command.UpdateCommand": "true",
+        "spark.rapids.sql.command.UpdateCommandEdge": "true",
+        "spark.rapids.sql.command.MergeIntoCommand": "true",
+        "spark.rapids.sql.command.MergeIntoCommandEdge": "true",
+        "spark.rapids.sql.delta.lowShuffleMerge.enabled": "false",
+    })
+    row_count = 4096
+    source_rows = 1024
+    source_path = spark_tmp_path + "/SOURCE"
+    cpu_path = spark_tmp_path + "/CPU"
+    gpu_path = spark_tmp_path + "/GPU"
+
+    def setup(spark):
+        spark.range(row_count).selectExpr(
+            "CAST(id AS INT) AS intF", "CAST(id % 32 AS BYTE) AS byteF") \
+            .write.parquet(source_path)
+        for path in (cpu_path, gpu_path):
+            spark.read.parquet(source_path).write.format("delta") \
+                .option("delta.enableDeletionVectors", "false").save(path)
+
+    # CPU setup is outside plan capture, so it cannot satisfy GPU command/write assertions.
+    with_cpu_session(setup, conf=conf)
+
+    def run_dml(spark, path):
+        source = f"(SELECT intF FROM parquet.`{source_path}` WHERE intF < {source_rows})"
+        if operation == "update_literal":
+            statement = f"UPDATE delta.`{path}` SET byteF = byteF + 1 WHERE intF % 7 = 0"
+        elif operation == "update_subquery":
+            statement = (f"UPDATE delta.`{path}` SET byteF = byteF + 1 "
+                         f"WHERE intF IN (SELECT intF FROM {source})")
+        else:
+            statement = (f"MERGE INTO delta.`{path}` t USING {source} s ON t.intF = s.intF "
+                         "WHEN MATCHED THEN UPDATE SET byteF = t.byteF + 1")
+        return spark.sql(statement).collect()
+
+    cpu_result = with_cpu_session(lambda spark: run_dml(spark, cpu_path), conf=conf)
+    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    callback.startCapture()
+    try:
+        gpu_result = with_gpu_session(lambda spark: run_dml(spark, gpu_path), conf=conf)
+        plans = callback.getResultsWithTimeout(10000)
+        command = "GpuMergeIntoCommand" if operation == "merge" else "GpuUpdateCommand"
+        assert any(callback.contains(plan, command) for plan in plans), \
+            f"{command} was not executed"
+        writes = [node for plan in plans for node in collect_plan_nodes(plan)
+                  if node.getClass().getSimpleName() == "GpuRapidsDeltaWriteExec"]
+        assert writes, "DML did not execute GpuRapidsDeltaWriteExec"
+        if operation == "merge":
+            assert any(callback.contains(plan, "GpuRapidsProcessDeltaMergeJoinExec")
+                       for plan in plans), "MERGE did not execute its GPU join processor"
+        assert not any(callback.didFallBack(plan, "RapidsDeltaWriteExec") for plan in plans), \
+            "DML write used CPU RapidsDeltaWriteExec"
+        if aqe_enabled and operation != "update_literal":
+            assert any(node.getClass().getSimpleName() == "AdaptiveSparkPlanExec"
+                       for write in writes for node in collect_plan_nodes(write)), \
+                "Shuffled DML write did not execute an adaptive child"
+    finally:
+        callback.endCapture()
+
+    assert_equal(cpu_result, gpu_result)
+    changed_rows = (row_count + 6) // 7 if operation == "update_literal" else source_rows
+    assert gpu_result[0][0] == changed_rows
+
+    def read_rows(spark, path):
+        return [tuple(row) for row in spark.read.format("delta").load(path)
+                .orderBy("intF").collect()]
+
+    cpu_rows = with_cpu_session(lambda spark: read_rows(spark, cpu_path), conf=conf)
+    gpu_rows = with_cpu_session(lambda spark: read_rows(spark, gpu_path), conf=conf)
+    assert_equal(cpu_rows, gpu_rows)
+    assert_equal(gpu_rows, [(i, i % 32 + int(
+        i % 7 == 0 if operation == "update_literal" else i < source_rows))
+        for i in range(row_count)])
+    metric = "numTargetRowsUpdated" if operation == "merge" else "numUpdatedRows"
+    for path in (cpu_path, gpu_path):
+        assert int(get_last_operation_metrics(path)[metric]) == changed_rows
