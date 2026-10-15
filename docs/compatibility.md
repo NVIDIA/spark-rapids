@@ -436,10 +436,6 @@ to `TIMESTAMP_NTZ` or if an explicit schema is provided that contains the `Times
 There is currently no support for reading numeric values as timestamps and null values are returned instead
 ([#4940](https://github.com/NVIDIA/cudf-spark/issues/4940)). A workaround would be to read as longs and then cast to timestamp.
 
-When GPU JSON datetime parsing is enabled, timestamps with out-of-range hour, minute, or second
-fields return `null` instead of accepting only their date prefix. Other JSON timestamp differences
-remain tracked in [#10535](https://github.com/NVIDIA/cudf-spark/issues/10535).
-
 ### JSON Arrays and Structs with Overflowing Numbers
 
 Spark is inconsistent between versions in how it handles numbers that overflow that are nested in either an array
