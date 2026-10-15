@@ -110,8 +110,8 @@ def with_iceberg_dml_session(func, format_version, mode, conf):
         callback.endCapture()
 
 
-def iceberg_table_properties_sql(format_version):
-    props = _build_tblprops({'format-version': format_version})
+def iceberg_table_properties_sql(format_version, table_prop=None):
+    props = _build_tblprops({**(table_prop or {}), 'format-version': format_version})
     return "TBLPROPERTIES (" + ", ".join(f"'{k}' = '{v}'" for k, v in props.items()) + ")"
 
 # iceberg supported types

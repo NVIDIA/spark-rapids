@@ -235,17 +235,20 @@ object GpuCSVScan extends Logging {
           "ignoreLeadingWhiteSpace or ignoreTrailingWhiteSpace")
       }
 
-      // CORRECTED dates are proleptic Gregorian epoch days and do not use a timezone.
-      // For other parser policies, timezone needs to be checked also. JVM timezone is used
-      // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
+      // For date type, whether the timezone needs to be checked depends on the time parser policy.
       //
-      // In details, for CSV data format, Spark uses dateFormatter to parse string as date data
-      // type which utilizes [[org.apache.spark.sql.catalyst.DateFormatter]]. And CSV format
-      // (e.g., [[UnivocityParser]]), it uses [[LegacyFastDateFormatter]] which is based on
-      // Apache Commons FastDateFormat. It parse string into Java util.Date base on JVM default
-      // timezone. From Java util.Date, it's converted into java.sql.Date type.
-      // By leveraging [[JavaDateTimeUtils]], it finally do `rebaseJulianToGregorianDays`
-      // considering its offset to UTC timezone.
+      // In CSV, Spark's UnivocityParser uses DateFormatter to parse a string as DateType. Under
+      // CORRECTED, DateFormatter parses directly to proleptic Gregorian epoch days. It does not
+      // convert through java.util.Date, so the session timezone has no effect.
+      //
+      // Under LEGACY, DateFormatter uses LegacyFastDateFormatter, which is based on Apache Commons
+      // FastDateFormat. It parses into java.util.Date based on the JVM default timezone, then
+      // converts it to java.sql.Date. Spark's date conversion utilities finally rebase Julian days
+      // to proleptic Gregorian days considering the offset to UTC, so timezone can affect the
+      // result.
+      //
+      // EXCEPTION may also invoke the legacy formatter when comparing parser behavior. Therefore,
+      // keep the conservative non-UTC fallback for LEGACY and EXCEPTION.
       if (GpuOverrides.getTimeParserPolicy != CorrectedTimeParserPolicy &&
           !GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")

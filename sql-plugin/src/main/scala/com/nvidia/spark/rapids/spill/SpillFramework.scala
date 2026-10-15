@@ -2190,7 +2190,7 @@ object DiskHandleStore {
       } else {
         val fc = getFileChannel
         val wrappedStream = closeOnExcept(fc)(wrapChannel)
-        outputChannel = closeOnExcept(wrappedStream)(Channels.newChannel)
+        outputChannel = closeOnExcept(wrappedStream)(new SpillOutputChannel(_))
         outputChannel
       }
     }
