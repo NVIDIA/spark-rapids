@@ -419,20 +419,23 @@ object ParquetSchemaUtils {
       parquetRecord.getFields.asScala.filter(_.getId != null).groupBy(f => f.getId.intValue())
 
     def clipMatchedField(parquetType: Type, sparkField: StructField): Option[Type] = {
-      var hasPhysicalLeaf = false
-      val clipped = clipParquetType(parquetType, sparkField.dataType, caseSensitive, useFieldId,
-        returnNullStructIfAllFieldsMissing, () => hasPhysicalLeaf = true)
-      // Before Spark 4.1, a struct whose requested children are all missing is itself null.
-      // Omit that leafless physical group and let schema evolution synthesize the null struct.
-      // Restrict this to StructType: list/map containers need their physical shape preserved.
-      if (returnNullStructIfAllFieldsMissing && sparkField.dataType.isInstanceOf[StructType] &&
-          !hasPhysicalLeaf) {
-        None
-      } else {
+      if (returnNullStructIfAllFieldsMissing && sparkField.dataType.isInstanceOf[StructType]) {
+        var hasPhysicalLeaf = false
+        val clipped = clipParquetType(parquetType, sparkField.dataType, caseSensitive, useFieldId,
+          returnNullStructIfAllFieldsMissing, () => hasPhysicalLeaf = true)
+        // Before Spark 4.1, a struct whose requested children are all missing is itself null.
+        // Omit that leafless physical group and let schema evolution synthesize the null struct.
         if (hasPhysicalLeaf) {
           onPhysicalLeaf()
+          Some(clipped)
+        } else {
+          None
         }
-        Some(clipped)
+      } else {
+        // Reuse the parent tracker directly so ordinary matched fields do not allocate a
+        // BooleanRef and capturing callback.
+        Some(clipParquetType(parquetType, sparkField.dataType, caseSensitive, useFieldId,
+          returnNullStructIfAllFieldsMissing, onPhysicalLeaf))
       }
     }
 
