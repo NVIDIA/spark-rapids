@@ -157,14 +157,21 @@ With `spark.sql.legacy.timeParserPolicy=CORRECTED`, GPU date parsing supports an
 and the formats listed under [CORRECTED and EXCEPTION timeParserPolicy](#corrected-and-exception-timeparserpolicy).
 These dates are supported in both UTC and non-UTC session and JVM time zones.
 
-An absent `dateFormat` uses Spark's CAST-style date grammar, including year-only, year-month, and
-signed or extended years. Explicit formats require exact field widths and complete input consumption,
-preserving leading and trailing whitespace. Invalid dates and epoch-day overflow produce nulls.
+In Spark 3.3, an absent `dateFormat` uses Spark's CAST-style date grammar, including year-only,
+year-month, and signed or extended years. Spark 3.4 and later also use this grammar when
+`preferDate=false`. With the default `preferDate=true`, Spark 3.4 and later first resolve an absent
+format to `yyyy-MM-dd`; disabling parsing fallback therefore requires a strictly formatted date.
+Explicit and resolved formats require exact field widths and complete input consumption; the
+formatter does not strip leading or trailing whitespace. Invalid dates and epoch-day overflow
+produce nulls.
 
 When Spark enables date parsing fallback, a failed format parse retries the CAST-style grammar.
 Spark 3.3 always enables this fallback. Spark 3.4 and later use the read option
 `enableDateTimeParsingFallback`, then `spark.sql.legacy.csv.enableDateTimeParsingFallback`, then
 enable it by default when `dateFormat` is absent.
+
+CAST-style parsing follows the running Spark version's whitespace rules, including control-character
+trimming changes in patch releases.
 
 For supported `CORRECTED` dates, setting `ignoreLeadingWhiteSpace` or `ignoreTrailingWhiteSpace`
 to `true` makes the scan fall back to CPU. Spark trims only unquoted fields, and the GPU parser
