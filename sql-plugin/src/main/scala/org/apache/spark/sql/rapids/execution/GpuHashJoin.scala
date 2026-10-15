@@ -2777,8 +2777,7 @@ class HashOuterJoinIterator(
             }
           })
         } else {
-          filteredBatch.close()
-          None
+          withResource(filteredBatch) { _ => None }
         }
       }
     }
