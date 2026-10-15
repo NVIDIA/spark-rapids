@@ -26,6 +26,9 @@ import org.apache.spark.sql.execution.python.EvalPythonExec.ArgumentMetadata
 import org.apache.spark.sql.execution.python.PythonUDFRunner
 
 object WritePythonUDFUtils {
+  // Shared runners pass session-configured logging settings through these parameters.
+  // DBR 17.3 already accepts both fields in PythonUDFRunner.writeUDFs; retain its profiler
+  // argument and the previous 0/WARNING defaults when callers do not supply logging settings.
   def writeUDFs(
       dataOut: DataOutputStream,
       funcs: Seq[(ChainedPythonFunctions, Long)],

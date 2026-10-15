@@ -34,7 +34,7 @@ class SparkShimServiceProvider extends com.nvidia.spark.rapids.SparkShimServiceP
   override def getShimVersion: ShimVersion = SparkShimServiceProvider.VERSION
 
   def matchesVersion(version: String): Boolean = {
-    val shimEnabledProp = "spark.rapids.shims.spark410db183" + ".enabled"
+    val shimEnabledProp = "spark.rapids.shims.spark410db183.enabled"
     val shimEnabled = Option(SparkEnv.get)
       .flatMap(_.conf.getOption(shimEnabledProp).map(_.toBoolean))
       .getOrElse(true)

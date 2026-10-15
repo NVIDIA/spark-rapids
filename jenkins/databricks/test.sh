@@ -49,7 +49,8 @@ set -ex
 #   CI_PART2 includes nightly resource-consuming tests to keep the split runtimes closer.
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 
-# CI-only: keep startup checks active while DBR 18.3 product tests are disabled (#16281).
+# TODO(#16317): Remove readiness-only mode when DBR 18.3 integration tests are enabled.
+# Keep the permanent startup checks that run before product tests.
 SPARK_READINESS_ONLY=${SPARK_READINESS_ONLY:-0}
 if [[ "$SPARK_READINESS_ONLY" == "1" ]]; then
     if [[ -z "${SPARK_STARTUP_CHECK:-}" ]]; then
