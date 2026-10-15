@@ -17,13 +17,16 @@
 package com.nvidia.spark.rapids.tests
 
 import com.nvidia.spark.rapids.FuzzerUtils._
-import com.nvidia.spark.rapids.SparkQueryCompareTestSuite
+import com.nvidia.spark.rapids.{RapidsConf, SparkQueryCompareTestSuite, TestUtils}
 
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
 import org.apache.spark.sql.types.{ArrayType, ByteType, CalendarIntervalType, DataType, IntegerType, LongType, MapType, NullType, StringType}
 
 class CacheTestSuite extends SparkQueryCompareTestSuite {
   type DfGenerator = SparkSession => DataFrame
+
+  private val pcbsClassName = "com.nvidia.spark.ParquetCachedBatchSerializer"
 
   test("interval") {
     testCache { spark: SparkSession =>
@@ -90,7 +93,7 @@ class CacheTestSuite extends SparkQueryCompareTestSuite {
       "array(map('s', cast(id as string)), cast(null as map<string,string>))"
   ).foreach { case (nestedType, nestedExpr) =>
     test(s"array with null $nestedType element and unsupported column") {
-      testCache { spark: SparkSession =>
+      testCacheWithPCBS { spark: SparkSession =>
         spark.range(2).selectExpr(
           "id",
           "make_interval(0, 0, 0, 0, 0, 0, id) as iv",
@@ -102,10 +105,46 @@ class CacheTestSuite extends SparkQueryCompareTestSuite {
 /** Helper functions  */
 
   def testCache(f: SparkSession => DataFrame): Unit = {
-    val df = withCpuSparkSession(f)
+    withCpuSparkSession(checkCache(_, f))
+  }
+
+  private def testCacheWithPCBS(f: SparkSession => DataFrame): Unit = {
+    TrampolineUtil.cleanupAnyExistingSession()
+    TestUtils.clearCachedBatchSerializer()
+    val spark = getBuilder()
+      .master("local[1]")
+      .config(RapidsConf.SQL_ENABLED.key, "false")
+      .config("spark.plugins", "com.nvidia.spark.SQLPlugin")
+      .config("spark.sql.cache.serializer", pcbsClassName)
+      .appName("CacheTestSuite with PCBS")
+      .getOrCreate()
+    try {
+      checkCache(spark, f, Some(pcbsClassName))
+    } finally {
+      TrampolineUtil.cleanupAnyExistingSession()
+      TestUtils.clearCachedBatchSerializer()
+    }
+  }
+
+  private def checkCache(
+      spark: SparkSession,
+      f: SparkSession => DataFrame,
+      expectedSerializer: Option[String] = None): Unit = {
+    val df = f(spark)
     val regularValues = df.selectExpr("*").collect()
-    val cachedValues = df.selectExpr("*").cache().collect()
-    compare(regularValues, cachedValues)
+    val cachedDf = df.selectExpr("*").cache()
+    try {
+      expectedSerializer.foreach { expected =>
+        val cachedData = spark.sharedState.cacheManager.lookupCachedData(cachedDf)
+          .getOrElse(fail("DataFrame was not registered with the cache manager"))
+        assertResult(expected)(
+          cachedData.cachedRepresentation.cacheBuilder.serializer.getClass.getName)
+      }
+      val cachedValues = cachedDf.collect()
+      assert(compare(regularValues, cachedValues), "Cached values differ from uncached values")
+    } finally {
+      cachedDf.unpersist()
+    }
   }
 
   def getArrayDF(dataType: DataType): DfGenerator = {
