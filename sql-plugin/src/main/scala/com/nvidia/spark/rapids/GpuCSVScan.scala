@@ -25,6 +25,7 @@ import scala.collection.JavaConverters._
 import ai.rapids.cudf
 import ai.rapids.cudf.{ColumnVector, DType, HostMemoryBuffer, Scalar, Schema, Table}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.jni.{CastStrings, GpuSplitAndRetryOOM}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, ShimFilePartitionReaderFactory}
 import org.apache.hadoop.conf.Configuration
@@ -507,28 +508,50 @@ object CSVPartitionReader {
       csvOpts: Boolean => cudf.CSVOptions,
       hasHeader: Boolean,
       comment: Byte,
-      partFile: PartitionedFile): Iterator[Table] with AutoCloseable = {
-    val size = dataBufferer.getLength
-    val buffer = withResource(dataBufferer.getBufferAndRelease)(_.slice(0, size))
-    val chunks = closeOnExcept(buffer) { _ =>
-      RmmRapidsRetryIterator.withRetry(CsvReadChunk(buffer, hasHeader, comment),
-        (chunk: CsvReadChunk) => chunk.split()) { chunk =>
-        NvtxIdWithMetrics(NvtxRegistry.CSV_DECODE, decodeTime) {
-          Table.readCSV(cudfSchema, csvOpts(chunk.hasHeader), chunk.buffer, 0,
-            chunk.buffer.getLength)
-        }
+      partFile: PartitionedFile,
+      readColumnIndices: Seq[Int] = Seq.empty): Iterator[Table] with AutoCloseable = {
+    var firstRow = dataBufferer match {
+      case csv: CsvHostLineBufferer => csv.firstRow.map { row =>
+        val indices = if (readColumnIndices.isEmpty) row.indices else readColumnIndices
+        indices.map(row(_)).toArray
       }
+      case _ => None
+    }
+    val size = dataBufferer.getLength
+    val chunks = if (size == 0) None else {
+      val buffer = withResource(dataBufferer.getBufferAndRelease)(_.slice(0, size))
+      Some(closeOnExcept(buffer) { _ =>
+        RmmRapidsRetryIterator.withRetry(CsvReadChunk(buffer, hasHeader, comment),
+          (chunk: CsvReadChunk) => chunk.split()) { chunk =>
+          NvtxIdWithMetrics(NvtxRegistry.CSV_DECODE, decodeTime) {
+            Table.readCSV(cudfSchema, csvOpts(chunk.hasHeader), chunk.buffer, 0,
+              chunk.buffer.getLength)
+          }
+        }
+      })
     }
     new Iterator[Table] with AutoCloseable {
-      override def hasNext: Boolean = chunks.hasNext
+      override def hasNext: Boolean = firstRow.nonEmpty || chunks.exists(_.hasNext)
       override def next(): Table = {
         try {
-          chunks.next()
+          firstRow match {
+            case Some(row) =>
+              firstRow = None
+              RmmRapidsRetryIterator.withRetryNoSplit {
+                withResource(row.safeMap(value => ColumnVector.fromStrings(value))) { columns =>
+                  new Table(columns: _*)
+                }
+              }
+            case None => chunks.get.next()
+          }
         } catch {
           case e: Exception => throw new IOException(s"Error when processing file [$partFile]", e)
         }
       }
-      override def close(): Unit = chunks.close()
+      override def close(): Unit = {
+        firstRow = None
+        chunks.foreach(_.close())
+      }
     }
   }
 
@@ -569,7 +592,8 @@ class CSVPartitionReader(
     // In multiLine mode, empty lines within quoted fields are
     // legitimate data and must not be filtered out.
     if (parsedOptions.multiLine) HostLineBuffererFactory
-    else FilterCsvEmptyHostLineBuffererFactory) {
+    else new FilterCsvEmptyHostLineBuffererFactory(parsedOptions, dataSchema.length,
+      partFile.start == 0 && parsedOptions.headerFlag)) {
 
   private var headerPending = partFile.start == 0 && parsedOptions.headerFlag
 
@@ -593,7 +617,8 @@ class CSVPartitionReader(
       }
       CSVPartitionReader.readToTables(dataBufferer, cudfDataSchema, decodeTime,
         hasHeader => buildCsvOptions(parsedOptions, readDataSchema, hasHeader).build(),
-        hasHeader, parsedOptions.comment.toByte, partFile)
+        hasHeader, parsedOptions.comment.toByte, partFile,
+        readDataSchema.fieldNames.map(dataSchema.fieldIndex).toSeq)
     }
   }
 

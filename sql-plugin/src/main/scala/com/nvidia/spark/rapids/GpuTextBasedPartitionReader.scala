@@ -31,12 +31,14 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.jni.CastStrings
 import com.nvidia.spark.rapids.jni.GpuSplitAndRetryOOM
 import com.nvidia.spark.rapids.shims.GpuTypeShims
+import com.univocity.parsers.csv.CsvParser
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.Text
 import org.apache.hadoop.io.compress.CompressionCodecFactory
 
 import org.apache.spark.TaskContext
+import org.apache.spark.sql.catalyst.csv.CSVOptions
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
@@ -59,6 +61,8 @@ trait LineBufferer extends AutoCloseable {
    * Get the numnber of lines currently added to this that were not filtered out.
    */
   def getNumLines: Int
+
+  def hasData: Boolean = getLength != 0
 
   /**
    * Add a new line of bytes to the data to process.
@@ -97,20 +101,45 @@ object FilterEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLineBu
     new HostLineBufferer(estimatedSize, lineSeparatorInRead, true)
 }
 
+private[rapids] class CsvHostLineBufferer(size: Long, separator: Array[Byte])
+    extends HostLineBufferer(size, separator, false) {
+  var firstRow: Option[Array[String]] = None
+
+  override def getNumLines: Int = super.getNumLines + firstRow.size
+
+  override def hasData: Boolean = firstRow.nonEmpty || super.hasData
+}
+
 /**
  * Factory for CSV reading that filters empty lines using Java String.trim() compatible whitespace
  * (all chars <= 0x20). This matches Spark CPU's CSVExprUtils.filterCommentAndEmpty behavior which
  * uses line.trim.nonEmpty to filter blank lines.
  */
-object FilterCsvEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLineBufferer] {
+class FilterCsvEmptyHostLineBuffererFactory(
+    parsedOptions: CSVOptions, numColumns: Int, hasHeader: Boolean)
+    extends LineBuffererFactory[HostLineBufferer] {
+  private var firstRecord = true
+
+  private def parseBomRecord(line: Array[Byte], offset: Int, len: Int): Array[String] = {
+    val parser = new CsvParser(parsedOptions.asParserSettings)
+    try {
+      val fields = parser.parseLine(new String(line, offset, len, StandardCharsets.UTF_8))
+      Array.tabulate(numColumns) { i =>
+        if (fields == null || i >= fields.length || fields(i) == parsedOptions.nullValue) null
+        else fields(i)
+      }
+    } finally {
+      parser.stopParsing()
+    }
+  }
+
   override def createBufferer(estimatedSize: Long,
       lineSeparatorInRead: Array[Byte]): HostLineBufferer =
-    new HostLineBufferer(estimatedSize, lineSeparatorInRead, true) {
+    new CsvHostLineBufferer(estimatedSize, lineSeparatorInRead) {
       // Match Java's String.trim() which treats all chars <= '\u0020' as whitespace.
       override def isWhiteSpace(b: Byte): Boolean = (b & 0xFF) <= 0x20
 
-      override def add(line: Array[Byte], offset: Int, len: Int): Unit = {
-        // Hadoop strips the file BOM; a BOM here is data even after filtered empty lines.
+      private def addPreservingBom(line: Array[Byte], offset: Int, len: Int): Unit = {
         if (getLength == 0 && len >= 3 && line(offset) == 0xef.toByte &&
             line(offset + 1) == 0xbb.toByte && line(offset + 2) == 0xbf.toByte) {
           val protectedLine = new Array[Byte](len + 1)
@@ -119,6 +148,22 @@ object FilterCsvEmptyHostLineBuffererFactory extends LineBuffererFactory[HostLin
           super.add(protectedLine, 0, protectedLine.length)
         } else {
           super.add(line, offset, len)
+        }
+      }
+
+      override def add(line: Array[Byte], offset: Int, len: Int): Unit = {
+        if (!isEmpty(line, offset, len)) {
+          val isComment = parsedOptions.isCommentSet &&
+            line(offset) == parsedOptions.comment.toByte
+          val isFirstRecord = firstRecord && !isComment
+          if (isFirstRecord) firstRecord = false
+          if (isFirstRecord && !hasHeader && len >= 3 && line(offset) == 0xef.toByte &&
+              line(offset + 1) == 0xbb.toByte && line(offset + 2) == 0xbf.toByte) {
+            // Spark's tokenizer strips a BOM once per partition, after filtering comments/blanks.
+            firstRow = Some(parseBomRecord(line, offset, len))
+          } else {
+            addPreservingBom(line, offset, len)
+          }
         }
       }
     }
@@ -610,11 +655,11 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
   private def ensurePendingTables(isFirstChunk: Boolean): Unit = {
     if (!pendingTables.hasNext) {
       closePendingTables()
-      val (dataBuffer, dataSize) = metrics(BUFFER_TIME).ns {
+      val (dataBuffer, _) = metrics(BUFFER_TIME).ns {
         readPartFile()
       }
       withResource(dataBuffer) { _ =>
-        if (dataSize != 0) {
+        if (dataBuffer.hasData) {
           GpuSemaphore.acquireIfNecessary(TaskContext.get())
           pendingTables = readToTables(dataBuffer, getCudfSchema(dataSchema), effectiveReadSchema,
             getCudfSchema(effectiveReadSchema), isFirstChunk, metrics(GPU_DECODE_TIME))

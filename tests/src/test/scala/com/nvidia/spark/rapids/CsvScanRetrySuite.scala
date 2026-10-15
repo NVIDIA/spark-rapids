@@ -40,7 +40,9 @@ class CsvScanRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
 
   private def withCsvTables[T](lines: Seq[String], header: Boolean = false)
       (fn: (Iterator[Table] with AutoCloseable) => T): T = {
-    withResource(FilterCsvEmptyHostLineBuffererFactory.createBufferer(32,
+    val factory = new FilterCsvEmptyHostLineBuffererFactory(
+      new SparkCSVOptions(Map("comment" -> "#"), false, "UTC"), stringSchema.length, header)
+    withResource(factory.createBufferer(32,
       Array('\n'.toByte))) { buffer =>
       lines.foreach { line =>
         val bytes = line.getBytes(StandardCharsets.UTF_8)
@@ -220,7 +222,8 @@ class CsvScanRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
             withResource(table.getColumn(0).copyToHost()) { a =>
               withResource(table.getColumn(1).copyToHost()) { b =>
                 (0 until batch.numRows()).foreach { i =>
-                  actual += Seq(a.getJavaString(i), b.getJavaString(i))
+                  actual += Seq(if (a.isNull(i)) null else a.getJavaString(i),
+                    if (b.isNull(i)) null else b.getJavaString(i))
                 }
               }
             }
@@ -250,7 +253,7 @@ class CsvScanRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
   }
 
   for (readSchema <- Seq(stringSchema, StructType(Seq.empty)); header <- Seq(false, true)) {
-    test(s"CSV partitions preserve their first interior U+FEFF: $readSchema, header=$header") {
+    test(s"CSV partitions match CPU BOM handling: $readSchema, header=$header") {
       val prefix = "\uFEFFa,b\nskipped,0\n"
       val start = prefix.getBytes(StandardCharsets.UTF_8).length - 1L
       withReader(prefix + "\uFEFF#first,1\n\uFEFFsecond,2\nnormal,3\n", readSchema,
@@ -258,7 +261,7 @@ class CsvScanRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
         val (actual, rows) = collectReaderStrings(reader)
         assert(rows == 3)
         if (readSchema.nonEmpty) {
-          assert(actual == Seq(Seq("\uFEFF#first", "1"), Seq("\uFEFFsecond", "2"),
+          assert(actual == Seq(Seq(null, null), Seq("\uFEFFsecond", "2"),
             Seq("normal", "3")))
         }
       }
@@ -266,12 +269,53 @@ class CsvScanRetrySuite extends RmmSparkRetrySuiteBase with MockitoSugar {
   }
 
   for (prefix <- Seq("\n\t\u0001\n", "\uFEFF", "\uFEFF\n")) {
-    test(s"CSV preserves U+FEFF after the file BOM or filtered empty lines: ${prefix.length}") {
+    test(s"CSV matches CPU BOM handling after filtered empty lines: ${prefix.length}") {
       withReader(prefix + "\uFEFF#data,1\n", stringSchema, 1024, header = false) { reader =>
         val (actual, rows) = collectReaderStrings(reader)
-        assert(actual == Seq(Seq("\uFEFF#data", "1")))
+        assert(actual == Seq(Seq(null, null)))
         assert(rows == 1)
       }
+    }
+  }
+
+  test("CSV CPU-parsed first row applies the read projection in a row-only chunk") {
+    val readSchema = StructType(Seq(StructField("b", StringType)))
+    withReader("\uFEFF\uFEFFfirst,1\nsecond,2\n", readSchema, 1024,
+        header = false, maxRows = 1) { reader =>
+      val values = ArrayBuffer[String]()
+      while (reader.next()) {
+        withResource(reader.get()) { batch =>
+          assert(batch.numCols() == 1)
+          withResource(GpuColumnVector.from(batch)) { table =>
+            withResource(table.getColumn(0).copyToHost()) { column =>
+              (0 until batch.numRows()).foreach(i => values += column.getJavaString(i))
+            }
+          }
+        }
+      }
+      assert(values.toSeq == Seq("1", "2"))
+    }
+  }
+
+  test("CSV closing after a CPU-parsed first row releases pending native input") {
+    val factory = new FilterCsvEmptyHostLineBuffererFactory(
+      new SparkCSVOptions(Map("comment" -> "#"), false, "UTC"), 2, false)
+    withResource(factory.createBufferer(64, Array('\n'.toByte))) { buffer =>
+      Seq("\uFEFF#first,1", "second,2").foreach { line =>
+        val bytes = line.getBytes(StandardCharsets.UTF_8)
+        buffer.add(bytes, 0, bytes.length)
+      }
+      val input = buffer.getBuffer
+      withResource(CSVPartitionReader.readToTables(buffer, GpuColumnVector.from(stringSchema),
+        NoopMetric, _ => CSVOptions.builder().withComment('#').build(),
+        false, '#'.toByte, null)) { tables =>
+        withResource(tables.next()) { table =>
+          assert(table.getRowCount == 1)
+          withResource(table.getColumn(0).copyToHost())(column => assert(column.isNull(0)))
+        }
+        assert(tables.hasNext)
+      }
+      assert(input.getRefCount == 0)
     }
   }
 
