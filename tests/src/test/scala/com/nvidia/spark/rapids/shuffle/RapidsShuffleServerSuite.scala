@@ -1370,6 +1370,21 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("a reply the gate turns away is closed once, even when its close throws") {
+    val reply = spy(new RefCountedDirectByteBuffer(ByteBuffer.allocateDirect(8)))
+    doAnswer(new Answer[Unit] {
+      override def answer(invocation: InvocationOnMock): Unit = {
+        invocation.callRealMethod()
+        throw new IllegalStateException("closing the reply failed in test")
+      }
+    }).when(reply).close()
+    val shut = new BufferSendState.ReplyGate {
+      override def queueIfOpen(queue: => Unit): Boolean = false
+    }
+    BufferSendState.sendErrorReply(makeTx(1), shut, reply)
+    verify(reply, times(1)).close()
+  }
+
   /**
    * Runs `body` with a server whose send loop runs on a thread of its own, and a send state for
    * table 1, whose buffer is gone, so that the loop ends it with an error reply. `body` gets the
