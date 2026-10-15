@@ -246,6 +246,53 @@ def test_delta_db173_path_write_aqe_gpu_stub(spark_tmp_path, aqe_enabled, empty_
         assert int(get_last_operation_metrics(path)["numOutputRows"]) == row_count
 
 
+@allow_non_gpu("RapidsDeltaWriteExec", *delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not is_databricks173_or_later(), reason="DBR 17.3 Delta write AQE planning")
+@pytest.mark.parametrize("aqe_enabled", [False, True], ids=idfn)
+def test_delta_db173_path_write_metadata_query_fallback(spark_tmp_path, aqe_enabled):
+    conf = copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.adaptive.enabled": str(aqe_enabled).lower(),
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false",
+    })
+    source_path = spark_tmp_path + "/SOURCE"
+    cpu_path = spark_tmp_path + "/CPU"
+    gpu_path = spark_tmp_path + "/GPU"
+    with_cpu_session(
+        lambda spark: spark.range(1).coalesce(1).write.format("delta")
+            .option("delta.enableDeletionVectors", "false").save(source_path), conf=conf)
+
+    def write_metadata(spark, path):
+        # Reading Delta log JSON deliberately triggers whole-plan metadata fallback.
+        spark.read.schema("add STRUCT<path: STRING>") \
+            .json(source_path + "/_delta_log/*.json").select("add.path") \
+            .where(f.col("path").isNotNull()).repartition(2).write.format("delta") \
+            .option("delta.enableDeletionVectors", "false").save(path)
+
+    with_cpu_session(lambda spark: write_metadata(spark, cpu_path), conf=conf)
+    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    callback.startCapture()
+    try:
+        with_gpu_session(lambda spark: write_metadata(spark, gpu_path), conf=conf)
+        plans = callback.getResultsWithTimeout(10000)
+        assert len(plans) > 0, "No execution plans captured for metadata write"
+        assert any(callback.didFallBack(plan, "RapidsDeltaWriteExec") for plan in plans), \
+            "Metadata write did not retain CPU RapidsDeltaWriteExec"
+        assert not any(callback.contains(plan, "GpuRapidsDeltaWriteExec") for plan in plans), \
+            "Metadata write incorrectly converted its Delta write placeholder to GPU"
+    finally:
+        callback.endCapture()
+
+    def read_rows(spark, path):
+        return spark.read.format("delta").load(path).collect()
+
+    cpu_rows = with_cpu_session(lambda spark: read_rows(spark, cpu_path), conf=conf)
+    gpu_rows = with_cpu_session(lambda spark: read_rows(spark, gpu_path), conf=conf)
+    assert_equal(cpu_rows, gpu_rows)
+    assert len(gpu_rows) == 1 and gpu_rows[0].path, "Expected one nonempty add-file path"
+
+
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
