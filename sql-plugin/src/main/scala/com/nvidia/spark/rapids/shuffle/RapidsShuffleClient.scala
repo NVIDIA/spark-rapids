@@ -400,7 +400,7 @@ class RapidsShuffleClient(
    */
   def doHandleBounceBufferReceive(tx: Transaction, 
       bufferReceiveState: BufferReceiveState): Unit = {
-    var windowConsumed = false
+    var moreWindows = false
     try {
       withResource(tx) { _ =>
         tx.getStatus match {
@@ -436,7 +436,7 @@ class RapidsShuffleClient(
               } else {
                 logDebug(s"BufferReceiveState: " +
                   s"${TransportUtils.toHex(bufferReceiveState.id)} is NOT done, continuing.")
-                windowConsumed = true
+                moreWindows = true
               }
             }
           case TransactionStatus.Error =>
@@ -453,7 +453,7 @@ class RapidsShuffleClient(
             s"${TransportUtils.toHex(bufferReceiveState.id)}", t)
         }
     }
-    if (windowConsumed) {
+    if (moreWindows) {
       // A request that the server failed while this window was on its way ends here, outside
       // the catch above, which would close the state a second time.
       endIfFailed(bufferReceiveState, bufferReceiveState.takeFailure())
@@ -469,7 +469,10 @@ class RapidsShuffleClient(
       reason: String): Unit =
     endIfFailed(bufferReceiveState, bufferReceiveState.serverFailed(reason))
 
-  /** Ends a receive state with the failure `failure` hands over, if it does, logging an error. */
+  /**
+   * Ends a receive state with the failure `failure` hands over, if any, and logs an ordinary
+   * error from ending it.
+   */
   private[this] def endIfFailed(
       bufferReceiveState: BufferReceiveState,
       failure: => Option[FailedTransfer]): Unit = {

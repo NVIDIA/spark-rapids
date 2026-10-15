@@ -131,10 +131,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   private[this] var repliesQueueing = 0
 
   /**
-   * Lets an error reply be queued only while the server is open. The transport closes after the
-   * server, and UCX's progress thread runs nothing queued after the transport's close, so a reply
-   * queued then would never be sent, nor would it or its transaction be released. Close waits
-   * for a reply let through here to be queued, which takes no blocking call.
+   * This server's reply gate, open while `started`. It counts the replies it lets through in
+   * `repliesQueueing`, and close waits for that count without a bound, since queueing a reply
+   * takes no blocking call.
    */
   private[this] object replyGate extends BufferSendState.ReplyGate {
     override def queueIfOpen(queue: => Unit): Boolean = {

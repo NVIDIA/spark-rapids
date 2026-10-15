@@ -1181,7 +1181,7 @@ object UCX {
      * how the send ended, as after an immediate UCX error, which JUCX reports before it throws.
      * A JVM error after the hand-off is not reported either: JUCX can run out of heap after UCX
      * took the send, which then calls back itself and may read the send's buffers until then.
-     * Nor is anything thrown once JUCX returned with the send. The header is left to the
+     * Nor is a throw reported once JUCX returned with the send. The header is left to the
      * collector, since UCX may still read it.
      */
     private[ucx] def reportThrow(error: Throwable): Unit = {
