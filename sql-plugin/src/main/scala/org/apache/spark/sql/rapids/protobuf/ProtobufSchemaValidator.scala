@@ -172,6 +172,9 @@ object ProtobufSchemaValidator {
         (targetType, defaultValue) match {
           case (BooleanType, ProtobufDefaultValue.BoolValue(value)) =>
             Right(empty.copy(defaultBool = value))
+          case (LongType, ProtobufDefaultValue.IntValue(value))
+              if fieldInfo.protoTypeName == "UINT32" =>
+            Right(empty.copy(defaultInt = Integer.toUnsignedLong(value.toInt)))
           case (IntegerType | LongType, ProtobufDefaultValue.IntValue(value)) =>
             Right(empty.copy(defaultInt = value))
           case (IntegerType | LongType, ProtobufDefaultValue.EnumValue(number, _)) =>

@@ -208,6 +208,36 @@ class ProtobufSchemaSuite extends AnyFunSuite {
       "protobuf oneof fields are not supported on GPU"))
   }
 
+  test("validator preserves integer default semantics when widening uint32") {
+    for {
+      protoType <- Seq("UINT32", "INT32", "SINT32")
+      (rawDefault, unsignedDefault) <- Seq(
+        (0, 0L), (Int.MaxValue, Int.MaxValue.toLong),
+        (Int.MinValue, 1L << 31), (-1, (1L << 32) - 1))
+      sparkType <- Seq(IntegerType, LongType)
+    } {
+      withClue(s"$protoType raw default=$rawDefault output=$sparkType: ") {
+        val field = StructField("value", sparkType)
+        val info = ProtobufSchemaExtractor.extractFieldInfo(field,
+          FakeFieldDescriptor("value", 1, protoType,
+            defaultValue = Some(ProtobufDefaultValue.IntValue(rawDefault.toLong))),
+          enumsAsInts = false).fold(fail(_), identity)
+        assert(info.isSupported)
+        val outputType = if (sparkType == LongType) DType.INT64 else DType.INT32
+        val flat = ProtobufSchemaValidator.toFlattenedFieldDescriptor(
+          "value", field, info, -1, 0, outputType.getTypeId.getNativeId, isOutput = true)
+          .fold(fail(_), identity)
+        val expected = if (protoType == "UINT32" && sparkType == LongType) {
+          unsignedDefault
+        } else {
+          rawDefault.toLong
+        }
+        assert(flat.hasDefaultValue)
+        assert(flat.defaultInt == expected)
+      }
+    }
+  }
+
   test("validator encodes enum-string defaults into both numeric and string payloads") {
     val enumMeta = ProtobufEnumMetadata(Seq(
       ProtobufEnumValue(0, "UNKNOWN"),
