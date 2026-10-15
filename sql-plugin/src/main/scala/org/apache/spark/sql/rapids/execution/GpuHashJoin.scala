@@ -2732,17 +2732,21 @@ class HashOuterJoinIterator(
       streamJoinIter.releaseBuiltSideTracker() match {
         case None => None
         case Some(tracker) =>
-          val filteredBatch = withResource(tracker) { scb =>
-            withResource(scb.getColumnarBatch()) { trackerBatch =>
+          val (filteredTable, builtTypes) = withResource(tracker) { _ =>
+            withResource(tracker.getColumnarBatch()) { trackerBatch =>
               withResource(GpuColumnVector.from(trackerBatch)) { trackerTab =>
                 val batch = built.getBatch
+                val builtTypes = GpuColumnVector.extractTypes(batch)
                 withResource(GpuColumnVector.from(batch)) { builtTable =>
-                  withResource(builtTable.filter(trackerTab.getColumn(0))) { filterTab =>
-                    GpuColumnVector.from(filterTab, GpuColumnVector.extractTypes(batch))
-                  }
+                  (builtTable.filter(trackerTab.getColumn(0)), builtTypes)
                 }
               }
             }
+          }
+          // filter returns an owning table. Release the tracker and input table wrappers before
+          // retaining the filtered columns in the output batch.
+          val filteredBatch = withResource(filteredTable) { _ =>
+            GpuColumnVector.from(filteredTable, builtTypes)
           }
           // Combine build-side columns with null columns for stream side
           withResource(filteredBatch) { builtBatch =>
