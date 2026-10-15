@@ -544,8 +544,9 @@ pytest reports a configuration error when it is missing.
 
 Select the fast matrix suite with `-m 'iceberg and iceberg_fast_test' --iceberg`.
 Only tests explicitly decorated with `@iceberg_fast_test` from `marks` are included.
-The current allowlist matches the remote-catalog test set: tests skipped for remote catalogs are
-excluded. New unmarked tests stay outside this suite. For example, with Iceberg configured:
+The current allowlist includes tests that support both local and remote catalogs. Tests requiring a
+remote catalog (S3 Tables/REST) and tests skipped for remote catalogs are excluded.
+New unmarked tests stay outside this suite. For example, with Iceberg configured:
 
 ```shell
 EXPECTED_ICEBERG_VERSION=1.10.1 \

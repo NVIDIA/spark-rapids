@@ -1334,7 +1334,6 @@ def test_iceberg_parquet_read_with_input_file(format_version, spark_tmp_table_fa
         conf={**iceberg_read_enabled_conf, 'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 
-@iceberg_fast_test
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
@@ -1390,7 +1389,6 @@ def test_iceberg_parquet_read_from_url_encoded_path(format_version, spark_tmp_ta
         lambda spark: spark.sql("SELECT * FROM {}".format(table)),
         conf={**iceberg_read_enabled_conf, 'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
-@iceberg_fast_test
 @iceberg
 @ignore_order(local=True) # Iceberg plans with a thread pool and is not deterministic in file ordering
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
