@@ -16,8 +16,8 @@
 
 package com.nvidia.spark.rapids.tests
 
-import com.nvidia.spark.rapids.FuzzerUtils._
 import com.nvidia.spark.rapids.{RapidsConf, SparkQueryCompareTestSuite, TestUtils}
+import com.nvidia.spark.rapids.FuzzerUtils._
 
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
