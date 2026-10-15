@@ -24,6 +24,7 @@ from delta_lake_utils import *
 from marks import *
 from parquet_write_test import parquet_write_gens_list, writer_confs
 from pyspark.sql.types import *
+from pyspark.sql.utils import AnalysisException
 from spark_session import *
 
 delta_write_gens = [x for sublist in parquet_write_gens_list for x in sublist]
@@ -1206,6 +1207,29 @@ def test_delta_insert_by_name_schema_evolution(spark_tmp_path, columns):
         expected_command="GpuAppendDataExecV1")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path),
                      conf=confs)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not is_oss_delta_lake_42_or_43(),
+                    reason="INSERT BY NAME schema evolution requires Delta 4.2+")
+def test_delta_insert_by_name_schema_evolution_disabled(spark_tmp_path):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    confs = copy_and_update(_delta_confs,
+                           {"spark.databricks.delta.schema.autoMerge.enabled": "false"})
+    with_cpu_session(
+        lambda spark: _create_cpu_gpu_tables(spark, data_path, "id BIGINT, data STRING"),
+        conf=confs)
+
+    def insert(spark, path):
+        with pytest.raises(AnalysisException) as error:
+            spark.sql(f"INSERT INTO delta.`{path}` BY NAME "
+                      "SELECT 'value' AS data, 42 AS new_col, 1L AS id").collect()
+        return error.value.getErrorClass()
+
+    cpu_error = with_cpu_session(lambda spark: insert(spark, data_path + "/CPU"), conf=confs)
+    gpu_error = with_gpu_session(lambda spark: insert(spark, data_path + "/GPU"), conf=confs)
+    assert cpu_error == gpu_error == "DELTA_METADATA_MISMATCH"
 
 
 @allow_non_gpu(*delta_meta_allow)
