@@ -767,16 +767,20 @@ protected case class GpuParquetFileFilterHandler(
               conf, readDataSchema, filePath)) { tableFooter =>
                 if (tableFooter.getNumColumns <= 0) {
                   // Special case because java parquet reader does not like having 0 columns.
-                  val numRows = tableFooter.getNumRows
-                  val block = new BlockMetaData()
-                  block.setRowCount(numRows)
-                  // Fix up the row index offset
                   val offsets = tableFooter.getRowIndexOffsets
-                  if (offsets.nonEmpty) {
+                  val blocks = if (offsets.nonEmpty) {
+                    val block = new BlockMetaData()
+                    block.setRowCount(tableFooter.getNumRows)
                     GpuParquetUtilsShims.setRowIndexOffset(block, offsets(0))
+                    Seq(block)
+                  } else {
+                    // A split without row groups must not produce a synthetic block with
+                    // the default row index offset (-1). Delta DV readers validate these
+                    // offsets even for zero-column scans.
+                    Seq.empty
                   }
                   val schema = new MessageType("root")
-                  return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
+                  return ParquetFileInfoWithBlockMeta(filePath, blocks, file.partitionValues,
                     schema, readDataSchema, DateTimeRebaseLegacy, DateTimeRebaseLegacy,
                     hasInt96Timestamps = false)
                 }
