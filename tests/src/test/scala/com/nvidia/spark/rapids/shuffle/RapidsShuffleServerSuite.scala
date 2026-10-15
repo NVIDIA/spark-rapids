@@ -1552,7 +1552,10 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(requestTx, timeout(TimeUnit.SECONDS.toMillis(awaitSeconds))).respond(any(), any())
       assertCloseReturns(server,
         "close kept waiting for an error reply whose send threw a fatal error")
-      replies.synchronized(assertResult(1)(replies.size))
+      replies.synchronized {
+        assertResult(1)(replies.size)
+        verify(replies.head, never()).close()
+      }
     }
   }
 
