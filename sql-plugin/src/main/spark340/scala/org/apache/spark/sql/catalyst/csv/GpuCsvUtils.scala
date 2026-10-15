@@ -49,6 +49,7 @@ package org.apache.spark.sql.catalyst.csv
 import com.nvidia.spark.rapids.shims.LegacyBehaviorPolicyShim
 
 import org.apache.spark.sql.catalyst.util.DateFormatter
+import org.apache.spark.sql.internal.SQLConf
 
 object GpuCsvUtils {
   def dateFormatInRead(options: CSVOptions): String =
@@ -63,4 +64,11 @@ object GpuCsvUtils {
 
   def enableDateTimeParsingFallback(options: CSVOptions): Boolean =
     options.enableDateTimeParsingFallback.getOrElse(false)
+
+  def enableDateParsingFallback(options: CSVOptions): Boolean =
+    options.enableDateTimeParsingFallback
+      .orElse(SQLConf.get.csvEnableDateTimeParsingFallback)
+      .getOrElse {
+        LegacyBehaviorPolicyShim.isLegacyTimeParserPolicy() || options.dateFormatOption.isEmpty
+      }
 }

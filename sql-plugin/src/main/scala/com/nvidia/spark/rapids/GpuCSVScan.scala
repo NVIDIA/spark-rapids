@@ -43,10 +43,11 @@ import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
+import org.apache.spark.sql.rapids.{CorrectedTimeParserPolicy, GpuToTimestamp, LegacyTimeParserPolicy}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
+import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.SerializableConfiguration
 
 trait ScanWithMetrics {
@@ -220,10 +221,22 @@ object GpuCSVScan extends Logging {
     }
 
     if (types.contains(DateType)) {
-      GpuTextBasedDateUtils.tagCudfFormat(meta,
-        GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
+      if (!supportsCorrectedDateParsing(parsedOptions)) {
+        GpuTextBasedDateUtils.tagCudfFormat(meta,
+          GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
+      }
 
-      // For date type, timezone needs to be checked also. This is because JVM timezone is used
+      if (supportsCorrectedDateParsing(parsedOptions) &&
+          (parsedOptions.ignoreLeadingWhiteSpaceInRead ||
+            parsedOptions.ignoreTrailingWhiteSpaceInRead)) {
+        // Univocity trims only unquoted fields. cuDF returns the same string for quoted
+        // and unquoted whitespace, so the date parser cannot recover that distinction.
+        meta.willNotWorkOnGpu("GPU CSV date parsing does not support " +
+          "ignoreLeadingWhiteSpace or ignoreTrailingWhiteSpace")
+      }
+
+      // CORRECTED dates are proleptic Gregorian epoch days and do not use a timezone.
+      // For other parser policies, timezone needs to be checked also. JVM timezone is used
       // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
       //
       // In details, for CSV data format, Spark uses dateFormatter to parse string as date data
@@ -233,7 +246,8 @@ object GpuCSVScan extends Logging {
       // timezone. From Java util.Date, it's converted into java.sql.Date type.
       // By leveraging [[JavaDateTimeUtils]], it finally do `rebaseJulianToGregorianDays`
       // considering its offset to UTC timezone.
-      if (!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
+      if (GpuOverrides.getTimeParserPolicy != CorrectedTimeParserPolicy &&
+          !GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
       }
     }
@@ -249,7 +263,8 @@ object GpuCSVScan extends Logging {
     // TODO parsedOptions.emptyValueInRead
 
     if (GpuCsvUtils.enableDateTimeParsingFallback(parsedOptions) &&
-        (types.contains(DateType) || types.contains(TimestampType))) {
+        (types.contains(TimestampType) ||
+          (types.contains(DateType) && !supportsCorrectedDateParsing(parsedOptions)))) {
       meta.willNotWorkOnGpu(s"GpuCSVScan does not support enableDateTimeParsingFallback")
     }
 
@@ -278,6 +293,10 @@ object GpuCSVScan extends Logging {
 
     FileFormatChecks.tag(meta, readSchema, CsvFormatType, ReadFileOp)
   }
+
+  def supportsCorrectedDateParsing(options: CSVOptions): Boolean =
+    GpuOverrides.getTimeParserPolicy == CorrectedTimeParserPolicy &&
+      options.dateFormatInRead.forall(GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS.contains)
 }
 
 case class GpuCSVScan(
@@ -434,8 +453,29 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
     }
   }
 
-  override def dateFormat: Option[String] = Some(GpuCsvUtils.dateFormatInRead(parsedOptions))
+  override def dateFormat: Option[String] = {
+    if (GpuCSVScan.supportsCorrectedDateParsing(parsedOptions)) {
+      parsedOptions.dateFormatInRead
+    } else {
+      Some(GpuCsvUtils.dateFormatInRead(parsedOptions))
+    }
+  }
   override def timestampFormat: String = GpuCsvUtils.timestampFormatInRead(parsedOptions)
+
+  private lazy val enableDateParsingFallback = GpuCsvUtils.enableDateParsingFallback(parsedOptions)
+  // UTF8String.trimAll changed in patch releases and can be backported independently.
+  // Probe the runtime semantics instead of maintaining a Spark version allowlist.
+  private lazy val dateParsingTrimsControls = UTF8String.fromBytes(Array(0.toByte))
+      .trimAll().numBytes() == 0
+
+  override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
+    if (GpuCSVScan.supportsCorrectedDateParsing(parsedOptions)) {
+      CastStrings.parseCsvDate(
+          input, dateFormat.orNull, enableDateParsingFallback, dateParsingTrimsControls)
+    } else {
+      super.castStringToDate(input, dt)
+    }
+  }
 }
 
 

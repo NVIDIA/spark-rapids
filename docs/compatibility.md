@@ -133,7 +133,8 @@ will produce a different result compared to the plugin.
 ## CSV Reading
 
 Spark allows for stripping leading and trailing white space using various options that are off by
-default. The plugin will strip leading and trailing space for all values except strings.
+default. For supported `CORRECTED` date formats, whitespace handling follows Spark as described
+below. The plugin strips leading and trailing space for other non-string values.
 
 There are also discrepancies/issues with specific types that are detailed below.
 
@@ -152,7 +153,24 @@ replacement character �.  Instead it just passes them through as described in 
 
 ### CSV Dates
 
-Only a limited set of formats are supported when parsing dates.
+With `spark.sql.legacy.timeParserPolicy=CORRECTED`, GPU date parsing supports an absent `dateFormat`
+and the formats listed under [CORRECTED and EXCEPTION timeParserPolicy](#corrected-and-exception-timeparserpolicy).
+These dates are supported in both UTC and non-UTC session and JVM time zones.
+
+An absent `dateFormat` uses Spark's CAST-style date grammar, including year-only, year-month, and
+signed or extended years. Explicit formats require exact field widths and complete input consumption,
+preserving leading and trailing whitespace. Invalid dates and epoch-day overflow produce nulls.
+
+When Spark enables date parsing fallback, a failed format parse retries the CAST-style grammar.
+Spark 3.3 always enables this fallback. Spark 3.4 and later use the read option
+`enableDateTimeParsingFallback`, then `spark.sql.legacy.csv.enableDateTimeParsingFallback`, then
+enable it by default when `dateFormat` is absent.
+
+For supported `CORRECTED` dates, setting `ignoreLeadingWhiteSpace` or `ignoreTrailingWhiteSpace`
+to `true` makes the scan fall back to CPU. Spark trims only unquoted fields, and the GPU parser
+cannot preserve that distinction.
+
+For other parser policies, date parsing supports the following limited set of formats.
 
 * `"yyyy-MM-dd"`
 * `"yyyy/MM/dd"`
@@ -184,8 +202,7 @@ portion followed by one of the following formats:
 * `HH:mm:ss.SSS`
 * `HH:mm:ss[.SSS]`
 
-Just like with dates all timestamp formats are actually supported at the same time.  The plugin will
-disable itself if it sees a format it cannot support.
+The plugin disables GPU timestamp parsing if the configured format is unsupported.
 
 Invalid timestamps in Spark, ones that have the correct format, but the numbers produce invalid
 dates or times, can result in an exception by default and how they are parsed can be controlled
