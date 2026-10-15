@@ -192,11 +192,22 @@ def test_select_complex_field(format, spark_tmp_path, query, expected_schemata, 
 
 @pytest.mark.skipif(not is_spark_411_or_later(),
                     reason="Spark 4.1.1+ exposes missing-struct parent validity")
-@pytest.mark.parametrize('return_null_struct', [False, True])
-@pytest.mark.parametrize('nested_array', [False, True])
+@pytest.mark.parametrize('footer_type,return_null_struct,nested_array', [
+    ("JAVA", False, False),
+    ("JAVA", False, True),
+    ("JAVA", True, False),
+    ("JAVA", True, True),
+    pytest.param("NATIVE", False, False, marks=pytest.mark.xfail(
+        strict=True, reason="https://github.com/NVIDIA/cudf-spark/issues/14247")),
+    pytest.param("NATIVE", False, True, marks=pytest.mark.xfail(
+        strict=True, reason="https://github.com/NVIDIA/cudf-spark/issues/14247")),
+    ("NATIVE", True, False),
+    pytest.param("NATIVE", True, True, marks=pytest.mark.xfail(
+        strict=True, reason="https://github.com/NVIDIA/cudf-spark/issues/14247")),
+])
 @ignore_order(local=True)
 def test_parquet_missing_nested_field_parent_null(spark_tmp_path, return_null_struct,
-                                                  nested_array):
+                                                  nested_array, footer_type):
     data_path = spark_tmp_path + "/MISSING_NESTED_PARENT"
     if nested_array:
         source_rows = [
@@ -217,7 +228,8 @@ def test_parquet_missing_nested_field_parent_null(spark_tmp_path, return_null_st
     conf = {
         "spark.sql.legacy.parquet.returnNullStructIfAllFieldsMissing":
             str(return_null_struct).lower(),
-        "spark.sql.parquet.enableVectorizedReader": "true"}
+        "spark.sql.parquet.enableVectorizedReader": "true",
+        "spark.rapids.sql.format.parquet.reader.footer.type": footer_type}
 
     def read_parent(spark):
         return spark.read.schema(read_schema).parquet(data_path).select("name", "address")
