@@ -126,6 +126,17 @@ class UCXSendTaskSuite extends AnyFunSuite {
     assertResult(Seq("success"))(ended.calls)
   }
 
+  test("a throw from JUCX before it took the send is reported once") {
+    // as from an endpoint that closed before the send reached UCX
+    val ended = new Ended
+    val failure = new IllegalStateException("the endpoint is closed in test")
+    val thrown = intercept[IllegalStateException](UCX.sendOrReport(ended)(
+      UCX.sendTask(1L, _, () => ())((_, _, _) => throw failure)))
+    assert(thrown eq failure)
+    assertResult(1)(ended.calls.size)
+    assert(ended.calls.head.startsWith(s"error ${UCX.SEND_TASK_FAILED}: "))
+  }
+
   test("a throw after JUCX took the send is left to the send's own callback") {
     // as when closing the send's NVTX range fails, once JUCX returned with the send in flight
     val ended = new Ended
