@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import tempfile
 
 import pytest
 from pyspark.sql import Row
@@ -23,7 +24,7 @@ from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, \
     deletion_vector_values_with_xfail_reasons, read_delta_path_with_cdf, delta_reorg_xfail
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
-from parquet_test_utils import parquet_row_group_midpoints
+from parquet_test_utils import copy_from_local, parquet_row_group_midpoints
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
     is_spark_320_or_later, is_spark_340_or_later, is_spark_350_or_later, \
     supports_delta_lake_deletion_vectors, is_spark_412_or_later, \
@@ -1827,3 +1828,148 @@ def test_delta_deletion_vector_native_footer_multi_row_group_zero_column_aggrega
         lambda spark: spark.sql(query.format(path=data_path)),
         exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
         conf=read_conf)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not gpu_supports_delta_dv_scan(),
+                    reason="GPU Delta deletion vector scan support is required")
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"],
+                         ids=idfn)
+@pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
+@pytest.mark.parametrize("empty_batches", [
+    "middle", "consecutive", "first", "last", "empty_split", "reported_layout"
+], ids=idfn)
+def test_delta_deletion_vector_count_star_after_empty_batch(
+        spark_tmp_path, parquet_reader_type, footer_type, empty_batches):
+    """Empty batches must neither hide live rows nor prevent clean reader termination."""
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    num_rows = 16384
+    appended_rows = 512
+    split_bytes = 16384
+    conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.databricks.delta.optimizeMetadataQuery.enabled": "false",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.rapids.sql.format.parquet.reader.type": parquet_reader_type,
+        "spark.rapids.sql.format.parquet.reader.footer.type": footer_type,
+        "spark.rapids.sql.reader.batchSizeRows": "100",
+        "spark.rapids.sql.reader.chunked": "false",
+        "spark.sql.files.maxPartitionBytes": str(split_bytes),
+    }
+    write_conf = copy_and_update(conf, {
+        "parquet.block.size": "4096",
+        "parquet.page.size": "1024",
+        "parquet.enable.dictionary": "false",
+    })
+
+    def setup_tables(spark):
+        if empty_batches == "reported_layout":
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+
+            # Reproduce the reported footer layout without relying on a particular
+            # Spark/Parquet writer's interpretation of parquet.block.size.
+            with tempfile.TemporaryDirectory() as local_path:
+                for file_index in range(4):
+                    start_id = file_index * (num_rows // 4)
+                    ids = pa.array(range(start_id, start_id + num_rows // 4), type=pa.int64())
+                    pq.write_table(pa.table({"id": ids, "payload1": ids, "payload2": ids}),
+                                   f"{local_path}/part-{file_index}.parquet",
+                                   row_group_size=253, data_page_size=1024,
+                                   use_dictionary=False, compression="snappy")
+                copy_from_local(spark, local_path, data_path)
+            spark.sql(f"CONVERT TO DELTA parquet.`{data_path}`").collect()
+            spark.sql(f"ALTER TABLE delta.`{data_path}` SET TBLPROPERTIES "
+                      "('delta.enableDeletionVectors' = 'true')").collect()
+        else:
+            spark.range(0, num_rows, 1, 4).selectExpr("id", "id AS payload1", "id AS payload2") \
+                .write.format("delta").option("delta.enableDeletionVectors", "true") \
+                .save(data_path)
+        original_files = spark.read.format("delta").load(data_path).inputFiles()
+        assert len(original_files) == 4
+        deleted_ids = set()
+        jvm = spark.sparkContext._jvm
+        hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+        for file_path in original_files:
+            reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(
+                hadoop_conf, jvm.org.apache.hadoop.fs.Path(file_path))
+            try:
+                blocks = list(reader.getFooter().getBlocks())
+                assert len(blocks) > 4, "Need multiple empty batches followed by live groups"
+                assert sum(b.getRowCount() for b in blocks) == num_rows // 4
+                midpoints = [b.getStartingPos() + b.getCompressedSize() // 2 for b in blocks]
+                split_ids = [midpoint // split_bytes for midpoint in midpoints]
+                if empty_batches == "reported_layout":
+                    assert [b.getRowCount() for b in blocks] == [253] * 16 + [48]
+                if empty_batches in ("middle", "reported_layout"):
+                    empty_groups = {2}
+                    assert split_ids[2] == split_ids[3]
+                elif empty_batches == "consecutive":
+                    empty_groups = {1, 2}
+                    assert split_ids[1] == split_ids[2] == split_ids[3]
+                elif empty_batches == "first":
+                    empty_groups = {0}
+                    assert split_ids[0] == split_ids[1]
+                elif empty_batches == "last":
+                    # Include the preceding group so even a short final group follows
+                    # an empty batch. There are no live groups left at end-of-input.
+                    empty_groups = {len(blocks) - 2, len(blocks) - 1}
+                else:
+                    assert empty_batches == "empty_split"
+                    empty_groups = {i for i, split_id in enumerate(split_ids)
+                                    if split_id == split_ids[0]}
+                    assert len(empty_groups) < len(blocks), "Keep live rows in later splits"
+                for index, block in enumerate(blocks):
+                    stats = block.getColumns().get(0).getStatistics()
+                    first_id = int(stats.genericGetMin())
+                    last_id = int(stats.genericGetMax())
+                    assert last_id - first_id + 1 == block.getRowCount()
+                    assert block.getRowCount() > 3
+                    if index in empty_groups:
+                        if index != len(blocks) - 1:
+                            assert block.getRowCount() > 100, "Deleted group must fill a batch"
+                        deleted_ids.update(range(first_id, last_id + 1))
+                    else:
+                        deleted_ids.update((first_id, first_id + 1, last_id))
+            finally:
+                reader.close()
+
+        delete_list = ",".join(str(i) for i in sorted(deleted_ids))
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE id IN ({delete_list})").collect()
+        metrics = _latest_delta_history(spark, data_path)["operationMetrics"]
+        assert int(metrics.get("numDeletionVectorsAdded", "0")) == 4
+        assert set(spark.read.format("delta").load(data_path).inputFiles()) == set(original_files)
+        spark.range(num_rows, num_rows + appended_rows, 1, 2) \
+            .selectExpr("id", "id AS payload1", "id AS payload2") \
+            .write.format("delta").mode("append").save(data_path)
+        assert len(spark.read.format("delta").load(data_path).inputFiles()) == 6
+        expected_ids = set(range(num_rows + appended_rows)) - deleted_ids
+        actual_ids = {r.id for r in spark.read.format("delta").load(data_path).collect()}
+        assert actual_ids == expected_ids
+        return sorted(expected_ids)
+
+    expected_ids = with_cpu_session(setup_tables, conf=write_conf)
+    expected_count = len(expected_ids)
+    if empty_batches == "reported_layout":
+        assert expected_count == 15692
+    query = f"SELECT COUNT(*) AS n FROM delta.`{data_path}`"
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(query),
+        exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
+        conf=conf)
+    assert with_cpu_session(lambda spark: spark.sql(query).collect(), conf=conf) == \
+        [Row(n=expected_count)]
+    assert with_gpu_session(lambda spark: spark.sql(query).collect(), conf=conf) == \
+        [Row(n=expected_count)]
+
+    # Exercise the same reader loops when actual Parquet columns are decoded.
+    data_query = f"SELECT id FROM delta.`{data_path}`"
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(data_query),
+        exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<id:bigint>",
+        conf=conf)
+    gpu_ids = with_gpu_session(lambda spark: spark.sql(data_query).collect(), conf=conf)
+    assert sorted(row.id for row in gpu_ids) == expected_ids
