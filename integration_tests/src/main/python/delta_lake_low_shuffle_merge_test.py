@@ -222,9 +222,11 @@ def test_delta_low_shuffle_merge_rewrite_with_dv_settings(
 @pytest.mark.skipif(not is_databricks_version(17, 3), reason="DBR 17.3 reader routing")
 @pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
 @pytest.mark.parametrize("metadata_only", [False, True], ids=idfn)
+@pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
 def test_delta_low_shuffle_merge_multiple_row_groups(
-        spark_tmp_path, spark_tmp_table_factory, reader_type, metadata_only):
+        spark_tmp_path, spark_tmp_table_factory, reader_type, metadata_only, use_chunked_reader):
     conf = copy_and_update(_delta_merge_conf(reader_type), {
+        "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower(),
         "spark.databricks.delta.optimizeWrite.enabled": "false",
         "spark.databricks.delta.autoCompact.enabled": "false",
         "spark.sql.files.minPartitionNum": "1",
