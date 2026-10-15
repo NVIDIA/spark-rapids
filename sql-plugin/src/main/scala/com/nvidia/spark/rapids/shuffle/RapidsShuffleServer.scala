@@ -984,7 +984,7 @@ object RapidsShuffleServer {
   private[shuffle] def failureReason(outcome: BufferSendState.Outcome): String = outcome match {
     case BufferSendState.MissingOutput => "the shuffle output it asked for is gone"
     case BufferSendState.OomExpired =>
-      "GPU memory ran out while preparing it, past the retry window"
+      "memory ran out while preparing it, past its retry deadline"
     case _ => "the server failed to prepare or send it"
   }
 
