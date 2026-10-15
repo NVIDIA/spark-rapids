@@ -24,6 +24,7 @@ import org.apache.hadoop.fs.Path
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.{Identifier, Table, TableCatalog, TableChange}
 import org.apache.spark.sql.connector.expressions.Transform
+import org.apache.spark.sql.sources.{And, Filter, GreaterThanOrEqual, IsNotNull}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
@@ -48,26 +49,46 @@ class ServerSidePlannedTestCatalog extends TableCatalog {
     // its 4.2 APIs only when this catalog is actually used.
     val loader = Thread.currentThread().getContextClassLoader
     val fileClass = loader.loadClass(deltaPackage + "ScanFile")
-    val files = if (ident.name() == "empty") {
-      List.empty[AnyRef]
-    } else {
-      selected.getFileSystem(spark.sparkContext.hadoopConfiguration).listStatus(selected)
+    def scanFiles(path: Path): List[AnyRef] = {
+      path.getFileSystem(spark.sparkContext.hadoopConfiguration).listStatus(path)
         .filter(_.getPath.getName.endsWith(".parquet"))
         .sortBy(_.getPath.toString)
         .map { status =>
           fileClass.getConstructor(classOf[String], java.lang.Long.TYPE, classOf[String])
             .newInstance(status.getPath.toString, Long.box(status.getLen), "parquet")
+            .asInstanceOf[AnyRef]
         }.toList
     }
-    val plan = loader.loadClass(deltaPackage + "ScanPlan")
+    val planConstructor = loader.loadClass(deltaPackage + "ScanPlan")
       .getConstructor(loader.loadClass("scala.collection.immutable.Seq"), classOf[Option[_]])
-      .newInstance(files, None).asInstanceOf[AnyRef]
+    def scanPlan(files: List[AnyRef]): AnyRef =
+      planConstructor.newInstance(files, None).asInstanceOf[AnyRef]
+
+    val files = if (ident.name() == "empty") List.empty[AnyRef] else scanFiles(selected)
+    val plan = scanPlan(files)
+    val pushFilters = ident.name() == "pushed"
+    val matchingFiles = if (pushFilters) scanFiles(new Path(root, "matching")) else Nil
+    // Only these predicates are faithfully evaluated by this fixture's file selection.
+    def supportedFilter(filter: Filter): Boolean = filter match {
+      case GreaterThanOrEqual("id", 10L) | IsNotNull("id") => true
+      case And(left, right) => supportedFilter(left) && supportedFilter(right)
+      case _ => false
+    }
+    def hasLowerBound(filter: Filter): Boolean = filter match {
+      case GreaterThanOrEqual("id", 10L) => true
+      case And(left, right) => hasLowerBound(left) || hasLowerBound(right)
+      case _ => false
+    }
     val clientClass = loader.loadClass(deltaPackage + "ServerSidePlanningClient")
     val client = Proxy.newProxyInstance(loader, Array(clientClass), (proxy, method, args) => {
       method.getName match {
+        case "planScan" if pushFilters =>
+          val filter = args(2).asInstanceOf[Option[Filter]]
+          require(filter.forall(supportedFilter), s"Unsupported planned filter: $filter")
+          scanPlan(if (filter.exists(hasLowerBound)) matchingFiles else files ++ matchingFiles)
         case "planScan" => plan
-        // Keep filters as Spark residuals over the fixed manifest.
-        case "canConvertFilters" => Boolean.box(false)
+        case "canConvertFilters" =>
+          Boolean.box(pushFilters && args(0).asInstanceOf[Array[Filter]].forall(supportedFilter))
         case "close" => null
         case "toString" => "FixedManifestPlanningClient"
         case "hashCode" => Int.box(System.identityHashCode(proxy))
@@ -82,7 +103,7 @@ class ServerSidePlannedTestCatalog extends TableCatalog {
   }
 
   override def listTables(namespace: Array[String]): Array[Identifier] =
-    Array(Identifier.of(namespace, "table"), Identifier.of(namespace, "empty"))
+    Array("table", "empty", "pushed").map(Identifier.of(namespace, _))
 
   override def createTable(ident: Identifier, schema: StructType, partitions: Array[Transform],
       properties: util.Map[String, String]): Table = throw new UnsupportedOperationException

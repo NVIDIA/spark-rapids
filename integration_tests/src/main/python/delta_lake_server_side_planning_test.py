@@ -18,6 +18,7 @@ import pytest
 
 from asserts import (assert_cpu_and_gpu_are_equal_collect_with_capture,
                      assert_gpu_fallback_collect)
+from conftest import spark_jvm
 from delta_lake_utils import is_oss_delta_lake_42
 from marks import allow_non_gpu, delta_lake, ignore_order
 from spark_session import with_cpu_session
@@ -28,14 +29,20 @@ pytestmark = [delta_lake, pytest.mark.skipif(
 
 
 @pytest.fixture
-def planned_scan_conf(spark_tmp_path):
+def planned_scan_conf(spark_tmp_path, request):
+    pushed = getattr(request, "param", None) == "pushed"
+
     def write(spark):
-        spark.range(30).selectExpr(
-            "id", "cast(id / 10.0 as decimal(12, 2)) amount",
-            "named_struct('a.b', cast(id as string)) nested") \
-            .repartition(2).write.parquet(spark_tmp_path + "/selected")
-        # Valid Parquet data outside the authoritative manifest must never be scanned.
-        spark.range(100, 110).write.parquet(spark_tmp_path + "/unplanned")
+        ranges = [(0, 10, "selected"), (10, 20, "matching")] if pushed else \
+            [(0, 30, "selected")]
+        for start, end, directory in ranges:
+            spark.range(start, end).selectExpr(
+                "id", "cast(id / 10.0 as decimal(12, 2)) amount",
+                "named_struct('a.b', cast(id as string)) nested") \
+                .repartition(2).write.parquet(spark_tmp_path + "/" + directory)
+        if not pushed:
+            # Valid Parquet data outside the authoritative manifest must never be scanned.
+            spark.range(100, 110).write.parquet(spark_tmp_path + "/unplanned")
 
     with_cpu_session(write)
     # Spark caches catalog instances across test sessions; each fixture needs its own options.
@@ -70,6 +77,32 @@ def test_server_side_planned_scan(planned_scan_conf, reader, query):
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         check_results, exist_classes="GpuBatchScanExec", conf=conf)
+
+
+@ignore_order
+@pytest.mark.parametrize("reader", ["PERFILE", "MULTITHREADED", "COALESCING"])
+@pytest.mark.parametrize("planned_scan_conf", ["pushed"], indirect=True)
+def test_server_side_planned_scan_pushed_filter(planned_scan_conf, reader):
+    catalog, settings = planned_scan_conf
+    conf = dict(settings, **{"spark.rapids.sql.format.parquet.reader.type": reader})
+
+    def read(spark):
+        # Project out id so correctness depends on the service's selective manifest,
+        # rather than a reader or Spark filter evaluating id after the scan.
+        df = spark.sql("SELECT amount, nested.`a.b` AS label FROM " + catalog +
+                       ".db.pushed WHERE id >= 10")
+        assert sorted(int(row.label) for row in df.collect()) == list(range(10, 20))
+        return df
+
+    def assert_no_residual_filter(cpu_plan, gpu_plan):
+        callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+        for plan in (cpu_plan, gpu_plan):
+            assert not callback.contains(plan, "FilterExec"), plan.toString()
+            assert not callback.contains(plan, "GpuFilterExec"), plan.toString()
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        read, exist_classes="GpuBatchScanExec", require_non_empty=True,
+        gpu_plan_assertion=assert_no_residual_filter, conf=conf)
 
 
 @ignore_order
