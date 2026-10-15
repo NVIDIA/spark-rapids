@@ -82,7 +82,8 @@ class GpuOptimisticTransaction(
       spark: SparkSession,
       plan: LogicalPlan): QueryExecution = {
     val session = spark.asInstanceOf[TrampolineConnectShims.SparkSession]
-    val queryExecution = new QueryExecution(session, plan) {
+    val queryExecution = new QueryExecution(session, plan,
+        shuffleCleanupMode = QueryExecution.determineShuffleCleanupMode(session.sessionState.conf)) {
       override lazy val executedPlan: SparkPlan = super.executedPlan match {
         case write @ RapidsDeltaWriteExec(_: AdaptiveSparkPlanExec) =>
           // DBR 17.3 stops physical preparations when AQE changes the plan, skipping the
