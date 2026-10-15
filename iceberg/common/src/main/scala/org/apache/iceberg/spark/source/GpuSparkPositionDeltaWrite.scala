@@ -51,6 +51,7 @@ import org.apache.spark.sql.connector.expressions.SortOrder
 import org.apache.spark.sql.connector.write._
 import org.apache.spark.sql.connector.write.RowLevelOperation.Command
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite
+import org.apache.spark.sql.internal.SQLConf.ParquetOutputTimestampType
 import org.apache.spark.sql.rapids.GpuWriteJobStatsTracker
 import org.apache.spark.sql.types.{DataType, IntegerType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -124,11 +125,18 @@ class GpuSparkPositionDeltaWrite(cpu: DeltaWrite)
     val dataSparkTypeWithFieldIds = GpuSparkPositionDeltaWrite.dataWriterSparkTypeFor(
       command, context)
 
-    val outputWriterFactory = new GpuParquetFileFormat().prepareWrite(
+    // Iceberg's Parquet writers always encode timestamps as INT64 microseconds and preserve
+    // proleptic-Gregorian values; they do not inherit Spark's Parquet timestamp or rebase settings.
+    // The GPU path reuses Spark's Parquet writer, so force the equivalent physical type and rebase
+    // mode here. Otherwise, session settings such as INT96 or LEGACY would change Iceberg's file
+    // semantics.
+    val outputWriterFactory = new GpuParquetFileFormat().prepareWriteWithTimestampOverrides(
       SparkSession.active,
       job,
       GpuSparkWrite.translateIcebergWriteProperties(writeProps),
-      dataSparkTypeWithFieldIds
+      dataSparkTypeWithFieldIds,
+      ParquetOutputTimestampType.TIMESTAMP_MICROS,
+      DateTimeRebaseCorrected
     )
 
     val serializedHadoopConf = new SerializableConfiguration(job.getConfiguration)
