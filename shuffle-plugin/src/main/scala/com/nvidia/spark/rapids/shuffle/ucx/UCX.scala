@@ -23,6 +23,7 @@ import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, Executors
 import java.util.concurrent.atomic.AtomicLong
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.control.NonFatal
 
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, MemoryBuffer, NvtxColor, NvtxRange}
 import com.nvidia.spark.rapids.{GpuDeviceManager, RapidsConf}
@@ -636,16 +637,27 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   def onWorkerThreadAsync(task: () => Unit): Unit = {
     workerTasks.add(task)
     if (rapidsConf.shuffleUcxUseWakeup) {
-      withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
-        // take up the worker object lock to protect against another `.close`
-        synchronized {
-          if (worker != null) {
-            worker.signal()
+      // The task is queued, and the progress thread runs it on its next pass, so a failure to
+      // wake the worker must not reach callers: they treat a throw from here as a task that was
+      // never queued and will never call back.
+      try {
+        withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
+          // take up the worker object lock to protect against another `.close`
+          synchronized {
+            if (worker != null) {
+              worker.signal()
+            }
           }
         }
+      } catch {
+        // runs after the monitor is released
+        case NonFatal(t) => logWarning("Unable to signal the UCX worker", t)
       }
     }
   }
+
+  /** Whether the progress thread has terminated, after which no callback can run. */
+  def isProgressThreadTerminated: Boolean = progressThread.isTerminated
 
   /**
    * Return rkeys (if we have registered memory)

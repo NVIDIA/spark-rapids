@@ -16,14 +16,19 @@
 
 package com.nvidia.spark.rapids.shuffle
 
-import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, MemoryBuffer}
+import java.io.IOException
+
+import scala.util.control.NonFatal
+
+import ai.rapids.cudf.{Cuda, CudaFatalException, DeviceMemoryBuffer, MemoryBuffer}
 import com.nvidia.spark.rapids.{RapidsShuffleHandle, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.{BufferMeta, BufferTransferRequest}
 
 import org.apache.spark.internal.Logging
-import org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException
+import org.apache.spark.shuffle.rapids.{RapidsShuffleSendPrepareException,
+  ShuffleOutputGoneException}
 
 /**
  * A helper case class to maintain the server side state in response to a transfer
@@ -58,7 +63,7 @@ class BufferSendState(
     serverStream: Cuda.Stream = Cuda.DEFAULT_STREAM)
     extends AutoCloseable with Logging {
 
-  class SendBlock(val bufferHandle: RapidsShuffleHandle) extends BlockWithSize {
+  class SendBlock(val tableId: Int, val bufferHandle: RapidsShuffleHandle) extends BlockWithSize {
     // we assume that the size of the buffer won't change as it goes to host/disk
     // we also are likely to assume this is just a device buffer, and so we should
     // copy to device and then send.
@@ -73,7 +78,8 @@ class BufferSendState(
 
   val peerExecutorId: Long = transaction.peerExecutorId()
 
-  private[this] var isClosed = false
+  // how this state ended, or null while it is live; set once, by `finish`
+  private[this] var outcome: BufferSendState.Outcome = null
 
   private[this] val (peerBufferReceiveHeader: Long,
       bufferMetas: Array[BufferMeta],
@@ -87,9 +93,10 @@ class BufferSendState(
       val btr = new BufferTransferRequest() // for reuse
       val blocksToSend = (0 until transferRequest.requestsLength()).map { ix =>
         val bufferTransferRequest = transferRequest.requests(btr, ix)
-        val handle = requestHandler.getShuffleHandle(bufferTransferRequest.bufferId())
+        val tableId = bufferTransferRequest.bufferId()
+        val handle = requestHandler.getShuffleHandle(tableId)
         bufferMetas(ix) = handle.tableMeta.bufferMeta()
-        new SendBlock(handle)
+        new SendBlock(tableId, handle)
       }
       (peerBufferReceiveHeader, bufferMetas, blocksToSend)
     }
@@ -162,20 +169,64 @@ class BufferSendState(
       ShuffleMetadata.buildBufferTransferResponse(bufferMetas))
   }
 
-  override def close(): Unit = synchronized {
-    if (hasMoreBlocks) {
-      logWarning("Closing BufferSendState but we still have more blocks!")
-    }
-    if (isClosed){
-      throw new IllegalStateException("ALREADY CLOSED!")
-    }
-    // close transaction
-    withResource(transaction) { _ =>
-      isClosed = true
-      freeBounceBuffers()
-      releaseAcquiredToCatalog()
-    }
+  /** Whether this state has ended. An ended state never becomes live again. */
+  def isTerminal: Boolean = synchronized { outcome != null }
+
+  // exposed for testing
+  private[shuffle] def endedWith: Option[BufferSendState.Outcome] = synchronized {
+    Option(outcome)
   }
+
+  /**
+   * Ends this state once: the first outcome is final, and later calls return false and do
+   * nothing. It releases the acquired buffers, the bounce buffers and the request transaction,
+   * attempting each even if releasing another failed. A failure to release that must end the
+   * send loop (see `BufferSendState.endsSendLoop`) is rethrown for its caller to log: the send
+   * loop ends with it, while the transport's callback wrapper, on a send's callback, and the
+   * sweep at transport close log and contain it. Any other failure to release is logged here
+   * and contained.
+   *
+   * While a send of this state is in flight only that send's callback may call this, or the
+   * server's sweep once the transport has stopped, because the transport can still read the
+   * bounce buffer until then.
+   * @return true if this call ended the state
+   */
+  def finish(result: BufferSendState.Outcome): Boolean = {
+    val first = synchronized {
+      val isFirst = outcome == null
+      if (isFirst) {
+        outcome = result
+      }
+      isFirst
+    }
+    if (first) {
+      if (result == BufferSendState.Completed && hasMoreSends) {
+        logWarning("Completing BufferSendState but we still have more blocks!")
+      }
+      var error: Throwable = null
+      def release(step: => Unit): Unit = {
+        try {
+          step
+        } catch {
+          case NonFatal(t) => if (error == null) error = t else error.addSuppressed(t)
+        }
+      }
+      release(releaseAcquiredToCatalog())
+      release(freeBounceBuffers())
+      // outside this state's monitor, since closing a transaction is a call into the transport
+      release(transaction.close())
+      if (error != null) {
+        if (BufferSendState.endsSendLoop(error)) {
+          // not logged here: whoever catches it logs it
+          throw error
+        }
+        logError(s"Error while releasing a BufferSendState that ended with $result", error)
+      }
+    }
+    first
+  }
+
+  override def close(): Unit = finish(BufferSendState.Closed)
 
   case class RangeBuffer(
       range: BlockRange[SendBlock], rapidsBuffer: MemoryBuffer)
@@ -210,7 +261,8 @@ class BufferSendState(
             // we acquire these buffers now, and keep them until the caller releases them
             // using `releaseAcquiredToCatalog`
             //these are closed later, after we synchronize streams
-            val spillable = blockRange.block.bufferHandle.spillable
+            val block = blockRange.block
+            val spillable = block.bufferHandle.spillable
             val buff = try {
               spillable.materialize()
             } catch {
@@ -219,6 +271,16 @@ class BufferSendState(
                   s"Memory exhausted while materializing a shuffle buffer for executor " +
                       s"${peerExecutorId} and header " +
                       s"${TransportUtils.toHex(peerBufferReceiveHeader)}: ${oom.toString}", oom)
+              // A closed handle throws IllegalStateException, and a spill file deleted before
+              // it opened IOException. Either means the output is gone only if the catalog let
+              // go of the buffer; a failure on a buffer it still holds stays unclassified.
+              case e @ (_: IllegalStateException | _: IOException)
+                  if requestHandler.isShuffleBufferRemoved(block.tableId, block.bufferHandle) =>
+                throw new RapidsShuffleSendPrepareException(
+                  s"Shuffle buffer for table ${block.tableId} was removed before it could be " +
+                      s"sent to executor ${peerExecutorId}",
+                  new ShuffleOutputGoneException(
+                    s"shuffle output for table ${block.tableId} is gone", e))
             }
             buff match {
               case _: DeviceMemoryBuffer =>
@@ -293,7 +355,56 @@ class BufferSendState(
    * allowing us to safely return buffers to the catalog to be potentially freed if spilling.
    */
   def releaseAcquiredToCatalog(): Unit = synchronized {
-    acquiredBuffs.foreach(_.close())
+    // detached first, so that a close that throws leaves nothing to close a second time
+    val toRelease = acquiredBuffs
     acquiredBuffs = Seq.empty
+    toRelease.safeClose()
   }
+}
+
+object BufferSendState {
+  /**
+   * Whether `error`, one of its causes or one of their suppressed errors must end the send loop
+   * rather than be contained: a fatal CUDA error, after which the GPU is unusable, or an
+   * interruption of the thread.
+   */
+  private[shuffle] def endsSendLoop(error: Throwable): Boolean = exists(error) {
+    case _: CudaFatalException | _: InterruptedException => true
+    case _ => false
+  }
+
+  /** Whether `error`, one of its causes or one of their suppressed errors is an interruption. */
+  private[shuffle] def wasInterrupted(error: Throwable): Boolean =
+    exists(error)(_.isInstanceOf[InterruptedException])
+
+  private def exists(error: Throwable)(p: Throwable => Boolean): Boolean = {
+    val seen = new java.util.IdentityHashMap[Throwable, Throwable]()
+    def visit(e: Throwable): Boolean = e != null && seen.put(e, e) == null &&
+        (p(e) || visit(e.getCause) || e.getSuppressed.exists(visit))
+    visit(error)
+  }
+
+  /** How a [[BufferSendState]] ended. Only the first outcome recorded for a state counts. */
+  sealed trait Outcome
+
+  /** Every window was sent, and the transfer response was handed to the transport. */
+  case object Completed extends Outcome
+
+  /** The server failed to prepare or issue a send, for a reason other than the ones below. */
+  case object Failed extends Outcome
+
+  /** A requested buffer is gone: the catalog no longer holds it, as after an unregister. */
+  case object MissingOutput extends Outcome
+
+  /** Materialization kept running out of memory past the retry window. */
+  case object OomExpired extends Outcome
+
+  /** The transport completed a data send with a status other than success. */
+  case object SendFailed extends Outcome
+
+  /** The server closed before the state could finish. */
+  case object ServerClosed extends Outcome
+
+  /** Closed directly, through `close()`. */
+  case object Closed extends Outcome
 }
