@@ -1185,8 +1185,9 @@ object UCX {
         val text = try {
           s"$SEND_TASK_FAILED_TEXT: $error"
         } catch {
-          // the heap ran out again, as it may have for the error itself
-          case _: OutOfMemoryError => SEND_TASK_FAILED_TEXT
+          // the heap ran out again, as it may have for the error itself, or the error cannot
+          // describe itself: the error is rethrown either way
+          case NonFatal(_) | _: OutOfMemoryError => SEND_TASK_FAILED_TEXT
         }
         ended = true
         val status = error match {
