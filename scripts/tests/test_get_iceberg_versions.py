@@ -489,14 +489,27 @@ class IcebergCatalogCallerSuite(unittest.TestCase):
         settings.write_text("<settings />", encoding="utf-8")
         binary_dir = self.workspace / "bin"
         binary_dir.mkdir()
-        (binary_dir / "python").symlink_to(sys.executable)
+        python = binary_dir / "python"
+        python.write_text(
+            '#!/usr/bin/env bash\nprintf "%s\\n" "$2" >> "$READER_LOG"\n'
+            'exec "$PYTHON_EXECUTABLE" "$@"\n', encoding="utf-8")
+        python.chmod(0o755)
         self.invocations = self.workspace / "runner.log"
         self.maven_log = self.workspace / "maven.log"
         self.cwd_log = self.workspace / "cwd.log"
+        self.reader_log = self.workspace / "reader.log"
+        self.marker_log = self.workspace / "markers.log"
         runner = self.artifacts / "run_pyspark_from_build.sh"
         runner.write_text(
             '#!/usr/bin/env bash\nprintf "%s|%s\\n" "$EXPECTED_ICEBERG_VERSION" "$PWD" '
-            '>> "$INVOCATIONS"\n', encoding="utf-8")
+            '>> "$INVOCATIONS"\n'
+            'while [[ $# -gt 0 ]]; do\n'
+            '  if [[ "$1" == "-m" ]]; then\n'
+            '    printf "%s\\n" "$2" >> "$MARKER_LOG"\n'
+            '    break\n'
+            '  fi\n'
+            '  shift\n'
+            'done\n', encoding="utf-8")
         runner.chmod(0o755)
         source = (REPO_ROOT / "jenkins" / "spark-tests.sh").read_text()
         start = source.index("run_iceberg_tests() {")
@@ -505,24 +518,29 @@ class IcebergCatalogCallerSuite(unittest.TestCase):
         self.definition.write_text(source[start:end], encoding="utf-8")
 
     def _run_catalog(self, catalog: str, requested: Optional[str] = None,
-                     settings: str = "jenkins/settings.xml") -> Tuple[
+                     settings: str = "jenkins/settings.xml", spark_version: str = "3.5.7",
+                     test_tags: Optional[str] = None) -> Tuple[
                          subprocess.CompletedProcess[str], List[str], List[str]]:
-        for log in (self.invocations, self.maven_log, self.cwd_log):
+        for log in (self.invocations, self.maven_log, self.cwd_log, self.reader_log, self.marker_log):
             if log.exists():
                 log.unlink()
         environment = os.environ.copy()
-        for name in ("MVN", "ICEBERG_VERSIONS", "ICEBERG_TEST_FAST_RUN"):
+        for name in ("MVN", "ICEBERG_VERSIONS", "TEST_TAGS"):
             environment.pop(name, None)
         environment.update(
-            WORKSPACE=str(self.workspace), SPARK_VER="3.5.7", SCALA_BINARY_VER="2.13",
+            WORKSPACE=str(self.workspace), SPARK_VER=spark_version, SCALA_BINARY_VER="2.13",
             PROJECT_REPO_HOST="unused", ICEBERG_REST_CREDENTIAL="unused",
             MAVEN_FIXTURES=str(FIXTURE_DIR), FAKE_MAVEN=str(FIXTURE_DIR / "fake-maven.sh"),
             MAVEN_LOG=str(self.maven_log), INVOCATIONS=str(self.invocations),
             CWD_LOG=str(self.cwd_log), DEFINITION=str(self.definition),
+            READER_LOG=str(self.reader_log), PYTHON_EXECUTABLE=sys.executable,
+            MARKER_LOG=str(self.marker_log),
             MVN_SETTINGS=settings, CATALOG=catalog,
             PATH=str(self.workspace / "bin") + os.pathsep + environment.get("PATH", ""))
         if requested is not None:
             environment["ICEBERG_VERSIONS"] = requested
+        if test_tags is not None:
+            environment["TEST_TAGS"] = test_tags
         command = '''set -e
 source "$DEFINITION"
 download_maven_jars() { printf '/fixture-jars\\n'; }
@@ -543,6 +561,8 @@ printf '%s\\n' "$PWD" > "$CWD_LOG"
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertEqual([f"1.9.2|{self.artifacts}", f"1.10.1|{self.artifacts}"], calls)
                 self.assertEqual([f"{self.workspace}|jenkins/settings.xml"] * 9, maven_calls)
+                self.assertEqual(["list"], self.reader_log.read_text().splitlines())
+                self.assertEqual(["iceberg"] * 2, self.marker_log.read_text().splitlines())
                 self.assertEqual(str(self.artifacts), self.cwd_log.read_text().strip())
 
     def test_requested_versions_use_workspace_settings_for_all_catalogs(self) -> None:
@@ -551,7 +571,8 @@ printf '%s\\n' "$PWD" > "$CWD_LOG"
                 result, calls, maven_calls = self._run_catalog(catalog, "1.10.1, 1.9.2")
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertEqual([f"1.10.1|{self.artifacts}", f"1.9.2|{self.artifacts}"], calls)
-                self.assertEqual([f"{self.workspace}|jenkins/settings.xml"] * 18, maven_calls)
+                self.assertEqual([f"{self.workspace}|jenkins/settings.xml"] * 9, maven_calls)
+                self.assertEqual(["validate-requested"], self.reader_log.read_text().splitlines())
                 self.assertEqual(str(self.artifacts), self.cwd_log.read_text().strip())
 
     def test_missing_settings_fail_before_running_any_catalog_tests(self) -> None:
@@ -562,6 +583,38 @@ printf '%s\\n' "$PWD" > "$CWD_LOG"
                 self.assertEqual([], calls)
                 self.assertEqual([f"{self.workspace}|missing.xml"], maven_calls)
                 self.assertIn("missing Maven settings: missing.xml", result.stderr)
+
+
+    def test_marker_selector_reaches_all_catalog_runners(self) -> None:
+        for catalog in ("default", "rest", "s3tables"):
+            with self.subTest(catalog=catalog):
+                result, calls, _ = self._run_catalog(catalog, test_tags="iceberg_fast_test")
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(2, len(calls))
+                self.assertEqual(["iceberg and (iceberg_fast_test)"] * 2,
+                                 self.marker_log.read_text().splitlines())
+
+    def test_empty_selections_warn_for_all_catalogs(self) -> None:
+        for catalog in ("default", "rest", "s3tables"):
+            for requested in (None, " , "):
+                with self.subTest(catalog=catalog, requested=requested):
+                    result, calls, _ = self._run_catalog(
+                        catalog, requested=requested, spark_version="3.5.4")
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                    self.assertEqual([], calls)
+                    self.assertIn("No supported Iceberg version found for Spark 3.5.4", result.stdout)
+                    self.assertEqual(["list" if requested is None else "validate-requested"],
+                                     self.reader_log.read_text().splitlines())
+
+    def test_invalid_requests_fail_without_listing_or_starting_tests(self) -> None:
+        for catalog in ("default", "rest", "s3tables"):
+            with self.subTest(catalog=catalog):
+                result, calls, _ = self._run_catalog(catalog, requested="9.9.9")
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual([], calls)
+                self.assertEqual(["validate-requested"], self.reader_log.read_text().splitlines())
+                self.assertIn("not present in the test matrix", result.stderr)
+                self.assertNotIn("No supported Iceberg version found", result.stdout)
 
 
 if __name__ == "__main__":

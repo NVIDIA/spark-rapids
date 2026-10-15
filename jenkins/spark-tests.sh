@@ -459,6 +459,10 @@ run_iceberg_tests() {
   fi
 
   local test_type=${1:-'default'}
+  local iceberg_test_tags="iceberg"
+  if [[ -n "${TEST_TAGS:-}" ]]; then
+    iceberg_test_tags="iceberg and ($TEST_TAGS)"
+  fi
 
   if [[ "$ICEBERG_SPARK_VER" == "4.0" || "$ICEBERG_SPARK_VER" == "4.1" ]]; then
     if [[ "$SCALA_BINARY_VER" != "2.13" ]]; then
@@ -468,14 +472,8 @@ run_iceberg_tests() {
   fi
 
   local matrix_reader="$WORKSPACE/scripts/get_iceberg_versions.py"
-  local supported_versions
-  # Maven settings paths are relative to the workspace, not the test artifacts directory.
-  supported_versions=$(
-    cd "$WORKSPACE" || exit 1
-    MVN="${MVN:-mvn}" python "$matrix_reader" list --spark-version "$SPARK_VER"
-  ) || return 1
-
   local iceberg_versions
+  # Maven settings paths are relative to the workspace, not the test artifacts directory.
   if [[ -n "${ICEBERG_VERSIONS:-}" ]]; then
     iceberg_versions=$(
       cd "$WORKSPACE" || exit 1
@@ -483,12 +481,16 @@ run_iceberg_tests() {
         --spark-version "$SPARK_VER" --requested-versions "$ICEBERG_VERSIONS"
     ) || return 1
     echo "Using user-specified ICEBERG_VERSIONS=$ICEBERG_VERSIONS"
-  elif [[ -z "$supported_versions" ]]; then
-    # Issue #15875 can exclude packaged combinations below the minimum test baselines.
-    echo "!!!! Skipping Iceberg tests. No matrix-selected Iceberg version for Spark $SPARK_VER"
-    return 0
   else
-    iceberg_versions="$supported_versions"
+    iceberg_versions=$(
+      cd "$WORKSPACE" || exit 1
+      MVN="${MVN:-mvn}" python "$matrix_reader" list --spark-version "$SPARK_VER"
+    ) || return 1
+  fi
+  if [[ -z "$iceberg_versions" ]]; then
+    # Issue #15875 can exclude packaged combinations below the minimum test baselines.
+    echo "!!!! Skipping Iceberg tests. No supported Iceberg version found for Spark $SPARK_VER"
+    return 0
   fi
 
   for ICEBERG_VERSION in $iceberg_versions; do
@@ -498,7 +500,6 @@ run_iceberg_tests() {
       env \
         HOST_NAME=$PROJECT_REPO_HOST \
         EXPECTED_ICEBERG_VERSION=${ICEBERG_VERSION} \
-        ICEBERG_TEST_FAST_RUN="${ICEBERG_TEST_FAST_RUN:-0}" \
         PYSP_TEST_spark_driver_memory=1G \
         PYSP_TEST_spark_executor_memory=2G \
         PYSP_TEST_spark_jars_packages=org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION} \
@@ -507,7 +508,7 @@ run_iceberg_tests() {
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
         PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
         PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
-        ./run_pyspark_from_build.sh -m iceberg --iceberg
+        ./run_pyspark_from_build.sh -m "$iceberg_test_tags" --iceberg
     elif [[ "$test_type" == "rest" ]]; then
       echo "!!! Running iceberg tests with rest catalog"
       ICEBERG_REST_JARS="org.apache.iceberg:iceberg-spark-runtime-${ICEBERG_SPARK_VER}_${SCALA_BINARY_VER}:${ICEBERG_VERSION},\
@@ -533,7 +534,7 @@ org.apache.iceberg:iceberg-aws-bundle:${ICEBERG_VERSION}"
             "PYSP_TEST_spark_sql_catalog_spark__catalog_oauth2-server-uri=${ICEBERG_REST_OAUTH2_SERVER_URI:-http://localhost:8080/realms/iceberg/protocol/openid-connect/token}" \
             PYSP_TEST_spark_sql_catalog_spark__catalog_scope="${ICEBERG_REST_SCOPE:-lakekeeper}" \
             PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${ICEBERG_REST_WAREHOUSE:-demo}" \
-            ./run_pyspark_from_build.sh -m iceberg --iceberg
+            ./run_pyspark_from_build.sh -m "$iceberg_test_tags" --iceberg
     elif [[ "$test_type" == "s3tables" ]]; then
       echo "!!! Running iceberg tests with s3tables"
       # AWS deps versions for Spark 3.5.x and 4.0.x
@@ -586,7 +587,7 @@ com.amazonaws:aws-java-sdk-bundle:${AWS_SDK_BUNDLE_VERSION}"
         PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
         "PYSP_TEST_spark_sql_catalog_spark__catalog_catalog-impl=software.amazon.s3tables.iceberg.S3TablesCatalog" \
         PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="${S3TABLES_BUCKET_ARN}" \
-        ./run_pyspark_from_build.sh -s -m iceberg --iceberg
+        ./run_pyspark_from_build.sh -s -m "$iceberg_test_tags" --iceberg
     fi
   done
 }

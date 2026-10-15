@@ -17,7 +17,7 @@ from pyspark.sql import functions as f
 
 from asserts import (assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect,
                      assert_gpu_fallback_write_sql)
-from conftest import is_iceberg_remote_catalog, is_iceberg_test_fast_run
+from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (
     iceberg_cow_format_versions, iceberg_mor_format_versions, with_iceberg_dml_session,
@@ -26,7 +26,8 @@ from iceberg import (
     iceberg_nested_write_gens_list, iceberg_unsupported_mark, merge_partition_transforms_distributed,
     supports_iceberg_v3, ICEBERG_V3_UNSUPPORTED_REASON, supports_iceberg_row_lineage_inheritance,
     ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON, row_lineage_df, rapids_reader_types)
-from marks import allow_non_gpu, allow_non_gpu_conditional, iceberg, ignore_order, datagen_overrides
+from marks import (allow_non_gpu, allow_non_gpu_conditional, iceberg, ignore_order,
+                   datagen_overrides, iceberg_fast_test)
 from spark_session import is_spark_400_or_later, with_gpu_session, with_cpu_session
 
 pytestmark = iceberg_unsupported_mark
@@ -200,6 +201,7 @@ def _do_test_iceberg_merge(
     )
 
 
+@iceberg_fast_test
 @allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
@@ -217,6 +219,7 @@ def test_iceberg_merge(format_version, spark_tmp_table_factory, partition_col_sq
     _do_test_iceberg_merge(spark_tmp_table_factory, partition_col_sql, merge_mode, format_version=format_version)
 
 
+@iceberg_fast_test
 @allow_non_gpu(
     "ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec",
     "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
@@ -264,6 +267,7 @@ def test_iceberg_merge_v3_table_fallback(
         conf=copy_and_update(iceberg_merge_enabled_conf, {"spark.rapids.sql.format.iceberg.v3.enabled": "false"}))
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
@@ -322,6 +326,7 @@ def test_iceberg_merge_v3_gpu_writes_deletion_vectors(spark_tmp_table_factory):
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(
@@ -359,6 +364,7 @@ def test_iceberg_v3_row_lineage_merge_update_insert(
         })
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(
@@ -414,8 +420,7 @@ def test_iceberg_v3_row_lineage_gpu_merge_update_insert(
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize(
     'format_version,partition_col_sql,merge_mode',
     with_iceberg_format_versions(merge_partition_transforms_distributed))
@@ -431,8 +436,7 @@ def test_iceberg_merge_full_coverage(format_version, spark_tmp_table_factory, pa
 @allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize(
     'format_version,merge_mode',
     with_iceberg_format_versions(['copy-on-write', 'merge-on-read']))
@@ -499,8 +503,7 @@ def test_iceberg_merge_additional_patterns(
 @allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('format_version,merge_mode', with_iceberg_format_versions(['copy-on-write']))
 @pytest.mark.parametrize('partition_col_sql', [pytest.param("year(_c9)", id="year(timestamp_col)")])
 @pytest.mark.parametrize('merge_sql', [
@@ -528,8 +531,7 @@ def test_iceberg_merge_additional_patterns_bug(
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "SortExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('format_version,merge_mode,fallback_exec', with_iceberg_format_versions([
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -581,8 +583,7 @@ def test_iceberg_merge_fallback_write_disabled(format_version, spark_tmp_table_f
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec", "ShuffleExchangeExec", "ProjectExec")
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('format_version,merge_mode,fallback_exec', with_iceberg_format_versions([
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -672,8 +673,7 @@ def test_iceberg_merge_fallback_unsupported_file_format(
 @allow_non_gpu("MergeRows$Keep", "MergeRows$Discard", "MergeRows$Split")
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize(
     'format_version,merge_mode',
     with_iceberg_format_versions(['copy-on-write', 'merge-on-read']))
@@ -699,8 +699,7 @@ def test_iceberg_merge_nested_types(format_version, spark_tmp_table_factory, mer
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('format_version,merge_mode,fallback_exec', with_iceberg_format_versions([
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -749,8 +748,7 @@ def test_iceberg_merge_fallback_iceberg_disabled(
 @allow_non_gpu("WriteDeltaExec", "MergeRowsExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_mor_format_versions)
 def test_iceberg_merge_mor_fallback_writedelta_disabled(format_version, spark_tmp_table_factory):
     """Test merge-on-read MERGE falls back when WriteDeltaExec is disabled
@@ -804,6 +802,7 @@ def test_iceberg_merge_mor_fallback_writedelta_disabled(format_version, spark_tm
 
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize("partition_col_sql", [
@@ -862,8 +861,7 @@ def test_merge_aqe(format_version, spark_tmp_table_factory, partition_col_sql):
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize(
     'format_version,merge_mode',
     with_iceberg_format_versions(['copy-on-write', 'merge-on-read']))
@@ -925,8 +923,7 @@ def test_iceberg_merge_after_drop_partition_field(format_version, spark_tmp_tabl
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_cow_format_versions)
 def test_iceberg_merge_partitioned_fanout_enabled(format_version, spark_tmp_table_factory):
     # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.

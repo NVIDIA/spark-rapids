@@ -17,7 +17,7 @@ import pytest
 from pyspark.sql import functions as F
 
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
-from conftest import is_iceberg_remote_catalog, is_iceberg_test_fast_run
+from conftest import is_iceberg_remote_catalog
 from data_gen import DEFAULT_DATA_GEN_LENGTH, StringGen, copy_and_update, gen_df
 from iceberg import (
     assert_gpu_and_cpu_lineage_writes_are_equal, iceberg_format_versions, create_iceberg_table,
@@ -26,7 +26,7 @@ from iceberg import (
     _build_tblprops, overwrite_static_partition_transforms, supports_iceberg_v3,
     ICEBERG_V3_UNSUPPORTED_REASON, supports_iceberg_row_lineage_inheritance,
     ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON, row_lineage_df)
-from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
+from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides, iceberg_fast_test
 from spark_session import with_gpu_session, with_cpu_session
 
 pytestmark = iceberg_unsupported_mark
@@ -82,6 +82,7 @@ def do_test_insert_overwrite_table_sql(spark_tmp_table_factory,
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
@@ -94,6 +95,7 @@ def test_insert_overwrite_unpartitioned_table(format_version, spark_tmp_table_fa
         lambda table_name: create_iceberg_table(table_name, table_prop=table_prop))
 
 
+@iceberg_fast_test
 @iceberg
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
 @ignore_order(local=True)
@@ -120,6 +122,7 @@ def test_insert_overwrite_v3_table_fallback(spark_tmp_table_factory):
             {"spark.rapids.sql.format.iceberg.v3.enabled": "false"}))
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(
@@ -152,8 +155,7 @@ def test_iceberg_v3_row_lineage_insert_overwrite(spark_tmp_table_factory):
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('OverwriteByExpressionExec', 'AppendDataExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_unpartitioned_table_values(format_version, spark_tmp_table_factory):
     """Test INSERT OVERWRITE on unpartitioned tables with VALUES syntax."""
@@ -213,6 +215,7 @@ def _do_test_insert_overwrite_partitioned_table(
         create_table_and_set_write_order)
 
 
+@iceberg_fast_test
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
@@ -231,8 +234,7 @@ def test_insert_overwrite_partitioned_table(format_version, spark_tmp_table_fact
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_col_sql", overwrite_static_partition_transforms)
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_partitioned_table_full_coverage(
@@ -248,8 +250,7 @@ def test_insert_overwrite_partitioned_table_full_coverage(
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_unpartitioned_table_nested_types(format_version, spark_tmp_table_factory):
     """Test INSERT OVERWRITE with Iceberg-native nested types on GPU."""
@@ -296,8 +297,7 @@ def test_insert_overwrite_unpartitioned_table_nested_types(format_version, spark
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_unpartitioned_table_all_cols(format_version, spark_tmp_table_factory):
     """Test INSERT OVERWRITE on unpartitioned table with all Iceberg write types on GPU."""
@@ -344,8 +344,7 @@ def test_insert_overwrite_unpartitioned_table_all_cols(format_version, spark_tmp
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_partitioned_table_nested_types(format_version, spark_tmp_table_factory):
     """Test INSERT OVERWRITE on partitioned table with Iceberg-native nested types on GPU."""
@@ -395,8 +394,7 @@ def test_insert_overwrite_partitioned_table_nested_types(format_version, spark_t
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_partitioned_table_all_cols(format_version, spark_tmp_table_factory):
     """Test INSERT OVERWRITE on partitioned table with all Iceberg write types on GPU."""
@@ -447,8 +445,7 @@ def test_insert_overwrite_partitioned_table_all_cols(format_version, spark_tmp_t
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('OverwriteByExpressionExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_table_unsupported_file_format_fallback(format_version,
@@ -485,8 +482,7 @@ def test_insert_overwrite_table_unsupported_file_format_fallback(format_version,
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('OverwriteByExpressionExec', 'ShuffleExchangeExec', 'SortExec', 'ProjectExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
@@ -524,8 +520,7 @@ def test_insert_overwrite_iceberg_table_fallback_when_conf_disabled(format_versi
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_static_after_drop_partition_field(format_version, spark_tmp_table_factory):
     """Test INSERT OVERWRITE (static mode) on table after dropping a partition field (void transform).
@@ -582,8 +577,7 @@ def test_insert_overwrite_static_after_drop_partition_field(format_version, spar
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('ShuffleExchangeExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_static_df_api_truncate_string(format_version, spark_tmp_table_factory):
     """Test static overwrite via DataFrame writeTo().overwrite() API with truncate(5, string_col)
@@ -642,8 +636,7 @@ def test_insert_overwrite_static_df_api_truncate_string(format_version, spark_tm
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_insert_overwrite_partitioned_table_fanout_enabled(format_version, spark_tmp_table_factory):
     # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.

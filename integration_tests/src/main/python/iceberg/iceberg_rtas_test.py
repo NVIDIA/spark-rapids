@@ -17,14 +17,15 @@ from typing import Callable, Dict, Optional
 import pytest
 
 from asserts import assert_equal_with_local_sort, assert_gpu_fallback_collect
-from conftest import is_iceberg_remote_catalog, is_iceberg_test_fast_run
+from conftest import is_iceberg_remote_catalog
 from data_gen import gen_df, copy_and_update
 from iceberg import (
     iceberg_format_versions, create_iceberg_table, iceberg_base_table_cols, iceberg_gens_list,
     iceberg_full_gens_list, iceberg_nested_write_gens_list, get_full_table_name,
     iceberg_write_enabled_conf, iceberg_unsupported_mark, _build_tblprops, rtas_partition_transforms,
     supports_iceberg_v3, ICEBERG_V3_UNSUPPORTED_REASON)
-from marks import iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional, datagen_overrides
+from marks import (iceberg, ignore_order, allow_non_gpu, allow_non_gpu_conditional,
+                   datagen_overrides, iceberg_fast_test)
 from spark_session import with_gpu_session, with_cpu_session, is_spark_400_or_later
 
 pytestmark = [
@@ -95,6 +96,7 @@ def _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory,
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
@@ -108,6 +110,7 @@ def test_rtas_unpartitioned_table(format_version, spark_tmp_table_factory):
     _assert_gpu_equals_cpu_rtas(spark_tmp_table_factory, df_gen, table_prop)
 
 
+@iceberg_fast_test
 @iceberg
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
 @ignore_order(local=True)
@@ -149,6 +152,7 @@ def _do_test_rtas_partitioned_table(
                                 partition_col_sql=partition_col_sql)
 
 
+@iceberg_fast_test
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
@@ -164,8 +168,7 @@ def test_rtas_partitioned_table(format_version, spark_tmp_table_factory, partiti
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_col_sql", rtas_partition_transforms)
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
@@ -176,6 +179,7 @@ def test_rtas_partitioned_table_full_coverage(format_version, spark_tmp_table_fa
     _do_test_rtas_partitioned_table(spark_tmp_table_factory, partition_col_sql, format_version=format_version)
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
@@ -208,8 +212,7 @@ def test_create_or_replace_table(format_version, spark_tmp_table_factory):
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("file_format", ["orc", "avro"], ids=lambda x: f"file_format={x}")
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
@@ -241,8 +244,7 @@ def test_rtas_unsupported_file_format_fallback(format_version, spark_tmp_table_f
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AtomicReplaceTableAsSelectExec', 'AppendDataExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("conf_key", ["spark.rapids.sql.format.iceberg.enabled",
                                       "spark.rapids.sql.format.iceberg.write.enabled"],
                          ids=lambda x: f"{x}=False")
@@ -275,8 +277,7 @@ def test_rtas_fallback_when_conf_disabled(format_version, spark_tmp_table_factor
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_rtas_unpartitioned_table_nested_types(format_version, spark_tmp_table_factory):
     table_prop = {
@@ -292,8 +293,7 @@ def test_rtas_unpartitioned_table_nested_types(format_version, spark_tmp_table_f
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_rtas_unpartitioned_table_all_cols(format_version, spark_tmp_table_factory):
@@ -311,8 +311,7 @@ def test_rtas_unpartitioned_table_all_cols(format_version, spark_tmp_table_facto
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_rtas_partitioned_table_nested_types(format_version, spark_tmp_table_factory):
     table_prop = {
@@ -331,8 +330,7 @@ def test_rtas_partitioned_table_nested_types(format_version, spark_tmp_table_fac
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_rtas_partitioned_table_all_cols(format_version, spark_tmp_table_factory):
@@ -354,8 +352,7 @@ def test_rtas_partitioned_table_all_cols(format_version, spark_tmp_table_factory
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu('AppendDataExec')
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("partition_table", [True, False], ids=lambda x: f"partition_table={x}")
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
@@ -398,6 +395,7 @@ def test_rtas_from_values(format_version, spark_tmp_table_factory,
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize("partition_col_sql", [
@@ -432,8 +430,7 @@ def test_rtas_aqe(format_version, spark_tmp_table_factory, partition_col_sql):
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_format_versions)
 def test_rtas_partitioned_table_fanout_enabled(format_version, spark_tmp_table_factory):
     # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.

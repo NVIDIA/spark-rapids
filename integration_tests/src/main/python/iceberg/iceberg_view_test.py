@@ -22,7 +22,7 @@ from iceberg import (
     iceberg_format_versions, iceberg_read_enabled_conf, iceberg_read_format_versions,
     iceberg_table_properties_sql, get_full_table_name, rapids_reader_types, create_iceberg_table,
     iceberg_base_table_cols, iceberg_gens_list, iceberg_unsupported_mark)
-from marks import iceberg, ignore_order
+from marks import iceberg, ignore_order, iceberg_fast_test
 from spark_session import with_cpu_session
 
 pytestmark = [
@@ -34,6 +34,7 @@ pytestmark = [
                        reason="Iceberg view tests only supported with REST catalog")
 ]
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)

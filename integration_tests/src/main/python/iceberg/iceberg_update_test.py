@@ -16,7 +16,7 @@ import pytest
 
 from asserts import (assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect,
                      assert_gpu_fallback_write_sql)
-from conftest import is_iceberg_remote_catalog, is_iceberg_test_fast_run
+from conftest import is_iceberg_remote_catalog
 from data_gen import *
 from iceberg import (
     iceberg_cow_format_versions, iceberg_mor_format_versions, with_iceberg_dml_session,
@@ -26,7 +26,8 @@ from iceberg import (
     update_partition_transforms_distributed, supports_iceberg_v3, ICEBERG_V3_UNSUPPORTED_REASON,
     supports_iceberg_row_lineage_inheritance, ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON,
     row_lineage_df, rapids_reader_types)
-from marks import allow_non_gpu, allow_non_gpu_conditional, disable_ansi_mode, iceberg, ignore_order, datagen_overrides
+from marks import (allow_non_gpu, allow_non_gpu_conditional, disable_ansi_mode, iceberg,
+                   ignore_order, datagen_overrides, iceberg_fast_test)
 from spark_session import is_spark_400_or_later, with_cpu_session, with_gpu_session
 
 pytestmark = iceberg_unsupported_mark
@@ -131,6 +132,7 @@ def do_update_test(spark_tmp_table_factory, update_sql_func, data_gen_func=None,
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
@@ -148,6 +150,7 @@ def test_iceberg_update_unpartitioned_table_single_column(format_version, spark_
     )
 
 
+@iceberg_fast_test
 @allow_non_gpu("ReplaceDataExec", "WriteDeltaExec", "BatchScanExec", "ColumnarToRowExec")
 @iceberg
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
@@ -182,6 +185,7 @@ def test_iceberg_update_v3_table_fallback(
             {"spark.rapids.sql.format.iceberg.v3.enabled": "false"}))
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
@@ -220,6 +224,7 @@ def test_iceberg_update_v3_gpu_writes_deletion_vectors(spark_tmp_table_factory):
     assert_equal_with_local_sort(cpu_data, gpu_data)
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.skipif(
@@ -246,6 +251,7 @@ def test_iceberg_v3_row_lineage_update(spark_tmp_table_factory, reader_type):
         })
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @allow_non_gpu("BatchScanExec")
@@ -269,8 +275,7 @@ def test_iceberg_v3_row_lineage_gpu_update(spark_tmp_table_factory, update_mode)
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize(
     'format_version,update_mode',
     with_iceberg_format_versions(['copy-on-write', 'merge-on-read']))
@@ -297,6 +302,7 @@ def _do_test_iceberg_update_partitioned_table_single_column(
     )
 
 
+@iceberg_fast_test
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
@@ -322,8 +328,7 @@ def test_iceberg_update_partitioned_table_single_column(
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize(
     'format_version,partition_col_sql,update_mode',
     with_iceberg_format_versions(update_partition_transforms_distributed))
@@ -343,8 +348,7 @@ def test_iceberg_update_partitioned_table_single_column_full_coverage(
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize(
     'format_version,update_mode',
     with_iceberg_format_versions(['copy-on-write', 'merge-on-read']))
@@ -363,8 +367,7 @@ def test_iceberg_update_partitioned_table_multiple_columns(format_version, spark
 @iceberg
 @ignore_order(local=True)
 @disable_ansi_mode
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 @pytest.mark.parametrize("format_version", iceberg_mor_format_versions)
 def test_iceberg_update_mor_then_select_count(format_version, spark_tmp_table_factory):
@@ -421,8 +424,7 @@ def test_iceberg_update_mor_then_select_count(format_version, spark_tmp_table_fa
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('format_version,update_mode,fallback_exec', with_iceberg_format_versions([
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -461,8 +463,7 @@ def test_iceberg_update_fallback_write_disabled(
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('format_version,update_mode,fallback_exec', with_iceberg_format_versions([
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -534,8 +535,7 @@ def test_iceberg_update_fallback_unsupported_file_format(
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 @pytest.mark.parametrize(
     'format_version,update_mode',
@@ -557,8 +557,7 @@ def test_iceberg_update_nested_types(format_version, spark_tmp_table_factory, up
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize('format_version,update_mode,fallback_exec', with_iceberg_format_versions([
     pytest.param('copy-on-write', 'ReplaceDataExec', id='cow'),
     pytest.param('merge-on-read', 'WriteDeltaExec', id='mor')
@@ -597,8 +596,7 @@ def test_iceberg_update_fallback_iceberg_disabled(
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @allow_non_gpu_conditional(is_spark_400_or_later(), "EmptyRelationExec")
 @pytest.mark.parametrize("format_version", iceberg_mor_format_versions)
 def test_iceberg_update_mor_fallback_writedelta_disabled(format_version, spark_tmp_table_factory):
@@ -635,6 +633,7 @@ def test_iceberg_update_mor_fallback_writedelta_disabled(format_version, spark_t
 
 
 
+@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize(
@@ -685,8 +684,7 @@ def test_update_aqe(format_version, spark_tmp_table_factory, update_mode, partit
 
 @iceberg
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.datagen_overrides(seed=UPDATE_TEST_SEED, reason=UPDATE_TEST_SEED_OVERRIDE_REASON)
 @pytest.mark.parametrize(
     'format_version,update_mode',
@@ -738,8 +736,7 @@ def test_iceberg_update_after_drop_partition_field(format_version, spark_tmp_tab
 @iceberg
 @datagen_overrides(seed=0, reason='https://github.com/NVIDIA/spark-rapids-jni/issues/4016')
 @ignore_order(local=True)
-@pytest.mark.skipif(is_iceberg_remote_catalog() or is_iceberg_test_fast_run(),
-                    reason="Skip for remote catalog or fast Iceberg run to reduce test time")
+@pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Skip for remote catalog to reduce test time")
 @pytest.mark.parametrize("format_version", iceberg_cow_format_versions)
 def test_iceberg_update_partitioned_table_fanout_enabled(format_version, spark_tmp_table_factory):
     # Use bucket(2, ...) to keep partition count low and avoid OOM from Iceberg's FanoutDataWriter.
