@@ -18,7 +18,8 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.io.{FileNotFoundException, IOException}
 import java.nio.ByteBuffer
-import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, Executors, TimeUnit}
+import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, ExecutionException, Executors,
+  TimeUnit}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -1681,6 +1682,63 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(requestTx, times(1)).respond(any(), any())
       assertResult(Some(BufferSendState.Completed))(state.endedWith)
       verify(requestTx, times(1)).close()
+    }
+  }
+
+  /** Records each transfer response that `state` builds in `responses`, spied. */
+  private def recordTransferResponses(
+      responses: ArrayBuffer[RefCountedDirectByteBuffer])(state: BufferSendState): Unit = {
+    doAnswer(new Answer[RefCountedDirectByteBuffer] {
+      override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
+        val response = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
+        responses.synchronized(responses += response)
+        response
+      }
+    }).when(state).getTransferResponse()
+  }
+
+  test("a transfer response whose send throws is closed once, and close does not wait for it") {
+    val responses = new ArrayBuffer[RefCountedDirectByteBuffer]()
+    val requestTx = makeTx(1)
+    doThrow(new IllegalStateException("respond failed in test"))
+      .when(requestTx).respond(any(), any())
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    withStateAwaitingCompletion(requestTx, sendBuffer)(recordTransferResponses(responses)) {
+      (server, state, complete) =>
+        val thrown = intercept[ExecutionException] {
+          complete().get(awaitSeconds, TimeUnit.SECONDS)
+        }
+        assertResult("respond failed in test")(thrown.getCause.getMessage)
+        responses.synchronized {
+          assertResult(1)(responses.size)
+          verify(responses.head, times(1)).close()
+        }
+        assertResult(Some(BufferSendState.Failed))(state.endedWith)
+        verify(sendBuffer, times(1)).close()
+        verify(requestTx, times(1)).close()
+        assertCloseReturns(server, "close kept waiting for a transfer response whose send threw")
+    }
+  }
+
+  test("a transfer response is closed once, by its send's callback") {
+    val responses = new ArrayBuffer[RefCountedDirectByteBuffer]()
+    val requestTx = makeTx(1)
+    val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
+    withStateAwaitingCompletion(requestTx, sendBuffer)(recordTransferResponses(responses)) {
+      (_, state, complete) =>
+        complete().get(awaitSeconds, TimeUnit.SECONDS)
+        assertResult(Some(BufferSendState.Completed))(state.endedWith)
+        val callback = ArgumentCaptor.forClass(classOf[TransactionCallback])
+        verify(requestTx, times(1)).respond(any(), callback.capture())
+        responses.synchronized {
+          assertResult(1)(responses.size)
+          verify(responses.head, never()).close()
+        }
+        val sent = mock[Transaction]
+        when(sent.getStatus).thenReturn(TransactionStatus.Success)
+        callback.getValue.apply(sent)
+        responses.synchronized(verify(responses.head, times(1)).close())
+        verify(sent, times(1)).close()
     }
   }
 
