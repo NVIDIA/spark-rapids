@@ -174,7 +174,6 @@ def test_ctas_v3_row_lineage(spark_tmp_table_factory):
         gpu_plan_assertion=assert_gpu_ctas)
 
 
-@iceberg_fast_test
 @iceberg
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
 @pytest.mark.skipif(not is_spark_411_or_later(),
@@ -322,7 +321,6 @@ def test_ctas_v3_variant_cpu_rows_convert_to_gpu(
     assert with_cpu_session(validate_output, conf=conf) == (300, 0)
 
 
-@iceberg_fast_test
 @iceberg
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="Requires a local Hadoop catalog")

@@ -1626,7 +1626,6 @@ def test_iceberg_small_file_combine_with_partition_spec_evolution(
         conf={**iceberg_read_enabled_conf, 'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 
-@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)

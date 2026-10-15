@@ -543,8 +543,9 @@ Set `EXPECTED_ICEBERG_VERSION` to the exact Iceberg runtime version whenever `--
 pytest reports a configuration error when it is missing.
 
 Select the fast matrix suite with `-m 'iceberg and iceberg_fast_test' --iceberg`.
-Only tests explicitly decorated with `@iceberg_fast_test` from `marks` are included;
-new unmarked tests stay outside this suite. For example, with Iceberg configured:
+Only tests explicitly decorated with `@iceberg_fast_test` from `marks` are included.
+The current allowlist matches the remote-catalog test set: tests skipped for remote catalogs are
+excluded. New unmarked tests stay outside this suite. For example, with Iceberg configured:
 
 ```shell
 EXPECTED_ICEBERG_VERSION=1.10.1 \

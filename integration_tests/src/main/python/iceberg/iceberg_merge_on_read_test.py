@@ -54,7 +54,6 @@ _iceberg_eq_delete_cache_bug = (
 # In spark/iceberg integration, there is no builtin way to generate eq deletion files using
 # sql, we used a low level api to add eq deletion files to iceberg table.
 # This does not work with aws s3tables, which is a managed table service.
-@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('eq_delete_cols',
@@ -77,7 +76,6 @@ def test_iceberg_v2_eq_deletes(spark_tmp_table_factory, spark_tmp_path,
 # Reader-type canary for eq-deletes: a small set of pairs crossed with all three
 # rapids_reader_types confirms reader-type selection composes with the eq-delete
 # read path. Full pair coverage runs against the default reader above.
-@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
@@ -114,7 +112,6 @@ def test_iceberg_v2_position_delete(spark_tmp_table_factory, reader_type):
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 
-@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
@@ -137,7 +134,6 @@ def test_iceberg_v2_position_delete_with_url_encoded_path(spark_tmp_table_factor
         lambda spark: spark.table(table_name),
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
-@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
@@ -265,7 +261,6 @@ def test_iceberg_v3_deletion_vector_row_lineage(
         is_cpu_first=False)
 
 
-@iceberg_fast_test
 @iceberg
 @pytest.mark.parametrize('reader_type', ['PERFILE', 'MULTITHREADED'])
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason="add_files requires a local catalog")
@@ -324,7 +319,6 @@ def test_iceberg_v3_deletion_vector_count_with_name_mapping(
         is_cpu_first=False)
 
 
-@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
@@ -451,7 +445,6 @@ def test_iceberg_small_file_combine_with_position_deletes(
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 
-@iceberg_fast_test
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
