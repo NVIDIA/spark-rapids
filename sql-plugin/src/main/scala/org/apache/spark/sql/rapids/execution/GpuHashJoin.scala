@@ -2729,15 +2729,21 @@ class HashOuterJoinIterator(
       val builtTypes = built.dataTypes
       val filteredTable = withResource(streamJoinIter) { _ =>
         streamJoinIter.releaseBuiltSideTracker().map { tracker =>
-          val trackerTable = withResource(tracker) { _ =>
-            withResource(tracker.getColumnarBatch()) { trackerBatch =>
-              GpuColumnVector.from(trackerBatch)
+          built.checkpoint()
+          try {
+            withRetryNoSplit(tracker) { trackerAttempt =>
+              withRestoreOnRetry(built) {
+                withResource(trackerAttempt.getColumnarBatch()) { trackerBatch =>
+                  withResource(GpuColumnVector.from(trackerBatch)) { trackerTable =>
+                    withResource(GpuColumnVector.from(built.getBatch)) { builtTable =>
+                      builtTable.filter(trackerTable.getColumn(0))
+                    }
+                  }
+                }
+              }
             }
-          }
-          withResource(trackerTable) { _ =>
-            withResource(GpuColumnVector.from(built.getBatch)) { builtTable =>
-              builtTable.filter(trackerTable.getColumn(0))
-            }
+          } finally {
+            built.allowSpilling()
           }
         }
       }
@@ -2748,24 +2754,31 @@ class HashOuterJoinIterator(
         val filteredBatch = withResource(filtered) { _ =>
           GpuColumnVector.from(filtered, builtTypes)
         }
-        // Combine build-side columns with null columns for stream side
-        withResource(filteredBatch) { builtBatch =>
-          val numFilterRows = builtBatch.numRows()
-          if (numFilterRows > 0) {
-            val streamColumns = streamAttributes.safeMap { attr =>
-              GpuColumnVector.fromNull(numFilterRows, attr.dataType)
-            }
-            withResource(new ColumnarBatch(streamColumns.toArray, numFilterRows)) { streamBatch =>
-              buildSide match {
-                case GpuBuildRight =>
-                  Some(GpuColumnVector.combineColumns(streamBatch, builtBatch))
-                case GpuBuildLeft =>
-                  Some(GpuColumnVector.combineColumns(builtBatch, streamBatch))
+        val numFilterRows = filteredBatch.numRows()
+        if (numFilterRows > 0) {
+          val spillableFiltered = closeOnExcept(filteredBatch) {
+            SpillableColumnarBatch(_, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          }
+          // Combine build-side columns with null columns for stream side
+          Some(withRetryNoSplit(spillableFiltered) { filteredAttempt =>
+            withResource(filteredAttempt.getColumnarBatch()) { builtBatch =>
+              val streamColumns = streamAttributes.safeMap { attr =>
+                GpuColumnVector.fromNull(numFilterRows, attr.dataType)
+              }
+              withResource(new ColumnarBatch(streamColumns.toArray, numFilterRows)) {
+                streamBatch =>
+                  buildSide match {
+                    case GpuBuildRight =>
+                      GpuColumnVector.combineColumns(streamBatch, builtBatch)
+                    case GpuBuildLeft =>
+                      GpuColumnVector.combineColumns(builtBatch, streamBatch)
+                  }
               }
             }
-          } else {
-            None
-          }
+          })
+        } else {
+          filteredBatch.close()
+          None
         }
       }
     }
