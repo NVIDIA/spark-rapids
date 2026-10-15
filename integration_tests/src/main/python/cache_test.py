@@ -324,13 +324,26 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
     assert_gpu_and_cpu_are_equal_collect(helper)
 
 def test_cache_udt():
+    schema = StructType([
+        StructField('mllib_v', mllib.VectorUDT(), nullable=False),
+        StructField('ml_v', ml.VectorUDT(), nullable=False),
+        StructField('ml_array', ArrayType(ml.VectorUDT(), containsNull=True), nullable=False),
+        StructField('ml_struct', StructType([
+            StructField('v', ml.VectorUDT(), nullable=True)]), nullable=False),
+        StructField('ml_map', MapType(StringType(), ml.VectorUDT(), valueContainsNull=True),
+            nullable=False)])
+    values = [
+        (mllib.DenseVector([1, ]), ml.DenseVector([1, ]),
+            [ml.DenseVector([1, ]), None], (ml.DenseVector([1, ]),),
+            {'dense': ml.DenseVector([1, ]), 'null': None}),
+        (mllib.SparseVector(1, [0, ], [1, ]), ml.SparseVector(1, [0, ], [1, ]),
+            [ml.SparseVector(1, [0, ], [1, ])], (ml.SparseVector(1, [0, ], [1, ]),),
+            {'sparse': ml.SparseVector(1, [0, ], [1, ])})]
+
     def fun(spark):
-        df = spark.sparkContext.parallelize([
-            (mllib.DenseVector([1, ]), ml.DenseVector([1, ])),
-            (mllib.SparseVector(1, [0, ], [1, ]), ml.SparseVector(1, [0, ], [1, ]))
-        ]).toDF(["mllib_v", "ml_v"])
+        df = spark.createDataFrame(spark.sparkContext.parallelize(values, numSlices=1), schema)
         df.cache().count()
-        return df.selectExpr("mllib_v", "ml_v").collect()
+        return df.collect()
     cpu_result = with_cpu_session(fun)
     gpu_result = with_gpu_session(fun)
     # assert_gpu_and_cpu_are_equal_collect method doesn't handle UDT so we just write a single
