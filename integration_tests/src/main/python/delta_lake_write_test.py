@@ -183,6 +183,51 @@ def test_delta_write_round_trip_after_type_widening(
         with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not is_databricks173_or_later(), reason="DBR 17.3 Delta write AQE planning")
+@pytest.mark.parametrize("aqe_enabled", [False, True], ids=idfn)
+@pytest.mark.parametrize("empty_input", [False, True], ids=idfn)
+def test_delta_db173_path_write_aqe_gpu_stub(spark_tmp_path, aqe_enabled, empty_input):
+    conf = copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.adaptive.enabled": str(aqe_enabled).lower(),
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false",
+    })
+    cpu_path = spark_tmp_path + "/CPU"
+    gpu_path = spark_tmp_path + "/GPU"
+    source_path = spark_tmp_path + "/SOURCE"
+    row_count = 0 if empty_input else 4096
+    # Parquet reads provide nullable columns, matching GPU output nullability even when
+    # Spark's test-mode query-planning validation is enabled.
+    with_cpu_session(
+        lambda spark: spark.range(row_count).selectExpr(
+            "id", "CAST(id % 4 AS INT) AS part", "concat('value-', id) AS value")
+            .write.parquet(source_path), conf=conf)
+
+    def write_delta(spark, path):
+        spark.read.parquet(source_path).repartition(4, "part").write.format("delta") \
+            .option("delta.enableDeletionVectors", "false").save(path)
+
+    with_cpu_session(lambda spark: write_delta(spark, cpu_path), conf=conf)
+    # AQE must replace the outer Delta write placeholder as well as its child stages.
+    assert_rapids_delta_write(
+        lambda spark: write_delta(spark, gpu_path), conf=conf,
+        required_gpu_classes=["GpuRapidsDeltaWriteExec"],
+        forbidden_cpu_fallback_classes=["RapidsDeltaWriteExec"], require_non_empty=True)
+
+    def read_rows(spark, path):
+        return [tuple(row) for row in spark.read.format("delta").load(path)
+                .orderBy("id").collect()]
+
+    cpu_rows = with_cpu_session(lambda spark: read_rows(spark, cpu_path), conf=conf)
+    gpu_rows = with_cpu_session(lambda spark: read_rows(spark, gpu_path), conf=conf)
+    assert_equal(cpu_rows, gpu_rows)
+    assert_equal(gpu_rows, [(i, i % 4, f"value-{i}") for i in range(row_count)])
+    for path in (cpu_path, gpu_path):
+        assert int(get_last_operation_metrics(path)["numOutputRows"]) == row_count
+
+
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
