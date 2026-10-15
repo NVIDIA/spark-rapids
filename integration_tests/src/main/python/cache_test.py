@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from decimal import Decimal
 import os
+
 import pytest
 
 from asserts import (assert_gpu_and_cpu_are_equal_collect,
@@ -325,29 +327,35 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
 
 def test_cache_udt():
     schema = StructType([
-        StructField('mllib_v', mllib.VectorUDT(), nullable=False),
-        StructField('ml_v', ml.VectorUDT(), nullable=False),
+        StructField('mllib_v', mllib.VectorUDT(), nullable=True),
+        StructField('ml_v', ml.VectorUDT(), nullable=True),
         StructField('ml_array', ArrayType(ml.VectorUDT(), containsNull=True), nullable=False),
         StructField('ml_struct', StructType([
             StructField('v', ml.VectorUDT(), nullable=True)]), nullable=False),
         StructField('ml_map', MapType(StringType(), ml.VectorUDT(), valueContainsNull=True),
-            nullable=False)])
+            nullable=False),
+        StructField('decimal32', DecimalType(5, 2), nullable=False),
+        StructField('decimal64', DecimalType(12, 2), nullable=False)])
     values = [
         (mllib.DenseVector([1, ]), ml.DenseVector([1, ]),
             [ml.DenseVector([1, ]), None], (ml.DenseVector([1, ]),),
-            {'dense': ml.DenseVector([1, ]), 'null': None}),
+            {'dense': ml.DenseVector([1, ]), 'null': None},
+            Decimal('123.45'), Decimal('9876543210.12')),
         (mllib.SparseVector(1, [0, ], [1, ]), ml.SparseVector(1, [0, ], [1, ]),
             [ml.SparseVector(1, [0, ], [1, ])], (ml.SparseVector(1, [0, ], [1, ]),),
-            {'sparse': ml.SparseVector(1, [0, ], [1, ])})]
+            {'sparse': ml.SparseVector(1, [0, ], [1, ])},
+            Decimal('-12.34'), Decimal('-9876543210.12'))]
 
     def fun(spark):
-        df = spark.createDataFrame(spark.sparkContext.parallelize(values, numSlices=1), schema)
+        df = spark.createDataFrame(spark.sparkContext.parallelize(values), schema)
         df.cache().count()
         return df.collect()
     cpu_result = with_cpu_session(fun)
     gpu_result = with_gpu_session(fun)
     # assert_gpu_and_cpu_are_equal_collect method doesn't handle UDT so we just write a single
-    # statement here to compare
+    # statement here to compare each result with the source values.
+    assert cpu_result == values, "CPU result not equal to source values"
+    assert gpu_result == values, "GPU result not equal to source values"
     assert cpu_result == gpu_result, "not equal"
 
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
