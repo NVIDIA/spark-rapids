@@ -126,9 +126,9 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   @volatile private[this] var started = true
 
-  // The replies, error replies and transfer responses, that `replyGate` let through and that
-  // are still being queued. Guarded by the `bssExec` monitor, with `started`, so that close can
-  // wait for them.
+  // The transfer responses, error replies included, that `replyGate` let through and that are
+  // still being queued. Guarded by the `bssExec` monitor, with `started`, so that close can wait
+  // for them.
   private[this] var repliesQueueing = 0
 
   /**

@@ -413,13 +413,13 @@ private[shuffle] class BufferLookupException(val tableIds: Seq[Int], cause: Thro
 
 object BufferSendState extends Logging {
   /**
-   * Lets a server queue its replies, error replies and transfer responses, only while it is
-   * open. The server shuts it before the transport closes, and waits for the replies it let
-   * through to be queued, so that each one is queued ahead of the transport's close, after
-   * which UCX's progress thread runs nothing.
+   * Lets a server queue its transfer responses, error replies included, only while it is open.
+   * The server shuts it before the transport closes, and waits for the replies it let through to
+   * be queued, so that each one is queued ahead of the transport's close, after which UCX's
+   * progress thread runs no task queued after it.
    */
   private[shuffle] trait ReplyGate {
-    /** Runs `queue`, which queues a reply, and returns true if the server is open; else false. */
+    /** Runs `queue`, which queues a reply, if the server is open, and returns whether it ran. */
     def queueIfOpen(queue: => Unit): Boolean
   }
 
@@ -495,7 +495,7 @@ object BufferSendState extends Logging {
   /** A requested buffer is gone: the catalog no longer holds it, as after an unregister. */
   case object MissingOutput extends Outcome
 
-  /** Materialization kept running out of memory past the retry window. */
+  /** Materialization ran out of memory once the request's OOM retry deadline had passed. */
   case object OomExpired extends Outcome
 
   /** The transport completed a data send with a status other than success. */

@@ -130,6 +130,11 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     RapidsShuffleHandle(handle, tableMeta)
   }
 
+  /**
+   * Mockito answers the mocked send-loop executor's `wait()` at once, so a test that closes the
+   * server while another thread queues a reply builds its own on a real executor, unspied, as
+   * `withGoneStateOnSendLoop` does.
+   */
   private def newServer(requestHandler: RapidsShuffleRequestHandler,
       serverConnection: ServerConnection): RapidsShuffleServer = {
     spy(new RapidsShuffleServer(
@@ -1424,10 +1429,9 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("an error reply decided before the server closed is not queued after the transport " +
-      "closed") {
+  test("an error reply decided before the server closed is not queued after it closed") {
     // Releasing the state's bounce buffers, after its reply was decided and before it is
-    // queued, holds the send loop until the server and the transport have closed.
+    // queued, holds the send loop until the server has closed.
     val (holding, mayResume) = (new CountDownLatch(1), new CountDownLatch(1))
     val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
     doAnswer(new Answer[Unit] {
@@ -1443,7 +1447,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         assert(holding.await(awaitSeconds, TimeUnit.SECONDS), "the send loop never ended the state")
         server.close()
         // as the transport does once UCX's progress thread has stopped, after which nothing
-        // queued for it runs
+        // queued for it runs. It ends nothing here, since the state never went in flight.
         server.releaseAbandoned(transportStopped = true)
       } finally {
         mayResume.countDown()
@@ -1461,8 +1465,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("close waits for an error reply that is being queued, which then precedes the " +
-      "transport's close") {
+  test("close waits for an error reply that is being queued") {
     val (queueing, mayQueue) = (new CountDownLatch(1), new CountDownLatch(1))
     val requestTx = makeTx(1)
     // the reply's send holds the send loop while the transport queues it
@@ -1604,15 +1607,14 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("a transfer response decided before the server closed is not queued after the " +
-      "transport closed") {
+  test("a transfer response decided before the server closed is not queued after it closed") {
     val (holding, mayResume) = (new CountDownLatch(1), new CountDownLatch(1))
     val responses = new ArrayBuffer[RefCountedDirectByteBuffer]()
     val requestTx = makeTx(1)
     val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
     withStateAwaitingCompletion(requestTx, sendBuffer) { state =>
       // building the response, after the server checked that it is open, holds the progress
-      // thread until the server and the transport have closed
+      // thread until the server has closed
       doAnswer(new Answer[RefCountedDirectByteBuffer] {
         override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
           holding.countDown()
@@ -1627,7 +1629,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       try {
         assert(holding.await(awaitSeconds, TimeUnit.SECONDS), "the send never completed")
         server.close()
-        // as the transport does once UCX's progress thread has stopped
+        // as the transport does once UCX's progress thread has stopped. It ends nothing here,
+        // since the send's callback already took the state out of flight.
         server.releaseAbandoned(transportStopped = true)
       } finally {
         mayResume.countDown()

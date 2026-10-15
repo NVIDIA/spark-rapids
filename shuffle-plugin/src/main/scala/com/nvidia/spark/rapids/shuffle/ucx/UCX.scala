@@ -584,8 +584,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       UcsConstants.MEMORY_TYPE.UCS_MEMORY_TYPE_HOST
     }
 
-    // A failure to close the range joins an error in flight, which decides whether the send's
-    // failure is reported, rather than replacing it.
+    // If the send throws, closeOnExcept adds a failure to close the range to its error as
+    // suppressed, since that error's type decides whether the send's failure is reported.
     val range = new NvtxRange("AM Send", NvtxColor.GREEN)
     closeOnExcept(range) { _ =>
       UCX.sendTask(am.header, completion,
@@ -1127,8 +1127,8 @@ object UCX {
   // at -100, and -200 is an unknown executor. A literal, since UcsConstants loads the natives.
   private[shuffle] val SEND_TASK_FAILED = -201
 
-  // What a send task reports when the heap ran out, before it could build its completion or
-  // while it built text from the error: fixed text, since that text would allocate.
+  // What a send task reports when it could not build its completion, or text from the error.
+  // Fixed text allocates nothing and cannot throw.
   private val SEND_TASK_FAILED_TEXT = "The send could not be handed to UCX"
 
   /**
