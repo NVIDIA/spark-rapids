@@ -441,9 +441,9 @@ object BufferSendState extends Logging {
       val response = try {
         reply
       } catch {
-        // Building the reply allocates a direct buffer on the send loop. Running out of memory
-        // there leaves the request unanswered, as before error replies, and the loop serving.
-        // Nothing has been sent yet, unlike after respond below.
+        // Building the reply allocates on the send loop, a direct buffer included. Running out
+        // of memory there, heap or direct, leaves the request unanswered and the loop serving,
+        // since nothing has been sent yet.
         case oom: OutOfMemoryError =>
           throw new IllegalStateException("No memory to build the error reply", oom)
       }

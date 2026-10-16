@@ -1410,14 +1410,18 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         .when(state).getErrorResponse(any())
 
       // an OutOfMemoryError that escapes a test aborts the suite, so this one is caught
-      val escaped = try {
-        server.doHandleTransferRequest(Seq(state))
-        None
-      } catch {
-        case oom: OutOfMemoryError => Some(oom)
+      var escaped: Option[OutOfMemoryError] = None
+      val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[BufferSendState].getName)) {
+        try {
+          server.doHandleTransferRequest(Seq(state))
+        } catch {
+          case oom: OutOfMemoryError => escaped = Some(oom)
+        }
       }
 
       assertResult(None)(escaped)
+      verify(state, times(1)).getErrorResponse(any())
+      assertResult(1)(logs.count(_.startsWith("Unable to send an error reply")))
       assertResult(Some(BufferSendState.MissingOutput))(state.endedWith)
       verify(requestTx, never()).respond(any(), any())
       verify(requestTx, times(1)).close()
