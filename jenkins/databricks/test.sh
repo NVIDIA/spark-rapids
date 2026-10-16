@@ -155,27 +155,12 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
         PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${UPSTREAM_SHIM_VER}.RapidsShuffleManager \
             bash integration_tests/run_pyspark_from_build.sh
     fi
-    if [[ "$TEST_MODE" == "DEFAULT" ]]; then
+    if [[ "$TEST_MODE" == "CI_PART1" ]]; then
+        bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" \
+            --test_type=$TEST_TYPE -k "not ($CI_PART2_BALANCED_TEST_EXPR)"
+    else
         bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
     fi
-fi
-
-# TEST ONLY: CI_PART1 fails in the injected smoke case above; CI_PART2 exercises driver loss.
-if [[ "$TEST_MODE" == "CI_PART1" || "$TEST_MODE" == "CI_PART2" ]]; then
-    if [[ "$TEST_MODE" == "CI_PART1" ]]; then
-        echo "TEST ONLY: smoke fault did not fail as expected"
-        exit 1
-    fi
-    parallelism=0
-    [[ "$BASE_SPARK_VERSION" == 4.* ]] && parallelism=2
-    echo "TEST ONLY: $TEST_MODE injecting driver exit with TEST_PARALLEL=$parallelism; failure expected"
-    TEST_PARALLEL=$parallelism TEST_TAGS='' TEST='' \
-    TESTS="range_test.py::test_simple_range diagnostic_faults.py::test_driver_exit" \
-        bash integration_tests/run_pyspark_from_build.sh \
-            --runtime_env="databricks" --test_type="$TEST_TYPE" \
-            --max-worker-restart=0 --test_oom_injection_mode=never
-    echo "TEST ONLY: driver fault did not fail as expected"
-    exit 1
 fi
 
 ## Run tests with jars building from the spark-rapids source code
