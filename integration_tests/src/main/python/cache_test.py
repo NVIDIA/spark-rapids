@@ -326,7 +326,8 @@ def test_cache_map_and_array(data_gen, enable_vectorized):
     assert_gpu_and_cpu_are_equal_collect(helper)
 
 @allow_non_gpu('InMemoryTableScanExec')
-def test_cache_udt():
+@pytest.mark.parametrize('aqe_enabled', ['true', 'false'])
+def test_cache_udt(aqe_enabled):
     schema = StructType([
         StructField('mllib_v', mllib.VectorUDT(), nullable=True),
         StructField('ml_v', ml.VectorUDT(), nullable=True),
@@ -361,7 +362,7 @@ def test_cache_udt():
 
     assert_gpu_fallback_collect(
         fun, 'InMemoryTableScanExec',
-        conf={'spark.sql.adaptive.enabled': 'false'},
+        conf={'spark.sql.adaptive.enabled': aqe_enabled},
         result_canonicalize_func_before_compare=canonicalize)
 
 @pytest.mark.parametrize('enable_vectorized_conf', enable_vectorized_confs, ids=idfn)
