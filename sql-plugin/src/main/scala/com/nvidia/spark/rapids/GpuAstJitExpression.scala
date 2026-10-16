@@ -85,7 +85,7 @@ object GpuAstJitExpression {
         newRoots: Seq[JitRoot],
         maxOps: Int,
         maxOutputs: Int): Boolean = {
-      val addedOps = newRoots.iterator.flatMap(_.operations).count(!operations.contains(_))
+      val addedOps = newRoots.iterator.flatMap(_.operations).toSet.count(!operations.contains(_))
       roots.size <= maxOutputs - newRoots.size && operations.size <= maxOps - addedOps
     }
 

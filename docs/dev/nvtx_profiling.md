@@ -116,10 +116,14 @@ equivalence, not the final cuDF Row IR or GPU instructions. Grouping honors the
 multi-output execution setting. These are final physical tiers, not the original
 planner's dependency-wave identifiers.
 
-The final backend labels distinguish `AST JIT` (compiled execution),
-`AST Interpreted` (the cuDF AST interpreter), and the regular GPU projection.
-These describe the backend selected for each bound tier output; an earlier Spark
-plan string may not show AST subexpressions extracted during tier planning.
+The final backend labels distinguish the plugin's explicit `AST JIT` path,
+its legacy `AST Interpreted` path, and the regular GPU projection. These labels
+describe wrapper selection, not a trace of native execution. The legacy wrapper
+uses `compile()` with cuDF's default backend selection; `LIBCUDF_JIT_ENABLED=1`
+can route that path to native JIT even when the plugin's Project JIT switch is off.
+Set `LIBCUDF_JIT_ENABLED=0` when comparing interpreted AST with explicit AST JIT,
+and use native tracing to confirm the executed backend. An earlier Spark plan
+string may not show AST subexpressions extracted during tier planning.
 
 With `spark.rapids.sql.metrics.level=DEBUG`, `GpuProjectExec` exposes:
 

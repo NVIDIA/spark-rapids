@@ -230,6 +230,37 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
     assertResult(2)(splitJit.map(_.groupId).distinct.size)
   }
 
+  for (independentFirst <- Seq(true, false);
+      (maxOps, maxOutputs, expectedGroups) <- Seq(
+        (384, 32, 1), (44, 32, 1), (43, 32, 2), (384, 31, 2))) {
+    test(s"shared component joins an existing group: independentFirst=$independentFirst, " +
+        s"maxOps=$maxOps, maxOutputs=$maxOutputs") {
+      val left = reference(0, IntegerType)
+      val right = reference(1, IntegerType)
+      val shared = (1 to 12).foldLeft[Expression](left) { (child, _) =>
+        GpuAdd(child, right, failOnError = false)()
+      }
+      val sharedOutputs = (1 to 31).map { index =>
+        alias(GpuMultiply(shared, GpuLiteral(index), failOnError = false)(), s"shared_$index")
+      }
+      val independent = alias(GpuMultiply(left, right, failOnError = false)(), "independent")
+      val expressions = if (independentFirst) independent +: sharedOutputs
+        else sharedOutputs :+ independent
+
+      // The shared chain must count once toward the limit: 12 + 31 + 1 = 44 operations.
+      val tiered = bindProject(expressions, Seq(left, right),
+        projectConf(maxGroupOps = maxOps, maxGroupOutputs = maxOutputs))
+      assertResult(1)(tiered.exprTiers.size)
+      val outputs = tiered.exprTiers.head
+      val jitExpressions = outputs.flatMap(GpuAstJitExpression.extractTopLevel)
+      assertResult(32)(jitExpressions.size)
+      assertResult(expectedGroups)(jitExpressions.map(_.groupId).distinct.size)
+      assert(jitExpressions.groupBy(_.groupId).values.forall(_.size <= maxOutputs))
+      assertResult(expressions.map(_.exprId))(
+        outputs.map(_.asInstanceOf[NamedExpression].exprId))
+    }
+  }
+
   test("an individually oversized JIT root uses single-output AST JIT") {
     val left = reference(0, IntegerType)
     val right = reference(1, IntegerType)
