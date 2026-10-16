@@ -222,6 +222,12 @@ object GpuDeltaParquetFileFormat {
   private[delta] val EDGE_COMPUTED_COLUMN_SKIP_ROW =
     "_databricks_internal_edge_computed_column_skip_row"
 
+  def hasPhysicalDeletionVectorSkipRowColumn(schema: StructType): Boolean =
+    schema.exists { field =>
+      field.name == EDGE_COMPUTED_COLUMN_SKIP_ROW ||
+        field.name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
+    }
+
   val LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION =
     "spark.rapids.internal.delta.lowShuffleMerge.scan"
   val LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION =

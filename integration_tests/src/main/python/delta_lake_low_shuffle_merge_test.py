@@ -459,34 +459,197 @@ def test_delta_low_shuffle_merge_internal_column_names(
         conf=_delta_merge_conf(reader_type), assert_func=_assert_collect_with_counters)
 
 
+@allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_version(17, 3),
+                    reason="DBR 17.3 physical skip-row column regression")
+@pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
+@pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
+@pytest.mark.parametrize("skip_row_predicate", [None, True, False],
+                         ids=["rewrite-only", "predicate-true", "predicate-false"])
+def test_delta_low_shuffle_merge_physical_skip_row_column(
+        spark_tmp_path, spark_tmp_table_factory, reader_type, use_chunked_reader,
+        skip_row_predicate):
+    # This is ordinary table data, not a generated deletion-vector marker (#16381).
+    skip_column = "_databricks_internal_edge_computed_column_skip_row"
+    conf = copy_and_update(_delta_merge_conf(reader_type), {
+        "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower(),
+        "spark.databricks.delta.properties.defaults.columnMapping.mode": "none",
+        # Temporary-DV rewrites also hit #16381, so this schema must use classic GPU MERGE.
+        "spark.rapids.sql.test.delta.lowShuffleMerge.failOnFallback": "false",
+        # DBR's CPU vectorized reader hits a ParquetReaderMetrics NPE for this name.
+        "spark.sql.parquet.enableVectorizedReader": "false",
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false"})
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    src_table = spark_tmp_table_factory.get()
+
+    def setup(spark):
+        target = gen_df(spark, [
+            ("k", RepeatSeqGen(list(range(8)), data_type=LongType())),
+            ("v", RepeatSeqGen([0], data_type=LongType())),
+            (skip_column, RepeatSeqGen([True, False], data_type=BooleanType()))],
+            length=8, num_slices=1)
+        setup_delta_dest_tables(spark, data_path, lambda _: target, False, False)
+        # Leave both true and false values in the unmodified-row rewrite pass as well.
+        # Datagen's RDD has no size statistics. Broadcast the tiny source so DBR's CPU
+        # row reader does not send GenericInternalRows directly into an UnsafeRow shuffle.
+        f.broadcast(target.where("k < 4").selectExpr("k", "k + 100 AS v")) \
+            .createOrReplaceTempView(src_table)
+
+    def do_merge(spark, path):
+        condition = "t.k = s.k"
+        if skip_row_predicate is not None:
+            condition += f" AND t.`{skip_column}` = {str(skip_row_predicate).lower()}"
+        return spark.sql(
+            f"MERGE INTO delta.`{path}` t USING {src_table} s "
+            f"ON {condition} "
+            "WHEN MATCHED THEN UPDATE SET t.v = s.v").collect()
+
+    with_cpu_session(setup, conf=conf)
+    _assert_collect_with_counters(do_merge, data_path, conf)
+    expected = [(k, k + 100 if k < 4 and (
+                    skip_row_predicate is None or (k % 2 == 0) == skip_row_predicate) else 0,
+                 1 if k % 2 == 0 else 0)
+                for k in range(8)]
+    for run in ["CPU", "GPU"]:
+        # The cast also projects DBR's row-reader output into UnsafeRows before the sort.
+        rows = with_cpu_session(
+            lambda spark: spark.read.format("delta").load(data_path + "/" + run)
+                .select("k", "v", f.col(skip_column).cast("int")).orderBy("k").collect(),
+            conf=conf)
+        assert rows == expected, f"{run} table contents: {rows}"
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_version(17, 3),
+                    reason="DBR 17.3 physical metadata-column regression")
+@pytest.mark.parametrize("mapping", ["none", "name", "id"], ids=idfn)
+@pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
+@pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
+def test_delta_low_shuffle_merge_physical_metadata_columns(
+        spark_tmp_path, spark_tmp_table_factory, mapping, reader_type, use_chunked_reader):
+    # A physical _metadata column shadows file metadata. CDF names are ordinary data when CDF
+    # is disabled. Preserve all fields, including the names used by row-tracking metadata.
+    conf = copy_and_update(_delta_merge_conf(reader_type), {
+        "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower(),
+        "spark.databricks.delta.properties.defaults.columnMapping.mode": mapping})
+    if mapping == "id":
+        conf["spark.sql.parquet.fieldId.read.enabled"] = "true"
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    src_table = spark_tmp_table_factory.get()
+
+    def target(spark):
+        return gen_df(spark, [
+            ("k", RepeatSeqGen(list(range(8)), data_type=LongType())),
+            ("v", RepeatSeqGen([0], data_type=LongType())),
+            ("_metadata", StructGen([
+                ("file_path", StringGen(pattern="user-path-[a-z]{1,20}", nullable=False)),
+                ("file_name", StringGen(pattern="user-name-[a-z]{1,20}", nullable=False)),
+                ("file_size", LongGen(nullable=False, min_val=0)),
+                ("file_modification_time", TimestampGen(
+                    start=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                    end=timedelta(days=3650), nullable=False)),
+                ("file_block_start", LongGen(nullable=False, min_val=0)),
+                ("file_block_length", LongGen(nullable=False, min_val=0)),
+                ("row_id", LongGen(nullable=False, min_val=0)),
+                ("row_commit_version", LongGen(nullable=False, min_val=0))], nullable=False)),
+            ("_change_type", StringGen(pattern="user-change-[a-z]{1,20}", nullable=False)),
+            ("_commit_version", LongGen(nullable=False, min_val=0)),
+            ("_commit_timestamp", TimestampGen(
+                start=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                end=timedelta(days=3650), nullable=False))], length=8, num_slices=1)
+
+    def setup(spark):
+        setup_delta_dest_tables(spark, data_path, target, False, False)
+        target(spark).where("k < 4").withColumn("v", f.col("k") + 1000) \
+            .createOrReplaceTempView(src_table)
+
+    def do_merge(spark, path):
+        return spark.sql(
+            f"MERGE INTO delta.`{path}` t USING {src_table} s ON t.k = s.k "
+            "AND t._metadata.file_path = s._metadata.file_path "
+            "AND t._metadata.row_id = s._metadata.row_id "
+            "AND t._change_type = s._change_type "
+            "AND t._commit_version = s._commit_version "
+            "WHEN MATCHED THEN UPDATE SET t.v = s.v").collect()
+
+    with_cpu_session(setup, conf=conf)
+    _assert_collect_with_counters(do_merge, data_path, conf)
+    expected = with_cpu_session(
+        lambda spark: target(spark).withColumn(
+            "v", f.when(f.col("k") < 4, f.col("k") + 1000).otherwise(f.lit(0)))
+            .orderBy("k").collect(), conf=conf)
+    for run in ["CPU", "GPU"]:
+        rows = with_cpu_session(
+            lambda spark: read_delta_path(spark, data_path + "/" + run)
+                .orderBy("k").collect(), conf=conf)
+        assert_equal(rows, expected)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not is_databricks_version(17, 3),
                     reason="DBR 17.3 low-shuffle column-mapping regression")
 @pytest.mark.parametrize("mapping", ["name", "id"], ids=idfn)
-@pytest.mark.parametrize("collision", ["none", "source", "target"], ids=idfn)
-@pytest.mark.parametrize("use_cdf", [False, True], ids=idfn)
-@pytest.mark.parametrize("reader_type", low_shuffle_merge_reader_types, ids=idfn)
+@pytest.mark.parametrize("collision,use_cdf,reader_type,use_chunked_reader", [
+    (collision, use_cdf, reader, True)
+    for collision in ["none", "source", "target"]
+    for use_cdf in [False, True]
+    for reader in ["PERFILE", "MULTITHREADED"]
+] + [
+    ("target", False, reader, chunked)
+    for reader in ["MULTITHREADED", "COALESCING", "AUTO"]
+    for chunked in [False, True]
+    if (reader, chunked) != ("MULTITHREADED", True)
+], ids=idfn)
 def test_delta_low_shuffle_merge_column_mapping(
-        spark_tmp_path, spark_tmp_table_factory, mapping, collision, use_cdf, reader_type):
+        spark_tmp_path, spark_tmp_table_factory, mapping, collision, use_cdf, reader_type,
+        use_chunked_reader):
     conf = copy_and_update(_delta_merge_conf(reader_type), {
+        "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower(),
         "spark.databricks.delta.properties.defaults.columnMapping.mode": mapping})
     if mapping == "id":
-        # The existing GPU id-mapped reader requires Parquet field-ID reads.
         conf["spark.sql.parquet.fieldId.read.enabled"] = "true"
     data_path = spark_tmp_path + "/DELTA_DATA"
     src_table = spark_tmp_table_factory.get()
+    # Combine target-name collision coverage with metadata-only schema evolution. Keep CDF's
+    # schema unchanged because reading CDF across a non-additive change is unsupported.
+    evolve_schema = collision == "target" and not use_cdf
 
     def dest_table_func(spark):
-        df = spark.range(4, numPartitions=1).withColumn("value", f.lit(-1))
+        df = gen_df(spark, [
+            ("id", RepeatSeqGen(list(range(4)), data_type=LongType())),
+            ("value", RepeatSeqGen([-1], data_type=LongType()))], length=4, num_slices=1)
         if collision == "target":
-            df = df.withColumn("__metadata_row_index", f.col("id") + 100)
+            column = "user_index" if evolve_schema else "__metadata_row_index"
+            df = df.withColumn(column, f.col("id") + 100)
+        if evolve_schema:
+            df = df.withColumn("payload", f.struct(
+                (f.col("id") + 300).alias("field"),
+                (f.col("id") + 900).alias("old_value")))
         return df
 
     def setup(spark):
         setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, False)
-        source = spark.range(1, 5, numPartitions=1).withColumn("value", f.col("id") + 10)
+        if evolve_schema:
+            for run in ["CPU", "GPU"]:
+                table = f"delta.`{data_path}/{run}`"
+                # Old physical columns remain in Parquet; re-added fields have new identities.
+                spark.sql(f"ALTER TABLE {table} RENAME COLUMN user_index TO __metadata_row_index")
+                spark.sql(f"ALTER TABLE {table} ALTER COLUMN __metadata_row_index FIRST")
+                spark.sql(f"ALTER TABLE {table} DROP COLUMN value")
+                spark.sql(f"ALTER TABLE {table} ADD COLUMNS (value BIGINT)")
+                spark.sql(f"ALTER TABLE {table} RENAME COLUMN payload.field TO _metadata")
+                spark.sql(f"ALTER TABLE {table} DROP COLUMN payload.old_value")
+                spark.sql(f"ALTER TABLE {table} ADD COLUMNS (payload.old_value BIGINT)")
+        source = gen_df(spark, [
+            ("id", RepeatSeqGen(list(range(1, 5)), data_type=LongType()))],
+            length=4, num_slices=1).withColumn("value", f.col("id") + 10)
         if collision == "source":
             source = source.withColumn("__metadata_row_index", f.col("id") + 100)
         source.createOrReplaceTempView(src_table)
@@ -503,6 +666,10 @@ def test_delta_low_shuffle_merge_column_mapping(
         update += ", t.__metadata_row_index = s.id + 200"
         columns += ", __metadata_row_index"
         values += ", s.id + 200"
+    if evolve_schema:
+        condition += " AND t.payload._metadata = s.id + 300"
+        columns += ", payload"
+        values += ", named_struct('_metadata', s.id + 300, 'old_value', CAST(NULL AS BIGINT))"
 
     def do_merge(spark, path):
         return spark.sql(
@@ -519,6 +686,16 @@ def test_delta_low_shuffle_merge_column_mapping(
             lambda spark, run=run: reader(spark, data_path + "/" + run).collect(), conf=conf)
             for run in ["CPU", "GPU"]]
         assert_equal_with_local_sort(*results)
+    if evolve_schema:
+        # Untouched rows must not recover values from the dropped physical columns.
+        expected = [(0, None, 100, 300, None), (2, 12, 202, 302, None),
+                    (3, None, 103, 303, None), (4, 14, 204, 304, None)]
+        for run in ["CPU", "GPU"]:
+            rows = with_cpu_session(
+                lambda spark: read_delta_path(spark, data_path + "/" + run)
+                    .select("id", "value", "__metadata_row_index", "payload._metadata",
+                            "payload.old_value").orderBy("id").collect(), conf=conf)
+            assert rows == expected, f"{run} table contents: {rows}"
 
 
 @allow_non_gpu(*delta_meta_allow)
