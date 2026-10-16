@@ -533,24 +533,57 @@ else
         # on failure. Previously stderr was discarded, which made CI failures
         # in this step opaque (the only signal was a non-zero grep exit).
         smoke_log=$(mktemp -t spark-shell-smoke.XXXXXX.log)
-        if <<< 'spark.range(100).agg(Map("id" -> "sum")).collect()' \
+        smoke_started=$(date +%s)
+        # Worker reports executor termination and exit status at INFO, even when
+        # the executor itself leaves no useful stderr. Keep this local to the smoke test.
+        if <<< 'sc.setLogLevel("INFO"); spark.range(100).agg(Map("id" -> "sum")).collect()' \
                 "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1 \
                 | tee "$smoke_log" \
                 | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'; then
             rm -f "$smoke_log"
             echo "SUCCESS spark-shell smoke test"
         else
-            shell_status=${PIPESTATUS[0]}
-            grep_status=${PIPESTATUS[2]}
-            echo "FAILED spark-shell smoke test (spark-shell exit=${shell_status}, grep exit=${grep_status})"
+            smoke_statuses=("${PIPESTATUS[@]}")
+            echo "FAILED spark-shell smoke test (spark-shell exit=${smoke_statuses[0]}, tee exit=${smoke_statuses[1]}, grep exit=${smoke_statuses[2]})"
             echo "----- spark-shell combined stdout/stderr (tail -n 300 of $smoke_log) -----"
             tail -n 300 "$smoke_log" || true
-            echo "----- spark-shell executor stderr (tail -n 200 each) -----"
-            for f in "${SPARK_HOME}"/work/*/*/stderr; do
-                [[ -f "$f" ]] || continue
-                echo "=== $f ==="
-                tail -n 200 "$f" || true
-            done
+            # Console-only, bounded and best effort; never replace the smoke-test failure.
+            if ! timeout --kill-after=5s 45s bash -s -- \
+                "$smoke_log" "$smoke_started" "${SPARK_WORKER_DIR:-$SPARK_HOME/work}" <<'SMOKE_DIAGNOSTICS'
+set +x
+smoke_log=$1
+smoke_started=$2
+worker_dir=$3
+crash_dirs=("$PWD")
+found_executor_logs=false
+# Restrict executor logs to this smoke application's IDs, not previous runs.
+while IFS= read -r app_id; do
+    for executor_dir in "$worker_dir/$app_id"/*; do
+        [[ -d "$executor_dir" ]] || continue
+        crash_dirs+=("$executor_dir")
+        for stream in stdout stderr; do
+            [[ -f "$executor_dir/$stream" ]] || continue
+            found_executor_logs=true
+            printf '\n----- Spark executor %s (tail -n 200) -----\n' "$executor_dir/$stream"
+            timeout --kill-after=1s 3s tail -n 200 "$executor_dir/$stream" || true
+        done
+    done
+done < <(grep -oE 'app-[0-9]+-[0-9]+' "$smoke_log" | sort -u)
+if [[ "$found_executor_logs" == false ]]; then
+    echo "No executor stdout/stderr found for this smoke-test application"
+fi
+# Only recent JVM fatal-error headers, not command lines, environment or full dumps.
+for directory in "${crash_dirs[@]}"; do
+    while IFS= read -r -d '' crash_log; do
+        printf '\n----- JVM fatal-error header: %s -----\n' "$crash_log"
+        timeout --kill-after=1s 3s grep -m 25 '^#' "$crash_log" || true
+    done < <(find "$directory" -maxdepth 1 -type f -name 'hs_err_pid*.log' \
+        -newermt "@$smoke_started" -print0)
+done
+SMOKE_DIAGNOSTICS
+            then
+                echo "Smoke-test diagnostics incomplete"
+            fi
             rm -f "$smoke_log"
             exit 1
         fi
