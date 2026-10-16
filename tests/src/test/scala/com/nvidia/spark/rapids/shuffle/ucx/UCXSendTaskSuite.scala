@@ -17,6 +17,7 @@
 package com.nvidia.spark.rapids.shuffle.ucx
 
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentLinkedQueue
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -249,5 +250,21 @@ class UCXSendTaskSuite extends AnyFunSuite {
     val unbuilt = intercept[OutOfMemoryError](UCX.sendOrReport(failing, _ => throw heap)(_ => ()))
     assert(unbuilt eq heap)
     assert(unbuilt.getSuppressed.exists(_ eq reportFailure))
+  }
+
+  test("a task is queued only when nothing after queueing it can throw") {
+    val tasks = new ConcurrentLinkedQueue[() => Unit]()
+    // what building the worker signal's NVTX range throws when the Java heap runs out
+    val oom = new OutOfMemoryError("Java heap space")
+    val thrown = intercept[OutOfMemoryError](UCX.queueTask(tasks, () => (), wakeup = true,
+      signal = () => (), newRange = () => throw oom))
+    assert(thrown eq oom)
+    // the caller sees a throw and frees what the task would use, so the task must not run
+    assert(tasks.isEmpty)
+
+    // a failure to wake the worker is not the caller's: the task stays queued
+    UCX.queueTask(tasks, () => (), wakeup = true,
+      signal = () => throw new IllegalStateException("signal failed in test"))
+    assertResult(1)(tasks.size)
   }
 }

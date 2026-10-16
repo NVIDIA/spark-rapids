@@ -116,6 +116,14 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   // task threads and [[progressThread]] will hand them to the UcpWorker thread.
   private val workerTasks = new ConcurrentLinkedQueue[() => Unit]()
 
+  // wakes the worker for a queued task, taking up the worker object lock to protect against
+  // another `.close`
+  private[this] val signalWorker: () => Unit = () => synchronized {
+    if (worker != null) {
+      worker.signal()
+    }
+  }
+
   // holds memory registered against UCX that should be de-register on exit (used for bounce
   // buffers)
   // NOTE: callers should hold the `registeredMemory` lock before modifying this array
@@ -633,27 +641,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     endpointManager.getConnection(peerExecutorId, peerMgmtHost, peerMgmtPort)
   }
 
-  def onWorkerThreadAsync(task: () => Unit): Unit = {
-    workerTasks.add(task)
-    if (rapidsConf.shuffleUcxUseWakeup) {
-      // The task is queued, and the progress thread runs it on its next pass, so a failure to
-      // wake the worker must not reach callers: they treat a throw from here as a task that was
-      // never queued and will never call back.
-      try {
-        withResource(new NvtxRange("UCX Signal", NvtxColor.RED)) { _ =>
-          // take up the worker object lock to protect against another `.close`
-          synchronized {
-            if (worker != null) {
-              worker.signal()
-            }
-          }
-        }
-      } catch {
-        // runs after the monitor is released
-        case NonFatal(t) => logWarning("Unable to signal the UCX worker", t)
-      }
-    }
-  }
+  def onWorkerThreadAsync(task: () => Unit): Unit =
+    UCX.queueTask(workerTasks, task, rapidsConf.shuffleUcxUseWakeup, signalWorker)
 
   /** Whether the progress thread has terminated, after which no callback can run. */
   def isProgressThreadTerminated: Boolean = progressThread.isTerminated
@@ -1114,7 +1103,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
 }
 
-object UCX {
+object UCX extends Logging {
   // This is used to distinguish a cancelled request vs. other errors
   // as the callback is the same (onError)
   // from https://github.com/openucx/ucx/blob/master/src/ucs/type/status.h
@@ -1285,6 +1274,43 @@ object UCX {
             t.addSuppressed(e)
         }
         throw t
+    }
+  }
+
+  // builds the NVTX range of each worker signal; a test stands in for it
+  private val newSignalRange: () => NvtxRange = () => new NvtxRange("UCX Signal", NvtxColor.RED)
+
+  /**
+   * Queues `task` for the progress thread, then wakes the worker through `signal` if `wakeup`.
+   * Callers treat a throw from here as a task never queued, which will never call back, and may
+   * free what it uses. So all that can fail comes before the task is queued, and a failure to
+   * wake the worker after it is only logged: the progress thread still runs the task.
+   * @param newRange builds the signal's NVTX range
+   */
+  private[shuffle] def queueTask(
+      tasks: ConcurrentLinkedQueue[() => Unit],
+      task: () => Unit,
+      wakeup: Boolean,
+      signal: () => Unit,
+      newRange: () => NvtxRange = newSignalRange): Unit = {
+    val range = if (wakeup) newRange() else null
+    try {
+      tasks.add(task)
+    } catch {
+      case t: Throwable =>
+        range.safeClose(t)
+        throw t
+    }
+    if (range != null) {
+      try {
+        try {
+          signal()
+        } finally {
+          range.close()
+        }
+      } catch {
+        case NonFatal(t) => logWarning("Unable to signal the UCX worker", t)
+      }
     }
   }
 
