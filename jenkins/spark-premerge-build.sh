@@ -393,7 +393,7 @@ case $BUILD_TYPE in
         ;;
 
     mvn_verify|ci_2|ci_scala213)
-        # TEST ONLY: build the selected shim and run four sanity cases, not full suites.
+        # TEST ONLY: build the selected shim and exercise one diagnostic failure per stage.
         export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
         update-java-alternatives --set $JAVA_HOME
         java -version
@@ -407,13 +407,16 @@ case $BUILD_TYPE in
         prepare_spark "$SPARK_VER" "$sanity_scala"
         env -u SPARK_HOME $MVN -f "$sanity_pom" -U -B $MVN_URM_MIRROR \
             -Dbuildver="${SPARK_VER//./}" clean package $MVN_BUILD_ARGS -DskipTests=true
-        for parallelism in 0 2; do
-            echo "TEST ONLY: $BUILD_TYPE running four range sanity tests with TEST_PARALLEL=$parallelism"
-            TEST_PARALLEL=$parallelism TEST_TYPE=pre-commit TEST_TAGS='' TEST='' \
-            TESTS="range_test.py::test_simple_range range_test.py::test_partitioned_range \
-range_test.py::test_start_end_range range_test.py::test_step_range" \
-                ./integration_tests/run_pyspark_from_build.sh
-        done
+        case "$BUILD_TYPE" in
+            mvn_verify) fault=test_assertion_failure; parallelism=0 ;;
+            ci_2) fault=test_pytest_worker_exit; parallelism=2 ;;
+            ci_scala213) fault=test_native_driver_crash; parallelism=2 ;;
+        esac
+        echo "TEST ONLY: $BUILD_TYPE injecting $fault with TEST_PARALLEL=$parallelism; failure expected"
+        TEST_PARALLEL=$parallelism TEST_TYPE=pre-commit TEST_TAGS='' TEST='' \
+        TESTS="range_test.py::test_simple_range diagnostic_faults.py::$fault" \
+            ./integration_tests/run_pyspark_from_build.sh \
+                --max-worker-restart=0 --test_oom_injection_mode=never
         ;;
 
     *)

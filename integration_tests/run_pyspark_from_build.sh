@@ -476,6 +476,10 @@ else
         [[ -n "${SPARK_HOME:-}" ]] && SPARK_TESTING_OPTS="$SPARK_TESTING_OPTS -Dspark.test.home=$SPARK_HOME"
     fi
     DRIVER_EXTRA_JAVA_OPTIONS="-ea -Duser.timezone=$TZ -Ddelta.log.cacheSize=$deltaCacheSize $SPARK_TESTING_OPTS"
+    # TEST ONLY: keep the injected JVM fatal-error log, but avoid writing a large core dump.
+    if [[ "$TESTS" == *diagnostic_faults.py::test_native_driver_crash* ]]; then
+        DRIVER_EXTRA_JAVA_OPTIONS+=" -XX:-CreateCoredumpOnCrash"
+    fi
     export PYSP_TEST_spark_driver_extraJavaOptions="$DRIVER_EXTRA_JAVA_OPTIONS $COVERAGE_SUBMIT_FLAGS $ENABLE_TEST_FEATURES"
     export PYSP_TEST_spark_executor_extraJavaOptions="-ea -Duser.timezone=$TZ $ENABLE_TEST_FEATURES"
 
@@ -607,8 +611,17 @@ else
         smoke_started=$(date +%s)
         # Worker reports executor termination and exit status at INFO, even when
         # the executor itself leaves no useful stderr. Keep this local to the smoke test.
-        if <<< 'sc.setLogLevel("INFO"); spark.range(100).agg(Map("id" -> "sum")).collect()' \
-                "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1 \
+        # TEST ONLY: exercise real executor loss/removal and matching output with a failed JVM.
+        if [[ "$VERSION_STRING" == 3.3.* ]]; then
+            echo "TEST ONLY: smoke executor halt(86); expect executor loss and master application removal"
+            smoke_command='sc.setLogLevel("INFO"); sc.parallelize(Seq(1), 1).foreachPartition { _ => System.err.println("TEST ONLY: smoke executor halt(86)"); Runtime.getRuntime.halt(86) }; spark.range(100).agg(Map("id" -> "sum")).collect()'
+        else
+            echo "TEST ONLY: smoke query succeeds, then driver halt(87); matching output must not mask failure"
+            smoke_command=$'sc.setLogLevel("INFO"); spark.range(100).agg(Map("id" -> "sum")).collect()\nSystem.err.println("TEST ONLY: smoke driver halt(87)"); Runtime.getRuntime.halt(87)'
+        fi
+        # TEST ONLY: bound the injected smoke scenario, leaving diagnostic collection outside.
+        if <<< "$smoke_command" \
+                timeout --kill-after=10s 180s "${SPARK_HOME}"/bin/spark-shell "${SPARK_SHELL_ARGS_ARR[@]}" 2>&1 \
                 | tee "$smoke_log" \
                 | grep -F 'res0: Array[org.apache.spark.sql.Row] = Array([4950])'; then
             smoke_statuses=("${PIPESTATUS[@]}")
