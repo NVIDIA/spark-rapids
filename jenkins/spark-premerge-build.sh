@@ -392,16 +392,28 @@ case $BUILD_TYPE in
         ci_scala213
         ;;
 
-    mvn_verify)
-        mvn_verify
-        ;;
-
-    ci_2 )
-        ci_2
-        ;;
-
-    ci_scala213 )
-        ci_scala213
+    mvn_verify|ci_2|ci_scala213)
+        # TEST ONLY: build the selected shim and run four sanity cases, not full suites.
+        export JAVA_HOME=$(echo /usr/lib/jvm/java-1.17.0-*)
+        update-java-alternatives --set $JAVA_HOME
+        java -version
+        sanity_pom=pom.xml
+        sanity_scala=2.12
+        if [[ "$BUILD_TYPE" == "ci_scala213" ]]; then
+            SPARK_VER=4.0.1
+            sanity_pom=scala2.13/pom.xml
+            sanity_scala=2.13
+        fi
+        prepare_spark "$SPARK_VER" "$sanity_scala"
+        env -u SPARK_HOME $MVN -f "$sanity_pom" -U -B $MVN_URM_MIRROR \
+            -Dbuildver="${SPARK_VER//./}" clean package $MVN_BUILD_ARGS -DskipTests=true
+        for parallelism in 0 2; do
+            echo "TEST ONLY: $BUILD_TYPE running four range sanity tests with TEST_PARALLEL=$parallelism"
+            TEST_PARALLEL=$parallelism TEST_TYPE=pre-commit TEST_TAGS='' TEST='' \
+            TESTS="range_test.py::test_simple_range range_test.py::test_partitioned_range \
+range_test.py::test_start_end_range range_test.py::test_step_range" \
+                ./integration_tests/run_pyspark_from_build.sh
+        done
         ;;
 
     *)

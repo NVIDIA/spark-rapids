@@ -155,20 +155,23 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
         PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${UPSTREAM_SHIM_VER}.RapidsShuffleManager \
             bash integration_tests/run_pyspark_from_build.sh
     fi
-    if [[ "$TEST_MODE" == "CI_PART1" ]]; then
-        # TEST ONLY: exercise serial and xdist IT entry points without the full suites.
-        for parallelism in 0 2; do
-            echo "TEST ONLY: running two range sanity tests with TEST_PARALLEL=$parallelism"
-            TEST_PARALLEL=$parallelism \
-            TESTS="range_test.py::test_simple_range range_test.py::test_partitioned_range" \
-                bash integration_tests/run_pyspark_from_build.sh \
-                    --runtime_env="databricks" --test_type="$TEST_TYPE"
-        done
-        echo "TEST ONLY: readiness, smoke and range sanity checks completed; skipping remaining suites"
-        exit 0
-    else
+    if [[ "$TEST_MODE" == "DEFAULT" ]]; then
         bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
     fi
+fi
+
+# TEST ONLY: exercise both CI parts without the full suites; DEFAULT remains unchanged.
+if [[ "$TEST_MODE" == "CI_PART1" || "$TEST_MODE" == "CI_PART2" ]]; then
+    for parallelism in 0 2; do
+        echo "TEST ONLY: $TEST_MODE running four range sanity tests with TEST_PARALLEL=$parallelism"
+        TEST_PARALLEL=$parallelism TEST_TAGS='' TEST='' \
+        TESTS="range_test.py::test_simple_range range_test.py::test_partitioned_range \
+range_test.py::test_start_end_range range_test.py::test_step_range" \
+            bash integration_tests/run_pyspark_from_build.sh \
+                --runtime_env="databricks" --test_type="$TEST_TYPE"
+    done
+    echo "TEST ONLY: range sanity checks completed; skipping remaining suites"
+    exit 0
 fi
 
 ## Run tests with jars building from the spark-rapids source code
