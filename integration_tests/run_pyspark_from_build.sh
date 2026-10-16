@@ -556,6 +556,11 @@ smoke_started=$2
 worker_dir=$3
 crash_dirs=("$PWD")
 found_executor_logs=false
+# Keep executor/removal events visible even when later shutdown traces fill the log tail.
+printf '\n----- Spark master/worker lifecycle (last 200 matching/context lines) -----\n'
+timeout --kill-after=1s 3s grep -E -C 3 \
+    ' (Master|Worker|ExecutorRunner|StandaloneAppClient|StandaloneSchedulerBackend|TaskSchedulerImpl):' \
+    "$smoke_log" | tail -n 200 || true
 # Restrict executor logs to this smoke application's IDs, not previous runs.
 while IFS= read -r app_id; do
     for executor_dir in "$worker_dir/$app_id"/*; do
