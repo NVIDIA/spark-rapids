@@ -20,7 +20,8 @@ from asserts import assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_co
     assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, \
-    deletion_vector_values_with_xfail_reasons, read_delta_path_with_cdf, delta_reorg_xfail
+    deletion_vector_values_with_xfail_reasons, read_delta_path_with_cdf, delta_reorg_xfail, \
+    is_oss_delta_lake_42
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from parquet_test_utils import parquet_row_group_midpoints
@@ -1827,3 +1828,75 @@ def test_delta_deletion_vector_native_footer_multi_row_group_zero_column_aggrega
         lambda spark: spark.sql(query.format(path=data_path)),
         exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
         conf=read_conf)
+
+
+@delta_lake
+@ignore_order
+@allow_non_gpu(*delta_meta_allow)
+@pytest.mark.skipif(not is_oss_delta_lake_42(), reason="Requires OSS Delta Lake 4.2")
+@pytest.mark.parametrize("stats_state", ["missing_stats", "with_stats", "mixed_stats"])
+@pytest.mark.parametrize("force_stats", [False, True], ids=["default", "forced"])
+@pytest.mark.parametrize("predicate, expected_rows, data_filter, prunes_missing_stats", [
+    (None, 100, False, False),
+    ("true", 100, False, False),
+    ("part = 1", 25, False, True),
+    ("part = 0", 25, False, False),
+    ("id = 50", 100, True, False),
+    ("part = 1 AND id = 49", 25, True, True),
+], ids=["no_filter", "true_filter", "partition_with_stats", "partition_without_stats",
+        "data_filter", "partition_and_data_filter"])
+def test_delta_force_statistics_collection(
+        spark_tmp_path, stats_state, force_stats, predicate, expected_rows, data_filter,
+        prunes_missing_stats):
+    # Model Delta's PreparedDeltaFileIndexRowCountSuite: the Spark setting sums
+    # existing numRecords during planning and leaves missing statistics unknown.
+    # https://github.com/delta-io/delta/pull/5888
+    path = spark_tmp_path + "/force_stats"
+
+    def setup(spark):
+        df = spark.range(100).selectExpr("id", "id % 4 AS part").coalesce(1)
+        initial = df.where("part != 0") if stats_state == "mixed_stats" else df
+        initial.write.format("delta").partitionBy("part") \
+            .option("delta.enableDeletionVectors", "false").save(path)
+        if stats_state == "mixed_stats":
+            # Only partition 0 lacks stats. Pruning it should recover known row counts;
+            # retaining it must leave the total unknown instead of returning a partial sum.
+            spark.conf.set("spark.databricks.delta.stats.collect", "false")
+            df.where("part = 0").write.format("delta").mode("append").save(path)
+        spark._jvm.org.apache.spark.sql.delta.DeltaLog.clearCache()
+
+    with_cpu_session(setup, conf={
+        "spark.databricks.delta.stats.collect": str(stats_state != "missing_stats").lower()})
+
+    def read_and_check_stats(spark):
+        df = spark.read.format("delta").load(path)
+        if predicate is not None:
+            df = df.where(predicate)
+        scans = []
+
+        def find_scans(plan):
+            if plan.getClass().getSimpleName() == "LogicalRelation":
+                index = plan.relation().location()
+                if index.getClass().getSimpleName() == "PreparedDeltaFileIndex":
+                    scans.append(index.preparedScan())
+            children = plan.children().iterator()
+            while children.hasNext():
+                find_scans(children.next())
+
+        find_scans(df._jdf.queryExecution().optimizedPlan())
+        assert len(scans) == 1, "Expected one prepared Delta scan"
+        stats_available = stats_state == "with_stats" or \
+            (stats_state == "mixed_stats" and prunes_missing_stats)
+        for count in [scans[0].scanned().rows(), scans[0].scanned().logicalRows()]:
+            if stats_available and (force_stats or data_filter):
+                assert count.isDefined(), "Expected collected scan row counts"
+                assert count.get() == expected_rows
+            else:
+                assert count.isEmpty(), "Expected scan row counts to remain unknown"
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        read_and_check_stats,
+        exist_classes="GpuFileSourceScanExec",
+        require_non_empty=True,
+        conf={"spark.databricks.delta.alwaysCollectStats.enabled": str(force_stats).lower()})
