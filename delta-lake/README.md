@@ -45,3 +45,13 @@ The following table details how the common subdirectories map to Delta Lake vers
 | `common/src/main/databricks` | Delta Lake on all Databricks platforms     |
 | `common/src/main/delta-io`   | Delta Lake on all non-Databricks platforms |
 | `delta-lake/src/main/delta*` | Directories supporting various version ranges |
+
+### Databricks 17.3 and 18.3 sources
+
+`common/src/main/db-400db173-410db183` contains compatible Scala and Java sources
+compiled separately against each runtime's dependencies. Each runtime module keeps its own
+API adaptations. Databricks 14.3 continues to use its existing source directories.
+
+When only one supported runtime consumes this directory, move its sources into that runtime's
+module; if a newer runtime also consumes them, retain a shared directory for the remaining
+versions.
