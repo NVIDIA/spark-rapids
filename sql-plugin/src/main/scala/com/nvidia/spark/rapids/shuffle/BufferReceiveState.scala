@@ -247,11 +247,12 @@ class BufferReceiveState(
                 contigBuffer = workingOn
                 workingOn = null
                 workingOnOffset = 0
+                toClose.append(contigBuffer)
               }
             } else {
-              // need to keep it around
+              // need to keep it around. Only the field owns it, so that the state's close frees
+              // it once if this window fails.
               workingOn = Rmm.alloc(fullSize, stream)
-              toClose.append(workingOn)
 
               workingOn.copyFromDeviceBufferAsync(0, deviceBounceBuffer,
                 bounceBufferByteOffset, b.rangeSize(), stream)

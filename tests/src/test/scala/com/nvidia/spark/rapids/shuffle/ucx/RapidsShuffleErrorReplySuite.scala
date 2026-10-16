@@ -331,6 +331,35 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("a window that fails after starting a partial table closes that table's buffer once") {
+    RmmSpark.removeAllCurrentThreadAssociation()
+    val requester = new Requester
+    // the first window holds the first table and starts the second
+    val requests = Seq(
+      PendingTransferRequest(requester.client, tableMeta(1, 512), reader()),
+      PendingTransferRequest(requester.client, tableMeta(2, 1024), reader()))
+    val closes = new AtomicInteger()
+    withBounceBuffer(1024) { bounceBuffer =>
+      val state = new BufferReceiveState(123L, bounceBuffer, requests,
+        () => closes.incrementAndGet())
+      requester.client.doIssueBufferReceives(state)
+      state.getBufferWhenReady(_ => (), 1024)
+      // the next window's receive waits for this one to be consumed, then fails to start
+      state.getBufferWhenReady(
+        _ => throw new IllegalStateException("receiving the next window failed in test"), 512)
+      val windowReceived = mock[Transaction]
+      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+
+      val allocated = Rmm.getTotalBytesAllocated
+      requester.client.doHandleBounceBufferReceive(windowReceived, state)
+
+      // the window's buffers and the partial table's are freed once, with the slot
+      assert(bounceBuffer.isClosed)
+      assertResult(1)(closes.get)
+      assertResult(allocated - 1024)(Rmm.getTotalBytesAllocated)
+    }
+  }
+
   test("a reader waiting on a transfer that the server fails gets a fetch failure") {
     val requester = new Requester
     val bounceBuffers = new ArrayBuffer[BounceBuffer]()
