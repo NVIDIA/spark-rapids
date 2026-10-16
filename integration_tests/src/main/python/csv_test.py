@@ -343,8 +343,7 @@ csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
-    # Date is also time zone related for csv since rebase.
-    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow)),
+    pytest.param('CORRECTED'),
     pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow))
 ])
 def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, ansi_enabled, time_parser_policy):
@@ -378,6 +377,31 @@ def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, a
                     .csv(data_path),
             conf=updated_conf)
 
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_date_read_corrected_non_utc_timezone(spark_tmp_path, v1_enabled_list):
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = StructType([
+        StructField('id', IntegerType()),
+        StructField('d', DateType())])
+    updated_conf = copy_and_update(_enable_all_types_conf,
+        {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+         'spark.sql.session.timeZone': 'America/New_York',
+         'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': 'true'})
+    with_cpu_session(
+        lambda spark: spark.createDataFrame([
+            (1, '2026-01-15'),
+            (2, '2026-07-15'),
+            (3, '1500-01-01')], 'id INT, d STRING') \
+            .write.option('header', 'true').csv(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema) \
+            .option('header', 'true') \
+            .option('dateFormat', 'yyyy-MM-dd') \
+            .csv(data_path),
+        conf=updated_conf)
+
 non_utc_allow_for_test_read_valid_and_invalid_dates=['BatchScanExec', 'FileSourceScanExec'] if is_not_utc() else []
 
 @pytest.mark.parametrize('filename', ["date.csv"])
@@ -385,8 +409,7 @@ non_utc_allow_for_test_read_valid_and_invalid_dates=['BatchScanExec', 'FileSourc
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
-    # Date is also time zone related for csv since rebasing.
-    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates)),
+    pytest.param('CORRECTED'),
     pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates))
 ])
 def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list, ansi_enabled, time_parser_policy):
@@ -575,6 +598,33 @@ def test_csv_read_count(spark_tmp_path):
     # Tracking issue: https://github.com/NVIDIA/spark-rapids/issues/9199
     assert_gpu_and_cpu_row_counts_equal(lambda spark: spark.read.csv(data_path),
         conf = {'spark.rapids.sql.explain': 'ALL'})
+
+
+@pytest.mark.parametrize('compression', ['none', 'bzip2'])
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('projection', ['all', 'pruned', 'count',
+    pytest.param('limit', marks=pytest.mark.allow_non_gpu('CollectLimitExec'))])
+def test_csv_small_reader_budget(spark_tmp_path, compression, v1_enabled_list, projection):
+    generators = [int_gen, StringGen('[a-zé,]{1,8}'), long_gen]
+    gen = StructGen([(f'c{i}', generators[i % 3]) for i in range(46)], nullable=False)
+    path = spark_tmp_path + '/csv_small_reader_budget'
+    with_cpu_session(lambda spark: gen_df(spark, gen, length=64).coalesce(1).write
+                     .option('header', True).option('compression', compression).csv(path))
+
+    def read(spark):
+        df = spark.read.schema(gen.data_type).option('header', True).csv(path)
+        if projection == 'pruned':
+            return df.select('c0', 'c1', 'c2')
+        if projection == 'count':
+            return df.selectExpr('count(*) as n')
+        if projection == 'limit':
+            return df.limit(1)
+        return df
+
+    assert_gpu_and_cpu_are_equal_collect(read, conf={
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        'spark.rapids.sql.reader.batchSizeBytes': '2048'})
+
 
 spark_350_timestamp_inference_xfail_formats = {
     ('yyyy-MM-dd', ''),
