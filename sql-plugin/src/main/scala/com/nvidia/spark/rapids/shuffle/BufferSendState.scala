@@ -429,16 +429,24 @@ object BufferSendState extends Logging {
   /**
    * Answers a failed transfer request with an error reply, through `gate`, and releases the
    * reply: its send's callback does, whatever the status, or this does when the send cannot
-   * start or the gate is shut. A reply that cannot be sent is logged, by the connection when its
-   * send fails and here when it cannot start, and its requester waits until it times out, as
-   * with no reply.
+   * start or the gate is shut. A reply that cannot be built or sent is logged, by the connection
+   * when its send fails and here otherwise, and its requester waits until it times out, as with
+   * no reply.
    */
   private[shuffle] def sendErrorReply(
       request: Transaction,
       gate: ReplyGate,
       reply: => RefCountedDirectByteBuffer): Unit = {
     try {
-      val response = reply
+      val response = try {
+        reply
+      } catch {
+        // Building the reply allocates a direct buffer on the send loop. Running out of memory
+        // there leaves the request unanswered, as before error replies, and the loop serving.
+        // Nothing has been sent yet, unlike after respond below.
+        case oom: OutOfMemoryError =>
+          throw new IllegalStateException("No memory to build the error reply", oom)
+      }
       val queued = try {
         gate.queueIfOpen {
           request.respond(response.acquire(), withResource(_) { _ =>

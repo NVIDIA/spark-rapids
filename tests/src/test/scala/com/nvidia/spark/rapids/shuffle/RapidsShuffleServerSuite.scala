@@ -1391,6 +1391,39 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     verify(reply, times(1)).close()
   }
 
+  test("an error reply that runs out of memory as it is built is not sent, and the loop goes on") {
+    val requestTx = makeTx(1)
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      // the buffer is gone, so that the request ends with an error reply
+      val handle = makeHandle(tableMeta,
+        () => throw new FileNotFoundException("spill file deleted in test"))
+      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+      when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(1),
+        ArgumentMatchers.eq(handle))).thenReturn(true)
+      val server = newServer(requestHandler, mock[ServerConnection])
+      val state = spy(new BufferSendState(
+        requestTx, makeSendBuffer(mock[DeviceMemoryBuffer]), requestHandler, null))
+      doThrow(new OutOfMemoryError("Cannot reserve 1024 bytes of direct buffer memory in test"))
+        .when(state).getErrorResponse(any())
+
+      // an OutOfMemoryError that escapes a test aborts the suite, so this one is caught
+      val escaped = try {
+        server.doHandleTransferRequest(Seq(state))
+        None
+      } catch {
+        case oom: OutOfMemoryError => Some(oom)
+      }
+
+      assertResult(None)(escaped)
+      assertResult(Some(BufferSendState.MissingOutput))(state.endedWith)
+      verify(requestTx, never()).respond(any(), any())
+      verify(requestTx, times(1)).close()
+    }
+  }
+
   /**
    * Runs `body` with a server whose send loop runs on a thread of its own, and a send state for
    * table 1, whose buffer is gone, so that the loop ends it with an error reply. `body` gets the
