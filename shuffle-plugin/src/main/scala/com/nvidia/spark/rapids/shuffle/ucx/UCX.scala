@@ -592,25 +592,19 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
       UcsConstants.MEMORY_TYPE.UCS_MEMORY_TYPE_HOST
     }
 
-    // If the send throws, closeOnExcept adds a failure to close the range to its error as
-    // suppressed, since that error's type decides whether the send's failure is reported.
-    val range = new NvtxRange("AM Send", NvtxColor.GREEN)
-    closeOnExcept(range) { _ =>
-      UCX.sendTask(am.header, completion,
-          () => new UcpRequestParams().setMemoryType(memType)) {
-        (headerAddress, params, completion) =>
-          ep.sendAmNonBlocking(
-            am.activeMessageId,
-            headerAddress,
-            UCX.ACTIVE_MESSAGE_HEADER_SIZE,
-            dataAddress,
-            dataSize,
-            flags,
-            completion,
-            params)
-      }
+    UCX.sendTaskInRange(new NvtxRange("AM Send", NvtxColor.GREEN), am.header, completion,
+        () => new UcpRequestParams().setMemoryType(memType)) {
+      (headerAddress, params, completion) =>
+        ep.sendAmNonBlocking(
+          am.activeMessageId,
+          headerAddress,
+          UCX.ACTIVE_MESSAGE_HEADER_SIZE,
+          dataAddress,
+          dataSize,
+          flags,
+          completion,
+          params)
     }
-    range.close()
   }
 
   def getServerConnection: UCXServerConnection = serverConnection
@@ -1234,6 +1228,23 @@ object UCX extends Logging {
     send(address, prepared, completion)
     // the caller's cleanup, such as closing its NVTX range, still runs inside the catch
     completion.tookSend()
+  }
+
+  /**
+   * Runs the task of one send, as `sendTask` does, inside the send's NVTX range. If the task
+   * throws, closeOnExcept adds a failure to close the range to its error as suppressed, since
+   * that error's type decides whether the send's failure is reported.
+   */
+  private[shuffle] def sendTaskInRange[P](
+      range: NvtxRange,
+      header: Long,
+      completion: SendCompletion,
+      prepare: () => P)(
+      send: SendToJucx[P]): Unit = {
+    closeOnExcept(range) { _ =>
+      sendTask(header, completion, prepare)(send)
+    }
+    range.close()
   }
 
   // builds the completion of each send; a test stands in for it

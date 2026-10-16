@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentLinkedQueue
 
 import scala.collection.mutable.ArrayBuffer
 
+import ai.rapids.cudf.{NvtxColor, NvtxRange}
 import org.openucx.jucx.{UcxCallback, UcxException}
 import org.openucx.jucx.ucp.UcpRequest
 import org.scalatest.funsuite.AnyFunSuite
@@ -250,6 +251,22 @@ class UCXSendTaskSuite extends AnyFunSuite {
     val unbuilt = intercept[OutOfMemoryError](UCX.sendOrReport(failing, _ => throw heap)(_ => ()))
     assert(unbuilt eq heap)
     assert(unbuilt.getSuppressed.exists(_ eq reportFailure))
+  }
+
+  test("a send's range that fails to close keeps the task's error, which decides the report") {
+    val ended = new Ended
+    val closeFailure = new IllegalStateException("closing the send's range failed in test")
+    val range = new NvtxRange("send in test", NvtxColor.GREEN) {
+      override def close(): Unit = throw closeFailure
+    }
+    // as from an immediate UCX error, which JUCX throws with its status
+    val failure = new UcxException("the send failed in test", -3)
+    val thrown = intercept[UcxException](UCX.sendOrReport(ended)(
+      UCX.sendTaskInRange(range, 1L, _, () => ())((_, _, _) => throw failure)))
+    assert(thrown eq failure)
+    assert(thrown.getSuppressed.exists(_ eq closeFailure))
+    assertResult(1)(ended.calls.size)
+    assert(ended.calls.head.startsWith("error -3: "))
   }
 
   test("a task is queued only when nothing after queueing it can throw") {
