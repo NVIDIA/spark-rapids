@@ -237,7 +237,7 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
         .when(windowReceived).close()
 
       // the last window closes the state, and then its failed close sends the state through
-      // the older catch, which closes it again
+      // the window handler's catch, which closes it again
       requester.client.doHandleBounceBufferReceive(windowReceived, state)
 
       assert(bounceBuffer.isClosed)
@@ -353,10 +353,44 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       val allocated = Rmm.getTotalBytesAllocated
       requester.client.doHandleBounceBufferReceive(windowReceived, state)
 
-      // the window's buffers and the partial table's are freed once, with the slot
+      // what the window allocated is freed once, and so is the slot, so the total drops by the
+      // slot's 1024 bytes
       assert(bounceBuffer.isClosed)
       assertResult(1)(closes.get)
       assertResult(allocated - 1024)(Rmm.getTotalBytesAllocated)
+    }
+  }
+
+  test("a window that fails after completing a partial table closes that table's buffer") {
+    RmmSpark.removeAllCurrentThreadAssociation()
+    val requester = new Requester
+    // the first window starts the first table, and the second completes it with the second
+    val requests = Seq(
+      PendingTransferRequest(requester.client, tableMeta(1, 1536), reader()),
+      PendingTransferRequest(requester.client, tableMeta(2, 512), reader()),
+      PendingTransferRequest(requester.client, tableMeta(3, 512), reader()))
+    val closes = new AtomicInteger()
+    withBounceBuffer(1024) { bounceBuffer =>
+      val state = new BufferReceiveState(123L, bounceBuffer, requests,
+        () => closes.incrementAndGet())
+      requester.client.doIssueBufferReceives(state)
+      val windowReceived = mock[Transaction]
+      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+      state.getBufferWhenReady(_ => (), 1024)
+      requester.client.doHandleBounceBufferReceive(windowReceived, state)
+      state.getBufferWhenReady(_ => (), 1024)
+      // the third window's receive waits for the second to be consumed, then fails to start
+      state.getBufferWhenReady(
+        _ => throw new IllegalStateException("receiving the next window failed in test"), 512)
+
+      val allocated = Rmm.getTotalBytesAllocated
+      requester.client.doHandleBounceBufferReceive(windowReceived, state)
+
+      // the first table's 1536 bytes and the slot's 1024 are freed, and the second table's
+      // buffer is allocated and freed in the window
+      assert(bounceBuffer.isClosed)
+      assertResult(1)(closes.get)
+      assertResult(allocated - 2560)(Rmm.getTotalBytesAllocated)
     }
   }
 

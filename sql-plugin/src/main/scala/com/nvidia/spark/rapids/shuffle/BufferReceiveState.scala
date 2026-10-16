@@ -133,8 +133,9 @@ class BufferReceiveState(
   def getRequests: Seq[PendingTransferRequest] = requests
 
   override def close(): Unit = synchronized {
-    // The copy thread's older catch closes the state again when the last window's own close
-    // fails after the state closed, so a second close releases nothing.
+    // The window handler's catch in RapidsShuffleClient closes the state again when the last
+    // window's transaction fails to close after the state closed, so a second close releases
+    // nothing.
     if (!closed) {
       closed = true
       if (workingOn != null) {
@@ -244,10 +245,10 @@ class BufferReceiveState(
 
               workingOnOffset += b.rangeSize()
               if (workingOnOffset == fullSize) {
+                toClose.append(workingOn)
                 contigBuffer = workingOn
                 workingOn = null
                 workingOnOffset = 0
-                toClose.append(contigBuffer)
               }
             } else {
               // need to keep it around. Only the field owns it, so that the state's close frees
