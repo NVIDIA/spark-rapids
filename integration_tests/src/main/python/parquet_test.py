@@ -2008,6 +2008,45 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
         error_message='The GPU does not support reading encrypted Parquet files')
 
 
+@pytest.mark.parametrize('reader_type', ['PERFILE', 'COALESCING', 'MULTITHREADED'], ids=idfn)
+@pytest.mark.parametrize('chunked', [False, True], ids=idfn)
+@pytest.mark.parametrize('num_rows', [0, 4096], ids=idfn)
+def test_parquet_count_empty_splits(spark_tmp_path, reader_type, chunked, num_rows):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    split_size = 4096
+
+    def setup_data(spark):
+        spark.range(num_rows).selectExpr(
+            'id', 'sha2(CAST(id AS STRING), 256) AS payload'
+        ).coalesce(1).write.parquet(data_path)
+        files = spark.read.parquet(data_path).inputFiles()
+        assert len(files) == 1
+        midpoints = parquet_row_group_midpoints(spark, files[0])
+        if num_rows:
+            assert midpoints and builtins.min(midpoints) >= split_size
+        else:
+            assert not midpoints
+
+    with_cpu_session(setup_data)
+    conf = {
+        'spark.rapids.sql.format.parquet.reader.type': reader_type,
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
+        'spark.rapids.sql.reader.chunked': str(chunked).lower(),
+        'spark.sql.files.maxPartitionBytes': str(split_size),
+        'spark.sql.parquet.aggregatePushdown': 'false',
+    }
+
+    def read_count(spark):
+        df = spark.read.parquet(data_path).selectExpr('count(*) AS n')
+        assert df.collect() == [Row(n=num_rows)]
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        read_count,
+        exist_classes=r'GpuFileGpuScan parquet .* ReadSchema: struct<>',
+        conf=conf)
+
+
 def test_parquet_read_count(spark_tmp_path):
     parquet_gens = [int_gen, string_gen, double_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
