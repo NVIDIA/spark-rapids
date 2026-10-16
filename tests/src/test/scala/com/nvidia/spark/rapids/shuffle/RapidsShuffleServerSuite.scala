@@ -1797,32 +1797,57 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     verify(transport, times(1)).close()
   }
 
-  test("the shuffle manager's stop closes the transport when the server's close is interrupted") {
-    val server = mock[RapidsShuffleServer]
-    val interrupted = new InterruptedException("stop interrupted in test")
-    // doThrow refuses a checked exception that the Scala method does not declare
-    doAnswer(_ => throw interrupted).when(server).close()
+  /**
+   * Runs `body` on an executor's shuffle manager in UCX mode, whose SparkEnv and catalog are
+   * mocks. The manager builds the configured transport class by reflection, and a constructor
+   * mock makes that transport serve `server`. `body` gets the transport once `stop` built it.
+   */
+  private def withExecutorManager(server: RapidsShuffleServer)(
+      body: (RapidsShuffleInternalManagerBase, () => UCXShuffleTransport) => Unit): Unit = {
     val conf = new SparkConf(loadDefaults = false).set("spark.rapids.shuffle.mode", "UCX")
-    // the manager builds the configured transport class by reflection
     withResource(mockConstruction(classOf[UCXShuffleTransport],
         (transport: UCXShuffleTransport, _: MockedConstruction.Context) =>
           when(transport.makeServer(any())).thenReturn(server))) { transports =>
-      // an executor's manager, whose SparkEnv and catalog are mocks
       val manager = new RapidsShuffleInternalManagerBase(conf, isDriver = false) {
         override protected lazy val env: SparkEnv = mock[SparkEnv](RETURNS_DEEP_STUBS)
         override protected def getCatalogOrThrow: ShuffleBufferCatalog =
           mock[ShuffleBufferCatalog]
       }
+      body(manager, () => {
+        assert(transports.constructed().size() == 1)
+        transports.constructed().get(0)
+      })
+    }
+  }
+
+  private def assertClosedOnceInOrder(
+      server: RapidsShuffleServer,
+      transport: UCXShuffleTransport): Unit = {
+    verify(server, times(1)).close()
+    verify(transport, times(1)).close()
+    // the transport's close stops UCX, so it comes after the server's
+    val closes = inOrder(server, transport)
+    closes.verify(server).close()
+    closes.verify(transport).close()
+  }
+
+  test("the shuffle manager's stop closes the transport when the server's close is interrupted") {
+    val server = mock[RapidsShuffleServer]
+    val interrupted = new InterruptedException("stop interrupted in test")
+    // doThrow refuses a checked exception that the Scala method does not declare
+    doAnswer(_ => throw interrupted).when(server).close()
+    withExecutorManager(server) { (manager, transport) =>
       val thrown = intercept[InterruptedException](manager.stop())
       assert(thrown eq interrupted)
-      assert(transports.constructed().size() == 1)
-      val transport = transports.constructed().get(0)
-      verify(server, times(1)).close()
-      verify(transport, times(1)).close()
-      // the transport's close stops UCX, so it comes after the server's
-      val closes = inOrder(server, transport)
-      closes.verify(server).close()
-      closes.verify(transport).close()
+      assertClosedOnceInOrder(server, transport())
+    }
+  }
+
+  test("the shuffle manager's stop closes the server, then the transport") {
+    val server = mock[RapidsShuffleServer]
+    withExecutorManager(server) { (manager, transport) =>
+      manager.stop()
+      assertClosedOnceInOrder(server, transport())
     }
   }
 
