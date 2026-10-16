@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.{AtomicInteger, AtomicLong, AtomicReference}
 
 import scala.collection.mutable.ArrayBuffer
 
-import ai.rapids.cudf.DeviceMemoryBuffer
+import ai.rapids.cudf.{DeviceMemoryBuffer, Rmm}
 import com.nvidia.spark.rapids.{LogCaptureUtils, MetaUtils, RapidsShuffleHandle,
   ShuffleMetadata}
 import com.nvidia.spark.rapids.format.TableMeta
@@ -270,6 +270,37 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       verify(state, times(1)).close()
       assertResult(1)(closes.get)
     }
+  }
+
+  test("a receive state whose bounce buffer fails to close still releases the rest") {
+    RmmSpark.removeAllCurrentThreadAssociation()
+    val requester = new Requester
+    // the first window holds the first table and half of the second, which stays partial
+    val requests = Seq(
+      PendingTransferRequest(requester.client, tableMeta(1, 512), reader()),
+      PendingTransferRequest(requester.client, tableMeta(2, 1024), reader()))
+    val closes = new AtomicInteger()
+    val slot = DeviceMemoryBuffer.allocate(1024)
+    val bounceBuffer = new BounceBuffer(slot) {
+      override def free(bb: BounceBuffer): Unit = {
+        slot.close()
+        throw new IllegalStateException("returning the bounce buffer failed in test")
+      }
+    }
+    val state = new BufferReceiveState(123L, bounceBuffer, requests,
+      () => closes.incrementAndGet())
+    requester.client.doIssueBufferReceives(state)
+    state.getBufferWhenReady(_ => (), 1024)
+    val windowReceived = mock[Transaction]
+    when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+    requester.client.doHandleBounceBufferReceive(windowReceived, state)
+
+    val allocated = Rmm.getTotalBytesAllocated
+    val thrown = intercept[IllegalStateException](state.close())
+    assertResult("returning the bounce buffer failed in test")(thrown.getMessage)
+    // the slot and the partial table's buffer are freed, and the transport's entry removed
+    assertResult(allocated - 2048)(Rmm.getTotalBytesAllocated)
+    assertResult(1)(closes.get)
   }
 
   test("a transfer request whose send task throws fails its readers") {

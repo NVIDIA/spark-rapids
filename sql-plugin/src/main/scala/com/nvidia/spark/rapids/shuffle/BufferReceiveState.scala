@@ -23,6 +23,7 @@ import scala.collection.mutable.ArrayBuffer
 import ai.rapids.cudf.{BaseDeviceMemoryBuffer, Cuda, DeviceMemoryBuffer, Rmm}
 import com.nvidia.spark.rapids.Arm.closeOnExcept
 import com.nvidia.spark.rapids.NvtxRegistry
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.jni.RmmSpark
 
@@ -136,14 +137,11 @@ class BufferReceiveState(
     // fails after the state closed, so a second close releases nothing.
     if (!closed) {
       closed = true
-      if (bounceBuffer != null) {
-        bounceBuffer.close()
-      }
       if (workingOn != null) {
         logWarning(s"BufferReceiveState closing, but there are unfinished batches")
-        workingOn.close()
       }
-      transportOnClose()
+      // each is released even when one before it fails, and the first failure is thrown
+      Seq[AutoCloseable](bounceBuffer, workingOn, () => transportOnClose()).safeClose()
     }
   }
 
