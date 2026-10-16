@@ -21,6 +21,7 @@ package org.apache.spark.sql.rapids.execution.python.shims
 import java.io.DataOutputStream
 
 import com.nvidia.spark.rapids.GpuSemaphore
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.api.python._
@@ -90,31 +91,31 @@ class GpuArrowPythonRunner(
       override def writeNextInputToStream(dataOut: DataOutputStream): Boolean = {
         // Keep hasNext lazy. Probing nonEmpty before the writer loop can pull from a
         // GPU-backed iterator too early and leave the Python worker waiting for input.
-        if (inputIterator.hasNext) {
-          arrowWriter.start(dataOut)
-          try {
+        try {
+          if (inputIterator.hasNext) {
+            arrowWriter.start(dataOut)
             arrowWriter.writeAndClose(inputIterator.next())
             wroteAnyInput = true
             dataOut.flush()
             true
-          } catch {
-            case t: Throwable =>
-              arrowWriter.close()
-              GpuSemaphore.releaseIfNecessary(TaskContext.get())
-              throw t
-          }
-        } else {
-          GpuSemaphore.releaseIfNecessary(TaskContext.get())
-          if (wroteAnyInput) {
-            arrowWriter.close()
-            dataOut.flush()
           } else {
-            // CPU Arrow writers still emit a schema for empty partitions; mirror that
-            // so the DBR 18.3 Python worker does not block waiting for an Arrow stream.
-            arrowWriter.writeEmptyIteratorOnCpu(dataOut, arrowSchema)
-            dataOut.flush()
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            if (wroteAnyInput) {
+              arrowWriter.close()
+              dataOut.flush()
+            } else {
+              // CPU Arrow writers still emit a schema for empty partitions; mirror that
+              // so the Python worker does not block waiting for an Arrow stream.
+              arrowWriter.writeEmptyIteratorOnCpu(dataOut, arrowSchema)
+              dataOut.flush()
+            }
+            false
           }
-          false
+        } catch {
+          case t: Throwable =>
+            arrowWriter.safeClose(t)
+            GpuSemaphore.releaseIfNecessary(TaskContext.get())
+            throw t
         }
       }
     }

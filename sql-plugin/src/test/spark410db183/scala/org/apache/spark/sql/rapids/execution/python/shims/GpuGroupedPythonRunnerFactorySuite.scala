@@ -22,15 +22,20 @@ package org.apache.spark.sql.rapids.execution.python.shims
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream, DataOutputStream}
 import java.util.Collections
 
+import ai.rapids.cudf.TableWriter
 import com.nvidia.spark.rapids.FQSuiteName
+import org.mockito.Mockito.{doThrow, mock, verify}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.SparkEnv
 import org.apache.spark.api.python.{ChainedPythonFunctions, PythonEvalType, PythonWorkerUtils,
   SimplePythonFunction}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.python.GpuArrowPythonWriter
 import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.CollectionAccumulator
 
 class GpuGroupedPythonRunnerFactorySuite
@@ -116,6 +121,83 @@ class GpuGroupedPythonRunnerFactorySuite
       dedupAttrs = new StructType(),
       pythonOutputSchema = new StructType(),
       evalType = PythonEvalType.SQL_GROUPED_MAP_PANDAS_UDF).getRunner()
+  }
+
+  private class TestArrowRunner extends GpuArrowPythonRunner(
+      funcs = runnerFunctions,
+      evalType = PythonEvalType.SQL_SCALAR_PANDAS_UDF,
+      argOffsets = runnerArgOffsets,
+      pythonInSchema = new StructType(),
+      timeZoneId = "UTC",
+      conf = Map.empty,
+      maxBatchSize = 1024,
+      pythonOutSchema = new StructType()) {
+    def writerForTest(input: Iterator[ColumnarBatch]): Writer =
+      newWriter(SparkEnv.get, null, input, 0, null)
+  }
+
+  private def installOpenTableWriter(writer: AnyRef): TableWriter = {
+    val arrowField = writer.getClass.getDeclaredFields
+      .find(field => classOf[GpuArrowPythonWriter].isAssignableFrom(field.getType)).get
+    arrowField.setAccessible(true)
+    val arrowWriter = arrowField.get(writer).asInstanceOf[GpuArrowPythonWriter]
+    // Simulate a stream left open by a previous batch without allocating GPU resources.
+    val field = classOf[GpuArrowPythonWriter].getDeclaredFields
+      .find(_.getType == classOf[TableWriter]).get
+    field.setAccessible(true)
+    val tableWriter = mock(classOf[TableWriter])
+    field.set(arrowWriter, tableWriter)
+    tableWriter
+  }
+
+  test("iterator hasNext failure closes the open Arrow writer") {
+    val failure = new IllegalStateException("hasNext failed")
+    var hasNextCalls = 0
+    val input = new Iterator[ColumnarBatch] {
+      override def hasNext: Boolean = {
+        hasNextCalls += 1
+        throw failure
+      }
+      override def next(): ColumnarBatch = throw new AssertionError("next must not run")
+    }
+    val runner = new TestArrowRunner()
+    val writer = runner.writerForTest(input)
+    assert(hasNextCalls === 0)
+    val tableWriter = installOpenTableWriter(writer)
+    val out = new DataOutputStream(new ByteArrayOutputStream())
+    assert(intercept[IllegalStateException](writer.writeNextInputToStream(out)) eq failure)
+    verify(tableWriter).close()
+  }
+
+  test("Arrow cleanup failure does not replace an iterator failure") {
+    val failure = new IllegalStateException("hasNext failed")
+    val closeFailure = new IllegalStateException("close failed")
+    val input = new Iterator[ColumnarBatch] {
+      override def hasNext: Boolean = throw failure
+      override def next(): ColumnarBatch = throw new AssertionError("next must not run")
+    }
+    val runner = new TestArrowRunner()
+    val writer = runner.writerForTest(input)
+    val tableWriter = installOpenTableWriter(writer)
+    doThrow(closeFailure).when(tableWriter).close()
+    val out = new DataOutputStream(new ByteArrayOutputStream())
+    assert(intercept[IllegalStateException](writer.writeNextInputToStream(out)) eq failure)
+    assert(failure.getSuppressed.contains(closeFailure))
+    verify(tableWriter).close()
+  }
+
+  test("iterator next failure closes the open Arrow writer") {
+    val failure = new IllegalStateException("next failed")
+    val input = new Iterator[ColumnarBatch] {
+      override def hasNext: Boolean = true
+      override def next(): ColumnarBatch = throw failure
+    }
+    val runner = new TestArrowRunner()
+    val writer = runner.writerForTest(input)
+    val tableWriter = installOpenTableWriter(writer)
+    val out = new DataOutputStream(new ByteArrayOutputStream())
+    assert(intercept[IllegalStateException](writer.writeNextInputToStream(out)) eq failure)
+    verify(tableWriter).close()
   }
 
   test("zero-conf with a positive slice size uses the grouped runner") {
