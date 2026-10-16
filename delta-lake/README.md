@@ -50,8 +50,4 @@ The following table details how the common subdirectories map to Delta Lake vers
 
 `common/src/main/db-400db173-410db183` contains compatible Scala and Java sources
 compiled separately against each runtime's dependencies. Each runtime module keeps its own
-API adaptations. Databricks 14.3 continues to use its existing source directories.
-
-When only one supported runtime consumes this directory, move its sources into that runtime's
-module; if a newer runtime also consumes them, retain a shared directory for the remaining
-versions.
+API adaptations.
