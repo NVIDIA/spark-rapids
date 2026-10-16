@@ -323,6 +323,18 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     }
 
     /**
+     * Refills snapshots that {@link #captureState()} returned for these builders, without
+     * allocating.
+     */
+    public void captureState(RapidsHostColumnBuilder.BuilderSnapshot[] into) {
+      for (int i = 0; i < builders.length; i++) {
+        if (builders[i] != null) {
+          builders[i].captureState(into[i]);
+        }
+      }
+    }
+
+    /**
      * Restore all column builders to a previously captured state.
      * @param snapshots the snapshots captured via {@link #captureState()}
      */
@@ -1190,7 +1202,10 @@ public class GpuColumnVector extends GpuColumnVectorBase {
     public static ColumnarBatch filter(ColumnarBatch batch, DataType[] dataTypes, ColumnView mask) {
         if (dataTypes.length == 0) {
             try(Scalar s = mask.sum(DType.INT64)) {
-                int numRows = Math.toIntExact(s.getLong());
+                // An all-null or empty mask selects nothing, and cudf reports that as an invalid
+                // scalar rather than a zero. Reading the payload without this check happens to
+                // give 0 today, but that is below cudf's documented reduction contract.
+                int numRows = s.isValid() ? Math.toIntExact(s.getLong()) : 0;
                 return new ColumnarBatch(new ColumnVector[0], numRows);
             }
         } else {

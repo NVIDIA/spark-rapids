@@ -21,13 +21,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-shim-deps-parent_2.12</artifactId>
-        <version>26.10.0-SNAPSHOT</version>
+        <version>26.12.0-SNAPSHOT</version>
         <relativePath>../shim-deps/pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-tests_2.12</artifactId>
     <name>RAPIDS Accelerator for Apache Spark Tests</name>
     <description>RAPIDS plugin for Apache Spark integration tests</description>
-    <version>26.10.0-SNAPSHOT</version>
+    <version>26.12.0-SNAPSHOT</version>
 
     <properties>
         <rapids.module>tests</rapids.module>
@@ -56,6 +56,13 @@
         <dependency>
             <groupId>org.scala-lang</groupId>
             <artifactId>scala-library</artifactId>
+        </dependency>
+        <!-- SpillOutputChannelSuite uses LZ4 directly; Databricks does not provide it transitively. -->
+        <dependency>
+            <groupId>org.lz4</groupId>
+            <artifactId>lz4-java</artifactId>
+            <version>1.8.0</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.scalatest</groupId>

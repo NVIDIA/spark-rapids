@@ -479,7 +479,7 @@ object RapidsConf extends Logging with RapidsConfEntries {
         |On startup use: `--conf [conf key]=[conf value]`. For example:
         |
         |```
-        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.10.0-SNAPSHOT-cuda12.jar \
+        |${SPARK_HOME}/bin/spark-shell --jars rapids-4-spark_2.12-26.12.0-SNAPSHOT-cuda12.jar \
         |--conf spark.plugins=com.nvidia.spark.SQLPlugin \
         |--conf spark.rapids.sql.concurrentGpuTasks=2
         |```
@@ -1073,6 +1073,8 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
 
   lazy val isOrcWriteEnabled: Boolean = get(ENABLE_ORC_WRITE)
 
+  lazy val isOrcDateWriteEnabled: Boolean = get(ENABLE_ORC_DATE_WRITE)
+
   lazy val isOrcFloatTypesToStringEnable: Boolean = get(ENABLE_ORC_FLOAT_TYPES_TO_STRING)
 
   lazy val isOrcPerFileReadEnabled: Boolean =
@@ -1175,15 +1177,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val shuffleTransportMaxReceiveInflightBytes: Long = get(
     SHUFFLE_TRANSPORT_MAX_RECEIVE_INFLIGHT_BYTES)
 
-  lazy val shuffleUcxActiveMessagesForceRndv: Boolean = get(SHUFFLE_UCX_ACTIVE_MESSAGES_FORCE_RNDV)
-
   lazy val shuffleUcxUseWakeup: Boolean = get(SHUFFLE_UCX_USE_WAKEUP)
 
   lazy val shuffleUcxListenerStartPort: Int = get(SHUFFLE_UCX_LISTENER_START_PORT)
-
-  lazy val shuffleUcxMgmtHost: String = get(SHUFFLE_UCX_MGMT_SERVER_HOST)
-
-  lazy val shuffleUcxMgmtConnTimeout: Int = get(SHUFFLE_UCX_MGMT_CONNECTION_TIMEOUT)
 
   lazy val shuffleUcxBounceBuffersSize: Long = get(SHUFFLE_UCX_BOUNCE_BUFFERS_SIZE)
 
@@ -1406,6 +1402,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testGetJsonObjectSaveRows: Int = get(TEST_GET_JSON_OBJECT_SAVE_ROWS)
 
   lazy val isDeltaLowShuffleMergeEnabled: Boolean = get(ENABLE_DELTA_LOW_SHUFFLE_MERGE)
+
+  lazy val testDeltaLowShuffleMergeFailOnFallback: Boolean =
+    get(TEST_DELTA_LOW_SHUFFLE_MERGE_FAIL_ON_FALLBACK)
 
   lazy val isDeltaDeletionVectorPredicatePushdownEnabled: Boolean =
     get(DELTA_DELETION_VECTOR_PREDICATE_PUSHDOWN)

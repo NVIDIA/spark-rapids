@@ -623,6 +623,16 @@ private[rapids] trait RapidsConfSqlEntries extends RapidsConfResourceEntries {
     .booleanConf
     .createWithDefault(true)
 
+  val ENABLE_ORC_DATE_WRITE = conf("spark.rapids.sql.format.orc.write.dateType.enabled")
+    .doc("When set to true, allows GPU ORC writes containing DATE columns, including nested " +
+      "DATE columns. The cuDF ORC writer does not record calendar metadata, so this is safe " +
+      "only when every DATE value written is on or after 1582-10-15. The plugin does not " +
+      "validate the values; the application must guarantee this range. By default, these " +
+      "writes fall back to the CPU writer.")
+    .sinceVersion("26.10.0")
+    .booleanConf
+    .createWithDefault(false)
+
   val ENABLE_ORC_BOOL = conf("spark.rapids.sql.format.orc.write.boolType.enabled")
     .doc("When set to false disables boolean columns for ORC writes. " +
       "Set to true if you want to experiment. " +
