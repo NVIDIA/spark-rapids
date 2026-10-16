@@ -156,8 +156,15 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
             bash integration_tests/run_pyspark_from_build.sh
     fi
     if [[ "$TEST_MODE" == "CI_PART1" ]]; then
-        # TEST ONLY: stop after readiness/smoke checks; remove before merge.
-        echo "TEST ONLY: readiness and spark-shell smoke checks completed; skipping integration suites"
+        # TEST ONLY: exercise serial and xdist IT entry points without the full suites.
+        for parallelism in 0 2; do
+            echo "TEST ONLY: running two range sanity tests with TEST_PARALLEL=$parallelism"
+            TEST_PARALLEL=$parallelism \
+            TESTS="range_test.py::test_simple_range range_test.py::test_partitioned_range" \
+                bash integration_tests/run_pyspark_from_build.sh \
+                    --runtime_env="databricks" --test_type="$TEST_TYPE"
+        done
+        echo "TEST ONLY: readiness, smoke and range sanity checks completed; skipping remaining suites"
         exit 0
     else
         bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
