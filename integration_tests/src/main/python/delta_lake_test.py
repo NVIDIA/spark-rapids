@@ -22,7 +22,7 @@ from asserts import assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_co
 from data_gen import *
 from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, \
     deletion_vector_values_with_xfail_reasons, read_delta_path_with_cdf, delta_reorg_xfail
-from marks import allow_non_gpu, delta_lake, ignore_order
+from marks import allow_non_gpu, allow_non_gpu_conditional, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from parquet_test_utils import parquet_row_group_midpoints
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
@@ -242,19 +242,24 @@ def test_delta_cdf_read_stays_columnar(spark_tmp_path, column_mapping):
         conf=conf)
 
 
-# AQE can replace the final aggregate over an empty CDF with EmptyRelationExec.
-@allow_non_gpu("RDDScanExec", "EmptyRelationExec", *delta_meta_allow)
+# AQE can replace the final aggregate over an empty CDF with an empty CPU relation.
+@allow_non_gpu("RDDScanExec", "EmptyRelationExec", "LocalTableScanExec", *delta_meta_allow)
+@allow_non_gpu_conditional(is_databricks_runtime(), "RowDataSourceScanExec")
 @delta_lake
 @ignore_order(local=True)
-@pytest.mark.skipif(is_databricks_runtime(), reason="OSS Delta CDF test")
-@pytest.mark.skipif(is_before_spark_353(), reason="GPU CDF reads require OSS Delta 3.3+")
+@pytest.mark.skipif(not is_databricks_runtime() and is_before_spark_353(),
+                    reason="GPU CDF reads require OSS Delta 3.3+")
 @pytest.mark.parametrize("aqe_enabled", ["true", "false"])
 @pytest.mark.parametrize("optimize_only", [True, False], ids=["empty_cdf", "nonempty_cdf"])
 @pytest.mark.parametrize("project_and_filter", [False, True], ids=["metadata", "renamed_filtered"])
 def test_delta_cdf_optimize_range_preserves_attributes(
         spark_tmp_path, aqe_enabled, optimize_only, project_and_filter):
     data_path = spark_tmp_path + "/DELTA_DATA"
-    conf = {"spark.sql.adaptive.enabled": aqe_enabled}
+    conf = {
+        "spark.sql.adaptive.enabled": aqe_enabled,
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false",
+    }
 
     def setup(spark):
         spark.range(20).repartition(2).write.format("delta") \
@@ -289,16 +294,19 @@ def test_delta_cdf_optimize_range_preserves_attributes(
         if optimize_only and aqe_enabled == "true":
             # AQE can eliminate the aggregate entirely. Its initial CPU plan still proves that
             # the CDF strategy exposed the internal read instead of retaining an opaque row scan.
-            if gpu_plan.getClass().getSimpleName() == "AdaptiveSparkPlanExec":
+            if not is_databricks_runtime() and \
+                    gpu_plan.getClass().getSimpleName() == "AdaptiveSparkPlanExec":
                 callback.assertNotContain(gpu_plan.initialPlan(), "RowDataSourceScanExec")
         else:
             callback.assertContains(gpu_plan, "GpuHashAggregateExec")
-        if not optimize_only:
+        if not optimize_only and not is_databricks_runtime():
             callback.assertContains(gpu_plan, "GpuFileSourceScanExec")
 
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         read_cdf,
-        non_exist_classes="RowDataSourceScanExec",
+        # Databricks uses native CDF planning, which can retain a CPU row scan. OSS must use
+        # the strategy under test rather than silently falling back to that opaque scan.
+        non_exist_classes="" if is_databricks_runtime() else "RowDataSourceScanExec",
         conf=conf,
         gpu_plan_assertion=assert_gpu_plan)
 
