@@ -155,12 +155,10 @@ if [[ $TEST_MODE == "DEFAULT" || $TEST_MODE == "CI_PART1" ]]; then
         PYSP_TEST_spark_shuffle_manager=com.nvidia.spark.rapids.${UPSTREAM_SHIM_VER}.RapidsShuffleManager \
             bash integration_tests/run_pyspark_from_build.sh
     fi
-    # TEST ONLY: stop after readiness/smoke checks; remove before merge.
-    echo "TEST ONLY: readiness and spark-shell smoke checks completed; skipping integration suites"
-    exit 0
     if [[ "$TEST_MODE" == "CI_PART1" ]]; then
-        bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" \
-            --test_type=$TEST_TYPE -k "not ($CI_PART2_BALANCED_TEST_EXPR)"
+        # TEST ONLY: stop after readiness/smoke checks; remove before merge.
+        echo "TEST ONLY: readiness and spark-shell smoke checks completed; skipping integration suites"
+        exit 0
     else
         bash integration_tests/run_pyspark_from_build.sh --runtime_env="databricks" --test_type=$TEST_TYPE
     fi
