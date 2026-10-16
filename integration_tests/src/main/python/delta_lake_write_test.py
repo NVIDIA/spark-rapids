@@ -1154,6 +1154,60 @@ def test_delta_overwrite_dynamic_by_name(spark_tmp_path):
     _assert_sql(data_path, confs, "INSERT OVERWRITE delta.`{path}`(data, data2, id) VALUES('c', 'e', 1)")
     with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not is_oss_delta_lake_42_or_43(),
+                    reason="INSERT BY NAME schema evolution requires Delta 4.2+")
+@pytest.mark.parametrize("columns", ["data, id, new_col", "new_col, data, id"])
+def test_delta_insert_by_name_schema_evolution(spark_tmp_path, columns):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    src_path = spark_tmp_path + "/PARQUET_DATA"
+    confs = copy_and_update(_delta_confs,
+                           {"spark.databricks.delta.schema.autoMerge.enabled": "true"})
+    expected_schema = StructType([
+        StructField("id", LongType()),
+        StructField("data", StringType()),
+        StructField("new_col", IntegerType())])
+
+    def setup(spark):
+        gen_df(spark, [("id", LongGen(nullable=False, min_val=0)),
+                       ("data", string_gen), ("new_col", int_gen)], length=32) \
+            .coalesce(1).write.parquet(src_path)
+        _create_cpu_gpu_tables(spark, data_path, "id BIGINT, data STRING")
+        for path in [data_path + "/CPU", data_path + "/GPU"]:
+            spark.sql(f"INSERT INTO delta.`{path}` VALUES (-1L, 'existing')")
+
+    with_cpu_session(setup, conf=_delta_confs)
+
+    def insert(spark, path):
+        # DeltaAnalysis resolves BY NAME to AppendData; the existing V1 append writer handles it.
+        query = spark.sql(f"INSERT INTO delta.`{path}` BY NAME "
+                          f"SELECT {columns} FROM parquet.`{src_path}`")
+        assert query._jdf.queryExecution().analyzed().nodeName() == "AppendData"
+        query.collect()
+
+    def read_and_check(spark, path):
+        df = read_delta_path(spark, path)
+        assert df.schema == expected_schema
+        expected = spark.read.parquet(src_path).select("id", "data", "new_col").union(
+            spark.sql("SELECT -1L AS id, 'existing' AS data, CAST(NULL AS INT) AS new_col"))
+        assert_equal(df.orderBy("id", "data", "new_col").collect(),
+                     expected.orderBy("id", "data", "new_col").collect())
+        logs = read_delta_logs(spark, path + "/_delta_log/*.json")
+        metadata = [action["metaData"] for action in logs[max(logs)] if "metaData" in action]
+        assert len(metadata) == 1, "Schema evolution must commit a metadata action"
+        assert json.loads(metadata[0]["schemaString"]) == expected_schema.jsonValue()
+        return df
+
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        insert, read_and_check, data_path, conf=confs,
+        expected_command="GpuAppendDataExecV1")
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path),
+                     conf=confs)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order(local=True)
@@ -1984,6 +2038,49 @@ def test_delta_write_partial_overwrite_replace_where(spark_tmp_path):
         conf=copy_and_update(writer_confs, delta_writes_enabled_conf))
     # Avoid checking delta log equivalence here. Using partition columns involves sorting, and
     # there's no guarantees on the task partitioning due to random sampling.
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_oss_delta_lake_42_or_43(), reason="Requires Delta 4.2+ CDF writes")
+@pytest.mark.parametrize("operation", ["add_only", "remove_only"])
+def test_delta_cdf_non_data_changing_write(spark_tmp_path, operation):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    conf = copy_and_update(_delta_confs, {
+        "spark.databricks.delta.autoCompact.enabled": "false",
+        "spark.databricks.delta.optimizeWrite.enabled": "false"
+    })
+
+    def data(spark):
+        return gen_df(spark, [("id", long_gen)], length=16).coalesce(1)
+
+    def setup_tables(spark):
+        for path in [data_path + "/CPU", data_path + "/GPU"]:
+            data(spark).write.format("delta").option("delta.enableChangeDataFeed", "true") \
+                .option("delta.enableDeletionVectors", "false").save(path)
+
+    def write(spark, path):
+        # dataChange=false is a caller assertion; these deliberately isolated commits
+        # exercise add-only/remove-only action handling, not logical rearrangement.
+        df = data(spark) if operation == "add_only" else data(spark).limit(0)
+        mode = "append" if operation == "add_only" else "overwrite"
+        df.write.format("delta").mode(mode).option("dataChange", "false").save(path)
+
+    with_cpu_session(setup_tables, conf=conf)
+    assert_gpu_and_cpu_writes_are_equal_collect(write, read_delta_path, data_path, conf=conf)
+
+    def check(spark):
+        cdf_results = []
+        for path in [data_path + "/CPU", data_path + "/GPU"]:
+            cdf_results.append(assert_delta_non_data_changing_commit(
+                spark, path, {"add"} if operation == "add_only" else {"remove"}))
+            assert spark.read.format("delta").load(path).count() == \
+                (32 if operation == "add_only" else 0)
+        assert_equal(*cdf_results)
+        assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path)
+
+    with_cpu_session(check, conf=conf)
 
 
 @allow_non_gpu(*delta_meta_allow, delta_write_fallback_allow)
