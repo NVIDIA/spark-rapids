@@ -208,7 +208,7 @@ def test_json_bom_at_batch_and_partition_boundaries(spark_tmp_path, v1_enabled_l
     assert_gpu_and_cpu_are_equal_collect(
         lambda spark: spark.read.schema(schema).options(**options).json(data_path), conf=conf)
 
-@ignore_order
+@ignore_order(local=True)
 @pytest.mark.parametrize('v1_enabled_list', ['', 'json'])
 @pytest.mark.parametrize('reader_batch_bytes', [1, 1024 * 1024])
 @pytest.mark.parametrize('encoding', [None, 'UTF-8', 'US-ASCII'])
