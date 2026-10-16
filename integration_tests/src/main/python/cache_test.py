@@ -580,6 +580,26 @@ def test_cache_zero_columns_from_rows(num_rows):
     with_gpu_session(check, conf=_pcbs_gpu_scan_conf)
 
 
+@_requires_pcbs_enabled
+def test_cache_converted_rows_across_batches():
+    rows = 200
+
+    def check(spark):
+        # Built from an RDD, so the project that adds the interval runs in whole-stage codegen,
+        # and the interval makes the serializer convert each row before writing it.
+        df = spark.createDataFrame(spark.sparkContext.parallelize(range(rows), 1).map(
+            lambda i: (i,)), 'id long') \
+            .withColumn('s', _padded_value_col(100)) \
+            .withColumn('iv', f.expr('make_interval(0, 0, 0, 0, 0, 0, id)')).cache()
+        assert df.count() == rows
+        mismatched = f.substring('s', 1, 10) != f.lpad(f.col('id').cast('string'), 10, '0')
+        return [r.id for r in df.where(mismatched).select('id').collect()]
+
+    # The CPU session caches through the serializer's CPU writer whatever the plugin supports
+    # on the GPU. A 1 KiB budget puts a batch boundary every few dozen rows.
+    assert with_cpu_session(check, conf={'spark.rapids.sql.batchSizeBytes': '1k'}) == []
+
+
 # One partition of 2300 values of 1 MiB: 2411724800 bytes, more than a cuDF column can hold.
 _over_2gib_rows = 2300
 _over_2gib_value_bytes = 1024 * 1024
