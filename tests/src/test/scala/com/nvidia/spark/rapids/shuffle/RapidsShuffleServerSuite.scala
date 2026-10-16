@@ -24,20 +24,23 @@ import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, ExecutionExcepti
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.{Cuda, CudaFatalException, DeviceMemoryBuffer, HostMemoryBuffer, MemoryBuffer}
-import com.nvidia.spark.rapids.{LogCaptureUtils, MetaUtils, RapidsShuffleHandle, ShuffleMetadata}
+import com.nvidia.spark.rapids.{LogCaptureUtils, MetaUtils, RapidsShuffleHandle,
+  ShuffleBufferCatalog, ShuffleMetadata}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.format.TableMeta
 import com.nvidia.spark.rapids.shuffle.ucx.{UCX, UCXActiveMessage, UCXServerConnection,
   UCXShuffleTransport}
 import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
-import org.mockito.{ArgumentCaptor, ArgumentMatchers}
+import org.mockito.{ArgumentCaptor, ArgumentMatchers, MockedConstruction}
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong}
 import org.mockito.Mockito._
 import org.mockito.invocation.InvocationOnMock
 import org.mockito.stubbing.Answer
 import org.openucx.jucx.UcxCallback
 
+import org.apache.spark.{SparkConf, SparkEnv}
 import org.apache.spark.shuffle.rapids.RapidsShuffleSendPrepareException
+import org.apache.spark.sql.rapids.RapidsShuffleInternalManagerBase
 import org.apache.spark.storage.ShuffleBlockBatchId
 
 class MockRapidsShuffleRequestHandler(mockBuffers: Seq[RapidsShuffleHandle])
@@ -1792,6 +1795,35 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     // the caller still sees the interrupt
     assert(thrown eq interrupted)
     verify(transport, times(1)).close()
+  }
+
+  test("the shuffle manager's stop closes the transport when the server's close is interrupted") {
+    val server = mock[RapidsShuffleServer]
+    val interrupted = new InterruptedException("stop interrupted in test")
+    // doThrow refuses a checked exception that the Scala method does not declare
+    doAnswer(_ => throw interrupted).when(server).close()
+    val conf = new SparkConf(loadDefaults = false).set("spark.rapids.shuffle.mode", "UCX")
+    // the manager builds the configured transport class by reflection
+    withResource(mockConstruction(classOf[UCXShuffleTransport],
+        (transport: UCXShuffleTransport, _: MockedConstruction.Context) =>
+          when(transport.makeServer(any())).thenReturn(server))) { transports =>
+      // an executor's manager, whose SparkEnv and catalog are mocks
+      val manager = new RapidsShuffleInternalManagerBase(conf, isDriver = false) {
+        override protected lazy val env: SparkEnv = mock[SparkEnv](RETURNS_DEEP_STUBS)
+        override protected def getCatalogOrThrow: ShuffleBufferCatalog =
+          mock[ShuffleBufferCatalog]
+      }
+      val thrown = intercept[InterruptedException](manager.stop())
+      assert(thrown eq interrupted)
+      assert(transports.constructed().size() == 1)
+      val transport = transports.constructed().get(0)
+      verify(server, times(1)).close()
+      verify(transport, times(1)).close()
+      // the transport's close stops UCX, so it comes after the server's
+      val closes = inOrder(server, transport)
+      closes.verify(server).close()
+      closes.verify(transport).close()
+    }
   }
 
   test("a missing-output warning names the first requests and counts the rest") {
