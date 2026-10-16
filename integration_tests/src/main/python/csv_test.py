@@ -491,6 +491,28 @@ def test_csv_corrected_date_default_formatter(spark_tmp_path, prefer_date,
         {'preferDate': prefer_date, 'enableDateTimeParsingFallback': parsing_fallback})
 
 
+@ignore_order(local=True)
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('session_tz', ['UTC', 'America/New_York'])
+@pytest.mark.parametrize('parsing_fallback', ['false', 'true'])
+def test_csv_corrected_date_unquoted_whitespace(spark_tmp_path, v1_enabled_list,
+        session_tz, parsing_fallback):
+    path = spark_tmp_path + '/date_unquoted_whitespace'
+    values = ['2020-05-01', ' 2020-05-01', '2020-05-01 ', ' 2020-05-01 ',
+              '\t2020-05-01', '2020-05-01\t', '\t2020-05-01\t', ' \t2020-05-01\t ']
+    lines = []
+    for index, value in enumerate(values):
+        lines.extend([str(2 * index) + ',' + value, str(2 * index + 1) + ',"' + value + '"'])
+    # Write raw CSV records so quoted and unquoted fields retain exactly the same whitespace.
+    with_cpu_session(lambda spark: spark.createDataFrame([(line,) for line in lines], 'value string')
+        .coalesce(1).write.text(path))
+    assert_corrected_date_csv(path, 'yyyy-MM-dd', v1_enabled_list,
+        {'spark.sql.session.timeZone': session_tz},
+        {'ignoreLeadingWhiteSpace': 'false', 'ignoreTrailingWhiteSpace': 'false',
+         'enableDateTimeParsingFallback': parsing_fallback})
+
+
 @allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
 @pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
 @pytest.mark.parametrize('leading,trailing', [('true', 'false'), ('false', 'true'), ('true', 'true')])
