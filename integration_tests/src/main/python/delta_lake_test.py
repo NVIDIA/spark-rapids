@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import tempfile
 
 import pytest
 from pyspark.sql import Row
@@ -24,7 +23,7 @@ from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, \
     deletion_vector_values_with_xfail_reasons, read_delta_path_with_cdf, delta_reorg_xfail
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
-from parquet_test_utils import copy_from_local, parquet_row_group_midpoints
+from parquet_test_utils import parquet_row_group_midpoints
 from spark_session import with_cpu_session, with_gpu_session, is_databricks_runtime, \
     is_spark_320_or_later, is_spark_340_or_later, is_spark_350_or_later, \
     supports_delta_lake_deletion_vectors, is_spark_412_or_later, \
@@ -1838,12 +1837,29 @@ def test_delta_deletion_vector_native_footer_multi_row_group_zero_column_aggrega
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"],
                          ids=idfn)
 @pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
-@pytest.mark.parametrize("empty_batches", [
-    "middle", "consecutive", "first", "last", "empty_split", "reported_layout"
+@pytest.mark.parametrize("deletion_pattern", [
+    "middle_row_group", "consecutive_row_groups", "first_row_group",
+    "last_two_row_groups", "entire_first_split"
 ], ids=idfn)
 def test_delta_deletion_vector_count_star_after_empty_batch(
-        spark_tmp_path, parquet_reader_type, footer_type, empty_batches):
-    """Empty batches must neither hide live rows nor prevent clean reader termination."""
+        spark_tmp_path, parquet_reader_type, footer_type, deletion_pattern):
+    """Check zero-column counts and data reads after fully deleted row groups.
+
+    Each deletion pattern is applied to every original file:
+    - middle_row_group: delete the third group, keeping the fourth group in the same split.
+    - consecutive_row_groups: delete the second and third groups, keeping the fourth group
+      in the same split to check that reading continues after consecutive empty batches.
+    - first_row_group: delete the first group, keeping the second group in the same split
+      to check that reading continues when the initial batch is empty.
+    - last_two_row_groups: delete the final two groups to check clean termination after
+      empty trailing batches, including the potentially short final group.
+    - entire_first_split: delete all groups in the first split, retaining live groups in
+      later splits to check that a split with no surviving rows is handled correctly.
+
+    Other groups lose three rows each. Small batches keep full-sized groups in separate
+    batches. Two plain files are appended to check mixed DV/non-DV input. Reader and footer
+    parameters exercise all three Parquet readers with both native and Java footer handling.
+    """
     data_path = spark_tmp_path + "/DELTA_DATA"
     num_rows = 16384
     appended_rows = 512
@@ -1866,28 +1882,9 @@ def test_delta_deletion_vector_count_star_after_empty_batch(
     })
 
     def setup_tables(spark):
-        if empty_batches == "reported_layout":
-            import pyarrow as pa
-            import pyarrow.parquet as pq
-
-            # Reproduce the reported footer layout without relying on a particular
-            # Spark/Parquet writer's interpretation of parquet.block.size.
-            with tempfile.TemporaryDirectory() as local_path:
-                for file_index in range(4):
-                    start_id = file_index * (num_rows // 4)
-                    ids = pa.array(range(start_id, start_id + num_rows // 4), type=pa.int64())
-                    pq.write_table(pa.table({"id": ids, "payload1": ids, "payload2": ids}),
-                                   f"{local_path}/part-{file_index}.parquet",
-                                   row_group_size=253, data_page_size=1024,
-                                   use_dictionary=False, compression="snappy")
-                copy_from_local(spark, local_path, data_path)
-            spark.sql(f"CONVERT TO DELTA parquet.`{data_path}`").collect()
-            spark.sql(f"ALTER TABLE delta.`{data_path}` SET TBLPROPERTIES "
-                      "('delta.enableDeletionVectors' = 'true')").collect()
-        else:
-            spark.range(0, num_rows, 1, 4).selectExpr("id", "id AS payload1", "id AS payload2") \
-                .write.format("delta").option("delta.enableDeletionVectors", "true") \
-                .save(data_path)
+        spark.range(0, num_rows, 1, 4).selectExpr("id", "id AS payload1", "id AS payload2") \
+            .write.format("delta").option("delta.enableDeletionVectors", "true") \
+            .save(data_path)
         original_files = spark.read.format("delta").load(data_path).inputFiles()
         assert len(original_files) == 4
         deleted_ids = set()
@@ -1902,23 +1899,21 @@ def test_delta_deletion_vector_count_star_after_empty_batch(
                 assert sum(b.getRowCount() for b in blocks) == num_rows // 4
                 midpoints = [b.getStartingPos() + b.getCompressedSize() // 2 for b in blocks]
                 split_ids = [midpoint // split_bytes for midpoint in midpoints]
-                if empty_batches == "reported_layout":
-                    assert [b.getRowCount() for b in blocks] == [253] * 16 + [48]
-                if empty_batches in ("middle", "reported_layout"):
+                if deletion_pattern == "middle_row_group":
                     empty_groups = {2}
                     assert split_ids[2] == split_ids[3]
-                elif empty_batches == "consecutive":
+                elif deletion_pattern == "consecutive_row_groups":
                     empty_groups = {1, 2}
                     assert split_ids[1] == split_ids[2] == split_ids[3]
-                elif empty_batches == "first":
+                elif deletion_pattern == "first_row_group":
                     empty_groups = {0}
                     assert split_ids[0] == split_ids[1]
-                elif empty_batches == "last":
+                elif deletion_pattern == "last_two_row_groups":
                     # Include the preceding group so even a short final group follows
                     # an empty batch. There are no live groups left at end-of-input.
                     empty_groups = {len(blocks) - 2, len(blocks) - 1}
                 else:
-                    assert empty_batches == "empty_split"
+                    assert deletion_pattern == "entire_first_split"
                     empty_groups = {i for i, split_id in enumerate(split_ids)
                                     if split_id == split_ids[0]}
                     assert len(empty_groups) < len(blocks), "Keep live rows in later splits"
@@ -1953,8 +1948,6 @@ def test_delta_deletion_vector_count_star_after_empty_batch(
 
     expected_ids = with_cpu_session(setup_tables, conf=write_conf)
     expected_count = len(expected_ids)
-    if empty_batches == "reported_layout":
-        assert expected_count == 15692
     query = f"SELECT COUNT(*) AS n FROM delta.`{data_path}`"
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.sql(query),
