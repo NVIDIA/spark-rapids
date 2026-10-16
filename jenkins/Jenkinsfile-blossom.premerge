@@ -142,6 +142,12 @@ pipeline {
                             (normal_build && databricksTestNeeded())) {
                         db_build = true
                     }
+                    // TEST ONLY: keep Databricks readiness/smoke validation; remove before merge.
+                    normal_build = false
+                    skills_build = false
+                    TEMP_SKILLS_IMAGE_BUILD = false
+                    db_build = true
+                    echo 'TEST ONLY: running Databricks part1 readiness and smoke checks'
                 }
             }
         } // end of Init githubHelper
@@ -466,7 +472,8 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
 
                 stage('Databricks IT part2') {
                     when {
-                        expression { db_build }
+                        // TEST ONLY: part2 has no upstream spark-shell smoke test.
+                        expression { false }
                     }
                     steps {
                         script {
