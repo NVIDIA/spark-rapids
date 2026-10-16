@@ -635,6 +635,7 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
     endpointManager.getConnection(peerExecutorId, peerMgmtHost, peerMgmtPort)
   }
 
+  /** Runs `task` on the progress thread. A throw means it was never queued (`UCX.queueTask`). */
   def onWorkerThreadAsync(task: () => Unit): Unit =
     UCX.queueTask(workerTasks, task, rapidsConf.shuffleUcxUseWakeup, signalWorker)
 
@@ -1288,14 +1289,15 @@ object UCX extends Logging {
     }
   }
 
-  // builds the NVTX range of each worker signal; a test stands in for it
+  // builds the NVTX range of each worker signal, and a test stands in for it
   private val newSignalRange: () => NvtxRange = () => new NvtxRange("UCX Signal", NvtxColor.RED)
 
   /**
    * Queues `task` for the progress thread, then wakes the worker through `signal` if `wakeup`.
    * Callers treat a throw from here as a task never queued, which will never call back, and may
-   * free what it uses. So all that can fail comes before the task is queued, and a failure to
-   * wake the worker after it is only logged: the progress thread still runs the task.
+   * free what it uses. So all that allocates comes before the task is queued, and an ordinary
+   * failure to wake the worker after it is only logged, since the progress thread still runs
+   * the task.
    * @param newRange builds the signal's NVTX range
    */
   private[shuffle] def queueTask(

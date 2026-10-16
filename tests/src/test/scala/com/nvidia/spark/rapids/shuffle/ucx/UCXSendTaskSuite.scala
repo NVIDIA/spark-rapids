@@ -29,7 +29,8 @@ import org.scalatest.funsuite.AnyFunSuite
 /**
  * The UCX send task, through the helper that runs it: a task that throws must still end its
  * send exactly once, or the send's transaction never completes. A test cannot build a UCX, so
- * each task here stands in for the header allocation and JUCX's send.
+ * each task here stands in for the header allocation and JUCX's send. The suite also covers how a
+ * task is queued for the progress thread.
  */
 class UCXSendTaskSuite extends AnyFunSuite {
 
@@ -269,7 +270,22 @@ class UCXSendTaskSuite extends AnyFunSuite {
     assert(ended.calls.head.startsWith("error -3: "))
   }
 
-  test("a task is queued only when nothing after queueing it can throw") {
+  test("a send's range closes once when the send is handed to JUCX") {
+    val ended = new Ended
+    val range = new CountedRange
+    UCX.sendOrReport(ended)(UCX.sendTaskInRange(range, 1L, _, () => ())(
+      (_, _, completion) => completion.onSuccess(null)))
+    assertResult(1)(range.closes)
+    assertResult(Seq("success"))(ended.calls)
+  }
+
+  /** An NVTX range that counts its closes. */
+  private class CountedRange extends NvtxRange("range in test", NvtxColor.RED) {
+    var closes = 0
+    override def close(): Unit = closes += 1
+  }
+
+  test("a worker task is queued only after its signal's range is built, and stays queued") {
     val tasks = new ConcurrentLinkedQueue[() => Unit]()
     // what building the worker signal's NVTX range throws when the Java heap runs out
     val oom = new OutOfMemoryError("Java heap space")
@@ -279,9 +295,19 @@ class UCXSendTaskSuite extends AnyFunSuite {
     // the caller sees a throw and frees what the task would use, so the task must not run
     assert(tasks.isEmpty)
 
-    // a failure to wake the worker is not the caller's: the task stays queued
+    // a queue that cannot take the task closes the range built for it, and signals nothing
+    val unqueued = new CountedRange
+    intercept[NullPointerException](UCX.queueTask(tasks, null, wakeup = true,
+      signal = () => fail("signalled a task that was not queued"), newRange = () => unqueued))
+    assertResult(1)(unqueued.closes)
+    assert(tasks.isEmpty)
+
+    // a failure to wake the worker is not the caller's, so the task stays queued
+    val signalled = new CountedRange
     UCX.queueTask(tasks, () => (), wakeup = true,
-      signal = () => throw new IllegalStateException("signal failed in test"))
+      signal = () => throw new IllegalStateException("signal failed in test"),
+      newRange = () => signalled)
     assertResult(1)(tasks.size)
+    assertResult(1)(signalled.closes)
   }
 }
