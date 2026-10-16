@@ -47,7 +47,7 @@ import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, LogicalPlan}
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, FileFormatWriter}
 import org.apache.spark.sql.functions.to_json
-import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuFileFormatWriter, GpuWriteJobStatsTracker}
+import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, ExecutionPlanCaptureCallback, GpuFileFormatWriter, GpuWriteJobStatsTracker}
 import org.apache.spark.sql.rapids.delta.GpuIdentityColumn
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.types._
@@ -319,6 +319,9 @@ abstract class GpuOptimisticTransactionWriteBase(
 
       try {
         logDebug(s"Physical plan for write:\n$physicalPlan")
+        if (rapidsConf.isTestEnabled) {
+          ExecutionPlanCaptureCallback.captureIfNeeded(physicalPlan)
+        }
         writeUsingGpuFileFormatWriter(
           sparkSession = spark.asInstanceOf[TrampolineConnectShims.SparkSession],
           plan = physicalPlan,

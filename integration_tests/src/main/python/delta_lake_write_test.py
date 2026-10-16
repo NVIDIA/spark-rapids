@@ -221,6 +221,8 @@ def test_delta_db173_path_write_aqe_gpu_stub(spark_tmp_path, aqe_enabled, empty_
         writes = [node for plan in plans for node in collect_plan_nodes(plan)
                   if node.getClass().getSimpleName() == "GpuRapidsDeltaWriteExec"]
         assert writes, "GpuRapidsDeltaWriteExec was not executed"
+        # Default capture must still count one write once; final writer plans are opt-in.
+        assert len(writes) == 1, "Default capture recorded the same Delta write twice"
         assert not any(callback.didFallBack(plan, "RapidsDeltaWriteExec") for plan in plans), \
             "Delta write used CPU RapidsDeltaWriteExec"
         if aqe_enabled:
@@ -2307,7 +2309,7 @@ def test_delta_db173_dml_aqe_gpu_stub(
 
     cpu_result = with_cpu_session(lambda spark: run_dml(spark, cpu_path), conf=conf)
     callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
-    callback.startCapture()
+    callback.startCaptureWithWritePlans()
     try:
         gpu_result = with_gpu_session(lambda spark: run_dml(spark, gpu_path), conf=conf)
         plans = callback.getResultsWithTimeout(10000)
@@ -2322,6 +2324,22 @@ def test_delta_db173_dml_aqe_gpu_stub(
                        for plan in plans), "MERGE did not execute its GPU join processor"
         assert not any(callback.didFallBack(plan, "RapidsDeltaWriteExec") for plan in plans), \
             "DML write used CPU RapidsDeltaWriteExec"
+        # The writer adds optimized exchanges after QueryExecution prepares its stub.
+        # Inspect the captured final writer tree, then require a task-updated metric so
+        # merely constructing an unused exchange cannot satisfy this assertion.
+        writer_plans = [plan for plan in plans
+                        if callback.contains(plan, "GpuRapidsDeltaWriteExec")]
+        optimized_exchanges = [node for plan in writer_plans
+                               for node in collect_plan_nodes(plan)
+                               if node.getClass().getSimpleName() ==
+                               "GpuOptimizeWriteExchangeExec"]
+        assert bool(optimized_exchanges) == optimize_write, \
+            "DML did not use the requested GPU optimized-write plan"
+        assert not any(callback.didFallBack(plan, "OptimizeWriteExchangeExec")
+                       for plan in writer_plans), "DML used CPU optimized-write exchange"
+        for exchange in optimized_exchanges:
+            assert exchange.metrics().apply("numPartitions").value() > 0, \
+                "GPU optimized-write exchange did not execute any read partitions"
         if aqe_enabled and operation != "update_literal":
             assert any(node.getClass().getSimpleName() == "AdaptiveSparkPlanExec"
                        for write in writes for node in collect_plan_nodes(write)), \
