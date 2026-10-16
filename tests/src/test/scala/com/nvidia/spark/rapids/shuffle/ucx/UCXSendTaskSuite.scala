@@ -285,7 +285,7 @@ class UCXSendTaskSuite extends AnyFunSuite {
     override def close(): Unit = closes += 1
   }
 
-  test("a worker task is queued only after its signal's range is built, and stays queued") {
+  test("a worker task is queued after its signal's range is built, and signalled once queued") {
     val tasks = new ConcurrentLinkedQueue[() => Unit]()
     // what building the worker signal's NVTX range throws when the Java heap runs out
     val oom = new OutOfMemoryError("Java heap space")
@@ -309,5 +309,19 @@ class UCXSendTaskSuite extends AnyFunSuite {
       newRange = () => signalled)
     assertResult(1)(tasks.size)
     assertResult(1)(signalled.closes)
+
+    // the worker is woken once, after the task is queued, and only when wakeup is on
+    val woken = new ArrayBuffer[Boolean]()
+    val task: () => Unit = () => ()
+    UCX.queueTask(tasks, task, wakeup = true, signal = () => {
+      woken += tasks.contains(task)
+      ()
+    }, newRange = () => new CountedRange)
+    UCX.queueTask(tasks, () => (), wakeup = false, signal = () => {
+      woken += false
+      ()
+    })
+    assertResult(Seq(true))(woken)
+    assertResult(3)(tasks.size)
   }
 }
