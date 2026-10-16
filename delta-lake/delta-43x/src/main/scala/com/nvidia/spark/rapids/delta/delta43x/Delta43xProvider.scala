@@ -25,11 +25,13 @@ import com.nvidia.spark.rapids.delta.common.{DeleteCommandMeta,
   DeltaDynamicPartitionOverwriteCommandMeta, UpdateCommandMeta}
 import com.nvidia.spark.rapids.delta.common.{GpuDelta4xParquetFileFormat, GpuDeltaParquetFileFormat2}
 import com.nvidia.spark.rapids.delta.common.DeltaProviderBase
+import com.nvidia.spark.rapids.delta.delta42x.DeltaV2ScanRule
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.{Identifier, StagingTableCatalog, SupportsWrite,
   TableCatalog}
+import org.apache.spark.sql.connector.read.Scan
 import org.apache.spark.sql.delta.{CatalogOwnedTableFeature, DeltaConfigs,
   DeltaDynamicPartitionOverwriteCommand, DeltaParquetFileFormat, IcebergCompat,
   MaterializePartitionColumnsTableFeature}
@@ -46,6 +48,8 @@ import org.apache.spark.sql.execution.datasources.v2.{AppendDataExecV1, AtomicCr
 import org.apache.spark.sql.internal.SQLConf
 
 object Delta43xProvider extends DeltaProviderBase with Logging {
+
+  override def getScans: Map[Class[_ <: Scan], ScanRule[_ <: Scan]] = DeltaV2ScanRule.rules
 
   private val UNITY_CATALOG_CLASS_NAME = "io.unitycatalog.spark.UCSingleCatalog"
   private val REST_API_FALLBACK_REASON =
