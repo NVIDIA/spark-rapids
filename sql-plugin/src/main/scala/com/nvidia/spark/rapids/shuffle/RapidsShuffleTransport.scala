@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import ai.rapids.cudf.MemoryBuffer
 import com.nvidia.spark.rapids.{NvtxRegistry, RapidsConf, ShimReflectionUtils}
-import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.Arm.closeOnExcept
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.rapids.storage.RapidsStorageUtils
@@ -591,17 +591,14 @@ object RapidsShuffleTransport extends Logging {
   /**
    * Closes an executor's shuffle server, then its transport, which stops UCX and frees the
    * bounce-buffer pools. The transport closes even when the server's close throws, as when the
-   * stopping thread is interrupted, and the server's error is the one thrown.
+   * stopping thread is interrupted, and the server's error is the one thrown. A reply that the
+   * interrupted server was still queueing may then never be sent.
    */
   def closeServerThenTransport(
       server: Option[AutoCloseable],
       transport: Option[AutoCloseable]): Unit = {
-    try {
+    closeOnExcept(transport) { _ =>
       server.foreach(_.close())
-    } catch {
-      case t: Throwable =>
-        transport.foreach(_.safeClose(t))
-        throw t
     }
     transport.foreach(_.close())
   }
