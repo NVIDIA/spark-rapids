@@ -108,7 +108,8 @@ class BufferReceiveState(
   // why the server failed this request, until the state ends
   private[this] var serverFailure: String = null
 
-  // set by close, after which a failure the server reports later has nothing left to end
+  // set by close, after which neither a second close nor a failure the server reports later
+  // releases anything
   private[this] var closed = false
 
   def getBufferWhenReady(finalizeCb: TransportBuffer => Unit, size: Long): Unit =
@@ -131,15 +132,19 @@ class BufferReceiveState(
   def getRequests: Seq[PendingTransferRequest] = requests
 
   override def close(): Unit = synchronized {
-    closed = true
-    if (bounceBuffer != null) {
-      bounceBuffer.close()
+    // The copy thread's older catch closes the state again when the last window's own close
+    // fails after the state closed, so a second close releases nothing.
+    if (!closed) {
+      closed = true
+      if (bounceBuffer != null) {
+        bounceBuffer.close()
+      }
+      if (workingOn != null) {
+        logWarning(s"BufferReceiveState closing, but there are unfinished batches")
+        workingOn.close()
+      }
+      transportOnClose()
     }
-    if (workingOn != null) {
-      logWarning(s"BufferReceiveState closing, but there are unfinished batches")
-      workingOn.close()
-    }
-    transportOnClose()
   }
 
   /**
