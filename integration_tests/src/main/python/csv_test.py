@@ -372,10 +372,47 @@ _csv_corrected_date_inputs = [
     'GMT2020', '20GMT20-05-01', '2020-05-01GMT', 'invalid']
 
 
-def write_corrected_date_csv(spark_tmp_path):
+
+# Keep the grammar boundaries together; the format matrix below reuses the same rows.
+_csv_corrected_date_corner_inputs = [
+    # Sign, width, integer overflow, and truncated date components.
+    '+', '-', '++2020', '--2020', '+-2020', '-+2020', '2020-', '2020--01',
+    '2020-05-', '2020-005-01', '2020-05-001', '2020-01-010', '2020-123-01',
+    '+2147483647-05-01', '+2147483648-05-01', '-2147483648-05-01',
+    '+4294969316-05-01', '-4294969316-05-01', '0000000-01-01', '00000000-01-01',
+    # Gregorian centuries, BCE leap years, missing-year defaults, and month lengths.
+    '2000-02-29', '2100-02-29', '2400-02-29', '0000-02-29', '-0004-02-29',
+    '-0001-02-29', '2020-04-30', '2020-04-31', '2020-12-31', '2020-12-32',
+    '02-28', '02-30', '02-00', '00-01', '13-01', '04-31',
+    # Every time field's upper bound and signed/truncated fields. CAST ignores a space tail.
+    '2020-05-01 00:00:00', '2020-05-01 23:59:59', '2020-05-01 23:60:00',
+    '2020-05-01 23:59:60', '2020-05-01 -1:00:00', '2020-05-01 00:-1:00',
+    '2020-05-01 00:00:-1', '2020-05-01 10:', '2020-05-01 10:11:',
+    '2020-05-01 10:11:12.0', '2020-05-01Tjunk', '2020-05-01 junk',
+    '2020-05-01\tjunk', '2020 junk', '2020-05Tjunk',
+    # GMT replacement removes original occurrences only and is case sensitive.
+    'GMTGMT2020-05-01GMTGMT', '20GMT20-0GMT5-0GMT1', 'GMT', 'GMTGMT',
+    'GM2020-05-01', '2020-05-01GM', '2020-05-01G', 'gmt2020-05-01',
+    'GGMTMT2020-05-01', '20GGMTMT20-05-01', '2020-05-01GMT junk',
+    '2020-05-01GMT\tjunk', '2020-05GMT', '2020GMT', '2020-02-30GMT',
+    # UTF8String trimAll examines bytes rather than Unicode code points.
+    '\u00a02020-05-01\u00a0', '\u20032020-05-01\u2003', '\u30002020-05-01\u3000',
+    '２０２０-05-01', '2020-０５-01', '2020-05-０１']
+
+_csv_corrected_date_format_examples = {
+    'yyyy-MM-dd': '2020-05-01', 'yyyy/MM/dd': '2020/05/01',
+    'yyyy-MM': '2020-05', 'yyyy/MM': '2020/05', 'dd/MM/yyyy': '01/05/2020',
+    'yyyy-MM-dd HH:mm:ss': '2020-05-01 23:59:59',
+    'MM-dd': '05-01', 'MM/dd': '05/01', 'dd-MM': '01-05', 'dd/MM': '01/05',
+    'MM/yyyy': '05/2020', 'MM-yyyy': '05-2020', 'MM/dd/yyyy': '05/01/2020',
+    'MM-dd-yyyy': '05-01-2020', 'MMyyyy': '052020'}
+
+
+def write_corrected_date_csv(spark_tmp_path, extra_inputs=()):
     path = spark_tmp_path + '/corrected_dates'
     with_cpu_session(lambda spark: spark.createDataFrame(
-        list(enumerate(_csv_corrected_date_inputs)), 'id int, value string').coalesce(1)
+        list(enumerate(_csv_corrected_date_inputs + _csv_corrected_date_corner_inputs +
+            list(extra_inputs))), 'id int, value string').coalesce(1)
         .write.option('quoteAll', True).option('ignoreLeadingWhiteSpace', False)
         .option('ignoreTrailingWhiteSpace', False).csv(path))
     return path
@@ -407,7 +444,10 @@ def assert_corrected_date_csv(path, date_format, v1_enabled_list, conf, options)
 @pytest.mark.parametrize('parsing_fallback', ['false', 'true'])
 def test_csv_corrected_date_parsing(spark_tmp_path, date_format, v1_enabled_list,
         session_tz, parsing_fallback):
-    path = write_corrected_date_csv(spark_tmp_path)
+    # Every proper prefix must be checked: a delimiter or field can end at the input boundary.
+    example = _csv_corrected_date_format_examples.get(date_format, '')
+    prefixes = [example[:end] for end in range(len(example))]
+    path = write_corrected_date_csv(spark_tmp_path, prefixes)
     assert_corrected_date_csv(path, date_format, v1_enabled_list,
         {'spark.sql.session.timeZone': session_tz},
         {'enableDateTimeParsingFallback': parsing_fallback})
@@ -415,19 +455,20 @@ def test_csv_corrected_date_parsing(spark_tmp_path, date_format, v1_enabled_list
 
 _csv_date_fallback_policies = [
     (None, None), (None, 'true'), (None, 'false'), ('true', None), ('false', None),
-    ('false', 'true'), ('true', 'false')]
+    ('false', 'true'), ('true', 'false'), ('true', 'true'), ('false', 'false')]
 
 
 @ignore_order(local=True)
 @allow_non_gpu('ProjectExec')
-@pytest.mark.parametrize('date_format', [None, 'yyyy/MM/dd', 'yyyy-MM'], ids=idfn)
+@pytest.mark.parametrize('date_format,prefer_date', [
+    (None, 'true'), (None, 'false'), ('yyyy/MM/dd', 'true'), ('yyyy-MM', 'true')], ids=idfn)
 @pytest.mark.parametrize('policy_index,read_fallback,conf_fallback',
     [(i, *policy) for i, policy in enumerate(_csv_date_fallback_policies)])
-def test_csv_corrected_date_fallback_precedence(spark_tmp_path, date_format,
+def test_csv_corrected_date_fallback_precedence(spark_tmp_path, date_format, prefer_date,
         policy_index, read_fallback, conf_fallback):
     path = write_corrected_date_csv(spark_tmp_path)
     conf = {'spark.sql.session.timeZone': 'UTC' if policy_index % 2 else 'America/New_York'}
-    options = {}
+    options = {'preferDate': prefer_date}
     if read_fallback is not None:
         options['enableDateTimeParsingFallback'] = read_fallback
     if conf_fallback is not None:
@@ -440,11 +481,13 @@ def test_csv_corrected_date_fallback_precedence(spark_tmp_path, date_format,
 @pytest.mark.parametrize('prefer_date', ['false', 'true'])
 @pytest.mark.parametrize('parsing_fallback', ['false', 'true'])
 @pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('ansi_enabled', ['false', 'true'])
 def test_csv_corrected_date_default_formatter(spark_tmp_path, prefer_date,
-        parsing_fallback, v1_enabled_list):
+        parsing_fallback, v1_enabled_list, ansi_enabled):
     path = write_corrected_date_csv(spark_tmp_path)
     assert_corrected_date_csv(path, None, v1_enabled_list,
-        {'spark.sql.session.timeZone': 'America/New_York'},
+        {'spark.sql.session.timeZone': 'America/New_York',
+         'spark.sql.ansi.enabled': ansi_enabled},
         {'preferDate': prefer_date, 'enableDateTimeParsingFallback': parsing_fallback})
 
 
@@ -466,6 +509,128 @@ def test_csv_corrected_date_whitespace_options_fallback(spark_tmp_path, v1_enabl
               'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
               'spark.rapids.sql.format.csv.read.enabled': 'true',
               'spark.rapids.sql.incompatibleDateFormats.enabled': 'false'})
+
+
+@ignore_order(local=True)
+@allow_non_gpu('ProjectExec')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('session_tz,read_tz,locale', [
+    ('UTC', 'America/New_York', 'en-US'),
+    ('America/New_York', 'UTC', 'ru-RU'),
+    ('UTC', 'Asia/Kathmandu', 'zh-CN'),
+    ('America/New_York', 'Pacific/Apia', 'en-US')])
+def test_csv_corrected_date_timezone_and_locale(spark_tmp_path, v1_enabled_list,
+        session_tz, read_tz, locale):
+    # These include a DST gap/overlap and a skipped civil day. DateType keeps calendar days.
+    path = write_corrected_date_csv(spark_tmp_path, [
+        '2021-03-14 02:30:00', '2021-11-07 01:30:00', '2011-12-30 12:00:00'])
+    assert_corrected_date_csv(path, 'yyyy-MM-dd HH:mm:ss', v1_enabled_list,
+        {'spark.sql.session.timeZone': session_tz},
+        {'timeZone': read_tz, 'locale': locale, 'enableDateTimeParsingFallback': 'false'})
+
+
+@ignore_order(local=True)
+@allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('mode', ['DROPMALFORMED', 'FAILFAST'])
+def test_csv_corrected_date_record_mode_fallback(spark_tmp_path, v1_enabled_list, mode):
+    path = spark_tmp_path + '/date_record_mode'
+    # The second row requires parsing retry even in FAILFAST mode.
+    rows = [(0, '2020/05/01'), (1, '2020-05-01')]
+    if mode == 'DROPMALFORMED':
+        rows.append((2, '2020-02-30'))
+    with_cpu_session(lambda spark: spark.createDataFrame(rows, 'id int, value string')
+        .coalesce(1).write.csv(path))
+    assert_gpu_fallback_collect(lambda spark: spark.read.schema('id int, value date')
+        .option('dateFormat', 'yyyy/MM/dd').option('enableDateTimeParsingFallback', 'true')
+        .option('mode', mode).csv(path),
+        'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec',
+        conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+              'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+              'spark.rapids.sql.format.csv.read.enabled': 'true'})
+
+
+@allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+def test_csv_corrected_date_failfast_invalid(spark_tmp_path, v1_enabled_list):
+    path = spark_tmp_path + '/date_failfast'
+    with_cpu_session(lambda spark: spark.createDataFrame([(0, '2020-02-30')],
+        'id int, value string').write.csv(path))
+    assert_gpu_and_cpu_error(lambda spark: spark.read.schema('id int, value date')
+        .option('dateFormat', 'yyyy-MM-dd').option('enableDateTimeParsingFallback', 'true')
+        .option('mode', 'FAILFAST').csv(path).collect(),
+        conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+              'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+              'spark.rapids.sql.format.csv.read.enabled': 'true'},
+        error_message='Malformed records are detected')
+
+
+@ignore_order(local=True)
+@allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('date_format', ['yyyyMMdd', 'yyyy-M-d'])
+def test_csv_corrected_date_unsupported_format_fallback(spark_tmp_path, v1_enabled_list,
+        date_format):
+    path = spark_tmp_path + '/unsupported_date_format'
+    with_cpu_session(lambda spark: spark.createDataFrame([
+        (0, '20200501'), (1, '2020-5-1'), (2, 'invalid')], 'id int, value string')
+        .coalesce(1).write.csv(path))
+    assert_gpu_fallback_collect(lambda spark: spark.read.schema('id int, value date')
+        .option('dateFormat', date_format).option('enableDateTimeParsingFallback', 'false')
+        .csv(path), 'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec',
+        conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+              'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+              'spark.rapids.sql.format.csv.read.enabled': 'true',
+              'spark.rapids.sql.incompatibleDateFormats.enabled': 'false'})
+
+
+@ignore_order(local=True)
+@allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('policy', ['LEGACY', 'EXCEPTION'])
+def test_csv_corrected_date_other_policy_fallback(spark_tmp_path, v1_enabled_list, policy):
+    path = spark_tmp_path + '/other_date_policy'
+    with_cpu_session(lambda spark: spark.createDataFrame([
+        (0, '2020-05-01'), (1, '1500-01-01')], 'id int, value string')
+        .coalesce(1).write.csv(path))
+    assert_gpu_fallback_collect(lambda spark: spark.read.schema('id int, value date')
+        .option('dateFormat', 'yyyy-MM-dd').csv(path),
+        'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec',
+        conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+              'spark.sql.legacy.timeParserPolicy': policy,
+              'spark.sql.session.timeZone': 'America/New_York',
+              'spark.rapids.sql.format.csv.read.enabled': 'true'})
+
+
+@ignore_order(local=True)
+@allow_non_gpu('ProjectExec', 'FileSourceScanExec', 'BatchScanExec')
+@pytest.mark.skipif(is_before_spark_340(), reason='Parsing fallback option requires Spark 3.4+')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('read_timestamp', [False, True])
+def test_csv_corrected_date_timestamp_pruning(spark_tmp_path, v1_enabled_list, read_timestamp):
+    path = spark_tmp_path + '/date_and_timestamp'
+    with_cpu_session(lambda spark: spark.createDataFrame([
+        (0, '2020/05/01', '2020-05-01 10:11:12'),
+        (1, '2020-05-01', '2020-05-01 10:11:12')], 'id int, value string, ts string')
+        .coalesce(1).write.csv(path))
+
+    def read(spark):
+        df = spark.read.schema('id int, value date, ts timestamp') \
+            .option('dateFormat', 'yyyy/MM/dd').option('timestampFormat', 'yyyy-MM-dd HH:mm:ss') \
+            .option('enableDateTimeParsingFallback', 'true').csv(path)
+        return df if read_timestamp else df.select('id', 'value')
+
+    conf = {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+            'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+            'spark.sql.session.timeZone': 'UTC',
+            'spark.rapids.sql.format.csv.read.enabled': 'true',
+            'spark.rapids.sql.incompatibleDateFormats.enabled': 'false'}
+    scan = 'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec'
+    if read_timestamp:
+        assert_gpu_fallback_collect(read, scan, conf=conf)
+    else:
+        assert_cpu_and_gpu_are_equal_collect_with_capture(read, exist_classes='Gpu' + scan,
+            non_exist_classes=scan, conf=conf, require_non_empty=True)
 
 
 @pytest.mark.parametrize('date_format', csv_supported_date_formats, ids=idfn)
