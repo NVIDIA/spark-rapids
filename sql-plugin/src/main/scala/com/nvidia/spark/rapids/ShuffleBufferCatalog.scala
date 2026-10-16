@@ -30,6 +30,7 @@ import com.nvidia.spark.rapids.spill.{SpillableDeviceBufferHandle, SpillableHand
 
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.internal.Logging
+import org.apache.spark.shuffle.rapids.ShuffleOutputGoneException
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -404,15 +405,35 @@ class ShuffleBufferCatalog(val mapIdsCanRepeat: Boolean = false) extends Logging
   def getShuffleBufferHandle(tableId: Int): RapidsShuffleHandle = {
     val shuffleBufferId = tableMap.get(tableId)
     if (shuffleBufferId == null) {
-      throw new NoSuchElementException(s"unknown table ID $tableId")
+      throw new ShuffleOutputGoneException(s"unknown table ID $tableId")
     }
-    val (maybeHandle, meta) = bufferIdToHandle.get(shuffleBufferId)
-    maybeHandle match {
-      case Some(spillable) =>
+    // null if an unregister removed the buffer since the line above
+    val handleAndMeta = bufferIdToHandle.get(shuffleBufferId)
+    if (handleAndMeta == null) {
+      throw new ShuffleOutputGoneException(s"unknown table ID $tableId")
+    }
+    handleAndMeta match {
+      case (Some(spillable), meta) =>
         RapidsShuffleHandle(spillable, meta)
-      case None =>
+      case (None, _) =>
         throw new IllegalStateException(
           "a buffer handle could not be obtained for a degenerate buffer")
+    }
+  }
+
+  /**
+   * Whether the catalog no longer holds a buffer that `getShuffleBufferHandle(tableId)`
+   * returned. Every catalog close removes the entries before closing the buffer, so a buffer
+   * found closed after its lookup is gone if, and only if, this is true.
+   */
+  def isShuffleBufferRemoved(tableId: Int, spillable: SpillableDeviceBufferHandle): Boolean = {
+    val shuffleBufferId = tableMap.get(tableId)
+    if (shuffleBufferId == null) {
+      true
+    } else {
+      val handleAndMeta = bufferIdToHandle.get(shuffleBufferId)
+      // table ids wrap around, so the id may name another buffer by now
+      handleAndMeta == null || !handleAndMeta._1.exists(_ eq spillable)
     }
   }
 
