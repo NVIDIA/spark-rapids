@@ -169,26 +169,20 @@ void databricksBuild(String clusterId) {
 
 void databricksTest(String clusterId) {
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
-    // TODO(#16317): Re-enable DBR 18.3 integration tests and remove readiness-only activation.
+    // TODO(#16317): Re-enable DBR 18.3 integration tests and remove the compile-only stage label.
     // Preserve the permanent readiness checks when restoring integration coverage.
     def readinessOnly = env.DB_RUNTIME == '18.3'
     def stageName = readinessOnly ? "Compile only against ${SPARK_MAJOR}DB" :
         "Test against $SPARK_MAJOR DB"
     try {
         stage(stageName) {
-            def readinessEnvs = readinessOnly ?
-                ["EXTRA_ENVS=${env.EXTRA_ENVS},SPARK_READINESS_ONLY=1"] : []
-            withEnv(readinessEnvs) {
-                withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-                    def TEST_PARAMS = DbUtils.getParameters(this, 'TEST', "-c $clusterId")
-                    sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
-                }
+            withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                def TEST_PARAMS = DbUtils.getParameters(this, 'TEST', "-c $clusterId")
+                sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
             }
         }
     } finally {
-        if (!readinessOnly) {
-            common.publishPytestResult(this, "Test against $SPARK_MAJOR DB")
-        }
+        common.publishPytestResult(this, "Test against $SPARK_MAJOR DB")
     }
 }
 

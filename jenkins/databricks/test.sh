@@ -49,20 +49,6 @@ set -ex
 #   CI_PART2 includes nightly resource-consuming tests to keep the split runtimes closer.
 TEST_MODE=${TEST_MODE:-'DEFAULT'}
 
-# TODO(#16317): Remove readiness-only mode when DBR 18.3 integration tests are enabled.
-# Keep the permanent startup checks that run before product tests.
-SPARK_READINESS_ONLY=${SPARK_READINESS_ONLY:-0}
-if [[ "$SPARK_READINESS_ONLY" == "1" ]]; then
-    if [[ -z "${SPARK_STARTUP_CHECK:-}" ]]; then
-        echo "Readiness-only mode requires the CI Spark readiness hook" >&2
-        exit 1
-    fi
-    case "$TEST_MODE" in
-        DEFAULT|CI_PART1|CI_PART2) ;;
-        *) echo "Readiness-only mode does not support TEST_MODE=$TEST_MODE" >&2; exit 1 ;;
-    esac
-fi
-
 # CI_PART2 untars the spark-rapids tgz built by C1_PART1 instead of rebuilding it
 PLUGIN_BUILT_TGZ=${PLUGIN_BUILT_TGZ:-"$1"}
 if [[ "$TEST_MODE" == "CI_PART2"  && -z "$LOCAL_JAR_PATH" && -f "$PLUGIN_BUILT_TGZ" ]]; then
@@ -76,6 +62,27 @@ SOURCE_PATH="/home/ubuntu/spark-rapids"
 source jenkins/databricks/setup.sh
 # Init common variables like SPARK_HOME, spark configs
 source jenkins/databricks/common_vars.sh
+
+# TODO(#16317): Remove readiness-only mode when DBR 18.3 integration tests are enabled.
+# Keep the permanent startup checks that run before product tests.
+# The startup hook identifies CI callers; manual runs keep their historical behavior.
+# Set SPARK_READINESS_ONLY=0 explicitly to run integration tests in CI.
+if [[ -z "${SPARK_READINESS_ONLY:-}" && -n "${SPARK_STARTUP_CHECK:-}" &&
+      "${PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion:-}" == 18.3.* &&
+      ("$TEST_MODE" == "DEFAULT" || "$TEST_MODE" == "CI_PART1" || "$TEST_MODE" == "CI_PART2") ]]; then
+    SPARK_READINESS_ONLY=1
+fi
+SPARK_READINESS_ONLY=${SPARK_READINESS_ONLY:-0}
+if [[ "$SPARK_READINESS_ONLY" == "1" ]]; then
+    if [[ -z "${SPARK_STARTUP_CHECK:-}" ]]; then
+        echo "Readiness-only mode requires the CI Spark readiness hook" >&2
+        exit 1
+    fi
+    case "$TEST_MODE" in
+        DEFAULT|CI_PART1|CI_PART2) ;;
+        *) echo "Readiness-only mode does not support TEST_MODE=$TEST_MODE" >&2; exit 1 ;;
+    esac
+fi
 
 BASE_SPARK_VERSION=${BASE_SPARK_VERSION:-$(< /databricks/spark/VERSION)}
 
