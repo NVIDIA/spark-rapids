@@ -183,6 +183,118 @@ def test_delta_write_round_trip_after_type_widening(
         with_cpu_session(lambda spark: assert_gpu_and_cpu_delta_logs_equivalent(spark, data_path))
 
 
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not is_databricks173_or_later(), reason="DBR 17.3 Delta write AQE planning")
+@pytest.mark.parametrize("aqe_enabled", [False, True], ids=idfn)
+@pytest.mark.parametrize("empty_input", [False, True], ids=idfn)
+def test_delta_db173_path_write_aqe_gpu_stub(spark_tmp_path, aqe_enabled, empty_input):
+    conf = copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.adaptive.enabled": str(aqe_enabled).lower(),
+        "spark.sql.classic.shuffleDependency.fileCleanup.enabled": "true",
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false",
+    })
+    cpu_path = spark_tmp_path + "/CPU"
+    gpu_path = spark_tmp_path + "/GPU"
+    source_path = spark_tmp_path + "/SOURCE"
+    row_count = 0 if empty_input else 4096
+    # Parquet reads provide nullable columns, matching GPU output nullability even when
+    # Spark's test-mode query-planning validation is enabled.
+    with_cpu_session(
+        lambda spark: spark.range(row_count).selectExpr(
+            "id", "CAST(id % 4 AS INT) AS part", "concat('value-', id) AS value")
+            .write.parquet(source_path), conf=conf)
+
+    def write_delta(spark, path):
+        spark.read.parquet(source_path).repartition(4, "part").write.format("delta") \
+            .option("delta.enableDeletionVectors", "false").save(path)
+
+    with_cpu_session(lambda spark: write_delta(spark, cpu_path), conf=conf)
+    # Inspect the write's own AQE context so metadata queries cannot satisfy these checks.
+    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    callback.startCapture()
+    try:
+        with_gpu_session(lambda spark: write_delta(spark, gpu_path), conf=conf)
+        plans = callback.getResultsWithTimeout(10000)
+        assert len(plans) > 0, "No execution plans captured for Delta write"
+        writes = [node for plan in plans for node in collect_plan_nodes(plan)
+                  if node.getClass().getSimpleName() == "GpuRapidsDeltaWriteExec"]
+        assert writes, "GpuRapidsDeltaWriteExec was not executed"
+        # Default capture must still count one write once; final writer plans are opt-in.
+        assert len(writes) == 1, "Default capture recorded the same Delta write twice"
+        assert not any(callback.didFallBack(plan, "RapidsDeltaWriteExec") for plan in plans), \
+            "Delta write used CPU RapidsDeltaWriteExec"
+        if aqe_enabled:
+            adaptive_plans = [node for write in writes for node in collect_plan_nodes(write)
+                              if node.getClass().getSimpleName() == "AdaptiveSparkPlanExec"]
+            if not empty_input:
+                assert adaptive_plans, "Delta write did not execute an adaptive child"
+            for adaptive in adaptive_plans:
+                assert adaptive.context().qe().shuffleCleanupMode().toString() == \
+                    "RemoveShuffleFiles", "Delta write did not preserve shuffle cleanup mode"
+    finally:
+        callback.endCapture()
+
+    def read_rows(spark, path):
+        return [tuple(row) for row in spark.read.format("delta").load(path)
+                .orderBy("id").collect()]
+
+    cpu_rows = with_cpu_session(lambda spark: read_rows(spark, cpu_path), conf=conf)
+    gpu_rows = with_cpu_session(lambda spark: read_rows(spark, gpu_path), conf=conf)
+    assert_equal(cpu_rows, gpu_rows)
+    assert_equal(gpu_rows, [(i, i % 4, f"value-{i}") for i in range(row_count)])
+    for path in (cpu_path, gpu_path):
+        assert int(get_last_operation_metrics(path)["numOutputRows"]) == row_count
+
+
+@allow_non_gpu("RapidsDeltaWriteExec", *delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not is_databricks173_or_later(), reason="DBR 17.3 Delta write AQE planning")
+@pytest.mark.parametrize("aqe_enabled", [False, True], ids=idfn)
+def test_delta_db173_path_write_metadata_query_fallback(spark_tmp_path, aqe_enabled):
+    conf = copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.adaptive.enabled": str(aqe_enabled).lower(),
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false",
+    })
+    source_path = spark_tmp_path + "/SOURCE"
+    cpu_path = spark_tmp_path + "/CPU"
+    gpu_path = spark_tmp_path + "/GPU"
+    with_cpu_session(
+        lambda spark: spark.range(1).coalesce(1).write.format("delta")
+            .option("delta.enableDeletionVectors", "false").save(source_path), conf=conf)
+
+    def write_metadata(spark, path):
+        # Reading Delta log JSON deliberately triggers whole-plan metadata fallback.
+        spark.read.schema("add STRUCT<path: STRING>") \
+            .json(source_path + "/_delta_log/*.json").select("add.path") \
+            .where(f.col("path").isNotNull()).repartition(2).write.format("delta") \
+            .option("delta.enableDeletionVectors", "false").save(path)
+
+    with_cpu_session(lambda spark: write_metadata(spark, cpu_path), conf=conf)
+    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    callback.startCapture()
+    try:
+        with_gpu_session(lambda spark: write_metadata(spark, gpu_path), conf=conf)
+        plans = callback.getResultsWithTimeout(10000)
+        assert len(plans) > 0, "No execution plans captured for metadata write"
+        assert any(callback.didFallBack(plan, "RapidsDeltaWriteExec") for plan in plans), \
+            "Metadata write did not retain CPU RapidsDeltaWriteExec"
+        assert not any(callback.contains(plan, "GpuRapidsDeltaWriteExec") for plan in plans), \
+            "Metadata write incorrectly converted its Delta write placeholder to GPU"
+    finally:
+        callback.endCapture()
+
+    def read_rows(spark, path):
+        return spark.read.format("delta").load(path).collect()
+
+    cpu_rows = with_cpu_session(lambda spark: read_rows(spark, cpu_path), conf=conf)
+    gpu_rows = with_cpu_session(lambda spark: read_rows(spark, gpu_path), conf=conf)
+    assert_equal(cpu_rows, gpu_rows)
+    assert len(gpu_rows) == 1 and gpu_rows[0].path, "Expected one nonempty add-file path"
+
+
 @allow_non_gpu(delta_write_fallback_allow, *delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -2352,3 +2464,114 @@ def test_delta_compaction(spark_tmp_path, enable_deletion_vectors):
         lambda spark, path: spark.read.format("delta").load(path),
         data_path,
         conf=_delta_confs)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not is_databricks173_or_later(), reason="DBR 17.3 Delta write AQE planning")
+@pytest.mark.parametrize("operation,aqe_enabled,optimize_write", [
+    pytest.param("update_literal", True, False, id="update-literal"),
+    pytest.param("update_subquery", True, False, id="update-subquery"),
+    pytest.param("merge", True, True, id="merge-optimized"),
+    pytest.param("merge", True, False, id="merge-unoptimized"),
+    pytest.param("merge", False, True, id="merge-no-aqe"),
+])
+def test_delta_db173_dml_aqe_gpu_stub(
+        spark_tmp_path, operation, aqe_enabled, optimize_write):
+    conf = copy_and_update(writer_confs, delta_writes_enabled_conf, {
+        "spark.sql.adaptive.enabled": str(aqe_enabled).lower(),
+        "spark.sql.shuffle.partitions": "4",
+        "spark.databricks.delta.optimizeWrite.enabled": str(optimize_write).lower(),
+        "spark.databricks.delta.autoCompact.enabled": "false",
+        "spark.rapids.sql.command.UpdateCommand": "true",
+        "spark.rapids.sql.command.UpdateCommandEdge": "true",
+        "spark.rapids.sql.command.MergeIntoCommand": "true",
+        "spark.rapids.sql.command.MergeIntoCommandEdge": "true",
+        "spark.rapids.sql.delta.lowShuffleMerge.enabled": "false",
+    })
+    row_count = 4096
+    source_rows = 1024
+    source_path = spark_tmp_path + "/SOURCE"
+    cpu_path = spark_tmp_path + "/CPU"
+    gpu_path = spark_tmp_path + "/GPU"
+
+    def setup(spark):
+        spark.range(row_count).selectExpr(
+            "CAST(id AS INT) AS intF", "CAST(id % 32 AS BYTE) AS byteF") \
+            .write.parquet(source_path)
+        for path in (cpu_path, gpu_path):
+            spark.read.parquet(source_path).write.format("delta") \
+                .option("delta.enableDeletionVectors", "false").save(path)
+
+    # CPU setup is outside plan capture, so it cannot satisfy GPU command/write assertions.
+    with_cpu_session(setup, conf=conf)
+
+    def run_dml(spark, path):
+        source = f"(SELECT intF FROM parquet.`{source_path}` WHERE intF < {source_rows})"
+        if operation == "update_literal":
+            statement = f"UPDATE delta.`{path}` SET byteF = byteF + 1 WHERE intF % 7 = 0"
+        elif operation == "update_subquery":
+            statement = (f"UPDATE delta.`{path}` SET byteF = byteF + 1 "
+                         f"WHERE intF IN (SELECT intF FROM {source})")
+        else:
+            statement = (f"MERGE INTO delta.`{path}` t USING {source} s ON t.intF = s.intF "
+                         "WHEN MATCHED THEN UPDATE SET byteF = t.byteF + 1")
+        return spark.sql(statement).collect()
+
+    cpu_result = with_cpu_session(lambda spark: run_dml(spark, cpu_path), conf=conf)
+    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+    callback.startCaptureWithWritePlans()
+    try:
+        gpu_result = with_gpu_session(lambda spark: run_dml(spark, gpu_path), conf=conf)
+        plans = callback.getResultsWithTimeout(10000)
+        command = "GpuMergeIntoCommand" if operation == "merge" else "GpuUpdateCommand"
+        assert any(callback.contains(plan, command) for plan in plans), \
+            f"{command} was not executed"
+        writes = [node for plan in plans for node in collect_plan_nodes(plan)
+                  if node.getClass().getSimpleName() == "GpuRapidsDeltaWriteExec"]
+        assert writes, "DML did not execute GpuRapidsDeltaWriteExec"
+        if operation == "merge":
+            assert any(callback.contains(plan, "GpuRapidsProcessDeltaMergeJoinExec")
+                       for plan in plans), "MERGE did not execute its GPU join processor"
+        assert not any(callback.didFallBack(plan, "RapidsDeltaWriteExec") for plan in plans), \
+            "DML write used CPU RapidsDeltaWriteExec"
+        # The writer adds optimized exchanges after QueryExecution prepares its stub.
+        # Inspect the captured final writer tree, then require a task-updated metric so
+        # merely constructing an unused exchange cannot satisfy this assertion.
+        writer_plans = [plan for plan in plans
+                        if callback.contains(plan, "GpuRapidsDeltaWriteExec")]
+        optimized_exchanges = [node for plan in writer_plans
+                               for node in collect_plan_nodes(plan)
+                               if node.getClass().getSimpleName() ==
+                               "GpuOptimizeWriteExchangeExec"]
+        assert bool(optimized_exchanges) == optimize_write, \
+            "DML did not use the requested GPU optimized-write plan"
+        assert not any(callback.didFallBack(plan, "OptimizeWriteExchangeExec")
+                       for plan in writer_plans), "DML used CPU optimized-write exchange"
+        for exchange in optimized_exchanges:
+            assert exchange.metrics().apply("numPartitions").value() > 0, \
+                "GPU optimized-write exchange did not execute any read partitions"
+        if aqe_enabled and operation != "update_literal":
+            assert any(node.getClass().getSimpleName() == "AdaptiveSparkPlanExec"
+                       for write in writes for node in collect_plan_nodes(write)), \
+                "Shuffled DML write did not execute an adaptive child"
+    finally:
+        callback.endCapture()
+
+    assert_equal(cpu_result, gpu_result)
+    changed_rows = (row_count + 6) // 7 if operation == "update_literal" else source_rows
+    assert gpu_result[0][0] == changed_rows
+
+    def read_rows(spark, path):
+        return [tuple(row) for row in spark.read.format("delta").load(path)
+                .orderBy("intF").collect()]
+
+    cpu_rows = with_cpu_session(lambda spark: read_rows(spark, cpu_path), conf=conf)
+    gpu_rows = with_cpu_session(lambda spark: read_rows(spark, gpu_path), conf=conf)
+    assert_equal(cpu_rows, gpu_rows)
+    assert_equal(gpu_rows, [(i, i % 32 + int(
+        i % 7 == 0 if operation == "update_literal" else i < source_rows))
+        for i in range(row_count)])
+    metric = "numTargetRowsUpdated" if operation == "merge" else "numUpdatedRows"
+    for path in (cpu_path, gpu_path):
+        assert int(get_last_operation_metrics(path)[metric]) == changed_rows
