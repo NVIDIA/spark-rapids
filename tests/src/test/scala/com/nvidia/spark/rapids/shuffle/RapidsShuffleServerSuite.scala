@@ -1778,6 +1778,18 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("the transport closes even when the server's close is interrupted") {
+    val server = mock[AutoCloseable]
+    val interrupted = new InterruptedException("stop interrupted in test")
+    doThrow(interrupted).when(server).close()
+    val transport = mock[RapidsShuffleTransport]
+    val thrown = intercept[InterruptedException](
+      RapidsShuffleTransport.closeServerThenTransport(Some(server), Some(transport)))
+    // the caller still sees the interrupt
+    assert(thrown eq interrupted)
+    verify(transport, times(1)).close()
+  }
+
   test("a missing-output warning names the first requests and counts the rest") {
     def request(executorId: Long): (Long, Long) = (executorId, executorId << 8)
     def named(executorId: Long): String =
