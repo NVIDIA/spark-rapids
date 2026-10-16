@@ -1773,6 +1773,69 @@ def test_db173_missing_row_index_filter_assertion_guard():
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@pytest.mark.parametrize("with_plain_file", [False, True], ids=idfn)
+@pytest.mark.parametrize("chunked", [False, True], ids=idfn)
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"], ids=idfn)
+@pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
+@pytest.mark.skipif(is_databricks_runtime() and not is_databricks173_or_later(),
+                    reason="Deletion vector scan is not supported on Databricks before 17.3")
+def test_delta_deletion_vector_count_empty_splits(
+        spark_tmp_path, parquet_reader_type, footer_type, with_plain_file, chunked):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    num_rows = 4096
+    split_size = 4096
+    conf = {
+        "spark.databricks.delta.optimizeMetadataQuery.enabled": "false",
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.rapids.sql.format.parquet.reader.type": parquet_reader_type,
+        "spark.rapids.sql.format.parquet.reader.footer.type": footer_type,
+        "spark.rapids.sql.reader.chunked": str(chunked).lower(),
+        "spark.sql.files.maxPartitionBytes": str(split_size),
+    }
+
+    def setup_table(spark):
+        # Wide rows make each file span several splits, including splits containing no
+        # row-group midpoint. COUNT(*) prunes all data columns from these empty splits.
+        spark.range(num_rows).selectExpr(
+            "id", "sha2(CAST(id AS STRING), 256) AS payload"
+        ).repartition(8).write.format("delta") \
+            .option("delta.enableDeletionVectors", "true").save(data_path)
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE pmod(id, 17) = 0").collect()
+        if with_plain_file:
+            # Include a file without a DV in the same scan.
+            spark.range(num_rows, num_rows + 128).selectExpr(
+                "id", "sha2(CAST(id AS STRING), 256) AS payload"
+            ).coalesce(1).write.format("delta").mode("append").save(data_path)
+        actions = spark.read.json(data_path + "/_delta_log/*.json")
+        dv_files = actions.where("add.deletionVector IS NOT NULL").select("add.path").collect()
+        assert dv_files
+        # Check the fixture actually produces splits without row groups; otherwise the
+        # invalid-offset regression can pass without exercising the offending path.
+        data_file = data_path + "/" + dv_files[0][0]
+        midpoints = parquet_row_group_midpoints(spark, data_file)
+        assert midpoints and min(midpoints) >= split_size
+
+    with_cpu_session(setup_table, conf=conf)
+
+    def read_count(spark):
+        df = spark.sql(f"SELECT count(*) FROM delta.`{data_path}`")
+        assert df.collect() == [Row(count=3855 + (128 if with_plain_file else 0))]
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        read_count,
+        exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
+        conf=conf)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"],
                          ids=idfn)
