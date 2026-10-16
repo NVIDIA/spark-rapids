@@ -88,7 +88,7 @@ class CacheTestSuite extends SparkQueryCompareTestSuite {
     "struct" ->
       "array(named_struct('s', cast(id as string)), cast(null as struct<s:string>))",
     "array" ->
-      "array(array(cast(id as string)), cast(null as array<string>))",
+      "array(array(named_struct('s', cast(id as string))), cast(null as array<struct<s:string>>))",
     "map" ->
       "array(map('s', cast(id as string)), cast(null as map<string,string>))"
   ).foreach { case (nestedType, nestedExpr) =>
