@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids.spill
 
+import java.nio.channels.InterruptibleChannel
+
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf._
@@ -950,6 +952,19 @@ class SpillFrameworkSuite extends SpillUnitTestBase with BeforeAndAfterAll {
 
   test("shared spill files are not deleted when a buffer is deleted") {
     testBufferFileDeletion(canShareDiskPaths = true)
+  }
+
+  test("disk spill builder keeps the codec outside an interruptible channel") {
+    val builder = DiskHandleStore.makeBuilder
+    try {
+      withResource(builder) { writer =>
+        val channel = writer.getChannel
+        assert(channel.isInstanceOf[SpillOutputChannel])
+        assert(!channel.isInstanceOf[InterruptibleChannel])
+      }
+    } finally {
+      SpillFramework.stores.diskStore.deleteFile(builder.blockId)
+    }
   }
 
   test("a non-contiguous table close while spilling") {
