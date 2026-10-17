@@ -1890,3 +1890,142 @@ def test_delta_deletion_vector_native_footer_multi_row_group_zero_column_aggrega
         lambda spark: spark.sql(query.format(path=data_path)),
         exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
         conf=read_conf)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order(local=True)
+@pytest.mark.skipif(not gpu_supports_delta_dv_scan(),
+                    reason="GPU Delta deletion vector scan support is required")
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"],
+                         ids=idfn)
+@pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
+@pytest.mark.parametrize("deletion_pattern", [
+    "middle_row_group", "consecutive_row_groups", "first_row_group",
+    "last_two_row_groups", "entire_first_split"
+], ids=idfn)
+def test_delta_deletion_vector_count_star_after_empty_batch(
+        spark_tmp_path, parquet_reader_type, footer_type, deletion_pattern):
+    """Check zero-column counts and data reads after fully deleted row groups.
+
+    Each deletion pattern is applied to every original file:
+    - middle_row_group: delete the third group, keeping the fourth group in the same split.
+    - consecutive_row_groups: delete the second and third groups, keeping the fourth group
+      in the same split to check that reading continues after consecutive empty batches.
+    - first_row_group: delete the first group, keeping the second group in the same split
+      to check that reading continues when the initial batch is empty.
+    - last_two_row_groups: delete the final two groups to check clean termination after
+      empty trailing batches, including the potentially short final group.
+    - entire_first_split: delete all groups in the first split, retaining live groups in
+      later splits to check that a split with no surviving rows is handled correctly.
+
+    Other groups lose three rows each. Small batches keep full-sized groups in separate
+    batches. Two plain files are appended to check mixed DV/non-DV input. Reader and footer
+    parameters exercise all three Parquet readers with both native and Java footer handling.
+    """
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    num_rows = 16384
+    appended_rows = 512
+    split_bytes = 16384
+    conf = {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.databricks.delta.optimizeMetadataQuery.enabled": "false",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.rapids.sql.format.parquet.reader.type": parquet_reader_type,
+        "spark.rapids.sql.format.parquet.reader.footer.type": footer_type,
+        "spark.rapids.sql.reader.batchSizeRows": "100",
+        "spark.rapids.sql.reader.chunked": "false",
+        "spark.sql.files.maxPartitionBytes": str(split_bytes),
+    }
+    write_conf = copy_and_update(conf, {
+        "parquet.block.size": "4096",
+        "parquet.page.size": "1024",
+        "parquet.enable.dictionary": "false",
+    })
+
+    def setup_tables(spark):
+        spark.range(0, num_rows, 1, 4).selectExpr("id", "id AS payload1", "id AS payload2") \
+            .write.format("delta").option("delta.enableDeletionVectors", "true") \
+            .save(data_path)
+        original_files = spark.read.format("delta").load(data_path).inputFiles()
+        assert len(original_files) == 4
+        deleted_ids = set()
+        jvm = spark.sparkContext._jvm
+        hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+        for file_path in original_files:
+            reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(
+                hadoop_conf, jvm.org.apache.hadoop.fs.Path(file_path))
+            try:
+                blocks = list(reader.getFooter().getBlocks())
+                assert len(blocks) > 4, "Need multiple empty batches followed by live groups"
+                assert sum(b.getRowCount() for b in blocks) == num_rows // 4
+                midpoints = [b.getStartingPos() + b.getCompressedSize() // 2 for b in blocks]
+                split_ids = [midpoint // split_bytes for midpoint in midpoints]
+                if deletion_pattern == "middle_row_group":
+                    empty_groups = {2}
+                    assert split_ids[2] == split_ids[3]
+                elif deletion_pattern == "consecutive_row_groups":
+                    empty_groups = {1, 2}
+                    assert split_ids[1] == split_ids[2] == split_ids[3]
+                elif deletion_pattern == "first_row_group":
+                    empty_groups = {0}
+                    assert split_ids[0] == split_ids[1]
+                elif deletion_pattern == "last_two_row_groups":
+                    # Include the preceding group so even a short final group follows
+                    # an empty batch. There are no live groups left at end-of-input.
+                    empty_groups = {len(blocks) - 2, len(blocks) - 1}
+                else:
+                    assert deletion_pattern == "entire_first_split"
+                    empty_groups = {i for i, split_id in enumerate(split_ids)
+                                    if split_id == split_ids[0]}
+                    assert len(empty_groups) < len(blocks), "Keep live rows in later splits"
+                for index, block in enumerate(blocks):
+                    stats = block.getColumns().get(0).getStatistics()
+                    first_id = int(stats.genericGetMin())
+                    last_id = int(stats.genericGetMax())
+                    assert last_id - first_id + 1 == block.getRowCount()
+                    assert block.getRowCount() > 3
+                    if index in empty_groups:
+                        if index != len(blocks) - 1:
+                            assert block.getRowCount() > 100, "Deleted group must fill a batch"
+                        deleted_ids.update(range(first_id, last_id + 1))
+                    else:
+                        deleted_ids.update((first_id, first_id + 1, last_id))
+            finally:
+                reader.close()
+
+        delete_list = ",".join(str(i) for i in sorted(deleted_ids))
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE id IN ({delete_list})").collect()
+        metrics = _latest_delta_history(spark, data_path)["operationMetrics"]
+        assert int(metrics.get("numDeletionVectorsAdded", "0")) == 4
+        assert set(spark.read.format("delta").load(data_path).inputFiles()) == set(original_files)
+        spark.range(num_rows, num_rows + appended_rows, 1, 2) \
+            .selectExpr("id", "id AS payload1", "id AS payload2") \
+            .write.format("delta").mode("append").save(data_path)
+        assert len(spark.read.format("delta").load(data_path).inputFiles()) == 6
+        expected_ids = set(range(num_rows + appended_rows)) - deleted_ids
+        actual_ids = {r.id for r in spark.read.format("delta").load(data_path).collect()}
+        assert actual_ids == expected_ids
+        return sorted(expected_ids)
+
+    expected_ids = with_cpu_session(setup_tables, conf=write_conf)
+    expected_count = len(expected_ids)
+    query = f"SELECT COUNT(*) AS n FROM delta.`{data_path}`"
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(query),
+        exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
+        conf=conf)
+    assert with_cpu_session(lambda spark: spark.sql(query).collect(), conf=conf) == \
+        [Row(n=expected_count)]
+    assert with_gpu_session(lambda spark: spark.sql(query).collect(), conf=conf) == \
+        [Row(n=expected_count)]
+
+    # Exercise the same reader loops when actual Parquet columns are decoded.
+    data_query = f"SELECT id FROM delta.`{data_path}`"
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.sql(data_query),
+        exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<id:bigint>",
+        conf=conf)
+    gpu_ids = with_gpu_session(lambda spark: spark.sql(data_query).collect(), conf=conf)
+    assert sorted(row.id for row in gpu_ids) == expected_ids
