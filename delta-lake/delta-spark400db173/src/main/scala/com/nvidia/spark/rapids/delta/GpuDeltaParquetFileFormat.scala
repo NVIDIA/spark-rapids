@@ -224,8 +224,10 @@ object GpuDeltaParquetFileFormat {
 
   def hasPhysicalDeletionVectorSkipRowColumn(schema: StructType): Boolean =
     schema.exists { field =>
-      field.name == EDGE_COMPUTED_COLUMN_SKIP_ROW ||
-        field.name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
+      Seq(field.name, DeltaColumnMapping.getPhysicalName(field)).exists { name =>
+        name == EDGE_COMPUTED_COLUMN_SKIP_ROW ||
+          name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME
+      }
     }
 
   val LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION =

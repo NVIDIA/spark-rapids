@@ -468,11 +468,14 @@ def test_delta_low_shuffle_merge_internal_column_names(
 @pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
 @pytest.mark.parametrize("skip_row_predicate", [None, True, False],
                          ids=["rewrite-only", "predicate-true", "predicate-false"])
+@pytest.mark.parametrize("rename_with_mapping", [False, True],
+                         ids=["unmapped", "mapped-and-renamed"])
 def test_delta_low_shuffle_merge_physical_skip_row_column(
         spark_tmp_path, spark_tmp_table_factory, reader_type, use_chunked_reader,
-        skip_row_predicate):
+        skip_row_predicate, rename_with_mapping):
     # This is ordinary table data, not a generated deletion-vector marker (#16381).
     skip_column = "_databricks_internal_edge_computed_column_skip_row"
+    logical_column = "user_flag" if rename_with_mapping else skip_column
     conf = copy_and_update(_delta_merge_conf(reader_type), {
         "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower(),
         "spark.databricks.delta.properties.defaults.columnMapping.mode": "none",
@@ -492,6 +495,12 @@ def test_delta_low_shuffle_merge_physical_skip_row_column(
             (skip_column, RepeatSeqGen([True, False], data_type=BooleanType()))],
             length=8, num_slices=1)
         setup_delta_dest_tables(spark, data_path, lambda _: target, False, False)
+        if rename_with_mapping:
+            for run in ["CPU", "GPU"]:
+                table = f"delta.`{data_path}/{run}`"
+                spark.sql(f"ALTER TABLE {table} SET TBLPROPERTIES "
+                          "('delta.columnMapping.mode' = 'name')")
+                spark.sql(f"ALTER TABLE {table} RENAME COLUMN `{skip_column}` TO user_flag")
         # Leave both true and false values in the unmodified-row rewrite pass as well.
         # Datagen's RDD has no size statistics. Broadcast the tiny source so DBR's CPU
         # row reader does not send GenericInternalRows directly into an UnsafeRow shuffle.
@@ -501,7 +510,7 @@ def test_delta_low_shuffle_merge_physical_skip_row_column(
     def do_merge(spark, path):
         condition = "t.k = s.k"
         if skip_row_predicate is not None:
-            condition += f" AND t.`{skip_column}` = {str(skip_row_predicate).lower()}"
+            condition += f" AND t.`{logical_column}` = {str(skip_row_predicate).lower()}"
         return spark.sql(
             f"MERGE INTO delta.`{path}` t USING {src_table} s "
             f"ON {condition} "
@@ -517,7 +526,7 @@ def test_delta_low_shuffle_merge_physical_skip_row_column(
         # The cast also projects DBR's row-reader output into UnsafeRows before the sort.
         rows = with_cpu_session(
             lambda spark: spark.read.format("delta").load(data_path + "/" + run)
-                .select("k", "v", f.col(skip_column).cast("int")).orderBy("k").collect(),
+                .select("k", "v", f.col(logical_column).cast("int")).orderBy("k").collect(),
             conf=conf)
         assert rows == expected, f"{run} table contents: {rows}"
 

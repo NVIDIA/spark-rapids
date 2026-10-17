@@ -1805,8 +1805,9 @@ private case class DeltaParquetTableReader(
         tableWithRowIndex, deletionVectorSkipRowIndexes)
     } catch {
       case t: Throwable =>
-        currentRowIndex.foreach(_.safeClose())
+        val rowIndex = currentRowIndex
         currentRowIndex = None
+        rowIndex.foreach(_.safeClose(t))
         throw t
     }
   }
