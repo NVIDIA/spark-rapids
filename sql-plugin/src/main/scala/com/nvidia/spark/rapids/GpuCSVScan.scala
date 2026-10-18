@@ -43,7 +43,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.LegacyTimeParserPolicy
+import org.apache.spark.sql.rapids.{CorrectedTimeParserPolicy, LegacyTimeParserPolicy}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -223,17 +223,22 @@ object GpuCSVScan extends Logging {
       GpuTextBasedDateUtils.tagCudfFormat(meta,
         GpuCsvUtils.dateFormatInRead(parsedOptions), parseString = true)
 
-      // For date type, timezone needs to be checked also. This is because JVM timezone is used
-      // to get days offset before rebasing Julian to Gregorian in Spark while not in Rapids.
+      // For date type, whether the timezone needs to be checked depends on the time parser policy.
       //
-      // In details, for CSV data format, Spark uses dateFormatter to parse string as date data
-      // type which utilizes [[org.apache.spark.sql.catalyst.DateFormatter]]. And CSV format
-      // (e.g., [[UnivocityParser]]), it uses [[LegacyFastDateFormatter]] which is based on
-      // Apache Commons FastDateFormat. It parse string into Java util.Date base on JVM default
-      // timezone. From Java util.Date, it's converted into java.sql.Date type.
-      // By leveraging [[JavaDateTimeUtils]], it finally do `rebaseJulianToGregorianDays`
-      // considering its offset to UTC timezone.
-      if (!GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
+      // In CSV, Spark's UnivocityParser uses DateFormatter to parse a string as DateType. Under
+      // CORRECTED, DateFormatter parses directly to proleptic Gregorian epoch days. It does not
+      // convert through java.util.Date, so the session timezone has no effect.
+      //
+      // Under LEGACY, DateFormatter uses LegacyFastDateFormatter, which is based on Apache Commons
+      // FastDateFormat. It parses into java.util.Date based on the JVM default timezone, then
+      // converts it to java.sql.Date. Spark's date conversion utilities finally rebase Julian days
+      // to proleptic Gregorian days considering the offset to UTC, so timezone can affect the
+      // result.
+      //
+      // EXCEPTION may also invoke the legacy formatter when comparing parser behavior. Therefore,
+      // keep the conservative non-UTC fallback for LEGACY and EXCEPTION.
+      if (GpuOverrides.getTimeParserPolicy != CorrectedTimeParserPolicy &&
+          !GpuOverrides.isUTCTimezone(parsedOptions.zoneId)) {
         meta.willNotWorkOnGpu(s"Not supported timezone type ${parsedOptions.zoneId}.")
       }
     }

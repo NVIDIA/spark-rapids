@@ -110,8 +110,8 @@ def with_iceberg_dml_session(func, format_version, mode, conf):
         callback.endCapture()
 
 
-def iceberg_table_properties_sql(format_version):
-    props = _build_tblprops({'format-version': format_version})
+def iceberg_table_properties_sql(format_version, table_prop=None):
+    props = _build_tblprops({**(table_prop or {}), 'format-version': format_version})
     return "TBLPROPERTIES (" + ", ".join(f"'{k}' = '{v}'" for k, v in props.items()) + ")"
 
 # iceberg supported types
@@ -477,6 +477,18 @@ def read_parquet_codecs(spark: SparkSession, path: str) -> List[str]:
             assert columns.size() > 0, f"Parquet file {path} has a row group with no column chunks"
             codecs.extend(column.getCodec().name() for column in columns)
         return codecs
+    finally:
+        reader.close()
+
+
+def read_parquet_schema(spark: SparkSession, path: str) -> str:
+    """Open the Parquet footer of `path` and return its physical schema."""
+    jvm = spark_jvm()
+    hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+    hadoop_path = jvm.org.apache.hadoop.fs.Path(path)
+    reader = jvm.org.apache.parquet.hadoop.ParquetFileReader.open(hadoop_conf, hadoop_path)
+    try:
+        return reader.getFooter().getFileMetaData().getSchema().toString()
     finally:
         reader.close()
 

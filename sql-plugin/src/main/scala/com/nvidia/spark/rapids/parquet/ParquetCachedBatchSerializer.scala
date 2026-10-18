@@ -1123,6 +1123,10 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         }
       }
 
+      // The input can write its next row over the values of the row it returned when hasNext
+      // is called, as whole-stage codegen does, so a row kept for the next batch is copied.
+      protected def keepForNextBatch(row: InternalRow): InternalRow = row.copy()
+
       protected def convertRowIteratorToCachedBatch(
           rowIterator: Iterator[InternalRow]): mutable.Queue[CachedBatch] = {
         val queue = new mutable.Queue[CachedBatch]()
@@ -1174,11 +1178,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
               }
               recordWriter.write(null, row)
             } else {
-              leftOverRow = Some(if (row.isInstanceOf[UnsafeRow]) {
-                row.copy()
-              } else {
-                row
-              })
+              leftOverRow = Some(keepForNextBatch(row))
             }
           }
           // passing null as context isn't used in this method
@@ -1210,6 +1210,11 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       override def next(): CachedBatch = myIter.next()
 
       override def hasNext: Boolean = myIter.hasNext
+
+      // A batch's row iterator moves its row only in next(), which the writer calls after the
+      // kept row is written. ColumnarBatchRow.copy() also lacks types the writer takes, such as
+      // Variant before Spark 4.1.2.
+      override protected def keepForNextBatch(row: InternalRow): InternalRow = row
 
       val myIter = iter.asInstanceOf[Iterator[ColumnarBatch]].flatMap { batch =>
         val hostBatch = if (batch.column(0).isInstanceOf[GpuColumnVector]) {
