@@ -878,7 +878,11 @@ val SHUFFLE_COMPRESSION_LZ4_CHUNK_SIZE = conf("spark.rapids.shuffle.compression.
         "the GPU filter operator will process it together with other filters. " +
         "This setting is effective only when " +
         "spark.databricks.delta.deletionVectors.useMetadataRowIndex is true. " +
-        "Otherwise, this setting is fixed to false regardless of its actual value.")
+        "Otherwise, this setting is fixed to false regardless of its actual value. " +
+        "On Databricks Runtime 17.3, low shuffle MERGE requires native filtering of temporary " +
+        "deletion vectors. Both settings must be true for every reader mode; otherwise MERGE " +
+        "falls back to the classic GPU executor. Ordinary reads retain their " +
+        "DV-setting-controlled reader selection.")
       .internal()
       .booleanConf
       .createWithDefault(true)

@@ -621,6 +621,19 @@ class InsertOnlyMergeExecutor(override val context: MergeExecutorContext) extend
  */
 class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extends MergeExecutor {
 
+  private def buildRewriteTargetDFWithFiles(files: Seq[AddFile]): DataFrame = {
+    val targetDF = buildTargetDFWithFiles(files)
+    val markedPlan = targetDF.queryExecution.analyzed.transform {
+      case r: LogicalRelation if r.relation.isInstanceOf[HadoopFsRelation] =>
+        val relation = r.relation.asInstanceOf[HadoopFsRelation]
+        r.copy(relation = relation.copy(
+          options = relation.options +
+            (GpuDeltaParquetFileFormat.LOW_SHUFFLE_MERGE_REWRITE_SCAN_OPTION -> "true"))(
+          context.spark))
+    }
+    Dataset.ofRows(context.spark, markedPlan)
+  }
+
   private case class TouchedFileDiscoveryPlan(
       df: DataFrame,
       filePathAttr: Attribute,
@@ -684,8 +697,20 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
    * 1. Low shuffle merge requires GPU file scans for touched-file discovery and both write passes.
    * 2. The temporary deletion vectors introduce extra overhead, so it may be better to fall back
    * when the changeset is too large.
+   *
+   * See [[DeltaSpark400DB173Provider.getReadFileFormat]] for the reader-mode capability table
+   * and the discovery-reader mapping that requires these checks before reader selection.
    */
   def shouldFallback(): Boolean = {
+    // The unmodified-row rewrite must apply temporary DVs to exclude the old versions of
+    // updated/deleted rows. The DBR 17.3 legacy readers ignore those DVs and can copy old rows
+    // alongside their replacements. Honor disabled native DV processing for every reader mode.
+    if (!DeltaSpark400DB173Provider.isPushDVPredicateDownEnabled(context.rapidsConf)) {
+      logWarning("Low shuffle merge requires native deletion-vector pushdown, " +
+        "fallback to classic GPU merge.")
+      return true
+    }
+
     // The native DV reader overwrites physical skip-row-named columns during discovery
     // and the unmodified-row rewrite pass. Reject affected schemas before either scan.
     // Use classic merge until https://github.com/NVIDIA/cudf-spark/issues/16381 is fixed.
@@ -1156,7 +1181,7 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
     val sourcePlanDF = context.cmd.mergeSourceDF
     val (targetPlanDF, rowTrackingCols, rowTrackingUpdateExprs) =
       UpdateCommandShims.preserveRowTrackingColumns(
-        buildTargetDFWithFiles(touchedFiles.values.map(_._2).toSeq),
+        buildRewriteTargetDFWithFiles(touchedFiles.values.map(_._2).toSeq),
         context.deltaTxn.snapshot,
         Seq.empty,
         Seq.empty)
@@ -1441,7 +1466,7 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
     val sourcePlanDF = context.cmd.mergeSourceDF
     val (targetPlanDF, rowTrackingCols, rowTrackingUpdateExprs) =
       UpdateCommandShims.preserveRowTrackingColumns(
-        buildTargetDFWithFiles(touchedFiles.values.map(_._2).toSeq),
+        buildRewriteTargetDFWithFiles(touchedFiles.values.map(_._2).toSeq),
         context.deltaTxn.snapshot,
         Seq.empty,
         Seq.empty)
@@ -1683,7 +1708,7 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
         tablePath))
     }.toSeq
     val (targetDF, _, _) = UpdateCommandShims.preserveRowTrackingColumns(
-      buildTargetDFWithFiles(filesWithTemporaryDVs),
+      buildRewriteTargetDFWithFiles(filesWithTemporaryDVs),
       context.deltaTxn.snapshot,
       Seq.empty,
       Seq.empty)

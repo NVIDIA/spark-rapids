@@ -41,7 +41,17 @@ low_shuffle_merge_reader_types = [
         "MULTITHREADED",
         marks=pytest.mark.skipif(
             not is_databricks_version(17, 3),
-            reason="Multithreaded low shuffle merge requires DBR 17.3"))]
+            reason="Multithreaded low shuffle merge requires DBR 17.3")),
+    pytest.param(
+        "COALESCING",
+        marks=pytest.mark.skipif(
+            not is_databricks_version(17, 3),
+            reason="Coalescing low shuffle merge requires DBR 17.3")),
+    pytest.param(
+        "AUTO",
+        marks=pytest.mark.skipif(
+            not is_databricks_version(17, 3),
+            reason="AUTO low shuffle merge requires DBR 17.3"))]
 
 
 def _delta_merge_conf(reader_type):
@@ -181,11 +191,11 @@ def test_delta_merge_standard_upsert(spark_tmp_path, spark_tmp_table_factory, us
                                         assert_func=_assert_collect_with_counters)
 
 
-@allow_non_gpu(*delta_meta_allow)
+@allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not is_databricks_version(17, 3), reason="DBR 17.3 reader routing")
-@pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
+@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
 @pytest.mark.parametrize("dv_predicate_pushdown,use_metadata_row_index",
                          [(True, True), (False, True), (True, False), (False, False)], ids=idfn)
 def test_delta_low_shuffle_merge_rewrite_with_dv_settings(
@@ -200,12 +210,27 @@ def test_delta_low_shuffle_merge_rewrite_with_dv_settings(
         "spark.databricks.delta.autoCompact.enabled": "false"})
 
     def dest_table_func(spark):
-        return spark.range(100, numPartitions=1).withColumn("value", f.col("id"))
+        return gen_df(spark, [("id", RepeatSeqGen(list(range(100)), data_type=LongType()))],
+                      length=100, num_slices=1).withColumn("value", f.col("id"))
 
     def src_table_func(spark):
-        return spark.range(15, numPartitions=1).withColumn("value", f.col("id") + 1000)
+        return gen_df(spark, [("id", RepeatSeqGen(list(range(15)), data_type=LongType()))],
+                      length=15, num_slices=1).withColumn("value", f.col("id") + 1000)
 
-    # Temporary-DV filtering is required for the rewrite regardless of the general DV settings.
+    def assert_merge(do_merge, data_path, merge_conf, expect_write=True):
+        expected_gpu_classes = None
+        if not (dv_predicate_pushdown and use_metadata_row_index):
+            with pytest.raises(Exception, match="Low shuffle merge unexpectedly fell back"):
+                with_gpu_session(lambda spark: do_merge(spark, data_path + "/GPU"),
+                                 conf=merge_conf)
+            merge_conf = copy_and_update(merge_conf, {
+                "spark.rapids.sql.test.delta.lowShuffleMerge.failOnFallback": "false"})
+            expected_gpu_classes = ["GpuRapidsProcessDeltaMergeJoinExec"]
+        _assert_collect_with_counters(
+            do_merge, data_path, merge_conf, expect_write=expect_write,
+            expected_gpu_classes=expected_gpu_classes)
+
+    # Disabled native DV processing must use classic GPU MERGE for every reader mode.
     # Updating 15 rows must leave the same 100-row final table on CPU and GPU.
     assert_delta_sql_merge_collect(
         spark_tmp_path, spark_tmp_table_factory,
@@ -213,7 +238,7 @@ def test_delta_low_shuffle_merge_rewrite_with_dv_settings(
         src_table_func=src_table_func, dest_table_func=dest_table_func,
         merge_sql="MERGE INTO {dest_table} t USING {src_table} s ON t.id = s.id "
                   "WHEN MATCHED THEN UPDATE SET t.value = s.value",
-        compare_logs=False, conf=conf, assert_func=_assert_collect_with_counters)
+        compare_logs=False, conf=conf, assert_func=assert_merge)
 
 
 @allow_non_gpu(*delta_meta_allow)
@@ -280,8 +305,12 @@ def test_delta_low_shuffle_merge_multiple_row_groups(
                     reason="DBR 17.3 low-shuffle NOT MATCHED BY SOURCE support")
 @pytest.mark.parametrize("use_cdf", [False, True], ids=idfn)
 @pytest.mark.parametrize("reader_type", low_shuffle_merge_reader_types, ids=idfn)
+@pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
 def test_delta_low_shuffle_merge_not_matched_by_source(
-        spark_tmp_path, spark_tmp_table_factory, use_cdf, reader_type):
+        spark_tmp_path, spark_tmp_table_factory, use_cdf, reader_type, use_chunked_reader):
+    conf = copy_and_update(_delta_merge_conf(reader_type), {
+        "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower()})
+
     def dest_table_func(spark):
         return gen_df(
             spark,
@@ -308,7 +337,7 @@ def test_delta_low_shuffle_merge_not_matched_by_source(
         use_cdf=use_cdf, enable_deletion_vectors=False,
         src_table_func=src_table_func, dest_table_func=dest_table_func,
         merge_sql=merge_sql, compare_logs=False,
-        conf=_delta_merge_conf(reader_type), assert_func=_assert_collect_with_counters)
+        conf=conf, assert_func=_assert_collect_with_counters)
 
 
 @allow_non_gpu(*delta_meta_allow)
@@ -464,19 +493,18 @@ def test_delta_low_shuffle_merge_internal_column_names(
 @ignore_order
 @pytest.mark.skipif(not is_databricks_version(17, 3),
                     reason="DBR 17.3 physical skip-row column regression")
-@pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
 @pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
 @pytest.mark.parametrize("skip_row_predicate", [None, True, False],
                          ids=["rewrite-only", "predicate-true", "predicate-false"])
 @pytest.mark.parametrize("rename_with_mapping", [False, True],
                          ids=["unmapped", "mapped-and-renamed"])
 def test_delta_low_shuffle_merge_physical_skip_row_column(
-        spark_tmp_path, spark_tmp_table_factory, reader_type, use_chunked_reader,
+        spark_tmp_path, spark_tmp_table_factory, use_chunked_reader,
         skip_row_predicate, rename_with_mapping):
     # This is ordinary table data, not a generated deletion-vector marker (#16381).
     skip_column = "_databricks_internal_edge_computed_column_skip_row"
     logical_column = "user_flag" if rename_with_mapping else skip_column
-    conf = copy_and_update(_delta_merge_conf(reader_type), {
+    conf = copy_and_update(_delta_merge_conf("MULTITHREADED"), {
         "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower(),
         "spark.databricks.delta.properties.defaults.columnMapping.mode": "none",
         # Temporary-DV rewrites also hit #16381, so this schema must use classic GPU MERGE.
@@ -517,7 +545,14 @@ def test_delta_low_shuffle_merge_physical_skip_row_column(
             "WHEN MATCHED THEN UPDATE SET t.v = s.v").collect()
 
     with_cpu_session(setup, conf=conf)
-    _assert_collect_with_counters(do_merge, data_path, conf)
+    if use_chunked_reader and skip_row_predicate is None and not rename_with_mapping:
+        strict_conf = copy_and_update(conf, {
+            "spark.rapids.sql.test.delta.lowShuffleMerge.failOnFallback": "true"})
+        with pytest.raises(Exception, match="Low shuffle merge unexpectedly fell back"):
+            with_gpu_session(lambda spark: do_merge(spark, data_path + "/GPU"),
+                             conf=strict_conf)
+    _assert_collect_with_counters(
+        do_merge, data_path, conf, expected_gpu_classes=["GpuRapidsProcessDeltaMergeJoinExec"])
     expected = [(k, k + 100 if k < 4 and (
                     skip_row_predicate is None or (k % 2 == 0) == skip_row_predicate) else 0,
                  1 if k % 2 == 0 else 0)

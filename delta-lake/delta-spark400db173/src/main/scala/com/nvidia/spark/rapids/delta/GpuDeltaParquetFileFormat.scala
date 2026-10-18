@@ -230,10 +230,15 @@ object GpuDeltaParquetFileFormat {
       }
     }
 
+  val LOW_SHUFFLE_MERGE_REWRITE_SCAN_OPTION =
+    "spark.rapids.internal.delta.lowShuffleMerge.rewriteScan"
   val LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION =
     "spark.rapids.internal.delta.lowShuffleMerge.scan"
   val LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION =
     "spark.rapids.internal.delta.lowShuffleMerge.rowIndexColumn"
+
+  def isLowShuffleMergeRewriteScan(options: Map[String, String]): Boolean =
+    options.get(LOW_SHUFFLE_MERGE_REWRITE_SCAN_OPTION).contains("true")
 
   def isLowShuffleMergeDiscoveryScan(options: Map[String, String]): Boolean =
     options.get(LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION).contains("true")

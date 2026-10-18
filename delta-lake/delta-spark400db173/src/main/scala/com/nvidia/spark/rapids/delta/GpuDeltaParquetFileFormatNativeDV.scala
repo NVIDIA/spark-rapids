@@ -905,6 +905,8 @@ case class GpuDeltaParquetFileFormatNativeDV(
      * Row-group offsets stay file-relative after splitting and predicate pushdown. Combined
      * metadata can contain several files, so each file contributes its own row-group sequences,
      * concatenated in the same order as the multithreaded reader metadata.
+     * This path does not apply DVs: LowShuffleMergeExecutor.shouldFallback requires the
+     * transaction snapshot to be DV-free before discovery. Keep that guard if this path changes.
      */
     private def metadataOnlyBatches(
         metadata: DeltaParquetHostMemoryEmptyMetaData): Iterator[ColumnarBatch] = {
