@@ -41,6 +41,7 @@ import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.METADATA_ROW_IDX_COL
 import com.nvidia.spark.rapids.jni.fileio.RapidsFileIO
 import com.nvidia.spark.rapids.parquet._
+import org.apache.commons.lang3.exception.ExceptionUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.metadata._
@@ -1795,6 +1796,21 @@ private case class DeltaParquetTableReader(
     }
   }
 
+  private def cleanupAndRethrow(original: Throwable)(cleanup: => Unit): Nothing = {
+    try {
+      cleanup
+    } catch {
+      // Keep fatal CUDA cleanup errors visible to retry and executor failure handling.
+      // Shared cleanup handling: https://github.com/NVIDIA/cudf-spark/issues/16393.
+      case failure: Throwable
+          if ExceptionUtils.indexOfType(failure, classOf[CudaFatalException]) >= 0 =>
+        failure.addSuppressed(original)
+        throw failure
+      case failure: Throwable => original.addSuppressed(failure)
+    }
+    throw original
+  }
+
   override def next: Table = {
     try {
       val table = super.next
@@ -1807,14 +1823,20 @@ private case class DeltaParquetTableReader(
       case t: Throwable =>
         val rowIndex = currentRowIndex
         currentRowIndex = None
-        rowIndex.foreach(_.safeClose(t))
-        throw t
+        cleanupAndRethrow(t) {
+          rowIndex.foreach(_.safeClose())
+        }
     }
   }
 
   override def close(): Unit = {
-    currentRowIndex.foreach(_.safeClose())
+    val rowIndex = currentRowIndex
     currentRowIndex = None
+    try {
+      rowIndex.foreach(_.safeClose())
+    } catch {
+      case t: Throwable => cleanupAndRethrow(t) { super.close() }
+    }
     super.close()
   }
 }
