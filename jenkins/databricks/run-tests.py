@@ -13,7 +13,6 @@
 # limitations under the License.
 """Upload & run test script on Databricks cluster."""
 
-import glob
 import shlex
 import subprocess
 import sys
@@ -88,7 +87,7 @@ def main():
         try:
             report_target_path = "%s/integration_tests/target" % get_test_report_path_prefix()
             subprocess.check_call(["mkdir", "-p", "integration_tests/target"])
-            # Copy the diagnostics needed by Jenkins while avoiding unrelated run_dir contents.
+            # Keep reports and diagnostics together; Jenkins discovers the XML recursively.
             rsync_command = [
                 "rsync", "-I", "-Pave", rsync_ssh,
                 "--prune-empty-dirs",
@@ -103,13 +102,6 @@ def main():
             ]
             print("rsync command: %s" % shell_join(rsync_command))
             subprocess.check_call(rsync_command)
-            # Keep the existing Jenkins JUnit publishing flow, which expects XML files in this
-            # directory.
-            xml_files = glob.glob("integration_tests/target/run_dir*/TEST-pytest-*.xml")
-            if xml_files:
-                copy_xml_command = ["cp"] + xml_files + ["./"]
-                print("copy xml command: %s" % shell_join(copy_xml_command))
-                subprocess.call(copy_xml_command)
         except subprocess.CalledProcessError as e:
             print("WARNING: test report collection failed: %s" % e)
 

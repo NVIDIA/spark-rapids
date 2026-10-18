@@ -18,7 +18,8 @@ import pytest
 import re
 
 from spark_session import is_databricks122_or_later, supports_delta_lake_deletion_vectors, \
-    is_databricks173_or_later, is_spark_353_or_later, is_spark_local_mode, \
+    is_databricks173_or_later, is_spark_353_or_later, is_spark_356_or_later, \
+    is_spark_400_or_later, is_spark_local_mode, \
     with_cpu_session, with_gpu_session
 from asserts import assert_equal
 from conftest import get_non_gpu_allowed, is_databricks_runtime, spark_jvm
@@ -99,6 +100,23 @@ def _loaded_delta_lake_version():
     except Exception:
         # Delta Lake is optional for most integration test runs.
         return None
+
+
+def _is_delta_rtas_truncate_unsupported():
+    if (is_databricks_runtime() or not is_spark_356_or_later()
+            or is_spark_400_or_later()):
+        return False
+    version = _loaded_delta_lake_version()
+    if version is None:
+        return False
+    parts = version.split("-", 1)[0].split(".")[:3]
+    return tuple(int(part) for part in parts) < (3, 3, 3)
+
+
+delta_rtas_truncate_skip = pytest.mark.skipif(
+    _is_delta_rtas_truncate_unsupported(),
+    reason="OSS Delta before 3.3.3 does not support staged-table truncate validation "
+           "on Spark 3.5.6+: https://github.com/delta-io/delta/issues/4671")
 
 
 def is_oss_delta_lake_24():
@@ -414,6 +432,31 @@ def read_delta_path_with_cdf(spark, path):
     assert "_commit_timestamp" in df.columns
     # Drop the commit timestamp column since it will differ between CPU and GPU
     return df.drop("_commit_timestamp")
+
+def assert_delta_non_data_changing_commit(spark, path, expected_file_actions):
+    """Check a commit after initial inserts and return its timestamp-free CDF history."""
+    logs = read_delta_logs(spark, path + "/_delta_log/*.json")
+    latest_file = sorted(logs)[-1]
+    version = int(latest_file.split(".")[0])
+    assert version > 0, "Expected a new non-data-changing commit"
+    actions = logs[latest_file]
+    assert not any("cdc" in action for action in actions), "Unexpected CDC file"
+    file_actions = [(kind, action[kind]) for action in actions
+                    for kind in ("add", "remove") if kind in action]
+    assert {kind for kind, _ in file_actions} == set(expected_file_actions)
+    assert all(action["dataChange"] is False for _, action in file_actions)
+
+    # Like Delta's CDCReaderSuite, only the initial inserts should appear in CDF.
+    initial = spark.read.format("delta").option("versionAsOf", 0).load(path) \
+        .selectExpr("*", "'insert' AS _change_type", "0L AS _commit_version")
+    cdf = read_delta_path_with_cdf(spark, path)
+    cdf_rows = cdf.sort(cdf.columns).collect()
+    assert_equal(initial.sort(initial.columns).collect(), cdf_rows)
+    commit_cdf = spark.read.format("delta").option("readChangeFeed", "true") \
+        .option("startingVersion", version).option("endingVersion", version).load(path)
+    assert commit_cdf.count() == 0, "Non-data-changing commit produced CDF rows"
+    return cdf_rows
+
 
 def schema_to_ddl(spark, schema):
     return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
