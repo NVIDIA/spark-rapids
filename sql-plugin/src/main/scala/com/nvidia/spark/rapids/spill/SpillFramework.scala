@@ -31,7 +31,7 @@ import ai.rapids.cudf._
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer,
   GpuCompressedColumnVector, GpuDeviceManager, HashedPriorityQueue, HostAlloc,
   HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, NvtxId, NvtxRegistry,
-  RapidsConf, RapidsHostColumnVector, SpillPriorities, TaskRegistryTracker}
+  RapidsConf, RapidsExecutorPlugin, RapidsHostColumnVector, SpillPriorities, TaskRegistryTracker}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.format.TableMeta
@@ -317,7 +317,24 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends DeviceStoreHandle {
    * See https://github.com/NVIDIA/spark-rapids/issues/8610 for more info.
    */
   override def releaseSpilled(): Unit = {
-    releaseDeviceResource()
+    synchronized {
+      var failure: Throwable = null
+      try {
+        releaseDeviceResource()
+      } catch {
+        case t: Throwable => failure = t
+      }
+      spilling = false
+      if (closed) {
+        try {
+          doClose()
+        } catch {
+          case t: Throwable =>
+            if (failure == null) failure = t else if (failure ne t) failure.addSuppressed(t)
+        }
+      }
+      if (failure != null) throw failure
+    }
   }
 
   // Wrap spill execution with memory spill metrics tracking
@@ -985,15 +1002,6 @@ class SpillableDeviceBufferHandle private (
     }
   }
 
-  override def releaseSpilled(): Unit = synchronized {
-    super.releaseSpilled()
-    spilling = false
-    if (closed) {
-      host.foreach(_.close())
-      host = None
-    }
-  }
-
   override def doClose(): Unit = {
     releaseDeviceResource()
     host.foreach(_.close())
@@ -1086,11 +1094,9 @@ class SpillableColumnarBatchHandle private (
                 taskPriority))
             val actualBytes: Long = staging.map(_.sizeInBytes).getOrElse(0L)
             synchronized {
-              spilling = false
               if (closed) {
                 staging.foreach(_.close())
                 staging = None
-                doClose()
               } else {
                 host = staging
               }
@@ -1239,9 +1245,7 @@ class SpillableColumnarBatchFromBufferHandle private (
               Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
                 cvFromBuffer.getBuffer, taskPriority))
             synchronized {
-              spilling = false
               if (closed) {
-                doClose()
                 staging.foreach(_.close())
                 staging = None
               } else {
@@ -1356,9 +1360,8 @@ class SpillableCompressedColumnarBatchHandle private (
               Some(SpillableHostBufferHandle.createHostHandleFromDeviceBuff(
                 cvFromBuffer.getTableBuffer, taskPriority))
             synchronized {
-              spilling = false
               if (closed) {
-                doClose()
+                staging.foreach(_.close())
                 staging = None
               } else {
                 host = staging
@@ -1768,11 +1771,18 @@ trait SpillableStore[T <: SpillableHandle]
         com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
         try {
           val plan = makeSpillPlan(spillNeeded)
-          try {
+          val amountSpilled = try {
             plan.trySpill()
-          } finally {
-            postSpill(plan)
+          } catch {
+            case t: Throwable =>
+              try postSpill(plan) catch {
+                case cleanupFailure: Throwable =>
+                  if (t ne cleanupFailure) t.addSuppressed(cleanupFailure)
+              }
+              throw t
           }
+          postSpill(plan)
+          amountSpilled
         } finally {
           com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
         }
@@ -2074,12 +2084,34 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
 class SpillableDeviceStore extends SpillableStore[DeviceStoreHandle] {
   override protected def spillNvtxRange: NvtxId = NvtxRegistry.DEVICE_SPILL
 
+  protected def synchronizeDevice(): Unit = Cuda.deviceSynchronize()
+
+  protected def failExecutorOnSyncFailure(): Unit = {
+    RapidsExecutorPlugin.exitWithHaltOnTimeout(20)
+  }
+
   override def postSpill(plan: SpillPlan): Unit = {
     // spillables is the list of handles that have to be closed
     // we synchronize every thread before we release what was spilled
-    Cuda.deviceSynchronize()
+    try {
+      synchronizeDevice()
+    } catch {
+      case error: Throwable =>
+        logError("Device spill synchronization failed, shutting down executor", error)
+        failExecutorOnSyncFailure()
+        throw error
+    }
     // this is safe to be called unconditionally if another thread spilled
-    plan.getSpilled.forEach(_.releaseSpilled())
+    var failure: Throwable = null
+    plan.getSpilled.forEach { handle =>
+      try {
+        handle.releaseSpilled()
+      } catch {
+        case t: Throwable =>
+          if (failure == null) failure = t else if (failure ne t) failure.addSuppressed(t)
+      }
+    }
+    if (failure != null) throw failure
   }
 }
 
@@ -2322,11 +2354,9 @@ class SpillableTableHandle private (
                 taskPriority))
             val actualBytes: Long = staging.map(_.sizeInBytes).getOrElse(0L)
             synchronized {
-              spilling = false
               if (closed) {
                 staging.foreach(_.close())
                 staging = None
-                doClose()
               } else {
                 host = staging
               }
