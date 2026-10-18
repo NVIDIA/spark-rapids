@@ -142,18 +142,6 @@ case class GpuBloomFilterMerge() extends CudfAggregate {
   override val name: String = "gpu_bloom_filter_merge"
 }
 
-case class CpuToGpuBloomFilterBufferConverter() extends CpuToGpuAggregateBufferConverter {
-  override def createExpression(child: Expression): CpuToGpuBufferTransition =
-    CpuToGpuBloomFilterBufferTransition(child)
-}
-
-case class CpuToGpuBloomFilterBufferTransition(override val child: Expression)
-    extends CpuToGpuBufferTransition {
-  override def dataType: DataType = BinaryType
-
-  override protected def nullSafeEval(input: Any): Array[Byte] = input.asInstanceOf[Array[Byte]]
-}
-
 case class GpuToCpuBloomFilterBufferConverter(
     estimatedNumItems: Long,
     numBits: Long) extends GpuToCpuAggregateBufferConverter {
