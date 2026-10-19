@@ -200,7 +200,11 @@ object GpuParquetScan {
   }
 
   def tagSupport(sparkSession: SparkSession, readSchema: StructType,
-      meta: RapidsMeta[_, _, _]): Unit = {
+      meta: RapidsMeta[_, _, _]): Unit =
+    tagSupport(sparkSession, readSchema, meta, None)
+
+  def tagSupport(sparkSession: SparkSession, readSchema: StructType,
+      meta: RapidsMeta[_, _, _], mayContainShreddedVariant: Option[Boolean]): Unit = {
     if (ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong) {
       meta.willNotWorkOnGpu("GPU does not support spark.sql.legacy.parquet.nanosAsLong")
     }
@@ -224,11 +228,22 @@ object GpuParquetScan {
     }
 
     val sqlConf = sparkSession.sessionState.conf
-    val schemaHasPotentiallyShreddedVariant =
-      hasPotentiallyShreddedVariant(readSchema.map(_.dataType), sqlConf)
+    // Delta can establish whether shredded files are possible from its table protocol.
+    // Other sources retain the conservative check based on Spark's reader configuration.
+    val schemaHasPotentiallyShreddedVariant = mayContainShreddedVariant match {
+      case Some(mayContain) => mayContain && readSchema.exists { field =>
+        TrampolineUtil.dataTypeExistsRecursively(field.dataType, GpuColumnVector.isVariantType)
+      }
+      case None => hasPotentiallyShreddedVariant(readSchema.map(_.dataType), sqlConf)
+    }
     if (schemaHasPotentiallyShreddedVariant) {
-      val reason = "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
-        "shredded Variant input"
+      val reason = if (mayContainShreddedVariant.isDefined) {
+        "GPU Delta reader does not support VARIANT columns when the table protocol " +
+          "supports variant shredding"
+      } else {
+        "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
+          "shredded Variant input"
+      }
       // Keep the scan and its consumers on CPU until an operator no longer outputs Variant.
       tagVariantScanPrefixForCpu(meta, reason)
     }

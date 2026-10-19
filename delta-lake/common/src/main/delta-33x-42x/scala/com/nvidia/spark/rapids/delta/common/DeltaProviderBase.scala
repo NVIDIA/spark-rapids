@@ -100,7 +100,13 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
-      GpuReadParquetFileFormat.tagSupport(meta)
+      val deltaFormat = format.asInstanceOf[DeltaParquetFileFormat]
+      // Disabling shredded writes does not remove existing shredded files. The reader
+      // feature remains in the protocol and is therefore safer than the write property.
+      val mayContainShreddedVariant = deltaFormat.protocol.readerFeatures.exists { features =>
+        features.contains("variantShredding-preview") || features.contains("variantShredding")
+      }
+      GpuReadParquetFileFormat.tagSupport(meta, Some(mayContainShreddedVariant))
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
     }

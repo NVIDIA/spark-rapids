@@ -18,14 +18,15 @@ from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture
 from delta_lake_utils import delta_meta_allow
 from marks import allow_non_gpu, incompat, ignore_order
 from spark_session import (is_databricks_runtime, is_databricks173_or_later,
-                           is_spark_40x, with_cpu_session)
+                           is_spark_40x, is_spark_41x, with_cpu_session)
 
 
 pytestmark = [
     pytest.mark.delta_lake,
     pytest.mark.skipif(
-        not (is_databricks_runtime() and is_databricks173_or_later() and is_spark_40x()),
-        reason='Protocol-based Variant fallback is implemented for DBR 17.3'),
+        not ((is_databricks_runtime() and is_databricks173_or_later() and is_spark_40x()) or
+             (not is_databricks_runtime() and (is_spark_40x() or is_spark_41x()))),
+        reason='Requires DBR 17.3 or OSS Spark 4.0/4.1 with Delta 4.x'),
 ]
 
 _shredding_features = {'variantShredding-preview', 'variantShredding'}
@@ -33,6 +34,9 @@ _table_states = ['unshredded', 'feature_only', 'shredded', 'disabled', 'mixed']
 _read_conf = {'spark.sql.variant.pushVariantIntoScan': 'false',
               'spark.sql.adaptive.enabled': 'true',
               'spark.sql.shuffle.partitions': '2'}
+# OSS Spark 4.0 requires opting in; DBR 17.3 and Spark 4.1 use the native reader default.
+if not is_databricks_runtime() and is_spark_40x():
+    _read_conf['spark.sql.variant.allowReadingShredded'] = 'true'
 
 
 def _physical_schemas(spark, path):
@@ -79,10 +83,10 @@ def _write_table(spark, path, state):
         assert detail.properties['delta.enableVariantShredding'] == 'false'
 
 
-def _read_query(spark, path, query):
-    # Exercise the native default; users must not need to disable shredded reads.
+def _read_query(spark, path, query, file_format='delta'):
+    # Users must not need to disable shredded reads to accelerate safe Delta tables.
     assert spark.conf.get('spark.sql.variant.allowReadingShredded') == 'true'
-    df = spark.read.format('delta').load(path)
+    df = spark.read.format(file_format).load(path)
     if query == 'ordinary':
         return df.select('id')
     if query == 'raw':
@@ -101,7 +105,7 @@ def _read_query(spark, path, query):
                'ColumnarToRowExec', 'ShuffleExchangeExec')
 @pytest.mark.parametrize('state', _table_states)
 @pytest.mark.parametrize('query', ['raw', 'nested', 'extract', 'aggregate', 'aqe', 'ordinary'])
-def test_db173_delta_variant_protocol_fallback(spark_tmp_path, state, query):
+def test_delta_variant_protocol_fallback(spark_tmp_path, state, query):
     path = spark_tmp_path + '/DELTA_VARIANT_PROTOCOL'
     with_cpu_session(lambda spark: _write_table(spark, path, state))
     use_gpu_scan = state == 'unshredded' or query == 'ordinary'
@@ -114,4 +118,50 @@ def test_db173_delta_variant_protocol_fallback(spark_tmp_path, state, query):
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: _read_query(spark, path, query),
         exist_classes=','.join(exist), non_exist_classes=','.join(absent),
+        conf=_read_conf)
+
+
+@pytest.mark.skipif(is_databricks_runtime(), reason='Exercise OSS Variant extraction pushdown')
+@ignore_order(local=True)
+@incompat
+@allow_non_gpu(*delta_meta_allow, 'FileSourceScanExec', 'ProjectExec', 'VariantGet',
+               'ColumnarToRowExec')
+@pytest.mark.parametrize('state', _table_states)
+def test_delta_variant_protocol_with_pushdown(spark_tmp_path, state):
+    path = spark_tmp_path + '/DELTA_VARIANT_PUSHDOWN'
+    with_cpu_session(lambda spark: _write_table(spark, path, state))
+    # Pushed Variant structs remain unsupported even when the protocol rules out shredding.
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: _read_query(spark, path, 'extract'),
+        exist_classes='FileSourceScanExec',
+        non_exist_classes='GpuFileSourceScanExec,GpuVariantGet',
+        conf=dict(_read_conf, **{'spark.sql.variant.pushVariantIntoScan': 'true'}))
+
+
+@pytest.mark.skipif(is_databricks_runtime() or not is_spark_41x(),
+                    reason='Spark 4.1 retains its configuration-based plain Parquet guard')
+@ignore_order(local=True)
+@incompat
+@allow_non_gpu('FileSourceScanExec', 'ProjectExec', 'VariantGet', 'ColumnarToRowExec')
+@pytest.mark.parametrize('shredded', [False, True])
+@pytest.mark.parametrize('query', ['raw', 'extract', 'ordinary'])
+def test_plain_parquet_variant_guard(spark_tmp_path, shredded, query):
+    path = spark_tmp_path + '/PARQUET_VARIANT'
+
+    def write(spark):
+        spark.conf.set('spark.sql.variant.writeShredding.enabled', str(shredded).lower())
+        spark.conf.set('spark.sql.variant.forceShreddingSchemaForTest',
+                       'STRUCT<x: BIGINT>' if shredded else '')
+        spark.range(8).selectExpr('id',
+            "parse_json(concat('{\"x\":', id, '}')) AS v").coalesce(1).write.parquet(path)
+        schemas = _physical_schemas(spark, path)
+        assert schemas and all(('typed_value' in schema) == shredded for schema in schemas)
+
+    with_cpu_session(write)
+    use_gpu_scan = query == 'ordinary'
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: _read_query(spark, path, query, file_format='parquet'),
+        exist_classes='GpuFileSourceScanExec' if use_gpu_scan else 'FileSourceScanExec',
+        non_exist_classes='FileSourceScanExec' if use_gpu_scan else
+            'GpuFileSourceScanExec,GpuVariantGet',
         conf=_read_conf)
