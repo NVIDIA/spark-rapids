@@ -221,7 +221,7 @@ class BufferSendState(
    * server's sweep once the transport has stopped, because the transport can still read the
    * bounce buffer until then.
    * @param errorReply the error reply to answer the requester with before the request
-   *                   transaction closes; none sends no reply
+   *                   transaction closes, or None to send no reply
    * @return true if this call ended the state
    */
   def finish(

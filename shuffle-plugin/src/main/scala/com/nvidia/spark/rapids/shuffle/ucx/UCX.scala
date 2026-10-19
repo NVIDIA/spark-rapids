@@ -1206,8 +1206,8 @@ object UCX extends Logging {
    * @param completion the send's completion, from `sendOrReport`
    * @param prepare builds what the send needs besides its header, such as its request
    *                parameters
-   * @param allocate allocates the header; a test stands in for the direct allocation
-   * @param addressOf the native address of a direct buffer; a test stands in for it too
+   * @param allocate allocates the header, and a test stands in for the direct allocation
+   * @param addressOf gets a direct buffer's native address, and a test stands in for the lookup
    */
   private[shuffle] def sendTask[P](
       header: Long,
@@ -1251,7 +1251,7 @@ object UCX extends Logging {
     range.close()
   }
 
-  // builds the completion of each send; a test stands in for it
+  // builds the completion of each send, and a test stands in for it
   private val newCompletion: UcxCallback => SendCompletion = new SendCompletion(_)
 
   /**

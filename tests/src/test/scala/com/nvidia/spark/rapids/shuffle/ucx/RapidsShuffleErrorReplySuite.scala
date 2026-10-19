@@ -321,8 +321,8 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       val oom = new OutOfMemoryError("Direct buffer memory")
       intercept[OutOfMemoryError](UCX.sendOrReport(send.getValue)(_ => throw oom))
 
-      // Each reader is told, rather than waiting until it times out. The receive state stays,
-      // as it does for any transfer request whose own send fails (#7545).
+      // Each reader is told at once. The receive state stays, as it does whenever a transfer
+      // request's transaction ends without success.
       Seq(first, second).foreach { handler =>
         verify(handler, times(1)).transferError(contains("Direct buffer memory"), isNull())
       }
@@ -618,7 +618,7 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       clock.advance(TimeUnit.SECONDS.toNanos(1))
       requestCallbacks.get(MessageType.TransferRequest)(request)
       readerThread.join(TimeUnit.SECONDS.toMillis(awaitSeconds))
-      // a reply that comes after the reader gave up is still sent, and says when; the reader
+      // a reply that comes after the reader gave up is still sent, and says when. The reader
       // can wake before the requester has closed the receive state, so this waits for that too
       assert(replied.await(awaitSeconds, TimeUnit.SECONDS), "the server never replied")
 
