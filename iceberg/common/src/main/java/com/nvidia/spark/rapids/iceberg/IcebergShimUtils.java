@@ -59,7 +59,11 @@ import java.util.Map;
  * {@link ShimUtils} based on the detected Iceberg version.
  */
 public interface IcebergShimUtils {
-    /** Returns the Parquet converter for the selected Spark and Iceberg versions. */
+    /**
+     * Converts Iceberg's shaded Parquet types to Spark's unshaded Parquet types.
+     * The default uses their common APIs; shims override it when both versions expose
+     * additional logical types, keeping version-specific references out of shared code.
+     */
     default FromIcebergShaded parquetConverter() {
         return FromIcebergShaded$.MODULE$;
     }

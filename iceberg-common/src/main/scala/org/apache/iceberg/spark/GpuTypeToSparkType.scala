@@ -63,11 +63,13 @@ object GpuTypeToSparkType {
 /**
  * Iceberg-to-Spark schema visitor. Builds the Spark `StructType` and, using the visitor's
  * natural post-order traversal, threads each top-level `StructField`'s nested-id metadata
- * via a per-subtree stack:
+ * via a per-subtree stack. Each visited child type contributes exactly one stack entry:
  *
  *  - `primitive` and `struct` push `None` — primitives have no children, and a struct
  *    attaches each child's id to the inner `StructField`, so neither contributes nested ids
  *    to an enclosing list/map.
+ *  - `afterField` pushes `None` for non-primitive leaves, such as Variant, that bypass
+ *    `primitive`. Collection element/key/value hooks delegate to this same callback.
  *  - `list` / `map` consume the child entries on the stack, build a JSON-serialized
  *    `Metadata` containing the element / key / value ids (plus any popped nested-ids JSON
  *    under `_NESTED_IDS_METADATA_KEY`), and push that JSON.
@@ -81,43 +83,19 @@ object GpuTypeToSparkType {
  */
 class GpuTypeToSparkType extends TypeToSparkType {
   private val nestedIdsStack = mutable.ArrayBuffer.empty[Option[String]]
-  private val subtreeStarts = mutable.ArrayBuffer.empty[Int]
 
   private def pushNested(nested: Option[String]): Unit = nestedIdsStack += nested
 
   private def popNested(): Option[String] =
     nestedIdsStack.remove(nestedIdsStack.length - 1)
 
-  private def beforeSubtree(): Unit = subtreeStarts += nestedIdsStack.length
-
-  private def afterSubtree(): Unit = {
-    val start = subtreeStarts.remove(subtreeStarts.length - 1)
-    val resultCount = nestedIdsStack.length - start
-    if (resultCount == 0) {
-      // Iceberg may add non-primitive leaf types, such as Variant, without routing them
-      // through primitive(). They do not have nested field IDs but still need a stack entry.
+  override def afterField(field: Types.NestedField): Unit = {
+    // Use the common Type API so this visitor also links against Iceberg without VariantType.
+    val fieldType = field.`type`()
+    if (!fieldType.isPrimitiveType && !fieldType.isNestedType) {
       pushNested(None)
-    } else {
-      require(resultCount == 1,
-        s"Expected one nested-id result for an Iceberg type subtree, found $resultCount")
     }
   }
-
-  override def beforeField(field: Types.NestedField): Unit = beforeSubtree()
-
-  override def afterField(field: Types.NestedField): Unit = afterSubtree()
-
-  override def beforeListElement(element: Types.NestedField): Unit = beforeSubtree()
-
-  override def afterListElement(element: Types.NestedField): Unit = afterSubtree()
-
-  override def beforeMapKey(key: Types.NestedField): Unit = beforeSubtree()
-
-  override def afterMapKey(key: Types.NestedField): Unit = afterSubtree()
-
-  override def beforeMapValue(value: Types.NestedField): Unit = beforeSubtree()
-
-  override def afterMapValue(value: Types.NestedField): Unit = afterSubtree()
 
   private def jsonOrNone(builder: MetadataBuilder): Option[String] = {
     val json = builder.build().json
