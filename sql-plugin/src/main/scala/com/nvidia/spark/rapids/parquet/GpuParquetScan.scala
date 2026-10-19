@@ -172,8 +172,7 @@ object GpuParquetScan {
     }
   }
 
-  private def tagVariantScanPrefixForCpu(
-      meta: RapidsMeta[_, _, _], reason: String, sqlConf: SQLConf): Unit = {
+  def tagVariantScanPrefixForCpu(meta: RapidsMeta[_, _, _], reason: String): Unit = {
     meta.willNotWorkOnGpu(reason)
     var ancestor = meta.parent
     var outputContainsVariant = true
@@ -183,8 +182,9 @@ object GpuParquetScan {
         case plan: SparkPlan =>
           plan.setTagValue(RapidsMeta.gpuSupportedTag,
             plan.getTagValue(RapidsMeta.gpuSupportedTag).getOrElse(Set.empty) + reason)
-          outputContainsVariant = hasPotentiallyShreddedVariant(
-            plan.output.map(_.dataType), sqlConf)
+          outputContainsVariant = plan.output.exists { attr =>
+            TrampolineUtil.dataTypeExistsRecursively(attr.dataType, GpuColumnVector.isVariantType)
+          }
         case _ =>
       }
       ancestor = current.parent
@@ -209,7 +209,7 @@ object GpuParquetScan {
       val reason = "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
         "shredded Variant input"
       // Keep the scan and its consumers on CPU until an operator no longer outputs Variant.
-      tagVariantScanPrefixForCpu(meta, reason, sqlConf)
+      tagVariantScanPrefixForCpu(meta, reason)
     }
   }
 
