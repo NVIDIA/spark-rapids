@@ -132,19 +132,16 @@ Map run(script, dbUtils, Closure build, Closure test) {
                     throw error
                 } finally {
                     def cleanupFailed = false
-                    def pendingError = primaryError
                     try {
                         cleanupAttempt(script, dbUtils, stateFile, initDir, primaryError)
                     } catch (Exception cleanupError) {
                         cleanupFailed = true
-                        pendingError = primaryError ?: cleanupError
                         throw cleanupError
                     } finally {
                         if (primaryError || retryable || cleanupFailed) {
                             printFailureSummary(script, stateFile, failureFile,
                                 cleanupFailed && !primaryError && !retryable ? 'cleanup' : operation,
-                                testFailed, classificationAvailable, retryable, finalAttempt, reason,
-                                pendingError)
+                                testFailed, classificationAvailable, retryable, finalAttempt, reason)
                         }
                     }
                 }
@@ -159,7 +156,7 @@ Map run(script, dbUtils, Closure build, Closure test) {
 
 void printFailureSummary(script, String stateFile, String failureFile, String operation,
                          boolean testFailed, boolean classificationAvailable,
-                         boolean retryable, boolean finalAttempt, String reason, Exception primaryError) {
+                         boolean retryable, boolean finalAttempt, String reason) {
     try {
         def state = script.fileExists(stateFile) ?
             script.readJSON(file: stateFile, returnPojo: true) : [:]
@@ -196,8 +193,8 @@ void printFailureSummary(script, String stateFile, String failureFile, String op
         lines.add('=== End Databricks failure summary ===')
         script.echo lines.join('\n')
     } catch (Exception summaryError) {
-        // Reporting must not replace the original error, cleanup failure or cancellation.
-        if (!primaryError && summaryError instanceof org.jenkinsci.plugins.workflow.steps.FlowInterruptedException) {
+        // Interruptions must propagate even when a test or cleanup failure is already pending.
+        if (summaryError instanceof org.jenkinsci.plugins.workflow.steps.FlowInterruptedException) {
             throw summaryError
         }
         // Do not log again here: even a warning can fail and hide the pending exception.
