@@ -238,8 +238,8 @@ object GpuParquetScan {
     }
     if (schemaHasPotentiallyShreddedVariant) {
       val reason = if (mayContainShreddedVariant.isDefined) {
-        "GPU Delta reader does not support VARIANT columns when the table protocol " +
-          "supports variant shredding"
+        "GPU Delta reader cannot safely read VARIANT columns when the table protocol supports " +
+          "shredding or an unrecognized reader feature"
       } else {
         "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
           "shredded Variant input"

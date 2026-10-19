@@ -165,3 +165,33 @@ def test_plain_parquet_variant_guard(spark_tmp_path, shredded, query):
         non_exist_classes='FileSourceScanExec' if use_gpu_scan else
             'GpuFileSourceScanExec,GpuVariantGet',
         conf=_read_conf)
+
+
+@pytest.mark.skipif(is_databricks_runtime() or not is_spark_41x(),
+                    reason='Stable shredding requires OSS Delta 4.1 or later')
+@ignore_order(local=True)
+@incompat
+@allow_non_gpu(*delta_meta_allow, 'FileSourceScanExec', 'ProjectExec', 'VariantGet',
+               'ColumnarToRowExec')
+@pytest.mark.parametrize('state', ['feature_only', 'shredded', 'disabled', 'mixed'])
+@pytest.mark.parametrize('query', ['extract', 'ordinary'])
+def test_delta_stable_variant_shredding(spark_tmp_path, state, query):
+    path = spark_tmp_path + '/DELTA_STABLE_VARIANT'
+
+    def write(spark):
+        delta_conf = spark._jvm.org.apache.spark.sql.delta.sources.DeltaSQLConf
+        key = delta_conf.FORCE_USE_PREVIEW_SHREDDING_FEATURE().key()
+        spark.conf.set(key, 'false')
+        _write_table(spark, path, state)
+        features = set(spark.sql(f'DESCRIBE DETAIL delta.`{path}`').first().tableFeatures)
+        assert 'variantShredding' in features
+        assert 'variantShredding-preview' not in features
+
+    with_cpu_session(write)
+    use_gpu_scan = query == 'ordinary'
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: _read_query(spark, path, query),
+        exist_classes='GpuFileSourceScanExec' if use_gpu_scan else 'FileSourceScanExec',
+        non_exist_classes='FileSourceScanExec' if use_gpu_scan else
+            'GpuFileSourceScanExec,GpuVariantGet',
+        conf=_read_conf)

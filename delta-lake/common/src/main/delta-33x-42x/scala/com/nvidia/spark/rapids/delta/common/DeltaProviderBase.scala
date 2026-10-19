@@ -101,11 +101,8 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
       val deltaFormat = format.asInstanceOf[DeltaParquetFileFormat]
-      // Disabling shredded writes does not remove existing shredded files. The reader
-      // feature remains in the protocol and is therefore safer than the write property.
-      val mayContainShreddedVariant = deltaFormat.protocol.readerFeatures.exists { features =>
-        features.contains("variantShredding-preview") || features.contains("variantShredding")
-      }
+      val mayContainShreddedVariant =
+        DeltaRuntimeShim.mayContainShreddedVariant(deltaFormat.protocol)
       GpuReadParquetFileFormat.tagSupport(meta, Some(mayContainShreddedVariant))
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")

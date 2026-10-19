@@ -30,16 +30,23 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog
 import org.apache.spark.sql.delta.{DeltaErrors, DeltaLog, DeltaOperations, DeltaOptions,
   NumRecordsStats, Snapshot}
+import org.apache.spark.sql.delta.{TableFeature, VariantShreddingPreviewTableFeature,
+  VariantShreddingTableFeature}
 import org.apache.spark.sql.delta.actions.{AddFile, Metadata}
 import org.apache.spark.sql.delta.catalog.DeltaCatalog
 import org.apache.spark.sql.delta.commands.{DeltaReorgOperation, UpdateCommand, WriteIntoDelta}
 import org.apache.spark.sql.delta.hooks.GpuAutoCompact43x
-import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShimBase, GpuDeltaLog,
+import org.apache.spark.sql.delta.rapids.{DeltaRuntimeShimBase, DeltaVariantShreddingShim,
+  GpuDeltaLog,
   GpuOptimisticTransactionBase, GpuWriteIntoDeltaLike, StartTransactionArg}
 import org.apache.spark.sql.delta.sources.DeltaSQLConf
 import org.apache.spark.sql.types.StructType
 
-class Delta43xRuntimeShim extends DeltaRuntimeShimBase {
+class Delta43xRuntimeShim extends DeltaRuntimeShimBase
+    with DeltaVariantShreddingShim {
+
+  override protected def variantShreddingFeatures: Set[TableFeature] =
+    Set(VariantShreddingPreviewTableFeature, VariantShreddingTableFeature)
 
   override def groupOptimizeFilesByPartition(
       spark: SparkSession,
