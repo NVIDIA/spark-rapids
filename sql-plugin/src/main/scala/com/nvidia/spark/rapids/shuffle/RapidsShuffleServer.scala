@@ -466,9 +466,13 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    */
   private def errorReply(
       outcome: BufferSendState.Outcome,
-      cause: Throwable): Option[BufferSendState.ErrorReply] =
-    if (BufferSendState.endsSendLoop(cause) || !started) None
-    else Some(BufferSendState.ErrorReply(RapidsShuffleServer.failureReason(outcome), replyGate))
+      cause: Throwable): Option[BufferSendState.ErrorReply] = {
+    if (BufferSendState.endsSendLoop(cause) || !started) {
+      None
+    } else {
+      Some(BufferSendState.ErrorReply(RapidsShuffleServer.failureReason(outcome), replyGate))
+    }
+  }
 
   private def closeQuietly(what: String, resource: AutoCloseable): Unit = {
     try {

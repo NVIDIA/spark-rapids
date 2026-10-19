@@ -1449,7 +1449,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
           requestCallbacks.put(invocation.getArgument[MessageType.Value](0),
             invocation.getArgument[TransactionCallback](1))
       }).when(serverConnection).registerRequestHandler(any(), any())
-      // the send loop starts once the states and the request are queued, so one pass takes all
+      // the send loop starts once the states and the request are queued, so its first pass
+      // sees all three
       val (queued, loopExited) = (new CountDownLatch(1), new CountDownLatch(1))
       val loopThread = Executors.newSingleThreadExecutor()
       val sendLoop: Executor = loop => loopThread.execute(() => {
