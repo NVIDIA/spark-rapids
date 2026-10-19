@@ -345,11 +345,9 @@ values occurring before the transition between the Julian and Gregorian calendar
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/cudf-spark/issues/144).
 
-The plugin supports reading `uncompressed`, `snappy`, `gzip` and `zstd` Parquet files and writing
-`uncompressed`, `snappy` and `zstd` Parquet files.  At this point, the plugin does not have the 
-ability to
-fall back to the CPU when reading an unsupported compression format, and will error out in that
-case.
+The plugin supports reading and writing `uncompressed`, `snappy`, `gzip` and `zstd` Parquet files.
+At this point, the plugin cannot fall back to the CPU when reading an unsupported compression
+format, and will error out in that case.
 
 ## Delta Lake low shuffle merge on Databricks Runtime 17.3
 
@@ -938,7 +936,7 @@ data.  The cuDF plugin `get_json_object` operation on the GPU will return `None`
 updated in a future release to more closely match Spark.
 
 If the JSON has a single quote `'` in the path, the GPU query may fail with `ai.rapids.cudf.CudfException`.
-More examples are in [issue-12483](https://github.com/rapidsai/cudf/issues/12483).
+More examples are in [issue-12483](https://github.com/NVIDIA/cudf/issues/12483).
 
 ## Approximate Percentile
 
