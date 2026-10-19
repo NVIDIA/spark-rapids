@@ -27,10 +27,10 @@ import org.openucx.jucx.ucp.UcpRequest
 import org.scalatest.funsuite.AnyFunSuite
 
 /**
- * The UCX send task, through the helper that runs it: a task that throws must still end its
- * send exactly once, or the send's transaction never completes. A test cannot build a UCX, so
- * each task here stands in for the header allocation and JUCX's send. The suite also covers how a
- * task is queued for the progress thread.
+ * Tests `UCX.sendOrReport` and the send task it runs, `UCX.sendTask`. A task that throws must
+ * still end its send exactly once, or the send's transaction never completes. A test cannot
+ * build a UCX, so the tests stand in for JUCX's send, or for the whole task. The suite also
+ * covers how `UCX.queueTask` queues a task for the progress thread.
  */
 class UCXSendTaskSuite extends AnyFunSuite {
 
@@ -124,8 +124,8 @@ class UCXSendTaskSuite extends AnyFunSuite {
   }
 
   test("a JVM error after the hand-off is left to the send's own callback") {
-    // JUCX can run out of heap after UCX took the send, which then still calls back, and may
-    // read the send's buffers until it does
+    // JUCX can run out of heap after UCX took the send. UCX still calls back, and may read the
+    // send's buffers until it does.
     val ended = new Ended
     var pending: UCX.SendCompletion = null
     val oom = new OutOfMemoryError("Java heap space")
@@ -247,7 +247,7 @@ class UCXSendTaskSuite extends AnyFunSuite {
     assert(thrown eq oom)
     assert(thrown.getSuppressed.exists(_ eq reportFailure))
 
-    // the same when the report goes to the sender's callback, the completion not built
+    // the same when the completion cannot be built, so the report goes to the sender's callback
     val heap = new OutOfMemoryError("Java heap space")
     val unbuilt = intercept[OutOfMemoryError](UCX.sendOrReport(failing, _ => throw heap)(_ => ()))
     assert(unbuilt eq heap)
@@ -295,14 +295,14 @@ class UCXSendTaskSuite extends AnyFunSuite {
     // the caller sees a throw and frees what the task would use, so the task must not run
     assert(tasks.isEmpty)
 
-    // a queue that cannot take the task closes the range built for it, and signals nothing
+    // when the queue refuses the task, queueTask closes the range it built and signals nothing
     val unqueued = new CountedRange
     intercept[NullPointerException](UCX.queueTask(tasks, null, wakeup = true,
       signal = () => fail("signalled a task that was not queued"), newRange = () => unqueued))
     assertResult(1)(unqueued.closes)
     assert(tasks.isEmpty)
 
-    // a failure to wake the worker is not the caller's, so the task stays queued
+    // an ordinary failure to wake the worker is only logged, since the task stays queued
     val signalled = new CountedRange
     UCX.queueTask(tasks, () => (), wakeup = true,
       signal = () => throw new IllegalStateException("signal failed in test"),

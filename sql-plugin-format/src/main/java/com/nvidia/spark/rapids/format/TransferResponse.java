@@ -18,8 +18,8 @@ public final class TransferResponse extends Table {
   public TransferResponse __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
   /**
-   * array of buffer responses, one for each requested, or in an error reply one for each
-   * requested buffer the server will not send, when it could read which those are
+   * array of buffer responses, one for each requested buffer. An error reply lists each
+   * requested buffer the server will not send, or none when the server could not tell which.
    */
   public BufferTransferResponse responses(int j) { return responses(new BufferTransferResponse(), j); }
   public BufferTransferResponse responses(BufferTransferResponse obj, int j) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }

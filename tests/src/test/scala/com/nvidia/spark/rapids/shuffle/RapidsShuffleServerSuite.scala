@@ -134,9 +134,60 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   }
 
   /**
-   * Mockito answers the mocked send-loop executor's `wait()` at once, so a test that closes the
-   * server while another thread queues a reply builds its own on a real executor, unspied, as
-   * `withGoneStateOnSendLoop` does.
+   * Runs `body` with a request handler that serves tables `tableIds`, whose buffers materialize
+   * with `materialize`.
+   */
+  private def withTables(tableIds: Int*)(materialize: () => DeviceMemoryBuffer)(
+      body: RapidsShuffleRequestHandler => Unit): Unit =
+    withRequestHandler(tableIds, materialize, removed = false, body)
+
+  /**
+   * Runs `body` with a request handler whose tables `tableIds` are gone. Each fails to
+   * materialize as a deleted spill file does and is reported removed, so that its request ends
+   * with an error reply.
+   */
+  private def withGoneTables(tableIds: Int*)(body: RapidsShuffleRequestHandler => Unit): Unit =
+    withRequestHandler(tableIds,
+      () => throw new FileNotFoundException("spill file deleted in test"), removed = true, body)
+
+  /** As `withTables`, and with `removed`, `isShuffleBufferRemoved` is true for each table. */
+  private def withRequestHandler(
+      tableIds: Seq[Int],
+      materialize: () => DeviceMemoryBuffer,
+      removed: Boolean,
+      body: RapidsShuffleRequestHandler => Unit): Unit = {
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      tableIds.foreach { id =>
+        val handle = makeHandle(tableMeta, materialize)
+        when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(id))).thenReturn(handle)
+        if (removed) {
+          when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(id),
+            ArgumentMatchers.eq(handle))).thenReturn(true)
+        }
+      }
+      body(requestHandler)
+    }
+  }
+
+  /** Answers with the buffer the real method builds, spied, after recording it in `built`. */
+  private def recordBuilt(
+      built: ArrayBuffer[RefCountedDirectByteBuffer]): Answer[RefCountedDirectByteBuffer] =
+    new Answer[RefCountedDirectByteBuffer] {
+      override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
+        val buffer = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
+        built.synchronized(built += buffer)
+        buffer
+      }
+    }
+
+  /**
+   * Mockito answers the mocked send-loop executor's `wait()` at once, without releasing its
+   * monitor, so a close that waits for a reply being queued would hang. A test that needs that
+   * wait builds its own server on a real executor, as `withGoneStateOnSendLoop` does. It does not
+   * spy that server, since a spy's close would not stop the send loop, which runs on the original.
    */
   private def newServer(requestHandler: RapidsShuffleRequestHandler,
       serverConnection: ServerConnection): RapidsShuffleServer = {
@@ -459,7 +510,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  test("successful preparation restarts the OOM backoff, not the request's retry deadline") {
+  test("successful preparation restarts the OOM backoff and keeps the request's retry deadline") {
     val sendBuffer = mock[SendBounceBuffers]
     val deviceBounceBuffer = mock[BounceBuffer]
     val deviceMemoryBuffer = mock[DeviceMemoryBuffer]
@@ -497,8 +548,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         // were a no-op or its successful preparation call site were removed, this would be the
         // third attempt.
         assertResult(Some(1))(bss.recordOomAndGetRetryAttempt(9L, 10L))
-        // The request's retries still end when they would have: a reader that started waiting
-        // before the request arrived saw none of this progress.
+        // The request's retries still end at the deadline counted from its arrival, since a
+        // reader that started waiting before the request arrived saw none of this progress.
         assertResult(None)(bss.recordOomAndGetRetryAttempt(10L, 10L))
       }
       // a reader's wait less 10 seconds, or less half of it if it is shorter than 20 seconds
@@ -919,12 +970,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   test("a data send whose send task throws ends its state, which leaves the in-flight set") {
     val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
     val requestTx = makeTx(1)
-    val requestHandler = mock[RapidsShuffleRequestHandler]
-    val metadataBuffer = ByteBuffer.allocateDirect(123)
-    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
-      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
-      val handle = makeHandle(tableMeta, () => mock[DeviceMemoryBuffer])
-      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+    withTables(1)(() => mock[DeviceMemoryBuffer]) { requestHandler =>
       // the real UCX server connection and transaction, with UCX mocked to capture the callback
       // that the send's task gets
       val ucx = mock[UCX]
@@ -961,27 +1007,12 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
           invocation.getArgument[ByteBuffer](0), invocation.getArgument[TransactionCallback](1))
     }).when(requestTx).respond(any(), any())
 
-    val requestHandler = mock[RapidsShuffleRequestHandler]
-    val metadataBuffer = ByteBuffer.allocateDirect(123)
-    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
-      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
-      // the buffer is gone, so that the request ends with an error reply
-      val handle = makeHandle(tableMeta,
-        () => throw new FileNotFoundException("spill file deleted in test"))
-      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
-      when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(1),
-        ArgumentMatchers.eq(handle))).thenReturn(true)
+    withGoneTables(1) { requestHandler =>
       val server = newServer(requestHandler, mock[ServerConnection])
       val replies = new ArrayBuffer[RefCountedDirectByteBuffer]()
       val state = spy(new BufferSendState(
         requestTx, makeSendBuffer(mock[DeviceMemoryBuffer]), requestHandler, null))
-      doAnswer(new Answer[RefCountedDirectByteBuffer] {
-        override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
-          val reply = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
-          replies += reply
-          reply
-        }
-      }).when(state).getErrorResponse(any())
+      doAnswer(recordBuilt(replies)).when(state).getErrorResponse(any())
 
       server.doHandleTransferRequest(Seq(state))
       val send = ArgumentCaptor.forClass(classOf[UcxCallback])
@@ -1086,7 +1117,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     assert(failure.getSuppressed.contains(fatal))
     assert(!Thread.interrupted())
     assertEndedOnce(states, buffers, txs, releases, serverConnection)
-    // only the state ended before the fatal error surfaced was answered
+    // only the state that ended before the fatal error surfaced was answered
     verify(txs.head, times(1)).respond(any(), any())
     txs.tail.foreach(tx => verify(tx, never()).respond(any(), any()))
     // rethrown, so left to whoever ends the loop with it to log
@@ -1251,30 +1282,13 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       .when(cannotStartTx).respond(any(), any())
     val txs = Seq(sendFailsTx, cannotStartTx)
 
-    val requestHandler = mock[RapidsShuffleRequestHandler]
-    val metadataBuffer = ByteBuffer.allocateDirect(123)
-    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
-      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
-      // both buffers are gone, so that both requests end with an error reply
-      Seq(1, 2).foreach { id =>
-        val handle = makeHandle(tableMeta,
-          () => throw new FileNotFoundException("spill file deleted in test"))
-        when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(id))).thenReturn(handle)
-        when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(id),
-          ArgumentMatchers.eq(handle))).thenReturn(true)
-      }
+    withGoneTables(1, 2) { requestHandler =>
       val server = newServer(requestHandler, mock[ServerConnection])
       val replies = new ArrayBuffer[RefCountedDirectByteBuffer]()
       val states = txs.map { tx =>
         val state = spy(new BufferSendState(
           tx, makeSendBuffer(mock[DeviceMemoryBuffer]), requestHandler, null))
-        doAnswer(new Answer[RefCountedDirectByteBuffer] {
-          override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
-            val reply = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
-            replies += reply
-            reply
-          }
-        }).when(state).getErrorResponse(any())
+        doAnswer(recordBuilt(replies)).when(state).getErrorResponse(any())
         state
       }
 
@@ -1303,10 +1317,10 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   private val awaitSeconds = 30L
 
   /**
-   * Starts a server whose send loop runs on a thread of its own, hands it a transfer request as
-   * the transport would, and closes it while the request handler holds the request's lookup or
-   * preparation: past the close's bounded wait for the loop, and past the transport's close,
-   * after which UCX's progress thread runs no more sends. Only then does the held work fail.
+   * Starts a server whose send loop runs on a thread of its own, and hands it a transfer request
+   * as the transport would. It closes the server while the request handler holds the request's
+   * lookup or preparation. The held work fails only once the close's bounded wait for the loop
+   * has run out and the transport has closed. By then UCX's progress thread runs no more sends.
    * @param held counted down by the request handler once it holds the send loop
    * @param mayFail counted down once the held lookup or preparation may fail
    */
@@ -1362,16 +1376,11 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
 
   test("a preparation that fails after the server closed gets no error reply") {
     val (held, mayFail) = (new CountDownLatch(1), new CountDownLatch(1))
-    val requestHandler = mock[RapidsShuffleRequestHandler]
-    val metadataBuffer = ByteBuffer.allocateDirect(123)
-    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
-      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
-      val handle = makeHandle(tableMeta, () => {
-        held.countDown()
-        mayFail.await(awaitSeconds, TimeUnit.SECONDS)
-        throw new IllegalStateException("preparation failed in test")
-      })
-      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+    withTables(1)(() => {
+      held.countDown()
+      mayFail.await(awaitSeconds, TimeUnit.SECONDS)
+      throw new IllegalStateException("preparation failed in test")
+    }) { requestHandler =>
       val (request, sendBuffer) = failAfterClose(requestHandler, held, mayFail)
       verify(request, never()).respond(any(), any())
       verify(request, times(1)).close()
@@ -1385,14 +1394,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
    */
   private def withTwoStates(txs: Seq[Transaction], materialize: () => DeviceMemoryBuffer)(
       body: (Seq[BufferSendState], RapidsShuffleRequestHandler) => Unit): Unit = {
-    val requestHandler = mock[RapidsShuffleRequestHandler]
-    val metadataBuffer = ByteBuffer.allocateDirect(123)
-    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
-      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
-      Seq(1, 2).foreach { id =>
-        val handle = makeHandle(tableMeta, materialize)
-        when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(id))).thenReturn(handle)
-      }
+    withTables(1, 2)(materialize) { requestHandler =>
       val states = txs.map { tx =>
         spy(new BufferSendState(tx, makeSendBuffer(mock[DeviceMemoryBuffer]), requestHandler, null))
       }
@@ -1505,16 +1507,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
 
   test("an error reply that runs out of memory as it is built is not sent, and the loop goes on") {
     val requestTx = makeTx(1)
-    val requestHandler = mock[RapidsShuffleRequestHandler]
-    val metadataBuffer = ByteBuffer.allocateDirect(123)
-    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
-      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
-      // the buffer is gone, so that the request ends with an error reply
-      val handle = makeHandle(tableMeta,
-        () => throw new FileNotFoundException("spill file deleted in test"))
-      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
-      when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(1),
-        ArgumentMatchers.eq(handle))).thenReturn(true)
+    withGoneTables(1) { requestHandler =>
       val server = newServer(requestHandler, mock[ServerConnection])
       val state = spy(new BufferSendState(
         requestTx, makeSendBuffer(mock[DeviceMemoryBuffer]), requestHandler, null))
@@ -1548,24 +1541,10 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
   private def withGoneStateOnSendLoop(requestTx: Transaction, sendBuffer: SendBounceBuffers)(
       body: (RapidsShuffleServer, BufferSendState, ArrayBuffer[RefCountedDirectByteBuffer]) =>
         Unit): Unit = {
-    val requestHandler = mock[RapidsShuffleRequestHandler]
-    val metadataBuffer = ByteBuffer.allocateDirect(123)
-    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
-      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
-      val handle = makeHandle(tableMeta,
-        () => throw new FileNotFoundException("spill file deleted in test"))
-      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
-      when(requestHandler.isShuffleBufferRemoved(ArgumentMatchers.eq(1),
-        ArgumentMatchers.eq(handle))).thenReturn(true)
+    withGoneTables(1) { requestHandler =>
       val replies = new ArrayBuffer[RefCountedDirectByteBuffer]()
       val state = spy(new BufferSendState(requestTx, sendBuffer, requestHandler, null))
-      doAnswer(new Answer[RefCountedDirectByteBuffer] {
-        override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
-          val reply = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
-          replies.synchronized(replies += reply)
-          reply
-        }
-      }).when(state).getErrorResponse(any())
+      doAnswer(recordBuilt(replies)).when(state).getErrorResponse(any())
       val sendLoop = Executors.newSingleThreadExecutor()
       try {
         val server = new RapidsShuffleServer(mockTransport, mock[ServerConnection],
@@ -1614,6 +1593,37 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }
   }
 
+  /**
+   * Closes `server` on a thread of its own while `mayQueue` holds a reply that the server let
+   * through in the middle of being queued. Checks that the close waits for it, then releases it
+   * and checks that the close returns. `reply` names the reply in the failure message.
+   */
+  private def assertCloseWaitsForQueueing(
+      server: RapidsShuffleServer,
+      mayQueue: CountDownLatch,
+      reply: String): Unit = {
+    val closer = Executors.newSingleThreadExecutor()
+    val closed = new CountDownLatch(1)
+    try {
+      closer.execute(() => {
+        server.close()
+        closed.countDown()
+      })
+      // longer than close's bounded wait for the send loop
+      assert(!closed.await(2, TimeUnit.SECONDS),
+        s"close returned while $reply it let through was still being queued")
+    } finally {
+      mayQueue.countDown()
+      closer.shutdown()
+    }
+    try {
+      assert(closed.await(awaitSeconds, TimeUnit.SECONDS), "close never returned")
+    } finally {
+      // a close still waiting is interrupted only once the reply may be queued
+      closer.shutdownNow()
+    }
+  }
+
   test("close waits for an error reply that is being queued") {
     val (queueing, mayQueue) = (new CountDownLatch(1), new CountDownLatch(1))
     val requestTx = makeTx(1)
@@ -1627,28 +1637,9 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     }).when(requestTx).respond(any(), any())
     val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
     withGoneStateOnSendLoop(requestTx, sendBuffer) { (server, state, replies) =>
-      val closer = Executors.newSingleThreadExecutor()
-      val closed = new CountDownLatch(1)
-      try {
-        server.addToContinueQueue(Seq(state))
-        assert(queueing.await(awaitSeconds, TimeUnit.SECONDS), "the reply was never sent")
-        closer.execute(() => {
-          server.close()
-          closed.countDown()
-        })
-        // longer than close's bounded wait for the send loop
-        assert(!closed.await(2, TimeUnit.SECONDS),
-          "close returned while an error reply it let through was still being queued")
-      } finally {
-        mayQueue.countDown()
-        closer.shutdown()
-      }
-      try {
-        assert(closed.await(awaitSeconds, TimeUnit.SECONDS), "close never returned")
-      } finally {
-        // a close still waiting is interrupted only once the reply may be queued
-        closer.shutdownNow()
-      }
+      server.addToContinueQueue(Seq(state))
+      assert(queueing.await(awaitSeconds, TimeUnit.SECONDS), "the reply was never sent")
+      assertCloseWaitsForQueueing(server, mayQueue, "an error reply")
       val callback = ArgumentCaptor.forClass(classOf[TransactionCallback])
       verify(requestTx, times(1)).respond(any(), callback.capture())
       // the queued reply is the transport's, and its callback releases it
@@ -1722,12 +1713,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       prepare: BufferSendState => Unit)(
       body: (RapidsShuffleServer, BufferSendState, () => java.util.concurrent.Future[_]) =>
         Unit): Unit = {
-    val requestHandler = mock[RapidsShuffleRequestHandler]
-    val metadataBuffer = ByteBuffer.allocateDirect(123)
-    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
-      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
-      val handle = makeHandle(tableMeta, () => mock[DeviceMemoryBuffer])
-      when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(1))).thenReturn(handle)
+    withTables(1)(() => mock[DeviceMemoryBuffer]) { requestHandler =>
       val serverConnection = mock[ServerConnection]
       val callback = ArgumentCaptor.forClass(classOf[TransactionCallback])
       when(serverConnection.send(
@@ -1768,9 +1754,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
           holding.countDown()
           mayResume.await(awaitSeconds, TimeUnit.SECONDS)
-          val response = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
-          responses.synchronized(responses += response)
-          response
+          recordBuilt(responses).answer(invocation)
         }
       }).when(state).getTransferResponse()
     } { (server, state, complete) =>
@@ -1811,25 +1795,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
     withStateAwaitingCompletion(requestTx, sendBuffer)(_ => ()) { (server, state, complete) =>
       val completed = complete()
-      val closer = Executors.newSingleThreadExecutor()
-      val closed = new CountDownLatch(1)
-      try {
-        assert(queueing.await(awaitSeconds, TimeUnit.SECONDS), "the response was never sent")
-        closer.execute(() => {
-          server.close()
-          closed.countDown()
-        })
-        assert(!closed.await(2, TimeUnit.SECONDS),
-          "close returned while a transfer response it let through was still being queued")
-      } finally {
-        mayQueue.countDown()
-        closer.shutdown()
-      }
-      try {
-        assert(closed.await(awaitSeconds, TimeUnit.SECONDS), "close never returned")
-      } finally {
-        closer.shutdownNow()
-      }
+      assert(queueing.await(awaitSeconds, TimeUnit.SECONDS), "the response was never sent")
+      assertCloseWaitsForQueueing(server, mayQueue, "a transfer response")
       completed.get(awaitSeconds, TimeUnit.SECONDS)
       verify(requestTx, times(1)).respond(any(), any())
       assertResult(Some(BufferSendState.Completed))(state.endedWith)
@@ -1839,15 +1806,8 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
 
   /** Records each transfer response that `state` builds in `responses`, spied. */
   private def recordTransferResponses(
-      responses: ArrayBuffer[RefCountedDirectByteBuffer])(state: BufferSendState): Unit = {
-    doAnswer(new Answer[RefCountedDirectByteBuffer] {
-      override def answer(invocation: InvocationOnMock): RefCountedDirectByteBuffer = {
-        val response = spy(invocation.callRealMethod().asInstanceOf[RefCountedDirectByteBuffer])
-        responses.synchronized(responses += response)
-        response
-      }
-    }).when(state).getTransferResponse()
-  }
+      responses: ArrayBuffer[RefCountedDirectByteBuffer])(state: BufferSendState): Unit =
+    doAnswer(recordBuilt(responses)).when(state).getTransferResponse()
 
   test("a transfer response whose send throws is closed once, and close does not wait for it") {
     val responses = new ArrayBuffer[RefCountedDirectByteBuffer]()

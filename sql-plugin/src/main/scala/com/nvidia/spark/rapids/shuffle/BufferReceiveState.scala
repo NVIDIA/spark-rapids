@@ -133,9 +133,8 @@ class BufferReceiveState(
   def getRequests: Seq[PendingTransferRequest] = requests
 
   override def close(): Unit = synchronized {
-    // The window handler's catch in RapidsShuffleClient closes the state again when the last
-    // window's transaction fails to close after the state closed, so a second close releases
-    // nothing.
+    // RapidsShuffleClient.doHandleBounceBufferReceive closes the state after the last window.
+    // Its catch closes the state again if that close or the window's transaction then fails.
     if (!closed) {
       closed = true
       if (workingOn != null) {
@@ -160,7 +159,7 @@ class BufferReceiveState(
 
   /**
    * Records that the server failed this request, after which no more windows come.
-   * @param reason why, for the error that each reader of a request that will not arrive gets
+   * @param reason the error message for each reader whose request will not arrive
    * @return what `takeFailure` returns now. A caller that gets the failure must end this state
    *         with it. While a window is left to consume, the failure waits for a later
    *         `takeFailure` call.

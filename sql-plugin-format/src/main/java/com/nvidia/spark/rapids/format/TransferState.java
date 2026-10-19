@@ -13,7 +13,7 @@ public final class TransferState {
    */
   public static final byte BUFFER_META_UPDATED = 1;
   /**
-   * The server will not send this buffer; the response's error says why
+   * The server will not send this buffer. The response's error says why.
    */
   public static final byte FAILED = 2;
 

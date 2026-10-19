@@ -23,7 +23,7 @@ enum TransferState: byte {
   /// Data has been compressed and requires meta update
   BUFFER_META_UPDATED = 1,
 
-  /// The server will not send this buffer; the response's error says why
+  /// The server will not send this buffer. The response's error says why.
   FAILED = 2
 }
 
@@ -40,8 +40,8 @@ table BufferTransferResponse {
 
 /// Flat buffer for Rapids UCX Shuffle Transfer Response.
 table TransferResponse {
-  /// array of buffer responses, one for each requested, or in an error reply one for each
-  /// requested buffer the server will not send, when it could read which those are
+  /// array of buffer responses, one for each requested buffer. An error reply lists each
+  /// requested buffer the server will not send, or none when the server could not tell which.
   responses: [BufferTransferResponse];
 
   /// set when the server failed the request

@@ -135,17 +135,17 @@ class BufferSendState(
 
   private[this] var acquiredBuffs: Seq[RangeBuffer] = Seq.empty
 
-  // How many requested blocks, in order, the windows prepared so far cover completely, and how
-  // many the windows handed to the transport do. The requester gets every window handed over, or
-  // the send fails and it gets no error reply.
+  // How many requested blocks, in order, the prepared windows cover completely, and how many the
+  // issued windows do. An error reply leaves out the blocks the issued windows cover completely.
+  // The requester gets each issued window, or that send fails and no error reply follows.
   private[this] var blocksPrepared = 0
   private[this] var blocksIssued = 0
 
-  // The materialization OOMs of this transfer request are retried until `retryNanos` after it
-  // arrived, however its windows went, so that a reader that started waiting shortly before the
-  // request was sent is still waiting for the error reply. A successful preparation by this
-  // state starts the count of attempts, and so the backoff, over. Results from other
-  // BufferSendState instances that happen to share a server batch do not affect either.
+  // Retry attempts for this request's materialization OOMs since this state last prepared a
+  // window. The backoff before a retry depends on this count. The retries end `retryNanos` after
+  // the request arrived, however many of its windows were sent. That deadline lets the error
+  // reply reach a reader that started waiting shortly before the request was sent. Other states
+  // in the same server batch change neither the count nor the deadline.
   private[this] var oomRetryAttempts: Int = 0
 
   /**
@@ -248,9 +248,9 @@ class BufferSendState(
       }
       release(releaseAcquiredToCatalog())
       release(freeBounceBuffers())
-      // The requester of a state whose release ends the send loop hears of it when its
-      // connection closes. Replying and closing the transaction are calls into the transport,
-      // so they run outside this state's monitor.
+      // No reply follows a release failure that ends the send loop, since the requester hears of
+      // the failure when its connection closes. Replying and closing the transaction are calls
+      // into the transport, so they run outside this state's monitor.
       if (error == null || !BufferSendState.endsSendLoop(error)) {
         errorReply.foreach(reply => BufferSendState.sendErrorReply(transaction, reply.gate,
           getErrorResponse(reply.reason)))
@@ -414,9 +414,9 @@ private[shuffle] class BufferLookupException(val tableIds: Seq[Int], cause: Thro
 object BufferSendState extends Logging {
   /**
    * Lets a server queue its transfer responses, error replies included, only while it is open.
-   * The server shuts it before the transport closes, and waits for the replies it let through to
-   * be queued, so that each one is queued ahead of the transport's close, after which UCX's
-   * progress thread runs no task queued after it.
+   * The server shuts it before the transport closes, then waits until every reply it let through
+   * is queued. UCX's progress thread runs no task queued after the transport's close, so a reply
+   * queued later would never be sent or released.
    */
   private[shuffle] trait ReplyGate {
     /** Runs `queue`, which queues a reply, if the server is open, and returns whether it ran. */
@@ -427,11 +427,11 @@ object BufferSendState extends Logging {
   private[shuffle] case class ErrorReply(reason: String, gate: ReplyGate)
 
   /**
-   * Answers a failed transfer request with an error reply, through `gate`, and releases the
-   * reply: its send's callback does, whatever the status, or this does when the send cannot
-   * start or the gate is shut. A reply that cannot be built or sent is logged, by the connection
-   * when its send fails and here otherwise, and its requester waits until it times out, as with
-   * no reply.
+   * Answers a failed transfer request with an error reply, through `gate`. The send's callback
+   * releases the reply, whatever the send's status. This method releases it when the send cannot
+   * start or the gate is shut. A reply that cannot be built or sent leaves its requester waiting
+   * until it times out, as with no reply. The connection logs a failed send, and this method logs
+   * any other failure.
    */
   private[shuffle] def sendErrorReply(
       request: Transaction,

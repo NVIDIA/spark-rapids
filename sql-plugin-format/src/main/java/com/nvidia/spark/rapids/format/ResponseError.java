@@ -9,8 +9,8 @@ import com.google.flatbuffers.*;
 
 @SuppressWarnings("unused")
 /**
- * Sent in place of a response's result when the server fails the request, in a response of
- * any type
+ * Why the server failed a request. A transfer response carries it, and it holds nothing
+ * specific to transfers, so that other responses can carry it too.
  */
 public final class ResponseError extends Table {
   public static ResponseError getRootAsResponseError(ByteBuffer _bb) { return getRootAsResponseError(_bb, new ResponseError()); }

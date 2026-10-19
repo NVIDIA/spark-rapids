@@ -42,8 +42,8 @@ import org.apache.spark.storage.ShuffleBlockId
  * outcomes are logged with `info` and then compared, in one assertion, against what the server
  * does, so a change to the ownership of these buffers shows up as the list of outcomes it
  * changed rather than as the first failed check. A request the server fails gets an error reply
- * naming the tables it will not send, unless a data send failed, the server closed, or the failure
- * ends the send loop.
+ * naming the tables it will not send, unless its own receive failed, a data send failed, the
+ * server closed, or the failure ends the send loop.
  */
 class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
   private val awaitSeconds = 30L
@@ -177,7 +177,10 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
     }
   }
 
-  /** The request handler `RapidsShuffleInternalManagerBase` gives the server, with a pause. */
+  /**
+   * The request handler `RapidsShuffleInternalManagerBase` gives the server, with a pause and a
+   * failing lookup.
+   */
   private class CatalogRequestHandler(catalog: ShuffleBufferCatalog)
       extends CatalogShuffleRequestHandler(catalog) {
     @volatile var pauseAfterLookupOf: Option[Int] = None
@@ -291,7 +294,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
 
   /**
    * What the requester got: "none", "sent" for a completed request's transfer response, or an
-   * error reply, which names the tables it will not send by their place in the request.
+   * error reply, with each table the server will not send shown by its place in the request.
    */
   private def reply(tx: Transaction): String = {
     val replies = new ArrayBuffer[String]()
@@ -995,7 +998,7 @@ class ShuffleBufferLifetimeSuite extends RapidsShuffleTestHelper {
         describe(attempt(server.doHandleTransferRequest(Seq(goneState, heldState)))))
       outcomes("send states", s"${ended(goneState)}, ${ended(heldState)}")
       outcomes("request transactions close", s"${txCloses(goneTx)}, ${txCloses(heldTx)}")
-      // the pass ends the removed buffer's state a second time, with no second reply
+      // the pass calls finish on the removed buffer's state a second time, with no second reply
       outcomes("requesters get", s"${reply(goneTx)}, ${reply(heldTx)}")
       outcomes("bounce buffers", s"${bounceState(goneBounce)}, ${bounceState(heldBounce)}")
       outcomes("states re-queued", calls(server, "addToContinueQueue"))

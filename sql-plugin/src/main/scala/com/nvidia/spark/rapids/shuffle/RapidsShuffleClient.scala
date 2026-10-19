@@ -461,8 +461,8 @@ class RapidsShuffleClient(
   }
 
   /**
-   * Ends the receive state of a request that the server failed, unless a window received for it
-   * is still to be consumed, which then ends it.
+   * Ends the receive state of a request that the server failed. While a window for it is left
+   * to consume, `doHandleBounceBufferReceive` ends the state after consuming the last one.
    */
   private[this] def doHandleTransferFailure(
       bufferReceiveState: BufferReceiveState,
@@ -470,8 +470,8 @@ class RapidsShuffleClient(
     endIfFailed(bufferReceiveState, bufferReceiveState.serverFailed(reason))
 
   /**
-   * Ends a receive state with the failure `failure` hands over, if any, and logs an ordinary
-   * error from ending it.
+   * Ends a receive state if `failure` hands over a failed transfer. A non-fatal error from
+   * ending it is logged, since the copy thread's handlers must not throw.
    */
   private[this] def endIfFailed(
       bufferReceiveState: BufferReceiveState,

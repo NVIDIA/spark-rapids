@@ -558,8 +558,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
 
   private def sendActiveMessage(executorId: Long, am: UCXActiveMessage,
       dataAddress: Long, dataSize: Long, cb: UcxCallback, isGpu: Boolean): Unit = {
-    // Built here, where a throw is a send that never started, so that the task allocates nothing
-    // on the progress thread before the catch that reports its failure.
+    // Built on the sender's thread, where a throw means the send never started, so that the task
+    // allocates nothing on the progress thread outside the try that reports its failure.
     val send: UCX.SendCompletion => Unit = completion => {
       val endpoint = endpointManager.getEndpointByExecutorId(executorId)
       if (endpoint == null) {
@@ -636,8 +636,8 @@ class UCX(transport: UCXShuffleTransport, executor: BlockManagerId, rapidsConf: 
   }
 
   /**
-   * Runs `task` on the progress thread. Callers treat a throw from here as a task never queued,
-   * which `UCX.queueTask` keeps true short of a fatal error after the queueing.
+   * Queues `task` for the progress thread. Callers treat a throw from here as a task never
+   * queued, and `UCX.queueTask` keeps that true except for a fatal error after the queueing.
    */
   def onWorkerThreadAsync(task: () => Unit): Unit =
     UCX.queueTask(workerTasks, task, rapidsConf.shuffleUcxUseWakeup, signalWorker)
@@ -1114,8 +1114,8 @@ object UCX extends Logging {
   // at -100, and -200 is an unknown executor. A literal, since UcsConstants loads the natives.
   private[shuffle] val SEND_TASK_FAILED = -201
 
-  // What a send task reports when it could not build its completion, or text from the error.
-  // Fixed text allocates nothing and cannot throw.
+  // What a send task reports when it cannot build its completion or describe its error,
+  // and the prefix of its report otherwise. Fixed text allocates nothing and cannot throw.
   private val SEND_TASK_FAILED_TEXT = "The send could not be handed to UCX"
 
   /**
@@ -1164,12 +1164,13 @@ object UCX extends Logging {
     }
 
     /**
-     * Reports what the send task threw as the send's failure, unless the sender already heard
-     * how the send ended, as after an immediate UCX error, which JUCX reports before it throws.
-     * A JVM error after the hand-off is not reported either: JUCX can run out of heap after UCX
-     * took the send, which then calls back itself and may read the send's buffers until then.
-     * Nor is a throw reported once JUCX returned with the send. The header is left to the
-     * collector, since UCX may still read it.
+     * Reports what the send task threw as the send's failure, unless one of these holds:
+     *  - The sender already heard how the send ended, as after an immediate UCX error, which
+     *    JUCX reports before it throws.
+     *  - JUCX returned with the send, so UCX ends it through this callback.
+     *  - The error is a JVM error after the hand-off. JUCX can run out of heap after UCX took
+     *    the send, and UCX then calls back itself and may read the send's buffers until it does.
+     * The header is left to the collector, since UCX may still read it.
      */
     private[ucx] def reportThrow(error: Throwable): Unit = {
       if (!ended && !taken && !(handedOff && error.isInstanceOf[VirtualMachineError])) {
@@ -1191,8 +1192,8 @@ object UCX extends Logging {
   }
 
   /**
-   * Hands one send to JUCX. Its own interface rather than a `Function3`, whose `apply` takes
-   * objects, so that the header's address is not boxed, which allocates, after the hand-off.
+   * Hands one send to JUCX. Its `apply` takes the header's address as a `Long`, since a
+   * `Function3` would box it, and nothing may allocate after the hand-off.
    */
   private[shuffle] trait SendToJucx[P] {
     def apply(headerAddress: Long, prepared: P, completion: SendCompletion): Unit
@@ -1224,13 +1225,14 @@ object UCX extends Logging {
     completion.header = buffer
     buffer.putLong(header)
     buffer.rewind()
-    // all that can fail before JUCX is called comes before the hand-off, so that it is
-    // reported: taking the address boxes it, and nothing after the hand-off allocates
+    // everything that can fail before JUCX is called comes before the hand-off, so that its
+    // failure is reported. addressOf boxes the address, and nothing after the hand-off allocates.
     val address = addressOf(buffer)
     val prepared = prepare()
     completion.handOff()
     send(address, prepared, completion)
-    // the caller's cleanup, such as closing its NVTX range, still runs inside the catch
+    // the caller's cleanup, such as closing its NVTX range, still runs inside sendOrReport's
+    // try, whose catch must not report a send that UCX now owns
     completion.tookSend()
   }
 
@@ -1258,9 +1260,9 @@ object UCX extends Logging {
    * Runs the task of one send, which allocates its header and hands the send to JUCX with the
    * given completion. If the task throws, the send's failure is reported once, so that its
    * transaction completes, and the error is rethrown for the progress thread to log. The real
-   * case is an `OutOfMemoryError` allocating the header, hence the catch of `Throwable`. Nothing
-   * allocates before the catch: the completion is built inside it, and a failure to build it is
-   * reported through `cb`.
+   * case is an `OutOfMemoryError` allocating the header, hence the catch of `Throwable`. The
+   * completion is built inside the `try`, so that nothing allocates before it. A failure to
+   * build the completion is reported through `cb`.
    * @param completionOf builds the send's completion
    */
   private[shuffle] def sendOrReport(

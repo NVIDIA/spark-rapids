@@ -50,7 +50,7 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
 
   private val reason = "the shuffle output it asked for is gone"
 
-  /** A client of executor 2 whose requests are answered by the test rather than sent. */
+  /** A client of executor 2 whose requests the test answers. */
   private class Requester {
     val ucx: UCX = mock[UCX]
     private val txIds = new AtomicLong()
@@ -83,6 +83,13 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     handler
   }
 
+  override def beforeEach(): Unit = {
+    super.beforeEach()
+    // The test thread plays the requester's copy thread, which consumeWindow marks as a
+    // shuffle thread. A thread dedicated to a task, as the base suite leaves it, cannot be one.
+    RmmSpark.removeAllCurrentThreadAssociation()
+  }
+
   /** Runs `body` with a receive bounce buffer of `size` bytes, closing it if nothing did. */
   private def withBounceBuffer(size: Long)(body: BounceBuffer => Unit): Unit = {
     val bounceBuffer = getBounceBuffer(size)
@@ -95,19 +102,36 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     }
   }
 
+  /**
+   * Runs `body` with a receive state for `requests`, spied unless `spied` is false, its bounce
+   * buffer of `size` bytes, and a count of the times the state released its transport entry.
+   */
+  private def withReceiveState(size: Long, requests: Seq[PendingTransferRequest],
+      spied: Boolean = true)(
+      body: (BufferReceiveState, BounceBuffer, AtomicInteger) => Unit): Unit = {
+    val closes = new AtomicInteger()
+    withBounceBuffer(size) { bounceBuffer =>
+      val state = new BufferReceiveState(123L, bounceBuffer, requests,
+        () => closes.incrementAndGet())
+      body(if (spied) spy(state) else state, bounceBuffer, closes)
+    }
+  }
+
+  private def receivedWindow(): Transaction = {
+    val tx = mock[Transaction]
+    when(tx.getStatus).thenReturn(TransactionStatus.Success)
+    tx
+  }
+
   test("an error reply before the first window ends the receive state once") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     val (first, second) = (reader(), reader())
-    // tables 1 to 7, alternating between two readers
+    // two more buffers than an error message names, alternating between two readers
     val requests = (1 to 7).map { id =>
       PendingTransferRequest(requester.client, tableMeta(id, 100L * id),
         if (id % 2 == 1) first else second)
     }
-    val closes = new AtomicInteger()
-    withBounceBuffer(4096) { bounceBuffer =>
-      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet()))
+    withReceiveState(4096, requests) { (state, bounceBuffer, closes) =>
       requester.client.doIssueBufferReceives(state)
       requester.answer(ShuffleMetadata.buildTransferErrorResponse(1 to 7, reason))
 
@@ -125,17 +149,13 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
   }
 
   test("an error reply with a window still to consume ends the state once it is consumed") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     val (delivered, failed) = (reader(), reader())
     // the first window holds the first table and half of the second
     val requests = Seq(
       PendingTransferRequest(requester.client, tableMeta(1, 512), delivered),
       PendingTransferRequest(requester.client, tableMeta(2, 1024), failed))
-    val closes = new AtomicInteger()
-    withBounceBuffer(1024) { bounceBuffer =>
-      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet()))
+    withReceiveState(1024, requests) { (state, bounceBuffer, closes) =>
       requester.client.doIssueBufferReceives(state)
       // the first window arrives, and UCX receives it into the slot
       state.getBufferWhenReady(_ => (), 1024)
@@ -144,9 +164,7 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       assert(!bounceBuffer.isClosed)
       assertResult(0)(closes.get)
 
-      val windowReceived = mock[Transaction]
-      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
-      requester.client.doHandleBounceBufferReceive(windowReceived, state)
+      requester.client.doHandleBounceBufferReceive(receivedWindow(), state)
 
       verify(delivered, times(1)).batchReceived(any())
       verify(delivered, never()).transferError(any(), any())
@@ -162,7 +180,6 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
 
   test("a reader that throws while a deferred error reply ends the state is logged, and the " +
       "state closes once") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     val (delivered, failed) = (reader(), reader())
     doThrow(new IllegalStateException("reader failed in test"))
@@ -170,15 +187,11 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     val requests = Seq(
       PendingTransferRequest(requester.client, tableMeta(1, 512), delivered),
       PendingTransferRequest(requester.client, tableMeta(2, 1024), failed))
-    val closes = new AtomicInteger()
-    withBounceBuffer(1024) { bounceBuffer =>
-      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet()))
+    withReceiveState(1024, requests) { (state, bounceBuffer, closes) =>
       requester.client.doIssueBufferReceives(state)
       state.getBufferWhenReady(_ => (), 1024)
       requester.answer(ShuffleMetadata.buildTransferErrorResponse(Seq(2), reason))
-      val windowReceived = mock[Transaction]
-      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+      val windowReceived = receivedWindow()
 
       // the copy thread consumes the window, then ends the state the server failed
       val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[RapidsShuffleClient].getName)) {
@@ -194,21 +207,16 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
 
   test("a window whose transaction fails to close, with a deferred error reply, closes the " +
       "state once") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     val (delivered, failed) = (reader(), reader())
     val requests = Seq(
       PendingTransferRequest(requester.client, tableMeta(1, 512), delivered),
       PendingTransferRequest(requester.client, tableMeta(2, 1024), failed))
-    val closes = new AtomicInteger()
-    withBounceBuffer(1024) { bounceBuffer =>
-      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet()))
+    withReceiveState(1024, requests) { (state, bounceBuffer, closes) =>
       requester.client.doIssueBufferReceives(state)
       state.getBufferWhenReady(_ => (), 1024)
       requester.answer(ShuffleMetadata.buildTransferErrorResponse(Seq(2), reason))
-      val windowReceived = mock[Transaction]
-      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+      val windowReceived = receivedWindow()
       doThrow(new IllegalStateException("closing the window failed in test"))
         .when(windowReceived).close()
 
@@ -222,17 +230,12 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
   }
 
   test("a last window whose transaction fails to close releases its state once") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     val requests = Seq(PendingTransferRequest(requester.client, tableMeta(1, 512), reader()))
-    val closes = new AtomicInteger()
-    withBounceBuffer(1024) { bounceBuffer =>
-      val state = new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet())
+    withReceiveState(1024, requests, spied = false) { (state, bounceBuffer, closes) =>
       requester.client.doIssueBufferReceives(state)
       state.getBufferWhenReady(_ => (), 512)
-      val windowReceived = mock[Transaction]
-      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+      val windowReceived = receivedWindow()
       doThrow(new IllegalStateException("closing the window failed in test"))
         .when(windowReceived).close()
 
@@ -246,7 +249,6 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
   }
 
   test("an error reply after the requester ended the state itself releases nothing again") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     val (first, second) = (reader(), reader())
     // the window cannot be handed to its reader, so the copy thread ends the state itself
@@ -254,15 +256,10 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     val requests = Seq(
       PendingTransferRequest(requester.client, tableMeta(1, 1024), first),
       PendingTransferRequest(requester.client, tableMeta(2, 512), second))
-    val closes = new AtomicInteger()
-    withBounceBuffer(1024) { bounceBuffer =>
-      val state = spy(new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet()))
+    withReceiveState(1024, requests) { (state, _, closes) =>
       requester.client.doIssueBufferReceives(state)
       state.getBufferWhenReady(_ => (), 1024)
-      val windowReceived = mock[Transaction]
-      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
-      requester.client.doHandleBounceBufferReceive(windowReceived, state)
+      requester.client.doHandleBounceBufferReceive(receivedWindow(), state)
       assertResult(1)(closes.get)
 
       // the server, which does not know, fails the request's next window
@@ -273,7 +270,6 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
   }
 
   test("a receive state whose bounce buffer fails to close still releases the rest") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     // the first window holds the first table and half of the second, which stays partial
     val requests = Seq(
@@ -291,9 +287,7 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       () => closes.incrementAndGet())
     requester.client.doIssueBufferReceives(state)
     state.getBufferWhenReady(_ => (), 1024)
-    val windowReceived = mock[Transaction]
-    when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
-    requester.client.doHandleBounceBufferReceive(windowReceived, state)
+    requester.client.doHandleBounceBufferReceive(receivedWindow(), state)
 
     val allocated = Rmm.getTotalBytesAllocated
     val thrown = intercept[IllegalStateException](state.close())
@@ -304,7 +298,6 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
   }
 
   test("a transfer request whose send task throws fails its readers") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     val (first, second) = (reader(), reader())
     val requests = Seq(
@@ -332,26 +325,20 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
   }
 
   test("a window that fails after starting a partial table closes that table's buffer once") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
     // the first window holds the first table and starts the second
     val requests = Seq(
       PendingTransferRequest(requester.client, tableMeta(1, 512), reader()),
       PendingTransferRequest(requester.client, tableMeta(2, 1024), reader()))
-    val closes = new AtomicInteger()
-    withBounceBuffer(1024) { bounceBuffer =>
-      val state = new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet())
+    withReceiveState(1024, requests, spied = false) { (state, bounceBuffer, closes) =>
       requester.client.doIssueBufferReceives(state)
       state.getBufferWhenReady(_ => (), 1024)
       // the next window's receive waits for this one to be consumed, then fails to start
       state.getBufferWhenReady(
         _ => throw new IllegalStateException("receiving the next window failed in test"), 512)
-      val windowReceived = mock[Transaction]
-      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
 
       val allocated = Rmm.getTotalBytesAllocated
-      requester.client.doHandleBounceBufferReceive(windowReceived, state)
+      requester.client.doHandleBounceBufferReceive(receivedWindow(), state)
 
       // what the window allocated is freed once, and so is the slot, so the total drops by the
       // slot's 1024 bytes
@@ -362,20 +349,15 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
   }
 
   test("a window that fails after completing a partial table closes that table's buffer") {
-    RmmSpark.removeAllCurrentThreadAssociation()
     val requester = new Requester
-    // the first window starts the first table, and the second completes it with the second
+    // the first window starts table 1, and the second completes it and holds all of table 2
     val requests = Seq(
       PendingTransferRequest(requester.client, tableMeta(1, 1536), reader()),
       PendingTransferRequest(requester.client, tableMeta(2, 512), reader()),
       PendingTransferRequest(requester.client, tableMeta(3, 512), reader()))
-    val closes = new AtomicInteger()
-    withBounceBuffer(1024) { bounceBuffer =>
-      val state = new BufferReceiveState(123L, bounceBuffer, requests,
-        () => closes.incrementAndGet())
+    withReceiveState(1024, requests, spied = false) { (state, bounceBuffer, closes) =>
       requester.client.doIssueBufferReceives(state)
-      val windowReceived = mock[Transaction]
-      when(windowReceived.getStatus).thenReturn(TransactionStatus.Success)
+      val windowReceived = receivedWindow()
       state.getBufferWhenReady(_ => (), 1024)
       requester.client.doHandleBounceBufferReceive(windowReceived, state)
       state.getBufferWhenReady(_ => (), 1024)
@@ -454,7 +436,7 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
   /**
    * A clock that a server's OOM backoff advances and a reader waits on. When the clock passes
    * the end of the reader's wait, `advance` returns only once the reader has given up, so that
-   * whatever the server does next reaches the reader after its wait ended, as it would in time.
+   * whatever the server does next reaches the reader after its wait ended, as with a real clock.
    */
   private class SharedClock {
     private[this] var now = 0L
@@ -618,8 +600,8 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       clock.advance(TimeUnit.SECONDS.toNanos(1))
       requestCallbacks.get(MessageType.TransferRequest)(request)
       readerThread.join(TimeUnit.SECONDS.toMillis(awaitSeconds))
-      // a reply that comes after the reader gave up is still sent, and says when. The reader
-      // can wake before the requester has closed the receive state, so this waits for that too
+      // This waits for the reply, which comes even if the reader gave up first, so a failed assert
+      // below can say when it came. The reader can also wake before the receive state closes.
       assert(replied.await(awaitSeconds, TimeUnit.SECONDS), "the server never replied")
 
       assert(failure.get.isInstanceOf[RapidsShuffleFetchFailedException],

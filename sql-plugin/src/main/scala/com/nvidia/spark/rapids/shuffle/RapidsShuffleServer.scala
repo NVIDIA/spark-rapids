@@ -164,9 +164,10 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   private[shuffle] def currentTimeNanos(): Long = System.nanoTime()
 
   /**
-   * How long a reader waits for its next batch, `spark.network.timeout`. The sends of a request
-   * retry a materialization OOM until `RapidsShuffleServer.oomRetryNanos` of it have passed
-   * since the request arrived, so that the error reply reaches a reader still waiting.
+   * How long a reader waits for its next batch, `spark.network.timeout`. A request's sends retry
+   * a materialization OOM until this wait less a margin has passed since the request arrived, so
+   * that the error reply reaches a reader still waiting. `RapidsShuffleServer.oomRetryNanos`
+   * subtracts the margin.
    */
   private[shuffle] def oomRetryTimeoutNanos: Long =
     TimeUnit.SECONDS.toNanos(GpuShuffleEnv.shuffleFetchTimeoutSeconds)
@@ -370,8 +371,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
 
   /**
    * Builds the send state of a transfer request. If its lookups fail, nothing was sent and the
-   * request is not retried: the bounce buffers are released, the requester gets an error reply,
-   * and the request transaction is closed, here.
+   * request is not retried: this method releases the bounce buffers, sends the requester an
+   * error reply if it can, and closes the request transaction.
    */
   private def newSendState(
       pendingTransfer: PendingTransferResponse,
@@ -457,12 +458,13 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
   }
 
   /**
-   * The error reply for a request that ended with `outcome` because of `cause`: none when `cause`
-   * ends the send loop, since the executor then exits and the requester hears of it when its
-   * connection closes, and none once the server is closing, which saves building one that
-   * `replyGate` would not let through. A lookup or a preparation can fail that late, since
-   * neither close waits for it without bound. A caller that ends several states calls this once
-   * per state, since the server can close between two of them.
+   * The error reply for a request that ended with `outcome` because of `cause`. There is none
+   * when `cause` ends the send loop, since the executor then exits and the requester hears of it
+   * when its connection closes. There is none once the server is closing either, which saves
+   * building a reply that `replyGate` would not let through. The send loop can still be running
+   * then, since the server's close and the transport's each wait for it a bounded time. A caller
+   * that ends several states calls this once per state, since the server can close between two
+   * of them.
    */
   private def errorReply(
       outcome: BufferSendState.Outcome,
@@ -700,8 +702,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
           stopOomRetries(
             expiredOom.map(_._1),
             expiredOom.map(_._2),
-            "The OOM retries of their requests ended, before their readers' " +
-                "spark.network.timeout would.")
+            "Their requests passed the OOM retry deadline, which comes before their readers' " +
+                "spark.network.timeout runs out.")
         }
 
         val retryableOomStates = retryableOom.map(_._1).toSet
@@ -770,8 +772,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         bufferSendStates.foreach { bufferSendState =>
           if (!sendsReached.contains(bufferSendState)) {
             try {
-              // Checked for each state, since ending one can find an error that ends the loop.
-              // States answered before it was found stay answered.
+              // The reply is decided per state, since ending one can add an error to `t` that
+              // ends the loop. The states answered before that stay answered.
               bufferSendState.finish(BufferSendState.Failed, errorReply(BufferSendState.Failed, t))
             } catch {
               case NonFatal(e) => keep(e)
@@ -974,7 +976,7 @@ object RapidsShuffleServer {
   // reach the reader first. It covers the time from the reader starting to wait to the request
   // arriving, the retry pass that finds the end, and the reply's delivery. A request that waited
   // longer than that in its requester's queue, which the server cannot see, still arrives too
-  // late, and its reader times out as before.
+  // late, and its reader times out.
   private val OOM_REPLY_MARGIN_NANOS = TimeUnit.SECONDS.toNanos(10)
 
   /**
