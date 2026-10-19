@@ -22,7 +22,7 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.iceberg.iceberg111x
 
-import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded
+import com.nvidia.spark.rapids.iceberg.parquet.converter.ParquetTypeConverter
 
 // Spark 4.0's unshaded Parquet does not expose the Variant logical type.
-object ParquetConverter extends FromIcebergShaded
+object VariantShadeShim extends ParquetTypeConverter

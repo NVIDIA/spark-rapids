@@ -22,14 +22,14 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.iceberg.iceberg111x
 
-import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded
+import com.nvidia.spark.rapids.iceberg.parquet.converter.ParquetTypeConverter
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{LogicalTypeAnnotation =>
   ShadedLogicalTypeAnnotation}
 import org.apache.parquet.schema.LogicalTypeAnnotation
 
 // Keep Variant references in this shim: older Iceberg lacks the shaded class, and Spark 4.0
 // lacks the unshaded factory. The common converter must remain linkable with those versions.
-object ParquetConverter extends FromIcebergShaded {
+object VariantShadeShim extends ParquetTypeConverter {
   override def unshade(inner: ShadedLogicalTypeAnnotation): LogicalTypeAnnotation = inner match {
     case shaded: ShadedLogicalTypeAnnotation.VariantLogicalTypeAnnotation =>
       LogicalTypeAnnotation.variantType(shaded.getSpecVersion)

@@ -20,8 +20,8 @@ import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.NoopMetric$;
 import com.nvidia.spark.rapids.RapidsConf;
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
-import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded;
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded$;
+import com.nvidia.spark.rapids.iceberg.parquet.converter.ParquetTypeConverter;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.ContentFile;
@@ -64,7 +64,7 @@ public interface IcebergShimUtils {
      * The default uses their common APIs; shims override it when both versions expose
      * additional logical types, keeping version-specific references out of shared code.
      */
-    default FromIcebergShaded parquetConverter() {
+    default ParquetTypeConverter parquetConverter() {
         return FromIcebergShaded$.MODULE$;
     }
 
