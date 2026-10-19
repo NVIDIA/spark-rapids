@@ -634,9 +634,10 @@ def assert_rapids_delta_write(
             assert any(
                 callback.contains(plan, expected_command) for plan in captured_plans), \
                 f"{expected_command} is not found in any captured plan"
-        if expected_command == "GpuMergeIntoCommand" and \
-                "BroadcastHashJoinExec" in get_non_gpu_allowed() and is_oss_delta_lake_40():
-            # OSS Delta 4.0 uses a CPU broadcast join to attach stats to the table-state
+        if expected_command and expected_command.startswith("GpuMergeIntoCommand") and \
+                "BroadcastHashJoinExec" in get_non_gpu_allowed() and \
+                (is_oss_delta_lake_40() or is_oss_delta_lake_42_or_43()):
+            # OSS Delta uses a CPU broadcast join to attach stats to the table-state
             # metadata during DV MERGE. Keep the allowance confined to that metadata query.
             _assert_oss_delta_40_merge_metadata_broadcasts(callback, captured_plans)
         for cls in expected_classes or ():

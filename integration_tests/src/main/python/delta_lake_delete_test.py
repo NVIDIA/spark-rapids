@@ -227,6 +227,40 @@ def test_delta_delete_with_deletion_vectors(
         assert_gpu_delete_command=not expect_cpu_fallback,
         expected_cpu_fallback_class="ExecutedCommandExec" if expect_cpu_fallback else None)
 
+@allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
+@delta_lake
+@pytest.mark.parametrize("enable_deletion_vectors", [True, False], ids=idfn)
+@pytest.mark.skipif(is_databricks_runtime() or is_before_spark_353() or
+                    not supports_delta_lake_deletion_vectors(),
+                    reason="Persistent DV command acceleration requires OSS Delta 3.3 or later")
+def test_delta_delete_dv_operation_logging(spark_tmp_path, enable_deletion_vectors):
+    # Exercise the shared bitmap generator against each runtime's DeltaLogging API.
+    conf = copy_and_update(delta_delete_enabled_conf,
+        {"spark.databricks.delta.delete.deletionVectors.persistent": "true"})
+    assert_delta_sql_delete_collect(
+        spark_tmp_path,
+        use_cdf=False,
+        dest_table_func=lambda spark: spark.range(1000).selectExpr(
+            "id", "CAST(id AS STRING) AS payload").coalesce(1),
+        delete_sql="DELETE FROM delta.`{path}` WHERE id % 10 = 0",
+        enable_deletion_vectors=enable_deletion_vectors,
+        conf=conf,
+        expect_write=not enable_deletion_vectors,
+        assert_gpu_delete_command=True,
+        expected_num_affected_rows=100)
+
+    def check_deletion_vectors(spark):
+        for mode in ["CPU", "GPU"]:
+            path = spark_tmp_path + "/DELTA_DATA/" + mode
+            adds = spark.read.json(path + "/_delta_log/*.json").select("add.*")
+            dv_count = adds.where("deletionVector IS NOT NULL").count() \
+                if "deletionVector" in adds.columns else 0
+            assert (dv_count > 0) == enable_deletion_vectors
+            assert spark.read.format("delta").load(path).count() == 900
+
+    with_cpu_session(check_deletion_vectors, conf=conf)
+
+
 @allow_non_gpu("SortExec, ColumnarToRowExec", *delta_meta_allow)
 @delta_lake
 @ignore_order
