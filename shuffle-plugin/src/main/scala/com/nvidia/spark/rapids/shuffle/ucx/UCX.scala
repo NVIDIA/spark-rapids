@@ -1258,11 +1258,28 @@ object UCX extends Logging {
 
   /**
    * Runs the task of one send, which allocates its header and hands the send to JUCX with the
-   * given completion. If the task throws, the send's failure is reported once, so that its
-   * transaction completes, and the error is rethrown for the progress thread to log. The real
-   * case is an `OutOfMemoryError` allocating the header, hence the catch of `Throwable`. The
-   * completion is built inside the `try`, so that nothing allocates before it. A failure to
-   * build the completion is reported through `cb`.
+   * given completion. The catch attempts failure reporting before rethrowing the error for
+   * the progress thread to log. The real case is an `OutOfMemoryError` allocating the header,
+   * hence the catch of `Throwable`. The completion is built inside the `try`, so that nothing
+   * allocates before it. A failure to build the completion is reported through `cb`.
+   *
+   * The send task moves from the worker queue to JUCX. SendCompletion forwards its result at
+   * most once, whether failure reporting here or a UCX callback completes it.
+   * {{{
+   * [queued] --> [sendOrReport] --> [handOff] -- JUCX returns --> [tookSend]
+   *                   |               |                            |
+   *              setup throws    ordinary throw                UCX callback
+   *                   |               |                            v
+   *                   v               |                         [ended]
+   *              [failure reported] <-+
+   * [handOff] -- immediate callback ---------------------------> [ended]
+   * [handOff] -- VM error --> [UCX may own] -- UCX callback -----> [ended]
+   * }}}
+   *
+   * Keep header and parameter allocation before handOff. A VirtualMachineError after handOff
+   * leaves completion to UCX, as does any throw after tookSend. ControlThrowable bypasses
+   * failure reporting.
+   *
    * @param completionOf builds the send's completion
    */
   private[shuffle] def sendOrReport(

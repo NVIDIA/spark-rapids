@@ -91,6 +91,23 @@ class CatalogShuffleRequestHandler(catalog: ShuffleBufferCatalog)
  * A single command thread is used to orchestrate sends/receives and to remove
  * from transport's progress thread.
  *
+ * Close shuts the transfer reply gate before waiting for admitted queue attempts. A reply
+ * decided while open still needs admission immediately before queueing.
+ * {{{
+ * [open] -- close --> [closing] -- queue attempts end --> [closed]
+ *
+ * reply decided while open --> [decided] -- gate open --> [queueing]
+ *                                  |                         |
+ *                             gate closed             returns or throws
+ *                                  v                         v
+ *                              [released]               [attempt ended]
+ * reply decided while closing or closed --> no reply
+ * }}}
+ *
+ * No reply is admitted once closing starts. Close waits for admitted queue attempts, including
+ * throws, then waits a bounded time for the send loop. Closed means close returned.
+ * Close does not wait for delivery or callbacks. Metadata replies do not use this gate.
+ *
  * @param transport the transport we were configured with
  * @param serverConnection a connection object, which contains functions to send/receive
  * @param originalShuffleServerId spark's `BlockManagerId` for this executor

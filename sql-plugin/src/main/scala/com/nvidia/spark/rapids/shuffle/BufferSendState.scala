@@ -46,9 +46,26 @@ import org.apache.spark.shuffle.rapids.{RapidsShuffleSendPrepareException,
  *
  * It also is AutoCloseable. close() should be called to free bounce buffers.
  *
- * In terms of the lifecycle of this object, it begins with the client asking for transfers to
- * start, it lasts through all buffers being transmitted, and ultimately finishes when a
- * TransferResponse is sent back to the client.
+ * A live request prepares and sends windows until one Outcome ends it. A lookup failure can
+ * get an error reply before a state exists.
+ * {{{
+ * request arrival -- lookup succeeds --> [live] -- success reply queues --> [Completed]
+ *                                         | ^
+ *                                         +-+ OOM before deadline
+ *                                         |
+ *     +-----------------------------------+
+ *     +-- output gone ------> [MissingOutput] -+
+ *     +-- OOM at deadline --> [OomExpired] ----+--> error reply eligible
+ *     +-- other failure ----> [Failed] -------+
+ *     +-- data send fails --> [SendFailed] ---+
+ *     +-- server stops -----> [ServerClosed] -+--> no error reply
+ *     +-- close ------------> [Closed] -------+
+ * }}}
+ *
+ * The first finish wins. An in-flight data send leaves completion to its callback until the
+ * transport stops. Failed in the final data callback gets no error reply.
+ * Error replies require an open server and no loop-ending failure. The materialization OOM
+ * deadline starts at request arrival and never resets when a window succeeds.
  *
  * @param transaction a request transaction
  * @param sendBounceBuffers - an object that contains a device and potentially a host

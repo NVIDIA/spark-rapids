@@ -48,7 +48,24 @@ case class FailedTransfer(reason: String, notReceived: Seq[PendingTransferReques
  * `consumeWindow` is called when data has arrived at the bounce buffer, copying
  * onto the ranges the bytes received.
  *
- * It also is AutoCloseable. close() should be called to free bounce buffers.
+ * An error reply waits for outstanding windows before the client ends incomplete requests.
+ * {{{
+ * request issued --> [receiving] -- all tables consumed --> [done] -- close --> [closed]
+ *                         |                                  ^                   ^
+ *                    error reply                             |                   |
+ *                         v                                  |                   |
+ *                  [serverFailure] -- all tables consumed ----+                   |
+ *                         |                                                      |
+ *                  no outstanding windows                                        |
+ *                         v                                                      |
+ *                  [FailedTransfer] -- fail waiting readers ----------------------+
+ * handler failure ---------------------------------------------------------------+
+ * }}}
+ *
+ * Recording or taking the failure releases nothing. The copy thread returns unused bytes and
+ * fails each distinct waiting reader before closing. The first close attempts to release the
+ * bounce buffer, partial-table buffer and transport entry, even if one release fails.
+ * Repeated close and late error replies release nothing.
  *
  * @param id - a numeric id that is used in all headers for this `BufferReceiveState`
  * @param bounceBuffer - bounce buffer to use (device memory strictly)
