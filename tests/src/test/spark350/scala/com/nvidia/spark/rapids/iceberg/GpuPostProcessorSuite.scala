@@ -1200,11 +1200,17 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
           val expectedSchema = new Schema(expectedField)
           val projected = ParquetSchemaUtil.pruneColumns(fileSchema, expectedSchema)
           val restored = GpuIcebergParquetReader.preserveStructValidity(fileSchema, projected)
-          assert(restored == new ShadedMessageType("test", Seq(retainedField).asJava))
+          val projectedPaths = projected.getPaths.asScala.map(_.toSeq).toSet
+          val helperSchema = new ShadedMessageType("test", Seq(retainedField).asJava)
+          val helperPaths = helperSchema.getPaths.asScala.map(_.toSeq).toSet
+          // Iceberg can already retain extra physical siblings for nested projections.
+          // Preserve those fields and add only the helper paths needed by empty structs.
+          assert(restored.getPaths.asScala.map(_.toSeq).toSet == projectedPaths ++ helperPaths)
           val partnerSchema = ParquetSchemaUtil.convert(restored)
           assert(partnerSchema.findField(1) != null)
           assert(partnerSchema.findField(2) != null)
-          assert(partnerSchema.findField(6) == null)
+          assert((partnerSchema.findField(6) != null) ==
+            projectedPaths.exists(_.last == "ignored"))
           assert(partnerSchema.findField(9) == null)
           assert(GpuIcebergParquetReader.preserveStructValidity(fileSchema, fileSchema) ==
             fileSchema)
