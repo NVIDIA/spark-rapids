@@ -1643,16 +1643,18 @@ def test_distinct_join(join_type, batch_size):
 
 @validate_execs_in_gpu_plan("GpuShuffledHashJoinExec")
 @ignore_order(local=True)
+@pytest.mark.inject_oom
+@pytest.mark.parametrize("use_condition", [False, True], ids=["EQUI", "CONDITION"])
 @pytest.mark.parametrize(
     "build_side", ["left", "right"], ids=["BUILD_LEFT", "BUILD_RIGHT"])
 @pytest.mark.parametrize(
     "unmatched_build_rows", [False, True], ids=["MATCHED", "UNMATCHED"])
-def test_distinct_full_outer_join(build_side, unmatched_build_rows):
+def test_distinct_full_outer_join(build_side, unmatched_build_rows, use_condition):
     join_conf = {
         "spark.sql.adaptive.enabled": "false",
         "spark.sql.autoBroadcastJoinThreshold": "-1",
         "spark.sql.join.preferSortMergeJoin": "false",
-        "spark.sql.shuffle.partitions": "2",
+        "spark.sql.shuffle.partitions": "1",
         # Exercise the stream-side iterator across multiple batches.
         "spark.rapids.sql.batchSizeBytes": "1",
         "spark.rapids.sql.join.useShuffledSymmetricHashJoin": "false",
@@ -1673,6 +1675,11 @@ def test_distinct_full_outer_join(build_side, unmatched_build_rows):
             left_df = left_df.hint("SHUFFLE_HASH")
         else:
             right_df = right_df.hint("SHUFFLE_HASH")
+        if use_condition:
+            # Key 1 matches the equi-join but fails the residual condition.
+            condition = ((left_df.join_key == right_df.join_key) &
+                         (left_df.join_key + right_df.join_key > 2))
+            return left_df.join(right_df, condition, "fullouter")
         return left_df.join(right_df, ["join_key"], "fullouter")
 
     assert_gpu_and_cpu_are_equal_collect(do_join, conf=join_conf)

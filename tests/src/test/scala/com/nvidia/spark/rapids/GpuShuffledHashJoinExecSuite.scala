@@ -18,8 +18,9 @@ package com.nvidia.spark.rapids
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, DataInputStream}
 
-import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, JCudfSerialization, Table}
+import ai.rapids.cudf.{ColumnVector, HostMemoryBuffer, JCudfSerialization, Rmm, Table}
 import com.nvidia.spark.rapids.Arm._
+import com.nvidia.spark.rapids.jni.GpuRetryOOM
 import org.mockito.ArgumentMatchers._
 import org.mockito.Mockito._
 import org.scalatest.funsuite.AnyFunSuite
@@ -29,7 +30,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.catalyst.plans.FullOuter
 import org.apache.spark.sql.rapids.execution.HashOuterJoinIterator
-import org.apache.spark.sql.types.{DataType, IntegerType}
+import org.apache.spark.sql.types.{BooleanType, DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** Tests for shuffled hash join preparation and finalization. */
@@ -57,6 +58,75 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
           false, None, NoopMetric, NoopMetric)) { iter =>
         assert(intercept[IllegalStateException](iter.hasNext) eq failure)
         verify(tracker, times(1)).close()
+      }
+    }
+  }
+
+  test("final outer join batch closes the filtered table if iterator cleanup fails") {
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val baseline = Rmm.getTotalBytesAllocated
+      withResource(newOneIntColumnTable()) { table =>
+        withResource(GpuColumnVector.from(table, Array[DataType](IntegerType))) { builtBatch =>
+          val built = mock[LazySpillableColumnarBatch]
+          when(built.dataTypes).thenReturn(Array[DataType](IntegerType))
+          when(built.getBatch).thenReturn(builtBatch)
+          val failure = new IllegalStateException("injected iterator cleanup failure")
+          doThrow(failure).when(built).close()
+          val tracker = withResource(ColumnVector.fromBooleans(true, false, true, false, true)) {
+            mask =>
+              SpillableColumnarBatch(
+                new ColumnarBatch(Array(GpuColumnVector.from(mask.incRefCount(), BooleanType)), 5),
+                SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+          }
+          val joinOptions = new RapidsConf(new SparkConf()).getJoinOptions(TARGET_SIZE_BIG)
+          withResource(new HashOuterJoinIterator(
+              FullOuter, built, Seq.empty, None, Some(tracker), Iterator.empty,
+              Seq.empty, attrs, None, joinOptions, GpuBuildRight,
+              false, None, NoopMetric, NoopMetric)) { iter =>
+            assert(intercept[IllegalStateException](iter.hasNext) eq failure)
+          }
+        }
+      }
+      assert(Rmm.getTotalBytesAllocated == baseline)
+    }
+  }
+
+  Seq(GpuBuildLeft, GpuBuildRight).foreach { buildSide =>
+    test(s"final outer join batch retries filtering for $buildSide") {
+      TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+        withResource(newOneIntColumnTable()) { table =>
+          withResource(GpuColumnVector.from(table, Array[DataType](IntegerType))) { builtBatch =>
+            val built = mock[LazySpillableColumnarBatch]
+            when(built.dataTypes).thenReturn(Array[DataType](IntegerType))
+            when(built.getBatch).thenReturn(builtBatch)
+            val tracker = mock[SpillableColumnarBatch]
+            val trackerBatch = withResource(
+                ColumnVector.fromBooleans(true, false, true, false, true)) { mask =>
+              new ColumnarBatch(Array(GpuColumnVector.from(mask.incRefCount(), BooleanType)), 5)
+            }
+            when(tracker.getColumnarBatch()).thenThrow(new GpuRetryOOM("final batch retry"))
+              .thenReturn(trackerBatch)
+            val joinOptions = new RapidsConf(new SparkConf()).getJoinOptions(TARGET_SIZE_BIG)
+            withResource(new HashOuterJoinIterator(
+                FullOuter, built, Seq.empty, None, Some(tracker), Iterator.empty,
+                Seq.empty, attrs, None, joinOptions, buildSide,
+                false, None, NoopMetric, NoopMetric)) { iter =>
+              assert(iter.hasNext)
+              withResource(iter.next()) { batch =>
+                assert(batch.numRows() == 3)
+                val buildOrdinal = if (buildSide == GpuBuildLeft) 0 else 1
+                withResource(batch.column(buildOrdinal).asInstanceOf[GpuColumnVector]
+                    .getBase.copyToHost()) { values =>
+                  assert((0 until 3).map(i => values.getInt(i)) == Seq(1, 3, 5))
+                }
+                assert(batch.column(1 - buildOrdinal).numNulls() == 3)
+              }
+              assert(!iter.hasNext)
+              verify(tracker, times(2)).getColumnarBatch()
+              verify(tracker, times(1)).close()
+            }
+          }
+        }
       }
     }
   }

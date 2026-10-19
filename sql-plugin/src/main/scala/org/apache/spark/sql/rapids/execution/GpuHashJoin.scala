@@ -2729,7 +2729,7 @@ class HashOuterJoinIterator(
       val builtTypes = built.dataTypes
       // filter returns an owning table. Release the stream iterator, tracker, and input table
       // wrappers before retaining the filtered columns in the output batch.
-      val filteredTable = withResource(streamJoinIter) { _ =>
+      val filteredTable = closeOnExcept(streamJoinIter) { _ =>
         streamJoinIter.releaseBuiltSideTracker().map { tracker =>
           closeOnExcept(tracker) { _ =>
             built.checkpoint()
@@ -2750,6 +2750,9 @@ class HashOuterJoinIterator(
             built.allowSpilling()
           }
         }
+      }
+      closeOnExcept(filteredTable) { _ =>
+        streamJoinIter.close()
       }
 
       filteredTable.flatMap { filtered =>
