@@ -716,23 +716,21 @@ class GpuDeltaParquetFileFormatBase2(
       val allPartValues: Option[Array[(Long, InternalRow)]] = deltaBuffer.allPartValues
       val dvMetadata: DeletionVectorMetadata = deltaBuffer.dvMetadata.head
 
-      val parseOpts = closeOnExcept(hostBuffers) { _ =>
-        getParquetOptions(readDataSchema, clippedSchema, useFieldId)
-      }
-      val colTypes = readDataSchema.fields.map(f => f.dataType)
+      val (parseOpts, colTypes, dvInfos) = closeOnExcept(hostBuffers) { _ =>
+        val parsedOptions = getParquetOptions(readDataSchema, clippedSchema, useFieldId)
+        val columnTypes = readDataSchema.fields.map(f => f.dataType)
+        val deletionVectorInfos: Array[SpillableDeletionVectorInfo] = if (hasTablePath) {
+          val filteredDvInfos = dvMetadata.takeDvInfos()
 
-      val dvInfos: Array[SpillableDeletionVectorInfo] = if (hasTablePath) {
-        val filteredDvInfos = dvMetadata.metadatas
-          .filter(_.maybeDvInfo.isDefined)
-          .map(_.maybeDvInfo.get)
-
-        closeOnExcept(filteredDvInfos.map(_.serializedBitmap)) { _ =>
-          require(filteredDvInfos.length == dvMetadata.metadatas.length,
-            "Every DeletionVectorInfo must exist if tablePath is defined")
+          closeOnExcept(filteredDvInfos) { _ =>
+            require(filteredDvInfos.length == dvMetadata.metadatas.length,
+              "Every DeletionVectorInfo must exist if tablePath is defined")
+          }
+          filteredDvInfos
+        } else {
+          Array()
         }
-        filteredDvInfos
-      } else {
-        Array()
+        (parsedOptions, columnTypes, deletionVectorInfos)
       }
 
       withResource(hostBuffers) { _ =>
@@ -803,23 +801,39 @@ class GpuDeltaParquetFileFormatBase2(
 
     /**
      * Deletion vector metadata for a single host memory buffer containing a part of data.
+     * Original and combined metadata share this object, so taking the info clears ownership
+     * for both.
      */
-    private case class SingleBufferDVMetadata(
-        // maybeDvInfo is None only when the tablePath is not defined.
-        maybeDvInfo: Option[SpillableDeletionVectorInfo]
-    )
+    private class SingleBufferDVMetadata(
+        private var maybeDvInfo: Option[SpillableDeletionVectorInfo]) {
+      def peekDvInfo: Option[SpillableDeletionVectorInfo] = maybeDvInfo
+
+      def takeDvInfo(): Option[SpillableDeletionVectorInfo] = {
+        val ret = maybeDvInfo
+        maybeDvInfo = None
+        ret
+      }
+    }
 
     private case class DeletionVectorMetadata(
         metadatas: Array[SingleBufferDVMetadata]
     ) extends AutoCloseable {
-      override def close(): Unit = metadatas.flatMap(_.maybeDvInfo).safeClose()
+      def takeDvInfos(): Array[SpillableDeletionVectorInfo] =
+        metadatas.flatMap(_.takeDvInfo())
+
+      def peekDvInfos: Array[SpillableDeletionVectorInfo] =
+        metadatas.flatMap(_.peekDvInfo)
+
+      override def close(): Unit = {
+        takeDvInfos().safeClose()
+      }
     }
 
     private object DeletionVectorMetadata {
       def forSingleBuffer(maybeDvInfo: Option[SpillableDeletionVectorInfo]) = {
         DeletionVectorMetadata(
           Array(
-            SingleBufferDVMetadata(maybeDvInfo)
+            new SingleBufferDVMetadata(maybeDvInfo)
           )
         )
       }
@@ -1036,9 +1050,9 @@ class GpuDeltaParquetFileFormatBase2(
 
       val dvInfos = metadata match {
         case emptyMeta: DeltaParquetHostMemoryEmptyMetaData =>
-          emptyMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
+          emptyMeta.dvMetadata.flatMap(_.peekDvInfos)
         case buffersMeta: DeltaParquetHostMemoryBuffersWithMetaData =>
-          buffersMeta.dvMetadata.flatMap(_.metadatas).flatMap(_.maybeDvInfo)
+          buffersMeta.dvMetadata.flatMap(_.peekDvInfos)
         case _ =>
           throw new IllegalArgumentException(s"Unexpected metadata type ${metadata.getClass()}")
       }
