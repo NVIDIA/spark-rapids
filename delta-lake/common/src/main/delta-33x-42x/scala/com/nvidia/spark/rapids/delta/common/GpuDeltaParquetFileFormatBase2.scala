@@ -811,7 +811,9 @@ class GpuDeltaParquetFileFormatBase2(
 
     private case class DeletionVectorMetadata(
         metadatas: Array[SingleBufferDVMetadata]
-    )
+    ) extends AutoCloseable {
+      override def close(): Unit = metadatas.flatMap(_.maybeDvInfo).safeClose()
+    }
 
     private object DeletionVectorMetadata {
       def forSingleBuffer(maybeDvInfo: Option[SpillableDeletionVectorInfo]) = {
@@ -839,7 +841,11 @@ class GpuDeltaParquetFileFormatBase2(
         numRows: Long,
         dvMetadata: Array[DeletionVectorMetadata],
         override val allPartValues: Option[Array[(Long, InternalRow)]] = None)
-      extends HostMemoryEmptyMetaData {}
+      extends HostMemoryEmptyMetaData {
+      override def close(): Unit = {
+        withResource(dvMetadata) { _ => super.close() }
+      }
+    }
 
     private case class DeltaParquetHostMemoryBuffersWithMetaData(
         override val partitionedFile: PartitionedFile,
@@ -855,6 +861,10 @@ class GpuDeltaParquetFileFormatBase2(
         // are present.
         dvMetadata: Array[DeletionVectorMetadata]
     ) extends HostMemoryBuffersWithMetaData {
+
+      override def close(): Unit = {
+        withResource(dvMetadata) { _ => super.close() }
+      }
 
       override def consumeHeadBuffer(): HostMemoryBuffersWithMetaData = {
         require(memBuffersAndSizes.nonEmpty,
