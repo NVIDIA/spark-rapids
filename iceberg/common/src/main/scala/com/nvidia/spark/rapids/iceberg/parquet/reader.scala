@@ -185,7 +185,7 @@ object GpuIcebergParquetReader {
     }
 
     new ShadedMessageType(projectedSchema.getName, projectedSchema.getFields.asScala.map { field =>
-      preserve(fileSchema.getType(field.getName), field)
+      preserve(fileSchema.asGroupType().getType(field.getName), field)
     }.asJava)
   }
 }
