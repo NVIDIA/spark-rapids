@@ -2975,29 +2975,43 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
     }
   }
 
+  private def validateEmptyRowCount(empty: HostMemoryEmptyMetaData): Unit = {
+    if (empty.numRows > Int.MaxValue) {
+      throw new ArithmeticException(
+        s"Cannot read metadata-only Parquet split for ${empty.partitionedFile.filePath}: " +
+          s"row count ${empty.numRows} exceeds the maximum supported batch row count " +
+          s"of ${Int.MaxValue}.")
+    }
+  }
+
   private def selectCombineHMBs(
       input: Array[HostMemoryBuffersWithMetaDataBase]): Array[HostMemoryBuffersWithMetaDataBase] = {
     val toCombine = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
     val leftOvers = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
     var firstNonEmpty: HostMemoryBuffersWithMetaData = null
-    var hasEmptyRows = false
+    var emptyNumRows = 0L
     var needsSplit = false
     var iterLoc = 0
     while (!needsSplit && iterLoc < input.length) {
       val result = input(iterLoc)
       val compatible = result match {
         // Zero-row entries, including ignored missing files, do not establish a group kind.
-        // Positive-row metadata must use the synthetic null-row path, not Parquet decoding.
-        case empty: HostMemoryEmptyMetaData => empty.numRows == 0 || firstNonEmpty == null
+        case empty: HostMemoryEmptyMetaData if empty.numRows == 0 => true
+        // Positive-row metadata uses synthetic batches, whose row counts must fit in Int.
+        case empty: HostMemoryEmptyMetaData =>
+          if (emptyNumRows == 0) {
+            validateEmptyRowCount(empty)
+          }
+          firstNonEmpty == null && empty.numRows <= Int.MaxValue.toLong - emptyNumRows
         case data: HostMemoryBuffersWithMetaData =>
-          !hasEmptyRows && (firstNonEmpty == null || !checkIfNeedToSplit(firstNonEmpty, data))
+          emptyNumRows == 0 && (firstNonEmpty == null || !checkIfNeedToSplit(firstNonEmpty, data))
         case _ => throw new RuntimeException("Unknown HostMemoryBuffersWithMetaDataBase")
       }
       if (compatible) {
         toCombine += result
         result match {
           case empty: HostMemoryEmptyMetaData =>
-            hasEmptyRows = hasEmptyRows || empty.numRows > 0
+            emptyNumRows += empty.numRows
           case data: HostMemoryBuffersWithMetaData if firstNonEmpty == null =>
             firstNonEmpty = data
           case _ =>
@@ -3048,7 +3062,13 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
   override def combineHMBs(
       input: Array[HostMemoryBuffersWithMetaDataBase]): HostMemoryBuffersWithMetaDataBase = {
     if (input.size == 1) {
-      input.head
+      closeOnExcept(input.head) { result =>
+        result match {
+          case empty: HostMemoryEmptyMetaData => validateEmptyRowCount(empty)
+          case _ =>
+        }
+        result
+      }
     } else {
       try {
         closeOnExcept(input) { _ =>
@@ -3233,7 +3253,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
           } else {
             if (fileBlockMeta.schema.getFieldCount == 0) {
               val bytesRead = fileSystemBytesRead() - startingBytesRead
-              val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum.toInt
+              val numRows = fileBlockMeta.blocks.map(_.getRowCount).sum
               newHMEmptyMetadataForChunks(file, 0, bytesRead,
                 fileBlockMeta.dateRebaseMode, fileBlockMeta.timestampRebaseMode,
                 fileBlockMeta.hasInt96Timestamps, fileBlockMeta.schema, fileBlockMeta.readSchema,
