@@ -114,6 +114,21 @@ if [[ "$SPARK_READINESS_ONLY" == "1" &&
     exit 0
 fi
 
+# TEST ONLY (#16399): remove this commit after validating the failure footers.
+# Use the installed CI hook, not manual runs or the local readiness-selection checks.
+if [[ "${SPARK_STARTUP_CHECK:-}" == "/home/ubuntu/.databricks-fallback/spark_readiness.sh" &&
+      "${PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion:-}" == 17.3.* &&
+      "$TEST_MODE" == "CI_PART2" ]]; then
+    echo "WILL RUN TESTS WITH SPARK_HOME: $SPARK_HOME"
+    echo "TEST ONLY: synthetic GPU startup failure; no GPU fault or test execution is induced"
+    for attempt in 1 2; do
+        echo "SYNTHETIC acquisition attempt $attempt: Will not use GPU 0 because of ai.rapids.cudf.CudaFatalException: 46 cudaErrorDevicesUnavailable CUDA-capable device(s) is/are busy or unavailable"
+    done
+    echo "SYNTHETIC: java.lang.IllegalStateException: Could not find a single GPU to use"
+    echo "FAILED integration tests (exit=1, run_dir=synthetic-validation-no-tests-run)"
+    exit 1
+fi
+
 IS_SPARK_321_OR_LATER=0
 [[ "$(printf '%s\n' "3.2.1" "$BASE_SPARK_VERSION" | sort -V | head -n1)" = "3.2.1" ]] && IS_SPARK_321_OR_LATER=1
 
