@@ -40,6 +40,7 @@ import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.{BlockMetaData => ShadedBlockMetaData}
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{
+  GroupType => ShadedGroupType,
   MessageType => ShadedMessageType,
   Type => ShadedType
 }
@@ -151,7 +152,8 @@ object GpuIcebergParquetReader {
   /** Keep physical parent validity when all projected struct children are missing from a file. */
   private[iceberg] def preserveStructValidity(
       fileSchema: ShadedMessageType,
-      projectedSchema: ShadedMessageType): ShadedMessageType = {
+      projectedSchema: ShadedMessageType,
+      requiredSchema: Schema): ShadedMessageType = {
     def firstLeaf(field: ShadedType, keepAllChildren: Boolean = false): ShadedType = {
       if (field.isPrimitive) {
         field
@@ -165,6 +167,23 @@ object GpuIcebergParquetReader {
       }
     }
 
+    def preserveChildren(
+        fileGroup: ShadedGroupType,
+        projectedGroup: ShadedGroupType): Seq[ShadedType] = {
+      val projectedByName = projectedGroup.getFields.asScala.map(f => f.getName -> f).toMap
+      fileGroup.getFields.asScala.flatMap { field =>
+        projectedByName.get(field.getName) match {
+          case Some(projectedField) => Some(preserve(field, projectedField))
+          case None if !field.isPrimitive && field.getId != null &&
+              requiredSchema.findField(field.getId.intValue()) != null =>
+            // Iceberg can drop a whole list or map when every requested child is missing.
+            // Field IDs distinguish a requested physical container from an unrelated sibling.
+            Some(firstLeaf(field))
+          case _ => None
+        }
+      }.toSeq
+    }
+
     def preserve(fileField: ShadedType, projectedField: ShadedType): ShadedType = {
       if (projectedField.isPrimitive) {
         projectedField
@@ -176,17 +195,14 @@ object GpuIcebergParquetReader {
           // post-processor removes this helper field while applying the projected defaults.
           firstLeaf(fileField)
         } else {
-          val fileGroup = fileField.asGroupType()
-          projectedGroup.withNewFields(projectedGroup.getFields.asScala.map { child =>
-            preserve(fileGroup.getType(child.getName), child)
-          }.asJava)
+          projectedGroup.withNewFields(
+            preserveChildren(fileField.asGroupType(), projectedGroup).asJava)
         }
       }
     }
 
-    new ShadedMessageType(projectedSchema.getName, projectedSchema.getFields.asScala.map { field =>
-      preserve(fileSchema.asGroupType().getType(field.getName), field)
-    }.asJava)
+    new ShadedMessageType(
+      projectedSchema.getName, preserveChildren(fileSchema, projectedSchema).asJava)
   }
 }
 
@@ -206,7 +222,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
     }
 
     val readSchemaWithValidity =
-      GpuIcebergParquetReader.preserveStructValidity(typeWithIds, fileReadSchema)
+      GpuIcebergParquetReader.preserveStructValidity(typeWithIds, fileReadSchema, requiredSchema)
     logDebug(s"Doing project schema, parquet file schema:\n$fileSchema " +
       s"\niceberg required schema:\n$requiredSchema " +
       s"\nfile reade schema:\n$readSchemaWithValidity")
