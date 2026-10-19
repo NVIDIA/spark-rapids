@@ -117,16 +117,45 @@ fi
 # TEST ONLY (#16399): remove this commit after validating the failure footers.
 # Use the installed CI hook, not manual runs or the local readiness-selection checks.
 if [[ "${SPARK_STARTUP_CHECK:-}" == "/home/ubuntu/.databricks-fallback/spark_readiness.sh" &&
-      "${PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion:-}" == 17.3.* &&
-      "$TEST_MODE" == "CI_PART2" ]]; then
+      ("$TEST_MODE" == "CI_PART1" || "$TEST_MODE" == "CI_PART2") ]]; then
     echo "WILL RUN TESTS WITH SPARK_HOME: $SPARK_HOME"
-    echo "TEST ONLY: synthetic GPU startup failure; no GPU fault or test execution is induced"
-    for attempt in 1 2; do
-        echo "SYNTHETIC acquisition attempt $attempt: Will not use GPU 0 because of ai.rapids.cudf.CudaFatalException: 46 cudaErrorDevicesUnavailable CUDA-capable device(s) is/are busy or unavailable"
-    done
-    echo "SYNTHETIC: java.lang.IllegalStateException: Could not find a single GPU to use"
-    echo "FAILED integration tests (exit=1, run_dir=synthetic-validation-no-tests-run)"
-    exit 1
+    echo "TEST ONLY: synthetic output validation; no real GPU fault or product test is induced"
+    synthetic_status=1
+    case "${PYSP_TEST_spark_databricks_clusterUsageTags_sparkVersion:-}/$TEST_MODE" in
+        14.3.*/CI_PART1)
+            echo 'TEST ONLY: inject summary parser failure'
+            echo 'TEST ONLY: remote command succeeds despite the optional parser failure'
+            exit 0
+            ;;
+        14.3.*/CI_PART2)
+            echo '============================= test session starts =============================='
+            echo 'SYNTHETIC: AssertionError: validation-only pytest failure'
+            echo '============================= 1 failed in 0.01s =============================='
+            ;;
+        17.3.*/CI_PART1)
+            echo 'SYNTHETIC: unclassified remote command failure'
+            synthetic_status=7
+            ;;
+        17.3.*/CI_PART2)
+            for attempt in 1 2; do
+                echo "SYNTHETIC acquisition attempt $attempt: Will not use GPU 0 because of ai.rapids.cudf.CudaFatalException: 46 cudaErrorDevicesUnavailable CUDA-capable device(s) is/are busy or unavailable"
+            done
+            echo 'SYNTHETIC: java.lang.IllegalStateException: Could not find a single GPU to use'
+            ;;
+        18.3.*/CI_PART1)
+            echo 'TEST ONLY: inject summary formatter failure'
+            synthetic_status=23
+            ;;
+        18.3.*/CI_PART2)
+            echo 'TEST ONLY: summary file is deliberately unwritable on the Jenkins agent'
+            echo '============================= test session starts =============================='
+            echo 'SYNTHETIC: AssertionError: original test failure must survive summary write failure'
+            echo '============================= 1 failed in 0.01s =============================='
+            ;;
+        *) echo 'TEST ONLY: unsupported validation cell' >&2; exit 2 ;;
+    esac
+    echo "FAILED integration tests (exit=$synthetic_status, run_dir=synthetic-validation-no-tests-run)"
+    exit "$synthetic_status"
 fi
 
 IS_SPARK_321_OR_LATER=0

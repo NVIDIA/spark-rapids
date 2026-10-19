@@ -142,6 +142,12 @@ pipeline {
                             (normal_build && databricksTestNeeded())) {
                         db_build = true
                     }
+                    // TEST ONLY (#16399): allocate only the Databricks validation jobs.
+                    normal_build = false
+                    skills_build = false
+                    TEMP_SKILLS_IMAGE_BUILD = false
+                    db_build = true
+                    echo 'TEST ONLY: standalone build/test and Skills stages are disabled'
                 }
             }
         } // end of Init githubHelper
@@ -233,8 +239,8 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                 }
             }
             // Parallel run mvn verify (build and integration tests) and unit tests (for multiple Spark versions)
-            // If any one is failed will abort another if not finish yet and will upload failure log to Github
-            failFast true
+            // TEST ONLY (#16399): each Databricks part must finish its independent cases.
+            failFast false
             parallel {
                 stage('Skills Premerge Test') {
                     when {

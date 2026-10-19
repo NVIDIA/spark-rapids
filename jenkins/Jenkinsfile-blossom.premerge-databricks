@@ -90,7 +90,7 @@ pipeline {
         } // end of Init githubHelper
 
         stage('Databricks') {
-            failFast true // Abort running if one branch failed
+            failFast false // TEST ONLY (#16399): collect all runtime outcomes.
             matrix {
                 axes {
                     axis {
@@ -116,7 +116,8 @@ pipeline {
                             BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
                             INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
                             INIT_SCRIPTS_DIR = "/databricks/init_scripts/${BUILD_TAG}-${DB_RUNTIME}"
-                            EXTRA_ENVS = "TEST_MODE=$TEST_MODE,REDUCED_IT=$REDUCED_IT"
+                            // TEST ONLY: native readiness plus synthetic cases; no upstream smoke/IT.
+                            EXTRA_ENVS = "TEST_MODE=$TEST_MODE,REDUCED_IT=$REDUCED_IT,WITH_DEFAULT_UPSTREAM_SHIM=0,SPARK_READINESS_ONLY=0"
                         }
                         steps {
                             script {
@@ -169,20 +170,23 @@ void databricksBuild(String clusterId) {
 
 void databricksTest(String clusterId) {
     def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
-    // TODO(#16317): Re-enable DBR 18.3 integration tests and remove the compile-only stage label.
-    // Preserve the permanent readiness checks when restoring integration coverage.
-    def readinessOnly = env.DB_RUNTIME == '18.3'
-    def stageName = readinessOnly ? "Compile only against ${SPARK_MAJOR}DB" :
-        "Test against $SPARK_MAJOR DB"
+    // TEST ONLY (#16399): DBR 18.3 also exercises a synthetic case after native readiness.
+    def stageName = "Validate failure output against $SPARK_MAJOR DB"
     try {
         stage(stageName) {
             withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
                 def TEST_PARAMS = DbUtils.getParameters(this, 'TEST', "-c $clusterId")
-                sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
+                // TEST ONLY: a missing/unwritable summary file must not mask the test exit.
+                def failureFile = env.DB_RUNTIME == '18.3' && params.TEST_MODE == 'CI_PART2' ?
+                    '/dev/null/synthetic-unwritable-summary.txt' : env.DATABRICKS_TEST_FAILURE_FILE
+                withEnv(["DATABRICKS_TEST_FAILURE_FILE=$failureFile"]) {
+                    sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
+                }
             }
         }
     } finally {
-        common.publishPytestResult(this, "Test against $SPARK_MAJOR DB")
+        // TEST ONLY: synthetic cases emit no JUnit XML; do not fail on missing reports.
+        echo 'TEST ONLY: no real pytest run; pytest report publication skipped'
     }
 }
 
