@@ -47,7 +47,6 @@ import org.apache.spark.sql.rapids.{CorrectedTimeParserPolicy, LegacyTimeParserP
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
-import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.SerializableConfiguration
 
 trait ScanWithMetrics {
@@ -485,15 +484,12 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
   override def timestampFormat: String = GpuCsvUtils.timestampFormatInRead(parsedOptions)
 
   private lazy val enableDateParsingFallback = GpuCsvUtils.enableDateParsingFallback(parsedOptions)
-  // UTF8String.trimAll changed in patch releases and can be backported independently.
-  // Probe the runtime semantics instead of maintaining a Spark version allowlist.
-  private lazy val dateParsingTrimsControls = UTF8String.fromBytes(Array(0.toByte))
-      .trimAll().numBytes() == 0
 
   override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
     if (GpuCSVScan.supportsCorrectedDateParsing(parsedOptions)) {
       CastStrings.parseCsvDate(
-          input, dateFormat.orNull, enableDateParsingFallback, dateParsingTrimsControls)
+          input, dateFormat.orNull, enableDateParsingFallback,
+          GpuTextBasedDateUtils.dateParsingTrimsControls)
     } else {
       super.castStringToDate(input, dt)
     }
