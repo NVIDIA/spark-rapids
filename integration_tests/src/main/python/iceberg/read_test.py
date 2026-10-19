@@ -145,8 +145,15 @@ def test_iceberg_v3_project_only_defaulted_struct_child(spark_tmp_table_factory,
                 (0, None), (1, 11), (2, 11)]
         return cpu_rows, gpu_rows
 
+    def read_defaults(spark):
+        # Iceberg's CPU nested pruning loses parent validity for this projection. Use an
+        # unpruned CPU reference while keeping GPU pruning enabled to exercise the regression.
+        gpu_enabled = spark.conf.get("spark.rapids.sql.enabled") == "true"
+        spark.conf.set("spark.sql.optimizer.nestedSchemaPruning.enabled", gpu_enabled)
+        return spark.sql(f"SELECT id, s.nested_added FROM {table_name}")
+
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql(f"SELECT id, s.nested_added FROM {table_name}"),
+        read_defaults,
         conf={
             "spark.rapids.sql.format.iceberg.v3.enabled": "true",
             "spark.rapids.sql.format.parquet.reader.type": reader_type},
