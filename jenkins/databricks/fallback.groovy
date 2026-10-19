@@ -33,8 +33,12 @@ Map run(script, dbUtils, Closure build, Closure test) {
     return script.databricksRetry(script, preferred, alternate) { target, attempt, finalAttempt ->
         def stateFile = "databricks-attempt-${script.env.BUILD_NUMBER}-${script.env.DB_RUNTIME}-${attempt}-${target}.json"
         def initDir = "${script.env.INIT_SCRIPTS_DIR}-${attempt}-${target}"
+        def failureFile = ".databricks-fallback/failure-${stateFile}.txt"
         def retryable = false
         def reason = ''
+        def operation = 'preparation'
+        def testFailed = false
+        def classificationAvailable = false
         script.withEnv([
             "DB_TYPE=$target",
             "DATABRICKS_HOST=${dbUtils.getHost(target)}",
@@ -42,6 +46,7 @@ Map run(script, dbUtils, Closure build, Closure test) {
             "DATABRICKS_WORKER=${dbUtils.getWorker(target)}",
             "CLUSTER_NAME=CI-${script.env.BUILD_TAG}-${script.env.DB_RUNTIME}-${attempt}-${target}",
             "INIT_SCRIPTS_DIR=$initDir",
+            "DATABRICKS_TEST_FAILURE_FILE=$failureFile",
             // An Azure-preferred job must not inherit an AWS-specific zone override.
             'DB_ZONE=auto'
         ]) {
@@ -76,17 +81,21 @@ Map run(script, dbUtils, Closure build, Closure test) {
                             if (status == 0 && state.phase == 'READY' && state.cluster_id) {
                                 script.echo "Databricks ${script.env.DB_RUNTIME}: using $target (attempt ${attempt + 1})"
                                 // Compilation failures must never enter the startup classifier.
+                                operation = 'build'
                                 script.echo 'Databricks: starting build callback (build failures do not trigger fallback)'
                                 build(state.cluster_id as String)
+                                operation = 'readiness hook installation'
                                 script.echo 'Databricks: build callback completed; installing Spark readiness hook'
                                 script.sh "python3 jenkins/databricks/cluster_fallback.py install-readiness --state $stateFile"
                                 def extraEnvs = script.env.EXTRA_ENVS ? "${script.env.EXTRA_ENVS}," : ''
                                 script.withEnv(["EXTRA_ENVS=${extraEnvs}SPARK_STARTUP_CHECK=/home/ubuntu/.databricks-fallback/spark_readiness.sh"]) {
                                     try {
+                                        operation = 'test'
                                         script.echo 'Databricks: starting test callback with Spark readiness checks'
                                         test(state.cluster_id as String)
                                         script.echo 'Databricks: test callback completed; verifying readiness results'
                                     } catch (hudson.AbortException testError) {
+                                        testFailed = true
                                         // Interruptions bypass this catch. Product failures have no failed readiness marker.
                                         script.echo 'Databricks: test callback failed; checking for a classified startup failure'
                                         try {
@@ -95,6 +104,7 @@ Map run(script, dbUtils, Closure build, Closure test) {
                                             state = script.readJSON(file: stateFile, returnPojo: true)
                                             retryable = classification == 75 && state.retryable == true
                                             reason = state.reason ?: 'UNKNOWN'
+                                            classificationAvailable = true
                                             script.echo "Databricks startup classification: exit=$classification, reason=$reason, retryable=$retryable"
                                         } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException interrupted) {
                                             throw interrupted
@@ -108,6 +118,7 @@ Map run(script, dbUtils, Closure build, Closure test) {
                                         }
                                     }
                                     if (!retryable) {
+                                        operation = 'readiness verification'
                                         script.sh "python3 jenkins/databricks/cluster_fallback.py verify-readiness --state $stateFile"
                                     }
                                 }
@@ -120,7 +131,20 @@ Map run(script, dbUtils, Closure build, Closure test) {
                     primaryError = error
                     throw error
                 } finally {
-                    cleanupAttempt(script, dbUtils, stateFile, initDir, primaryError)
+                    def cleanupFailed = false
+                    try {
+                        cleanupAttempt(script, dbUtils, stateFile, initDir, primaryError)
+                    } catch (Exception cleanupError) {
+                        cleanupFailed = true
+                        throw cleanupError
+                    } finally {
+                        if (primaryError || retryable || cleanupFailed) {
+                            printFailureSummary(script, stateFile, failureFile,
+                                cleanupFailed && !primaryError && !retryable ? 'cleanup' : operation,
+                                testFailed, classificationAvailable, retryable, finalAttempt, reason,
+                                primaryError)
+                        }
+                    }
                 }
             }
         }
@@ -128,6 +152,53 @@ Map run(script, dbUtils, Closure build, Closure test) {
         def cleanedState = script.readJSON(file: stateFile, returnPojo: true)
         return [retryable: retryable, reason: reason, cleanup_complete: cleanedState.cleanup_complete == true]
 
+    }
+}
+
+void printFailureSummary(script, String stateFile, String failureFile, String operation,
+                         boolean testFailed, boolean classificationAvailable,
+                         boolean retryable, boolean finalAttempt, String reason, Exception primaryError) {
+    try {
+        def state = script.fileExists(stateFile) ?
+            script.readJSON(file: stateFile, returnPojo: true) : [:]
+        def lines = ["=== Databricks failure summary: DBR ${script.env.DB_RUNTIME}, ${script.env.DB_TYPE} ===",
+                     "Failed operation: $operation"]
+        if (testFailed && script.fileExists(failureFile)) {
+            def testSummary = script.readFile(file: failureFile).trim()
+            if (testSummary) {
+                lines.add(testSummary)
+            }
+        }
+        def readiness = state.spark_readiness ?: [:]
+        (state.readiness_modes ?: []).each { mode ->
+            lines.add("Spark readiness ($mode): ${readiness[mode]?.phase ?: 'not recorded'}")
+        }
+        def classified = operation == 'preparation' || classificationAvailable
+        def classificationReason = classified ? reason ?: 'unavailable' : 'not available for this failure'
+        lines.add("Retry classification: $classificationReason, retryable=$retryable")
+        if (testFailed && !classificationAvailable) {
+            lines.add('No retry: startup classification was unavailable; preserving the test failure.')
+        } else if (reason == 'NOT_A_CLASSIFIED_SPARK_STARTUP_FAILURE') {
+            def modes = state.readiness_modes ?: []
+            lines.add(modes && modes.every { readiness[it]?.phase == 'READY' } ?
+                'No retry: Spark readiness already passed; later product/test failures do not trigger fallback.' :
+                'No retry: no classified preflight failure was recorded.')
+        } else if (retryable) {
+            lines.add(finalAttempt ? 'No retry: attempt limit reached.' :
+                'Retry eligible; the coordinator proceeds only after successful cleanup.')
+        } else {
+            lines.add('No retry: this failure is not classified as retryable.')
+        }
+        lines.add("Cluster termination confirmed: ${state.termination_confirmed == true}")
+        lines.add("Cluster cleanup complete: ${state.cleanup_complete == true}")
+        lines.add('=== End Databricks failure summary ===')
+        script.echo lines.join('\n')
+    } catch (Exception summaryError) {
+        // Reporting must not replace the original error, cleanup failure or cancellation.
+        if (!primaryError && summaryError instanceof org.jenkinsci.plugins.workflow.steps.FlowInterruptedException) {
+            throw summaryError
+        }
+        script.echo 'Databricks failure summary unavailable; inspect the preceding logs and attempt state.'
     }
 }
 

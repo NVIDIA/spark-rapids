@@ -13,6 +13,9 @@
 # limitations under the License.
 """Upload & run test script on Databricks cluster."""
 
+import os
+from pathlib import Path
+import re
 import shlex
 import subprocess
 import sys
@@ -49,6 +52,49 @@ def get_test_report_path_prefix():
     return source_path
 
 
+def observe_test_output(line, summary):
+    line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+    if line.startswith("WILL RUN TESTS WITH SPARK_HOME:"):
+        # Only the last invocation can explain a failure; earlier suites may have passed.
+        summary.clear()
+        summary["invocation_started"] = True
+    if re.search(r"=+ test session starts =+", line):
+        summary["pytest_started"] = True
+    if "cudaErrorDevicesUnavailable" in line:
+        summary["gpu_unavailable"] = True
+    if "IllegalStateException: Could not find a single GPU to use" in line:
+        summary["gpu_acquisition_failed"] = True
+    failure = re.match(r"FAILED integration tests \(exit=(\d+), run_dir=.*\)", line)
+    if failure:
+        summary["test_exit"] = failure.group(1)
+    if line.startswith("FAILED spark-shell smoke test ("):
+        summary["smoke_failed"] = True
+    if line.startswith("=") and re.search(r"\bin [0-9.]+s\b", line):
+        counts = re.findall(r"\b\d+ (?:passed|failed|errors?|skipped|xfailed|xpassed)\b", line)
+        if counts:
+            summary["pytest_result"] = ", ".join(counts)
+
+
+def format_test_failure(summary, status):
+    lines = ["Remote test command exit: %s" % status]
+    if "test_exit" in summary:
+        lines.append("Integration test invocation exit: " + summary["test_exit"])
+    if summary.get("smoke_failed"):
+        lines.append("Spark-shell smoke test failed.")
+    if summary.get("gpu_unavailable"):
+        lines.append("Observed: 46 cudaErrorDevicesUnavailable: "
+                     "CUDA-capable device(s) is/are busy or unavailable")
+    if summary.get("gpu_acquisition_failed"):
+        lines.append("Observed: IllegalStateException: Could not find a single GPU to use")
+    if summary.get("invocation_started"):
+        lines.append("Pytest session start observed for the last invocation: " +
+                     ("yes" if summary.get("pytest_started") else "no"))
+    if summary.get("pytest_result"):
+        lines.append("Last pytest result: " + summary["pytest_result"])
+    lines.append("These are observed symptoms, not an infrastructure root-cause classification.")
+    return "\n".join(lines)
+
+
 def main():
     """Define main function."""
     master_addr = ClusterUtils.cluster_get_master_addr(params.workspace, params.clusterid, params.token)
@@ -80,8 +126,21 @@ def main():
     ssh_command = ["ssh"] + ssh_args + ["ubuntu@%s" % master_addr,
                                          "bash -c %s" % shlex.quote(remote_command)]
     print("ssh command: %s" % shell_join(ssh_command))
+    summary = {}
+    failure = ""
     try:
-        subprocess.check_call(ssh_command)
+        # Keep streaming the full log, retaining only bounded, known diagnostic fields.
+        with subprocess.Popen(ssh_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              text=True, errors="replace") as process:
+            for line in process.stdout:
+                print(line, end="", flush=True)
+                observe_test_output(line, summary)
+            status = process.wait()
+        if status:
+            failure = format_test_failure(summary, status)
+            # Preserve this wrapper's failure exit (1), without burying the footer under
+            # a CalledProcessError traceback containing the entire SSH command.
+            raise SystemExit(1)
     finally:
         print("Copying test reports back")
         try:
@@ -104,6 +163,19 @@ def main():
             subprocess.check_call(rsync_command)
         except subprocess.CalledProcessError as e:
             print("WARNING: test report collection failed: %s" % e)
+        finally:
+            if failure:
+                # The CI wrapper reprints this after classification and cleanup. Manual
+                # callers get the same console footer without requiring a state file.
+                failure_file = os.environ.get("DATABRICKS_TEST_FAILURE_FILE")
+                if failure_file:
+                    try:
+                        Path(failure_file).write_text(failure + "\n")
+                    except OSError:
+                        print("WARNING: unable to save the test failure summary")
+                print("\n=== Databricks test failure summary ===\n" + failure +
+                      "\nRetry classification and cluster cleanup are reported by the CI wrapper.\n"
+                      "=== End test failure summary ===", flush=True)
 
 
 if __name__ == '__main__':
