@@ -227,7 +227,7 @@ def test_delta_delete_with_deletion_vectors(
         assert_gpu_delete_command=not expect_cpu_fallback,
         expected_cpu_fallback_class="ExecutedCommandExec" if expect_cpu_fallback else None)
 
-@allow_non_gpu("ColumnarToRowExec", *delta_meta_allow)
+@allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @pytest.mark.parametrize("enable_deletion_vectors", [True, False], ids=idfn)
 @pytest.mark.skipif(is_databricks_runtime() or is_before_spark_353() or
@@ -252,13 +252,75 @@ def test_delta_delete_dv_operation_logging(spark_tmp_path, enable_deletion_vecto
     def check_deletion_vectors(spark):
         for mode in ["CPU", "GPU"]:
             path = spark_tmp_path + "/DELTA_DATA/" + mode
-            adds = spark.read.json(path + "/_delta_log/*.json").select("add.*")
-            dv_count = adds.where("deletionVector IS NOT NULL").count() \
-                if "deletionVector" in adds.columns else 0
-            assert (dv_count > 0) == enable_deletion_vectors
+            metrics = spark.sql(f"DESCRIBE HISTORY delta.`{path}` LIMIT 1").first() \
+                .operationMetrics
+            assert (int(metrics.get("numDeletionVectorsAdded", 0)) > 0) == enable_deletion_vectors
             assert spark.read.format("delta").load(path).count() == 900
 
     with_cpu_session(check_deletion_vectors, conf=conf)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(is_databricks_runtime() or not is_oss_delta_lake_42_or_43(),
+                    reason="Exercise OSS Delta 4.2 and 4.3 DV reader compatibility")
+@pytest.mark.parametrize("reader_type", ["PERFILE", "MULTITHREADED"])
+@pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
+@pytest.mark.parametrize("column_mapping_mode", ["none", "name"])
+def test_delta_delete_dv_user_row_deleted_column(
+        spark_tmp_path, reader_type, dv_predicate_pushdown, column_mapping_mode):
+    conf = copy_and_update(delta_delete_enabled_conf, {
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.format.parquet.reader.type": reader_type,
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled":
+            str(dv_predicate_pushdown).lower()})
+    column = "__delta_internal_is_row_deleted"
+    path = spark_tmp_path + "/DELTA_DATA"
+
+    def setup_table(spark):
+        spark.createDataFrame([(0, 0), (1, 1), (2, 0), (3, 2), (4, None)],
+                              f"id INT, `{column}` BYTE").coalesce(1) \
+            .write.format("delta").option("delta.enableDeletionVectors", "true") \
+            .option("delta.columnMapping.mode", column_mapping_mode).save(path)
+
+    with_cpu_session(setup_table, conf=conf)
+
+    def do_delete(spark):
+        return spark.sql(f"DELETE FROM delta.`{path}` WHERE `{column}` = 0").collect()
+
+    gpu_result = assert_rapids_delta_write(
+        do_delete, conf=conf,
+        required_gpu_classes=[], expected_command="GpuDeleteCommand",
+        expected_classes=["GpuFileSourceScanExec"])
+    assert gpu_result[0][0] == 2
+
+    def check_survivors(spark):
+        # Delta's CPU scan also confuses the two fields after DVs exist. Apply the committed
+        # bitmap to the physical Parquet rows directly to verify the surviving user values.
+        jvm = spark.sparkContext._jvm
+        delta = jvm.org.apache.spark.sql.delta
+        snapshot = delta.DeltaLog.forTableWithSnapshot(spark._jsparkSession, path)._2()
+        files = snapshot.allFiles().collect()
+        assert len(files) == 1
+        add = files[0]
+        assert add.deletionVector() is not None
+        store = delta.storage.dv.HadoopFileSystemDVStore(
+            spark.sparkContext._jsc.hadoopConfiguration())
+        bitmap = store.read(add.deletionVector(), jvm.org.apache.hadoop.fs.Path(path))
+        assert bitmap.cardinality() == 2
+        schema = snapshot.metadata().schema()
+        def physical_name(name):
+            metadata = schema.apply(name).metadata()
+            key = "delta.columnMapping.physicalName"
+            return metadata.getString(key) if metadata.contains(key) else name
+        physical_rows = pq.read_table(os.path.join(path, add.path())).to_pylist()
+        survivors = [(row[physical_name("id")], row[physical_name(column)])
+                     for index, row in enumerate(physical_rows) if not bitmap.contains(index)]
+        assert sorted(survivors) == [(1, 1), (3, 2), (4, None)]
+        metrics = spark.sql(f"DESCRIBE HISTORY delta.`{path}` LIMIT 1").first().operationMetrics
+        assert int(metrics["numDeletionVectorsAdded"]) > 0
+
+    with_cpu_session(check_survivors, conf=conf)
 
 
 @allow_non_gpu("SortExec, ColumnarToRowExec", *delta_meta_allow)

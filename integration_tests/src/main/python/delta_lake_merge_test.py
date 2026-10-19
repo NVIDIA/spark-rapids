@@ -1848,7 +1848,7 @@ def test_delta_merge_not_matched_by_source_with_dv(spark_tmp_path, spark_tmp_tab
         merge_sql=merge_sql, compare_logs=True, conf=delta_merge_enabled_conf)
 
 
-@allow_non_gpu("ColumnarToRowExec", "BroadcastHashJoinExec", "BroadcastExchangeExec",
+@allow_non_gpu("BroadcastHashJoinExec", "BroadcastExchangeExec",
                *delta_meta_allow)
 @delta_lake
 @pytest.mark.skipif(is_databricks_runtime() or not is_oss_delta_lake_42_or_43(),
@@ -1858,8 +1858,12 @@ def test_delta_merge_not_matched_by_source_with_dv(spark_tmp_path, spark_tmp_tab
 @pytest.mark.parametrize("existing_dv", [True, False], ids=idfn)
 def test_delta_dv_dml_operation_logging(
         spark_tmp_path, command, use_metadata_row_index, existing_dv):
-    from delta_lake_utils import _assert_oss_delta_40_merge_metadata_broadcasts
+    """Check DML logging and physical row positions with fresh or existing DVs.
 
+    command selects DELETE, UPDATE, or MERGE. use_metadata_row_index exercises both
+    Delta row-index settings; the GPU helper supplies explicit physical indexes in either
+    case. existing_dv seeds a CPU DELETE so subsequent DML must preserve an existing DV.
+    """
     conf = copy_and_update(delta_merge_enabled_conf, {
         "spark.rapids.sql.command.DeleteCommand": "true",
         "spark.rapids.sql.command.UpdateCommand": "true",
@@ -1883,8 +1887,7 @@ def test_delta_dv_dml_operation_logging(
 
     with_cpu_session(setup_tables, conf=conf)
 
-    def run_command(spark, mode):
-        path = spark_tmp_path + "/" + mode
+    def run_command(spark, path):
         statements = {
             "DELETE": f"DELETE FROM delta.`{path}` WHERE id % 10 = 0",
             "UPDATE": f"UPDATE delta.`{path}` SET payload = 'updated' WHERE id % 10 = 0",
@@ -1893,22 +1896,13 @@ def test_delta_dv_dml_operation_logging(
                 "ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.payload = 'updated'"}
         return spark.sql(statements[command]).collect()
 
-    cpu_result = with_cpu_session(lambda spark: run_command(spark, "CPU"), conf=conf)
     expected_command = {"DELETE": "GpuDeleteCommand", "UPDATE": "GpuUpdateCommand",
                         "MERGE": "GpuMergeIntoCommand43x" if is_oss_delta_lake_43()
                             else "GpuMergeIntoCommand42x"}[command]
-    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
-    callback.startCapture()
-    try:
-        gpu_result = with_gpu_session(lambda spark: run_command(spark, "GPU"), conf=conf)
-        plans = callback.getResultsWithTimeout(10000)
-        for expected_class in [expected_command, "GpuFileSourceScanExec"]:
-            assert any(callback.contains(plan, expected_class) for plan in plans), expected_class
-        # Reuse the validator to confine CPU broadcast joins to table-state metadata.
-        _assert_oss_delta_40_merge_metadata_broadcasts(callback, plans)
-    finally:
-        callback.endCapture()
-    assert_equal(cpu_result, gpu_result)
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        run_command, lambda spark, path: read_delta_path(spark, path).orderBy("id"),
+        spark_tmp_path, conf=conf, expected_command=expected_command,
+        required_gpu_classes=["GpuFileSourceScanExec"])
 
     expected = [(i, "updated" if command != "DELETE" and i % 10 == 0 else str(i))
                 for i in range(1000)
@@ -1927,7 +1921,7 @@ def test_delta_dv_dml_operation_logging(
     with_cpu_session(check_tables, conf=conf)
 
 
-@allow_non_gpu("ColumnarToRowExec", "BroadcastHashJoinExec", "BroadcastExchangeExec",
+@allow_non_gpu("BroadcastHashJoinExec", "BroadcastExchangeExec",
                *delta_meta_allow)
 @delta_lake
 @pytest.mark.skipif(is_databricks_runtime() or not is_oss_delta_lake_42_or_43(),
@@ -1937,8 +1931,13 @@ def test_delta_dv_dml_operation_logging(
 @pytest.mark.parametrize("merge_case", [
     "mixed", "not_matched_by_source", "duplicate_delete", "no_match", "full_delete"])
 def test_delta_merge_dv_clauses(spark_tmp_path, use_cdf, persistent_dv, merge_case):
-    from delta_lake_utils import _assert_oss_delta_40_merge_metadata_broadcasts
+    """Compare MERGE clause behavior on a target that already contains DVs.
 
+    use_cdf enables change data feed and checks the emitted change rows. persistent_dv
+    selects DV writes versus rewriting files while still reading the target's existing DVs.
+    merge_case covers mixed DELETE/UPDATE/INSERT clauses, NOT MATCHED BY SOURCE deletes,
+    duplicate source rows for an unconditional DELETE, a no-op, or removal of every row.
+    """
     conf = copy_and_update(delta_merge_enabled_conf, {
         "spark.databricks.delta.delete.deletionVectors.persistent": "true",
         "spark.databricks.delta.merge.deletionVectors.persistent": str(persistent_dv).lower()})
@@ -1969,24 +1968,23 @@ def test_delta_merge_dv_clauses(spark_tmp_path, use_cdf, persistent_dv, merge_ca
         "full_delete": ("SELECT id FROM range(20)", "WHEN MATCHED THEN DELETE")}
     source_sql, clauses = source_and_clauses[merge_case]
 
-    def do_merge(spark, mode):
-        path = spark_tmp_path + "/" + mode
-        return spark.sql(f"MERGE INTO delta.`{path}` AS t USING ({source_sql}) AS s "
-                         f"ON t.id = s.id {clauses}").collect()
+    affected = {"mixed": 3, "not_matched_by_source": 11, "duplicate_delete": 1,
+                "no_match": 0, "full_delete": 19}
 
-    cpu_result = with_cpu_session(lambda spark: do_merge(spark, "CPU"), conf=conf)
-    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
-    callback.startCapture()
-    try:
-        gpu_result = with_gpu_session(lambda spark: do_merge(spark, "GPU"), conf=conf)
-        plans = callback.getResultsWithTimeout(10000)
-        expected_command = "GpuMergeIntoCommand43x" if is_oss_delta_lake_43() \
-            else "GpuMergeIntoCommand42x"
-        assert any(callback.contains(plan, expected_command) for plan in plans)
-        _assert_oss_delta_40_merge_metadata_broadcasts(callback, plans)
-    finally:
-        callback.endCapture()
-    assert_equal(cpu_result, gpu_result)
+    def do_merge(spark, path):
+        result = spark.sql(f"MERGE INTO delta.`{path}` AS t USING ({source_sql}) AS s "
+                           f"ON t.id = s.id {clauses}").collect()
+        assert result[0][0] == affected[merge_case]
+        return result
+
+    expected_command = "GpuMergeIntoCommand43x" if is_oss_delta_lake_43() \
+        else "GpuMergeIntoCommand42x"
+    # Mixed clauses always write data, so also exercise the helper's default write check.
+    # Other cases include no-ops and full-file deletion without replacement Parquet data.
+    assert_gpu_and_cpu_writes_are_equal_collect(
+        do_merge, lambda spark, path: read_delta_path(spark, path).orderBy("id"),
+        spark_tmp_path, conf=conf, expected_command=expected_command,
+        required_gpu_classes=None if merge_case == "mixed" else [])
 
     expected = {i: str(i) for i in range(19)}
     if merge_case == "mixed":
@@ -1998,10 +1996,6 @@ def test_delta_merge_dv_clauses(spark_tmp_path, use_cdf, persistent_dv, merge_ca
         del expected[0]
     elif merge_case == "full_delete":
         expected.clear()
-    affected = {"mixed": 3, "not_matched_by_source": 11, "duplicate_delete": 1,
-                "no_match": 0, "full_delete": 19}
-    assert gpu_result[0][0] == affected[merge_case]
-
     def check_tables(spark):
         cdf_results = []
         for mode in ["CPU", "GPU"]:
