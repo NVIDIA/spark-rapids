@@ -355,6 +355,13 @@ Low shuffle merge is disabled by default. To enable it on Databricks Runtime 17.
 or `MULTITHREADED`. With `COALESCING` or `AUTO`, touched-file discovery uses the
 multithreaded reader to preserve file-relative row indices. OSS Delta Lake 2.4 still
 requires `PERFILE`.
+
+Low shuffle merge also requires both
+`spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled=true` and
+`spark.databricks.delta.deletionVectors.useMetadataRowIndex=true`. If either is `false`,
+MERGE falls back to classic GPU merge. In particular, remove the `useMetadataRowIndex=false`
+setting recommended for older runtimes when enabling low shuffle merge on Databricks Runtime 17.3.
+
 Tables with physical columns named like deletion-vector skip-row markers use classic GPU
 merge to avoid corrupting those values during discovery and temporary-DV rewrites; see
 [the native reader column-collision issue](https://github.com/NVIDIA/cudf-spark/issues/16381).

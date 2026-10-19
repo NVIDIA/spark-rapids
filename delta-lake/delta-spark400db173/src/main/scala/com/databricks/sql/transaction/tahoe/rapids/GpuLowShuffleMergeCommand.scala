@@ -21,6 +21,7 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 import scala.annotation.nowarn
@@ -1077,9 +1078,12 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
 
   private def uniqueColumnName(base: String, existing: Seq[String]): String = {
     val resolver = context.cmd.conf.resolver
-    Iterator.from(0)
-        .map(i => if (i == 0) base else s"$base$i")
-        .find(candidate => !existing.exists(name => resolver(name, candidate)))
+    // Column mapping can retain old physical names after renames or drops. Randomize generated
+    // names so discovery does not read a dropped column absent from the current schema.
+    val physicalNames = context.deltaTxn.metadata.schema.map(DeltaColumnMapping.getPhysicalName)
+    val reservedNames = existing ++ physicalNames
+    Iterator.continually(s"${base}_${UUID.randomUUID().toString.replace('-', '_')}")
+        .find(candidate => !reservedNames.exists(name => resolver(name, candidate)))
         .get
   }
 

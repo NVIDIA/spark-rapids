@@ -20,6 +20,7 @@ import pytest
 from conftest import is_databricks_runtime
 from delta_lake_merge_common import *
 from marks import *
+from parquet_test_utils import parquet_row_group_midpoints
 from pyspark.sql.types import *
 from spark_session import is_databricks_version, spark_version
 
@@ -277,6 +278,13 @@ def test_delta_low_shuffle_merge_multiple_row_groups(
                 .option("maxRecordsPerFile", 2048).option("parquet.block.size", 16384) \
                 .option("parquet.enable.dictionary", "false") \
                 .option("compression", "uncompressed").save(data_path + "/" + run)
+            partition_files = spark.read.format("delta").load(data_path + "/" + run) \
+                .select("p", f.input_file_name().alias("file")) \
+                .groupBy("p").agg(f.collect_set("file").alias("files")).collect()
+            assert len(partition_files) == 3
+            assert all(len(partition.files) > 1 for partition in partition_files)
+            assert any(len(parquet_row_group_midpoints(spark, path)) > 1
+                       for partition in partition_files for path in partition.files)
         # Read two Delta partitions during discovery and leave the third untouched.
         spark.range(2, numPartitions=1).withColumn("p", f.col("id")) \
             .createOrReplaceTempView(src_table)
@@ -496,13 +504,17 @@ def test_delta_low_shuffle_merge_internal_column_names(
 @pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
 @pytest.mark.parametrize("skip_row_predicate", [None, True, False],
                          ids=["rewrite-only", "predicate-true", "predicate-false"])
-@pytest.mark.parametrize("rename_with_mapping", [False, True],
-                         ids=["unmapped", "mapped-and-renamed"])
-def test_delta_low_shuffle_merge_physical_skip_row_column(
+# CPU MERGE treats an unmapped __delta_internal_is_row_deleted as generated metadata and
+# fails with "useMetadataRowIndex is enabled but rowIndexColumn is not defined". Exercise
+# DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME through its retained physical name.
+@pytest.mark.parametrize("skip_column,rename_with_mapping", [
+    ("_databricks_internal_edge_computed_column_skip_row", False),
+    ("_databricks_internal_edge_computed_column_skip_row", True),
+    ("__delta_internal_is_row_deleted", True)], ids=idfn)
+def test_delta_low_shuffle_merge_physical_internal_column(
         spark_tmp_path, spark_tmp_table_factory, use_chunked_reader,
-        skip_row_predicate, rename_with_mapping):
+        skip_row_predicate, rename_with_mapping, skip_column):
     # This is ordinary table data, not a generated deletion-vector marker (#16381).
-    skip_column = "_databricks_internal_edge_computed_column_skip_row"
     logical_column = "user_flag" if rename_with_mapping else skip_column
     conf = copy_and_update(_delta_merge_conf("MULTITHREADED"), {
         "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower(),
@@ -545,7 +557,7 @@ def test_delta_low_shuffle_merge_physical_skip_row_column(
             "WHEN MATCHED THEN UPDATE SET t.v = s.v").collect()
 
     with_cpu_session(setup, conf=conf)
-    if use_chunked_reader and skip_row_predicate is None and not rename_with_mapping:
+    if use_chunked_reader and skip_row_predicate is None:
         strict_conf = copy_and_update(conf, {
             "spark.rapids.sql.test.delta.lowShuffleMerge.failOnFallback": "true"})
         with pytest.raises(Exception, match="Low shuffle merge unexpectedly fell back"):
@@ -639,18 +651,11 @@ def test_delta_low_shuffle_merge_physical_metadata_columns(
 @ignore_order
 @pytest.mark.skipif(not is_databricks_version(17, 3),
                     reason="DBR 17.3 low-shuffle column-mapping regression")
+@pytest.mark.parametrize("reader_type", low_shuffle_merge_reader_types, ids=idfn)
+@pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
 @pytest.mark.parametrize("mapping", ["name", "id"], ids=idfn)
-@pytest.mark.parametrize("collision,use_cdf,reader_type,use_chunked_reader", [
-    (collision, use_cdf, reader, True)
-    for collision in ["none", "source", "target"]
-    for use_cdf in [False, True]
-    for reader in ["PERFILE", "MULTITHREADED"]
-] + [
-    ("target", False, reader, chunked)
-    for reader in ["MULTITHREADED", "COALESCING", "AUTO"]
-    for chunked in [False, True]
-    if (reader, chunked) != ("MULTITHREADED", True)
-], ids=idfn)
+@pytest.mark.parametrize("collision", ["none", "source", "target"], ids=idfn)
+@pytest.mark.parametrize("use_cdf", [False, True], ids=idfn)
 def test_delta_low_shuffle_merge_column_mapping(
         spark_tmp_path, spark_tmp_table_factory, mapping, collision, use_cdf, reader_type,
         use_chunked_reader):
@@ -724,12 +729,18 @@ def test_delta_low_shuffle_merge_column_mapping(
 
     # This must execute low shuffle, not just enter the command and fall back to classic merge.
     _assert_collect_with_counters(do_merge, data_path, conf)
+
+    def read_data(spark, path, read_func):
+        df = read_func(spark, path)
+        return df.sort(df.columns)
+
     readers = [read_delta_path, read_delta_path_with_cdf] if use_cdf else [read_delta_path]
     for reader in readers:
-        results = [with_cpu_session(
-            lambda spark, run=run: reader(spark, data_path + "/" + run).collect(), conf=conf)
-            for run in ["CPU", "GPU"]]
-        assert_equal_with_local_sort(*results)
+        cpu_result = with_cpu_session(
+            lambda spark: read_data(spark, data_path + "/CPU", reader).collect(), conf=conf)
+        gpu_result = with_cpu_session(
+            lambda spark: read_data(spark, data_path + "/GPU", reader).collect(), conf=conf)
+        assert_equal(cpu_result, gpu_result)
     if evolve_schema:
         # Untouched rows must not recover values from the dropped physical columns.
         expected = [(0, None, 100, 300, None), (2, 12, 202, 302, None),
@@ -740,6 +751,86 @@ def test_delta_low_shuffle_merge_column_mapping(
                     .select("id", "value", "__metadata_row_index", "payload._metadata",
                             "payload.old_value").orderBy("id").collect(), conf=conf)
             assert rows == expected, f"{run} table contents: {rows}"
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks_version(17, 3),
+                    reason="DBR 17.3 low-shuffle physical column-mapping regression")
+@pytest.mark.parametrize("reader_type", low_shuffle_merge_reader_types, ids=idfn)
+@pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
+@pytest.mark.parametrize("collision", [
+    "retained-physical", "unused-physical", "dropped-physical"], ids=idfn)
+@pytest.mark.parametrize("use_cdf", [False, True], ids=idfn)
+def test_delta_low_shuffle_merge_column_mapping_physical_columns(
+        spark_tmp_path, spark_tmp_table_factory, collision, use_cdf, reader_type, use_chunked_reader):
+    conf = copy_and_update(_delta_merge_conf(reader_type), {
+        "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower(),
+        "spark.databricks.delta.properties.defaults.columnMapping.mode": "none"})
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    src_table = spark_tmp_table_factory.get()
+
+    def dest_table_func(spark):
+        fields = [
+            ("id", RepeatSeqGen(list(range(4)), data_type=LongType())),
+            ("value", RepeatSeqGen([-1], data_type=LongType()))]
+        if collision in ["unused-physical", "dropped-physical"]:
+            # STRING cannot serve as the BIGINT row index; an omitted INSERT value can be NULL.
+            fields.append(("__metadata_row_index", StringGen("user-[0-9]{3}", nullable=True)))
+        df = gen_df(spark, fields, length=4, num_slices=1)
+        if collision == "retained-physical":
+            df = df.withColumn("__metadata_row_index", f.col("id") + 100)
+        return df
+
+    def setup(spark):
+        setup_delta_dest_tables(spark, data_path, dest_table_func, False, False)
+        for run in ["CPU", "GPU"]:
+            table = f"delta.`{data_path}/{run}`"
+            # Upgrade after writing so rename/drop leaves __metadata_row_index in Parquet.
+            spark.sql(f"ALTER TABLE {table} SET TBLPROPERTIES "
+                      "('delta.columnMapping.mode' = 'name')")
+            if collision == "dropped-physical":
+                spark.sql(f"ALTER TABLE {table} DROP COLUMN __metadata_row_index")
+            else:
+                spark.sql(f"ALTER TABLE {table} RENAME COLUMN __metadata_row_index TO user_index")
+            if use_cdf:
+                spark.sql(f"ALTER TABLE {table} SET TBLPROPERTIES "
+                          "('delta.enableChangeDataFeed' = 'true')")
+        gen_df(spark, [
+            ("id", RepeatSeqGen(list(range(1, 5)), data_type=LongType()))],
+            length=4, num_slices=1).withColumn("value", f.col("id") + 10) \
+            .createOrReplaceTempView(src_table)
+
+    with_cpu_session(setup, conf=conf)
+    # Exercise referenced collisions as well as old physical columns absent from discovery.
+    condition = "t.id = s.id"
+    update = "t.value = s.value"
+    columns, values = "id, value", "s.id, s.value"
+    if collision == "retained-physical":
+        condition += " AND t.user_index = s.id + 100"
+        update += ", t.user_index = s.id + 200"
+        columns += ", user_index"
+        values += ", s.id + 200"
+
+    def do_merge(spark, path):
+        return spark.sql(
+            f"MERGE INTO delta.`{path}` t USING {src_table} s ON {condition} "
+            "WHEN MATCHED AND s.id = 1 THEN DELETE "
+            f"WHEN MATCHED AND s.id = 2 THEN UPDATE SET {update} "
+            f"WHEN NOT MATCHED THEN INSERT ({columns}) VALUES ({values})").collect()
+
+    _assert_collect_with_counters(do_merge, data_path, conf)
+
+    def read_data(spark, path):
+        df = read_delta_path(spark, path)
+        return df.sort(df.columns)
+
+    cpu_result = with_cpu_session(
+        lambda spark: read_data(spark, data_path + "/CPU").collect(), conf=conf)
+    gpu_result = with_cpu_session(
+        lambda spark: read_data(spark, data_path + "/GPU").collect(), conf=conf)
+    assert_equal(cpu_result, gpu_result)
 
 
 @allow_non_gpu(*delta_meta_allow)
