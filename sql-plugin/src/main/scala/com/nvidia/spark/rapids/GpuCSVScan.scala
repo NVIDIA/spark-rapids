@@ -43,7 +43,7 @@ import org.apache.spark.sql.execution.datasources.csv.CSVDataSource
 import org.apache.spark.sql.execution.datasources.v2._
 import org.apache.spark.sql.execution.datasources.v2.csv.CSVScan
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{CorrectedTimeParserPolicy, GpuToTimestamp, LegacyTimeParserPolicy}
+import org.apache.spark.sql.rapids.{CorrectedTimeParserPolicy, LegacyTimeParserPolicy}
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.vectorized.ColumnarBatch
@@ -297,9 +297,28 @@ object GpuCSVScan extends Logging {
     FileFormatChecks.tag(meta, readSchema, CsvFormatType, ReadFileOp)
   }
 
+  // CSV formats require independent validation. Adding an expression format must not
+  // implicitly enable it for CSV date parsing.
+  private val correctedDateFormats: Set[String] = Set(
+    "yyyy-MM-dd",
+    "yyyy/MM/dd",
+    "yyyy-MM",
+    "yyyy/MM",
+    "dd/MM/yyyy",
+    "yyyy-MM-dd HH:mm:ss",
+    "MM-dd",
+    "MM/dd",
+    "dd-MM",
+    "dd/MM",
+    "MM/yyyy",
+    "MM-yyyy",
+    "MM/dd/yyyy",
+    "MM-dd-yyyy",
+    "MMyyyy")
+
   def supportsCorrectedDateParsing(options: CSVOptions): Boolean =
     GpuOverrides.getTimeParserPolicy == CorrectedTimeParserPolicy &&
-      options.dateFormatInRead.forall(GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS.contains)
+      options.dateFormatInRead.forall(correctedDateFormats.contains)
 }
 
 case class GpuCSVScan(

@@ -339,7 +339,7 @@ def test_csv_fallback(spark_tmp_path, read_func, disable_conf, spark_tmp_table_f
 csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'MM-yyyy', 'MM/yyyy', 'MM-dd-yyyy', 'MM/dd/yyyy', 'dd-MM-yyyy', 'dd/MM/yyyy']
 
-# Keep this list in sync with GpuToTimestamp.CORRECTED_COMPATIBLE_FORMATS. None exercises
+# Keep this list in sync with GpuCSVScan.correctedDateFormats. None exercises
 # the absent-format/default-formatter path as well as the derived parsing fallback policy.
 csv_corrected_date_formats = [None, 'yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
         'dd/MM/yyyy', 'yyyy-MM-dd HH:mm:ss', 'MM-dd', 'MM/dd', 'dd-MM', 'dd/MM',
@@ -590,12 +590,15 @@ def test_csv_corrected_date_failfast_invalid(spark_tmp_path, v1_enabled_list):
 @ignore_order(local=True)
 @allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
 @pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
-@pytest.mark.parametrize('date_format', ['yyyyMMdd', 'yyyy-M-d'])
+@pytest.mark.parametrize('date_format', [
+    'yyyyMMdd', 'yyyy-M-d', 'yyyy-MM-dd HH:ss', 'yyyy-MM-dd-MM'])
 def test_csv_corrected_date_unsupported_format_fallback(spark_tmp_path, v1_enabled_list,
         date_format):
     path = spark_tmp_path + '/unsupported_date_format'
+    # These patterns must stay on CPU independently of the expression format allowlist.
     with_cpu_session(lambda spark: spark.createDataFrame([
-        (0, '20200501'), (1, '2020-5-1'), (2, 'invalid')], 'id int, value string')
+        (0, '20200501'), (1, '2020-5-1'), (2, 'invalid'),
+        (3, '2020-05-01 99:99'), (4, '2020-05-01-06')], 'id int, value string')
         .coalesce(1).write.csv(path))
     assert_gpu_fallback_collect(lambda spark: spark.read.schema('id int, value date')
         .option('dateFormat', date_format).option('enableDateTimeParsingFallback', 'false')

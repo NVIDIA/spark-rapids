@@ -154,7 +154,24 @@ replacement character �.  Instead it just passes them through as described in 
 ### CSV Dates
 
 With `spark.sql.legacy.timeParserPolicy=CORRECTED`, GPU date parsing supports an absent `dateFormat`
-and the formats listed under [CORRECTED and EXCEPTION timeParserPolicy](#corrected-and-exception-timeparserpolicy).
+and the following explicit CSV date formats:
+
+- `yyyy-MM-dd`
+- `yyyy/MM/dd`
+- `yyyy-MM`
+- `yyyy/MM`
+- `dd/MM/yyyy`
+- `yyyy-MM-dd HH:mm:ss`
+- `MM-dd`
+- `MM/dd`
+- `dd-MM`
+- `dd/MM`
+- `MM/yyyy`
+- `MM-yyyy`
+- `MM/dd/yyyy`
+- `MM-dd-yyyy`
+- `MMyyyy`
+
 These dates are supported in both UTC and non-UTC session and JVM time zones.
 
 In Spark 3.3, an absent `dateFormat` uses Spark's CAST-style date grammar, including year-only,
