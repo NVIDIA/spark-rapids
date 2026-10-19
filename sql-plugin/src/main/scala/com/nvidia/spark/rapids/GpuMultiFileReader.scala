@@ -941,7 +941,9 @@ abstract class MultiFileCloudPartitionReaderBase(
           }
         }
 
-        if (batchIter.hasNext || filesToRead == 0 || isDone) {
+        val noPendingFiles = filesToRead == 0 && currentFileHostBuffers.isEmpty &&
+          combineLeftOverFiles.isEmpty
+        if (batchIter.hasNext || noPendingFiles || isDone) {
           continue = false
         }
       }
@@ -984,22 +986,26 @@ abstract class MultiFileCloudPartitionReaderBase(
     // this is more complicated because threads might still be processing files
     // in cases close got called early for like limit() calls
     isDone = true
-    closeCurrentFileHostBuffers()
     batchIter = EmptyGpuColumnarBatchIterator
 
     // clean up Async Readers being left over
     val needToClose = mutable.ArrayBuffer[BufferInfo]()
-    tasks.asScala.foreach {
-      case task if task.isCancelled => // Do nothing if already cancelled
-      case task if task.isDone => // Close all produced hmbs
-        needToClose += convertAsyncResult(task.get())
-      case task => // Task is still running
-        // Note we are not interrupting thread here so it
-        // will finish reading and then just discard. If we
-        // interrupt HDFS logs warnings about being interrupted.
-        task.cancel(false)
+    currentFileHostBuffers.foreach(needToClose += _)
+    currentFileHostBuffers = None
+    combineLeftOverFiles.foreach(needToClose ++= _)
+    combineLeftOverFiles = None
+    withResource(needToClose) { _ =>
+      tasks.asScala.foreach {
+        case task if task.isCancelled => // Do nothing if already cancelled
+        case task if task.isDone => // Close all produced hmbs
+          needToClose += convertAsyncResult(task.get())
+        case task => // Task is still running
+          // Note we are not interrupting thread here so it
+          // will finish reading and then just discard. If we
+          // interrupt HDFS logs warnings about being interrupted.
+          task.cancel(false)
+      }
     }
-    needToClose.safeClose()
   }
 }
 

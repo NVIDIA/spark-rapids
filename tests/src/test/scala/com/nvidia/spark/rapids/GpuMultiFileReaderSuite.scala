@@ -101,4 +101,68 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
       assertResult(false)(multiFileReader.next())
     }
   }
+
+  private class PendingFilesReader(firstProducesRows: Boolean)
+      extends MultiFileCloudPartitionReaderBase(
+        new Configuration(false), Array.empty,
+        new ThreadPoolConfBuilder(1, true, 1L << 20, 10000L, false).build(),
+        1, Array.empty, Map.empty, 1000, 64L * 1024 * 1024) {
+    var released = 0
+
+    private def file(rows: Long): HostMemoryBuffersWithMetaDataBase = {
+      val result = new HostMemoryBuffersWithMetaDataBase {
+        override def partitionedFile: PartitionedFile =
+          PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty, "file:///tmp/test", 0, 0)
+        override def memBuffersAndSizes: Array[SingleHMBAndMeta] =
+          Array(SingleHMBAndMeta.empty(rows))
+        override def bytesRead: Long = 0
+      }
+      result.addReleaseResourceCallback(() => released += 1)
+      result
+    }
+
+    combineLeftOverFiles = Some(Array(file(1), file(2)))
+
+    override def combineHMBs(input: Array[HostMemoryBuffersWithMetaDataBase])
+        : HostMemoryBuffersWithMetaDataBase = {
+      combineLeftOverFiles = if (input.length > 1) Some(input.tail) else None
+      input.head
+    }
+
+    override def getBatchRunner(tc: TaskContext, file: PartitionedFile,
+        conf: Configuration, filters: Array[Filter])
+        : AsyncRunner[HostMemoryBuffersWithMetaDataBase] =
+      throw new UnsupportedOperationException("All files are already pending")
+
+    override def readBatches(meta: HostMemoryBuffersWithMetaDataBase)
+        : Iterator[ColumnarBatch] = withResource(meta) { _ =>
+      val rows = meta.memBuffersAndSizes.head.numRows.toInt
+      if (rows == 1 && !firstProducesRows) {
+        EmptyGpuColumnarBatchIterator
+      } else {
+        Iterator(new ColumnarBatch(Array.empty, rows))
+      }
+    }
+
+    override def getFileFormatShortName: String = "test"
+  }
+
+  test("drain pending files after a group produces no rows and all futures are consumed") {
+    withResource(new PendingFilesReader(firstProducesRows = false)) { reader =>
+      assert(reader.next())
+      withResource(reader.get()) { batch => assert(batch.numRows() == 2) }
+      assert(!reader.next())
+      assert(reader.released == 2)
+    }
+  }
+
+  test("close releases already collected files after early termination") {
+    val reader = new PendingFilesReader(firstProducesRows = true)
+    withResource(reader) { _ =>
+      assert(reader.next())
+      withResource(reader.get()) { batch => assert(batch.numRows() == 1) }
+      assert(reader.released == 1)
+    }
+    assert(reader.released == 2)
+  }
 }
