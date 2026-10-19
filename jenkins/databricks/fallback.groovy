@@ -132,17 +132,19 @@ Map run(script, dbUtils, Closure build, Closure test) {
                     throw error
                 } finally {
                     def cleanupFailed = false
+                    def pendingError = primaryError
                     try {
                         cleanupAttempt(script, dbUtils, stateFile, initDir, primaryError)
                     } catch (Exception cleanupError) {
                         cleanupFailed = true
+                        pendingError = primaryError ?: cleanupError
                         throw cleanupError
                     } finally {
                         if (primaryError || retryable || cleanupFailed) {
                             printFailureSummary(script, stateFile, failureFile,
                                 cleanupFailed && !primaryError && !retryable ? 'cleanup' : operation,
                                 testFailed, classificationAvailable, retryable, finalAttempt, reason,
-                                primaryError)
+                                pendingError)
                         }
                     }
                 }
@@ -198,7 +200,7 @@ void printFailureSummary(script, String stateFile, String failureFile, String op
         if (!primaryError && summaryError instanceof org.jenkinsci.plugins.workflow.steps.FlowInterruptedException) {
             throw summaryError
         }
-        script.echo 'Databricks failure summary unavailable; inspect the preceding logs and attempt state.'
+        // Do not log again here: even a warning can fail and hide the pending exception.
     }
 }
 

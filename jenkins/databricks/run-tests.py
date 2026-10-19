@@ -95,6 +95,27 @@ def format_test_failure(summary, status):
     return "\n".join(lines)
 
 
+def report_test_failure(summary, status):
+    # Reporting is optional. Keep failures here separate from the test's exit status.
+    try:
+        failure = format_test_failure(summary, status)
+    except Exception:
+        failure = "Remote test command exit: %s\nDetailed failure summary unavailable." % status
+    try:
+        failure_file = os.environ.get("DATABRICKS_TEST_FAILURE_FILE")
+        if failure_file:
+            Path(failure_file).write_text(failure + "\n")
+    except Exception:
+        failure += "\nWARNING: unable to save the test failure summary; console report only."
+    try:
+        print("\n=== Databricks test failure summary ===\n" + failure +
+              "\nRetry classification and cluster cleanup are reported by the CI wrapper.\n"
+              "=== End test failure summary ===", flush=True)
+    except Exception:
+        # Do not attempt another write if the diagnostic output itself is unavailable.
+        pass
+
+
 def main():
     """Define main function."""
     master_addr = ClusterUtils.cluster_get_master_addr(params.workspace, params.clusterid, params.token)
@@ -127,17 +148,25 @@ def main():
                                          "bash -c %s" % shlex.quote(remote_command)]
     print("ssh command: %s" % shell_join(ssh_command))
     summary = {}
-    failure = ""
+    status = None
     try:
         # Keep streaming the full log, retaining only bounded, known diagnostic fields.
         with subprocess.Popen(ssh_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True, errors="replace") as process:
             for line in process.stdout:
-                print(line, end="", flush=True)
-                observe_test_output(line, summary)
+                try:
+                    print(line, end="", flush=True)
+                except Exception:
+                    # Continue draining SSH output even if forwarding a log line fails.
+                    pass
+                if summary is not None:
+                    try:
+                        observe_test_output(line, summary)
+                    except Exception:
+                        # Disable the optional parser, not the test or its output stream.
+                        summary = None
             status = process.wait()
         if status:
-            failure = format_test_failure(summary, status)
             # Preserve this wrapper's failure exit (1), without burying the footer under
             # a CalledProcessError traceback containing the entire SSH command.
             raise SystemExit(1)
@@ -164,18 +193,10 @@ def main():
         except subprocess.CalledProcessError as e:
             print("WARNING: test report collection failed: %s" % e)
         finally:
-            if failure:
+            if status:
                 # The CI wrapper reprints this after classification and cleanup. Manual
                 # callers get the same console footer without requiring a state file.
-                failure_file = os.environ.get("DATABRICKS_TEST_FAILURE_FILE")
-                if failure_file:
-                    try:
-                        Path(failure_file).write_text(failure + "\n")
-                    except OSError:
-                        print("WARNING: unable to save the test failure summary")
-                print("\n=== Databricks test failure summary ===\n" + failure +
-                      "\nRetry classification and cluster cleanup are reported by the CI wrapper.\n"
-                      "=== End test failure summary ===", flush=True)
+                report_test_failure(summary, status)
 
 
 if __name__ == '__main__':
