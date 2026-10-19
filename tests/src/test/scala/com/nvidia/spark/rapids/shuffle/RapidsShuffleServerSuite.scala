@@ -18,8 +18,8 @@ package com.nvidia.spark.rapids.shuffle
 
 import java.io.{FileNotFoundException, IOException}
 import java.nio.ByteBuffer
-import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, ExecutionException, Executors,
-  TimeUnit}
+import java.util.concurrent.{ConcurrentHashMap, CountDownLatch, ExecutionException, Executor,
+  Executors, TimeUnit}
 
 import scala.collection.mutable.ArrayBuffer
 
@@ -1376,6 +1376,114 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
       verify(request, never()).respond(any(), any())
       verify(request, times(1)).close()
       verify(sendBuffer, times(1)).close()
+    }
+  }
+
+  /**
+   * Runs `body` with two spied send states, for the requests `txs` of tables 1 and 2, whose
+   * buffers materialize with `materialize`. `body` gets the states and their request handler.
+   */
+  private def withTwoStates(txs: Seq[Transaction], materialize: () => DeviceMemoryBuffer)(
+      body: (Seq[BufferSendState], RapidsShuffleRequestHandler) => Unit): Unit = {
+    val requestHandler = mock[RapidsShuffleRequestHandler]
+    val metadataBuffer = ByteBuffer.allocateDirect(123)
+    withResource(new RefCountedDirectByteBuffer(metadataBuffer)) { _ =>
+      val tableMeta = MetaUtils.buildTableMeta(1, 456, metadataBuffer, 100)
+      Seq(1, 2).foreach { id =>
+        val handle = makeHandle(tableMeta, materialize)
+        when(requestHandler.getShuffleHandle(ArgumentMatchers.eq(id))).thenReturn(handle)
+      }
+      val states = txs.map { tx =>
+        spy(new BufferSendState(tx, makeSendBuffer(mock[DeviceMemoryBuffer]), requestHandler, null))
+      }
+      body(states, requestHandler)
+    }
+  }
+
+  /** The first state is answered before the server closed, and the second builds no reply. */
+  private def assertOnlyFirstAnswered(states: Seq[BufferSendState], txs: Seq[Transaction])
+      : Unit = {
+    verify(states.head, times(1)).getErrorResponse(any())
+    verify(txs.head, times(1)).respond(any(), any())
+    verify(states(1), never()).getErrorResponse(any())
+    verify(txs(1), never()).respond(any(), any())
+    txs.foreach(tx => verify(tx, times(1)).close())
+  }
+
+  test("states whose OOM retries end as the server closes build no reply after it closed") {
+    val txs = Seq(makeTx(1), makeTx(2))
+    withTwoStates(txs, () => throw new OutOfMemoryError("GPU allocation failed in test")) {
+      (states, requestHandler) =>
+        val server = new RapidsShuffleServer(mockTransport, mock[ServerConnection],
+          RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"), requestHandler, mockExecutor,
+          mockBssExecutor, mockConf) {
+          // each OOM is past its request's retry deadline
+          override private[shuffle] def oomRetryTimeoutNanos: Long = 0L
+        }
+        // the server closes once the first state's request has closed, and with no send loop
+        // running, its close returns at once
+        doAnswer(_ => server.close()).when(txs.head).close()
+        server.doHandleTransferRequest(states)
+        states.foreach(state => assertResult(Some(BufferSendState.OomExpired))(state.endedWith))
+        assertOnlyFirstAnswered(states, txs)
+    }
+  }
+
+  test("states ended by a failure to gather sends build no reply after the server closed") {
+    val (holding, mayResume) = (new CountDownLatch(1), new CountDownLatch(1))
+    val txs = Seq(makeTx(1), makeTx(2))
+    // closing the first state's request holds the send loop until the server has closed
+    doAnswer(_ => {
+      holding.countDown()
+      mayResume.await(awaitSeconds, TimeUnit.SECONDS)
+    }).when(txs.head).close()
+    withTwoStates(txs, () => mock[DeviceMemoryBuffer]) { (states, requestHandler) =>
+      // a new request makes the loop ask for bounce buffers while both states wait to continue
+      when(mockTransport.tryGetSendBounceBuffers(anyLong(), anyInt()))
+        .thenThrow(new IllegalStateException("no bounce buffers in test"))
+      val request = makeTx(3)
+      val serverConnection = mock[ServerConnection]
+      val requestCallbacks = new ConcurrentHashMap[MessageType.Value, TransactionCallback]()
+      doAnswer(new Answer[Unit] {
+        override def answer(invocation: InvocationOnMock): Unit =
+          requestCallbacks.put(invocation.getArgument[MessageType.Value](0),
+            invocation.getArgument[TransactionCallback](1))
+      }).when(serverConnection).registerRequestHandler(any(), any())
+      // the send loop starts once the states and the request are queued, so one pass takes all
+      val (queued, loopExited) = (new CountDownLatch(1), new CountDownLatch(1))
+      val loopThread = Executors.newSingleThreadExecutor()
+      val sendLoop: Executor = loop => loopThread.execute(() => {
+        try {
+          queued.await(awaitSeconds, TimeUnit.SECONDS)
+          loop.run()
+        } finally {
+          loopExited.countDown()
+        }
+      })
+      try {
+        val server = new RapidsShuffleServer(mockTransport, serverConnection,
+          RapidsShuffleTestHelper.makeMockBlockManager("1", "foo"), requestHandler, mockExecutor,
+          sendLoop, mockConf)
+        try {
+          server.start()
+          server.addToContinueQueue(states)
+          requestCallbacks.get(MessageType.TransferRequest)(request)
+          queued.countDown()
+          assert(holding.await(awaitSeconds, TimeUnit.SECONDS),
+            "the send loop never ended the first state")
+          server.close()
+        } finally {
+          mayResume.countDown()
+        }
+        assert(loopExited.await(awaitSeconds, TimeUnit.SECONDS), "the send loop never exited")
+      } finally {
+        loopThread.shutdownNow()
+      }
+      states.foreach(state => assertResult(Some(BufferSendState.Failed))(state.endedWith))
+      assertOnlyFirstAnswered(states, txs)
+      // the loop closes the request it never served as it exits
+      verify(request, never()).respond(any(), any())
+      verify(request, times(1)).close()
     }
   }
 

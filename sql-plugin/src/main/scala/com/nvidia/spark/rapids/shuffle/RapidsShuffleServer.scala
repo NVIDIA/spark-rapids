@@ -186,8 +186,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
     val failure = new IllegalStateException(
       s"Unable to prepare shuffle sends. $reason These sends will not be retried.")
     errors.foreach(failure.addSuppressed)
-    val reply = errorReply(BufferSendState.OomExpired, failure)
-    states.foreach(_.finish(BufferSendState.OomExpired, reply))
+    states.foreach(_.finish(BufferSendState.OomExpired,
+      errorReply(BufferSendState.OomExpired, failure)))
     logError(failure.getMessage, failure)
     bssExec.synchronized {
       bssExec.notifyAll()
@@ -331,8 +331,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
         } catch {
           case NonFatal(t) =>
             // no send has been issued in this pass yet, so these states can end here
-            val reply = errorReply(BufferSendState.Failed, t)
-            bssToIssue.foreach(_.finish(BufferSendState.Failed, reply))
+            bssToIssue.foreach(_.finish(BufferSendState.Failed,
+              errorReply(BufferSendState.Failed, t)))
             bssToIssue.clear()
             if (BufferSendState.endsSendLoop(t)) {
               throw t
@@ -461,7 +461,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    * ends the send loop, since the executor then exits and the requester hears of it when its
    * connection closes, and none once the server is closing, which saves building one that
    * `replyGate` would not let through. A lookup or a preparation can fail that late, since
-   * neither close waits for it without bound.
+   * neither close waits for it without bound. Each state asks as it ends, since the server can
+   * close between two states that end together.
    */
   private def errorReply(
       outcome: BufferSendState.Outcome,
