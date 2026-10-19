@@ -147,6 +147,38 @@ class ProtobufSchemaSuite extends AnyFunSuite {
     }
   }
 
+  test("flattened fields and schemas support hash lookup by array contents") {
+    for (defaultFloat <- Seq(Double.NaN, 0.0, -0.0)) {
+      val field = FlattenedFieldDescriptor(1, -1, 0, WT_VARINT,
+        DType.STRING.getTypeId.getNativeId, ENC_ENUM_STRING,
+        false, false, true, true, 1L, defaultFloat, false,
+        "EN".getBytes("UTF-8"), Array(0, 1),
+        Array("UNKNOWN".getBytes("UTF-8"), "EN".getBytes("UTF-8")))
+      val equalField = field.copy(defaultString = field.defaultString.clone(),
+        enumValidValues = field.enumValidValues.clone(),
+        enumNames = field.enumNames.map(_.clone()))
+      assert(field == equalField)
+      assert(field.hashCode() == equalField.hashCode())
+      assert(scala.collection.immutable.HashSet(field).contains(equalField))
+      val schema = ProtobufSchemaValidator.toFlattenedSchemaArrays(Array(field))
+      val equalSchema = ProtobufSchemaValidator.toFlattenedSchemaArrays(Array(equalField))
+      assert(schema == equalSchema)
+      assert(schema.hashCode() == equalSchema.hashCode())
+      assert(scala.collection.immutable.HashSet(schema).contains(equalSchema))
+      val withoutPayload = field.copy(defaultString = null, enumValidValues = null,
+        enumNames = null)
+      assert(scala.collection.immutable.HashSet(withoutPayload).contains(withoutPayload.copy()))
+      val schemaWithoutPayload = ProtobufSchemaValidator.toFlattenedSchemaArrays(
+        Array(withoutPayload))
+      val equalSchemaWithoutPayload = ProtobufSchemaValidator.toFlattenedSchemaArrays(
+        Array(withoutPayload.copy()))
+      assert(schemaWithoutPayload == equalSchemaWithoutPayload)
+      assert(schemaWithoutPayload.hashCode() == equalSchemaWithoutPayload.hashCode())
+      assert(scala.collection.immutable.HashSet(schemaWithoutPayload)
+        .contains(equalSchemaWithoutPayload))
+    }
+  }
+
   test("extractor records reflection failures as unsupported field info") {
     val msgDesc = FakeMessageDescriptor(
       syntax = "PROTO2",
