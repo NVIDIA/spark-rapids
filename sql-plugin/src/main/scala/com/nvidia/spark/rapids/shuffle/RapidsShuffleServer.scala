@@ -461,8 +461,8 @@ class RapidsShuffleServer(transport: RapidsShuffleTransport,
    * ends the send loop, since the executor then exits and the requester hears of it when its
    * connection closes, and none once the server is closing, which saves building one that
    * `replyGate` would not let through. A lookup or a preparation can fail that late, since
-   * neither close waits for it without bound. Each state asks as it ends, since the server can
-   * close between two states that end together.
+   * neither close waits for it without bound. A caller that ends several states calls this once
+   * per state, since the server can close between two of them.
    */
   private def errorReply(
       outcome: BufferSendState.Outcome,
