@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from urllib.parse import unquote
 
 import pytest
 from conftest import spark_jvm
@@ -1886,7 +1887,7 @@ def test_delta_deletion_vector_count_empty_splits(
         assert dv_files
         # Check the fixture actually produces splits without row groups; otherwise the
         # invalid-offset regression can pass without exercising the offending path.
-        data_file = data_path + "/" + dv_files[0][0]
+        data_file = data_path + "/" + unquote(dv_files[0][0])
         midpoints = parquet_row_group_midpoints(spark, data_file)
         assert midpoints and min(midpoints) >= split_size
 
