@@ -38,7 +38,7 @@ import org.apache.hadoop.io.Text
 import org.apache.hadoop.io.compress.CompressionCodecFactory
 
 import org.apache.spark.TaskContext
-import org.apache.spark.sql.catalyst.csv.CSVOptions
+import org.apache.spark.sql.catalyst.csv.{CSVOptions, GpuCsvUtils}
 import org.apache.spark.sql.connector.read.PartitionReader
 import org.apache.spark.sql.execution.QueryExecutionException
 import org.apache.spark.sql.execution.datasources.{HadoopFileLinesReader, PartitionedFile}
@@ -78,10 +78,13 @@ class FilterCsvEmptyHostLineBuffererFactory(
     extends LineBuffererFactory[HostLineBufferer] {
   private var firstRecord = true
 
-  private def parseBomRecord(line: Array[Byte], offset: Int, len: Int): Array[String] = {
-    val parser = new CsvParser(parsedOptions.asParserSettings)
+  private[rapids] def parseBomRecord(
+      line: Array[Byte], offset: Int, len: Int): Array[String] = {
+    val settings = parsedOptions.asParserSettings
+    val parser = new CsvParser(settings)
     try {
-      val fields = parser.parseLine(new String(line, offset, len, StandardCharsets.UTF_8))
+      val fields = parser.parseLine(GpuCsvUtils.csvLineToParse(line, offset, len,
+        parsedOptions, settings.getFormat.getNormalizedNewline))
       Array.tabulate(numColumns) { i =>
         if (fields == null || i >= fields.length || fields(i) == parsedOptions.nullValue) null
         else fields(i)

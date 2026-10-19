@@ -659,6 +659,26 @@ def test_csv_read_interior_bom(spark_tmp_path, v1_enabled_list, header, boundary
 
 @ignore_order(local=True)
 @pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('header', [False, True])
+def test_csv_pruned_partition_bom_input_meta(spark_tmp_path, v1_enabled_list, header):
+    path = spark_tmp_path + '/csv_partition_bom'
+    prefix = '# x\n# y\na,b\n' if header else ''
+    values = ['plain', '\ufefffirst', '\ufeff#value', '\ufeff', 'normal'] * 8
+    text = '\ufeff' + prefix + '\n'.join(f'{value},{i}' for i, value in enumerate(values))
+    with_cpu_session(lambda spark: spark.createDataFrame([(text,)], 'value string')
+                     .coalesce(1).write.text(path + '/p=0'))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema('a string, b int').option('header', header)
+            .option('comment', '#').csv(path)
+            .selectExpr('b', 'input_file_block_start()', 'input_file_block_length()'),
+        conf={
+            'spark.sql.sources.useV1SourceList': v1_enabled_list,
+            'spark.sql.files.maxPartitionBytes': '32'})
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
 @pytest.mark.parametrize('prefix', ['', '\n \t\n', '# leading comment\n \t\n'])
 @pytest.mark.parametrize('first_record,header', [
     ('\ufefffirst,1', False), ('\ufeff#value,1', False), ('\ufeff', False),
