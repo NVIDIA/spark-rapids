@@ -85,7 +85,8 @@ def check_termination(info):
     # These explicit capacity codes describe infrastructure shortages even when the API
     # categorizes the termination as CLIENT_ERROR. Do not extend that exception to other codes.
     retryable = code in CAPACITY_TERMINATIONS or (
-        code in RETRYABLE_TERMINATIONS and reason.get("type") != "CLIENT_ERROR")
+        code in RETRYABLE_TERMINATIONS and reason.get("type") != "CLIENT_ERROR") or (
+        code == "BOOTSTRAP_TIMEOUT" and reason.get("type") == "SERVICE_FAULT")
     print("Cluster termination: code=%s, type=%s, retryable=%s" %
           (code, reason.get("type", "UNKNOWN"), retryable), flush=True)
     raise PreparationError(code, retryable)
