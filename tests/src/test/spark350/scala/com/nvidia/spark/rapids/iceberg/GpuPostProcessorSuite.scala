@@ -42,6 +42,7 @@ import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
 import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.{MetadataColumns, Schema}
+import org.apache.iceberg.parquet.ParquetSchemaUtil
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{
   MessageType => ShadedMessageType,
   Type => ShadedType,
@@ -1132,6 +1133,97 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val plan = processor.displayActionPlan()
     assert(plan.contains("field[0] (input[0]):\n        PassThrough"), plan)
     assert(plan.contains(s"FillDefault(fieldId=$defaultId, int)"), plan)
+  }
+
+  test("Default-only struct projections retain physical validity through nested containers") {
+    val defaultField = fieldWithDefaults(
+      3,
+      "added",
+      Types.IntegerType.get(),
+      required = false,
+      initialDefault = Some(Int.box(11))).getOrElse {
+      cancel("Iceberg runtime does not expose v3 field defaults")
+    }
+    val expectedStruct = Types.StructType.of(defaultField)
+    val presentField =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+        .id(2).named("present")
+    val ignoredField =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+        .id(6).named("ignored")
+    val keyField =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.REQUIRED)
+        .id(5).named("key")
+    val unrelatedField =
+      ShadedTypes.primitive(ShadedPrimitiveTypeName.INT64, ShadedRepetition.OPTIONAL)
+        .id(9).named("unrelated")
+
+    def physicalStruct(name: String, includeIgnored: Boolean) = {
+      val builder = ShadedTypes.optionalGroup().addField(presentField)
+      if (includeIgnored) {
+        builder.addField(ignoredField)
+      }
+      builder.id(1).named(name)
+    }
+
+    def physicalFields(includeIgnored: Boolean): Seq[ShadedType] = Seq(
+      physicalStruct("s", includeIgnored),
+      ShadedTypes.optionalGroup().addField(physicalStruct("s", includeIgnored))
+        .id(4).named("outer"),
+      ShadedTypes.optionalList().element(physicalStruct("element", includeIgnored))
+        .id(4).named("items"),
+      ShadedTypes.optionalMap().key(keyField).value(physicalStruct("value", includeIgnored))
+        .id(4).named("entries"),
+      ShadedTypes.optionalGroup().addField(
+        ShadedTypes.optionalMap().key(keyField).value(physicalStruct("value", includeIgnored))
+          .id(7).named("entries"))
+        .id(4).named("outer"),
+      ShadedTypes.optionalGroup().addField(
+        ShadedTypes.optionalList().element(physicalStruct("element", includeIgnored))
+          .id(7).named("items"))
+        .id(4).named("outer"))
+
+    val expectedFields = Seq(
+      Types.NestedField.optional(1, "s", expectedStruct),
+      Types.NestedField.optional(4, "outer", Types.StructType.of(
+        Types.NestedField.optional(1, "s", expectedStruct))),
+      Types.NestedField.optional(4, "items", Types.ListType.ofOptional(1, expectedStruct)),
+      Types.NestedField.optional(4, "entries",
+        Types.MapType.ofOptional(5, 1, Types.LongType.get(), expectedStruct)),
+      Types.NestedField.optional(4, "outer", expectedStruct),
+      Types.NestedField.optional(4, "outer", expectedStruct))
+
+    physicalFields(includeIgnored = true).zip(physicalFields(includeIgnored = false))
+      .zip(expectedFields).foreach { case ((fileField, retainedField), expectedField) =>
+        withClue(s"${expectedField.name()}: ") {
+          val fileSchema = new ShadedMessageType("test", Seq(fileField, unrelatedField).asJava)
+          val expectedSchema = new Schema(expectedField)
+          val projected = ParquetSchemaUtil.pruneColumns(fileSchema, expectedSchema)
+          val restored = GpuIcebergParquetReader.preserveStructValidity(fileSchema, projected)
+          assert(restored == new ShadedMessageType("test", Seq(retainedField).asJava))
+          val partnerSchema = ParquetSchemaUtil.convert(restored)
+          assert(partnerSchema.findField(1) != null)
+          assert(partnerSchema.findField(2) != null)
+          assert(partnerSchema.findField(6) == null)
+          assert(partnerSchema.findField(9) == null)
+          assert(GpuIcebergParquetReader.preserveStructValidity(fileSchema, fileSchema) ==
+            fileSchema)
+          val emptySchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
+          assert(GpuIcebergParquetReader.preserveStructValidity(fileSchema, emptySchema) ==
+            emptySchema)
+
+          val (parquetInfo, shadedSchema) = createParquetInfo(restored)
+          val processor = new GpuParquetReaderPostProcessor(
+            parquetInfo,
+            new JHashMap[Integer, Any](),
+            expectedSchema,
+            shadedSchema,
+            Map.empty)
+          val plan = processor.displayActionPlan()
+          assert(plan.contains("FillDefault(fieldId=3, int)"), plan)
+          assert(!plan.contains("FillNull"), plan)
+        }
+      }
   }
 
   test("Whole-struct constants build a FetchConstant action") {

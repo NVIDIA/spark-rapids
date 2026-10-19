@@ -39,7 +39,11 @@ import org.apache.iceberg.parquet._
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.metadata.{BlockMetaData => ShadedBlockMetaData}
-import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType}
+import org.apache.iceberg.shaded.org.apache.parquet.schema.{
+  MessageType => ShadedMessageType,
+  Type => ShadedType
+}
+import org.apache.iceberg.shaded.org.apache.parquet.schema.LogicalTypeAnnotation.MapLogicalTypeAnnotation
 import org.apache.parquet.hadoop.metadata.BlockMetaData
 
 import org.apache.spark.internal.Logging
@@ -143,6 +147,49 @@ case class GpuIcebergParquetReaderConf(
     validateDeletionVectorCrc: Boolean,
 )
 
+object GpuIcebergParquetReader {
+  /** Keep physical parent validity when all projected struct children are missing from a file. */
+  private[iceberg] def preserveStructValidity(
+      fileSchema: ShadedMessageType,
+      projectedSchema: ShadedMessageType): ShadedMessageType = {
+    def firstLeaf(field: ShadedType, keepAllChildren: Boolean = false): ShadedType = {
+      if (field.isPrimitive) {
+        field
+      } else {
+        val group = field.asGroupType()
+        val children = group.getFields.asScala
+        // A map's repeated key/value group needs both children to remain a valid map schema.
+        val isMap = group.getLogicalTypeAnnotation.isInstanceOf[MapLogicalTypeAnnotation]
+        val retained = if (keepAllChildren) children else children.take(1)
+        group.withNewFields(retained.map(child => firstLeaf(child, isMap)).asJava)
+      }
+    }
+
+    def preserve(fileField: ShadedType, projectedField: ShadedType): ShadedType = {
+      if (projectedField.isPrimitive) {
+        projectedField
+      } else {
+        val projectedGroup = projectedField.asGroupType()
+        if (projectedGroup.getFieldCount == 0) {
+          // ParquetSchemaUtil.convert drops empty structs. A retained physical leaf carries
+          // definition levels for the parent even when the leaf itself is null. The
+          // post-processor removes this helper field while applying the projected defaults.
+          firstLeaf(fileField)
+        } else {
+          val fileGroup = fileField.asGroupType()
+          projectedGroup.withNewFields(projectedGroup.getFields.asScala.map { child =>
+            preserve(fileGroup.getType(child.getName), child)
+          }.asJava)
+        }
+      }
+    }
+
+    new ShadedMessageType(projectedSchema.getName, projectedSchema.getFields.asScala.map { field =>
+      preserve(fileSchema.getType(field.getName), field)
+    }.asJava)
+  }
+}
+
 trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
   def conf: GpuIcebergParquetReaderConf
 
@@ -158,10 +205,12 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
       (typeWithIds, ParquetSchemaUtil.pruneColumnsFallback(typeWithIds, requiredSchema))
     }
 
+    val readSchemaWithValidity =
+      GpuIcebergParquetReader.preserveStructValidity(typeWithIds, fileReadSchema)
     logDebug(s"Doing project schema, parquet file schema:\n$fileSchema " +
       s"\niceberg required schema:\n$requiredSchema " +
-      s"\nfile reade schema:\n$fileReadSchema")
-    (typeWithIds, fileReadSchema)
+      s"\nfile reade schema:\n$readSchemaWithValidity")
+    (typeWithIds, readSchemaWithValidity)
   }
 
   def filterRowGroups(reader: ParquetFileReader,

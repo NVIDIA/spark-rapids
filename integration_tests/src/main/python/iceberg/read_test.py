@@ -19,7 +19,7 @@ from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, \
 from conftest import spark_jvm
 from data_gen import LongGen, StructGen, UniqueLongGen, gen_df
 from iceberg import _build_tblprops, get_full_table_name, iceberg_unsupported_mark, \
-    supports_iceberg_v3, ICEBERG_V3_UNSUPPORTED_REASON
+    rapids_reader_types, supports_iceberg_v3, ICEBERG_V3_UNSUPPORTED_REASON
 from marks import allow_non_gpu, iceberg, ignore_order
 from spark_session import with_cpu_session
 
@@ -107,6 +107,50 @@ def test_iceberg_v3_initial_defaults_all_types(spark_tmp_table_factory):
         lambda spark: spark.sql(query),
         exist_classes="GpuBatchScanExec",
         conf=v3_conf)
+
+
+@iceberg
+@pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+@ignore_order(local=True)
+def test_iceberg_v3_project_only_defaulted_struct_child(spark_tmp_table_factory, reader_type):
+    table_name = get_full_table_name(spark_tmp_table_factory)
+    props_sql = ", ".join(
+        f"'{key}' = '{value}'" for key, value in _build_tblprops({"format-version": "3"}).items())
+
+    def setup_table(spark):
+        spark.sql(
+            f"CREATE TABLE {table_name} "
+            "(id BIGINT, s STRUCT<present: BIGINT>) USING ICEBERG "
+            f"TBLPROPERTIES ({props_sql})")
+        # A null physical leaf must still distinguish a non-null struct from a null parent.
+        spark.createDataFrame(
+            [(0, None), (1, (None,)), (2, (7,))],
+            "id BIGINT, s STRUCT<present: BIGINT>"
+        ).coalesce(1).writeTo(table_name).append()
+
+        jvm = spark_jvm()
+        table = jvm.org.apache.iceberg.spark.Spark3Util.loadIcebergTable(
+            spark._jsparkSession, table_name)
+        table.updateSchema().addColumn(
+            "s", "nested_added", jvm.org.apache.iceberg.types.Types.IntegerType.get(),
+            jvm.org.apache.iceberg.expressions.Literal.of(11)).commit()
+        spark.sql(f"REFRESH TABLE {table_name}")
+
+    with_cpu_session(setup_table)
+
+    def check_defaults(cpu_rows, gpu_rows):
+        for rows in (cpu_rows, gpu_rows):
+            assert sorted((row.id, row.nested_added) for row in rows) == [
+                (0, None), (1, 11), (2, 11)]
+        return cpu_rows, gpu_rows
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.sql(f"SELECT id, s.nested_added FROM {table_name}"),
+        conf={
+            "spark.rapids.sql.format.iceberg.v3.enabled": "true",
+            "spark.rapids.sql.format.parquet.reader.type": reader_type},
+        result_canonicalize_func_before_compare=check_defaults)
 
 
 @iceberg
