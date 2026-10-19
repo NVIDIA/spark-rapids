@@ -30,6 +30,10 @@ object ProtobufSchemaValidator {
       defaultBool: Boolean,
       defaultString: Array[Byte])
 
+  /**
+   * Converts supported field metadata and explicit defaults to JNI payloads, or Left on rejection.
+   * The caller supplies the matching Spark field, cuDF leaf type, placement and output visibility.
+   */
   def toFlattenedFieldDescriptor(
       path: String,
       field: StructField,
@@ -74,6 +78,10 @@ object ProtobufSchemaValidator {
     }
   }
 
+  /**
+   * Checks top-level placement, repeated-field capacity and enum-string array sizes.
+   * This does not replace ProtobufSchemaDescriptor's constructor validation.
+   */
   def validateFlattenedSchema(flatFields: Seq[FlattenedFieldDescriptor]): Either[String, Unit] = {
     var repeatedCount = 0
     flatFields.zipWithIndex.foreach { case (field, idx) =>
@@ -100,6 +108,10 @@ object ProtobufSchemaValidator {
     Right(())
   }
 
+  /**
+   * Transposes fields into JNI argument arrays in the same order, without validation.
+   * Nested payload arrays are shared with the input descriptors.
+   */
   def toFlattenedSchemaArrays(
       flatFields: Array[FlattenedFieldDescriptor]): FlattenedSchemaArrays = {
     FlattenedSchemaArrays(

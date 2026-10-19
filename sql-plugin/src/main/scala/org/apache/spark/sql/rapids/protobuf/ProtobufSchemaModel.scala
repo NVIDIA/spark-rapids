@@ -20,10 +20,12 @@ import java.util.Arrays
 
 import org.apache.spark.sql.types.DataType
 
+/** Planning flags for enum representation and malformed-message handling. */
 final case class ProtobufPlannerOptions(
     enumsAsInts: Boolean,
     failOnErrors: Boolean)
 
+/** Extracted facts for one Spark field; unsupported fields retain a fallback reason. */
 final case class ProtobufFieldInfo(
     fieldNumber: Int,
     protoTypeName: String,
@@ -35,9 +37,14 @@ final case class ProtobufFieldInfo(
     defaultValue: Option[ProtobufDefaultValue],
     enumMetadata: Option[ProtobufEnumMetadata],
     isRepeated: Boolean = false) {
+  /** Whether an explicit default value is available for JNI schema preparation. */
   def hasDefaultValue: Boolean = defaultValue.isDefined
 }
 
+/**
+ * One JNI schema entry; parentIdx indexes the flattened sequence (-1 for a top-level field).
+ * Array payloads are mutable and are compared by content.
+ */
 final case class FlattenedFieldDescriptor(
     fieldNumber: Int,
     parentIdx: Int,
@@ -99,6 +106,7 @@ final case class FlattenedFieldDescriptor(
   }
 }
 
+/** Mutable parallel JNI arguments indexed in flattened-field order, with content-based equality. */
 final case class FlattenedSchemaArrays(
     fieldNumbers: Array[Int],
     parentIndices: Array[Int],

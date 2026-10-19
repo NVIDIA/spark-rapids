@@ -24,12 +24,18 @@ import com.nvidia.spark.rapids.jni.Protobuf._
 import org.apache.spark.sql.types._
 
 object ProtobufSchemaExtractor {
+  private val PROTO2_MAGIC_STRING = "PROTO2"
+
+  /**
+   * Collects top-level field metadata keyed by Spark field name. Right may contain unsupported
+   * fields; Left describes a message-level rejection or metadata read failure.
+   */
   def analyzeAllFields(
       schema: StructType,
       msgDesc: ProtobufMessageDescriptor,
       enumsAsInts: Boolean,
       messageName: String): Either[String, Map[String, ProtobufFieldInfo]] = try {
-    if (msgDesc.syntax != "PROTO2") {
+    if (msgDesc.syntax != PROTO2_MAGIC_STRING) {
       return Left("Only proto2 protobuf messages are supported on GPU")
     }
     if (msgDesc.javaStringCheckUtf8 && schema.fields.exists { sf =>
@@ -63,6 +69,9 @@ object ProtobufSchemaExtractor {
       Left(s"Failed to read protobuf metadata for message '$messageName': ${t.getMessage}")
   }
 
+  /**
+   * Returns field facts, including unsupported reasons, or Left when descriptor/default reads fail.
+   */
   def extractFieldInfo(
       sparkField: StructField,
       fieldDescriptor: ProtobufFieldDescriptor,
@@ -81,7 +90,7 @@ object ProtobufSchemaExtractor {
       (false,
         Some("protobuf oneof fields are not supported on GPU"),
         ENC_DEFAULT)
-    } else if (fieldDescriptor.referencedTypeSyntax.exists(_ != "PROTO2")) {
+    } else if (fieldDescriptor.referencedTypeSyntax.exists(_ != PROTO2_MAGIC_STRING)) {
       (false, Some("Only proto2 referenced types are supported on GPU"), ENC_DEFAULT)
     } else {
       checkFieldSupport(
@@ -138,6 +147,11 @@ object ProtobufSchemaExtractor {
     )
   }
 
+  /**
+   * Checks the Spark/protobuf type pairing, unwrapping repeated non-message fields.
+   * Returns (supported, optional rejection reason, JNI encoding). Syntax, oneofs, defaults and
+   * enum declarations are checked separately.
+   */
   def checkFieldSupport(
       sparkType: DataType,
       protoTypeName: String,
@@ -182,6 +196,7 @@ object ProtobufSchemaExtractor {
     checkScalarEncoding(sparkType, protoTypeName, enumsAsInts)
   }
 
+  /** Returns (supported, optional rejection reason, JNI encoding) for a scalar type pairing. */
   def checkScalarEncoding(
       sparkType: DataType,
       protoTypeName: String,
@@ -228,6 +243,7 @@ object ProtobufSchemaExtractor {
     }
   }
 
+  /** Maps a protobuf type and JNI encoding to its wire type, or Left for an unknown type. */
   def getWireType(protoTypeName: String, encoding: Int): Either[String, Int] = {
     val wireType = protoTypeName match {
       case "BOOL" | "INT32" | "UINT32" | "SINT32" | "INT64" | "UINT64" | "SINT64" | "ENUM" =>
