@@ -106,7 +106,7 @@ class BufferReceiveState(
   // how many requests, in order, were consumed into batches
   private[this] var received = 0
 
-  // why the server failed this request, until the state ends
+  // why the server failed this request, until `takeFailure` hands it over
   private[this] var serverFailure: String = null
 
   // set by close, after which neither a second close nor a failure the server reports later
@@ -159,10 +159,11 @@ class BufferReceiveState(
   def hasMoreBlocks: Boolean = synchronized { hasMoreBuffers_ }
 
   /**
-   * Records that the server failed this request, so that no more windows come, and ends the
-   * state if no window is left to consume.
+   * Records that the server failed this request, after which no more windows come.
    * @param reason why, for the error that each reader of a request that will not arrive gets
-   * @return what `takeFailure` returns
+   * @return what `takeFailure` returns now. A caller that gets the failure must end this state
+   *         with it. While a window is left to consume, the failure waits for a later
+   *         `takeFailure` call.
    */
   def serverFailed(reason: String): Option[FailedTransfer] = synchronized {
     serverFailure = reason
@@ -170,9 +171,11 @@ class BufferReceiveState(
   }
 
   /**
-   * Ends this state if the server failed its request, no window is left to consume, and nothing
-   * closed it already: until then, UCX can still write into the bounce buffer. The one caller
-   * that ends it gets the failure, and releases the state.
+   * Hands over the server's failure when no window is left to consume and nothing closed this
+   * state. While a window is left, UCX can still write into the bounce buffer, and the copy
+   * thread has yet to copy out of it. The one caller that gets the failure must end this state:
+   * return the bytes in flight for `notReceived` to the transport, fail their readers and close
+   * this state.
    */
   def takeFailure(): Option[FailedTransfer] = synchronized {
     if (serverFailure != null && toConsume == 0 && !closed) {
