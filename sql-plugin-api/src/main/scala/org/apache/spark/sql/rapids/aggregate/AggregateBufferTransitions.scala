@@ -27,6 +27,7 @@ import org.apache.spark.sql.catalyst.expressions.{Expression, UnsafeArrayData, U
 import org.apache.spark.sql.catalyst.expressions.codegen.CodegenFallback
 import org.apache.spark.sql.catalyst.util.ArrayData
 import org.apache.spark.sql.types._
+import org.apache.spark.util.sketch.{BloomFilter => SparkBloomFilter}
 
 trait CpuToGpuAggregateBufferConverter {
   def createExpression(child: Expression): CpuToGpuBufferTransition
@@ -51,6 +52,45 @@ case class CpuToGpuBloomFilterBufferTransition(override val child: Expression)
     extends CpuToGpuBufferTransition {
   override def dataType: DataType = BinaryType
 
+  override protected def nullSafeEval(input: Any): Array[Byte] = input.asInstanceOf[Array[Byte]]
+}
+
+case class GpuToCpuBloomFilterBufferConverter(
+    estimatedNumItems: Long,
+    numBits: Long) extends GpuToCpuAggregateBufferConverter {
+  override def createExpression(child: Expression): GpuToCpuBufferTransition =
+    GpuToCpuBloomFilterBufferTransition(child, estimatedNumItems, numBits)
+}
+
+case class GpuToCpuBloomFilterBufferTransition(
+    override val child: Expression,
+    estimatedNumItems: Long,
+    numBits: Long) extends GpuToCpuBufferTransition {
+
+  private lazy val emptyBloomFilterBytes: Array[Byte] = {
+    val bloomFilter = SparkBloomFilter.create(estimatedNumItems, numBits)
+    val out = new ByteArrayOutputStream()
+    val dataOut = new DataOutputStream(out)
+    try {
+      bloomFilter.writeTo(dataOut)
+      dataOut.flush()
+      out.toByteArray
+    } finally {
+      dataOut.close()
+    }
+  }
+
+  override def eval(input: InternalRow): Any = {
+    val buffer = child.eval(input)
+    if (buffer == null) {
+      emptyBloomFilterBytes.clone()
+    } else {
+      buffer.asInstanceOf[Array[Byte]]
+    }
+  }
+
+  // ShimUnaryExpression still requires nullSafeEval even though eval handles the null-to-empty
+  // bloom filter rewrite directly for this bridge expression.
   override protected def nullSafeEval(input: Any): Array[Byte] = input.asInstanceOf[Array[Byte]]
 }
 
