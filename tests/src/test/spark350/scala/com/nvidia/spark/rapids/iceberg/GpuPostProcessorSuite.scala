@@ -42,6 +42,7 @@ import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
 import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.{MetadataColumns, Schema}
+import org.apache.iceberg.expressions.Expressions
 import org.apache.iceberg.parquet.ParquetSchemaUtil
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{
   MessageType => ShadedMessageType,
@@ -1133,6 +1134,54 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     val plan = processor.displayActionPlan()
     assert(plan.contains("field[0] (input[0]):\n        PassThrough"), plan)
     assert(plan.contains(s"FillDefault(fieldId=$defaultId, int)"), plan)
+  }
+
+  test("Row-group pruning preserves missing defaults and recognizes physical field IDs") {
+    val defaultField = fieldWithDefaults(
+      2, "added", Types.IntegerType.get(), required = false,
+      initialDefault = Some(Int.box(11))).getOrElse {
+      cancel("Iceberg runtime does not expose v3 field defaults")
+    }
+    val nestedDefault = fieldWithDefaults(
+      4, "added", Types.IntegerType.get(), required = false,
+      initialDefault = Some(Int.box(11))).get
+    val requiredSchema = new Schema(
+      Types.NestedField.optional(1, "id", Types.LongType.get()),
+      defaultField,
+      Types.NestedField.optional(3, "s", Types.StructType.of(nestedDefault)))
+    val physicalId = ShadedTypes.optional(ShadedPrimitiveTypeName.INT64).id(1).named("id")
+    val physicalSibling =
+      ShadedTypes.optional(ShadedPrimitiveTypeName.INT64).id(5).named("present")
+    val physicalStruct = ShadedTypes.optionalGroup().addField(physicalSibling).id(3).named("s")
+    val oldSchema = new ShadedMessageType(
+      "test", Seq[ShadedType](physicalId, physicalStruct).asJava)
+
+    Seq(
+      Expressions.equal("added", 11),
+      Expressions.greaterThan("added", 10),
+      Expressions.notNull("added"),
+      Expressions.not(Expressions.equal("added", 23)),
+      Expressions.and(Expressions.equal("id", 1L), Expressions.equal("added", 11)),
+      Expressions.or(Expressions.equal("id", 1L), Expressions.equal("added", 11)),
+      Expressions.equal("s.added", 11)).foreach { filter =>
+      assert(GpuIcebergParquetReader.hasMissingDefaultFilter(
+        oldSchema, requiredSchema, filter, caseSensitive = true), filter.toString)
+    }
+    assert(!GpuIcebergParquetReader.hasMissingDefaultFilter(
+      oldSchema, requiredSchema, Expressions.equal("id", 1L), caseSensitive = true))
+    assert(GpuIcebergParquetReader.hasMissingDefaultFilter(
+      oldSchema, requiredSchema, Expressions.equal("ADDED", 11), caseSensitive = false))
+
+    val renamedPhysical =
+      ShadedTypes.optional(ShadedPrimitiveTypeName.INT32).id(2).named("old_name")
+    val currentSchema = new ShadedMessageType(
+      "test", Seq[ShadedType](physicalId, renamedPhysical, physicalStruct).asJava)
+    assert(!GpuIcebergParquetReader.hasMissingDefaultFilter(
+      currentSchema, requiredSchema, Expressions.notNull("added"), caseSensitive = true))
+    val nullDefaultSchema = new Schema(
+      Types.NestedField.optional(2, "added", Types.IntegerType.get()))
+    assert(!GpuIcebergParquetReader.hasMissingDefaultFilter(
+      oldSchema, nullDefaultSchema, Expressions.notNull("added"), caseSensitive = true))
   }
 
   test("Default-only struct projections retain physical validity through nested containers") {

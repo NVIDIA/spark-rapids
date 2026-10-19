@@ -18,7 +18,7 @@ package com.nvidia.spark.rapids.iceberg.parquet
 
 import java.io.{IOException, UncheckedIOException}
 import java.net.URI
-import java.util.Objects
+import java.util.{Collections, Objects}
 
 import scala.collection.JavaConverters._
 
@@ -33,7 +33,7 @@ import com.nvidia.spark.rapids.shims.parquet.GpuParquetUtilsShims
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.iceberg.{MetadataColumns, Schema}
-import org.apache.iceberg.expressions.Expression
+import org.apache.iceberg.expressions.{Binder, Expression}
 import org.apache.iceberg.mapping.NameMapping
 import org.apache.iceberg.parquet._
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions
@@ -149,6 +149,24 @@ case class GpuIcebergParquetReaderConf(
 )
 
 object GpuIcebergParquetReader {
+  private[iceberg] def hasMissingDefaultFilter(
+      fileSchema: ShadedMessageType,
+      requiredSchema: Schema,
+      filter: Expression,
+      caseSensitive: Boolean): Boolean = {
+    val defaultFieldIds = Binder.boundReferences(
+      requiredSchema.asStruct(), Collections.singletonList(filter), caseSensitive)
+      .asScala.filter(id => ShimUtils.hasInitialDefault(requiredSchema.findField(id)))
+
+    def containsFieldId(field: ShadedType, fieldId: Int): Boolean = {
+      (field.getId != null && field.getId.intValue() == fieldId) ||
+        (!field.isPrimitive && field.asGroupType().getFields.asScala
+          .exists(child => containsFieldId(child, fieldId)))
+    }
+
+    defaultFieldIds.exists(id => !containsFieldId(fileSchema, id.intValue()))
+  }
+
   /** Keep physical parent validity when all projected struct children are missing from a file. */
   private[iceberg] def preserveStructValidity(
       fileSchema: ShadedMessageType,
@@ -237,7 +255,11 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
     val blocks = reader.getRowGroups.asScala
       .zipWithIndex
 
-    filter.map { f =>
+    // Iceberg's Parquet filters treat absent columns as null, ignoring initial defaults.
+    // Keep these row groups and let Spark evaluate residuals after defaults are materialized.
+    val safeFilter = filter.filterNot(f => GpuIcebergParquetReader.hasMissingDefaultFilter(
+      typeWithIds, requiredSchema, f, conf.caseSensitive))
+    safeFilter.map { f =>
       val statsFilter = new ParquetMetricsRowGroupFilter(requiredSchema,
         f,
         conf.caseSensitive)
@@ -342,7 +364,10 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
         sqlConf.isParquetBinaryAsString,
         sqlConf.isParquetINT96AsTimestamp,
         conf.caseSensitive,
-        sqlConf.parquetInferTimestampNTZEnabled,
+        // Projected TIMESTAMP_NTZ fields are rejected during planning. A retained physical
+        // helper can still have that type; decode it as a timestamp to carry parent validity.
+        // The post-processor removes the helper before producing the requested output.
+        false,
         sqlConf.legacyParquetNanosAsLong
       ).convert(unshade(fileReadSchema))
 
