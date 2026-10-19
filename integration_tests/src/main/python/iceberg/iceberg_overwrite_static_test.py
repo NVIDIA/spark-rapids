@@ -25,7 +25,8 @@ from iceberg import (
     iceberg_nested_write_gens_list, iceberg_write_enabled_conf, iceberg_unsupported_mark,
     _build_tblprops, overwrite_static_partition_transforms, supports_iceberg_v3,
     ICEBERG_V3_UNSUPPORTED_REASON, supports_iceberg_row_lineage_inheritance,
-    ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON, row_lineage_df)
+    ICEBERG_ROW_LINEAGE_INHERITANCE_UNSUPPORTED_REASON, iceberg_table_properties_sql,
+    row_lineage_df)
 from marks import iceberg, ignore_order, allow_non_gpu, datagen_overrides
 from spark_session import with_gpu_session, with_cpu_session
 
@@ -131,7 +132,7 @@ def test_iceberg_v3_row_lineage_insert_overwrite(spark_tmp_table_factory):
     def setup_iceberg_table(spark, table):
         spark.sql(
             f"CREATE TABLE {table} (id BIGINT, v BIGINT) USING ICEBERG "
-            "TBLPROPERTIES ('format-version' = '3')")
+            f"{iceberg_table_properties_sql('3')}")
         row_lineage_df(spark, with_value=True).writeTo(table).append()
 
     def overwrite(spark, table):
