@@ -26,7 +26,6 @@ import com.nvidia.spark.rapids.{CombineConf, DateTimeRebaseCorrected, GpuMetric,
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.ShimUtils
-import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
 import com.nvidia.spark.rapids.parquet.{GpuParquetUtils, ParquetFileInfoWithBlockMeta}
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import com.nvidia.spark.rapids.shims.parquet.GpuParquetUtilsShims
@@ -144,6 +143,9 @@ case class GpuIcebergParquetReaderConf(
 )
 
 trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
+  private lazy val parquetConverter = ShimUtils.parquetConverter()
+  import parquetConverter.unshade
+
   def conf: GpuIcebergParquetReaderConf
 
   def projectSchema(fileSchema: ShadedMessageType, requiredSchema: Schema):

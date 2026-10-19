@@ -22,30 +22,34 @@ spark-rapids-shim-json-lines ***/
 package org.apache.iceberg.spark
 
 import com.nvidia.spark.rapids.SchemaUtils._
-import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded
+import com.nvidia.spark.rapids.iceberg.ShimUtils
 import org.apache.iceberg.Schema
+import org.apache.iceberg.parquet.ParquetSchemaUtil
 import org.apache.iceberg.shaded.org.apache.parquet.schema.{LogicalTypeAnnotation =>
   ShadedLogicalTypeAnnotation}
 import org.apache.iceberg.types.Types
 import org.apache.parquet.schema.LogicalTypeAnnotation
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.sql.execution.datasources.parquet.ParquetToSparkSchemaConverter
 import org.apache.spark.sql.execution.datasources.parquet.ParquetUtils.FIELD_ID_METADATA_KEY
 import org.apache.spark.sql.types.{ArrayType, MapType, StringType, StructType, VariantType}
 
 class GpuIcebergVariantSchemaSuite extends AnyFunSuite {
 
-  test("toSparkType preserves field IDs around top-level and nested Variant fields") {
+  private def variantSchema: Schema = {
     val payload = Types.StructType.of(
       Types.NestedField.optional(3, "items",
         Types.ListType.ofOptional(4, Types.VariantType.get())),
       Types.NestedField.optional(5, "attributes",
         Types.MapType.ofOptional(6, 7, Types.StringType.get(), Types.VariantType.get())))
-    val schema = new Schema(
+    new Schema(
       Types.NestedField.optional(1, "variant_value", Types.VariantType.get()),
       Types.NestedField.optional(2, "payload", payload))
+  }
 
-    val sparkSchema = GpuTypeToSparkType.toSparkType(schema)
+  test("toSparkType preserves field IDs around top-level and nested Variant fields") {
+    val sparkSchema = GpuTypeToSparkType.toSparkType(variantSchema)
     val variantField = sparkSchema("variant_value")
     assert(variantField.dataType == VariantType)
     assert(variantField.metadata.getLong(FIELD_ID_METADATA_KEY) == 1L)
@@ -69,9 +73,23 @@ class GpuIcebergVariantSchemaSuite extends AnyFunSuite {
 
   test("unshade preserves the Variant logical type spec version") {
     val shaded = ShadedLogicalTypeAnnotation.variantType(1.toByte)
-    val unshaded = FromIcebergShaded.unshade(shaded)
+    val unshaded = ShimUtils.parquetConverter().unshade(shaded)
       .asInstanceOf[LogicalTypeAnnotation.VariantLogicalTypeAnnotation]
 
     assert(unshaded.getSpecVersion == 1.toByte)
+  }
+
+  test("the selected converter handles Variant annotations throughout a Parquet schema") {
+    val shadedSchema = ParquetSchemaUtil.convert(variantSchema, "variant_schema")
+    val unshadedSchema = ShimUtils.parquetConverter().unshade(shadedSchema)
+    val sparkSchema = new ParquetToSparkSchemaConverter(
+      false, true, true, true, false).convert(unshadedSchema)
+
+    assert(sparkSchema("variant_value").dataType == VariantType)
+    assert(unshadedSchema.asGroupType().getType("variant_value").getId.intValue() == 1)
+    val payload = sparkSchema("payload").dataType.asInstanceOf[StructType]
+    assert(payload("items").dataType == ArrayType(VariantType, containsNull = true))
+    assert(payload("attributes").dataType ==
+      MapType(StringType, VariantType, valueContainsNull = true))
   }
 }

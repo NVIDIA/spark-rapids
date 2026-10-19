@@ -20,6 +20,7 @@ import com.nvidia.spark.rapids.GpuMetric;
 import com.nvidia.spark.rapids.RapidsConf;
 import com.nvidia.spark.rapids.ShimLoader;
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 
 import org.apache.hadoop.fs.Path;
@@ -72,6 +73,10 @@ public class ShimUtils {
 
     public static String locationOf(ContentFile<?> f) {
         return IMPL.locationOf(f);
+    }
+
+    public static FromIcebergShaded parquetConverter() {
+        return IMPL.parquetConverter();
     }
 
     public static int formatVersion(Table table) {

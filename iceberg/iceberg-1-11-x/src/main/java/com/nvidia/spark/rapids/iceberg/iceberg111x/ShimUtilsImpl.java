@@ -21,6 +21,7 @@ import com.nvidia.spark.rapids.RapidsConf;
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
 import com.nvidia.spark.rapids.iceberg.IcebergDeletionVector;
 import com.nvidia.spark.rapids.iceberg.Iceberg19PlusShimUtils;
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.*;
@@ -43,6 +44,11 @@ import java.util.Map;
 
 /** Iceberg 1.11.x shim: uses {@code SparkUtil::internalToSpark} and a cache-aware footer path. */
 public class ShimUtilsImpl extends Iceberg19PlusShimUtils {
+    @Override
+    public FromIcebergShaded parquetConverter() {
+        return ParquetConverter$.MODULE$;
+    }
+
     @Override
     public int formatVersion(Table table) {
         return TableUtil.formatVersion(table);

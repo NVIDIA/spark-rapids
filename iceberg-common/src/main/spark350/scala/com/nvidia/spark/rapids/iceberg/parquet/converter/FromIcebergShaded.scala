@@ -55,7 +55,10 @@ import org.apache.parquet.schema.LogicalTypeAnnotation.TimeUnit
 import org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName
 
 
-object FromIcebergShaded {
+object FromIcebergShaded extends FromIcebergShaded
+
+/** Common conversions that do not depend on version-specific Parquet logical types. */
+class FromIcebergShaded {
   def unshade(columnOrder: ShadedColumnOrder): ColumnOrder = {
     if (columnOrder == null) {
       return null
@@ -123,16 +126,6 @@ object FromIcebergShaded {
         LogicalTypeAnnotation.IntervalLogicalTypeAnnotation.getInstance()
       case _: ShadedLogicalTypeAnnotation.MapKeyValueTypeAnnotation =>
         LogicalTypeAnnotation.MapKeyValueTypeAnnotation.getInstance()
-      case shaded if shaded.getClass.getSimpleName == "VariantLogicalTypeAnnotation" =>
-        // Variant was added after the oldest supported Iceberg and Parquet versions. Keep this
-        // root-safe converter linkable with those versions by reflecting only after the runtime
-        // annotation identifies itself as Variant.
-        val specVersion = shaded.getClass.getMethod("getSpecVersion").invoke(shaded)
-          .asInstanceOf[java.lang.Byte].byteValue()
-        classOf[LogicalTypeAnnotation]
-          .getMethod("variantType", java.lang.Byte.TYPE)
-          .invoke(null, Byte.box(specVersion))
-          .asInstanceOf[LogicalTypeAnnotation]
       case _ => throw new IllegalArgumentException(s"Unknown logical type annotation: $inner")
     }
   }
