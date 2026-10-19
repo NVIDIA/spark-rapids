@@ -1876,7 +1876,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
     val requestTx = makeTx(1)
     val sendBuffer = makeSendBuffer(mock[DeviceMemoryBuffer])
     withStateAwaitingCompletion(requestTx, sendBuffer)(recordTransferResponses(responses)) {
-      (_, state, complete) =>
+      (server, state, complete) =>
         complete().get(awaitSeconds, TimeUnit.SECONDS)
         assertResult(Some(BufferSendState.Completed))(state.endedWith)
         val callback = ArgumentCaptor.forClass(classOf[TransactionCallback])
@@ -1890,6 +1890,7 @@ class RapidsShuffleServerSuite extends RapidsShuffleTestHelper {
         callback.getValue.apply(sent)
         responses.synchronized(verify(responses.head, times(1)).close())
         verify(sent, times(1)).close()
+        assertCloseReturns(server, "close kept waiting after a transfer response was sent")
     }
   }
 
