@@ -268,7 +268,7 @@ def test_delta_delete_dv_operation_logging(spark_tmp_path, enable_deletion_vecto
 @pytest.mark.parametrize("dv_predicate_pushdown", [True, False], ids=idfn)
 @pytest.mark.parametrize("column_mapping_mode", ["none", "name"])
 def test_delta_delete_dv_user_row_deleted_column(
-        spark_tmp_path, reader_type, dv_predicate_pushdown, column_mapping_mode):
+        spark_tmp_path, local_tmp_path, reader_type, dv_predicate_pushdown, column_mapping_mode):
     conf = copy_and_update(delta_delete_enabled_conf, {
         "spark.databricks.delta.delete.deletionVectors.persistent": "true",
         "spark.rapids.sql.format.parquet.reader.type": reader_type,
@@ -313,7 +313,13 @@ def test_delta_delete_dv_user_row_deleted_column(
             metadata = schema.apply(name).metadata()
             key = "delta.columnMapping.physicalName"
             return metadata.getString(key) if metadata.contains(key) else name
-        physical_rows = pq.read_table(os.path.join(path, add.path())).to_pylist()
+        # spark_tmp_path may use Hadoop storage that PyArrow cannot access directly.
+        hadoop_path = jvm.org.apache.hadoop.fs.Path
+        parquet_path = hadoop_path(hadoop_path(path), add.path())
+        local_parquet_path = os.path.join(local_tmp_path, "data.parquet")
+        parquet_path.getFileSystem(spark.sparkContext._jsc.hadoopConfiguration()) \
+            .copyToLocalFile(parquet_path, hadoop_path(local_parquet_path))
+        physical_rows = pq.read_table(local_parquet_path).to_pylist()
         survivors = [(row[physical_name("id")], row[physical_name(column)])
                      for index, row in enumerate(physical_rows) if not bitmap.contains(index)]
         assert sorted(survivors) == [(1, 1), (3, 2), (4, None)]
