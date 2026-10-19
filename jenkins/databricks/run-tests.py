@@ -54,11 +54,6 @@ def get_test_report_path_prefix():
 
 def observe_test_output(line, summary):
     line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-    # TEST ONLY (#16399): exercise the optional parser/formatter failure guards.
-    if line == "TEST ONLY: inject summary parser failure":
-        raise RuntimeError("Synthetic summary parser failure")
-    if line == "TEST ONLY: inject summary formatter failure":
-        summary["synthetic_formatter_failure"] = True
     if line.startswith("WILL RUN TESTS WITH SPARK_HOME:"):
         # Only the last invocation can explain a failure; earlier suites may have passed.
         summary.clear()
@@ -81,9 +76,6 @@ def observe_test_output(line, summary):
 
 
 def format_test_failure(summary, status):
-    # TEST ONLY (#16399): preserve the command exit when summary formatting fails.
-    if summary.get("synthetic_formatter_failure"):
-        raise RuntimeError("Synthetic summary formatter failure")
     lines = ["Remote test command exit: %s" % status]
     if "test_exit" in summary:
         lines.append("Integration test invocation exit: " + summary["test_exit"])
