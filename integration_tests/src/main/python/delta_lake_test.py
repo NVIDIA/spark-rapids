@@ -20,7 +20,8 @@ from asserts import assert_gpu_fallback_collect, assert_gpu_and_cpu_are_equal_co
     assert_cpu_and_gpu_are_equal_collect_with_capture
 from data_gen import *
 from delta_lake_utils import delta_meta_allow, setup_delta_dest_table, \
-    deletion_vector_values_with_xfail_reasons, read_delta_path_with_cdf, delta_reorg_xfail
+    deletion_vector_values_with_xfail_reasons, read_delta_path_with_cdf, delta_reorg_xfail, \
+    is_oss_delta_lake_42
 from marks import allow_non_gpu, delta_lake, ignore_order
 from parquet_test import reader_opt_confs_no_native
 from parquet_test_utils import parquet_row_group_midpoints
@@ -1772,6 +1773,69 @@ def test_db173_missing_row_index_filter_assertion_guard():
 
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
+@pytest.mark.parametrize("with_plain_file", [False, True], ids=idfn)
+@pytest.mark.parametrize("chunked", [False, True], ids=idfn)
+@pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"], ids=idfn)
+@pytest.mark.parametrize("footer_type", ["NATIVE", "JAVA"], ids=idfn)
+@pytest.mark.skipif(not supports_delta_lake_deletion_vectors(),
+                    reason="Delta Lake deletion vector support is required")
+@pytest.mark.skipif(is_before_spark_353(),
+                    reason="Spark-RAPIDS supports scan with deletion vectors starting in Spark 3.5.3")
+@pytest.mark.skipif(is_databricks_runtime() and not is_databricks173_or_later(),
+                    reason="Deletion vector scan is not supported on Databricks before 17.3")
+def test_delta_deletion_vector_count_empty_splits(
+        spark_tmp_path, parquet_reader_type, footer_type, with_plain_file, chunked):
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    num_rows = 4096
+    split_size = 4096
+    conf = {
+        "spark.databricks.delta.optimizeMetadataQuery.enabled": "false",
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.rapids.sql.format.parquet.reader.type": parquet_reader_type,
+        "spark.rapids.sql.format.parquet.reader.footer.type": footer_type,
+        "spark.rapids.sql.reader.chunked": str(chunked).lower(),
+        "spark.sql.files.maxPartitionBytes": str(split_size),
+    }
+
+    def setup_table(spark):
+        # Wide rows make each file span several splits, including splits containing no
+        # row-group midpoint. COUNT(*) prunes all data columns from these empty splits.
+        spark.range(num_rows).selectExpr(
+            "id", "sha2(CAST(id AS STRING), 256) AS payload"
+        ).repartition(8).write.format("delta") \
+            .option("delta.enableDeletionVectors", "true").save(data_path)
+        spark.sql(f"DELETE FROM delta.`{data_path}` WHERE pmod(id, 17) = 0").collect()
+        if with_plain_file:
+            # Include a file without a DV in the same scan.
+            spark.range(num_rows, num_rows + 128).selectExpr(
+                "id", "sha2(CAST(id AS STRING), 256) AS payload"
+            ).coalesce(1).write.format("delta").mode("append").save(data_path)
+        actions = spark.read.json(data_path + "/_delta_log/*.json")
+        dv_files = actions.where("add.deletionVector IS NOT NULL").select("add.path").collect()
+        assert dv_files
+        # Check the fixture actually produces splits without row groups; otherwise the
+        # invalid-offset regression can pass without exercising the offending path.
+        data_file = data_path + "/" + dv_files[0][0]
+        midpoints = parquet_row_group_midpoints(spark, data_file)
+        assert midpoints and min(midpoints) >= split_size
+
+    with_cpu_session(setup_table, conf=conf)
+
+    def read_count(spark):
+        df = spark.sql(f"SELECT count(*) FROM delta.`{data_path}`")
+        assert df.collect() == [Row(count=3855 + (128 if with_plain_file else 0))]
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        read_count,
+        exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
+        conf=conf)
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
 @ignore_order(local=True)
 @pytest.mark.parametrize("parquet_reader_type", ["PERFILE", "COALESCING", "MULTITHREADED"],
                          ids=idfn)
@@ -1827,3 +1891,75 @@ def test_delta_deletion_vector_native_footer_multi_row_group_zero_column_aggrega
         lambda spark: spark.sql(query.format(path=data_path)),
         exist_classes=r"GpuFileGpuScan parquet .* ReadSchema: struct<>",
         conf=read_conf)
+
+
+@delta_lake
+@ignore_order
+@allow_non_gpu(*delta_meta_allow)
+@pytest.mark.skipif(not is_oss_delta_lake_42(), reason="Requires OSS Delta Lake 4.2")
+@pytest.mark.parametrize("stats_state", ["missing_stats", "with_stats", "mixed_stats"])
+@pytest.mark.parametrize("force_stats", [False, True], ids=["default", "forced"])
+@pytest.mark.parametrize("predicate, expected_rows, data_filter, prunes_missing_stats", [
+    (None, 100, False, False),
+    ("true", 100, False, False),
+    ("part = 1", 25, False, True),
+    ("part = 0", 25, False, False),
+    ("id = 50", 100, True, False),
+    ("part = 1 AND id = 49", 25, True, True),
+], ids=["no_filter", "true_filter", "partition_with_stats", "partition_without_stats",
+        "data_filter", "partition_and_data_filter"])
+def test_delta_force_statistics_collection(
+        spark_tmp_path, stats_state, force_stats, predicate, expected_rows, data_filter,
+        prunes_missing_stats):
+    # Model Delta's PreparedDeltaFileIndexRowCountSuite: the Spark setting sums
+    # existing numRecords during planning and leaves missing statistics unknown.
+    # https://github.com/delta-io/delta/pull/5888
+    path = spark_tmp_path + "/force_stats"
+
+    def setup(spark):
+        df = spark.range(100).selectExpr("id", "id % 4 AS part").coalesce(1)
+        initial = df.where("part != 0") if stats_state == "mixed_stats" else df
+        initial.write.format("delta").partitionBy("part") \
+            .option("delta.enableDeletionVectors", "false").save(path)
+        if stats_state == "mixed_stats":
+            # Only partition 0 lacks stats. Pruning it should recover known row counts;
+            # retaining it must leave the total unknown instead of returning a partial sum.
+            spark.conf.set("spark.databricks.delta.stats.collect", "false")
+            df.where("part = 0").write.format("delta").mode("append").save(path)
+        spark._jvm.org.apache.spark.sql.delta.DeltaLog.clearCache()
+
+    with_cpu_session(setup, conf={
+        "spark.databricks.delta.stats.collect": str(stats_state != "missing_stats").lower()})
+
+    def read_and_check_stats(spark):
+        df = spark.read.format("delta").load(path)
+        if predicate is not None:
+            df = df.where(predicate)
+        scans = []
+
+        def find_scans(plan):
+            if plan.getClass().getSimpleName() == "LogicalRelation":
+                index = plan.relation().location()
+                if index.getClass().getSimpleName() == "PreparedDeltaFileIndex":
+                    scans.append(index.preparedScan())
+            children = plan.children().iterator()
+            while children.hasNext():
+                find_scans(children.next())
+
+        find_scans(df._jdf.queryExecution().optimizedPlan())
+        assert len(scans) == 1, "Expected one prepared Delta scan"
+        stats_available = stats_state == "with_stats" or \
+            (stats_state == "mixed_stats" and prunes_missing_stats)
+        for count in [scans[0].scanned().rows(), scans[0].scanned().logicalRows()]:
+            if stats_available and (force_stats or data_filter):
+                assert count.isDefined(), "Expected collected scan row counts"
+                assert count.get() == expected_rows
+            else:
+                assert count.isEmpty(), "Expected scan row counts to remain unknown"
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        read_and_check_stats,
+        exist_classes="GpuFileSourceScanExec",
+        require_non_empty=True,
+        conf={"spark.databricks.delta.alwaysCollectStats.enabled": str(force_stats).lower()})
