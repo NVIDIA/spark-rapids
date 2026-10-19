@@ -23,10 +23,11 @@ package org.apache.iceberg.spark
 
 import com.nvidia.spark.rapids.SchemaUtils._
 import com.nvidia.spark.rapids.iceberg.ShimUtils
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded
 import org.apache.iceberg.Schema
 import org.apache.iceberg.parquet.ParquetSchemaUtil
-import org.apache.iceberg.shaded.org.apache.parquet.schema.{LogicalTypeAnnotation =>
-  ShadedLogicalTypeAnnotation}
+import org.apache.iceberg.shaded.org.apache.parquet.schema.{LogicalTypeAnnotation => ShadedLogicalTypeAnnotation, Types => ShadedTypes}
+import org.apache.iceberg.shaded.org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BINARY
 import org.apache.iceberg.types.Types
 import org.apache.parquet.schema.LogicalTypeAnnotation
 import org.scalatest.funsuite.AnyFunSuite
@@ -72,8 +73,14 @@ class GpuIcebergVariantSchemaSuite extends AnyFunSuite {
   }
 
   test("unshade preserves the Variant logical type spec version") {
-    val shaded = ShadedLogicalTypeAnnotation.variantType(1.toByte)
-    val unshaded = ShimUtils.parquetConverter().unshade(shaded)
+    val shaded = ShadedTypes.buildMessage()
+      .optionalGroup().as(ShadedLogicalTypeAnnotation.variantType(1.toByte))
+      .required(BINARY).named("metadata")
+      .required(BINARY).named("value")
+      .named("variant_value")
+      .named("variant_schema")
+    val unshaded = ShimUtils.unshadeParquetSchema(shaded)
+      .asGroupType().getType("variant_value").getLogicalTypeAnnotation
       .asInstanceOf[LogicalTypeAnnotation.VariantLogicalTypeAnnotation]
 
     assert(unshaded.getSpecVersion == 1.toByte)
@@ -81,7 +88,7 @@ class GpuIcebergVariantSchemaSuite extends AnyFunSuite {
 
   test("the selected converter handles Variant annotations throughout a Parquet schema") {
     val shadedSchema = ParquetSchemaUtil.convert(variantSchema, "variant_schema")
-    val unshadedSchema = ShimUtils.parquetConverter().unshade(shadedSchema)
+    val unshadedSchema = ShimUtils.unshadeParquetSchema(shadedSchema)
     val sparkSchema = new ParquetToSparkSchemaConverter(
       false, true, true, true, false).convert(unshadedSchema)
 
@@ -91,5 +98,19 @@ class GpuIcebergVariantSchemaSuite extends AnyFunSuite {
     assert(payload("items").dataType == ArrayType(VariantType, containsNull = true))
     assert(payload("attributes").dataType ==
       MapType(StringType, VariantType, valueContainsNull = true))
+  }
+
+  test("the selected converter preserves ordinary nested Parquet schemas") {
+    val schema = new Schema(
+      Types.NestedField.required(1, "id", Types.IntegerType.get()),
+      Types.NestedField.optional(2, "payload", Types.StructType.of(
+        Types.NestedField.optional(3, "amounts",
+          Types.ListType.ofOptional(4, Types.DecimalType.of(9, 2))),
+        Types.NestedField.optional(5, "timestamps",
+          Types.MapType.ofOptional(6, 7, Types.StringType.get(), Types.TimestampType.withZone())),
+        Types.NestedField.required(8, "uuid", Types.UUIDType.get()))))
+    val shadedSchema = ParquetSchemaUtil.convert(schema, "ordinary_schema")
+
+    assert(ShimUtils.unshadeParquetSchema(shadedSchema) == FromIcebergShaded.unshade(shadedSchema))
   }
 }

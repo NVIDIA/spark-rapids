@@ -21,7 +21,6 @@ import com.nvidia.spark.rapids.NoopMetric$;
 import com.nvidia.spark.rapids.RapidsConf;
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile;
 import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded$;
-import com.nvidia.spark.rapids.iceberg.parquet.converter.ParquetTypeConverter;
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.ContentFile;
@@ -40,6 +39,7 @@ import org.apache.iceberg.io.WriteResult;
 import org.apache.iceberg.parquet.GpuParquetIO;
 import org.apache.iceberg.shaded.org.apache.parquet.ParquetReadOptions;
 import org.apache.iceberg.shaded.org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.iceberg.shaded.org.apache.parquet.schema.MessageType;
 import org.apache.iceberg.spark.source.GpuSparkScan;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.read.Scan;
@@ -60,12 +60,11 @@ import java.util.Map;
  */
 public interface IcebergShimUtils {
     /**
-     * Converts Iceberg's shaded Parquet types to Spark's unshaded Parquet types.
-     * The default uses their common APIs; shims override it when both versions expose
-     * additional logical types, keeping version-specific references out of shared code.
+     * Converts a shaded Parquet schema to Spark's unshaded Parquet schema.
+     * Shims add Variant support only when both Parquet versions expose that logical type.
      */
-    default ParquetTypeConverter parquetConverter() {
-        return FromIcebergShaded$.MODULE$;
+    default org.apache.parquet.schema.MessageType unshadeParquetSchema(MessageType schema) {
+        return FromIcebergShaded$.MODULE$.unshade(schema);
     }
 
     /** Returns the Iceberg table format version from the table's current metadata. */

@@ -22,7 +22,11 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.iceberg.iceberg111x
 
-import com.nvidia.spark.rapids.iceberg.parquet.converter.ParquetTypeConverter
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded
+import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => ShadedMessageType}
+import org.apache.parquet.schema.MessageType
 
 // Spark 4.0's unshaded Parquet does not expose the Variant logical type.
-object VariantShadeShim extends ParquetTypeConverter
+object VariantUnshadeShim {
+  def unshade(schema: ShadedMessageType): MessageType = FromIcebergShaded.unshade(schema)
+}

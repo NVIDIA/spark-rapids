@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.{CombineConf, DateTimeRebaseCorrected, GpuMetric,
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergInputFile
 import com.nvidia.spark.rapids.iceberg.ShimUtils
+import com.nvidia.spark.rapids.iceberg.parquet.converter.FromIcebergShaded._
 import com.nvidia.spark.rapids.parquet.{GpuParquetUtils, ParquetFileInfoWithBlockMeta}
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import com.nvidia.spark.rapids.shims.parquet.GpuParquetUtilsShims
@@ -143,9 +144,6 @@ case class GpuIcebergParquetReaderConf(
 )
 
 trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable with Logging {
-  private lazy val parquetConverter = ShimUtils.parquetConverter()
-  import parquetConverter.unshade
-
   def conf: GpuIcebergParquetReaderConf
 
   def projectSchema(fileSchema: ShadedMessageType, requiredSchema: Schema):
@@ -196,7 +194,7 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
 
   def clipBlocksToSchema(fileReadSchema: ShadedMessageType,
       blocks: Seq[ShadedBlockMetaData]): Seq[BlockMetaData] = {
-    GpuParquetUtils.clipBlocksToSchema(unshade(fileReadSchema),
+    GpuParquetUtils.clipBlocksToSchema(ShimUtils.unshadeParquetSchema(fileReadSchema),
       blocks.map(unshade).asJava,
       conf.caseSensitive)
   }
@@ -281,12 +279,12 @@ trait GpuIcebergParquetReader extends Iterator[ColumnarBatch] with AutoCloseable
         conf.caseSensitive,
         sqlConf.parquetInferTimestampNTZEnabled,
         sqlConf.legacyParquetNanosAsLong
-      ).convert(unshade(fileReadSchema))
+      ).convert(ShimUtils.unshadeParquetSchema(fileReadSchema))
 
       val parquetFileInfo = ParquetFileInfoWithBlockMeta(file.path,
         blocks,
         InternalRow.empty, // Iceberg handles partition values but itself
-        unshade(fileReadSchema),
+        ShimUtils.unshadeParquetSchema(fileReadSchema),
         partReaderSparkSchema,
         DateTimeRebaseCorrected,
         DateTimeRebaseCorrected,
