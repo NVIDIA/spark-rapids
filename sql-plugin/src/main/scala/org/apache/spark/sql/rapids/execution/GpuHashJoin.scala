@@ -2727,9 +2727,13 @@ class HashOuterJoinIterator(
   private def getFinalBatch(): Option[ColumnarBatch] = {
     NvtxIdWithMetrics(NvtxRegistry.GET_FINAL_BATCH, joinTime) {
       val builtTypes = built.dataTypes
+      // filter returns an owning table. Release the stream iterator, tracker, and input table
+      // wrappers before retaining the filtered columns in the output batch.
       val filteredTable = withResource(streamJoinIter) { _ =>
         streamJoinIter.releaseBuiltSideTracker().map { tracker =>
-          built.checkpoint()
+          closeOnExcept(tracker) { _ =>
+            built.checkpoint()
+          }
           try {
             withRetryNoSplit(tracker) { trackerAttempt =>
               withRestoreOnRetry(built) {
@@ -2749,18 +2753,20 @@ class HashOuterJoinIterator(
       }
 
       filteredTable.flatMap { filtered =>
-        // filter returns an owning table. Release the stream iterator, tracker, and input table
-        // wrappers before retaining the filtered columns in the output batch.
         val filteredBatch = withResource(filtered) { _ =>
-          GpuColumnVector.from(filtered, builtTypes)
+          if (filtered.getRowCount > 0) {
+            Some(GpuColumnVector.from(filtered, builtTypes))
+          } else {
+            None
+          }
         }
-        val numFilterRows = filteredBatch.numRows()
-        if (numFilterRows > 0) {
-          val spillableFiltered = closeOnExcept(filteredBatch) {
-            SpillableColumnarBatch(_, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
+        filteredBatch.map { nonEmptyBatch =>
+          val numFilterRows = nonEmptyBatch.numRows()
+          val spillableFiltered = closeOnExcept(nonEmptyBatch) { _ =>
+            SpillableColumnarBatch(nonEmptyBatch, SpillPriorities.ACTIVE_ON_DECK_PRIORITY)
           }
           // Combine build-side columns with null columns for stream side
-          Some(withRetryNoSplit(spillableFiltered) { filteredAttempt =>
+          withRetryNoSplit(spillableFiltered) { filteredAttempt =>
             withResource(filteredAttempt.getColumnarBatch()) { builtBatch =>
               val streamColumns = streamAttributes.safeMap { attr =>
                 GpuColumnVector.fromNull(numFilterRows, attr.dataType)
@@ -2775,9 +2781,7 @@ class HashOuterJoinIterator(
                   }
               }
             }
-          })
-        } else {
-          withResource(filteredBatch) { _ => None }
+          }
         }
       }
     }

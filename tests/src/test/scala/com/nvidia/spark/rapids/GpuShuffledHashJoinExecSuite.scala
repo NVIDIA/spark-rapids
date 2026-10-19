@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,10 +27,12 @@ import org.scalatestplus.mockito.MockitoSugar
 
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
-import org.apache.spark.sql.types.IntegerType
+import org.apache.spark.sql.catalyst.plans.FullOuter
+import org.apache.spark.sql.rapids.execution.HashOuterJoinIterator
+import org.apache.spark.sql.types.{DataType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-/** Tests for the "prepareBuildBatchesForJoin" function. */
+/** Tests for shuffled hash join preparation and finalization. */
 class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
   private val metricMap = mock[Map[String, GpuMetric]]
   when(metricMap(any())).thenReturn(NoopMetric)
@@ -40,6 +42,24 @@ class GpuShuffledHashJoinExecSuite extends AnyFunSuite with MockitoSugar {
   private val TARGET_SIZE_BIG = 1024L
   private val attrs = Array(AttributeReference("a1", IntegerType, nullable=false)())
   private val buildGoals = Seq(RequireSingleBatch, RequireSingleBatchWithFilter(GpuLiteral(true)))
+
+  test("final outer join batch closes the released tracker if checkpoint fails") {
+    TestUtils.withGpuSparkSession(new SparkConf()) { _ =>
+      val built = mock[LazySpillableColumnarBatch]
+      when(built.dataTypes).thenReturn(Array[DataType](IntegerType))
+      val failure = new IllegalStateException("injected checkpoint failure")
+      doThrow(failure).when(built).checkpoint()
+      val tracker = mock[SpillableColumnarBatch]
+      val joinOptions = new RapidsConf(new SparkConf()).getJoinOptions(TARGET_SIZE_BIG)
+      withResource(new HashOuterJoinIterator(
+          FullOuter, built, Seq.empty, None, Some(tracker), Iterator.empty,
+          Seq.empty, attrs, None, joinOptions, GpuBuildRight,
+          false, None, NoopMetric, NoopMetric)) { iter =>
+        assert(intercept[IllegalStateException](iter.hasNext) eq failure)
+        verify(tracker, times(1)).close()
+      }
+    }
+  }
 
   private def newOneIntColumnTable(): Table = {
     withResource(ColumnVector.fromInts(1, 2, 3, 4, 5)) { cudfCol =>
