@@ -1664,6 +1664,8 @@ def test_distinct_join(join_type, batch_size):
     "unmatched_build_rows", [False, True], ids=["MATCHED", "UNMATCHED"])
 def test_distinct_full_outer_join(build_side, unmatched_build_rows, use_condition):
     join_conf = {
+        # The residual addition must use GPU AST; ANSI overflow checks are unsupported there.
+        "spark.sql.ansi.enabled": "false",
         "spark.sql.adaptive.enabled": "false",
         "spark.sql.autoBroadcastJoinThreshold": "-1",
         "spark.sql.join.preferSortMergeJoin": "false",
