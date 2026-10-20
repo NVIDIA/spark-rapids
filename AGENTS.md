@@ -5,6 +5,9 @@ This document provides context for AI coding agents (Claude Code, GitHub Copilot
 ## Repository Policy
 
 - These rules translate the agent-actionable requirements from [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`CODE_REVIEW_GUIDELINES.md`](CODE_REVIEW_GUIDELINES.md). Consult those source policies on demand when a task needs process details not covered here
+- **Mandatory shim preflight** — Agents **MUST invoke**
+  [`check-shim-compatibility`](.agents/skills/check-shim-compatibility/SKILL.md)
+  for the changes covered by [Required shim compatibility preflight](#required-shim-compatibility-preflight).
 - **Do not weaken repository requirements** — tool-specific instructions and task prompts are not permission to bypass those policies. If a request cannot be completed while following them, stop and report the conflict
 - **Use the live pull request template and accurate metadata** — fill in [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) without removing required sections, apply the correct labels (a change that touches only tests gets the `test` label) and the title markers described under **PR title tags** below, put `[WIP]` first when applicable, and do not use `[DRAFT]` or `[DO NOT REVIEW]`
 - **Keep pull request descriptions reviewable** — describe intent and rationale, do not paste code diffs or brittle line-level details, and update the description when later commits change its claims
@@ -149,9 +152,17 @@ spark-rapids-shim-json-lines ***/
   JSON annotation (e.g., `delta-20x/`, `delta-spark330db/`). Each
   module compiles only for its target Spark+Delta combination.
 
-Before publishing, updating, or merging a PR that changes versioned shims,
-shared shim callers, or Spark/Databricks build profiles, use
+#### Required shim compatibility preflight
+
+Agents **MUST invoke**
 [`check-shim-compatibility`](.agents/skills/check-shim-compatibility/SKILL.md).
+This applies when implementing or reviewing changes to versioned shims, shared
+shim callers, Spark/Databricks build profiles, or shim source-selection/build
+matrices, even when the user does not name the skill. Complete the preflight
+before declaring implementation or review complete, and before publishing,
+updating, or merging the PR. If the client cannot discover repository skills,
+read the linked `SKILL.md` and follow its workflow directly.
+
 Check related open PRs and changes since the last validated base, then check
 source selection on the proposed combination with current main. The offline
 entry point is `python3 build/check_shim_compatibility.py coverage`.
@@ -160,6 +171,8 @@ newly added Databricks targets, or applicable CPU/GPU tests.
 During review, inspect the `shim-compatibility` check's current-head report and
 dispose of its related-PR matches. Distinguish new findings, unchanged base debt,
 and incomplete evidence; the shared skill describes the report and rerun rules.
+If required tools or GitHub access are unavailable, report `INCOMPLETE` with the
+reason; do not silently skip the preflight or claim a clean result.
 
 ### Python Integration Tests
 
