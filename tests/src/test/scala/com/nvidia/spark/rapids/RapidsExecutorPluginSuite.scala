@@ -32,6 +32,22 @@ class RapidsExecutorPluginSuite extends AnyFunSuite {
     }
   }
 
+  test("fatal CUDA exit waits for GPU core dump despite a pending interrupt") {
+    var waitInterrupted = true
+    var exitInterrupted = true
+    try {
+      Thread.currentThread().interrupt()
+      RapidsExecutorPlugin.waitForGpuCoreDumpThenExit(
+        { waitInterrupted = Thread.currentThread().isInterrupted },
+        { exitInterrupted = Thread.currentThread().isInterrupted })
+      assert(!waitInterrupted)
+      assert(!exitInterrupted)
+      assert(Thread.currentThread().isInterrupted)
+    } finally {
+      Thread.interrupted()
+    }
+  }
+
   test("fatal CUDA exit runs after a failed GPU core dump wait") {
     var exited = false
     RapidsExecutorPlugin.waitForGpuCoreDumpThenExit(

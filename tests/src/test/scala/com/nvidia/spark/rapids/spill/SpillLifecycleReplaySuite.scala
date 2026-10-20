@@ -187,6 +187,22 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
     }
   }
 
+  private def compressedReplayHandle(): ReplayHandle = {
+    val handle = SpillableCompressedColumnarBatchHandle(buildCompressedBatch(0, 1000))
+    ReplayHandle(handle, () => handle.host.isDefined,
+      () => withResource(handle.materialize()) { compressed =>
+        withResource(decompressBatch(compressed)) { batch =>
+          withResource(buildContiguousTable(0, 1000)) { contiguous =>
+            withResource(contiguous.getTable) { expected =>
+              withResource(GpuColumnVector.from(batch)) { actual =>
+                TestUtils.compareTables(expected, actual)
+              }
+            }
+          }
+        }
+      })
+  }
+
   private val siblingHandles = Seq(
     HandleCase("columnar batch", () => {
       val (handle, dataTypes) = addTableToFramework()
@@ -202,21 +218,10 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
           verifyOrdinaryBatch(batch)
         })
     }),
-    HandleCase("compressed columnar batch", () => {
-      val handle = SpillableCompressedColumnarBatchHandle(buildCompressedBatch(0, 1000))
-      ReplayHandle(handle, () => handle.host.isDefined,
-        () => withResource(handle.materialize()) { compressed =>
-          withResource(decompressBatch(compressed)) { batch =>
-            withResource(buildContiguousTable(0, 1000)) { contiguous =>
-              withResource(contiguous.getTable) { expected =>
-                withResource(GpuColumnVector.from(batch)) { actual =>
-                  TestUtils.compareTables(expected, actual)
-                }
-              }
-            }
-          }
-        })
-    }, hostLimit = 1L, diskBacked = true),
+    HandleCase("compressed columnar batch with host staging", () => compressedReplayHandle(),
+      hostLimit = 1L << 20),
+    HandleCase("compressed columnar batch with disk staging", () => compressedReplayHandle(),
+      hostLimit = 1L, diskBacked = true),
     HandleCase("table", () => {
       val (handle, _) = addSpillableTableToFramework()
       ReplayHandle(handle, () => handle.host.isDefined,

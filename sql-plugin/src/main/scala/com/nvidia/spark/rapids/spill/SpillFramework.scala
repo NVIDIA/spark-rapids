@@ -314,6 +314,9 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends DeviceStoreHandle {
    * materialized handle's refCount, and the spiller thread (the spiller thread cannot
    * free a device buffer that the worker thread isn't done with).
    * See https://github.com/NVIDIA/spark-rapids/issues/8610 for more info.
+   *
+   * Subclasses' `spill` must leave `spilling` set on success; this method clears it and
+   * completes any `close` deferred during the spill, only after the post-spill synchronize.
    */
   override def releaseSpilled(): Unit = {
     synchronized {
@@ -328,8 +331,7 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends DeviceStoreHandle {
         try {
           doClose()
         } catch {
-          case t: Throwable =>
-            if (failure == null) failure = t else if (failure ne t) failure.addSuppressed(t)
+          case t: Throwable => failure = SpillFramework.addFailure(failure, t)
         }
       }
       if (failure != null) throw failure
@@ -1775,8 +1777,7 @@ trait SpillableStore[T <: SpillableHandle]
           } catch {
             case t: Throwable =>
               try postSpill(plan) catch {
-                case cleanupFailure: Throwable =>
-                  if (t ne cleanupFailure) t.addSuppressed(cleanupFailure)
+                case cleanupFailure: Throwable => SpillFramework.addFailure(t, cleanupFailure)
               }
               throw t
           }
@@ -2106,8 +2107,7 @@ class SpillableDeviceStore extends SpillableStore[DeviceStoreHandle] {
       try {
         handle.releaseSpilled()
       } catch {
-        case t: Throwable =>
-          if (failure == null) failure = t else if (failure ne t) failure.addSuppressed(t)
+        case t: Throwable => failure = SpillFramework.addFailure(failure, t)
       }
     }
     if (failure != null) throw failure
@@ -2409,6 +2409,18 @@ object SpillableTableHandle {
 }
 
 object SpillFramework extends Logging {
+  /**
+   * Returns the first failure, recording `t` as suppressed unless it is that same failure.
+   */
+  private[spill] def addFailure(failure: Throwable, t: Throwable): Throwable = {
+    if (failure == null) {
+      t
+    } else {
+      if (failure ne t) failure.addSuppressed(t)
+      failure
+    }
+  }
+
   // public for tests. Some tests not in the `spill` package require setting this
   // because they need fine control over allocations.
   var storesInternal: SpillableStores = _

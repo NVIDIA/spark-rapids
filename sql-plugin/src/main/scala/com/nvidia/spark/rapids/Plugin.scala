@@ -908,7 +908,8 @@ object RapidsExecutorPlugin extends Logging {
   }
 
   private[rapids] def waitForGpuCoreDumpThenExit(waitForDump: => Unit, exit: => Unit): Unit = {
-    var interrupted = false
+    // Clear an interrupt pending on entry so it cannot skip the dump wait or diagnostics.
+    var interrupted = Thread.interrupted()
     try {
       waitForDump
     } catch {
