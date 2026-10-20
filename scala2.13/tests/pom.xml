@@ -110,10 +110,6 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.apache.iceberg</groupId>
-            <artifactId>iceberg-spark-runtime-${iceberg.artifact.suffix}_${scala.binary.version}</artifactId>
-        </dependency>
-        <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>2.23.14</version>
@@ -122,6 +118,55 @@
     </dependencies>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>parallel-unit-tests</id>
+                            <!-- Bound to the test phase by the parallel-unit-tests and
+                                 databricks profiles. -->
+                            <phase>none</phase>
+                            <goals>
+                                <goal>exec</goal>
+                            </goals>
+                            <configuration>
+                                <!-- exec:exec does not honor -DskipTests; mirror it here so
+                                     package/install builds that skip tests stay test-free. -->
+                                <skip>${skipTests}</skip>
+                                <executable>${java.home}/bin/java</executable>
+                                <classpathScope>test</classpathScope>
+                                <arguments>
+                                    <argument>-Xmx512m</argument>
+                                    <argument>-cp</argument>
+                                    <classpath/>
+                                    <argument>com.nvidia.spark.rapids.ParallelUnitTestRunner</argument>
+                                    <argument>testClasses=${project.build.testOutputDirectory}</argument>
+                                    <argument>reportsDir=${project.build.directory}/surefire-reports</argument>
+                                    <argument>forkCount=${parallelForkCount}</argument>
+                                    <argument>wildcardSuites=${wildcardSuites}</argument>
+                                    <argument>tagsToInclude=${test.include.tags}</argument>
+                                    <argument>tagsToExclude=${test.exclude.tags}</argument>
+                                    <argument>suffixes=${suffixes}</argument>
+                                    <argument>testsFilter=${tests}</argument>
+                                    <argument>argLine=${argLine}</argument>
+                                    <argument>testJvmArgs=-ea -Xmx4g -Xss4m ${extraJavaTestArgs}</argument>
+                                    <argument>shuffleManagerOverride=${rapids.shuffle.manager.override}</argument>
+                                    <argument>allocationFraction=${rapids.test.gpu.allocFraction}</argument>
+                                    <argument>maxAllocationFraction=${rapids.test.gpu.maxAllocFraction}</argument>
+                                    <argument>minAllocationFraction=${rapids.test.gpu.minAllocFraction}</argument>
+                                    <argument>testFailureIgnore=${maven.test.failure.ignore}</argument>
+                                    <argument>sparkConfs=${parallelSparkConfs}</argument>
+                                    <argument>suiteTimeoutSeconds=${parallelSuiteTimeout}</argument>
+                                </arguments>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
@@ -174,38 +219,33 @@
                             <execution>
                                 <id>parallel-unit-tests</id>
                                 <phase>test</phase>
-                                <goals>
-                                    <goal>exec</goal>
-                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
+            <id>databricks</id>
+            <activation>
+                <property>
+                    <name>databricks</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>parallel-unit-tests</id>
+                                <phase>test</phase>
                                 <configuration>
-                                    <!-- exec:exec does not honor -DskipTests; mirror it here so
-                                         package/install builds that skip tests stay test-free. -->
-                                    <skip>${skipTests}</skip>
-                                    <executable>${java.home}/bin/java</executable>
-                                    <classpathScope>test</classpathScope>
-                                    <arguments>
-                                        <argument>-Xmx512m</argument>
-                                        <argument>-cp</argument>
-                                        <classpath/>
-                                        <argument>com.nvidia.spark.rapids.ParallelUnitTestRunner</argument>
-                                        <argument>testClasses=${project.build.testOutputDirectory}</argument>
-                                        <argument>reportsDir=${project.build.directory}/surefire-reports</argument>
-                                        <argument>forkCount=${parallelForkCount}</argument>
-                                        <argument>wildcardSuites=${wildcardSuites}</argument>
-                                        <argument>tagsToInclude=${test.include.tags}</argument>
-                                        <argument>tagsToExclude=${test.exclude.tags}</argument>
-                                        <argument>suffixes=${suffixes}</argument>
-                                        <argument>testsFilter=${tests}</argument>
-                                        <argument>argLine=${argLine}</argument>
-                                        <argument>testJvmArgs=-ea -Xmx4g -Xss4m ${extraJavaTestArgs}</argument>
-                                        <argument>shuffleManagerOverride=${rapids.shuffle.manager.override}</argument>
-                                        <argument>allocationFraction=${rapids.test.gpu.allocFraction}</argument>
-                                        <argument>maxAllocationFraction=${rapids.test.gpu.maxAllocFraction}</argument>
-                                        <argument>minAllocationFraction=${rapids.test.gpu.minAllocFraction}</argument>
-                                        <argument>testFailureIgnore=${maven.test.failure.ignore}</argument>
-                                        <argument>sparkConfs=${parallelSparkConfs}</argument>
-                                        <argument>suiteTimeoutSeconds=${parallelSuiteTimeout}</argument>
-                                    </arguments>
+                                    <!-- The jars under /databricks/jars exceed the 128 KiB
+                                         limit of one command-line argument. Pass them in a
+                                         manifest-only jar; workers inherit this classpath. -->
+                                    <longClasspath>true</longClasspath>
                                 </configuration>
                             </execution>
                         </executions>
@@ -235,6 +275,11 @@
                     <groupId>org.apache.spark</groupId>
                     <artifactId>spark-catalyst_${scala.binary.version}</artifactId>
                     <type>test-jar</type>
+                </dependency>
+                <!-- The OSS Iceberg runtime bundles Spark classes that shadow the Databricks ones. -->
+                <dependency>
+                    <groupId>org.apache.iceberg</groupId>
+                    <artifactId>iceberg-spark-runtime-${iceberg.artifact.suffix}_${scala.binary.version}</artifactId>
                 </dependency>
                 <dependency>
                     <groupId>org.scalatestplus</groupId>

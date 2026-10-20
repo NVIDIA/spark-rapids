@@ -1017,6 +1017,33 @@
         </profile>
         --><!-- #endif scala-2.13 -->
         <profile>
+            <id>databricks-tests</id>
+            <activation>
+                <property>
+                    <name>databricks</name>
+                </property>
+            </activation>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <!-- The scalatest plugin passes the classpath in a single CLASSPATH
+                             variable, which /databricks/jars exceeds. The tests module runs
+                             its suites with the parallel runner instead. -->
+                        <plugin>
+                            <groupId>org.scalatest</groupId>
+                            <artifactId>scalatest-maven-plugin</artifactId>
+                            <executions>
+                                <execution>
+                                    <id>test</id>
+                                    <phase>none</phase>
+                                </execution>
+                            </executions>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
+        </profile>
+        <profile>
             <id>source-javadoc</id>
             <build>
                 <plugins>
@@ -1317,6 +1344,7 @@
             --add-opens=java.base/sun.nio.cs=ALL-UNNAMED
             --add-opens=java.base/sun.security.action=ALL-UNNAMED
             --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+            --add-opens=java.management/sun.management=ALL-UNNAMED
             -Djdk.reflect.useDirectMethodHandle=false
         </extraJavaTestArgs>
         <cloudera.repo.enabled>false</cloudera.repo.enabled>
@@ -1931,7 +1959,8 @@ This will force full Scala code rebuild in downstream modules.
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>exec-maven-plugin</artifactId>
-                    <version>3.0.0</version>
+                    <!-- 3.1.0+ honors longClasspath for -cp in <arguments> -->
+                    <version>3.1.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
