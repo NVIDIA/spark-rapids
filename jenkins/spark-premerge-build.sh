@@ -182,7 +182,7 @@ run_iceberg_version_detect_tests() {
     echo "Running Iceberg version detection tests for Spark $spark_ver (Scala $scala_ver)..."
 
     local iceberg_versions
-    iceberg_versions=$(MVN="${MVN:-mvn}" python scripts/get_iceberg_versions.py list \
+    iceberg_versions=$(python scripts/get_iceberg_versions.py list \
         --spark-version "$spark_ver") || return 1
     if [[ -z "$iceberg_versions" ]]; then
         # Issue #15875 can exclude packaged combinations below the minimum test baselines.
@@ -200,7 +200,7 @@ run_iceberg_version_detect_tests() {
             PYSP_TEST_spark_sql_catalog_spark__catalog="org.apache.iceberg.spark.SparkSessionCatalog" \
             PYSP_TEST_spark_sql_catalog_spark__catalog_type="hadoop" \
             PYSP_TEST_spark_sql_catalog_spark__catalog_warehouse="/tmp/spark-warehouse-$RANDOM" \
-            ./integration_tests/run_pyspark_from_build.sh -m iceberg --iceberg -k test_iceberg_version_detection
+            TEST_TAGS=iceberg ./integration_tests/run_pyspark_from_build.sh --iceberg -k test_iceberg_version_detection
     done
 }
 

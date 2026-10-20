@@ -553,8 +553,17 @@ EXPECTED_ICEBERG_VERSION=1.10.1 \
   ./integration_tests/run_pyspark_from_build.sh -m 'iceberg and iceberg_fast_test' --iceberg
 ```
 
-For nightly Iceberg jobs, set the existing `TEST_TAGS=iceberg_fast_test` selector.
-Normal runs use `-m iceberg`; catalog and version restrictions still apply to selected tests.
+Nightly pipelines control version and suite selection through `ICEBERG_VERSIONS` and `TEST_TAGS`.
+For example, `ICEBERG_VERSIONS=1.10.1 TEST_TAGS=iceberg_fast_test` runs only that runtime with the
+fast suite; omit `TEST_TAGS` for its full suite. Multiple requested versions run in the supplied order.
+Without `ICEBERG_VERSIONS`, the job runs every JSON-selected version; without `TEST_TAGS`, each
+uses the full Iceberg suite. The caller does not schedule full versus fast runs automatically.
+Catalog and version restrictions still apply. A marker filter matching no tests retains pytest's
+failure status; it is distinct from a successful skip for an empty version selection.
+
+Runtime version queries read only `scripts/iceberg-versions.json`. The dedicated premerge validation
+job checks the complete matrix against Maven using the canonical Scala 2.13 POM, which includes the
+Spark 4 profiles absent from the Scala 2.12 reactor.
 
 When testing Iceberg package-private access paths, load the local Iceberg runtime jar with
 `ICEBERG_EXTRA_CLASSPATH` instead of `PYSP_TEST_spark_jars` or

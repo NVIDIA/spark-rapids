@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import copy
 import io
@@ -64,15 +65,18 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
 
     def _load_document(self, document: Dict[str, Any]) -> MATRIX_READER.IcebergVersionMatrix:
         self.matrix_path.write_text(json.dumps(document), encoding="utf-8")
-        return MATRIX_READER.IcebergVersionMatrix.load(self.matrix_path, self.pom_path)
+        matrix = MATRIX_READER.IcebergVersionMatrix.load(self.matrix_path)
+        matrix.validate(self.pom_path)
+        return matrix
 
     def _run_cli(self, command: str, *arguments: str) -> Tuple[int, str, str]:
         stdout = io.StringIO()
         stderr = io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            exit_code = MATRIX_READER.main([
-                command, "--matrix", str(self.matrix_path),
-                "--pom", str(self.pom_path), *arguments])
+            inputs = ["--matrix", str(self.matrix_path)]
+            if command == "validate":
+                inputs += ["--pom", str(self.pom_path)]
+            exit_code = MATRIX_READER.main([command, *inputs, *arguments])
         return exit_code, stdout.getvalue(), stderr.getvalue()
 
     def test_selects_representative_versions(self) -> None:
@@ -131,13 +135,17 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
         with self.assertRaisesRegex(MATRIX_READER.MatrixError, "missing 3.5.6"):
             self._load_document(self.document)
 
-    def test_cli_fails_for_missing_mapping_instead_of_skipping(self) -> None:
+    def test_queries_do_not_invoke_maven_or_validate_other_mappings(self) -> None:
         self.document["iceberg_versions"][1]["spark_versions"].pop(0)
         self.matrix_path.write_text(json.dumps(self.document), encoding="utf-8")
-        exit_code, stdout, stderr = self._run_cli("list", "--spark-version", "3.5.5")
-        self.assertEqual(1, exit_code)
-        self.assertEqual("", stdout)
-        self.assertIn("missing 3.5.5", stderr)
+        self.maven.reset_mock()
+        self.maven.side_effect = FileNotFoundError("Maven must not run for queries")
+        self.assertEqual((0, "1.9.2 1.10.1\n", ""),
+                         self._run_cli("list", "--spark-version", "3.5.7"))
+        self.assertEqual((0, "1.10.1\n", ""), self._run_cli(
+            "validate-requested", "--spark-version", "3.5.7",
+            "--requested-versions", "1.10.1"))
+        self.maven.assert_not_called()
 
     def test_cli_explains_empty_selections(self) -> None:
         # 4.2.0 represents the stub family. Below-baseline patches are also valid
@@ -247,6 +255,9 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
             ["validate", "--spark-version", "3.5.6"],
             ["validate", "--requested-versions", "1.10.1"],
             ["list", "--spark-version", "3.5.6", "--requested-versions", "1.10.1"],
+            ["list", "--spark-version", "3.5.6", "--pom", "pom.xml"],
+            ["validate-requested", "--spark-version", "3.5.6",
+             "--requested-versions", "1.10.1", "--pom", "pom.xml"],
         )
         for arguments in cases:
             with self.subTest(arguments=arguments):
@@ -386,7 +397,7 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
 
     def test_cli_reports_maven_failure_without_skipping(self) -> None:
         self.maven.side_effect = MATRIX_READER.MatrixError("Maven effective-POM failed: bad model")
-        exit_code, stdout, stderr = self._run_cli("list", "--spark-version", "3.5.7")
+        exit_code, stdout, stderr = self._run_cli("validate")
         self.assertEqual(1, exit_code)
         self.assertEqual("", stdout)
         self.assertIn("Maven effective-POM failed: bad model", stderr)
@@ -454,6 +465,16 @@ class MavenEffectivePomSuite(unittest.TestCase):
         self.assertEqual(subprocess.STDOUT, run.call_args[1]["stderr"])
         self.assertEqual(3, len(projects))
 
+    def test_rejects_ambient_profile_selection_before_maven_runs(self) -> None:
+        for options in ("-P release350", "-Prelease350", "--activate-profiles=release350",
+                        "-Dbuildver=350", "-D buildver=350", "--define=buildver=350",
+                        "--define buildver=350"):
+            with self.subTest(options=options), patch.dict(os.environ, {"MVN": "mvn " + options}), \
+                    patch.object(subprocess, "run") as run:
+                with self.assertRaisesRegex(MATRIX_READER.MatrixError, "must not select profiles"):
+                    MATRIX_READER._effective_pom(Path("pom.xml"), "release357")
+                run.assert_not_called()
+
     def test_parent_discovery_is_non_recursive(self) -> None:
         with patch.object(subprocess, "run", side_effect=self._run_maven) as run:
             projects = MATRIX_READER._effective_pom(Path("parent/pom.xml"))
@@ -468,7 +489,7 @@ class MavenEffectivePomSuite(unittest.TestCase):
                 MATRIX_READER._effective_pom(Path("pom.xml"), "release357")
 
 
-class IcebergCatalogCallerSuite(unittest.TestCase):
+class IcebergCallerFixture(unittest.TestCase):
     def setUp(self) -> None:
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -481,12 +502,6 @@ class IcebergCatalogCallerSuite(unittest.TestCase):
             (REPO_ROOT / "scripts" / "get_iceberg_versions.py").read_text(), encoding="utf-8")
         (scripts / "iceberg-versions.json").write_text(
             (FIXTURE_DIR / "iceberg-versions.json").read_text(), encoding="utf-8")
-        pom = self.workspace / "scala2.13" / "pom.xml"
-        pom.parent.mkdir()
-        pom.write_text((FIXTURE_DIR / "effective-parent.xml").read_text(), encoding="utf-8")
-        settings = self.workspace / "jenkins" / "settings.xml"
-        settings.parent.mkdir()
-        settings.write_text("<settings />", encoding="utf-8")
         binary_dir = self.workspace / "bin"
         binary_dir.mkdir()
         python = binary_dir / "python"
@@ -495,7 +510,6 @@ class IcebergCatalogCallerSuite(unittest.TestCase):
             'exec "$PYTHON_EXECUTABLE" "$@"\n', encoding="utf-8")
         python.chmod(0o755)
         self.invocations = self.workspace / "runner.log"
-        self.maven_log = self.workspace / "maven.log"
         self.cwd_log = self.workspace / "cwd.log"
         self.reader_log = self.workspace / "reader.log"
         self.marker_log = self.workspace / "markers.log"
@@ -503,13 +517,13 @@ class IcebergCatalogCallerSuite(unittest.TestCase):
         runner.write_text(
             '#!/usr/bin/env bash\nprintf "%s|%s\\n" "$EXPECTED_ICEBERG_VERSION" "$PWD" '
             '>> "$INVOCATIONS"\n'
-            'while [[ $# -gt 0 ]]; do\n'
-            '  if [[ "$1" == "-m" ]]; then\n'
-            '    printf "%s\\n" "$2" >> "$MARKER_LOG"\n'
-            '    break\n'
+            'printf "%s\\n" "$TEST_TAGS" >> "$MARKER_LOG"\n'
+            'for argument in "$@"; do\n'
+            '  if [[ "$argument" == "-m" ]]; then\n'
+            '    echo "duplicate marker argument" >&2; exit 99\n'
             '  fi\n'
-            '  shift\n'
-            'done\n', encoding="utf-8")
+            'done\n'
+            'exit "${RUNNER_STATUS:-0}"\n', encoding="utf-8")
         runner.chmod(0o755)
         source = (REPO_ROOT / "jenkins" / "spark-tests.sh").read_text()
         start = source.index("run_iceberg_tests() {")
@@ -517,11 +531,13 @@ class IcebergCatalogCallerSuite(unittest.TestCase):
         self.definition = self.workspace / "functions.sh"
         self.definition.write_text(source[start:end], encoding="utf-8")
 
+
+class IcebergCatalogCallerSuite(IcebergCallerFixture):
     def _run_catalog(self, catalog: str, requested: Optional[str] = None,
-                     settings: str = "jenkins/settings.xml", spark_version: str = "3.5.7",
-                     test_tags: Optional[str] = None) -> Tuple[
-                         subprocess.CompletedProcess[str], List[str], List[str]]:
-        for log in (self.invocations, self.maven_log, self.cwd_log, self.reader_log, self.marker_log):
+                     spark_version: str = "3.5.7", test_tags: Optional[str] = None,
+                     runner_status: int = 0) -> Tuple[
+                         subprocess.CompletedProcess[str], List[str]]:
+        for log in (self.invocations, self.cwd_log, self.reader_log, self.marker_log):
             if log.exists():
                 log.unlink()
         environment = os.environ.copy()
@@ -530,12 +546,11 @@ class IcebergCatalogCallerSuite(unittest.TestCase):
         environment.update(
             WORKSPACE=str(self.workspace), SPARK_VER=spark_version, SCALA_BINARY_VER="2.13",
             PROJECT_REPO_HOST="unused", ICEBERG_REST_CREDENTIAL="unused",
-            MAVEN_FIXTURES=str(FIXTURE_DIR), FAKE_MAVEN=str(FIXTURE_DIR / "fake-maven.sh"),
-            MAVEN_LOG=str(self.maven_log), INVOCATIONS=str(self.invocations),
+            MVN="missing-mvn -Pextra -Dbuildver=999", INVOCATIONS=str(self.invocations),
             CWD_LOG=str(self.cwd_log), DEFINITION=str(self.definition),
             READER_LOG=str(self.reader_log), PYTHON_EXECUTABLE=sys.executable,
             MARKER_LOG=str(self.marker_log),
-            MVN_SETTINGS=settings, CATALOG=catalog,
+            RUNNER_STATUS=str(runner_status), CATALOG=catalog,
             PATH=str(self.workspace / "bin") + os.pathsep + environment.get("PATH", ""))
         if requested is not None:
             environment["ICEBERG_VERSIONS"] = requested
@@ -544,51 +559,57 @@ class IcebergCatalogCallerSuite(unittest.TestCase):
         command = '''set -e
 source "$DEFINITION"
 download_maven_jars() { printf '/fixture-jars\\n'; }
-MVN="bash \\"$FAKE_MAVEN\\" -s \\"$MVN_SETTINGS\\""
 run_iceberg_tests "$CATALOG"
 printf '%s\\n' "$PWD" > "$CWD_LOG"
 '''
         result = subprocess.run(["bash", "-c", command], cwd=self.artifacts,
                                 env=environment, text=True, capture_output=True)
         calls = self.invocations.read_text().splitlines() if self.invocations.exists() else []
-        maven_calls = self.maven_log.read_text().splitlines() if self.maven_log.exists() else []
-        return result, calls, maven_calls
+        return result, calls
 
-    def test_relative_settings_for_all_catalogs(self) -> None:
+    def test_json_only_selection_for_all_catalogs(self) -> None:
         for catalog in ("default", "rest", "s3tables"):
             with self.subTest(catalog=catalog):
-                result, calls, maven_calls = self._run_catalog(catalog)
+                result, calls = self._run_catalog(catalog)
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertEqual([f"1.9.2|{self.artifacts}", f"1.10.1|{self.artifacts}"], calls)
-                self.assertEqual([f"{self.workspace}|jenkins/settings.xml"] * 9, maven_calls)
                 self.assertEqual(["list"], self.reader_log.read_text().splitlines())
                 self.assertEqual(["iceberg"] * 2, self.marker_log.read_text().splitlines())
                 self.assertEqual(str(self.artifacts), self.cwd_log.read_text().strip())
 
-    def test_requested_versions_use_workspace_settings_for_all_catalogs(self) -> None:
+    def test_requested_versions_preserve_order_without_maven_for_all_catalogs(self) -> None:
         for catalog in ("default", "rest", "s3tables"):
             with self.subTest(catalog=catalog):
-                result, calls, maven_calls = self._run_catalog(catalog, "1.10.1, 1.9.2")
+                result, calls = self._run_catalog(catalog, "1.10.1, 1.9.2")
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertEqual([f"1.10.1|{self.artifacts}", f"1.9.2|{self.artifacts}"], calls)
-                self.assertEqual([f"{self.workspace}|jenkins/settings.xml"] * 9, maven_calls)
                 self.assertEqual(["validate-requested"], self.reader_log.read_text().splitlines())
                 self.assertEqual(str(self.artifacts), self.cwd_log.read_text().strip())
 
-    def test_missing_settings_fail_before_running_any_catalog_tests(self) -> None:
+    def test_pipeline_single_version_full_and_fast_for_all_catalogs(self) -> None:
         for catalog in ("default", "rest", "s3tables"):
-            with self.subTest(catalog=catalog):
-                result, calls, maven_calls = self._run_catalog(catalog, settings="missing.xml")
-                self.assertNotEqual(0, result.returncode)
-                self.assertEqual([], calls)
-                self.assertEqual([f"{self.workspace}|missing.xml"], maven_calls)
-                self.assertIn("missing Maven settings: missing.xml", result.stderr)
+            for tags in (None, "iceberg_fast_test"):
+                with self.subTest(catalog=catalog, tags=tags):
+                    result, calls = self._run_catalog(
+                        catalog, requested="1.10.1", test_tags=tags)
+                    self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                    self.assertEqual([f"1.10.1|{self.artifacts}"], calls)
+                    expected = "iceberg" if tags is None else "iceberg and (iceberg_fast_test)"
+                    self.assertEqual([expected], self.marker_log.read_text().splitlines())
 
+    def test_runner_failures_including_no_matching_tests_are_not_hidden(self) -> None:
+        for catalog in ("default", "rest", "s3tables"):
+            for status in (1, 5):
+                with self.subTest(catalog=catalog, status=status):
+                    result, calls = self._run_catalog(
+                        catalog, requested="1.10.1", runner_status=status)
+                    self.assertEqual(status, result.returncode)
+                    self.assertEqual(1, len(calls))
 
     def test_marker_selector_reaches_all_catalog_runners(self) -> None:
         for catalog in ("default", "rest", "s3tables"):
             with self.subTest(catalog=catalog):
-                result, calls, _ = self._run_catalog(catalog, test_tags="iceberg_fast_test")
+                result, calls = self._run_catalog(catalog, test_tags="iceberg_fast_test")
                 self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                 self.assertEqual(2, len(calls))
                 self.assertEqual(["iceberg and (iceberg_fast_test)"] * 2,
@@ -598,7 +619,7 @@ printf '%s\\n' "$PWD" > "$CWD_LOG"
         for catalog in ("default", "rest", "s3tables"):
             for requested in (None, " , "):
                 with self.subTest(catalog=catalog, requested=requested):
-                    result, calls, _ = self._run_catalog(
+                    result, calls = self._run_catalog(
                         catalog, requested=requested, spark_version="3.5.4")
                     self.assertEqual(0, result.returncode, result.stdout + result.stderr)
                     self.assertEqual([], calls)
@@ -609,12 +630,107 @@ printf '%s\\n' "$PWD" > "$CWD_LOG"
     def test_invalid_requests_fail_without_listing_or_starting_tests(self) -> None:
         for catalog in ("default", "rest", "s3tables"):
             with self.subTest(catalog=catalog):
-                result, calls, _ = self._run_catalog(catalog, requested="9.9.9")
+                result, calls = self._run_catalog(catalog, requested="9.9.9")
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual([], calls)
                 self.assertEqual(["validate-requested"], self.reader_log.read_text().splitlines())
                 self.assertIn("not present in the test matrix", result.stderr)
                 self.assertNotIn("No supported Iceberg version found", result.stdout)
+
+
+class IcebergPremergeCallerSuite(IcebergCallerFixture):
+    def setUp(self) -> None:
+        super().setUp()
+        source = (REPO_ROOT / "jenkins" / "spark-premerge-build.sh").read_text()
+        start = source.index("run_iceberg_version_detect_tests() {")
+        end = source.index("\n}\n", start) + len("\n}\n")
+        self.definition.write_text(source[start:end], encoding="utf-8")
+        integration = self.workspace / "integration_tests"
+        integration.mkdir()
+        (integration / "run_pyspark_from_build.sh").symlink_to(
+            self.artifacts / "run_pyspark_from_build.sh")
+
+    def _run_premerge(self, spark_version: str, runner_status: int = 0) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update(
+            MVN="missing-mvn -Pextra -Dbuildver=999", SPARK_VER=spark_version,
+            DEFINITION=str(self.definition), INVOCATIONS=str(self.invocations),
+            READER_LOG=str(self.reader_log), MARKER_LOG=str(self.marker_log),
+            TEST_TAGS="iceberg_fast_test", RUNNER_STATUS=str(runner_status),
+            PYTHON_EXECUTABLE=sys.executable,
+            PATH=str(self.workspace / "bin") + os.pathsep + environment.get("PATH", ""))
+        return subprocess.run(
+            ["bash", "-ec", 'source "$DEFINITION"; run_iceberg_version_detect_tests "$SPARK_VER" 2.13'],
+            cwd=self.workspace, env=environment, text=True, capture_output=True)
+
+    def test_version_detection_runs_all_json_selected_versions_without_maven(self) -> None:
+        result = self._run_premerge("3.5.7")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual([f"1.9.2|{self.workspace}", f"1.10.1|{self.workspace}"],
+                         self.invocations.read_text().splitlines())
+        self.assertEqual(["iceberg", "iceberg"], self.marker_log.read_text().splitlines())
+        self.assertEqual(["list"], self.reader_log.read_text().splitlines())
+
+    def test_version_detection_empty_selection_skips_without_runner(self) -> None:
+        result = self._run_premerge("3.5.4")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertFalse(self.invocations.exists())
+        self.assertIn("Skipping Iceberg version detection", result.stdout)
+
+    def test_version_detection_malformed_matrix_fails_before_runner(self) -> None:
+        (self.workspace / "scripts" / "iceberg-versions.json").write_text("{")
+        result = self._run_premerge("3.5.7")
+        self.assertEqual(1, result.returncode)
+        self.assertFalse(self.invocations.exists())
+        self.assertIn("Iceberg test matrix error", result.stderr)
+
+    def test_version_detection_runner_failure_stops_remaining_versions(self) -> None:
+        result = self._run_premerge("3.5.7", runner_status=1)
+        self.assertEqual(1, result.returncode)
+        self.assertEqual([f"1.9.2|{self.workspace}"], self.invocations.read_text().splitlines())
+
+
+class IcebergFastCatalogCoverageSuite(unittest.TestCase):
+    def _skipped(self, condition: ast.expr, remote: bool, rest: bool) -> bool:
+        if isinstance(condition, ast.Call) and isinstance(condition.func, ast.Name):
+            return {"is_iceberg_remote_catalog": remote,
+                    "is_iceberg_rest_catalog": rest}[condition.func.id]
+        if isinstance(condition, ast.UnaryOp) and isinstance(condition.op, ast.Not):
+            return not self._skipped(condition.operand, remote, rest)
+        self.fail(f"Unrecognized catalog guard: {ast.unparse(condition)}")
+
+    def test_fast_allowlist_matches_tests_shared_by_local_and_remote_catalogs(self) -> None:
+        fast = set()
+        shared = set()
+        for path in (REPO_ROOT / "integration_tests/src/main/python/iceberg").glob("*_test.py"):
+            module = ast.parse(path.read_text())
+            module_marks = [node.value for node in module.body if isinstance(node, ast.Assign)
+                            and any(isinstance(t, ast.Name) and t.id == "pytestmark"
+                                    for t in node.targets)]
+            for function in module.body:
+                if not isinstance(function, ast.FunctionDef) or not function.name.startswith("test_"):
+                    continue
+                if not any(isinstance(d, ast.Name) and d.id == "iceberg"
+                           for d in function.decorator_list):
+                    continue
+                key = (path.name, function.name)
+                if any(isinstance(d, ast.Name) and d.id == "iceberg_fast_test"
+                       for d in function.decorator_list):
+                    fast.add(key)
+                guards = [node.args[0] for mark in module_marks + function.decorator_list
+                          for node in ast.walk(mark)
+                          if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                          and node.func.attr == "skipif" and node.args
+                          and any(isinstance(name, ast.Name) and name.id in
+                                  ("is_iceberg_remote_catalog", "is_iceberg_rest_catalog")
+                                  for name in ast.walk(node.args[0]))]
+                if not any(self._skipped(guard, remote, rest)
+                           for remote, rest in ((False, False), (True, False), (True, True))
+                           for guard in guards):
+                    shared.add(key)
+        self.assertTrue(fast, "No Iceberg fast markers found")
+        self.assertEqual(shared, fast,
+                         "Update the fast marker or catalog skip when changing suite eligibility")
 
 
 if __name__ == "__main__":

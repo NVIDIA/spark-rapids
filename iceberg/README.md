@@ -21,11 +21,10 @@ The integration-test source of truth is maintained in
 [`scripts/iceberg-versions.json`](../scripts/iceberg-versions.json).
 
 For Spark 3.5.4+, both `iceberg-1-9-x` and `iceberg-1-10-x` modules are compiled into the
-build. The correct version-specific implementation is
-selected at runtime by probing the `iceberg-spark-runtime` jar on the classpath.
-Version-specific code lives in distinct sub-packages (`iceberg19x`, `iceberg110x`,
-`iceberg111x`) to avoid class conflicts, and the common `ShimUtils` dispatcher delegates to
-the appropriate implementation.
+build. The correct version-specific implementation is selected at runtime by probing the
+`iceberg-spark-runtime` jar on the classpath. Version-specific code lives in distinct
+sub-packages (`iceberg19x`, `iceberg110x`, `iceberg111x`) to avoid class conflicts, and the
+common `ShimUtils` dispatcher delegates to the appropriate implementation.
 
 For Spark 4.0.0-4.0.1, only `iceberg-1-10-x` is compiled during the build. For Spark
 4.0.2+, both `iceberg-1-10-x` and `iceberg-1-11-x` are compiled, and the correct

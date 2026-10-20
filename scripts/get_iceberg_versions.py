@@ -34,10 +34,12 @@ import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, TypeVar, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple, Type, TypeVar, Union
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MATRIX = REPO_ROOT / "scripts" / "iceberg-versions.json"
+# Scala 2.13 is the canonical packaging source: it includes Spark 4 profiles
+# absent from the Scala 2.12 reactor. Runtime queries only read DEFAULT_MATRIX.
 DEFAULT_POM = REPO_ROOT / "scala2.13" / "pom.xml"
 VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 SPARK_PROPERTY_PATTERN = re.compile(r"^spark[0-9]+\.version$")
@@ -60,33 +62,24 @@ def _version_parts(version: str) -> Tuple[int, int, int]:
     return int(major), int(minor), int(patch)
 
 
-@dataclass(frozen=True, order=True)
-class SparkVersion:
-    """A release Spark version, ordered numerically by major, minor, and patch.
+Release = TypeVar("Release", bound="_ReleaseVersion")
 
-    Attributes:
-        major: Nonnegative Spark major release number.
-        minor: Nonnegative minor release number within the major release.
-        patch: Nonnegative patch release number within the minor release.
-    """
+
+@dataclass(frozen=True, order=True)
+class _ReleaseVersion:
+    """Shared numeric release implementation; subclasses retain distinct domains."""
 
     major: int
     minor: int
     patch: int
 
     def __post_init__(self) -> None:
-        """Reject noninteger or negative release components."""
         _validate_version_parts(self.major, self.minor, self.patch)
 
     @classmethod
-    def parse(cls, version: str) -> SparkVersion:
+    def parse(cls: Type[Release], version: str) -> Release:
         """Parse an exact major.minor.patch release; raise MatrixError otherwise."""
         return cls(*_version_parts(version))
-
-    @property
-    def family(self) -> str:
-        """Return the major.minor family used to look up minimum test baselines."""
-        return f"{self.major}.{self.minor}"
 
     def __str__(self) -> str:
         """Return the release string used by JSON and the command line."""
@@ -94,31 +87,26 @@ class SparkVersion:
 
 
 @dataclass(frozen=True, order=True)
-class IcebergVersion:
-    """An Iceberg runtime release, distinct from a Spark version.
+class SparkVersion(_ReleaseVersion):
+    """A Spark release with nonnegative integer major, minor, and patch fields.
 
-    Attributes:
-        major: Nonnegative Iceberg major release number.
-        minor: Nonnegative minor release number within the major release.
-        patch: Nonnegative patch release number within the minor release.
+    Releases are ordered numerically within the Spark domain. Parsing and string
+    formatting use exact major.minor.patch strings, without snapshot suffixes.
     """
 
-    major: int
-    minor: int
-    patch: int
+    @property
+    def family(self) -> str:
+        """Return the major.minor family used to look up minimum test baselines."""
+        return f"{self.major}.{self.minor}"
 
-    def __post_init__(self) -> None:
-        """Reject noninteger or negative release components."""
-        _validate_version_parts(self.major, self.minor, self.patch)
 
-    @classmethod
-    def parse(cls, version: str) -> IcebergVersion:
-        """Parse an exact major.minor.patch runtime; raise MatrixError otherwise."""
-        return cls(*_version_parts(version))
+@dataclass(frozen=True, order=True)
+class IcebergVersion(_ReleaseVersion):
+    """An Iceberg release with nonnegative integer major, minor, and patch fields.
 
-    def __str__(self) -> str:
-        """Return the runtime string used by JSON and the command line."""
-        return f"{self.major}.{self.minor}.{self.patch}"
+    Numeric ordering, parsing, and formatting share the release implementation,
+    while equality and ordering remain distinct from the Spark version domain.
+    """
 
 
 def _validate_version_parts(major: int, minor: int, patch: int) -> None:
@@ -161,6 +149,15 @@ def _effective_pom(pom_path: Path, profile: Optional[str] = None,
     Captured Maven logs cannot contaminate the shell-readable CLI output.
     """
     command = shlex.split(os.environ.get("MVN", "mvn"))
+    for index, argument in enumerate(command[1:], start=1):
+        defines_buildver = argument in ("-Dbuildver", "--define=buildver") or \
+            argument.startswith(("-Dbuildver=", "--define=buildver="))
+        if argument in ("-D", "--define") and index + 1 < len(command):
+            defines_buildver = command[index + 1].split("=", 1)[0] == "buildver"
+        if argument.startswith(("-P", "--activate-profiles")) or defines_buildver:
+            raise MatrixError(
+                "MVN must not select profiles (-P or -Dbuildver); "
+                "validate evaluates each release profile itself")
     command.extend(["-B", "-q", "-f", str(pom_path.resolve())])
     if profile is None:
         command.append("-N")
@@ -356,8 +353,6 @@ class IcebergSupport:
             if not isinstance(version, SparkVersion) or not isinstance(support, SparkSupport):
                 raise MatrixError(
                     f"Spark entries for Iceberg {self.version} require version and supported")
-            if support.version != version:
-                raise MatrixError(f"Spark key {version} disagrees with record {support.version}")
 
     def validate(self, packaging: MavenPackaging) -> None:
         """Compare eligible Spark records and support flags with inferred Maven combinations.
@@ -424,7 +419,7 @@ class IcebergSupport:
 class IcebergVersionMatrix:
     """Collection of Iceberg releases used to select CI test combinations.
 
-    Use ``load`` to decode the JSON records and validate their Maven combinations.
+    Use ``load`` for JSON-only queries and ``validate`` for the premerge Maven check.
 
     Attributes:
         iceberg_supports: Records keyed by IcebergVersion in JSON order. ``load`` requires a
@@ -443,47 +438,57 @@ class IcebergVersionMatrix:
                for version, support in self.iceberg_supports.items()):
             raise MatrixError(
                 "each Iceberg entry requires version, upstream_minimums, and spark_versions")
-        if any(version != support.version for version, support in self.iceberg_supports.items()):
-            raise MatrixError("Iceberg version keys disagree with their records")
 
     @classmethod
-    def load(cls, matrix_path: Path = DEFAULT_MATRIX,
-             pom_path: Path = DEFAULT_POM) -> IcebergVersionMatrix:
-        """Decode JSON dataclasses, validate the inferred Maven combinations, and return them.
+    def load(cls, matrix_path: Path = DEFAULT_MATRIX) -> IcebergVersionMatrix:
+        """Decode and check the JSON schema without invoking Maven.
 
         Args:
-            matrix_path: JSON file with a single ``iceberg_versions`` list.
-                Defaults to the repository's ``scripts/iceberg-versions.json``.
-            pom_path: Maven POM supplying the Spark shim properties and profiles.
-                Defaults to the repository's ``scala2.13/pom.xml``. Its included Iceberg
-                module POMs supply the packaged runtime versions.
+            matrix_path: Reviewable integration-test JSON source of truth.
+
+        Returns:
+            Typed, version-indexed records in JSON order. The standard-library
+            object hook constructs the dataclasses and checks their fields.
 
         Raises:
-            MatrixError: The schema, an entry, or its inferred Maven support is
-                invalid, or a packaged Iceberg version is missing from the matrix.
-            OSError: The JSON cannot be read, Maven cannot run, or its output is unreadable.
-            json.JSONDecodeError: The matrix is not valid JSON.
-            ET.ParseError: Maven's effective POM output is not well-formed XML.
+            MatrixError: The schema, versions, duplicates, or reasons are invalid.
+            OSError, json.JSONDecodeError: The JSON cannot be read or parsed.
 
-        The standard-library JSON ``object_hook`` constructs the dataclasses using
-        their field metadata and constructor validation. Maven comparison covers
-        the entire matrix before any individual version query.
+        Packaging drift is checked separately by ``validate`` in premerge.
         """
         with open(matrix_path, encoding="utf-8") as stream:
             matrix = json.load(stream, object_hook=_decode_matrix_record)
         if not isinstance(matrix, cls):
             raise MatrixError("matrix must contain only an iceberg_versions list")
+        return matrix
+
+    def validate(self, pom_path: Path = DEFAULT_POM) -> None:
+        """Check the complete matrix against Maven packaging and test baselines.
+
+        Args:
+            pom_path: Canonical Scala 2.13 parent POM, which includes Spark 4
+                profiles absent from the Scala 2.12 reactor. Overrides support
+                fixture or alternate reactors; a Scala 2.12-only POM cannot
+                validate the complete cross-Spark matrix.
+
+        Raises:
+            MatrixError: Maven fails, a packaged runtime is missing, or a mapping
+                disagrees with the minimum-baseline and packaging policy.
+            OSError, ET.ParseError: Maven or its generated XML is unavailable.
+
+        Only the explicit premerge validation command calls Maven. Runtime
+        selection through ``load`` and the query methods needs only JSON.
+        """
         packaging = MavenPackaging.load(pom_path)
         packaged_versions: Set[IcebergVersion] = set().union(
             *packaging.iceberg_versions_by_spark.values())
-        missing = packaged_versions - matrix.iceberg_supports.keys()
+        missing = packaged_versions - self.iceberg_supports.keys()
         if missing:
             raise MatrixError(
                 "packaged Iceberg versions missing from the matrix: "
                 f"{', '.join(map(str, sorted(missing)))}")
-        for support in matrix.iceberg_supports.values():
+        for support in self.iceberg_supports.values():
             support.validate(packaging)
-        return matrix
 
     def supported_iceberg_versions(self, spark_version: str) -> List[str]:
         """Return enabled Iceberg versions for Spark, preserving matrix order.
@@ -579,7 +584,7 @@ def _print_versions(spark_version: str, versions: List[str]) -> None:
     """Print shell-readable versions and explain an empty selection on stderr."""
     if not versions:
         # A valid matrix can intentionally exclude even a packaged combination.
-        # Missing entries for shims at or above a baseline fail during load().
+        # Premerge validation rejects missing entries at or above a baseline.
         print(
             f"No Iceberg versions selected for Spark {spark_version}: "
             "the minimum-baseline and packaging test policy excludes all entries "
@@ -609,15 +614,15 @@ def command_validate(args: argparse.Namespace) -> None:
 
     These failures reach ``main``, which reports them and returns exit status 1.
     """
-    IcebergVersionMatrix.load(args.matrix, args.pom)
+    IcebergVersionMatrix.load(args.matrix).validate(args.pom)
 
 
 def command_list(args: argparse.Namespace) -> None:
-    """Validate the inputs and print matrix-selected Iceberg versions for Spark.
+    """Read JSON and print matrix-selected Iceberg versions without Maven.
 
     Args:
         args: Parsed ``list`` arguments containing the ``matrix`` JSON path,
-            the ``pom`` path, and the exact ``spark_version`` to query.
+            and the exact ``spark_version`` to query.
 
     Returns:
         None after printing space-separated versions in matrix order and a
@@ -625,12 +630,12 @@ def command_list(args: argparse.Namespace) -> None:
         on stderr; it is successful and lets CI skip that Spark combination.
 
     Raises:
-        MatrixError: Matrix validation fails or the Spark query is malformed,
+        MatrixError: JSON schema validation fails or the Spark query is malformed,
             including a snapshot in a family covered by the matrix.
-        OSError, json.JSONDecodeError, ET.ParseError: An input cannot be read
+        OSError, json.JSONDecodeError: The JSON cannot be read
             or parsed. ``main`` reports these failures and returns status 1.
     """
-    matrix = IcebergVersionMatrix.load(args.matrix, args.pom)
+    matrix = IcebergVersionMatrix.load(args.matrix)
     versions = matrix.supported_iceberg_versions(args.spark_version)
     _print_versions(args.spark_version, versions)
 
@@ -639,8 +644,8 @@ def command_validate_requested(args: argparse.Namespace) -> None:
     """Validate caller-selected versions for Spark and echo them in caller order.
 
     Args:
-        args: Parsed ``validate-requested`` arguments containing ``matrix`` and
-            ``pom`` paths, an exact Spark release in ``spark_version``, and a
+        args: Parsed ``validate-requested`` arguments containing the ``matrix``
+            JSON path, an exact Spark release in ``spark_version``, and a
             comma- or whitespace-separated ``requested_versions`` string.
 
     Returns:
@@ -651,12 +656,13 @@ def command_validate_requested(args: argparse.Namespace) -> None:
     Raises:
         MatrixError: The matrix or Spark release is invalid, or a requested
             Iceberg version is unknown, below the test baseline, or unsupported.
-        OSError, json.JSONDecodeError, ET.ParseError: An input cannot be read
-            or parsed. ``main`` reports these failures and returns status 1.
+        OSError, json.JSONDecodeError: The JSON cannot be read or parsed.
+            ``main`` reports these failures and returns status 1.
 
-    The entire matrix is validated before the requested combinations are checked.
+    Only JSON schema and requested-combination checks run here; Maven packaging
+    validation belongs to the explicit premerge ``validate`` command.
     """
-    matrix = IcebergVersionMatrix.load(args.matrix, args.pom)
+    matrix = IcebergVersionMatrix.load(args.matrix)
     requested = [
         version for version in re.split(r"[\s,]+", args.requested_versions) if version]
     versions = matrix.validate_requested_versions(args.spark_version, requested)
@@ -679,12 +685,11 @@ def parse_args(arguments: Optional[Sequence[str]] = None) -> argparse.Namespace:
     inputs.add_argument(
         "--matrix", type=Path, default=DEFAULT_MATRIX,
         help="matrix JSON file (default: scripts/iceberg-versions.json)")
-    inputs.add_argument(
-        "--pom", type=Path, default=DEFAULT_POM,
-        help="Spark shim POM (default: scala2.13/pom.xml)")
-
     validate_parser = subparsers.add_parser(
         "validate", parents=[inputs], help="validate the entire matrix against the POM")
+    validate_parser.add_argument(
+        "--pom", type=Path, default=DEFAULT_POM,
+        help="canonical packaging POM (default: scala2.13/pom.xml, including Spark 4)")
     validate_parser.set_defaults(handler=command_validate)
 
     list_parser = subparsers.add_parser(
@@ -708,19 +713,25 @@ def parse_args(arguments: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def main(arguments: Optional[Sequence[str]] = None) -> int:
     r"""Validate or query the integration-test source of truth, scripts/iceberg-versions.json.
 
-    Run from the repository root, with Maven available::
+    Run from the repository root::
 
         python3 scripts/get_iceberg_versions.py validate
         python3 scripts/get_iceberg_versions.py list --spark-version 3.5.6
         python3 scripts/get_iceberg_versions.py validate-requested \
             --spark-version 3.5.6 --requested-versions '1.10.1, 1.9.2'
 
-    Each command accepts --matrix and --pom to override the JSON and parent POM
-    inputs; defaults are scripts/iceberg-versions.json and scala2.13/pom.xml.
-    Use --help on a command to see its arguments. The MVN environment variable
-    can supply the existing Maven command and settings options. Relative settings
-    paths resolve against the current working directory. Maven's effective POMs
-    validate the entire matrix before selection; Maven logs stay off stdout.
+    Each command accepts --matrix (default: scripts/iceberg-versions.json).
+    list and validate-requested read only JSON and never invoke Maven. Premerge
+    runs validate explicitly to compare the complete matrix with Maven packaging.
+    Only validate accepts --pom (default: scala2.13/pom.xml). Scala 2.13 is the
+    intentional canonical source because it includes Spark 4 profiles missing
+    from the Scala 2.12 POM; this is a cross-Spark test matrix, not a per-Scala
+    packaging matrix.
+
+    For validate, MVN can supply the Maven executable and settings; relative
+    settings resolve against the current working directory. MVN must not include
+    -P or -Dbuildver, since validation selects each release profile itself.
+    Maven logs stay off stdout. Use --help on a command to see its arguments.
 
     validate produces no output on success. list prints enabled versions in JSON
     order. validate-requested accepts comma- or whitespace-separated versions and
