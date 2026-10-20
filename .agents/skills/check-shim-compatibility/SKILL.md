@@ -44,9 +44,11 @@ The helper paginates **all authors' open PRs**, including Drafts, and examines
 PRs merged in that base-commit range. It compares actual changed paths, explicit
 imports in our changed sources, shim families across version directories, and
 matrix/implementation interactions.
-A matrix path match is deliberately broad; inspect the actual diff to determine
-whether it changes applicable profiles. The scan records the observed head of
-each related PR and refuses a clean result on API failure, truncated file lists,
+A matrix path match is deliberately broad. A shim/profile change also flags
+peer shared-source changes conservatively because their imports are not read;
+inspect those diffs to establish whether a caller actually depends on the change.
+The scan records each related PR's observed head and refuses a clean result on
+API failure, truncated file lists,
 or base/open-head movement during the scan. It does not fetch other PR branches
 or execute their code.
 
@@ -118,6 +120,12 @@ evidence. This skill is advisory until the repository wires a deterministic
 check into required CI; it cannot prevent concurrent human merges.
 
 ## Manual verification
+
+Run the helper's automated regression suite before changing its implementation:
+
+```bash
+python3 -m unittest discover -s build/tests -p test_check_shim_compatibility.py -v
+```
 
 For a real-source #16404 replay, export `pom.xml`, `scala2.13/pom.xml`, and
 `sql-plugin/src/main` from these commits into separate temporary directories.

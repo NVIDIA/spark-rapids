@@ -31,7 +31,8 @@ SHIM_TAG = "spark-rapids-shim-json-lines"
 VERSIONED = re.compile(r"^(.*)/src/main/spark([^/]+)/(scala|java)/(.+)$")
 PACKAGE = re.compile(r"(?m)^\s*package\s+([\w.]+)")
 DECLARATION = re.compile(
-    r"(?m)^(?:(?:private|protected|public|sealed|abstract|final|case)\s+)*"
+    r"(?m)^(?:(?:(?:private|protected)(?:\[[\w.]+\])?"
+    r"|public|sealed|abstract|final|case)\s+)*"
     r"(?:class|object|trait|interface|enum)\s+(\w+)")
 IMPORT = re.compile(r"(?m)^\s*import\s+([^\n;{]+(?:\{[^}]*\}[^\n;]*)?)")
 
@@ -359,6 +360,14 @@ def overlap_reasons(current, other, references=()):
         reasons.append("same shim family: " + ", ".join(sorted(families & peer_families)))
     if (families and peer_matrix) or (peer_families and matrix) or (matrix and peer_matrix):
         reasons.append("shim implementation and/or build matrix changes; inspect actual diffs")
+    # Peer source is not fetched or executed. A shared caller can depend on our
+    # shim/profile without changing a versioned path, so require manual review
+    # rather than declaring these combinations unrelated.
+    peer_shared = any(re.search(r"/src/main/(?:scala|java)/", path)
+                      and path.endswith((".scala", ".java")) for path in other)
+    if (families or matrix) and peer_shared:
+        reasons.append("shared-source peer may call changed shims or use changed profiles; "
+                       "inspect actual diffs")
     return reasons
 
 
