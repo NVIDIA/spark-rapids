@@ -345,18 +345,28 @@ values occurring before the transition between the Julian and Gregorian calendar
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/cudf-spark/issues/144).
 
-The plugin supports reading `uncompressed`, `snappy`, `gzip` and `zstd` Parquet files and writing
-`uncompressed`, `snappy` and `zstd` Parquet files.  At this point, the plugin does not have the 
-ability to
-fall back to the CPU when reading an unsupported compression format, and will error out in that
-case.
+The plugin supports reading and writing `uncompressed`, `snappy`, `gzip` and `zstd` Parquet files.
+At this point, the plugin cannot fall back to the CPU when reading an unsupported compression
+format, and will error out in that case.
 
 ## Delta Lake low shuffle merge on Databricks Runtime 17.3
 
-Low shuffle merge is disabled by default. To enable it on Databricks Runtime 17.3, set
-`spark.rapids.sql.delta.lowShuffleMerge.enabled=true` and the Parquet reader to `PERFILE`.
-The default remains disabled because Delta Lake 2.4 does not support low shuffle merge
-with change data feed enabled.
+Low shuffle merge is disabled by default because Delta Lake 2.4 does not support it
+with change data feed enabled. To enable it on Databricks Runtime 17.3, set
+`spark.rapids.sql.delta.lowShuffleMerge.enabled=true`. The Parquet reader can use `PERFILE`
+or `MULTITHREADED`. With `COALESCING` or `AUTO`, touched-file discovery uses the
+multithreaded reader to preserve file-relative row indices. OSS Delta Lake 2.4 still
+requires `PERFILE`.
+
+Low shuffle merge also requires both
+`spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled=true` and
+`spark.databricks.delta.deletionVectors.useMetadataRowIndex=true`. If either is `false`,
+MERGE falls back to classic GPU merge. In particular, remove the `useMetadataRowIndex=false`
+setting recommended for older runtimes when enabling low shuffle merge on Databricks Runtime 17.3.
+
+Tables with columns whose logical or physical name matches a deletion-vector skip-row marker
+use classic GPU merge to avoid corrupting those values during discovery and temporary-DV rewrites; see
+[the native reader column-collision issue](https://github.com/NVIDIA/cudf-spark/issues/16381).
 
 On Databricks Runtime 17.3, tables with existing deletion vectors fall back to classic
 GPU merge before low shuffle merge builds temporary deletion vectors. The existing
@@ -938,7 +948,7 @@ data.  The cuDF plugin `get_json_object` operation on the GPU will return `None`
 updated in a future release to more closely match Spark.
 
 If the JSON has a single quote `'` in the path, the GPU query may fail with `ai.rapids.cudf.CudfException`.
-More examples are in [issue-12483](https://github.com/rapidsai/cudf/issues/12483).
+More examples are in [issue-12483](https://github.com/NVIDIA/cudf/issues/12483).
 
 ## Approximate Percentile
 

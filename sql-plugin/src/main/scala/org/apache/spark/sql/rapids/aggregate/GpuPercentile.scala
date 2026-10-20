@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{withResource, withResourceIfAllowed}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.ReallyAGpuExpression
 import com.nvidia.spark.rapids.jni.Histogram
+import com.nvidia.spark.rapids.jni.Histogram.ValueOrder
 import com.nvidia.spark.rapids.shims.{ShimExpression, SparkShimImpl}
 
 import org.apache.spark.sql.catalyst.InternalRow
@@ -65,7 +66,8 @@ case class CudfMergeHistogram(override val dataType: DataType)
  * Perform the final evaluation step to compute percentiles from histograms.
  */
 case class GpuPercentileEvaluation(childExpr: Expression, percentage: Either[Double, Array[Double]],
-                                   outputType: DataType, isReduction: Boolean)
+                                   outputType: DataType, isReduction: Boolean,
+                                   isInputOrderDescending: Boolean)
   extends GpuExpression with ShimExpression {
   override def dataType: DataType = outputType
   override def prettyName: String = "percentile_evaluation"
@@ -80,18 +82,21 @@ case class GpuPercentileEvaluation(childExpr: Expression, percentage: Either[Dou
     case _: ArrayType => true
     case _ => false
   }
+  private lazy val valueOrder =
+    if (isInputOrderDescending) ValueOrder.DESCENDING else ValueOrder.ASCENDING
 
   override def columnarEval(batch: ColumnarBatch): GpuColumnVector = {
     withResourceIfAllowed(childExpr.columnarEval(batch)) { histograms =>
-      val percentiles = Histogram.percentileFromHistogram(histograms.getBase,
-        percentageArray, outputAsList, SparkShimImpl.exactPercentileInterpolation)
+      val percentiles = Histogram.percentileFromHistogramWithOptions(histograms.getBase,
+        percentageArray, outputAsList, SparkShimImpl.exactPercentileInterpolation,
+        valueOrder)
       GpuColumnVector.from(percentiles, outputType)
     }
   }
 }
 
 abstract class GpuPercentile(childExpr: Expression, percentageLit: GpuLiteral,
-                             isReduction: Boolean)
+                             isReduction: Boolean, isInputOrderDescending: Boolean)
   extends GpuAggregateFunction with Serializable {
   protected lazy val histogramBufferType: DataType =
     ArrayType(StructType(Seq(StructField("value", childExpr.dataType),
@@ -106,7 +111,8 @@ abstract class GpuPercentile(childExpr: Expression, percentageLit: GpuLiteral,
   override lazy val mergeAggregates: Seq[CudfAggregate] =
     Seq(CudfMergeHistogram(histogramBufferType))
   override lazy val evaluateExpression: Expression =
-    GpuPercentileEvaluation(histogramBuffer, percentages, outputType, isReduction)
+    GpuPercentileEvaluation(
+      histogramBuffer, percentages, outputType, isReduction, isInputOrderDescending)
 
   override def dataType: DataType = histogramBufferType
   override def prettyName: String = "percentile"
@@ -128,8 +134,8 @@ abstract class GpuPercentile(childExpr: Expression, percentageLit: GpuLiteral,
  * Compute percentiles from just the input values.
  */
 case class GpuPercentileDefault(childExpr: Expression, percentage: GpuLiteral,
-                                isReduction: Boolean)
-  extends GpuPercentile(childExpr, percentage, isReduction) {
+                                isReduction: Boolean, isInputOrderDescending: Boolean)
+  extends GpuPercentile(childExpr, percentage, isReduction, isInputOrderDescending) {
   override lazy val inputProjection: Seq[Expression] = Seq(childExpr)
   override lazy val updateAggregates: Seq[CudfAggregate] = Seq(CudfHistogram(histogramBufferType))
 }
@@ -138,8 +144,9 @@ case class GpuPercentileDefault(childExpr: Expression, percentage: GpuLiteral,
  * Compute percentiles from the input values associated with frequencies.
  */
 case class GpuPercentileWithFrequency(childExpr: Expression, percentage: GpuLiteral,
-                                      frequencyExpr: Expression, isReduction: Boolean)
-  extends GpuPercentile(childExpr, percentage, isReduction) {
+                                      frequencyExpr: Expression, isReduction: Boolean,
+                                      isInputOrderDescending: Boolean)
+  extends GpuPercentile(childExpr, percentage, isReduction, isInputOrderDescending) {
   override lazy val inputProjection: Seq[Expression] = {
     val outputType: DataType = if(isReduction) {
       StructType(Seq(StructField("value", childExpr.dataType), StructField("frequency", LongType)))
@@ -180,12 +187,14 @@ case class GpuCreateHistogramIfValid(valuesExpr: Expression, frequenciesExpr: Ex
 
 object GpuPercentile{
   def apply(childExpr: Expression, percentageLit: GpuLiteral, frequencyExpr: Expression,
-            isReduction: Boolean): GpuPercentile = {
+            isReduction: Boolean, isInputOrderDescending: Boolean): GpuPercentile = {
     frequencyExpr match {
       case GpuLiteral(freq, LongType) if freq == 1 =>
-        GpuPercentileDefault(childExpr, percentageLit, isReduction)
+        GpuPercentileDefault(
+          childExpr, percentageLit, isReduction, isInputOrderDescending)
       case _  =>
-        GpuPercentileWithFrequency(childExpr, percentageLit, frequencyExpr, isReduction)
+        GpuPercentileWithFrequency(
+          childExpr, percentageLit, frequencyExpr, isReduction, isInputOrderDescending)
     }
   }
 }

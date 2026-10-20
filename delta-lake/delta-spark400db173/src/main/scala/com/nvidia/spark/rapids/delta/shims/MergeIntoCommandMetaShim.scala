@@ -73,7 +73,7 @@ object MergeIntoCommandMetaShim {
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommand, conf: RapidsConf): RunnableCommand = {
-    if (conf.isDeltaLowShuffleMergeEnabled && conf.isParquetPerFileReadEnabled) {
+    if (conf.isDeltaLowShuffleMergeEnabled) {
       GpuLowShuffleMergeCommand(
         mergeCmd.source,
         mergeCmd.target,
@@ -105,7 +105,7 @@ object MergeIntoCommandMetaShim {
   }
 
   def convertToGpu(mergeCmd: MergeIntoCommandEdge, conf: RapidsConf): RunnableCommand = {
-    if (conf.isDeltaLowShuffleMergeEnabled && conf.isParquetPerFileReadEnabled) {
+    if (conf.isDeltaLowShuffleMergeEnabled) {
       GpuLowShuffleMergeCommand(
         mergeCmd.source,
         mergeCmd.target,

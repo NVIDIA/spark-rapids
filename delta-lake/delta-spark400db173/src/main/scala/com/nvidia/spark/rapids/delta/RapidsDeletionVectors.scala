@@ -405,8 +405,8 @@ object RapidsDeletionVectors extends Logging {
   }
 
   /**
-   * Drops the first column from a table. Used when reading with deletion vectors, as the cuDF API
-   * prepends a UINT64 index column that is not used.
+   * Drops cuDF's prepended UINT64 source-row-index column from the data table. Low shuffle
+   * discovery retains it separately to populate its synthetic row-index column.
    */
   def dropFirstColumn(table: Table): Table = {
     if (table.getNumberOfColumns == 0) {
@@ -476,7 +476,7 @@ object RapidsDeletionVectors extends Logging {
     }
   }
 
-  private def serializedEmptyBitmap(): HostMemoryBuffer = {
+  private[delta] def serializedEmptyBitmap(): HostMemoryBuffer = {
     closeOnExcept(HostMemoryBuffer.allocate(8)) { buffer =>
       buffer.setLong(0, 0L)
       buffer

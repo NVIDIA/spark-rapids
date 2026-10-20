@@ -423,15 +423,40 @@ def assert_gpu_and_cpu_latest_delta_log_equivalent(spark, data_path):
 def read_delta_path(spark, path):
     return spark.read.format("delta").load(path)
 
-def read_delta_path_with_cdf(spark, path):
+def read_delta_path_with_cdf(spark, path, starting_version=0):
     df = spark.read.format("delta") \
-        .option("readChangeFeed", "true").option("startingVersion", 0) \
+        .option("readChangeFeed", "true").option("startingVersion", starting_version) \
         .load(path)
     assert "_change_type" in df.columns
     assert "_commit_version" in df.columns
     assert "_commit_timestamp" in df.columns
     # Drop the commit timestamp column since it will differ between CPU and GPU
     return df.drop("_commit_timestamp")
+
+def assert_delta_non_data_changing_commit(spark, path, expected_file_actions):
+    """Check a commit after initial inserts and return its timestamp-free CDF history."""
+    logs = read_delta_logs(spark, path + "/_delta_log/*.json")
+    latest_file = sorted(logs)[-1]
+    version = int(latest_file.split(".")[0])
+    assert version > 0, "Expected a new non-data-changing commit"
+    actions = logs[latest_file]
+    assert not any("cdc" in action for action in actions), "Unexpected CDC file"
+    file_actions = [(kind, action[kind]) for action in actions
+                    for kind in ("add", "remove") if kind in action]
+    assert {kind for kind, _ in file_actions} == set(expected_file_actions)
+    assert all(action["dataChange"] is False for _, action in file_actions)
+
+    # Like Delta's CDCReaderSuite, only the initial inserts should appear in CDF.
+    initial = spark.read.format("delta").option("versionAsOf", 0).load(path) \
+        .selectExpr("*", "'insert' AS _change_type", "0L AS _commit_version")
+    cdf = read_delta_path_with_cdf(spark, path)
+    cdf_rows = cdf.sort(cdf.columns).collect()
+    assert_equal(initial.sort(initial.columns).collect(), cdf_rows)
+    commit_cdf = spark.read.format("delta").option("readChangeFeed", "true") \
+        .option("startingVersion", version).option("endingVersion", version).load(path)
+    assert commit_cdf.count() == 0, "Non-data-changing commit produced CDF rows"
+    return cdf_rows
+
 
 def schema_to_ddl(spark, schema):
     return spark.sparkContext._jvm.org.apache.spark.sql.types.DataType.fromJson(schema.json()).toDDL()
@@ -638,10 +663,12 @@ def assert_rapids_delta_write(
             assert any(
                 callback.contains(plan, expected_command) for plan in captured_plans), \
                 f"{expected_command} is not found in any captured plan"
-        if expected_command == "GpuMergeIntoCommand" and \
-                "BroadcastHashJoinExec" in get_non_gpu_allowed() and is_oss_delta_lake_40():
-            # OSS Delta 4.0 uses a CPU broadcast join to attach stats to the table-state
-            # metadata during DV MERGE. Keep the allowance confined to that metadata query.
+        if expected_command and expected_command.startswith(
+                ("GpuMergeIntoCommand", "GpuDeleteCommand", "GpuUpdateCommand")) and \
+                "BroadcastHashJoinExec" in get_non_gpu_allowed() and \
+                (is_oss_delta_lake_40() or is_oss_delta_lake_42_or_43()):
+            # OSS Delta uses a CPU broadcast join to attach stats to the table-state
+            # metadata during DV DML. Keep the allowance confined to that metadata query.
             _assert_oss_delta_40_merge_metadata_broadcasts(callback, captured_plans)
         for cls in expected_classes or ():
             assert any(
