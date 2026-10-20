@@ -22,7 +22,7 @@ import org.apache.spark.sql.catalyst.plans.{InnerLike, JoinType, LeftOuter, Righ
 import org.apache.spark.sql.types.DataType
 
 /**
- * A request to execute one equi-hash join operation through [[HashProbeBackend]].
+ * A request to execute one equi-hash join operation through `HashProbeBackend`.
  * `requiredBuildSide` specifies whether the requested operation has a physical side constraint,
  * e.g. left or right outer/semi/anti or a known-distinct build side. `exactCountJoinType`
  * specifies when the backend can provide an exact output count before execution, and which
