@@ -341,10 +341,19 @@ def spark_readiness(path, operation):
     return RETRYABLE_EXIT if state["retryable"] else 1
 
 
+def gpu_diagnostics(path):
+    state = load_state(path)
+    # Both the remote command (10s) and the SSH transport (60s) are bounded.
+    readiness_command(state, "timeout --kill-after=2s 10s nvidia-smi -q 2>&1 || "
+                      "printf '\\nGPU diagnostics unavailable or incomplete.\\n'")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=["prepare", "cleanup", "install-readiness",
-                                             "classify-startup", "verify-readiness"])
+                                             "classify-startup", "verify-readiness",
+                                             "gpu-diagnostics"])
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--config", type=Path,
                         help="prepare only: JSON cluster_spec and ordered readiness_modes")
@@ -355,6 +364,8 @@ def main():
     try:
         if args.operation == "prepare":
             return prepare(args.state, args.config)
+        if args.operation == "gpu-diagnostics":
+            return gpu_diagnostics(args.state)
         if args.operation in {"install-readiness", "classify-startup", "verify-readiness"}:
             return spark_readiness(args.state, args.operation)
         cleanup(args.state)
