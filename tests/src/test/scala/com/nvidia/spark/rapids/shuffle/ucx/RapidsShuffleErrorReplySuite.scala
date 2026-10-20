@@ -384,6 +384,37 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("a window consumed after its state closed fails before it allocates") {
+    val requester = new Requester
+    val (first, second) = (reader(), reader())
+    // the first window's hand-off fails after the second window's receive started
+    when(first.batchReceived(any())).thenThrow(new IllegalStateException("reader failed in test"))
+    // the first window holds table 1, and the second starts table 2
+    val requests = Seq(
+      PendingTransferRequest(requester.client, tableMeta(1, 1024), first),
+      PendingTransferRequest(requester.client, tableMeta(2, 2048), second))
+    withReceiveState(1024, requests, spied = false) { (state, bounceBuffer, closes) =>
+      requester.client.doIssueBufferReceives(state)
+      state.getBufferWhenReady(_ => (), 1024)
+      // the second window's receive waits for the first window to be consumed
+      state.getBufferWhenReady(_ => (), 1024)
+      // the window handler's catch closes the state with the second window still to consume
+      requester.client.doHandleBounceBufferReceive(receivedWindow(), state)
+      assert(bounceBuffer.isClosed)
+
+      val allocated = Rmm.getTotalBytesAllocated
+      requester.client.doHandleBounceBufferReceive(receivedWindow(), state)
+
+      // the second window allocates nothing, and its reader is told of the closed state
+      assertResult(allocated)(Rmm.getTotalBytesAllocated)
+      verify(first, times(1)).transferError(any(), any())
+      val errors = ArgumentCaptor.forClass(classOf[Throwable])
+      verify(second, times(2)).transferError(any(), errors.capture())
+      assert(errors.getValue.getMessage.contains("is closed"))
+      assertResult(1)(closes.get)
+    }
+  }
+
   test("a window that fails after completing a partial table closes that table's buffer") {
     val requester = new Requester
     // the first window starts table 1, and the second completes it and holds all of table 2

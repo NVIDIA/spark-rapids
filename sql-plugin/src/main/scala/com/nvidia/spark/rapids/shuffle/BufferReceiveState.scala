@@ -216,6 +216,13 @@ class BufferReceiveState(
     }
     currentBlocks = nextBlocks
 
+    // The window handler's catch can close this state while this window is on its way. The
+    // catch then tells this window's readers, which no earlier error reached.
+    if (closed) {
+      throw new IllegalStateException(
+        s"BufferReceiveState ${TransportUtils.toHex(id)} is closed, yet received a window")
+    }
+
     if (windowedBlockIterator.hasNext) {
       nextBlocks = windowedBlockIterator.next()
     } else {
