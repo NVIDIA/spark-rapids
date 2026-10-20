@@ -11,7 +11,9 @@ current head's `shim-compatibility` check summary and JSON/Markdown artifact;
 verify head/base identities. If tools cannot retrieve the report or execute the
 read-only helper, state the missing evidence instead of claiming a clean scan.
 
-Inspect related PRs targeting the same branch against the current combined tree:
+Cross-PR discovery is optional advisory work using the separate `related-prs`
+command. It does not gate the core combined-tree check. When requested, inspect
+related PRs targeting the same branch:
 
 - Open PRs: all authors, including Drafts, without an age limit.
 - Merged PRs: from the base actually covered by the latest applicable successful

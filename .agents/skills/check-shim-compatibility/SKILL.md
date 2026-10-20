@@ -1,6 +1,6 @@
 ---
 name: check-shim-compatibility
-description: Check cudf-spark shim compatibility while reviewing or before publishing, updating, or merging a PR that changes versioned sources, shared shim callers, or Spark/Databricks build profiles. Inspect related open and intervening merged PRs, check source selection, and identify required combined-tree validation.
+description: Check cudf-spark shim source selection on a PR combined with its current target branch and identify required profile validation. Use for versioned sources, shared shim callers, or Spark/Databricks build profiles; cross-PR discovery is a separate optional advisory step.
 ---
 
 # Check shim compatibility
@@ -19,7 +19,9 @@ The helper never posts comments or changes GitHub state.
 The `Shim compatibility` workflow runs the `shim-compatibility` check on PR
 events, using read-only repository/PR permissions. It exports immutable Git
 source blobs, checks `sql-plugin` on current base and the proposed combined tree,
-and scans related PRs. No product code, Maven build, or GPU test is executed.
+without depending on unrelated PR activity. No product code, Maven build, or
+GPU test is executed. Cross-PR discovery is available separately through
+`related-prs` when useful; the automated check does not run it.
 
 ```bash
 python3 build/check_shim_compatibility.py review \
@@ -27,23 +29,24 @@ python3 build/check_shim_compatibility.py review \
 ```
 
 `report.json` and `report.md` record exact head/base/combined-tree identities,
-the checked matrix, new versus unchanged base findings, and PR associations.
+the checked matrix and new versus unchanged base findings.
 The workflow publishes a summary and full artifact, with up to ten error
 annotations for new static findings. Unchanged base debt is reported without
-new-error annotations. `NEEDS_REVIEW` completes the scan but needs source-backed
-disposition; it does not automatically establish a defect. `INCOMPLETE` fails
+new-error annotations. `INCOMPLETE` fails
 the check, retaining any static evidence already collected. Unrelated diffs are
 reported as `NOT_APPLICABLE`. The automated source-selection scope is currently
 `sql-plugin`; inspect other affected modules separately.
 
-Copilot and Greptile reviewers should read this evidence and inspect matches,
-then report confirmed new gaps with file/symbol/profile, related PR links, and
+Copilot and Greptile reviewers should read this evidence,
+then report confirmed new gaps with file/symbol/profile and
 observed output. If no execution/API tools or current report are available,
 state that limitation. Never fabricate a successful run or report missing
-access as a product defect. A green check with associations still needs their
-disposition; it is not merge authorization.
+access as a product defect. A green check is not merge authorization.
 
-The workflow reruns on PR events, not every merge to the target branch. Before
+The workflow runs on PR opening, head updates, reopening, ready-for-review, and
+target-branch changes. Title/body-only edits skip the job and use an isolated
+concurrency group so they cannot cancel a useful scan. It does not run on every
+merge to the target branch. Before
 merge, compare the report's base/head to current refs and rerun when relevant
 changes have landed. Required-check branch protection remains a repository
 setting; this change does not enable it or the reviewers' execution features.
@@ -61,7 +64,12 @@ setting; this change does not enable it or the reviewers' execution features.
    changes. For a genuinely unrelated change, report that scope and stop this
    specialized preflight; normal publication/merge requirements still apply.
 
-## Find related PRs
+## Optional related-PR discovery
+
+This advisory command is separate from `review` and is not required for the
+core check to pass. Use it when investigating concurrent changes or when a
+reviewer asks for cross-PR analysis. Its API failures or moving peer refs affect
+only that advisory result, not a completed core report.
 
 For an existing PR (replace `12345`), run:
 
@@ -79,8 +87,7 @@ For a new PR, omit `--pr`. Search PRs targeting the same repository and branch:
   Pass that base as `--validated-base SHA` only when the run's exact base is
   known and it covered the affected profiles/shim APIs. Otherwise use the
   default head/target-branch common ancestor. The helper does not discover or
-  verify prior CI coverage automatically; the automated workflow uses this
-  common-ancestor fallback.
+  verify prior CI coverage automatically.
 
 Prioritize related merges from the last **48 hours** during inspection, while
 retaining older changes in that commit range. An earlier green premerge check
@@ -157,14 +164,16 @@ alone cannot select the correct behavioral implementation.
 - Related PRs with complete coverage and valid combined-tree evidence may
   proceed through normal review and CI gates without an extra human approval.
 
-Exit 0 means the requested check/scan completed; a `NEEDS_REVIEW` report still
-requires disposition of its matches. No exit code alone establishes merge readiness.
+Exit 0 means the requested check completed. The optional `related-prs` command
+can return `NEEDS_REVIEW`, requiring disposition of its matches. No exit code
+alone establishes merge readiness.
 
-Report head/base SHAs, profile matrix, related PR links and dispositions,
-static findings, actual build/test evidence, and remaining gaps. A report with
+Report head/base SHAs, profile matrix, static findings, actual build/test
+evidence, and remaining gaps. Include related PR links and dispositions only
+when the optional advisory scan was requested. A report with
 `dirty: true` includes work in progress and must be rerun on the final committed
 head before merge. Immediately before publication or merge, refresh the base,
-current head, related PR states, and matrix. Relevant movement invalidates prior
+current head and matrix. Relevant movement invalidates prior
 evidence. The CI check is advisory until made required by repository settings;
 it cannot prevent concurrent human merges.
 

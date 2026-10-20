@@ -24,11 +24,15 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: shim-compatibility-${{ github.event.pull_request.number }}
+  # Metadata-only edits use their own group so they cannot cancel a useful scan.
+  group: >-
+    shim-compatibility-${{ github.event.pull_request.number }}-${{
+    github.event.action == 'edited' && !github.event.changes.base.ref && github.run_id || 'scan' }}
   cancel-in-progress: true
 
 jobs:
   shim-compatibility:
+    if: github.event.action != 'edited' || github.event.changes.base.ref
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -49,7 +53,7 @@ jobs:
           python-version: '3.12'
       - name: Fetch current target branch
         run: git fetch --no-tags origin "+refs/heads/${SHIM_BASE_BRANCH}:refs/remotes/origin/shim-review-base"
-      - name: Check combined-tree source selection and related PRs
+      - name: Check combined-tree source selection
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-

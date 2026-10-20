@@ -475,9 +475,29 @@ def review_scope(paths):
         or path.startswith(".agents/skills/check-shim-compatibility/") for path in paths))
 
 
-def review(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
-    """Check immutable base/combined trees; retain static evidence even if the PR scan fails."""
-    report = dict(status="INCOMPLETE", scope="sql-plugin source selection and related PRs; "
+def verify_review_refs(root, repo, base_ref, head_ref, base, head, branch, own_pr):
+    owner, name = repo.split("/")
+    if (commit_sha(root, base_ref), commit_sha(root, head_ref)) != (base, head):
+        raise PreflightError("Local base/head refs changed during review; retry")
+    if remote_base(root, owner, name, branch) != base:
+        raise PreflightError("Fetched base differs from GitHub; fetch the target branch and retry")
+    if own_pr is not None:
+        query = """query($owner:String!, $name:String!, $number:Int!) {
+          repository(owner:$owner, name:$name) { pullRequest(number:$number) {
+            state headRefOid baseRefName baseRepository { nameWithOwner }
+          } }
+        }"""
+        pr = graphql(root, query, owner=owner, name=name, number=own_pr)["pullRequest"]
+        if (not pr or pr["state"] != "OPEN" or pr["headRefOid"] != head
+                or pr["baseRefName"] != branch
+                or pr["baseRepository"]["nameWithOwner"].lower() != repo.lower()):
+            raise PreflightError("Requested PR is not open at the analyzed head/base; "
+                                 "refresh the PR and rerun")
+
+
+def review(root, repo, base_ref, head_ref, branch, own_pr):
+    """Check the requested PR and current target without discovering unrelated PRs."""
+    report = dict(status="INCOMPLETE", scope="sql-plugin source selection on the combined tree; "
                   "not compilation, runtime validation, or merge authorization")
     try:
         base, head = commit_sha(root, base_ref), commit_sha(root, head_ref)
@@ -489,6 +509,7 @@ def review(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
             report.update(status="NOT_APPLICABLE", reason="No shim, shared JVM source, "
                           "profile/matrix, or preflight implementation changes")
             return report
+        verify_review_refs(root, repo, base_ref, head_ref, base, head, branch, own_pr)
         merged = subprocess.run(["git", "merge-tree", "--write-tree", base, head], cwd=root,
                                 text=True, capture_output=True, timeout=90)
         if merged.returncode == 1:
@@ -508,13 +529,8 @@ def review(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
         current = report["combined_coverage"]["findings"]
         report["new_findings"] = [f for f in current if finding_key(f) not in previous]
         report["existing_findings"] = [f for f in current if finding_key(f) in previous]
-        report["pr_scan"] = related_prs(root, repo, base_ref, head_ref, validated_base,
-                                         branch, own_pr, include_worktree=False,
-                                         require_pr_head=True)
-        if (report["pr_scan"]["base"], report["pr_scan"]["head"]) != (base, head):
-            raise PreflightError("Base/head changed between static analysis and PR scan")
-        report["status"] = ("BLOCKED" if report["new_findings"] else
-                            "NEEDS_REVIEW" if report["pr_scan"]["related"] else "PASS")
+        verify_review_refs(root, repo, base_ref, head_ref, base, head, branch, own_pr)
+        report["status"] = "BLOCKED" if report["new_findings"] else "PASS"
     except (PreflightError, OSError, ValueError, KeyError, TypeError,
             subprocess.TimeoutExpired) as error:
         report["error"] = str(error)
@@ -576,16 +592,8 @@ def write_review(root, report, output, github_actions=False):
         lines += ["", "Profiles: " + ", ".join(result["buildvers"]),
                   "", "Unmodelled wildcard imports: {}. See report.json for full inputs and limits.".
                   format(len(result["unmodelled_wildcard_imports"]))]
-    if "pr_scan" in report:
-        scan = report["pr_scan"]
-        lines += ["", "## Related PRs requiring disposition", "",
-                  "History starts at `{}` ({} base commits); all authors' open PRs included.".
-                  format(scan["history_start"], scan["history_commits"])]
-        lines += ["- [#{}]({}): {} — {}".format(pr["number"], pr["url"],
-                  html.escape(pr["title"]), html.escape("; ".join(pr["reasons"])))
-                  for pr in scan["related"]] or ["None."]
-    lines += ["", "Associations alone are not defects. Inspect peer diffs before commenting; "
-              "static PASS does not establish compilation or merge readiness.", ""]
+    lines += ["", "Cross-PR discovery is optional; run related-prs separately when useful. "
+              "Static PASS does not establish compilation or merge readiness.", ""]
     (output / "report.md").write_text("\n".join(lines), encoding="utf-8")
     if github_actions:
         # GitHub limits annotations per step; the complete report remains in the artifact.
@@ -598,9 +606,6 @@ def write_review(root, report, output, github_actions=False):
             print("::error {}::{}".format(parameters, actions_escape(finding_message(finding))))
         if report["status"] in ("INCOMPLETE", "BLOCKED") and "error" in report:
             print("::error title=Shim compatibility::" + actions_escape(report["error"]))
-        if report.get("pr_scan", {}).get("related"):
-            print("::warning title=Shim compatibility::Related PRs need inspection; "
-                  "see the report. This association is not a confirmed defect.")
 
 
 def main(argv=None):
@@ -611,17 +616,19 @@ def main(argv=None):
     static.add_argument("--module", action="append", help="default: sql-plugin")
     static.add_argument("--buildver", action="append", help="default: all supported release profiles")
     for mode, description in (("related-prs", "read-only GitHub PR association scan"),
-                              ("review", "combined-tree check and review evidence")):
+                              ("review", "combined-tree source-selection check")):
         online = subparsers.add_parser(mode, help=description)
         online.add_argument("--repo", default="NVIDIA/cudf-spark")
         online.add_argument("--base-ref", default="origin/main")
         online.add_argument("--head-ref", default="HEAD")
         online.add_argument("--base-branch", default="main")
-        online.add_argument("--validated-base", help="base SHA used in the last relevant validation")
-        online.add_argument("--pr", type=int, help="exclude this PR from candidates")
+        online.add_argument("--pr", type=int, help=("PR to validate" if mode == "review"
+                                                  else "exclude this PR from candidates"))
         if mode == "review":
             online.add_argument("--output-dir", type=Path, required=True)
             online.add_argument("--github-actions", action="store_true")
+        else:
+            online.add_argument("--validated-base", help="base SHA used in the last relevant validation")
     args = parser.parse_args(argv)
     try:
         root = args.root.resolve()
@@ -629,7 +636,7 @@ def main(argv=None):
             result = coverage(root, args.module or ["sql-plugin"], args.buildver)
         elif args.mode == "review":
             result = review(root, args.repo, args.base_ref, args.head_ref,
-                            args.validated_base, args.base_branch, args.pr)
+                            args.base_branch, args.pr)
             write_review(root, result, args.output_dir, args.github_actions)
         else:
             result = related_prs(root, args.repo, args.base_ref, args.head_ref,
