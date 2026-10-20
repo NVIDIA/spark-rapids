@@ -3004,7 +3004,8 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
   }
 
   private def selectCombineHMBs(
-      input: Array[HostMemoryBuffersWithMetaDataBase]): Array[HostMemoryBuffersWithMetaDataBase] = {
+      input: Array[HostMemoryBuffersWithMetaDataBase]):
+      (Array[HostMemoryBuffersWithMetaDataBase], Array[HostMemoryBuffersWithMetaDataBase]) = {
     val toCombine = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
     val leftOvers = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
     var firstNonEmpty: HostMemoryBuffersWithMetaData = null
@@ -3045,8 +3046,7 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
     }
     // Keep original results: recombining an already combined result would lose its per-file
     // partition values, because the metadata aggregation below expects individual files.
-    combineLeftOverFiles = if (leftOvers.nonEmpty) Some(leftOvers.toArray) else None
-    toCombine.toArray
+    (toCombine.toArray, leftOvers.toArray)
   }
 
   private def computeCombineHMBMeta(
@@ -3089,33 +3089,29 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
         result
       }
     } else {
-      try {
-        closeOnExcept(input) { _ =>
-          val selected = selectCombineHMBs(input)
-          // Preserve the original per-file chunking and avoid aggregating a singleton's rows.
-          if (selected.length == 1) {
-            selected.head
+      closeOnExcept(input) { _ =>
+        val (selected, leftOvers) = selectCombineHMBs(input)
+        val remaining = if (leftOvers.nonEmpty) Some(leftOvers) else None
+        // Preserve the original per-file chunking and avoid aggregating a singleton's rows.
+        val result = if (selected.length == 1) {
+          selected.head
+        } else {
+          val (combinedMeta, combinedEmptyMeta) = computeCombineHMBMeta(selected)
+          val result = if (combinedEmptyMeta.allEmpty) {
+            newCombinedHMEmptyMetadata(combinedEmptyMeta, combinedMeta)
           } else {
-            val (combinedMeta, combinedEmptyMeta) = computeCombineHMBMeta(selected)
-            val result = if (combinedEmptyMeta.allEmpty) {
-              newCombinedHMEmptyMetadata(combinedEmptyMeta, combinedMeta)
-            } else {
-              doCombineHMBs(combinedMeta)
-            }
-            closeOnExcept(result) { combined =>
-              combined.setExecutionTime(selected.map(_.getFilterTime).sum,
-                selected.map(_.getBufferTime).sum)
-              combined.setScheduleTime(selected.map(_.getScheduleTime).sum)
-              selected.foreach(_.combineReleaseCallbacks(combined))
-              combined
-            }
+            doCombineHMBs(combinedMeta)
+          }
+          closeOnExcept(result) { combined =>
+            combined.setExecutionTime(selected.map(_.getFilterTime).sum,
+              selected.map(_.getBufferTime).sum)
+            combined.setScheduleTime(selected.map(_.getScheduleTime).sum)
+            selected.foreach(_.combineReleaseCallbacks(combined))
+            combined
           }
         }
-      } catch {
-        case t: Throwable =>
-          // The inputs have left future tracking; closeOnExcept owns their failure cleanup.
-          combineLeftOverFiles = None
-          throw t
+        combineLeftOverFiles = remaining
+        result
       }
     }
   }
@@ -3351,7 +3347,10 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
   Iterator[ColumnarBatch] = fileBufsAndMeta match {
     case meta: HostMemoryEmptyMetaData => withResource(meta) { _ =>
       // Not reading any data, but add in partition data if needed
-      val rows = computeNumRowsAlive(meta.numRows, meta)
+      val rows = meta.allPartValues match {
+        case Some(parts) => Math.toIntExact(parts.iterator.map(_._1).sum)
+        case None => computeNumRowsAlive(meta.numRows, meta)
+      }
       val origBatch = if (meta.readSchema.isEmpty) {
         new ColumnarBatch(Array.empty, rows)
       } else {
