@@ -283,7 +283,8 @@ def spark_readiness(path, operation):
 
     # This marker is written only by the plugin-free preflight. READY/missing markers must
     # never turn a later compilation, smoke-test or pytest failure into a provider retry.
-    state.update(retryable=False, reason="NOT_A_CLASSIFIED_SPARK_STARTUP_FAILURE")
+    state.update(retryable=False, classification_available=False,
+                 reason="SPARK_STARTUP_CLASSIFICATION_UNAVAILABLE")
     save_state(path, state)
     results = {}
     for mode in ("databricks", "upstream"):
@@ -298,8 +299,11 @@ def spark_readiness(path, operation):
                 or readiness.get("phase") not in {"STARTING", "READY", "FAILED"}):
             raise PreparationError("INVALID_SPARK_READINESS_RESULT")
         results[mode] = readiness
+        state["spark_readiness"] = results
+        save_state(path, state)
         print("Spark readiness %s: %s" % (mode, readiness["phase"]), flush=True)
     state["spark_readiness"] = results
+    state.update(reason="NOT_A_CLASSIFIED_SPARK_STARTUP_FAILURE")
     save_state(path, state)
     if operation == "verify-readiness":
         print("Required Spark readiness checks: " + ", ".join(modes), flush=True)
@@ -330,6 +334,7 @@ def spark_readiness(path, operation):
                 check_termination(info)
             except PreparationError as error:
                 state.update(retryable=error.retryable, reason=str(error))
+    state["classification_available"] = True
     save_state(path, state)
     print("Spark readiness classification: %s (retryable=%s)" %
           (state["reason"], state["retryable"]), flush=True)

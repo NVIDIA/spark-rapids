@@ -13,6 +13,7 @@
 # limitations under the License.
 """Upload & run test script on Databricks cluster."""
 
+import json
 import os
 from pathlib import Path
 import re
@@ -64,6 +65,16 @@ def observe_test_output(line, summary):
         summary["gpu_unavailable"] = True
     if "IllegalStateException: Could not find a single GPU to use" in line:
         summary["gpu_acquisition_failed"] = True
+    if "Could not start Spark Connect GRPC service" in line:
+        summary["connect_start_failed"] = True
+    if "Address already in use" in line:
+        summary["port_in_use"] = True
+    if line.startswith("INTERNALERROR>"):
+        summary["pytest_internal_error"] = True
+    if "Py4JNetworkError: Answer from Java side is empty" in line:
+        summary["java_gateway_lost"] = True
+    if "Databricks: forcing remaining test processes to exit after 10s" in line:
+        summary["forced_shutdown"] = True
     failure = re.match(r"FAILED integration tests \(exit=(\d+), run_dir=.*\)", line)
     if failure:
         summary["test_exit"] = failure.group(1)
@@ -71,14 +82,35 @@ def observe_test_output(line, summary):
         summary["smoke_failed"] = True
     if line.startswith("=") and re.search(r"\bin [0-9.]+s\b", line):
         counts = re.findall(r"\b\d+ (?:passed|failed|errors?|skipped|xfailed|xpassed)\b", line)
-        if counts:
+        if "no tests ran" in line:
+            summary["pytest_result"] = "no tests ran"
+        elif counts:
             summary["pytest_result"] = ", ".join(counts)
+
+
+def record_readiness_output(line, readiness):
+    # Console observations survive a later loss of SSH. They are diagnostic only;
+    # the retry classifier still requires the attempt's remote readiness markers.
+    match = re.fullmatch(r"Spark readiness (databricks|upstream): (READY|FAILED)(?: \(.*\))?",
+                         line.strip())
+    if not match:
+        return
+    readiness[match.group(1)] = match.group(2)
+    output = os.environ.get("DATABRICKS_READINESS_OBSERVATIONS_FILE")
+    if output:
+        path = Path(output)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(readiness) + "\n")
+        temporary.replace(path)
 
 
 def format_test_failure(summary, status):
     lines = ["Remote test command exit: %s" % status]
     if "test_exit" in summary:
         lines.append("Integration test invocation exit: " + summary["test_exit"])
+        if status == 255:
+            lines.append("SSH exited 255 after an integration-test failure was already observed; "
+                         "the transport error does not replace that failure.")
     if summary.get("smoke_failed"):
         lines.append("Spark-shell smoke test failed.")
     if summary.get("gpu_unavailable"):
@@ -86,6 +118,16 @@ def format_test_failure(summary, status):
                      "CUDA-capable device(s) is/are busy or unavailable")
     if summary.get("gpu_acquisition_failed"):
         lines.append("Observed: IllegalStateException: Could not find a single GPU to use")
+    if summary.get("connect_start_failed"):
+        lines.append("Observed: Spark Connect gRPC service failed to start")
+    if summary.get("port_in_use"):
+        lines.append("Observed: port binding failed (Address already in use)")
+    if summary.get("java_gateway_lost"):
+        lines.append("Observed: Java gateway returned an empty response")
+    if summary.get("pytest_internal_error"):
+        lines.append("Observed: pytest INTERNALERROR (not a test assertion result)")
+    if summary.get("forced_shutdown"):
+        lines.append("Remaining test processes required forced shutdown after command completion.")
     if summary.get("invocation_started"):
         lines.append("Pytest session start observed for the last invocation: " +
                      ("yes" if summary.get("pytest_started") else "no"))
@@ -125,15 +167,23 @@ def main():
     print("Master node address is: %s" % master_addr)
 
     print("Copying script")
-    ssh_args = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+    ssh_args = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+                "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3",
+                "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
                 "-p", "2200", "-i", params.private_key_file]
     rsync_ssh = shell_join(["ssh"] + ssh_args)
     rsync_command = ["rsync", "-I", "-Pave", rsync_ssh, "--", params.local_script,
                      "ubuntu@%s:%s" % (master_addr, params.script_dest)]
     print("rsync command: %s" % shell_join(rsync_command))
-    subprocess.check_call(rsync_command)
+    subprocess.check_call(rsync_command, timeout=120)
+
+    runner = str(Path(__file__).with_name("run-test-command.sh"))
+    remote_runner = params.script_dest + ".runner.sh"
+    subprocess.check_call(["rsync", "-I", "-Pave", rsync_ssh, "--", runner,
+                           "ubuntu@%s:%s" % (master_addr, remote_runner)], timeout=120)
 
     test_command = shell_join([
+        "bash", remote_runner,
         "env",
         "LOCAL_JAR_PATH=%s" % params.jar_path,
         "SPARK_CONF=%s" % params.spark_conf,
@@ -143,11 +193,11 @@ def main():
         "bash",
         params.script_dest,
     ] + params.script_args)
-    remote_command = "%s 2>&1 | tee testout; exit ${PIPESTATUS[0]}" % test_command
     ssh_command = ["ssh"] + ssh_args + ["ubuntu@%s" % master_addr,
-                                         "bash -c %s" % shlex.quote(remote_command)]
+                                         "bash -c %s" % shlex.quote(test_command)]
     print("ssh command: %s" % shell_join(ssh_command))
     summary = {}
+    readiness = {}
     status = None
     try:
         # Keep streaming the full log, retaining only bounded, known diagnostic fields.
@@ -159,6 +209,12 @@ def main():
                 except Exception:
                     # Continue draining SSH output even if forwarding a log line fails.
                     pass
+                if readiness is not None:
+                    try:
+                        record_readiness_output(line, readiness)
+                    except Exception:
+                        # Losing optional evidence must not interrupt the remote command.
+                        readiness = None
                 if summary is not None:
                     try:
                         observe_test_output(line, summary)
@@ -171,8 +227,8 @@ def main():
             # a CalledProcessError traceback containing the entire SSH command.
             raise SystemExit(1)
     finally:
-        print("Copying test reports back")
         try:
+            print("Copying test reports back")
             report_target_path = "%s/integration_tests/target" % get_test_report_path_prefix()
             subprocess.check_call(["mkdir", "-p", "integration_tests/target"])
             # Keep reports and diagnostics together; Jenkins discovers the XML recursively.
@@ -189,9 +245,12 @@ def main():
                 "integration_tests/target/",
             ]
             print("rsync command: %s" % shell_join(rsync_command))
-            subprocess.check_call(rsync_command)
-        except subprocess.CalledProcessError as e:
-            print("WARNING: test report collection failed: %s" % e)
+            subprocess.check_call(rsync_command, timeout=120)
+        except (subprocess.SubprocessError, OSError) as e:
+            try:
+                print("WARNING: test report collection failed: %s" % e)
+            except OSError:
+                pass
         finally:
             if status:
                 # The CI wrapper reprints this after classification and cleanup. Manual
