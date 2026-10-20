@@ -74,6 +74,11 @@ class GpuDeltaParquetFileFormatBase(
   val columnMappingMode: DeltaColumnMappingMode = metadata.columnMappingMode
   val referenceSchema: StructType = metadata.schema
 
+  // Delta does not mark its synthetic deleted-row field in StructField metadata. A field
+  // present in the table schema is user data, even when it has the internal marker's name.
+  private val hasSyntheticRowDeletedColumn =
+    !referenceSchema.exists(_.name == IS_ROW_DELETED_COLUMN_NAME)
+
   if (columnMappingMode == IdMapping) {
     val requiredReadConf = SQLConf.PARQUET_FIELD_ID_READ_ENABLED
     require(SparkSession.getActiveSession.exists(_.sessionState.conf.getConf(requiredReadConf)),
@@ -89,7 +94,7 @@ class GpuDeltaParquetFileFormatBase(
    */
   override def prepareSchema(inputSchema: StructType): StructType = {
     def isInternalColumn(field: StructField): Boolean =
-      field.name == IS_ROW_DELETED_COLUMN_NAME ||
+      (hasSyntheticRowDeletedColumn && field.name == IS_ROW_DELETED_COLUMN_NAME) ||
         GpuDeltaParquetFileFormatBase2.isGpuRowIndexColumn(field)
     val dataSchema = StructType(inputSchema.fields.filterNot(
       isInternalColumn))
@@ -190,7 +195,11 @@ class GpuDeltaParquetFileFormatBase(
       results.headOption.map(e => ColumnMetadata(e._2, e._1))
     }
 
-    val isRowDeletedColumn = findColumn(IS_ROW_DELETED_COLUMN_NAME)
+    val isRowDeletedColumn = if (hasSyntheticRowDeletedColumn) {
+      findColumn(IS_ROW_DELETED_COLUMN_NAME)
+    } else {
+      None
+    }
     val rowIndexColumn = schemaWithIndices
       .find(entry => GpuDeltaParquetFileFormatBase2.isGpuRowIndexColumn(entry._1))
       .map(entry => ColumnMetadata(entry._2, entry._1))
@@ -241,6 +250,7 @@ class GpuDeltaParquetFileFormatBase(
       fileScan.rapidsConf,
       fileScan.allMetrics,
       useMetadataRowIndex = false,
+      hasSyntheticRowDeletedColumn,
       tablePath,
       // queryUsesInputFile is used to disable combining small files in the multi-threaded reader.
       // When it is true, combining small files is disabled. Since we don't currently support
@@ -266,6 +276,7 @@ class DeltaMultiFileReaderFactory(
     @transient rapidsConf: RapidsConf,
     metrics: Map[String, GpuMetric],
     useMetadataRowIndex: Boolean,
+    hasSyntheticRowDeletedColumn: Boolean,
     tablePath: Option[String],
     queryUsesInputFile: Boolean
     ) extends GpuParquetMultiFilePartitionReaderFactory(sqlConf, broadcastedConf,
@@ -283,7 +294,11 @@ class DeltaMultiFileReaderFactory(
     results.headOption.map(e => ColumnMetadata(e._2, e._1))
   }
 
-  private val isRowDeletedColumn = findColumn(IS_ROW_DELETED_COLUMN_NAME)
+  private val isRowDeletedColumn = if (hasSyntheticRowDeletedColumn) {
+    findColumn(IS_ROW_DELETED_COLUMN_NAME)
+  } else {
+    None
+  }
   private val rowIndexColumn = schemaWithIndices
     .find(entry => GpuDeltaParquetFileFormatBase2.isGpuRowIndexColumn(entry._1))
     .map(entry => ColumnMetadata(entry._2, entry._1))
