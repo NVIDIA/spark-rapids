@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2022, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,8 @@ class ScalaUDFSuite extends SparkQueryCompareTestSuite {
     frame.select(urlencode(col("strings")))
   }
 
-  testSparkResultsAreEqual("Scala always true", nullableStringsFromCsv) { frame =>
+  testSparkResultsAreEqual("Scala always true", nullableStringsFromCsv,
+      conf = noSpecializedScalaUDF()) { frame =>
     // This is a basic smoke-test of the Scala UDF framework, not an
     // exhaustive test of the specific UDF implementation itself.
     val udf = frame.sparkSession.udf.register("alwaystrue", new AlwaysTrueUDF())

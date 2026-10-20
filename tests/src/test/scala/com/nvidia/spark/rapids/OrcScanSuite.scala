@@ -183,11 +183,14 @@ class OrcScanSuite extends SparkQueryCompareTestSuite {
       .set(SQLConf.IGNORE_MISSING_FILES.key, "true")
       .set(RapidsConf.ORC_READER_TYPE.key, RapidsReaderType.COALESCING.toString)
 
-    val cpuResult = withCpuSparkSession(collectAfterDeletingPlannedFiles(_, checkGpu = false), conf)
+    // The Databricks CPU reader fails on the missing files despite ignoreMissingFiles
+    if (!isDatabricksRuntime) {
+      val cpuResult =
+        withCpuSparkSession(collectAfterDeletingPlannedFiles(_, checkGpu = false), conf)
+      assertResult(Seq("0", "1"))(cpuResult)
+    }
     val gpuResult = withGpuSparkSession(collectAfterDeletingPlannedFiles(_, checkGpu = true), conf)
-
-    assertResult(Seq("0", "1"))(cpuResult)
-    assertResult(cpuResult)(gpuResult)
+    assertResult(Seq("0", "1"))(gpuResult)
   }
 
   private def causedByFileNotFound(t: Throwable): Boolean =

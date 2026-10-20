@@ -16,16 +16,18 @@
 
 package com.nvidia.spark.rapids.lore
 
-import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, GpuProjectExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite}
+import com.nvidia.spark.rapids.{FunSuiteWithTempDir, GpuColumnarToRowExec, GpuHashAggregateExec, GpuProjectExec, GpuShuffledSymmetricHashJoinExec, RapidsConf, ShimLoader, SparkQueryCompareTestSuite}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.SparkShimImpl
 import org.apache.hadoop.fs.Path
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.{functions, DataFrame, SparkSession}
-import org.apache.spark.sql.execution.SQLExecution
+import org.apache.spark.sql.execution.{SparkPlan, SQLExecution}
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanHelper
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
+import org.apache.spark.sql.rapids.execution.GpuBroadcastHashJoinExec
 
 class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir with Logging {
   /**
@@ -90,7 +92,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("Broadcast join") {
     // The max value and number of values make it so that SUM will not overflow, so ANIS is good
-    doTestReplay("32[*]") { spark =>
+    doTestReplay(broadcastJoin) { spark =>
       val df1 = spark.range(0, 1000, 1, 10)
         .selectExpr("id % 10 as key", "id % 100 as value")
         .groupBy("key")
@@ -137,7 +139,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("No broadcast join") {
     // The max value and number of values make it so that SUM will not overflow, so ANIS is good
-    doTestReplay("30[*]") { spark =>
+    doTestReplay(shuffledSymmetricJoin) { spark =>
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -156,7 +158,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("AQE broadcast") {
     // The max value and number of values make it so that SUM will not overflow, so ANIS is good
-    doTestReplay("93[*]") { spark =>
+    doTestReplay(project) { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       val df1 = spark.range(0, 1000, 1, 10)
@@ -175,7 +177,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
 
   test("AQE Exchange") {
     // The max value and number of values make it so that SUM will not overflow, so ANIS is good
-    doTestReplay("28[*]") { spark =>
+    doTestReplay(hashAggregate) { spark =>
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
 
       spark.range(0, 1000, 1, 100)
@@ -337,7 +339,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("GpuShuffledSymmetricHashJoin with SerializedTableColumn") {
-    doTestReplay("56[*]") { spark =>
+    doTestReplay(shuffledSymmetricJoin) { spark =>
       // Disable broadcast join, force hash join
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -353,7 +355,7 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
   }
 
   test("GpuShuffledSymmetricHashJoin with in Kudo mode") {
-    doTestReplay("56[*]") { spark =>
+    doTestReplay(shuffledSymmetricJoin) { spark =>
       // Disable broadcast join, force hash join
       spark.conf.set(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key, "-1")
       spark.conf.set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
@@ -568,6 +570,36 @@ class GpuLoreSuite extends SparkQueryCompareTestSuite with FunSuiteWithTempDir w
       val directDf = spark.read.parquet(parquetFile.toString)
       assert(directDf.columns.toSeq == expectedNames)
     }
+  }
+
+  private val broadcastJoin: PartialFunction[SparkPlan, SparkPlan] = {
+    case j: GpuBroadcastHashJoinExec => j
+  }
+  private val shuffledSymmetricJoin: PartialFunction[SparkPlan, SparkPlan] = {
+    case j: GpuShuffledSymmetricHashJoinExec => j
+  }
+  private val project: PartialFunction[SparkPlan, SparkPlan] = {
+    case p: GpuProjectExec => p
+  }
+  private val hashAggregate: PartialFunction[SparkPlan, SparkPlan] = {
+    case a: GpuHashAggregateExec => a
+  }
+
+  /**
+   * Dumps and replays the first node in the executed plan that `target` matches. LORE ids
+   * depend on the plan shape, which differs between Spark and Databricks.
+   */
+  private def doTestReplay(target: PartialFunction[SparkPlan, SparkPlan])
+      (dfFunc: SparkSession => DataFrame): Unit = {
+    val loreId = withGpuSparkSession { spark =>
+      val df = dfFunc(spark)
+      df.collect()
+      val plan = df.queryExecution.executedPlan
+      new AdaptiveSparkPlanHelper {}.collectFirst(plan)(target)
+        .flatMap(GpuLore.loreIdOf)
+        .getOrElse(fail(s"No LORE id for the target node in:\n$plan"))
+    }
+    doTestReplay(s"$loreId[*]")(dfFunc)
   }
 
   private def doTestReplay(loreDumpIds: String)(dfFunc: SparkSession => DataFrame) = {

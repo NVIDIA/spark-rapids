@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2021-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,21 +31,21 @@ class KnownNotNullSuite extends SparkQueryCompareTestSuite {
 
   testSparkResultsAreEqual("KnownNotNull in Scala UDF-Int",
       intsFromCsv,
-      enableCsvConf) { frame =>
+      noSpecializedScalaUDF(enableCsvConf())) { frame =>
     val plusOne = frame.sparkSession.udf.register("plusOne", new IntPlusOne())
     frame.select(plusOne(col("ints_1")))
   }
 
   testSparkResultsAreEqual("KnownNotNull in Scala UDF-Long",
     longsFromCSVDf,
-    enableCsvConf) { frame =>
+    noSpecializedScalaUDF(enableCsvConf())) { frame =>
     val plusOne = frame.sparkSession.udf.register("plusOne", new LongPlusOne())
     frame.select(plusOne(col("longs")))
   }
 
   testSparkResultsAreEqual("KnownNotNull in Scala UDF-Short",
     shortsFromCsv,
-    enableCsvConf) { frame =>
+    noSpecializedScalaUDF(enableCsvConf())) { frame =>
     val plusOne = frame.sparkSession.udf.register("plusOne", new ShortPlusOne())
     frame.select(plusOne(col("shorts")))
   }

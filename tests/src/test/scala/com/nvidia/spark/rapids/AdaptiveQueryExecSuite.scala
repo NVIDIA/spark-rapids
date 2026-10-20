@@ -40,7 +40,7 @@ import org.apache.spark.sql.functions.{col, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{ExecutionPlanCaptureCallback, GpuFileSourceScanExec,
   GpuInMemoryTableScanExec}
-import org.apache.spark.sql.rapids.execution.{GpuCustomShuffleReaderExec, GpuJoinExec, GpuShuffleExchangeExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastHashJoinExec, GpuCustomShuffleReaderExec, GpuJoinExec, GpuShuffleExchangeExecBase}
 import org.apache.spark.sql.rapids.shims.SparkSessionUtils
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims.SparkSession
 import org.apache.spark.sql.types.{ArrayType, DataTypes, DecimalType, IntegerType, StringType, StructField, StructType}
@@ -100,6 +100,31 @@ class AdaptiveQueryExecSuite
   private def findTopLevelSort(plan: SparkPlan): Seq[SortExec] = {
     collect(plan) {
       case s: SortExec => s
+    }
+  }
+
+  /**
+   * Databricks AQE turns these sort-merge joins into broadcast hash joins at runtime, even with
+   * spark.sql.autoBroadcastJoinThreshold=-1, and cancels or locally reads the stream side's
+   * shuffle. See https://github.com/NVIDIA/cudf-spark/issues/16455
+   */
+  private def checkDatabricksBroadcastJoins(plan: SparkPlan, numJoins: Int): Unit = {
+    val joins = collect(plan) {
+      case j: GpuBroadcastHashJoinExec => j
+    }
+    assert(joins.size == numJoins)
+    joins.foreach { j =>
+      val streamSide = j.buildSide match {
+        case GpuBuildLeft => j.right
+        case GpuBuildRight => j.left
+      }
+      val streamShuffles = collect(streamSide) {
+        case s: ShuffleQueryStageExec => s
+      }
+      val streamLocalReaders = collect(streamSide) {
+        case r: GpuCustomShuffleReaderExec if r.isLocalReader => r
+      }
+      assert(streamShuffles.size == streamLocalReaders.size, s"stream side: $streamSide")
     }
   }
 
@@ -244,7 +269,8 @@ class AdaptiveQueryExecSuite
       val shuffleExchanges =
           OperatorsUtilShims.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
               .map(_.asInstanceOf[ShuffleQueryStageExec])
-      assert(shuffleExchanges.length === 2)
+      // Databricks cancels the shuffle of the side it later streams through a broadcast join
+      assert(shuffleExchanges.length === (if (isDatabricksRuntime) 1 else 2))
       val stats = shuffleExchanges.map(_.getRuntimeStatistics)
       assert(stats.forall(_.rowCount.contains(1000)))
     }
@@ -258,7 +284,9 @@ class AdaptiveQueryExecSuite
       val innerSmj = findTopLevelGpuShuffleHashJoin(innerAdaptivePlan)
       // Spark changed how skewed joins work and now the numbers are different
       // depending on the version being used
-      if (cmpSparkVersion(3,1,1) >= 0) {
+      if (isDatabricksRuntime) {
+        checkDatabricksBroadcastJoins(innerAdaptivePlan, 1)
+      } else if (cmpSparkVersion(3,1,1) >= 0) {
         checkSkewJoin(innerSmj, 2, 1)
       } else {
         checkSkewJoin(innerSmj, 1, 1)
@@ -274,7 +302,9 @@ class AdaptiveQueryExecSuite
       val leftSmj = findTopLevelGpuShuffleHashJoin(leftAdaptivePlan)
       // Spark changed how skewed joins work and now the numbers are different
       // depending on the version being used
-      if (cmpSparkVersion(3,1,1) >= 0) {
+      if (isDatabricksRuntime) {
+        checkDatabricksBroadcastJoins(leftAdaptivePlan, 1)
+      } else if (cmpSparkVersion(3,1,1) >= 0) {
         checkSkewJoin(leftSmj, 2, 0)
       } else {
         checkSkewJoin(leftSmj, 1, 0)
@@ -288,7 +318,11 @@ class AdaptiveQueryExecSuite
         spark,
         "SELECT * FROM skewData1 right outer join skewData2 ON key1 = key2")
       val rightSmj = findTopLevelGpuShuffleHashJoin(rightAdaptivePlan)
-      checkSkewJoin(rightSmj, 0, 1)
+      if (isDatabricksRuntime) {
+        checkDatabricksBroadcastJoins(rightAdaptivePlan, 1)
+      } else {
+        checkSkewJoin(rightSmj, 0, 1)
+      }
     }
   }
 
@@ -653,9 +687,15 @@ class AdaptiveQueryExecSuite
       val smj = findTopLevelSortMergeJoin(plan)
       assert(smj.size == 3)
 
-      // executed GPU plan replaces SMJ with SHJ
-      val shj = findTopLevelGpuShuffleHashJoin(adaptivePlan)
-      assert(shj.size == 3)
+      // executed GPU plan replaces SMJ with SHJ. Databricks also turns some, depending on
+      // runtime statistics, into BHJ.
+      if (isDatabricksRuntime) {
+        val bhj = collect(adaptivePlan) { case j: GpuBroadcastHashJoinExec => j }
+        assert(bhj.size + findTopLevelGpuShuffleHashJoin(adaptivePlan).size == 3)
+      } else {
+        val shj = findTopLevelGpuShuffleHashJoin(adaptivePlan)
+        assert(shj.size == 3)
+      }
 
       // one of the GPU exchanges should have been re-used
       val ex = findReusedExchange(adaptivePlan)
@@ -729,13 +769,18 @@ class AdaptiveQueryExecSuite
       val smj = findTopLevelSortMergeJoin(plan)
       assert(smj.size == 1)
 
-      val bhj = findTopLevelGpuBroadcastHashJoin(adaptivePlan)
-      assert(bhj.size == 1)
-      val localReaders = collect(adaptivePlan) {
-        case reader: GpuCustomShuffleReaderExec if reader.isLocalReader => reader
+      if (isDatabricksRuntime) {
+        // the build side may come from an executor-side broadcast instead of an exchange
+        checkDatabricksBroadcastJoins(adaptivePlan, 1)
+      } else {
+        val bhj = findTopLevelGpuBroadcastHashJoin(adaptivePlan)
+        assert(bhj.size == 1)
+        val localReaders = collect(adaptivePlan) {
+          case reader: GpuCustomShuffleReaderExec if reader.isLocalReader => reader
+        }
+        // Verify local readers length
+        assert(localReaders.length == 2)
       }
-      // Verify local readers length
-      assert(localReaders.length == 2)
 
       // test with non-common data types
       uncommonTypeTestData(spark)
@@ -745,11 +790,15 @@ class AdaptiveQueryExecSuite
       val smj2 = findTopLevelSortMergeJoin(plan2)
       assert(smj2.size == 1)
 
-      val localReaders2 = collect(adaptivePlan2) {
-        case reader: GpuCustomShuffleReaderExec if reader.isLocalReader => reader
+      if (isDatabricksRuntime) {
+        checkDatabricksBroadcastJoins(adaptivePlan2, 1)
+      } else {
+        val localReaders2 = collect(adaptivePlan2) {
+          case reader: GpuCustomShuffleReaderExec if reader.isLocalReader => reader
+        }
+        // Verify local readers length
+        assert(localReaders2.length == 2)
       }
-      // Verify local readers length
-      assert(localReaders2.length == 2)
     }, conf)
   }
 

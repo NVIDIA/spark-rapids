@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2025, NVIDIA CORPORATION.
+ * Copyright (c) 2020-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,6 +46,9 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
     val conf = new SparkConf()
         .set("spark.rapids.sql.exec.BroadcastNestedLoopJoinExec", "true")
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
+        // Databricks otherwise reads the CPU shuffle of the LocalTableScan build side as an
+        // executor-side broadcast, which keeps the join on the CPU
+        .set("spark.databricks.execution.executorSideBroadcast.enabled", "false")
         // In some cases AQE can make the children not look like they are on the GPU
         .set(RapidsConf.TEST_ALLOWED_NONGPU.key,
           "ShuffleExchangeExec,RoundRobinPartitioning")
