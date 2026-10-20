@@ -45,13 +45,12 @@ The following table details how the common subdirectories map to Delta Lake vers
 | `common/src/main/databricks` | Delta Lake on all Databricks platforms     |
 | `common/src/main/delta-io`   | Delta Lake on all non-Databricks platforms |
 | `delta-lake/src/main/delta*` | Directories supporting various version ranges |
+| `common/src/main/db-350db143-400db173/scala` | DBR 14.3 and 17.3 table-creation and write bases |
+| `common/src/main/db-350db143-410db183/scala` | Compatible sources for DBR 14.3 and 17.3; DBR 18.3 consumption follows in a separate PR |
+| `common/src/main/db-400db173-410db183/{scala,java}` | DBR 17.3 sources prepared for sharing with DBR 18.3 in a separate PR |
 
-### Databricks 17.3 and 18.3 sources
-
-`common/src/main/db-400db173-410db183` contains compatible Scala and Java sources
-compiled separately against each runtime's dependencies. Each runtime module keeps its own
-API adaptations. Databricks 14.3 continues to use its existing source directories.
-
-When only one supported runtime consumes this directory, move its sources into that runtime's
-module; if a newer runtime also consumes them, retain a shared directory for the remaining
-versions.
+A module consuming `db-400db173-410db183` must also supply compatible implementations of
+`GpuCreateDeltaTableCommand`, `GpuDeltaFileFormatWriter`, `GpuOptimisticTransaction`,
+`GpuOptimisticTransactionBase`, and `GpuWriteIntoDeltaBase`, either from its own sources or
+another selected common directory. This PR wires the new directories into DBR 14.3/17.3;
+the DBR 18.3 release profile continues to build the Delta stub.

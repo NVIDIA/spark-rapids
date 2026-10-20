@@ -100,7 +100,10 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
-      GpuReadParquetFileFormat.tagSupport(meta)
+      val deltaFormat = format.asInstanceOf[DeltaParquetFileFormat]
+      val mayContainShreddedVariant =
+        DeltaRuntimeShim.mayContainShreddedVariant(deltaFormat.protocol)
+      GpuReadParquetFileFormat.tagSupport(meta, Some(mayContainShreddedVariant))
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
     }
