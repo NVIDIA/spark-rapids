@@ -70,13 +70,27 @@ python3 build/check_shim_compatibility.py related-prs \
   --base-ref origin/main --pr 12345
 ```
 
-For a new PR, omit `--pr`. Add `--validated-base SHA` when the previous
-validation's exact base is known. The default starts at the head/base common
-ancestor. History is commit-based, not limited to the last 24 hours: #16291
-merged about 56 hours before #16037 and their combination caused #16404.
+For a new PR, omit `--pr`. Search PRs targeting the same repository and branch:
 
-The helper paginates **all authors' open PRs**, including Drafts, and examines
-PRs merged in that base-commit range. It compares actual changed paths, explicit
+- **Open PRs:** all authors, including Drafts, without an age limit; exclude the
+  PR being checked.
+- **Merged PRs:** changes after the base actually covered by the latest
+  applicable successful validation, through the fetched current target SHA.
+  Pass that base as `--validated-base SHA` only when the run's exact base is
+  known and it covered the affected profiles/shim APIs. Otherwise use the
+  default head/target-branch common ancestor. The helper does not discover or
+  verify prior CI coverage automatically; the automated workflow uses this
+  common-ancestor fallback.
+
+Prioritize related merges from the last **48 hours** during inspection, while
+retaining older changes in that commit range. An earlier green premerge check
+only justifies narrowing the range if it included those changes and covered the
+affected profiles/shim APIs. #16291 merged about 56 hours before #16037 and their
+combination caused #16404. The goal is to catch concurrent PRs that each pass
+their own checks but fail when combined.
+
+The helper paginates the open PRs and examines PRs merged in that base-commit
+range. It compares actual changed paths, explicit
 imports in our changed sources, shim families across version directories, and
 matrix/implementation interactions.
 A matrix path match is deliberately broad. A shim/profile change also flags

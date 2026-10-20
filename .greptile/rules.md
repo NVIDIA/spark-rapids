@@ -11,7 +11,16 @@ current head's `shim-compatibility` check summary and JSON/Markdown artifact;
 verify head/base identities. If tools cannot retrieve the report or execute the
 read-only helper, state the missing evidence instead of claiming a clean scan.
 
-Inspect related open/intervening merged PRs against the current combined tree.
+Inspect related PRs targeting the same branch against the current combined tree:
+
+- Open PRs: all authors, including Drafts, without an age limit.
+- Merged PRs: from the base actually covered by the latest applicable successful
+  validation through the fetched current target branch. If that validated base
+  or coverage is unknown, use the PR/target-branch common ancestor.
+
+Prioritize related merges from the last 48 hours, but retain older changes in
+that commit range. Earlier green premerge checks justify a narrower range only
+when they included those changes and covered the affected profiles/shim APIs.
 Comment on confirmed new gaps with the file, symbol, profile, related PR links,
 and observed evidence. Keep unchanged base findings separate. An association or
 Draft alone is not a defect. `INCOMPLETE` is not a pass; static success is not

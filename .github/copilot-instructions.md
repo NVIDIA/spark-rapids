@@ -11,12 +11,14 @@ instructions must not weaken the repository policy.
 
 For shim/shared-caller or Spark/Databricks matrix changes, follow
 [check-shim-compatibility](../.agents/skills/check-shim-compatibility/SKILL.md).
-Read the `shim-compatibility` check summary/artifact and verify head/base.
-Inspect related PRs; report confirmed new gaps with file, symbol, profile,
-peer links and observed evidence. Separate unchanged base debt and incomplete
-scans; a Draft or association alone is not a defect. Use the read-only helper
-when tools permit; otherwise state missing evidence. Never claim an unobserved
-run. Static success is not compilation; stale reports need a rerun.
+Scope: all authors' open PRs (including Drafts, any age) to the same branch;
+merged PRs in `validated-base..current-base`, using the head/base common ancestor
+if prior profile/API coverage is unknown. Prioritize 48 hours; keep older merges
+in range.
+Read the `shim-compatibility` report; verify head/base. Report confirmed gaps
+with file/symbol/profile, peer links and observed evidence. Separate base debt;
+Drafts/associations alone are not defects. Use the read-only helper when possible;
+state missing evidence. Static success is not compilation; rerun stale reports.
 
 ## Cross-repo References
 
