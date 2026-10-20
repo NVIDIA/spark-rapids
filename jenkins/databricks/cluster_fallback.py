@@ -103,8 +103,8 @@ def wait_for_driver(cluster_id, timeout=START_TIMEOUT):
             if re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9.-]*", address):
                 return address
         time.sleep(20)
-    # An unclassified startup timeout can also be an init-script/configuration defect.
-    raise PreparationError("CLUSTER_READINESS_TIMEOUT")
+    # Retry this pre-build startup deadline on a fresh cluster only after confirmed cleanup.
+    raise PreparationError("CLUSTER_READINESS_TIMEOUT", retryable=True)
 
 
 def wait_for_ssh(address, cluster_id):
