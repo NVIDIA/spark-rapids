@@ -61,6 +61,7 @@ class ParquetCombineSuite extends RmmSparkRetrySuiteBase {
       1, false, false, false, false, ordered, CombineConf(1L << 20, 0)) {
     var failRowCount = false
     var failBuild = false
+    var numDeletedRows = 0L
 
     private def file(key: Int) = PartitionedFileUtilsShim.newPartitionedFile(
       InternalRow(key), s"file:///tmp/part-$key", 0, 0)
@@ -90,12 +91,18 @@ class ParquetCombineSuite extends RmmSparkRetrySuiteBase {
 
     override protected def computeNumRowsAlive(rows: Long,
         metadata: HostMemoryBuffersWithMetaDataBase): Int = {
+      if (failRowCount) {
+        assert(pending.isEmpty, "leftovers must not be published before combining succeeds")
+      }
       require(!failRowCount, "injected row-count failure")
-      super.computeNumRowsAlive(rows, metadata)
+      super.computeNumRowsAlive(rows - numDeletedRows, metadata)
     }
 
     override protected def newCombinedHMBWithMetaData(meta: CombinedMeta,
         buffer: SingleHMBAndMeta, offset: Long): HostMemoryBuffersWithMetaData = {
+      if (failBuild) {
+        assert(pending.isEmpty, "leftovers must not be published before combining succeeds")
+      }
       require(!failBuild, "injected combined-buffer failure")
       super.newCombinedHMBWithMetaData(meta, buffer, offset)
     }
@@ -316,6 +323,35 @@ class ParquetCombineSuite extends RmmSparkRetrySuiteBase {
       intercept[IllegalArgumentException] { reader.combineHMBs(input) }
       assert(released == 3)
       assert(reader.pending.isEmpty)
+    }
+  }
+
+  test("combined metadata-only groups reuse the precomputed alive-row counts") {
+    withResource(new Reader(ordered = true)) { reader =>
+      reader.numDeletedRows = 5
+      val countSchema = new StructType()
+      val input = Array[HostMemoryBuffersWithMetaDataBase](
+        reader.empty(0, 10, countSchema), reader.empty(1, 20, countSchema))
+      var released = 0
+      input.foreach(_.addReleaseResourceCallback(() => released += 1))
+      withResource(reader.combineHMBs(input)) { combined =>
+        assert(combined.memBuffersAndSizes.map(_.numRows).sum == 30)
+        assert(combined.allPartValues.get.map(_._1).toSeq == Seq(5L, 15L))
+        reader.failRowCount = true
+        assert(readRowCount(reader, combined) == 20)
+        assert(released == 2)
+      }
+      assert(released == 2)
+    }
+  }
+
+  test("uncombined metadata-only files compute their alive-row counts") {
+    withResource(new Reader(ordered = true)) { reader =>
+      reader.numDeletedRows = 5
+      withResource(reader.empty(0, 10, new StructType())) { metadata =>
+        assert(metadata.allPartValues.isEmpty)
+        assert(readRowCount(reader, metadata) == 5)
+      }
     }
   }
 
