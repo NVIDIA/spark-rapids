@@ -89,7 +89,11 @@ Map run(script, dbUtils, Closure build, Closure test) {
                                 script.echo 'Databricks: build callback completed; installing Spark readiness hook'
                                 script.sh "python3 jenkins/databricks/cluster_fallback.py install-readiness --state $stateFile"
                                 def extraEnvs = script.env.EXTRA_ENVS ? "${script.env.EXTRA_ENVS}," : ''
-                                script.withEnv(["EXTRA_ENVS=${extraEnvs}SPARK_STARTUP_CHECK=/home/ubuntu/.databricks-fallback/spark_readiness.sh"]) {
+                                script.withEnv([
+                                    "EXTRA_ENVS=${extraEnvs}SPARK_STARTUP_CHECK=/home/ubuntu/.databricks-fallback/spark_readiness.sh",
+                                    // Opt in only here; manual run-tests.py callers keep their defaults.
+                                    'DATABRICKS_CI_TEST_SUPERVISION=1'
+                                ]) {
                                     try {
                                         operation = 'test'
                                         script.echo 'Databricks: starting test callback with Spark readiness checks'

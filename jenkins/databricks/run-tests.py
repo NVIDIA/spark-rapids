@@ -11,7 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Upload & run test script on Databricks cluster."""
+"""Upload & run test script on Databricks cluster.
+
+DATABRICKS_CI_TEST_SUPERVISION=1 opts CI into process cleanup and bounded SSH/transfers.
+Leave it unset for the existing manual execution behavior.
+"""
 
 import json
 import os
@@ -167,23 +171,20 @@ def main():
     print("Master node address is: %s" % master_addr)
 
     print("Copying script")
-    ssh_args = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
-                "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3",
-                "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+    ci_supervision = os.environ.get("DATABRICKS_CI_TEST_SUPERVISION") == "1"
+    transfer_timeout = 120 if ci_supervision else None
+    ssh_args = ["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
                 "-p", "2200", "-i", params.private_key_file]
+    if ci_supervision:
+        ssh_args += ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
+                     "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"]
     rsync_ssh = shell_join(["ssh"] + ssh_args)
     rsync_command = ["rsync", "-I", "-Pave", rsync_ssh, "--", params.local_script,
                      "ubuntu@%s:%s" % (master_addr, params.script_dest)]
     print("rsync command: %s" % shell_join(rsync_command))
-    subprocess.check_call(rsync_command, timeout=120)
+    subprocess.check_call(rsync_command, timeout=transfer_timeout)
 
-    runner = str(Path(__file__).with_name("run-test-command.sh"))
-    remote_runner = params.script_dest + ".runner.sh"
-    subprocess.check_call(["rsync", "-I", "-Pave", rsync_ssh, "--", runner,
-                           "ubuntu@%s:%s" % (master_addr, remote_runner)], timeout=120)
-
-    test_command = shell_join([
-        "bash", remote_runner,
+    test_command = [
         "env",
         "LOCAL_JAR_PATH=%s" % params.jar_path,
         "SPARK_CONF=%s" % params.spark_conf,
@@ -192,9 +193,18 @@ def main():
         "TEST_TYPE=%s" % params.test_type,
         "bash",
         params.script_dest,
-    ] + params.script_args)
+    ] + params.script_args
+    if ci_supervision:
+        runner = str(Path(__file__).with_name("run-test-command.sh"))
+        remote_runner = params.script_dest + ".runner.sh"
+        subprocess.check_call(["rsync", "-I", "-Pave", rsync_ssh, "--", runner,
+                               "ubuntu@%s:%s" % (master_addr, remote_runner)],
+                              timeout=transfer_timeout)
+        remote_command = shell_join(["bash", remote_runner] + test_command)
+    else:
+        remote_command = "%s 2>&1 | tee testout; exit ${PIPESTATUS[0]}" % shell_join(test_command)
     ssh_command = ["ssh"] + ssh_args + ["ubuntu@%s" % master_addr,
-                                         "bash -c %s" % shlex.quote(test_command)]
+                                         "bash -c %s" % shlex.quote(remote_command)]
     print("ssh command: %s" % shell_join(ssh_command))
     summary = {}
     readiness = {}
@@ -245,7 +255,7 @@ def main():
                 "integration_tests/target/",
             ]
             print("rsync command: %s" % shell_join(rsync_command))
-            subprocess.check_call(rsync_command, timeout=120)
+            subprocess.check_call(rsync_command, timeout=transfer_timeout)
         except (subprocess.SubprocessError, OSError) as e:
             try:
                 print("WARNING: test report collection failed: %s" % e)

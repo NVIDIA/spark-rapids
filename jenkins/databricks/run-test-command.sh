@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Remote Linux supervisor used by run-tests.py; direct test.sh usage is unchanged.
+# Remote Linux supervisor for run-tests.py with DATABRICKS_CI_TEST_SUPERVISION=1.
 # A regular log file decouples command completion from orphan JVM output pipes.
 set +m
 test_pid=
