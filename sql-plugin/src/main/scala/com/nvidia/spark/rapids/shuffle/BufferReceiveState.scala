@@ -123,7 +123,7 @@ class BufferReceiveState(
   // how many requests, in order, were consumed into batches
   private[this] var received = 0
 
-  // why the server failed this request, until `takeFailure` hands it over
+  // why the server failed this request, until `maybeTakeFailure` hands it over
   private[this] var serverFailure: String = null
 
   // set by close, after which neither a second close nor a failure the server reports later
@@ -175,25 +175,24 @@ class BufferReceiveState(
   def hasMoreBlocks: Boolean = synchronized { hasMoreBuffers_ }
 
   /**
-   * Records that the server failed this request, after which no more windows come.
+   * Records the server's failure, and hands it over now if no window is left to consume.
+   * Otherwise the field keeps it until the copy thread has consumed those windows.
    * @param reason the error message for each reader whose request will not arrive
-   * @return what `takeFailure` returns now. A caller that gets the failure must end this state
-   *         with it. While a window is left to consume, the failure waits for a later
-   *         `takeFailure` call.
+   * @return what `maybeTakeFailure` returns
    */
   def serverFailed(reason: String): Option[FailedTransfer] = synchronized {
     serverFailure = reason
-    takeFailure()
+    maybeTakeFailure()
   }
 
   /**
-   * Hands over the server's failure when no window is left to consume and nothing closed this
-   * state. While a window is left, UCX can still write into the bounce buffer, and the copy
-   * thread has yet to copy out of it. The one caller that gets the failure must end this state:
-   * return the bytes in flight for `notReceived` to the transport, fail their readers and close
-   * this state.
+   * Hands over and clears the server's failure only when no window is left to consume and
+   * nothing closed this state. While a window is left, UCX can still write into the bounce
+   * buffer, and the copy thread has yet to copy out of it. The one caller that gets the failure
+   * must end this state: return the bytes in flight for `notReceived` to the transport, fail
+   * their readers and close this state.
    */
-  def takeFailure(): Option[FailedTransfer] = synchronized {
+  def maybeTakeFailure(): Option[FailedTransfer] = synchronized {
     if (serverFailure != null && toConsume == 0 && !closed) {
       val failure = FailedTransfer(serverFailure, requests.drop(received))
       serverFailure = null

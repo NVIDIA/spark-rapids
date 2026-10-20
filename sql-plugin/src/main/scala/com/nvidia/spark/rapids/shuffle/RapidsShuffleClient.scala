@@ -456,7 +456,7 @@ class RapidsShuffleClient(
     if (moreWindows) {
       // A request that the server failed while this window was on its way ends here, outside
       // the catch above, which would close the state a second time.
-      endIfFailed(bufferReceiveState, bufferReceiveState.takeFailure())
+      endIfFailed(bufferReceiveState, bufferReceiveState.maybeTakeFailure())
     }
   }
 
