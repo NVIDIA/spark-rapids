@@ -117,11 +117,7 @@ current head, related PR states, and matrix. Relevant movement invalidates prior
 evidence. This skill is advisory until the repository wires a deterministic
 check into required CI; it cannot prevent concurrent human merges.
 
-## Regression checks
-
-```bash
-python3 -m unittest discover -s build/tests -p 'test_check_shim_compatibility.py'
-```
+## Manual verification
 
 For a real-source #16404 replay, export `pom.xml`, `scala2.13/pom.xml`, and
 `sql-plugin/src/main` from these commits into separate temporary directories.
