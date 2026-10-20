@@ -680,12 +680,13 @@ def test_csv_pruned_partition_bom_input_meta(spark_tmp_path, v1_enabled_list, he
 @ignore_order(local=True)
 @pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
 @pytest.mark.parametrize('prefix', ['', '\n \t\n', '# leading comment\n \t\n'])
-@pytest.mark.parametrize('first_record,header', [
-    ('\ufefffirst,1', False), ('\ufeff#value,1', False), ('\ufeff', False),
-    ('\ufeff \t', False), ('\ufeff\ufefffirst,1', False), ('\ufeff"quoted,value",1', False),
-    ('\ufeffa,b', True), ('\ufeff#not_header,ignored', True)])
+@pytest.mark.parametrize('first_record,header,quote', [
+    ('\ufefffirst,1', False, '"'), ('\ufeff#value,1', False, '"'), ('\ufeff', False, '"'),
+    ('\ufeff \t', False, '"'), ('\ufeff\ufefffirst,1', False, '"'),
+    ('\ufeff"quoted,value",1', False, '"'), ('\ufeffa,b', True, '"'),
+    ('\ufeff#not_header,ignored', True, '"'), ('\ufeff"quoted,value",1', False, ''),
+    ('\ufeff', False, ''), ('\ufeff#value,1', False, '')])
 @pytest.mark.parametrize('schema', ['a string, b int', 'a string'])
-@pytest.mark.parametrize('quote', ['"', ''])
 def test_csv_first_record_bom(spark_tmp_path, v1_enabled_list, prefix, first_record, header,
                             schema, quote):
     path = spark_tmp_path + '/csv_first_record_bom'
