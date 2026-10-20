@@ -95,6 +95,16 @@ class SourceResolverTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Ambiguous shim sources for 356'):
             resolve_sources(self.graph, variants, '356')
 
+    def test_nearer_override_wins_regardless_of_variant_order(self):
+        self.source('355', 'Example.scala', ['{"spark":{"introduced":"355"}}'])
+        self.source('356', 'Example.scala', ['{"spark":{"introduced":"355"}}'])
+        override = self.source('357', 'Example.scala', ['{"spark":{"only":"357"}}'])
+        variants, _ = self.scan()
+        logical = 'src/main/scala/pkg/Example.scala'
+        for ordered in (variants, list(reversed(variants))):
+            self.assertEqual(resolve_sources(self.graph, ordered, '357')[logical].physical_path,
+                             override)
+
     def test_shadow_keeps_exact_removals(self):
         exact = self.source('420', 'Example.scala', ['{"spark":"420"}'])
         variants, _ = self.scan()

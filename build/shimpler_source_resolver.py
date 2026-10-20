@@ -116,20 +116,26 @@ def resolve_sources(graph, variants, target):
     """Select the nearest applicable physical variant of each logical source."""
     lineage = source_lineage(graph, target)
     selected = {}
+    ties = {}
     for variant in variants:
         match = _matching_selection(variant, lineage)
         if match is None:
             continue
         distance, introduction, kind = match
         previous = selected.get(variant.logical_path)
-        if previous is not None and previous[0] == distance:
-            raise ValueError('Ambiguous shim sources for %s at %s: %s and %s' %
-                             (target, variant.logical_path, previous[1].physical_path,
-                              variant.physical_path))
         if previous is None or distance < previous[0]:
             selection = SourceSelection(variant.logical_path, variant.physical_path,
                                         introduction, kind, tuple(lineage[:distance + 1]))
             selected[variant.logical_path] = (distance, selection)
+            ties.pop(variant.logical_path, None)
+        elif distance == previous[0]:
+            ties.setdefault(variant.logical_path,
+                            [previous[1].physical_path]).append(variant.physical_path)
+    if ties:
+        logical = sorted(ties)[0]
+        first, second = sorted(ties[logical])[:2]
+        raise ValueError('Ambiguous shim sources for %s at %s: %s and %s' %
+                         (target, logical, first, second))
     return dict((logical, pair[1]) for logical, pair in selected.items())
 
 
