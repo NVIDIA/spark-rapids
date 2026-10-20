@@ -39,6 +39,7 @@ Map run(script, dbUtils, Closure build, Closure test) {
         def operation = 'preparation'
         def testFailed = false
         def classificationAvailable = false
+        def gpuDiagnostics = ''
         script.withEnv([
             "DB_TYPE=$target",
             "DATABRICKS_HOST=${dbUtils.getHost(target)}",
@@ -101,6 +102,7 @@ Map run(script, dbUtils, Closure build, Closure test) {
                                         script.echo 'Databricks: test callback completed; verifying readiness results'
                                     } catch (hudson.AbortException testError) {
                                         testFailed = true
+                                        gpuDiagnostics = collectGpuDiagnostics(script, stateFile)
                                         // Interruptions bypass this catch. Product failures have no failed readiness marker.
                                         script.echo 'Databricks: test callback failed; checking for a classified startup failure'
                                         try {
@@ -149,7 +151,8 @@ Map run(script, dbUtils, Closure build, Closure test) {
                         if (primaryError || retryable || cleanupFailed) {
                             printFailureSummary(script, stateFile, failureFile,
                                 cleanupFailed && !primaryError && !retryable ? 'cleanup' : operation,
-                                testFailed, classificationAvailable, retryable, finalAttempt, reason)
+                                testFailed, classificationAvailable, retryable, finalAttempt, reason,
+                                gpuDiagnostics)
                         }
                     }
                 }
@@ -162,9 +165,22 @@ Map run(script, dbUtils, Closure build, Closure test) {
     }
 }
 
+String collectGpuDiagnostics(script, String stateFile) {
+    try {
+        // Capture before cleanup, but leave the test log focused on its original Spark failure.
+        return script.sh(returnStdout: true, label: 'Collect Databricks GPU diagnostics',
+            script: "set +x\npython3 jenkins/databricks/cluster_fallback.py gpu-diagnostics --state $stateFile 2>&1 || :").trim()
+    } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException interrupted) {
+        throw interrupted
+    } catch (Exception ignored) {
+        return 'GPU diagnostics unavailable; preserving the original test failure.'
+    }
+}
+
 void printFailureSummary(script, String stateFile, String failureFile, String operation,
                          boolean testFailed, boolean classificationAvailable,
-                         boolean retryable, boolean finalAttempt, String reason) {
+                         boolean retryable, boolean finalAttempt, String reason,
+                         String gpuDiagnostics = '') {
     try {
         def state = script.fileExists(stateFile) ?
             script.readJSON(file: stateFile, returnPojo: true) : [:]
@@ -203,6 +219,12 @@ void printFailureSummary(script, String stateFile, String failureFile, String op
         }
         lines.add("Cluster termination confirmed: ${state.termination_confirmed == true}")
         lines.add("Cluster cleanup complete: ${state.cleanup_complete == true}")
+        if (gpuDiagnostics) {
+            lines.add('GPU snapshot collected after test failure, before cluster cleanup:')
+            lines.add('=== Databricks GPU diagnostics ===')
+            lines.add(gpuDiagnostics)
+            lines.add('=== End Databricks GPU diagnostics ===')
+        }
         lines.add('=== End Databricks failure summary ===')
         script.echo lines.join('\n')
     } catch (Exception summaryError) {

@@ -423,9 +423,9 @@ def assert_gpu_and_cpu_latest_delta_log_equivalent(spark, data_path):
 def read_delta_path(spark, path):
     return spark.read.format("delta").load(path)
 
-def read_delta_path_with_cdf(spark, path):
+def read_delta_path_with_cdf(spark, path, starting_version=0):
     df = spark.read.format("delta") \
-        .option("readChangeFeed", "true").option("startingVersion", 0) \
+        .option("readChangeFeed", "true").option("startingVersion", starting_version) \
         .load(path)
     assert "_change_type" in df.columns
     assert "_commit_version" in df.columns
