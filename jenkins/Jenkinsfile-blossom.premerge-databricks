@@ -116,7 +116,8 @@ pipeline {
                             BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
                             INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
                             INIT_SCRIPTS_DIR = "/databricks/init_scripts/${BUILD_TAG}-${DB_RUNTIME}"
-                            EXTRA_ENVS = "TEST_MODE=$TEST_MODE,REDUCED_IT=$REDUCED_IT"
+                            EXTRA_ENVS = "TEST_MODE=$TEST_MODE,REDUCED_IT=$REDUCED_IT," +
+                                "RUN_UNIT_TESTS=${runUnitTests("$DB_RUNTIME")}"
                         }
                         steps {
                             script {
@@ -148,6 +149,11 @@ pipeline {
         } // end of stage Databricks
     } // end of stages
 } // end of pipeline
+
+// Run the Scala unit tests once per pre-merge run, on the runtimes where they pass (#1320)
+boolean runUnitTests(String dbRuntime) {
+    return params.TEST_MODE == 'CI_PART1' && dbRuntime == '17.3'
+}
 
 // params.DATABRICKS_TYPE: 'aws' or 'azure3', param can be defined through the jenkins webUI
 String getDbType() {

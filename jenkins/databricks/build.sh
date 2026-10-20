@@ -21,6 +21,8 @@
 #   BASE_SPARK_VERSION: Spark version [3.2.1, 3.3.0]. Default is pulled from current instance.
 #   MVN_OPT: Options to be passed to the MVN commands. Note that "-DskipTests" is hardcoded in the
 #       build command.
+#   RUN_UNIT_TESTS: Set to true to run the Scala unit tests in the tests module after the build.
+#       Default is false.
 # Usage:
 # - build for DB10.4/Spark 3.2.1:
 #       `BASE_SPARK_VERSION=3.2.1 ./jenkins/databricks/build.sh`
@@ -217,6 +219,11 @@ fi
 
 # Build the RAPIDS plugin by running package command for databricks
 $MVN_CMD -B -f $POM_FILE -Ddatabricks -Dbuildver=$BUILDVER $MVN_PHASES -DskipTests $MVN_OPT
+
+if [[ "$RUN_UNIT_TESTS" == "true" ]]; then
+    $MVN_CMD -B -f $POM_FILE -Ddatabricks -Dbuildver=$BUILDVER package -pl tests -am \
+        -Dmaven.scaladoc.skip $MVN_OPT
+fi
 
 if [[ "$WITH_DEFAULT_UPSTREAM_SHIM" != "0" ]]; then
     echo "Building the default Spark shim and creating a two-shim dist jar"

@@ -341,7 +341,6 @@
                 <rat.consoleOutput>true</rat.consoleOutput>
                 <parquet.hadoop.version>1.12.0</parquet.hadoop.version>
                 <rapids.delta.artifactId1>rapids-4-spark-delta-${spark.version.classifier}</rapids.delta.artifactId1>
-                <slf4j.version>2.0.7</slf4j.version>
             </properties>
             <modules>
                 <module>shim-deps/databricks</module>
@@ -1030,7 +1029,9 @@
                     <plugins>
                         <!-- The scalatest plugin passes the classpath in a single CLASSPATH
                              variable, which /databricks/jars exceeds. The tests module runs
-                             its suites with the parallel runner instead. -->
+                             its suites with the parallel runner instead; the suites of other
+                             modules, such as sql-plugin and udf-compiler, do not run on
+                             Databricks. -->
                         <plugin>
                             <groupId>org.scalatest</groupId>
                             <artifactId>scalatest-maven-plugin</artifactId>
