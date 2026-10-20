@@ -23,12 +23,15 @@ import com.databricks.sql.transaction.tahoe.{
   DeltaParquetFileFormat,
   IdMapping,
   NameMapping,
-  NoMapping
+  NoMapping,
+  VariantShreddingPreviewTableFeature,
+  VariantShreddingTableFeature
 }
 import com.databricks.sql.transaction.tahoe.actions.{Metadata, Protocol}
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.schema.SchemaMergingUtils
-import com.nvidia.spark.rapids.{GpuMetric, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, SparkPlanMeta}
+import com.nvidia.spark.rapids.parquet.GpuParquetScan
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -38,6 +41,7 @@ import org.apache.spark.sql.catalyst.expressions.Literal.TrueLiteral
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{MetadataBuilder, StructType}
@@ -207,6 +211,18 @@ object GpuDeltaParquetFileFormat {
         s"reading metadata columns starting with prefix _databricks_internal is not supported")
     }
     val format = meta.wrapped.relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
+    val mayContainShreddedVariant =
+      format.protocol.isFeatureSupported(VariantShreddingPreviewTableFeature) ||
+        format.protocol.isFeatureSupported(VariantShreddingTableFeature)
+    if (mayContainShreddedVariant && requiredSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, GpuColumnVector.isVariantType)
+    }) {
+      // The protocol can retain this feature after shredded writes are disabled, because
+      // existing files can still be shredded. Keep their VARIANT consumers on CPU as well.
+      GpuParquetScan.tagVariantScanPrefixForCpu(meta,
+        "GPU Delta reader does not support VARIANT columns when the table protocol " +
+          "supports variant shredding")
+    }
     val hasRowIndexFilters = hasRowIndexFiltersInTahoeFileIndex(meta.wrapped.relation)
     if (hasDeletionVectorSkipRowColumn &&
         DeltaReadSupport.isDmlMetricDVScan(meta)) {

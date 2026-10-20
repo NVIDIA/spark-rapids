@@ -85,6 +85,7 @@
                         <include>**/DeltaReadSupport.scala</include>
                         <include>**/GpuDeltaParquetFileFormat.scala</include>
                         <include>**/GpuDeltaParquetFileFormatNativeDV.scala</include>
+                        <include>**/GpuDeltaParquetFileFormatNativeDVBase.scala</include>
                         <include>**/RapidsDeletionVectors.scala</include>
                         <include>**/DeltaBitmapUtils.java</include>
                         <include>**/GpuDeltaParquetFileFormatBase.scala</include>
