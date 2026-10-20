@@ -1103,6 +1103,9 @@ class RapidsConf(conf: Map[String, String]) extends Logging {
   lazy val testDeltaLowShuffleMergeFailOnFallback: Boolean =
     get(TEST_DELTA_LOW_SHUFFLE_MERGE_FAIL_ON_FALLBACK)
 
+  lazy val testDeltaLowShuffleMergeFailedOnNotMetadataOnly: Boolean =
+    get(TEST_DELTA_LOW_SHUFFLE_MERGE_FAILED_ON_NOT_METADATA_ONLY)
+
   lazy val isDeltaDeletionVectorPredicatePushdownEnabled: Boolean =
     get(DELTA_DELETION_VECTOR_PREDICATE_PUSHDOWN)
 
