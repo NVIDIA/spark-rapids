@@ -70,6 +70,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   test("decimal sum overflow check keeps empty, null, and ANSI behavior") {
     import Arm.withResource
 
+    // A previous suite in a persistent worker may have shut down RMM's tracking adaptor.
+    withGpuSparkSession(_ => ())
     val inputType = DecimalType(16, 0)
     val decimalType = DecimalType(15, 0)
     val maxValue = 999999999999999L
