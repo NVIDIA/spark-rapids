@@ -36,6 +36,9 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
   private[this] val sparkProtobufUtilsObjectClassName =
     "org.apache.spark.sql.protobuf.utils.ProtobufUtils$"
 
+  /** Option keys whose semantics the GPU decoder handles. */
+  val SupportedOptions: Set[String] = Set("enums.as.ints", "mode")
+
   /**
    * Reads arguments from ProtobufDataToCatalyst after runtime replacement, not an analyzed wrapper.
    * Left explains a missing or incompatible Spark API.
@@ -47,6 +50,34 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
       descriptorSource <- reflectDescriptorSource(e)
     } yield ProtobufExprInfo(messageName, descriptorSource, options)
   }
+
+  /**
+   * Parses enum representation and parse mode, returning Left for invalid booleans/DROPMALFORMED.
+   * Defaults to FAILFAST; unrecognized mode strings use permissive behavior, matching Spark.
+   */
+  def parsePlannerOptions(
+      options: Map[String, String]): Either[String, ProtobufPlannerOptions] = {
+    val mode = options.getOrElse("mode", "FAILFAST")
+    if (mode.equalsIgnoreCase("DROPMALFORMED")) {
+      Left("from_protobuf DROPMALFORMED mode is not supported on GPU")
+    } else {
+      val enumsAsInts = Try(options.getOrElse("enums.as.ints", "false").toBoolean)
+        .toEither
+        .left
+        .map { _ =>
+          "Invalid value for from_protobuf option 'enums.as.ints': " +
+            s"'${options.getOrElse("enums.as.ints", "")}' (expected true/false)"
+        }
+      enumsAsInts.map(v =>
+        ProtobufPlannerOptions(
+          enumsAsInts = v,
+          failOnErrors = mode.equalsIgnoreCase("FAILFAST")))
+    }
+  }
+
+  /** Unrecognized option keys, sorted for stable fallback diagnostics. */
+  def unsupportedOptions(options: Map[String, String]): Seq[String] =
+    options.keys.filterNot(SupportedOptions.contains).toSeq.sorted
 
   /** Resolves the schema or returns a failure reason; lazy metadata reads may still throw. */
   def resolveMessageDescriptor(
