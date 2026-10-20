@@ -350,14 +350,14 @@ object DVPredicatePushdown extends ShimPredicateHelper {
 
     /**
      * Removes DV predicates from the filter condition and, when safe, prunes the
-     * [[IS_ROW_DELETED_COLUMN_NAME]] column from the child plan.
+     * `IS_ROW_DELETED_COLUMN_NAME` column from the child plan.
      *
      * DV predicates are dropped from the returned predicate list only when the filter child
      * contains a native deletion-vector GPU scan. Pruning the column from the child is safe
-     * only when no other predicate in the condition also reads [[IS_ROW_DELETED_COLUMN_NAME]].
+     * only when no other predicate in the condition also reads `IS_ROW_DELETED_COLUMN_NAME`.
      *
      * Returns a pair of:
-     *   - `Some(newChild)` with [[IS_ROW_DELETED_COLUMN_NAME]] pruned from the subtree, or
+     *   - `Some(newChild)` with `IS_ROW_DELETED_COLUMN_NAME` pruned from the subtree, or
      *     `None` if column pruning is not safe (the caller should use the original child)
      *   - the remaining predicates that the caller should re-attach as a new filter
      *     (empty if the entire condition consisted of pushed deletion-vector predicates)

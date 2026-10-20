@@ -58,8 +58,8 @@ object AstUtil {
    * @param condition to be split if needed
    * @param left attributions from left child
    * @param right attributions from right child
-   * @return a tuple of [[Expression]] for remained expressions, List of [[NamedExpression]] for
-   *         left child if any, List of [[NamedExpression]] for right child if any
+   * @return a tuple of `Expression` for remained expressions, List of `NamedExpression` for
+   *         left child if any, List of `NamedExpression` for right child if any
    */
   def extractNonAstFromJoinCond(condition: Option[BaseExprMeta[_]],
                                 left: AttributeSeq, right: AttributeSeq):

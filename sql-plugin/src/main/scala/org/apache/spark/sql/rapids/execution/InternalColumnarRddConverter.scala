@@ -626,7 +626,7 @@ private class ExternalRowToColumnarIterator(
 }
 
 /**
- * Please don't use this class directly use [[com.nvidia.spark.rapids.ColumnarRdd]] instead. We had
+ * Please don't use this class directly use `com.nvidia.spark.rapids.ColumnarRdd` instead. We had
  * to place the implementation in a spark specific package to poke at the internals of spark more
  * than anyone should know about.
  *

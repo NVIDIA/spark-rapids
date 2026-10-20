@@ -22,7 +22,7 @@ import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
  * A trait for classes that are capable of collecting statistics on columnar data that's being
- * processed by a single write task in [[GpuFileFormatDataWriter]] - i.e. there should be one
+ * processed by a single write task in `GpuFileFormatDataWriter` - i.e. there should be one
  * instance per executor.
  *
  * newPartition event is only triggered if the relation to be written out is partitioned.

@@ -934,7 +934,7 @@ object RmmRapidsRetryIterator extends Logging {
    * A common split function for an AutoCloseableTargetSize, which just divides the target size
    * in half, and creates a seq with just one element representing the new target size.
    * @return a Seq[AutoCloseableTargetSize] with 1 element.
-   * @throws GpuSplitAndRetryOOM if it reaches the split limit.
+   * @note the returned function throws `GpuSplitAndRetryOOM` if it reaches the split limit.
    */
   def splitTargetSizeInHalfGpu: AutoCloseableTargetSize => Seq[AutoCloseableTargetSize] =
     (target: AutoCloseableTargetSize) => {
@@ -946,7 +946,7 @@ object RmmRapidsRetryIterator extends Logging {
    * in half, and creates a seq with just one element representing the new target size.
    *
    * @return a Seq[AutoCloseableTargetSize] with 1 element.
-   * @throws CpuSplitAndRetryOOM if it reaches the split limit.
+   * @note the returned function throws `CpuSplitAndRetryOOM` if it reaches the split limit.
    */
   def splitTargetSizeInHalfCpu: AutoCloseableTargetSize => Seq[AutoCloseableTargetSize] =
     (target: AutoCloseableTargetSize) => {

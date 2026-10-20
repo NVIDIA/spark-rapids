@@ -27,7 +27,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Implementation of {@link RapidsOutputFile} using the Hadoop file system.
+ * Implementation of {@code RapidsOutputFile} using the Hadoop file system.
  * <br/>
  * This class provides methods to create an output file and to obtain the absolute path.
  */

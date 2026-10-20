@@ -51,9 +51,9 @@ trait RapidsShuffleRequestHandler {
   def getShuffleBufferMetas(shuffleBlockBatchId: ShuffleBlockBatchId): Seq[TableMeta]
 
   /**
-   * Acquires (locks w.r.t. the memory tier) a [[RapidsBuffer]] corresponding to a table id.
+   * Acquires (locks w.r.t. the memory tier) a `RapidsBuffer` corresponding to a table id.
    * @param tableId the unique id for a table in the catalog
-   * @return a [[RapidsBuffer]] which is reference counted, and should be closed by the acquirer
+   * @return a `RapidsBuffer` which is reference counted, and should be closed by the acquirer
    */
   def getShuffleHandle(tableId: Int): RapidsShuffleHandle
 

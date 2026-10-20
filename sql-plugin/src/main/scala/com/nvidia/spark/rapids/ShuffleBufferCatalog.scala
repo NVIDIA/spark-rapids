@@ -342,8 +342,8 @@ class ShuffleBufferCatalog(val mapIdsCanRepeat: Boolean = false) extends Logging
    *
    * @param bufferIds every buffer the attempt added, which the catalog owns once this returns
    * @param sizes the attempt's size of each partition, as its MapStatus reports them
-   * @throws IllegalStateException if the shuffle was unregistered before the commit looked it
-   *                               up, leaving the buffers with the caller
+   * @throws java.lang.IllegalStateException if the shuffle was unregistered before the commit
+   *                                         looked it up, leaving the buffers with the caller
    */
   def commitMapOutput(
       shuffleId: Int,

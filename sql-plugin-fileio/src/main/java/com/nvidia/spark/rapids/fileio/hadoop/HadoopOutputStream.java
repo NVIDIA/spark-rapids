@@ -25,7 +25,7 @@ import java.io.OutputStream;
 import static java.util.Objects.requireNonNull;
 
 /**
- * A {@link RapidsOutputStream} implementation that wraps a Hadoop {@link FSDataOutputStream}.
+ * A {@code RapidsOutputStream} implementation that wraps a Hadoop {@code FSDataOutputStream}.
  * <br/>
  * This class delegates to the underlying output stream for write and close operations.
  */

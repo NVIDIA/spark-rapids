@@ -35,7 +35,7 @@ import org.apache.spark.sql.rapids.{ColumnarWriteJobStatsTracker, ColumnarWriteT
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /**
- * A [[WriteTaskStats]] that contains a map from file name to the json representation
+ * A `WriteTaskStats` that contains a map from file name to the json representation
  * of the collected statistics.
  */
 case class GpuDeltaFileStatistics(stats: Map[String, String]) extends WriteTaskStats
