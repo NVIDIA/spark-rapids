@@ -3606,6 +3606,19 @@ def test_from_protobuf_smoke_binary_descriptor_api(simple_desc, from_protobuf_fn
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@allow_non_gpu("ProtobufDataToCatalyst")
+def test_from_protobuf_disabled_by_expression_config(simple_desc, from_protobuf_fn):
+    desc_path, _ = simple_desc
+
+    def run_on_spark(spark):
+        return _make_smoke_df(spark).select(
+            from_protobuf_fn(f.col("bin"), "test.Simple", desc_path).alias("decoded"))
+
+    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst",
+        conf={"spark.rapids.sql.expression.ProtobufDataToCatalyst": "false"})
+
+
 # ===========================================================================
 # Regression tests for known bugs found by code review
 # ===========================================================================
@@ -3994,22 +4007,28 @@ def test_deep_pruning_whole_ancestor_and_deep_leaf(
     {"mode": "DROPMALFORMED"},
     {"mode": "DROPMALFORMED", "emit.default.values": "true"},
 ], ids=["dropmalformed", "dropmalformed-with-unsupported-option"])
+@pytest.mark.parametrize("malformed", [False, True], ids=["valid", "malformed"])
 @allow_non_gpu("ProtobufDataToCatalyst")
-def test_from_protobuf_dropmalformed_mode_is_rejected(
-        local_tmp_path, from_protobuf_fn, options):
+def test_from_protobuf_dropmalformed_mode_falls_back(
+        local_tmp_path, from_protobuf_fn, options, malformed):
+    """Spark rejects DROPMALFORMED only when a malformed row reaches its error handler."""
     desc_path, desc_bytes = _setup_protobuf_desc(
         local_tmp_path, "dropmalformed.desc", _build_simple_descriptor_set_bytes)
     message_name = "test.Simple"
-    row = _encode_tag(2, 0) + _encode_varint(42)
+    row = bytes([0x08, 0x80]) if malformed else _encode_tag(2, 0) + _encode_varint(42)
 
     def run_on_spark(spark):
         df = spark.createDataFrame([(row,)], schema="bin binary")
         decoded = _call_from_protobuf(
             from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
             options=options)
-        return df.select(decoded.alias("decoded")).collect()
+        return df.select(decoded.alias("decoded"))
 
-    assert_gpu_and_cpu_error(run_on_spark, {}, "DROPMALFORMED")
+    if malformed:
+        assert_gpu_and_cpu_error(
+            lambda spark: run_on_spark(spark).collect(), {}, "DROPMALFORMED")
+    else:
+        assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")

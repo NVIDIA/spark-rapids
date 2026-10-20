@@ -38,15 +38,18 @@
 {"spark": "402"}
 {"spark": "403"}
 {"spark": "404"}
+{"spark": "410db183"}
 {"spark": "411"}
 {"spark": "412"}
 {"spark": "413"}
 {"spark": "420"}
+{"spark": "500"}
 spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable
+import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids._
@@ -80,7 +83,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
     try {
       val clazz = ShimReflectionUtils.loadClass(protobufDataToCatalystClassName)
         .asInstanceOf[Class[_ <: UnaryExpression]]
-      Map(clazz.asInstanceOf[Class[_ <: Expression]] -> fromProtobufRule)
+      Map(clazz.asInstanceOf[Class[_ <: Expression]] -> fromProtobufRule(clazz))
     } catch {
       case _: ClassNotFoundException => Map.empty
       case e: Exception =>
@@ -93,7 +96,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
     }
   }
 
-  private def fromProtobufRule: ExprRule[_ <: Expression] = {
+  private def fromProtobufRule(clazz: Class[_ <: UnaryExpression]): ExprRule[_ <: Expression] = {
+    // Name the rule config and docs after ProtobufDataToCatalyst instead of UnaryExpression.
+    implicit val tag: ClassTag[UnaryExpression] = ClassTag(clazz)
     GpuOverrides.expr[UnaryExpression](
       "Decode a BinaryType column (protobuf) into a Spark SQL struct",
       ExprChecks.unaryProject(
@@ -107,7 +112,6 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
 
         private var fullSchema: StructType = _
         private var failOnErrors: Boolean = _
-        private var preventCpuBridge: Boolean = false
 
         // Flattened schema variables for GPU decoding
         private var flatFieldNumbers: Array[Int] = _
@@ -147,8 +151,6 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           val plannerOptions = SparkProtobufCompat.parsePlannerOptions(exprInfo.options) match {
             case Right(opts) => opts
             case Left(reason) =>
-              // Interpreted bridge evaluation can bypass Spark's option validation.
-              preventCpuBridge = true
               willNotWorkOnGpu(reason)
               return
           }
@@ -846,8 +848,6 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
           StructType(decodedFields.map(f => f.copy(nullable = true)))
         }
-
-        override def preventsTreeBridgeOptimization: Boolean = preventCpuBridge
 
         /**
          * Check if an expression references the output of a protobuf decode expression.
