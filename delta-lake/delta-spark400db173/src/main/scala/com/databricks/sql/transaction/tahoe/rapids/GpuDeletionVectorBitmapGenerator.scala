@@ -41,7 +41,7 @@ import org.apache.spark.paths.SparkPath
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
-import org.apache.spark.sql.{Column, DataFrame, Encoder, SparkSession}
+import org.apache.spark.sql.{Column, Encoder, SparkSession}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
@@ -61,6 +61,14 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
     "com.databricks.sql.transaction.tahoe.commands.DeletionVectorData"
   private val DvWriterClassName =
     "com.databricks.sql.transaction.tahoe.commands.DeletionVectorWriter$"
+
+  private def isolatedSession(spark: SparkSession): SparkSession = {
+    val isolated = spark.newSession()
+    spark.sessionState.conf.getAllConfs.foreach { case (key, value) =>
+      isolated.sessionState.conf.setConfString(key, value)
+    }
+    isolated
+  }
 
   // DBR's DeletionVectorData signature references a Scala 2.12-only Sizing trait in some
   // compile jars. Resolve this private API at runtime so the Scala 2.13 compiler need not load it.
@@ -136,14 +144,10 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
       hasReadableDVs: Boolean,
       targetScan: GpuTargetScan,
       condition: Column,
-      nameToAddFileMap: Map[String, AddFile],
-      prefilteredTargetDf: Option[DataFrame] = None): Seq[TouchedFileWithDV] = {
+      nameToAddFileMap: Map[String, AddFile]): Seq[TouchedFileWithDV] = {
     // This scan's broadcast join must be planned without AQE. A thread-local SQLConf override
     // does not control QueryExecution's session-owned planner on DBR, so use an isolated session.
-    val scanSpark = spark.newSession()
-    spark.sessionState.conf.getAllConfs.foreach { case (key, value) =>
-      scanSpark.sessionState.conf.setConfString(key, value)
-    }
+    val scanSpark = isolatedSession(spark)
     scanSpark.sessionState.conf.setConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED, false)
     val fileMetadata = nameToAddFileMap.toSeq.sortBy(_._1).map { case (path, add) =>
       val existingDv = if (hasReadableDVs) {
@@ -169,10 +173,8 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
 
     // Keep the predicate below input_file_name(), whose non-deterministic projection otherwise
     // prevents Spark from pushing the predicate into the Parquet scan.
-    val filteredTargetDf = prefilteredTargetDf.getOrElse {
-      targetScan.dataFrameWithoutFilePath.filter(condition)
-        .withColumn(targetScan.filePathColumnName, input_file_name())
-    }
+    val filteredTargetDf = targetScan.dataFrameWithoutFilePath.filter(condition)
+      .withColumn(targetScan.filePathColumnName, input_file_name())
     val gpuTargetDf = DMLWithDeletionVectorsHelperShims.withGpuExecutionContext(
       scanSpark, filteredTargetDf)
     val matchedRows = gpuTargetDf
@@ -249,9 +251,9 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
                 bitmap.cardinality)
             }
           val prefixLength = DeltaUtils.getRandomPrefixLength(txn.metadata)
-          GpuDeltaCpuFallback.withRapidsDisabled(spark) {
-            spark.createDataset(rowIndexData)(dvDataEncoder)
-              .mapPartitions(dvWriter(spark, txn.deltaLog.newDeltaHadoopConf(),
+          GpuDeltaCpuFallback.withRapidsDisabled(scanSpark) {
+            scanSpark.createDataset(rowIndexData)(dvDataEncoder)
+              .mapPartitions(dvWriter(scanSpark, txn.deltaLog.newDeltaHadoopConf(),
                 txn.deltaLog.dataPath, prefixLength))(DeletionVectorResult.encoder)
               .collect().toSeq
           }
@@ -303,8 +305,10 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
     // This helper works on file actions and snapshot statistics, not table rows. Keeping its
     // metadata joins on CPU avoids GPU broadcasts/transfers and CPU JSON bridges for small
     // driver-originated datasets. Bitmap generation above and subsequent DML remain GPU-enabled.
-    val (actions, metrics) = GpuDeltaCpuFallback.withRapidsDisabled(spark) {
-      DMLWithDeletionVectorsHelper.processUnmodifiedData(spark, touchedFiles, txn.snapshot)
+    val metadataSpark = isolatedSession(spark)
+    val (actions, metrics) = GpuDeltaCpuFallback.withRapidsDisabled(metadataSpark) {
+      DMLWithDeletionVectorsHelper.processUnmodifiedData(
+        metadataSpark, touchedFiles, txn.snapshot)
     }
     // DBR rehydrates the replacement AddFile stats from the snapshot, but the paired RemoveFile
     // can retain the numRecords-only stats from the data-skipping candidate. Both actions describe

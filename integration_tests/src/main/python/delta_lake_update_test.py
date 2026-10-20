@@ -219,6 +219,46 @@ def test_delta_update_deletion_vector_history_metrics(spark_tmp_path):
     assert cpu_metrics == gpu_metrics, f"CPU {cpu_metrics} vs GPU {gpu_metrics}"
     assert gpu_metrics == {"numRemovedFiles": 0, "numDeletionVectorsAdded": 1}
 
+
+@allow_non_gpu('ColumnarToRowExec', 'ExternalRDDScanExec', *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Persistent-DV command acceleration requires DBR 17.3+")
+def test_delta_update_partitioned_dv_optimize_write_disabled(spark_tmp_path):
+    conf = copy_and_update(delta_update_enabled_conf, {
+        "spark.databricks.delta.update.deletionVectors.persistent": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.rapids.sql.delta.deletionVectors.predicatePushdown.enabled": "true",
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false"})
+    assert_delta_sql_update_collect(
+        spark_tmp_path,
+        use_cdf=False,
+        enable_deletion_vectors=True,
+        dest_table_func=lambda spark: spark.createDataFrame(
+            [(i, i * 3, i // 50) for i in range(100)], "id INT, v INT, p INT")
+            .coalesce(1),
+        update_sql="UPDATE delta.`{path}` SET v = v + 100 WHERE id = 1",
+        partition_columns=["p"],
+        conf=conf)
+
+    def history_metrics(spark, path):
+        row = spark.sql(f"DESCRIBE HISTORY delta.`{path}`") \
+            .where("operation = 'UPDATE'").orderBy("version", ascending=False).first()
+        return {key: int(row["operationMetrics"].get(key, 0))
+                for key in ["numUpdatedRows", "numCopiedRows", "numDeletionVectorsAdded"]}
+
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    cpu_metrics = with_cpu_session(
+        lambda spark: history_metrics(spark, data_path + "/CPU"), conf=conf)
+    gpu_metrics = with_cpu_session(
+        lambda spark: history_metrics(spark, data_path + "/GPU"), conf=conf)
+    assert gpu_metrics == cpu_metrics, f"CPU {cpu_metrics} vs GPU {gpu_metrics}"
+    assert gpu_metrics == {
+        "numUpdatedRows": 1, "numCopiedRows": 0, "numDeletionVectorsAdded": 1}
+
+
 fallback_test_params = [{"spark.rapids.sql.format.delta.write.enabled": "false"},
                         {"spark.rapids.sql.format.parquet.write.enabled": "false"},
                         {"spark.rapids.sql.command.UpdateCommand": "false"},

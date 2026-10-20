@@ -141,11 +141,9 @@ abstract class GpuOptimisticTransactionBaseCommon
       physicalPlan: SparkPlan,
       partitionSchema: StructType,
       isOptimize: Boolean,
-      writeOptions: Option[DeltaOptions],
-      optimizeDmlRewrite: Boolean = false): SparkPlan = {
+      writeOptions: Option[DeltaOptions]): SparkPlan = {
     val optimizeWriteEnabled = !isOptimize &&
-      (optimizeDmlRewrite ||
-        DeltaWriteUtils.shouldOptimizeWrite(writeOptions, spark.sessionState.conf, metadata))
+      DeltaWriteUtils.shouldOptimizeWrite(writeOptions, spark.sessionState.conf, metadata)
     if (optimizeWriteEnabled) {
       val planWithoutTopRepartition =
         DeltaShufflePartitionsUtil.removeTopRepartition(physicalPlan)

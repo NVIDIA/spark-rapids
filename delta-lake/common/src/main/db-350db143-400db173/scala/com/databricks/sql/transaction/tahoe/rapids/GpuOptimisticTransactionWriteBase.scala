@@ -203,8 +203,7 @@ abstract class GpuOptimisticTransactionWriteBase(
       isOptimizeOverride: Option[Boolean],
       keepPartitionIdTag: Boolean,
       forcePreserveInputOrder: Boolean,
-      context: Option[String],
-      optimizeDmlRewrite: Boolean = false): (Seq[FileAction], QueryExecution) = {
+      context: Option[String]): (Seq[FileAction], QueryExecution) = {
     hasWritten = true
 
     val spark = inputData.sparkSession
@@ -278,8 +277,7 @@ abstract class GpuOptimisticTransactionWriteBase(
       val empty2NullPlan = convertEmptyToNullIfNeeded(queryPhysicalPlan,
         partitioningColumns, constraints)
       val optimizedPlan =
-        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize,
-          writeOptions, optimizeDmlRewrite)
+        applyOptimizeWriteIfNeeded(spark, empty2NullPlan, partitionSchema, isOptimize, writeOptions)
       val planWithInvariants = addInvariantChecks(optimizedPlan, constraints)
       val physicalPlan = convertToGpu(planWithInvariants)
 
