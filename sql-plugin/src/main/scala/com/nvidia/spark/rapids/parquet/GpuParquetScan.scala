@@ -172,8 +172,7 @@ object GpuParquetScan {
     }
   }
 
-  private def tagVariantScanPrefixForCpu(
-      meta: RapidsMeta[_, _, _], reason: String, sqlConf: SQLConf): Unit = {
+  def tagVariantScanPrefixForCpu(meta: RapidsMeta[_, _, _], reason: String): Unit = {
     meta.willNotWorkOnGpu(reason)
     var ancestor = meta.parent
     var outputContainsVariant = true
@@ -183,11 +182,34 @@ object GpuParquetScan {
         case plan: SparkPlan =>
           plan.setTagValue(RapidsMeta.gpuSupportedTag,
             plan.getTagValue(RapidsMeta.gpuSupportedTag).getOrElse(Set.empty) + reason)
-          outputContainsVariant = hasPotentiallyShreddedVariant(
-            plan.output.map(_.dataType), sqlConf)
+          outputContainsVariant = plan.output.exists { attr =>
+            TrampolineUtil.dataTypeExistsRecursively(attr.dataType, GpuColumnVector.isVariantType)
+          }
         case _ =>
       }
       ancestor = current.parent
+    }
+  }
+
+  def tagVariantSupport(
+      readSchema: StructType,
+      meta: RapidsMeta[_, _, _],
+      sqlConf: SQLConf): Unit = {
+    val schemaHasPushedVariant = readSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(
+        field.dataType, ParquetVariantShims.isPushedVariantStruct)
+    }
+    if (schemaHasPushedVariant) {
+      meta.willNotWorkOnGpu("GPU Parquet reader does not support Variant extraction pushdown")
+    }
+
+    val schemaHasPotentiallyShreddedVariant =
+      hasPotentiallyShreddedVariant(readSchema.map(_.dataType), sqlConf)
+    if (schemaHasPotentiallyShreddedVariant) {
+      val reason = "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
+        "shredded Variant input"
+      // Keep the scan and its consumers on CPU until an operator no longer outputs Variant.
+      tagVariantScanPrefixForCpu(meta, reason)
     }
   }
 
@@ -213,23 +235,8 @@ object GpuParquetScan {
         s"${RapidsConf.ENABLE_PARQUET_READ} to true")
     }
 
-    val schemaHasPushedVariant = readSchema.exists { field =>
-      TrampolineUtil.dataTypeExistsRecursively(
-        field.dataType, ParquetVariantShims.isPushedVariantStruct)
-    }
-    if (schemaHasPushedVariant) {
-      meta.willNotWorkOnGpu("GPU Parquet reader does not support Variant extraction pushdown")
-    }
-
     val sqlConf = sparkSession.sessionState.conf
-    val schemaHasPotentiallyShreddedVariant =
-      hasPotentiallyShreddedVariant(readSchema.map(_.dataType), sqlConf)
-    if (schemaHasPotentiallyShreddedVariant) {
-      val reason = "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
-        "shredded Variant input"
-      // Keep the scan and its consumers on CPU until an operator no longer outputs Variant.
-      tagVariantScanPrefixForCpu(meta, reason, sqlConf)
-    }
+    tagVariantSupport(readSchema, meta, sqlConf)
 
     FileFormatChecks.tag(meta, readSchema, ParquetFormatType, ReadFileOp)
 
