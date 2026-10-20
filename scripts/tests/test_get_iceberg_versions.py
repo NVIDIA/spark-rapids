@@ -440,6 +440,11 @@ class IcebergVersionMatrixSuite(unittest.TestCase):
 
 
 class MavenEffectivePomSuite(unittest.TestCase):
+    def setUp(self) -> None:
+        environment = patch.dict(os.environ, {"MVN": "mvn"})
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def _run_maven(self, command: List[str], **arguments: Any) -> subprocess.CompletedProcess[str]:
         output_argument = next(value for value in command if value.startswith("-Doutput="))
         output = Path(output_argument.split("=", 1)[1])
