@@ -202,6 +202,10 @@ if [[ "${statuses[0]}" == 0 && "${statuses[1]}" == 0 ]] &&
     grep -qx 'DATABRICKS_SPARK_READINESS_OK' "$log_file"; then
     printf '{"phase":"READY","runtime":"%s"}\n' "$1" > "$status_file"
     printf 'Spark readiness %s: READY\n' "$1"
+    # Take one full GPU snapshot after native readiness, not again for upstream Spark.
+    if [[ "$1" == databricks ]]; then
+        diagnostic nvidia-smi -q || :
+    fi
     exit 0
 fi
 
