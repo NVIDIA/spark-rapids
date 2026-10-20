@@ -33,14 +33,9 @@ import org.apache.spark.sql.types._
 /**
  * How a set of Spark filters was split for a hybrid scan read.
  *
- * @param ast      compiled AST for the conjuncts in `pushed`, or None if none were pushable.
- *                 The caller owns this and must close it.
- * @param pushed   conjuncts the hybrid scan reader will evaluate. It applies them exactly, so
- *                 they must not be re-applied above the scan.
- * @param residual conjuncts the reader cannot evaluate, so the scan output is a superset of the
- *                 rows they accept. Something above the scan has to apply them: for a file scan
- *                 that is Spark's own filter, which it keeps above the scan because Parquet
- *                 pushdown is never assumed to be exact.
+ * @param ast      compiled AST for `pushed`, or None if nothing was pushed. Owned by the caller.
+ * @param pushed   conjuncts the reader applies exactly
+ * @param residual conjuncts the reader cannot apply; Spark's filter above the scan applies them
  */
 case class FilterPushdownPlan(
     ast: Option[CompiledExpression],
@@ -48,14 +43,11 @@ case class FilterPushdownPlan(
     residual: Array[Filter])
 
 /**
- * Converts Spark SQL Filter expressions into cuDF AST expressions for the Parquet hybrid scan
- * reader, which uses them to prune row groups and to build the row mask it applies during
- * materialize.
+ * Converts Spark filters into cuDF AST expressions for the Parquet hybrid scan reader, which uses
+ * them to prune row groups and filter rows.
  *
- * Conversion is all-or-nothing per conjunct. A conjunct that cannot be represented exactly is
- * reported as residual rather than approximated, because the reader treats the AST it is given
- * as an exact filter: an AST that accepts fewer rows than the Spark filter would silently drop
- * qualifying rows.
+ * The reader treats the AST as exact, so a conjunct that cannot be converted exactly is left
+ * residual rather than approximated.
  *
  * @param schema          schema of the columns being read, for column index and type lookup
  * @param isCaseSensitive whether column name matching is case-sensitive
@@ -77,13 +69,9 @@ case class FilterToAstConverter(
     schema.fields.map(field => normalize(field.name) -> field.dataType).toMap
 
   /**
-   * Split `filters` into the conjuncts the reader can evaluate and those it cannot.
-   *
-   * The input array is an implicit conjunction, so a conjunct that fails to convert can be
-   * left out of the pushed AST and evaluated after the scan instead. That rewrite is only
-   * valid at conjunction level: within a disjunction every operand must convert, otherwise
-   * pushing the convertible side alone would reject rows the other side accepts. `convertFilter`
-   * enforces that by failing an `Or`/`Not` whose children do not fully convert.
+   * Split `filters`, an implicit conjunction, into the conjuncts the reader can evaluate and
+   * those it cannot. Only top-level conjuncts can be left residual; an `Or` or `Not` converts
+   * only if all of its children do.
    */
   def planPushdown(filters: Array[Filter]): FilterPushdownPlan = {
     val pushed = ArrayBuffer.empty[Filter]
@@ -92,19 +80,10 @@ case class FilterToAstConverter(
     val converted = FilterToAstConverter.splitConjuncts(filters).map { conjunct =>
       conjunct -> convertFilter(conjunct)
     }
-    // Spark infers an `IsNotNull` for every column a null-intolerant predicate references, so one
-    // usually arrives next to the predicate it was inferred from. It is then strictly redundant:
-    // the predicate it came from cannot hold for a null, so leaving the check out cannot change
-    // which rows or which row groups survive. Keeping it is not free, though. It adds a node that
-    // is evaluated for every row of the filter columns, it makes libcudf build and compare a
-    // nullability statistic per row group that nothing else needs, and it is the one thing that
-    // pulls that statistic into the pruning expression, which is where a chunk holding a mix of
-    // nulls and non-nulls yields an unknown verdict — work spent to learn nothing.
-    // A null check with no such sibling is left alone, since on its own it can still rule out a
-    // row group whose column is entirely null.
-    // Only a conjunct that is being pushed counts as the sibling, and a null check never counts as
-    // one, or a pair of them on the same column would each vouch for the other and both be left
-    // out, losing the constraint altogether.
+    // Don't push an `IsNotNull` that a pushed predicate on the same column already implies (Spark
+    // infers one beside most predicates): it changes no result but costs a per-row evaluation and
+    // a per-row-group null statistic. Null checks don't vouch for each other, or a pair of them
+    // would both be dropped.
     val provenNotNull = converted.collect {
       case (conjunct, Some(_)) if FilterToAstConverter.notNullCheckColumn(conjunct).isEmpty =>
         FilterToAstConverter.columnsProvenNotNull(conjunct).map(normalize)
@@ -184,7 +163,7 @@ case class FilterToAstConverter(
         } yield nullAwareOr(leftExpr, rightExpr)
 
       case Not(child) =>
-        convertNegated(child)
+        convertFilter(child).map(new UnaryOperation(UnaryOperator.NOT, _))
 
       case other =>
         // String predicates (StringStartsWith/EndsWith/Contains) land here; libcudf ASTs have
@@ -195,81 +174,14 @@ case class FilterToAstConverter(
   }
 
   /**
-   * HACK: factor the negation through to the comparisons rather than emit a cuDF `NOT`, because
-   * libcudf's row group pruning gets a negation wrong. For `NOT(col == 5)` it checks whether any
-   * row is 5 and then inverts that answer, pruning every row group holding a 5 anywhere. What the
-   * filter means is `col != 5`, which may only prune a row group where every row is 5, so the read
-   * silently loses rows. Anything with no negated form stays residual. Remove this once libcudf is
-   * fixed.
-   *
-   * `IsNotNull` still emits a `NOT` over a null check, which that pruning skips rather than
-   * inverts. Negating a comparison is exact for nulls too: both forms are null on the same rows.
-   */
-  private def convertNegated(filter: Filter): Option[AstExpression] = {
-    filter match {
-      case EqualTo(attribute, value) =>
-        convertComparison(attribute, value, BinaryOperator.NOT_EQUAL)
-
-      case GreaterThan(attribute, value) =>
-        convertComparison(attribute, value, BinaryOperator.LESS_EQUAL)
-
-      case GreaterThanOrEqual(attribute, value) =>
-        convertComparison(attribute, value, BinaryOperator.LESS)
-
-      case LessThan(attribute, value) =>
-        convertComparison(attribute, value, BinaryOperator.GREATER_EQUAL)
-
-      case LessThanOrEqual(attribute, value) =>
-        convertComparison(attribute, value, BinaryOperator.GREATER)
-
-      case IsNull(attribute) =>
-        convertFilter(IsNotNull(attribute))
-
-      case IsNotNull(attribute) =>
-        convertFilter(IsNull(attribute))
-
-      case In(attribute, values) =>
-        convertNotIn(attribute, values)
-
-      case And(left, right) =>
-        for {
-          leftExpr <- convertNegated(left)
-          rightExpr <- convertNegated(right)
-        } yield nullAwareOr(leftExpr, rightExpr)
-
-      case Or(left, right) =>
-        for {
-          leftExpr <- convertNegated(left)
-          rightExpr <- convertNegated(right)
-        } yield nullAwareAnd(leftExpr, rightExpr)
-
-      case Not(child) =>
-        convertFilter(child)
-
-      case other =>
-        // No negated form to emit. `EqualNullSafe` lands here because the AST has no null-safe
-        // not-equal, and the string predicates because they do not convert at all.
-        logDebug(s"Negated filter not convertible to a cuDF AST: $other")
-        None
-    }
-  }
-
-  /**
-   * Join two converted filters with a conjunction whose null handling is Kleene rather than
-   * propagating. This matters for pruning, not just for the rows: libcudf rewrites the expression
-   * against per-row-group statistics, where anything it cannot decide for a row group comes back
-   * null, and a plain `LOGICAL_AND` lets that null swallow a sibling that did decide, keeping a row
-   * group that could have been pruned. A column holding a mix of nulls and non-nulls makes any
-   * `IsNull` or `IsNotNull` on it undecidable that way, and Spark infers an `IsNotNull` beside
-   * nearly every predicate it pushes, so the propagating form costs a read all of its statistics
-   * pruning. `NULL_LOGICAL_AND` evaluates unknown against false as false, which is also what Spark
-   * means by `AND`.
+   * Kleene `AND`, as Spark means it: under a `NOT`, a propagating `LOGICAL_AND` would turn
+   * `NOT(null AND false)` into null rather than true.
    */
   private def nullAwareAnd(left: AstExpression, right: AstExpression): AstExpression = {
     new BinaryOperation(BinaryOperator.NULL_LOGICAL_AND, left, right)
   }
 
-  /** Join two converted filters with a Kleene disjunction. See `nullAwareAnd`. */
+  /** Kleene `OR`. See `nullAwareAnd`. */
   private def nullAwareOr(left: AstExpression, right: AstExpression): AstExpression = {
     new BinaryOperation(BinaryOperator.NULL_LOGICAL_OR, left, right)
   }
@@ -281,23 +193,48 @@ case class FilterToAstConverter(
     for {
       col <- makeColumnRef(attribute)
       dataType <- getColumnType(attribute)
+      if pushableFloatComparison(dataType, value, operator)
       literal <- convertLiteral(value, dataType)
     } yield new BinaryOperation(operator, col, literal)
   }
 
+  private def isFloatingPoint(dataType: DataType): Boolean = dataType match {
+    case FloatType | DoubleType => true
+    case _ => false
+  }
+
+  /** Whether a literal compared against a column is a NaN. */
+  private def isNaNLiteral(value: Any): Boolean = value match {
+    case f: Float => f.isNaN
+    case d: Double => d.isNaN
+    case _ => false
+  }
+
   /**
-   * Convert `IN` to a chain of OR-ed equality comparisons. Every value must convert: dropping
-   * one would reject the rows that match it.
+   * cuDF ASTs compare floats with IEEE-754 semantics: a NaN equals nothing, not even itself, and
+   * loses every ordered comparison. Spark instead orders NaN above every value and equal to
+   * itself. The two agree for `=`, `<`, `<=`, and `!=` against a non-NaN literal, so those push;
+   * `>`, `>=`, and any NaN literal diverge -- Spark keeps NaN rows the cuDF AST would drop -- so
+   * they stay residual for Spark's post-scan filter to evaluate.
    */
+  private def pushableFloatComparison(
+      dataType: DataType, value: Any, operator: BinaryOperator): Boolean = {
+    !isFloatingPoint(dataType) ||
+      (!isNaNLiteral(value) &&
+        operator != BinaryOperator.GREATER &&
+        operator != BinaryOperator.GREATER_EQUAL)
+  }
+
+  /** Convert `IN` to OR-ed equalities. Every value must convert. */
   private def convertIn(attribute: String, values: Array[Any]): Option[AstExpression] = {
-    // An empty IN list accepts nothing. There is no AST literal for "always false", so leave
-    // it residual rather than inventing one.
+    // The AST has no "always false" literal for an empty list.
     if (values.isEmpty) {
       None
     } else {
       for {
         col <- makeColumnRef(attribute)
         dataType <- getColumnType(attribute)
+        if !isFloatingPoint(dataType) || !values.exists(isNaNLiteral)
         literals <- allOrNothing(values.map(convertLiteral(_, dataType)))
       } yield {
         literals.map { literal =>
@@ -307,29 +244,7 @@ case class FilterToAstConverter(
     }
   }
 
-  /**
-   * Convert `NOT IN` to a chain of AND-ed inequality comparisons, rather than a negation of the
-   * OR-ed equalities `convertIn` builds. See `convertNegated`.
-   */
-  private def convertNotIn(attribute: String, values: Array[Any]): Option[AstExpression] = {
-    // An empty NOT IN list accepts everything. There is no AST literal for "always true", so
-    // leave it residual rather than inventing one.
-    if (values.isEmpty) {
-      None
-    } else {
-      for {
-        col <- makeColumnRef(attribute)
-        dataType <- getColumnType(attribute)
-        literals <- allOrNothing(values.map(convertLiteral(_, dataType)))
-      } yield {
-        literals.map { literal =>
-          new BinaryOperation(BinaryOperator.NOT_EQUAL, col, literal): AstExpression
-        }.reduce((left, right) => nullAwareAnd(left, right))
-      }
-    }
-  }
-
-  /** Some(values) only if every element is defined, so a partial conversion cannot leak out. */
+  /** Some(values) only if every element is defined. */
   private def allOrNothing[T: ClassTag](converted: Array[Option[T]]): Option[Array[T]] = {
     if (converted.forall(_.isDefined)) Some(converted.map(_.get)) else None
   }
@@ -337,10 +252,7 @@ case class FilterToAstConverter(
   private def getColumnType(attribute: String): Option[DataType] =
     columnNameToType.get(normalize(attribute))
 
-  /**
-   * Build a reference to `attribute`, or None if it is not one of the columns being read (a
-   * filter on a column outside the read schema cannot be evaluated by the reader).
-   */
+  /** A reference to `attribute`, or None if it is not one of the columns being read. */
   private def makeColumnRef(attribute: String): Option[AstExpression] = {
     columnNameToIndex.get(normalize(attribute)).map { colIdx =>
       if (useColumnNames) {
@@ -368,8 +280,7 @@ case class FilterToAstConverter(
           case DateType => convertDateLiteral(value)
           case TimestampType => convertTimestampLiteral(value)
           case other =>
-            // Decimal needs the column's precision/scale to round-trip, and nested types have
-            // no AST representation at all. Both stay residual.
+            // Decimal needs the column's precision and scale; nested types have no AST form.
             logDebug(s"No cuDF AST literal for $other")
             None
         }
@@ -394,8 +305,7 @@ case class FilterToAstConverter(
   /** Spark pushes timestamps as microseconds since the epoch. */
   private def convertTimestampLiteral(value: Any): Option[Literal] = value match {
     case ts: Timestamp =>
-      // getTime is whole milliseconds (negative before the epoch, so scale rather than divide
-      // to keep floor semantics); getNanos carries the sub-second part.
+      // getTime is floored milliseconds; getNanos adds the sub-millisecond part.
       val micros = ts.getTime * 1000L + (ts.getNanos / 1000) % 1000
       Some(Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS, micros))
     case i: Instant =>
@@ -425,10 +335,7 @@ case class FilterToAstConverter(
 
 object FilterToAstConverter {
 
-  /**
-   * Flatten an implicit conjunction into its top-level conjuncts, so that an unconvertible
-   * part of a nested `And` does not force the whole tree to be residual.
-   */
+  /** Flatten nested `And`s into top-level conjuncts, so each can be pushed or left residual. */
   def splitConjuncts(filters: Array[Filter]): Array[Filter] = {
     def split(filter: Filter): Seq[Filter] = filter match {
       case And(left, right) => split(left) ++ split(right)
@@ -438,9 +345,8 @@ object FilterToAstConverter {
   }
 
   /**
-   * Whether a filter is of a shape the converter can attempt. This is a cheap structural
-   * screen for eligibility checks; it does not verify that the referenced columns exist or
-   * that the literals convert, so `planPushdown` remains the authority on what is pushed.
+   * Whether a filter has a shape the converter handles. A structural check only: `planPushdown`
+   * decides what is actually pushed.
    */
   def isSupportedFilter(filter: Filter): Boolean = filter match {
     case _: EqualTo | _: EqualNullSafe => true
@@ -455,22 +361,11 @@ object FilterToAstConverter {
   }
 
   /**
-   * Whether a filter can rule out a row group, which is the only reason to read one with the
-   * hybrid scan reader rather than the parquet-mr path. A read that can prune nothing pays every
-   * cost hybrid adds — parsing the footer here rather than reusing parquet-mr's, planning byte
-   * ranges, the dictionary page phase with its own read and semaphore acquisition — to end up
-   * reading exactly what parquet-mr would have read. Two-stage does not save it either: with no
-   * row group ruled out, the row mask is nearly all true, so almost no payload page is skipped.
+   * Whether a filter can rule out a row group, without which the hybrid scan reader only adds
+   * cost over parquet-mr.
    *
-   * `IsNotNull` is the case this rules out, and it is a common one, because Spark infers one for
-   * every column a null-intolerant predicate mentions. Ruling out a row group on it means proving
-   * the chunk is *entirely* null, which is what libcudf tests — its per-chunk flag is set only
-   * when the null count equals the value count — and a chunk with no non-null value at all is
-   * rare in real data, so treat this as never pruning rather than as a long shot worth paying for.
-   * `IsNull` is the useful direction: it rules out every row group whose column has no nulls.
-   *
-   * Within a disjunction every operand has to be able to prune, since a row group survives an
-   * `Or` unless both sides rule it out.
+   * `IsNotNull` counts as never pruning: it needs a chunk that is entirely null, which is rare.
+   * An `Or` prunes only if both sides can.
    */
   def canPruneRowGroups(filter: Filter): Boolean = filter match {
     case _: EqualTo | _: EqualNullSafe => true
@@ -488,10 +383,8 @@ object FilterToAstConverter {
   }
 
   /**
-   * Whether a filter can rule out a row group using its dictionary pages, which only tell
-   * whether a value is present in a chunk. libcudf's dictionary filter acts on `EQUAL` and
-   * `NOT_EQUAL` and treats every other operator as "keep", so reading the dictionary pages for
-   * a filter without one of those is pure cost.
+   * Whether a filter can rule out a row group using its dictionary pages. libcudf's dictionary
+   * filter only acts on `EQUAL` and `NOT_EQUAL`.
    */
   def canPruneWithDictionary(filter: Filter): Boolean = filter match {
     case _: EqualTo | _: EqualNullSafe => true
@@ -510,10 +403,8 @@ object FilterToAstConverter {
   }
 
   /**
-   * The columns a filter proves are not null wherever it holds, which makes a separate
-   * `IsNotNull` on any of them redundant. A comparison qualifies because a null operand makes it
-   * unknown rather than true. An `Or` only proves what both of its sides prove, and a negation
-   * proves nothing, since `NOT` of an unknown is unknown rather than true.
+   * The columns a filter proves are not null wherever it holds. An `Or` proves only what both
+   * sides prove; a negation proves nothing.
    */
   def columnsProvenNotNull(filter: Filter): Set[String] = filter match {
     case IsNotNull(attribute) => Set(attribute)
@@ -554,11 +445,7 @@ object FilterToAstConverter {
     case _ => Set.empty
   }
 
-  /**
-   * Whether every residual filter can be evaluated against the scan's own output. A residual
-   * filter referencing a column outside `schema` cannot be applied after the scan, so such a
-   * read must not use the hybrid scan reader at all.
-   */
+  /** Whether every residual filter only references columns in `schema`, the scan's output. */
   def residualsEvaluableOn(residual: Array[Filter], schema: StructType,
       isCaseSensitive: Boolean): Boolean = {
     def normalize(name: String): String = {
