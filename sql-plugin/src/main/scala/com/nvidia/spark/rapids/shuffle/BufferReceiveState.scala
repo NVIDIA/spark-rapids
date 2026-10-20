@@ -182,7 +182,13 @@ class BufferReceiveState(
    * @return what `maybeTakeFailure` returns
    */
   def serverFailed(reason: String): Option[FailedTransfer] = synchronized {
-    serverFailure = reason
+    // A transfer request gets one terminal response, so this runs at most once per state. A
+    // second failure while the first waits for a window keeps the first and is only logged.
+    if (serverFailure == null) {
+      serverFailure = reason
+    } else {
+      logWarning(s"Ignoring a second server failure for ${TransportUtils.toHex(id)}: $reason")
+    }
     maybeTakeFailure()
   }
 

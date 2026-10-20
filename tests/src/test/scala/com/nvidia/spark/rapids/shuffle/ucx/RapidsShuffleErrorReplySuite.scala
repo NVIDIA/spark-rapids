@@ -179,6 +179,32 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
     }
   }
 
+  test("a second server failure while the first waits for a window is logged and ignored") {
+    val requester = new Requester
+    val (delivered, failed) = (reader(), reader())
+    // the first window holds the first table and half of the second
+    val requests = Seq(
+      PendingTransferRequest(requester.client, tableMeta(1, 512), delivered),
+      PendingTransferRequest(requester.client, tableMeta(2, 1024), failed))
+    withReceiveState(1024, requests, spied = false) { (state, bounceBuffer, closes) =>
+      requester.client.doIssueBufferReceives(state)
+      state.getBufferWhenReady(_ => (), 1024)
+      // no production path fails a request twice, so the test calls serverFailed itself
+      val logs = LogCaptureUtils.captureLogsFrom(Seq(classOf[BufferReceiveState].getName)) {
+        assert(state.serverFailed("the first failure").isEmpty)
+        assert(state.serverFailed("the second failure").isEmpty)
+      }
+
+      requester.client.doHandleBounceBufferReceive(receivedWindow(), state)
+
+      verify(failed, times(1)).transferError(contains("the first failure"), isNull())
+      verify(failed, never()).transferError(contains("the second failure"), any())
+      assertResult(1)(logs.count(_.contains("the second failure")))
+      assert(bounceBuffer.isClosed)
+      assertResult(1)(closes.get)
+    }
+  }
+
   test("a reader that throws while a deferred error reply ends the state is logged, and the " +
       "state closes once") {
     val requester = new Requester
