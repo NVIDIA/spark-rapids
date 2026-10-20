@@ -144,6 +144,21 @@
       "rule": "Report `Performance: Not required` as a high-severity finding unless the pull request is documentation-only or test-only, or its description gives a verifiable reason the change cannot affect runtime performance. A bug-fix label, small diff, or rarely used path is not by itself an exemption. When uncertain, flag.",
       "scope": ["**"],
       "severity": "high"
+    },
+    {
+      "id": "shim-compatibility-preflight",
+      "rule": "For versioned sources, shared shim callers, and Spark/Databricks profile or matrix changes, follow .agents/skills/check-shim-compatibility/SKILL.md. Read the exact-head shim-compatibility check summary and report artifact; inspect related open and intervening merged PRs. Report confirmed new missing providers or source collisions with file, symbol, profile, peer PR links, and observed evidence. Do not attribute unchanged base debt to this PR or treat a related/Draft PR alone as a defect. INCOMPLETE means evidence is missing; do not claim execution or a clean scan without observed output. When execution is available, use the skill's read-only helper; otherwise state the limitation. Relevant base/head movement requires a rerun.",
+      "scope": [
+        "**/src/main/**",
+        "pom.xml",
+        "scala2.13/pom.xml",
+        "shim-deps/**",
+        "scala2.13/shim-deps/**",
+        "build/**",
+        "jenkins/**",
+        ".github/workflows/**"
+      ],
+      "severity": "high"
     }
   ]
 }

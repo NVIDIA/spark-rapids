@@ -3,6 +3,22 @@
 For full coding conventions, build commands, code examples, and
 shim layer architecture, see `AGENTS.md` at the repo root.
 
+## Shim compatibility review
+
+For versioned sources, shared shim callers, or Spark/Databricks profile/matrix
+changes, follow `.agents/skills/check-shim-compatibility/SKILL.md`. Read the
+current head's `shim-compatibility` check summary and JSON/Markdown artifact;
+verify head/base identities. If tools cannot retrieve the report or execute the
+read-only helper, state the missing evidence instead of claiming a clean scan.
+
+Inspect related open/intervening merged PRs against the current combined tree.
+Comment on confirmed new gaps with the file, symbol, profile, related PR links,
+and observed evidence. Keep unchanged base findings separate. An association or
+Draft alone is not a defect. `INCOMPLETE` is not a pass; static success is not
+compilation. Relevant base/head movement requires a rerun. With an execution
+environment such as TREX available, the same helper can produce the evidence;
+these rules do not enable that environment by themselves.
+
 ## Review Checklist
 
 - [ ] C1: Resource leaks — AutoCloseable not closed on exception paths; use withResource/closeOnExcept/safeClose, never bare .close() (see AGENTS.md § Resource management)

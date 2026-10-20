@@ -1,6 +1,6 @@
 ---
 name: check-shim-compatibility
-description: Check cudf-spark shim compatibility before publishing, updating, or merging a PR that changes versioned sources, shared shim callers, or Spark/Databricks build profiles. Inspect related open and intervening merged PRs, check source selection, and identify the required combined-tree validation.
+description: Check cudf-spark shim compatibility while reviewing or before publishing, updating, or merging a PR that changes versioned sources, shared shim callers, or Spark/Databricks build profiles. Inspect related open and intervening merged PRs, check source selection, and identify required combined-tree validation.
 ---
 
 # Check shim compatibility
@@ -10,8 +10,43 @@ authorization to publish, comment, push, or merge. Preserve the calling workflow
 validation, review, and mutation requirements.
 
 The repository helper is `build/check_shim_compatibility.py` (Python 3.10+,
-standard library only). The `related-prs` mode also needs authenticated `gh` and
-Git history. It never posts comments or changes GitHub state.
+standard library only). The `related-prs` and `review` modes need authenticated
+`gh` and Git history; `review` requires Git 2.38+ for `merge-tree --write-tree`.
+The helper never posts comments or changes GitHub state.
+
+## Automated review evidence
+
+The `Shim compatibility` workflow runs the `shim-compatibility` check on PR
+events, using read-only repository/PR permissions. It exports immutable Git
+source blobs, checks `sql-plugin` on current base and the proposed combined tree,
+and scans related PRs. No product code, Maven build, or GPU test is executed.
+
+```bash
+python3 build/check_shim_compatibility.py review \
+  --base-ref origin/main --pr 12345 --output-dir /tmp/shim-review
+```
+
+`report.json` and `report.md` record exact head/base/combined-tree identities,
+the checked matrix, new versus unchanged base findings, and PR associations.
+The workflow publishes a summary and full artifact, with up to ten error
+annotations for new static findings. Unchanged base debt is reported without
+new-error annotations. `NEEDS_REVIEW` completes the scan but needs source-backed
+disposition; it does not automatically establish a defect. `INCOMPLETE` fails
+the check, retaining any static evidence already collected. Unrelated diffs are
+reported as `NOT_APPLICABLE`. The automated source-selection scope is currently
+`sql-plugin`; inspect other affected modules separately.
+
+Copilot and Greptile reviewers should read this evidence and inspect matches,
+then report confirmed new gaps with file/symbol/profile, related PR links, and
+observed output. If no execution/API tools or current report are available,
+state that limitation. Never fabricate a successful run or report missing
+access as a product defect. A green check with associations still needs their
+disposition; it is not merge authorization.
+
+The workflow reruns on PR events, not every merge to the target branch. Before
+merge, compare the report's base/head to current refs and rerun when relevant
+changes have landed. Required-check branch protection remains a repository
+setting; this change does not enable it or the reviewers' execution features.
 
 ## Establish the proposed combination
 
@@ -116,16 +151,10 @@ static findings, actual build/test evidence, and remaining gaps. A report with
 `dirty: true` includes work in progress and must be rerun on the final committed
 head before merge. Immediately before publication or merge, refresh the base,
 current head, related PR states, and matrix. Relevant movement invalidates prior
-evidence. This skill is advisory until the repository wires a deterministic
-check into required CI; it cannot prevent concurrent human merges.
+evidence. The CI check is advisory until made required by repository settings;
+it cannot prevent concurrent human merges.
 
 ## Manual verification
-
-Run the helper's automated regression suite before changing its implementation:
-
-```bash
-python3 -m unittest discover -s build/tests -p test_check_shim_compatibility.py -v
-```
 
 For a real-source #16404 replay, export `pom.xml`, `scala2.13/pom.xml`, and
 `sql-plugin/src/main` from these commits into separate temporary directories.

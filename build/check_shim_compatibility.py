@@ -18,11 +18,14 @@
 import argparse
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+import html
+import io
 import json
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 
 from get_buildvers import _get_buildvers
 
@@ -371,7 +374,8 @@ def overlap_reasons(current, other, references=()):
     return reasons
 
 
-def related_prs(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
+def related_prs(root, repo, base_ref, head_ref, validated_base, branch, own_pr,
+                include_worktree=True, require_pr_head=False):
     owner, name = repo.split("/")
     base, head = commit_sha(root, base_ref), commit_sha(root, head_ref)
     if remote_base(root, owner, name, branch) != base:
@@ -383,13 +387,19 @@ def related_prs(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
     current = git_paths(root, "diff", "--name-only", common, head)
     # Include work in progress when preparing a new PR; record that it is not an exact-head scan.
     is_worktree_head = head == git(root, "rev-parse", "HEAD")
-    dirty = is_worktree_head and bool(git(root, "status", "--porcelain", "--untracked-files=normal"))
+    dirty = include_worktree and is_worktree_head and bool(
+        git(root, "status", "--porcelain", "--untracked-files=normal"))
     if dirty:
         current.update(git_paths(root, "diff", "--name-only", "HEAD"))
         current.update(git_paths(root, "ls-files", "--others", "--exclude-standard"))
     references = changed_imports(root, current, head, dirty)
     commits = git(root, "rev-list", start + ".." + base).splitlines()
     candidates = list(open_prs(root, owner, name, branch))
+    if require_pr_head and own_pr is not None:
+        own = next((pr for pr in candidates if pr["number"] == own_pr), None)
+        if own is None or own["headRefOid"] != head:
+            raise PreflightError("Requested PR is not open at the analyzed head/base; "
+                                 "refresh the PR and rerun")
     open_heads = {(pr["number"], pr["headRefOid"]) for pr in candidates}
     candidates += merged_prs(root, owner, name, commits, branch)
     related = []
@@ -417,6 +427,182 @@ def related_prs(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
                 scope="local fetched base and observed PR heads; association is not a confirmed defect")
 
 
+def source_snapshot(root, tree, destination):
+    """Export data only: do not check out or execute build hooks from either tree."""
+    paths = ("pom.xml", "scala2.13/pom.xml", "sql-plugin/src/main")
+    entries = []
+    for record in run(["git", "ls-tree", "-rz", tree, "--", *paths], root).split("\0"):
+        if record:
+            metadata, path = record.split("\t", 1)
+            mode, kind, oid = metadata.split()
+            if kind == "blob" and mode in ("100644", "100755"):
+                entries.append((oid, path))
+    if not entries:
+        raise PreflightError("No source-selection inputs in " + tree)
+    # Reading blobs bypasses export-ignore attributes and avoids executing either tree's code.
+    blobs = subprocess.run(["git", "cat-file", "--batch"], cwd=root,
+                           input="".join(oid + "\n" for oid, _ in entries).encode(),
+                           capture_output=True, timeout=90)
+    if blobs.returncode:
+        raise PreflightError("Cannot export source-selection inputs")
+    stream = io.BytesIO(blobs.stdout)
+    for oid, relative in entries:
+        actual, kind, size = stream.readline().decode().split()
+        data = stream.read(int(size))
+        if actual != oid or kind != "blob" or len(data) != int(size) or stream.read(1) != b"\n":
+            raise PreflightError("Truncated source snapshot")
+        path = destination / relative
+        if not path.resolve().is_relative_to(destination.resolve()):
+            raise PreflightError("Invalid source path")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+
+def finding_key(finding):
+    key = (finding["kind"], finding["module"], finding["buildver"],
+           finding.get("symbol"), finding.get("caller"), finding.get("source"))
+    # A third selected provider worsens an existing two-provider collision.
+    if finding["kind"] == "duplicate_source":
+        key += (tuple(sorted(finding["providers"])),)
+    return key
+
+
+def review_scope(paths):
+    families, matrix = path_signals(paths)
+    return bool(families or matrix or any(
+        re.search(r"/src/main/(?:scala|java)/.*\.(?:scala|java)$", path)
+        or path in ("build/check_shim_compatibility.py", ".github/workflows/shim-compatibility.yml")
+        or path.startswith(".agents/skills/check-shim-compatibility/") for path in paths))
+
+
+def review(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
+    """Check immutable base/combined trees; retain static evidence even if the PR scan fails."""
+    report = dict(status="INCOMPLETE", scope="sql-plugin source selection and related PRs; "
+                  "not compilation, runtime validation, or merge authorization")
+    try:
+        base, head = commit_sha(root, base_ref), commit_sha(root, head_ref)
+        report.update(base=base, head=head, pr=own_pr)
+        common = git(root, "merge-base", base, head)
+        changed = git_paths(root, "diff", "--name-only", common, head)
+        report["changed_files"] = sorted(changed)
+        if not review_scope(changed):
+            report.update(status="NOT_APPLICABLE", reason="No shim, shared JVM source, "
+                          "profile/matrix, or preflight implementation changes")
+            return report
+        merged = subprocess.run(["git", "merge-tree", "--write-tree", base, head], cwd=root,
+                                text=True, capture_output=True, timeout=90)
+        if merged.returncode == 1:
+            report.update(status="BLOCKED", error="Head and current base have merge conflicts")
+            return report
+        if merged.returncode:
+            raise PreflightError("Cannot construct the combined source tree")
+        tree = merged.stdout.splitlines()[0]
+        report["combined_tree"] = tree
+        with tempfile.TemporaryDirectory(prefix="shim-review-") as temporary:
+            snapshots = Path(temporary)
+            for label, revision in (("base", base), ("combined", tree)):
+                destination = snapshots / label
+                source_snapshot(root, revision, destination)
+                report[label + "_coverage"] = coverage(destination, ["sql-plugin"], None)
+        previous = {finding_key(f) for f in report["base_coverage"]["findings"]}
+        current = report["combined_coverage"]["findings"]
+        report["new_findings"] = [f for f in current if finding_key(f) not in previous]
+        report["existing_findings"] = [f for f in current if finding_key(f) in previous]
+        report["pr_scan"] = related_prs(root, repo, base_ref, head_ref, validated_base,
+                                         branch, own_pr, include_worktree=False,
+                                         require_pr_head=True)
+        if (report["pr_scan"]["base"], report["pr_scan"]["head"]) != (base, head):
+            raise PreflightError("Base/head changed between static analysis and PR scan")
+        report["status"] = ("BLOCKED" if report["new_findings"] else
+                            "NEEDS_REVIEW" if report["pr_scan"]["related"] else "PASS")
+    except (PreflightError, OSError, ValueError, KeyError, TypeError,
+            subprocess.TimeoutExpired) as error:
+        report["error"] = str(error)
+    return report
+
+
+def finding_message(finding):
+    if finding["kind"] == "missing_implementation":
+        return "{}: {} imports {}, but no implementation is selected".format(
+            finding["buildver"], finding["caller"], finding["symbol"])
+    return "{}: duplicate destination {} selected from {}".format(
+        finding["buildver"], finding["source"], ", ".join(finding["providers"]))
+
+
+def annotation_location(root, head, finding, changed=()):
+    # Locate against the actual PR head, rather than assuming combined-tree line numbers match it.
+    paths = [finding["caller"]] if "caller" in finding else finding["providers"]
+    for path in sorted(paths, key=lambda path: (path not in changed, path)):
+        if not git(root, "ls-tree", "--name-only", head, "--", path):
+            continue
+        original = git(root, "show", head + ":" + path)
+        source = without_comments(original)
+        token = finding.get("symbol", "").split(".")[-1]
+        if token:
+            line = next((i for i, text in enumerate(source.splitlines(), 1)
+                         if re.search(r"\b" + re.escape(token) + r"\b", text)), 1)
+        else:
+            line = next((i for i, text in enumerate(original.splitlines(), 1)
+                         if re.search(r'"spark"\s*:\s*"' + re.escape(finding["buildver"]) + '"',
+                                      text)), 1)
+        return path, line
+    return None
+
+
+def actions_escape(value, parameter=False):
+    value = str(value).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    return value.replace(":", "%3A").replace(",", "%2C") if parameter else value
+
+
+def write_review(root, report, output, github_actions=False):
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n",
+                                      encoding="utf-8")
+    lines = ["# Shim compatibility preflight: " + report["status"], "", report["scope"], ""]
+    for key in ("head", "base", "combined_tree"):
+        if key in report:
+            lines.append("- {}: `{}`".format(key, report[key]))
+    if "error" in report:
+        lines += ["", "Check incomplete or blocked: " + html.escape(report["error"])]
+    if "reason" in report:
+        lines += ["", report["reason"]]
+    for key, title in (("new_findings", "New static findings"),
+                       ("existing_findings", "Existing base findings (not attributed to this PR)")):
+        if key in report:
+            lines += ["", "## {} ({})".format(title, len(report[key]))]
+            lines += ["- " + html.escape(finding_message(f)) for f in report[key]] or ["None."]
+    if "combined_coverage" in report:
+        result = report["combined_coverage"]
+        lines += ["", "Profiles: " + ", ".join(result["buildvers"]),
+                  "", "Unmodelled wildcard imports: {}. See report.json for full inputs and limits.".
+                  format(len(result["unmodelled_wildcard_imports"]))]
+    if "pr_scan" in report:
+        scan = report["pr_scan"]
+        lines += ["", "## Related PRs requiring disposition", "",
+                  "History starts at `{}` ({} base commits); all authors' open PRs included.".
+                  format(scan["history_start"], scan["history_commits"])]
+        lines += ["- [#{}]({}): {} — {}".format(pr["number"], pr["url"],
+                  html.escape(pr["title"]), html.escape("; ".join(pr["reasons"])))
+                  for pr in scan["related"]] or ["None."]
+    lines += ["", "Associations alone are not defects. Inspect peer diffs before commenting; "
+              "static PASS does not establish compilation or merge readiness.", ""]
+    (output / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    if github_actions:
+        # GitHub limits annotations per step; the complete report remains in the artifact.
+        for finding in report.get("new_findings", [])[:10]:
+            location = annotation_location(root, report["head"], finding,
+                                           report.get("changed_files", []))
+            parameters = "title=Shim compatibility"
+            if location:
+                parameters += ",file={},line={}".format(actions_escape(location[0], True), location[1])
+            print("::error {}::{}".format(parameters, actions_escape(finding_message(finding))))
+        if report["status"] in ("INCOMPLETE", "BLOCKED") and "error" in report:
+            print("::error title=Shim compatibility::" + actions_escape(report["error"]))
+        if report.get("pr_scan", {}).get("related"):
+            print("::warning title=Shim compatibility::Related PRs need inspection; "
+                  "see the report. This association is not a confirmed defect.")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
@@ -424,23 +610,32 @@ def main(argv=None):
     static = subparsers.add_parser("coverage", help="offline source-selection checks")
     static.add_argument("--module", action="append", help="default: sql-plugin")
     static.add_argument("--buildver", action="append", help="default: all supported release profiles")
-    online = subparsers.add_parser("related-prs", help="read-only GitHub PR association scan")
-    online.add_argument("--repo", default="NVIDIA/cudf-spark")
-    online.add_argument("--base-ref", default="origin/main")
-    online.add_argument("--head-ref", default="HEAD")
-    online.add_argument("--base-branch", default="main")
-    online.add_argument("--validated-base", help="base SHA used in the last relevant validation")
-    online.add_argument("--pr", type=int, help="exclude this PR from candidates")
+    for mode, description in (("related-prs", "read-only GitHub PR association scan"),
+                              ("review", "combined-tree check and review evidence")):
+        online = subparsers.add_parser(mode, help=description)
+        online.add_argument("--repo", default="NVIDIA/cudf-spark")
+        online.add_argument("--base-ref", default="origin/main")
+        online.add_argument("--head-ref", default="HEAD")
+        online.add_argument("--base-branch", default="main")
+        online.add_argument("--validated-base", help="base SHA used in the last relevant validation")
+        online.add_argument("--pr", type=int, help="exclude this PR from candidates")
+        if mode == "review":
+            online.add_argument("--output-dir", type=Path, required=True)
+            online.add_argument("--github-actions", action="store_true")
     args = parser.parse_args(argv)
     try:
         root = args.root.resolve()
         if args.mode == "coverage":
             result = coverage(root, args.module or ["sql-plugin"], args.buildver)
+        elif args.mode == "review":
+            result = review(root, args.repo, args.base_ref, args.head_ref,
+                            args.validated_base, args.base_branch, args.pr)
+            write_review(root, result, args.output_dir, args.github_actions)
         else:
             result = related_prs(root, args.repo, args.base_ref, args.head_ref,
                                  args.validated_base, args.base_branch, args.pr)
         print(json.dumps(result, indent=2, sort_keys=True))
-        return 1 if result["status"] == "BLOCKED" else 0
+        return 2 if result["status"] == "INCOMPLETE" else 1 if result["status"] == "BLOCKED" else 0
     except (PreflightError, OSError, ValueError, KeyError, TypeError,
             subprocess.TimeoutExpired) as error:
         print(json.dumps(dict(status="INCOMPLETE", error=str(error)), indent=2))
