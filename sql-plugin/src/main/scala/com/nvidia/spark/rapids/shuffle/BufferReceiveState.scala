@@ -175,8 +175,9 @@ class BufferReceiveState(
   def hasMoreBlocks: Boolean = synchronized { hasMoreBuffers_ }
 
   /**
-   * Records the server's failure, and hands it over now if no window is left to consume.
-   * Otherwise the field keeps it until the copy thread has consumed those windows.
+   * Records the server's failure, and returns it if `maybeTakeFailure` can hand it over now.
+   * Otherwise `RapidsShuffleClient.doHandleBounceBufferReceive` tries again after each window
+   * that leaves more to receive.
    * @param reason the error message for each reader whose request will not arrive
    * @return what `maybeTakeFailure` returns
    */
@@ -269,8 +270,9 @@ class BufferReceiveState(
                 workingOnOffset = 0
               }
             } else {
-              // need to keep it around. Only the field owns it, so that the state's close frees
-              // it once if this window fails.
+              // need to keep it around. Only the field owns it, so that if this window fails, the
+              // catch in RapidsShuffleClient.doHandleBounceBufferReceive closes the state, which
+              // frees it once.
               workingOn = Rmm.alloc(fullSize, stream)
 
               workingOn.copyFromDeviceBufferAsync(0, deviceBounceBuffer,
