@@ -40,7 +40,7 @@ cleanup() {
     fi
 }
 
-trap cleanup EXIT
+trap 'cleanup' EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -57,4 +57,6 @@ status=$?
 wait "$log_pid" || true
 log_pid=
 printf '\nDatabricks remote test command completed (exit=%s)\n' "$status"
+cleanup
+trap - EXIT
 exit "$status"
