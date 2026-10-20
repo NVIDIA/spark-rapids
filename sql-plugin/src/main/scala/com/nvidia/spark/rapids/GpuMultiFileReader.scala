@@ -698,8 +698,15 @@ abstract class MultiFileCloudPartitionReaderBase(
         readBatches(fileHostBuffers)
       } catch {
         case e@(_: RuntimeException | _: IOException) if ignoreCorruptFiles =>
-          logWarning(s"Skipped the corrupted file: $file", e)
-          EmptyGpuColumnarBatchIterator
+          val remainingBuffers = currentFileHostBuffers.filterNot(_ eq fileHostBuffers)
+          // Skip the rest of this file and clear pending buffers before releasing them.
+          currentFileHostBuffers = None
+          withResource(fileHostBuffers) { _ =>
+            withResource(remainingBuffers) { _ =>
+              logWarning(s"Skipped the corrupted file: $file", e)
+              EmptyGpuColumnarBatchIterator
+            }
+          }
       }
       // the data is copied to GPU so submit another task if we were limited
       if (addTaskIfNeeded) addNextTaskIfNeeded()

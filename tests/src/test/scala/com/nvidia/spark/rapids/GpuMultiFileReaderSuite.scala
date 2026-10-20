@@ -16,20 +16,25 @@
 
 package com.nvidia.spark.rapids
 
-import java.io.FileNotFoundException
+import java.io.{FileNotFoundException, IOException}
+
+import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.HostMemoryBuffer
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.io.async.AsyncRunner
+import com.nvidia.spark.rapids.parquet._
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+import org.apache.parquet.schema.{MessageType, Type}
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
@@ -164,5 +169,93 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
       assert(reader.released == 1)
     }
     assert(reader.released == 2)
+  }
+
+  private class CorruptFileReader(failingChunk: Int, withHealthyFile: Boolean)
+      extends MultiFileCloudParquetPartitionReader(
+        null, new Configuration(false), Array.empty,
+        _ => throw new UnsupportedOperationException("All files are already pending"),
+        true, None, false, 1000, 1L << 20, 1L << 20, 1L << 20, false, 0,
+        false, CpuCompressionConfig.disabled(), Map.empty, new StructType(),
+        new ThreadPoolConfBuilder(1, true, 1L << 20, 10000L, false).build(),
+        1, false, true, false, false, true, CombineConf(1L << 20, 0)) {
+    val attemptedChunks = ArrayBuffer[Int]()
+    val hostBuffers = ArrayBuffer[HostMemoryBuffer]()
+    var releasedFiles = 0
+
+    private val parquetSchema = new MessageType("test", java.util.Collections.emptyList[Type]())
+    private val readSchema = new StructType()
+
+    private def partitionedFile(name: String): PartitionedFile =
+      PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty, s"file:///tmp/$name", 0, 0)
+
+    private def corruptFile(): HostMemoryBuffersWithMetaData = {
+      val buffers = (1 to 3).map { rows =>
+        val hostBuffer = HostMemoryBuffer.allocate(1)
+        hostBuffers += hostBuffer
+        val spillable = SpillableHostBuffer(hostBuffer, 1,
+          SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+        SingleHMBAndMeta(Array(spillable), 1, rows, Seq.empty)
+      }.toArray
+      val file = partitionedFile("corrupt.parquet")
+      val metadata = ParquetFileInfoWithBlockMeta(new Path(file.filePath.toString()),
+        Seq.empty, file.partitionValues, parquetSchema, readSchema,
+        DateTimeRebaseCorrected, DateTimeRebaseCorrected, false)
+      val result = newHMBWithMetaDataForChunks(file, buffers, buffers.map(_.bytes).sum, metadata)
+      result.addReleaseResourceCallback(() => releasedFiles += 1)
+      result
+    }
+
+    private def healthyEmptyFile(): HostMemoryBuffersWithMetaDataBase = {
+      // The production combiner keeps metadata-only rows separate from the buffered file.
+      val result = newHMEmptyMetadataForChunks(partitionedFile("healthy.parquet"), 0, 0,
+        DateTimeRebaseCorrected, DateTimeRebaseCorrected, false,
+        parquetSchema, readSchema, 4, Seq.empty)
+      result.addReleaseResourceCallback(() => releasedFiles += 1)
+      result
+    }
+
+    val files: Array[HostMemoryBuffersWithMetaDataBase] =
+      if (withHealthyFile) Array(corruptFile(), healthyEmptyFile()) else Array(corruptFile())
+    combineLeftOverFiles = Some(files)
+
+    override protected def readBufferToBatches(buffer: HostMemoryBuffersWithMetaData)
+        : Iterator[ColumnarBatch] = {
+      val chunk = buffer.memBuffersAndSizes.head
+      val rows = chunk.numRows.toInt
+      attemptedChunks += rows
+      // The file has only three buffered chunks, so exceeding this limit indicates retries.
+      // Bound those retries so a regression fails instead of hanging. AssertionError escapes
+      // the ignoreCorruptFiles handler, which would swallow RuntimeException or IOException.
+      if (attemptedChunks.size > 3) {
+        throw new AssertionError("Reader retried a corrupt chunk instead of skipping the file")
+      }
+      withResource(chunk.hmbs) { _ =>
+        if (rows == failingChunk) {
+          throw new IOException("Corrupt chunk")
+        }
+        Iterator(new ColumnarBatch(Array.empty, rows))
+      }
+    }
+  }
+
+  for (failingChunk <- Seq(1, 2, 3); withHealthyFile <- Seq(false, true)) {
+    test(s"skip corrupt chunk $failingChunk and remaining chunks, healthy file=$withHealthyFile") {
+      val reader = new CorruptFileReader(failingChunk, withHealthyFile)
+      // Also own the original wrappers so a failed regression test cannot leak skipped buffers.
+      withResource(reader.files) { _ =>
+        withResource(reader) { _ =>
+          val expectedRows = (1 until failingChunk) ++ (if (withHealthyFile) Seq(4) else Seq.empty)
+          expectedRows.foreach { rows =>
+            assert(reader.next())
+            withResource(reader.get()) { batch => assert(batch.numRows() == rows) }
+          }
+          assert(!reader.next())
+          assert(reader.attemptedChunks.toSeq === (1 to failingChunk))
+          assert(reader.releasedFiles == reader.files.length)
+          assert(reader.hostBuffers.forall(_.getRefCount == 0))
+        }
+      }
+    }
   }
 }
