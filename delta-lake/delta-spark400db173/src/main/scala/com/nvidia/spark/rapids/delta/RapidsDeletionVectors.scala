@@ -405,8 +405,8 @@ object RapidsDeletionVectors extends Logging {
   }
 
   /**
-   * Drops the first column from a table. Used when reading with deletion vectors, as the cuDF API
-   * prepends a UINT64 index column that is not used.
+   * Drops cuDF's prepended UINT64 source-row-index column from the data table. Low shuffle
+   * discovery retains it separately to populate its synthetic row-index column.
    */
   def dropFirstColumn(table: Table): Table = {
     if (table.getNumberOfColumns == 0) {

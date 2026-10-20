@@ -350,7 +350,8 @@ case.
 
 ## Delta Lake low shuffle merge on Databricks Runtime 17.3
 
-Low shuffle merge is disabled by default. To enable it on Databricks Runtime 17.3, set
+Low shuffle merge is disabled by default because Delta Lake 2.4 does not support it
+with change data feed enabled. To enable it on Databricks Runtime 17.3, set
 `spark.rapids.sql.delta.lowShuffleMerge.enabled=true`. The Parquet reader can use `PERFILE`
 or `MULTITHREADED`. With `COALESCING` or `AUTO`, touched-file discovery uses the
 multithreaded reader to preserve file-relative row indices. OSS Delta Lake 2.4 still
@@ -362,11 +363,9 @@ Low shuffle merge also requires both
 MERGE falls back to classic GPU merge. In particular, remove the `useMetadataRowIndex=false`
 setting recommended for older runtimes when enabling low shuffle merge on Databricks Runtime 17.3.
 
-Tables with physical columns named like deletion-vector skip-row markers use classic GPU
-merge to avoid corrupting those values during discovery and temporary-DV rewrites; see
+Tables with columns whose logical or physical name matches a deletion-vector skip-row marker
+use classic GPU merge to avoid corrupting those values during discovery and temporary-DV rewrites; see
 [the native reader column-collision issue](https://github.com/NVIDIA/cudf-spark/issues/16381).
-The default remains disabled because Delta Lake 2.4 does not support low shuffle merge
-with change data feed enabled.
 
 On Databricks Runtime 17.3, tables with existing deletion vectors fall back to classic
 GPU merge before low shuffle merge builds temporary deletion vectors. The existing

@@ -71,6 +71,8 @@ private case class DeletionVectorOutputColumns(rowIndexColumn: Option[Int] = Non
    * Replaces the synthetic row-index placeholder after Parquet schema evolution. cuDF prepends
    * source row indexes to deletion-vector reads, so callers separate that column before schema
    * evolution and transfer it here. This method takes ownership of both inputs.
+   * TODO (NVIDIA/cudf-spark#16429): Skip the synthetic field during schema evolution and insert
+   * the cast index afterwards, avoiding the null placeholder allocated outside the chunk limit.
    */
   def populateAndClose(table: Table, cudfRowIndex: Option[ColumnVector]): Table = {
     if (!needsRowIndex) {
@@ -714,13 +716,16 @@ case class GpuDeltaParquetFileFormatNativeDV(
       dataSchema, readDataSchema, partitionSchema, filters, rapidsConf, poolConfBuilder,
       metrics, queryUsesInputFile) with Logging {
 
-    // Low-shuffle target scans need a file-relative row index. The multithreaded reader keeps
+    private val failedOnNotMetadataOnly =
+      lowShuffleMergeDiscoveryScan && rapidsConf.isTestEnabled &&
+        rapidsConf.testDeltaLowShuffleMergeFailedOnNotMetadataOnly
+
+    // Low-shuffle discovery scans need a file-relative row index. The multithreaded reader keeps
     // per-file row-group metadata, while the coalescing reader loses those file boundaries.
+    // Disabling coalescing makes MultiFileReaderUtils select the multithreaded reader.
     override val canUseCoalesceFilesReader: Boolean =
       !lowShuffleMergeDiscoveryScan && rapidsConf.isParquetCoalesceFileReadEnabled &&
         !(queryUsesInputFile || ignoreCorruptFiles)
-    override val canUseMultiThreadReader: Boolean =
-      lowShuffleMergeDiscoveryScan || rapidsConf.isParquetMultiThreadReadEnabled
 
     logDebug("Using GpuDeltaParquetMultiFilePartitionReaderFactory for multi-threaded Parquet " +
       "reading with deletion vectors")
@@ -780,7 +785,8 @@ case class GpuDeltaParquetFileFormatNativeDV(
         keepReadsInOrder,
         combineConf,
         deletionVectorReadInfo,
-        tablePathOpt
+        tablePathOpt,
+        failedOnNotMetadataOnly
       )
     }
 
@@ -869,7 +875,8 @@ case class GpuDeltaParquetFileFormatNativeDV(
       keepReadsInOrder: Boolean,
       combineConf: CombineConf,
       deletionVectorReadInfo: Option[RapidsDeletionVectorReadInfo],
-      tablePathOpt: Option[String])
+      tablePathOpt: Option[String],
+      failedOnNotMetadataOnly: Boolean)
     extends AbstractMultiFileCloudParquetPartitionReader(fileIO, conf, files, filterFunc,
       isSchemaCaseSensitive, debugDumpPrefix, debugDumpAlways, maxReadBatchSizeRows,
       maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes, useChunkedReader,
@@ -896,6 +903,12 @@ case class GpuDeltaParquetFileFormatNativeDV(
             super.readBatches(fileBufsAndMeta)
           }
         case _ =>
+          // Empty reads do not distinguish metadata-only from data-reading scans.
+          if (failedOnNotMetadataOnly && fileBufsAndMeta.memBuffersAndSizes.exists(_.numRows > 0)) {
+            withResource(fileBufsAndMeta) { _ =>
+              throw new IllegalStateException("Expected metadata-only low shuffle merge discovery")
+            }
+          }
           super.readBatches(fileBufsAndMeta)
       }
     }
@@ -910,6 +923,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
      */
     private def metadataOnlyBatches(
         metadata: DeltaParquetHostMemoryEmptyMetaData): Iterator[ColumnarBatch] = {
+      // Defensive guard: outputColumns.needsRowIndex limits the caller to discovery scans.
       require(lowShuffleMergeDiscoveryScan,
         "Row-index-only reads are supported only for low-shuffle merge discovery")
       val rowGroupMetadata = metadata.dvMetadata.flatMap(_.peekDvInfos)

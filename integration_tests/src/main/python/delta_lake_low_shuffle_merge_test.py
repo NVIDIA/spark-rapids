@@ -36,6 +36,7 @@ delta_merge_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                 "true"})
 
 
+# AUTO routing is covered by the focused DV-settings and multiple-row-group tests below.
 low_shuffle_merge_reader_types = [
     "PERFILE",
     pytest.param(
@@ -47,12 +48,7 @@ low_shuffle_merge_reader_types = [
         "COALESCING",
         marks=pytest.mark.skipif(
             not is_databricks_version(17, 3),
-            reason="Coalescing low shuffle merge requires DBR 17.3")),
-    pytest.param(
-        "AUTO",
-        marks=pytest.mark.skipif(
-            not is_databricks_version(17, 3),
-            reason="AUTO low shuffle merge requires DBR 17.3"))]
+            reason="Coalescing low shuffle merge requires DBR 17.3"))]
 
 
 def _delta_merge_conf(reader_type):
@@ -109,7 +105,7 @@ def _assert_collect_with_counters(do_merge, data_path, conf, expect_write=True,
                     reason="Low Shuffle Merge requires Delta Lake 2.4 or DBR 17.3")
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
-@pytest.mark.parametrize("reader_type", low_shuffle_merge_reader_types, ids=idfn)
+@pytest.mark.parametrize("reader_type", ["PERFILE"], ids=idfn)
 def test_delta_low_shuffle_merge_when_gpu_file_scan_override_failed(spark_tmp_path,
                                                                     spark_tmp_table_factory,
                                                                     use_cdf, num_slices, reader_type):
@@ -119,6 +115,7 @@ def test_delta_low_shuffle_merge_when_gpu_file_scan_override_failed(spark_tmp_pa
     merge_sql = "MERGE INTO {dest_table} USING {src_table} ON {dest_table}.a == {src_table}.a" \
                 " WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *"
 
+    # This falls back before low-shuffle reader selection, so one reader mode is sufficient.
     conf = copy_and_update(_delta_merge_conf(reader_type),
                            {
                                "spark.rapids.sql.exec.FileSourceScanExec": "false",
@@ -145,9 +142,10 @@ def test_delta_low_shuffle_merge_when_gpu_file_scan_override_failed(spark_tmp_pa
 @pytest.mark.parametrize("use_cdf", [True, False], ids=idfn)
 @pytest.mark.parametrize("partition_columns", [None, ["a"], ["b"], ["a", "b"]], ids=idfn)
 @pytest.mark.parametrize("num_slices", num_slices_to_test, ids=idfn)
-@pytest.mark.parametrize("reader_type", low_shuffle_merge_reader_types, ids=idfn)
+@pytest.mark.parametrize("reader_type", ["PERFILE"], ids=idfn)
 def test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_factory, table_ranges,
                                            use_cdf, partition_columns, num_slices, reader_type):
+    # Insert-only MERGE bypasses low-shuffle discovery and rewrite.
     do_test_delta_merge_not_match_insert_only(spark_tmp_path, spark_tmp_table_factory,
                                               table_ranges, use_cdf, False, partition_columns,
                                               num_slices, False, _delta_merge_conf(reader_type),
@@ -249,10 +247,14 @@ def test_delta_low_shuffle_merge_rewrite_with_dv_settings(
 @pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
 @pytest.mark.parametrize("metadata_only", [False, True], ids=idfn)
 @pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
+@pytest.mark.parametrize("footer_type", ["JAVA", "NATIVE"], ids=idfn)
 def test_delta_low_shuffle_merge_multiple_row_groups(
-        spark_tmp_path, spark_tmp_table_factory, reader_type, metadata_only, use_chunked_reader):
+        spark_tmp_path, spark_tmp_table_factory, reader_type, metadata_only, use_chunked_reader,
+        footer_type):
     conf = copy_and_update(_delta_merge_conf(reader_type), {
         "spark.rapids.sql.reader.chunked": str(use_chunked_reader).lower(),
+        "spark.rapids.sql.format.parquet.reader.footer.type": footer_type,
+        "spark.rapids.sql.test.delta.lowShuffleMerge.failedOnNotMetadataOnly": str(metadata_only).lower(),
         "spark.databricks.delta.optimizeWrite.enabled": "false",
         "spark.databricks.delta.autoCompact.enabled": "false",
         "spark.sql.files.minPartitionNum": "1",
@@ -584,7 +586,7 @@ def test_delta_low_shuffle_merge_physical_internal_column(
 @pytest.mark.skipif(not is_databricks_version(17, 3),
                     reason="DBR 17.3 physical metadata-column regression")
 @pytest.mark.parametrize("mapping", ["none", "name", "id"], ids=idfn)
-@pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING", "AUTO"], ids=idfn)
+@pytest.mark.parametrize("reader_type", ["MULTITHREADED", "COALESCING"], ids=idfn)
 @pytest.mark.parametrize("use_chunked_reader", [False, True], ids=idfn)
 def test_delta_low_shuffle_merge_physical_metadata_columns(
         spark_tmp_path, spark_tmp_table_factory, mapping, reader_type, use_chunked_reader):
@@ -770,6 +772,7 @@ def test_delta_low_shuffle_merge_column_mapping_physical_columns(
         "spark.databricks.delta.properties.defaults.columnMapping.mode": "none"})
     data_path = spark_tmp_path + "/DELTA_DATA"
     src_table = spark_tmp_table_factory.get()
+    cdf_start_versions = {}
 
     def dest_table_func(spark):
         fields = [
@@ -797,6 +800,8 @@ def test_delta_low_shuffle_merge_column_mapping_physical_columns(
             if use_cdf:
                 spark.sql(f"ALTER TABLE {table} SET TBLPROPERTIES "
                           "('delta.enableChangeDataFeed' = 'true')")
+                cdf_start_versions[data_path + "/" + run] = spark.sql(
+                    f"DESCRIBE HISTORY {table} LIMIT 1").first()["version"]
         gen_df(spark, [
             ("id", RepeatSeqGen(list(range(1, 5)), data_type=LongType()))],
             length=4, num_slices=1).withColumn("value", f.col("id") + 10) \
@@ -822,15 +827,18 @@ def test_delta_low_shuffle_merge_column_mapping_physical_columns(
 
     _assert_collect_with_counters(do_merge, data_path, conf)
 
-    def read_data(spark, path):
-        df = read_delta_path(spark, path)
+    def read_data(spark, path, read_cdf):
+        # Start at CDF enablement, after the rename/drop; earlier versions have no change feed.
+        df = read_delta_path_with_cdf(spark, path, starting_version=cdf_start_versions[path]) \
+            if read_cdf else read_delta_path(spark, path)
         return df.sort(df.columns)
 
-    cpu_result = with_cpu_session(
-        lambda spark: read_data(spark, data_path + "/CPU").collect(), conf=conf)
-    gpu_result = with_cpu_session(
-        lambda spark: read_data(spark, data_path + "/GPU").collect(), conf=conf)
-    assert_equal(cpu_result, gpu_result)
+    for read_cdf in ([False, True] if use_cdf else [False]):
+        cpu_result = with_cpu_session(
+            lambda spark: read_data(spark, data_path + "/CPU", read_cdf).collect(), conf=conf)
+        gpu_result = with_cpu_session(
+            lambda spark: read_data(spark, data_path + "/GPU", read_cdf).collect(), conf=conf)
+        assert_equal(cpu_result, gpu_result)
 
 
 @allow_non_gpu(*delta_meta_allow)
@@ -980,7 +988,8 @@ def test_delta_low_shuffle_merge_row_tracking_falls_back_to_classic_merge(
 
     # DBR 17.3 exposes nullable row-tracking scan fields that the GPU reader does not support, so
     # low-shuffle planning intentionally falls back to the classic GPU merge executor.
-    _assert_collect_with_counters(do_merge, data_path, conf)
+    _assert_collect_with_counters(
+        do_merge, data_path, conf, expected_gpu_classes=["GpuRapidsProcessDeltaMergeJoinExec"])
 
     for run in ["CPU", "GPU"]:
         after = with_cpu_session(
@@ -1014,7 +1023,7 @@ def test_delta_low_shuffle_merge_row_tracking_falls_back_to_classic_merge(
 @pytest.mark.skipif(not is_databricks_version(17, 3),
                     reason="DBR 17.3 existing-DV low-shuffle fallback")
 @pytest.mark.parametrize("disable_dv_property", [False, True], ids=idfn)
-@pytest.mark.parametrize("reader_type", low_shuffle_merge_reader_types, ids=idfn)
+@pytest.mark.parametrize("reader_type", ["MULTITHREADED"], ids=idfn)
 def test_delta_low_shuffle_merge_existing_deletion_vectors_fall_back(
         spark_tmp_path, disable_dv_property, reader_type):
     conf = copy_and_update(_delta_merge_conf(reader_type), {

@@ -142,6 +142,8 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
    * For discovery, the native reader maps configured COALESCING (including AUTO when coalescing
    * is eligible) to MULTITHREADED so it can produce file-relative row indexes. PERFILE discovery
    * uses the legacy row-index path. Rewrites follow normal reader-mode eligibility rules.
+   * The rewrite marker only enables the prerequisite check below; once native DV processing is
+   * enabled, marked rewrites and ordinary reads select the same reader.
    * TODO: Native PERFILE/COALESCING discovery row indexes: NVIDIA/cudf-spark#16323.
    */
   override def getReadFileFormat(
