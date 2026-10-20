@@ -45,7 +45,7 @@ import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsInputFile}
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile.CopyRange
 import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{LocalCopy, PARQUET_MAGIC}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims,
-  ParquetVariantShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+  ParquetMissingStructShims, ParquetVariantShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import com.nvidia.spark.rapids.shims.parquet.{GpuParquetUtilsShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -172,8 +172,8 @@ object GpuParquetScan {
     }
   }
 
-  private def tagVariantScanPrefixForCpu(
-      meta: RapidsMeta[_, _, _], reason: String, sqlConf: SQLConf): Unit = {
+  private[rapids] def tagVariantScanPrefixForCpu(
+      meta: RapidsMeta[_, _, _], reason: String): Unit = {
     meta.willNotWorkOnGpu(reason)
     var ancestor = meta.parent
     var outputContainsVariant = true
@@ -183,8 +183,10 @@ object GpuParquetScan {
         case plan: SparkPlan =>
           plan.setTagValue(RapidsMeta.gpuSupportedTag,
             plan.getTagValue(RapidsMeta.gpuSupportedTag).getOrElse(Set.empty) + reason)
-          outputContainsVariant = hasPotentiallyShreddedVariant(
-            plan.output.map(_.dataType), sqlConf)
+          outputContainsVariant = plan.output.exists { attr =>
+            TrampolineUtil.dataTypeExistsRecursively(
+              attr.dataType, GpuColumnVector.isVariantType)
+          }
         case _ =>
       }
       ancestor = current.parent
@@ -198,7 +200,11 @@ object GpuParquetScan {
   }
 
   def tagSupport(sparkSession: SparkSession, readSchema: StructType,
-      meta: RapidsMeta[_, _, _]): Unit = {
+      meta: RapidsMeta[_, _, _]): Unit =
+    tagSupport(sparkSession, readSchema, meta, None)
+
+  def tagSupport(sparkSession: SparkSession, readSchema: StructType,
+      meta: RapidsMeta[_, _, _], mayContainShreddedVariant: Option[Boolean]): Unit = {
     if (ParquetLegacyNanoAsLongShims.legacyParquetNanosAsLong) {
       meta.willNotWorkOnGpu("GPU does not support spark.sql.legacy.parquet.nanosAsLong")
     }
@@ -222,13 +228,24 @@ object GpuParquetScan {
     }
 
     val sqlConf = sparkSession.sessionState.conf
-    val schemaHasPotentiallyShreddedVariant =
-      hasPotentiallyShreddedVariant(readSchema.map(_.dataType), sqlConf)
+    // Delta can establish whether shredded files are possible from its table protocol.
+    // Other sources retain the conservative check based on Spark's reader configuration.
+    val schemaHasPotentiallyShreddedVariant = mayContainShreddedVariant match {
+      case Some(mayContain) => mayContain && readSchema.exists { field =>
+        TrampolineUtil.dataTypeExistsRecursively(field.dataType, GpuColumnVector.isVariantType)
+      }
+      case None => hasPotentiallyShreddedVariant(readSchema.map(_.dataType), sqlConf)
+    }
     if (schemaHasPotentiallyShreddedVariant) {
-      val reason = "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
-        "shredded Variant input"
+      val reason = if (mayContainShreddedVariant.isDefined) {
+        "GPU Delta reader cannot safely read VARIANT columns when the table protocol supports " +
+          "shredding or an unrecognized reader feature"
+      } else {
+        "GPU Parquet reader cannot safely read Variant columns when Spark allows " +
+          "shredded Variant input"
+      }
       // Keep the scan and its consumers on CPU until an operator no longer outputs Variant.
-      tagVariantScanPrefixForCpu(meta, reason, sqlConf)
+      tagVariantScanPrefixForCpu(meta, reason)
     }
 
     FileFormatChecks.tag(meta, readSchema, ParquetFormatType, ReadFileOp)
@@ -565,6 +582,8 @@ protected case class GpuParquetFileFilterHandler(
   private val int96RebaseMode = SparkShimImpl.int96ParquetRebaseRead(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val ignoreMissingParquetFieldId = ParquetSchemaClipShims.ignoreMissingIds(sqlConf)
+  private val returnNullStructIfAllFieldsMissing =
+    ParquetMissingStructShims.returnNullStructIfAllFieldsMissing(sqlConf)
 
   private val PARQUET_ENCRYPTION_CONFS = Seq("parquet.encryption.kms.client.class",
     "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
@@ -767,16 +786,20 @@ protected case class GpuParquetFileFilterHandler(
               conf, readDataSchema, filePath)) { tableFooter =>
                 if (tableFooter.getNumColumns <= 0) {
                   // Special case because java parquet reader does not like having 0 columns.
-                  val numRows = tableFooter.getNumRows
-                  val block = new BlockMetaData()
-                  block.setRowCount(numRows)
-                  // Fix up the row index offset
                   val offsets = tableFooter.getRowIndexOffsets
-                  if (offsets.nonEmpty) {
+                  val blocks = if (offsets.nonEmpty) {
+                    val block = new BlockMetaData()
+                    block.setRowCount(tableFooter.getNumRows)
                     GpuParquetUtilsShims.setRowIndexOffset(block, offsets(0))
+                    Seq(block)
+                  } else {
+                    // A split without row groups must not produce a synthetic block with
+                    // the default row index offset (-1). Delta DV readers validate these
+                    // offsets even for zero-column scans.
+                    Seq.empty
                   }
                   val schema = new MessageType("root")
-                  return ParquetFileInfoWithBlockMeta(filePath, Seq(block), file.partitionValues,
+                  return ParquetFileInfoWithBlockMeta(filePath, blocks, file.partitionValues,
                     schema, readDataSchema, DateTimeRebaseLegacy, DateTimeRebaseLegacy,
                     hasInt96Timestamps = false)
                 }
@@ -851,7 +874,8 @@ protected case class GpuParquetFileFilterHandler(
       val (clipped, clippedSchema) =
         NvtxRegistry.PARQUET_CLIP_SCHEMA {
           val clippedSchema = ParquetSchemaUtils.clipParquetSchema(
-            fileSchema, readDataSchema, isCaseSensitive, readUseFieldId)
+            fileSchema, readDataSchema, isCaseSensitive, readUseFieldId,
+            returnNullStructIfAllFieldsMissing)
           // Check if the read schema is compatible with the file schema.
           checkSchemaCompat(clippedSchema, readDataSchema,
             (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath.toString()),
@@ -2455,11 +2479,6 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
 }
 
-// Parquet schema wrapper
-case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
-  override def isEmpty: Boolean = schema.getFields.isEmpty
-}
-
 // Parquet BlockMetaData wrapper
 case class ParquetDataBlock(
     dataBlock: BlockMetaData,
@@ -3817,7 +3836,8 @@ abstract class AbstractParquetPartitionReader(
       return true
     }
     batchIter = EmptyGpuColumnarBatchIterator
-    if (!isDone) {
+    // Row-level deletes can empty a batch while later row groups still contain live rows.
+    while (!batchIter.hasNext && !isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
       } else {
