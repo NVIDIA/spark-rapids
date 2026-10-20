@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, NVIDIA CORPORATION.
+ * Copyright (c) 2023-2026, NVIDIA CORPORATION.
  *
  * This file was derived from:
  *  1. DoAutoCompaction.scala from PR#1156 at https://github.com/delta-io/delta/pull/1156,
