@@ -43,11 +43,11 @@ import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.catalog.CatalogTable
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
-import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
+import org.apache.spark.sql.catalyst.plans.logical.{LocalRelation, LogicalPlan}
 import org.apache.spark.sql.execution.{QueryExecution, SparkPlan, SQLExecution}
 import org.apache.spark.sql.execution.datasources.{BasicWriteJobStatsTracker, FileFormatWriter}
 import org.apache.spark.sql.functions.to_json
-import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, GpuFileFormatWriter, GpuWriteJobStatsTracker}
+import org.apache.spark.sql.rapids.{BasicColumnarWriteJobStatsTracker, ColumnarWriteJobStatsTracker, ExecutionPlanCaptureCallback, GpuFileFormatWriter, GpuWriteJobStatsTracker}
 import org.apache.spark.sql.rapids.delta.GpuIdentityColumn
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.types._
@@ -88,6 +88,13 @@ abstract class GpuOptimisticTransactionWriteBase(
 
   def this(deltaLog: DeltaLog, rapidsConf: RapidsConf)(implicit clock: Clock) = {
     this(deltaLog, Option.empty[CatalogTable], deltaLog.update(), rapidsConf)
+  }
+
+  protected def createWriteQueryExecution(
+      spark: SparkSession,
+      plan: LogicalPlan): QueryExecution = {
+    TrampolineConnectShims.createDataFrame(
+      spark.asInstanceOf[TrampolineConnectShims.SparkSession], plan).queryExecution
   }
 
   protected def getGpuWriteCommitter(
@@ -220,10 +227,8 @@ abstract class GpuOptimisticTransactionWriteBase(
     // context to plan the AQE sub-plan properly with respect to columnar and row transitions.
     // We could force the AQE node to be columnar here by explicitly replacing the node, but that
     // breaks the connection between the queryExecution and the node that will actually execute.
-    val gpuWritePlan = TrampolineConnectShims.createDataFrame(
-      spark.asInstanceOf[TrampolineConnectShims.SparkSession],
-      RapidsDeltaWrite(normalizedQueryExecution.logical))
-    val queryExecution = gpuWritePlan.queryExecution
+    val queryExecution = createWriteQueryExecution(
+      spark, RapidsDeltaWrite(normalizedQueryExecution.logical))
 
     val partitioningColumns = getPartitioningColumns(partitionSchema, output)
 
@@ -314,6 +319,9 @@ abstract class GpuOptimisticTransactionWriteBase(
 
       try {
         logDebug(s"Physical plan for write:\n$physicalPlan")
+        if (rapidsConf.isTestEnabled) {
+          ExecutionPlanCaptureCallback.captureIfNeeded(physicalPlan)
+        }
         writeUsingGpuFileFormatWriter(
           sparkSession = spark.asInstanceOf[TrampolineConnectShims.SparkSession],
           plan = physicalPlan,

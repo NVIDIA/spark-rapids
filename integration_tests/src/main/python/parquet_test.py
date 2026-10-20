@@ -2014,6 +2014,45 @@ def test_parquet_read_encryption(spark_tmp_path, reader_confs, v1_enabled_list):
         error_message='The GPU does not support reading encrypted Parquet files')
 
 
+@pytest.mark.parametrize('reader_type', ['PERFILE', 'COALESCING', 'MULTITHREADED'], ids=idfn)
+@pytest.mark.parametrize('chunked', [False, True], ids=idfn)
+@pytest.mark.parametrize('num_rows', [0, 4096], ids=idfn)
+def test_parquet_count_empty_splits(spark_tmp_path, reader_type, chunked, num_rows):
+    data_path = spark_tmp_path + '/PARQUET_DATA'
+    split_size = 4096
+
+    def setup_data(spark):
+        spark.range(num_rows).selectExpr(
+            'id', 'sha2(CAST(id AS STRING), 256) AS payload'
+        ).coalesce(1).write.parquet(data_path)
+        files = spark.read.parquet(data_path).inputFiles()
+        assert len(files) == 1
+        midpoints = parquet_row_group_midpoints(spark, files[0])
+        if num_rows:
+            assert midpoints and builtins.min(midpoints) >= split_size
+        else:
+            assert not midpoints
+
+    with_cpu_session(setup_data)
+    conf = {
+        'spark.rapids.sql.format.parquet.reader.type': reader_type,
+        'spark.rapids.sql.format.parquet.reader.footer.type': 'NATIVE',
+        'spark.rapids.sql.reader.chunked': str(chunked).lower(),
+        'spark.sql.files.maxPartitionBytes': str(split_size),
+        'spark.sql.parquet.aggregatePushdown': 'false',
+    }
+
+    def read_count(spark):
+        df = spark.read.parquet(data_path).selectExpr('count(*) AS n')
+        assert df.collect() == [Row(n=num_rows)]
+        return df
+
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        read_count,
+        exist_classes=r'GpuFileGpuScan parquet .* ReadSchema: struct<>',
+        conf=conf)
+
+
 def test_parquet_read_count(spark_tmp_path):
     parquet_gens = [int_gen, string_gen, double_gen]
     gen_list = [('_c' + str(i), gen) for i, gen in enumerate(parquet_gens)]
@@ -2127,7 +2166,11 @@ def _write_parquet_unknown_null_table(
 # SPARK-56045 / SPARK-54220: Parquet UNKNOWN logical type annotation. PyArrow null columns are
 # written as INT32 physical + UNKNOWN/Null logical annotation.
 
-@pytest.mark.skipif(is_spark_411_or_later(),
+dbr_183_unknown_type_annotation_semantics = is_databricks_version(18, 3)
+unknown_type_annotation_412_semantics = \
+    is_spark_412_or_later() or dbr_183_unknown_type_annotation_semantics
+
+@pytest.mark.skipif(is_spark_411_or_later() or dbr_183_unknown_type_annotation_semantics,
                     reason='pre-SPARK-54220 physical-type behavior')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_pre_411_physical(spark_tmp_path, reader_confs):
@@ -2143,7 +2186,7 @@ def test_parquet_unknown_type_annotation_pre_411_physical(spark_tmp_path, reader
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=reader_confs)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_default_physical(spark_tmp_path, reader_confs):
@@ -2163,7 +2206,8 @@ def test_parquet_unknown_type_annotation_default_physical(spark_tmp_path, reader
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_411_or_later(),
+@pytest.mark.skipif(
+    not (is_spark_411_or_later() or dbr_183_unknown_type_annotation_semantics),
                     reason='SPARK-54220 requires Spark 4.1.1+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 @allow_non_gpu('FileSourceScanExec', 'ColumnarToRowExec')
@@ -2173,7 +2217,7 @@ def test_parquet_unknown_type_annotation_respect_nulltype(spark_tmp_path, reader
 
     # Spark 4.1.1 always maps UNKNOWN to NullType; 4.1.2+ needs the conf enabled.
     conf = reader_confs
-    if is_spark_412_or_later():
+    if unknown_type_annotation_412_semantics:
         conf = copy_and_update(reader_confs, {
             'spark.sql.parquet.reader.respectUnknownTypeAnnotation.enabled': 'true',
         })
@@ -2188,7 +2232,7 @@ def test_parquet_unknown_type_annotation_respect_nulltype(spark_tmp_path, reader
     assert_gpu_fallback_collect(read_and_check_schema, 'FileSourceScanExec', conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_explicit_int_schema(spark_tmp_path, reader_confs):
@@ -2213,7 +2257,7 @@ def test_parquet_unknown_type_annotation_explicit_int_schema(spark_tmp_path, rea
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_preserves_field_id(spark_tmp_path, reader_confs):
@@ -2237,7 +2281,7 @@ def test_parquet_unknown_type_annotation_preserves_field_id(spark_tmp_path, read
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_list_physical(spark_tmp_path, reader_confs):
@@ -2258,7 +2302,7 @@ def test_parquet_unknown_type_annotation_list_physical(spark_tmp_path, reader_co
     assert_gpu_and_cpu_are_equal_collect(read_and_check_schema, conf=conf)
 
 
-@pytest.mark.skipif(not is_spark_412_or_later(),
+@pytest.mark.skipif(not unknown_type_annotation_412_semantics,
                     reason='SPARK-56045 requires Spark 4.1.2+')
 @pytest.mark.parametrize('reader_confs', reader_opt_confs)
 def test_parquet_unknown_type_annotation_map_physical(spark_tmp_path, reader_confs):

@@ -17,8 +17,8 @@
 package org.apache.spark.sql.rapids.protobuf
 
 import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.jni.Protobuf._
 
-import org.apache.spark.sql.rapids.GpuFromProtobuf
 import org.apache.spark.sql.types._
 
 object ProtobufSchemaValidator {
@@ -32,6 +32,10 @@ object ProtobufSchemaValidator {
       defaultBool: Boolean,
       defaultString: Array[Byte])
 
+  /**
+   * Converts supported field metadata and explicit defaults to JNI payloads, or Left on rejection.
+   * The caller supplies the matching Spark field, cuDF leaf type, placement and output visibility.
+   */
   def toFlattenedFieldDescriptor(
       path: String,
       field: StructField,
@@ -47,7 +51,7 @@ object ProtobufSchemaValidator {
           encodeDefaultValue(path, field.dataType, fieldInfo).map { defaults =>
             val enumValidValues = fieldInfo.enumMetadata.map(_.validValues).orNull
             val enumNames =
-              if (fieldInfo.encoding == GpuFromProtobuf.ENC_ENUM_STRING) {
+              if (fieldInfo.encoding == ENC_ENUM_STRING) {
                 fieldInfo.enumMetadata.map(_.orderedNames).orNull
               } else {
                 null
@@ -76,6 +80,10 @@ object ProtobufSchemaValidator {
     }
   }
 
+  /**
+   * Checks parent/depth consistency, output visibility, per-message repeated capacity and enums.
+   * This does not replace ProtobufSchemaDescriptor's constructor validation.
+   */
   def validateFlattenedSchema(flatFields: Seq[FlattenedFieldDescriptor]): Either[String, Unit] = {
     val structTypeId = DType.STRUCT.getTypeId.getNativeId
     val repeatedFieldsByParent = scala.collection.mutable.Map.empty[Int, Int]
@@ -116,7 +124,7 @@ object ProtobufSchemaValidator {
         }
         repeatedFieldsByParent.update(field.parentIdx, repeatedCount)
       }
-      if (field.encoding == GpuFromProtobuf.ENC_ENUM_STRING) {
+      if (field.encoding == ENC_ENUM_STRING) {
         if (field.enumValidValues == null || field.enumNames == null) {
           return Left(s"Enum-string field at position $idx is missing enum metadata")
         }
@@ -128,6 +136,10 @@ object ProtobufSchemaValidator {
     Right(())
   }
 
+  /**
+   * Transposes fields into JNI argument arrays in the same order, without validation.
+   * Nested payload arrays are shared with the input descriptors.
+   */
   def toFlattenedSchemaArrays(
       flatFields: Array[FlattenedFieldDescriptor]): FlattenedSchemaArrays = {
     FlattenedSchemaArrays(
@@ -154,6 +166,9 @@ object ProtobufSchemaValidator {
       path: String,
       field: StructField,
       fieldInfo: ProtobufFieldInfo): Either[String, Unit] = {
+    if (!fieldInfo.isSupported) {
+      return Left(fieldInfo.unsupportedReason.getOrElse(s"Unsupported protobuf field '$path'"))
+    }
     if (fieldInfo.isRepeated && fieldInfo.hasDefaultValue) {
       return Left(s"Repeated protobuf field '$path' cannot carry a default value")
     }
@@ -170,7 +185,7 @@ object ProtobufSchemaValidator {
       case _ =>
     }
 
-    if (fieldInfo.encoding == GpuFromProtobuf.ENC_ENUM_STRING &&
+    if (fieldInfo.encoding == ENC_ENUM_STRING &&
         fieldInfo.enumMetadata.isEmpty) {
       return Left(s"Enum-string field '$path' is missing enum metadata")
     }

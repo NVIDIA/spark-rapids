@@ -17,18 +17,32 @@
 package org.apache.spark.sql.rapids.protobuf
 
 import scala.collection.mutable
+import scala.util.control.NonFatal
 
-import com.nvidia.spark.rapids.jni.Protobuf.{WT_32BIT, WT_64BIT, WT_LEN, WT_VARINT}
+import com.nvidia.spark.rapids.jni.Protobuf._
 
-import org.apache.spark.sql.rapids.GpuFromProtobuf
 import org.apache.spark.sql.types._
 
 object ProtobufSchemaExtractor {
+  private val PROTO2_MAGIC_STRING = "PROTO2"
+
+  /**
+   * Collects top-level field metadata keyed by Spark field name. Right may contain unsupported
+   * fields; Left describes a message-level rejection or metadata read failure.
+   */
   def analyzeAllFields(
       schema: StructType,
       msgDesc: ProtobufMessageDescriptor,
       enumsAsInts: Boolean,
-      messageName: String): Either[String, Map[String, ProtobufFieldInfo]] = {
+      messageName: String): Either[String, Map[String, ProtobufFieldInfo]] = try {
+    if (msgDesc.syntax != PROTO2_MAGIC_STRING) {
+      return Left("Only proto2 protobuf messages are supported on GPU")
+    }
+    if (msgDesc.javaStringCheckUtf8 && schema.fields.exists { sf =>
+      msgDesc.findField(sf.name).exists(_.protoTypeName == "STRING")
+    }) {
+      return Left("Strict protobuf UTF-8 validation is not supported on GPU")
+    }
     val result = mutable.Map[String, ProtobufFieldInfo]()
 
     schema.fields.foreach { sf =>
@@ -50,16 +64,34 @@ object ProtobufSchemaExtractor {
     }
 
     Right(result.toMap)
+  } catch {
+    case NonFatal(t) =>
+      Left(s"Failed to read protobuf metadata for message '$messageName': ${t.getMessage}")
   }
 
+  /**
+   * Returns field facts, including unsupported reasons, or Left when descriptor/default reads fail.
+   */
   def extractFieldInfo(
+      sparkField: StructField,
+      fieldDescriptor: ProtobufFieldDescriptor,
+      enumsAsInts: Boolean): Either[String, ProtobufFieldInfo] = try {
+    extractFieldInfoInternal(sparkField, fieldDescriptor, enumsAsInts)
+  } catch {
+    case NonFatal(t) =>
+      Left(s"Failed to read protobuf metadata for field '${sparkField.name}': ${t.getMessage}")
+  }
+
+  private def extractFieldInfoInternal(
       sparkField: StructField,
       fieldDescriptor: ProtobufFieldDescriptor,
       enumsAsInts: Boolean): Either[String, ProtobufFieldInfo] = {
     val (isSupported, unsupportedReason, encoding) = if (fieldDescriptor.isInOneof) {
       (false,
         Some("protobuf oneof fields are not supported on GPU"),
-        GpuFromProtobuf.ENC_DEFAULT)
+        ENC_DEFAULT)
+    } else if (fieldDescriptor.referencedTypeSyntax.exists(_ != PROTO2_MAGIC_STRING)) {
+      (false, Some("Only proto2 referenced types are supported on GPU"), ENC_DEFAULT)
     } else {
       checkFieldSupport(
         sparkField.dataType,
@@ -91,7 +123,7 @@ object ProtobufSchemaExtractor {
         unsupportedReason = unsupportedReason,
         isRequired = fieldDescriptor.isRequired,
         defaultValue = defaultValue,
-        enumMetadata = fieldDescriptor.enumMetadata,
+        enumMetadata = if (isSupported) fieldDescriptor.enumMetadata else None,
         isRepeated = fieldDescriptor.isRepeated
       ))
   }
@@ -104,16 +136,22 @@ object ProtobufSchemaExtractor {
       fieldNumber = fieldDescriptor.map(_.fieldNumber).getOrElse(-1),
       protoTypeName = fieldDescriptor.map(_.protoTypeName).getOrElse("UNKNOWN"),
       sparkType = sparkField.dataType,
-      encoding = GpuFromProtobuf.ENC_DEFAULT,
+      encoding = ENC_DEFAULT,
       isSupported = false,
       unsupportedReason = Some(reason),
       isRequired = fieldDescriptor.exists(_.isRequired),
       defaultValue = None,
-      enumMetadata = fieldDescriptor.flatMap(_.enumMetadata),
+      // The failed default conversion may have already attempted to read enum metadata.
+      enumMetadata = None,
       isRepeated = fieldDescriptor.exists(_.isRepeated)
     )
   }
 
+  /**
+   * Checks the Spark/protobuf type pairing, including nested and repeated message fields.
+   * Returns (supported, optional rejection reason, JNI encoding). Syntax, oneofs, defaults and
+   * enum declarations are checked separately.
+   */
   def checkFieldSupport(
       sparkType: DataType,
       protoTypeName: String,
@@ -128,30 +166,30 @@ object ProtobufSchemaExtractor {
                  StringType | BinaryType =>
               return checkScalarEncoding(elementType, protoTypeName, enumsAsInts)
             case _: StructType =>
-              return (true, None, GpuFromProtobuf.ENC_DEFAULT)
+              return (true, None, ENC_DEFAULT)
             case _ =>
               return (
                 false,
                 Some(s"unsupported repeated element type: $elementType"),
-                GpuFromProtobuf.ENC_DEFAULT)
+                ENC_DEFAULT)
           }
         case _ =>
           return (
             false,
             Some(s"repeated field should map to ArrayType, got: $sparkType"),
-            GpuFromProtobuf.ENC_DEFAULT)
+            ENC_DEFAULT)
       }
     }
 
     if (protoTypeName == "MESSAGE") {
       sparkType match {
         case _: StructType =>
-          return (true, None, GpuFromProtobuf.ENC_DEFAULT)
+          return (true, None, ENC_DEFAULT)
         case _ =>
           return (
             false,
             Some(s"nested message should map to StructType, got: $sparkType"),
-            GpuFromProtobuf.ENC_DEFAULT)
+            ENC_DEFAULT)
       }
     }
 
@@ -162,37 +200,37 @@ object ProtobufSchemaExtractor {
         return (
           false,
           Some(s"unsupported Spark type: $other"),
-          GpuFromProtobuf.ENC_DEFAULT)
+          ENC_DEFAULT)
     }
 
     checkScalarEncoding(sparkType, protoTypeName, enumsAsInts)
   }
 
+  /** Returns (supported, optional rejection reason, JNI encoding) for a scalar type pairing. */
   def checkScalarEncoding(
       sparkType: DataType,
       protoTypeName: String,
       enumsAsInts: Boolean): (Boolean, Option[String], Int) = {
     val encoding = (sparkType, protoTypeName) match {
-      case (BooleanType, "BOOL") => Some(GpuFromProtobuf.ENC_DEFAULT)
-      case (IntegerType, "INT32" | "UINT32") => Some(GpuFromProtobuf.ENC_DEFAULT)
-      case (IntegerType, "SINT32") => Some(GpuFromProtobuf.ENC_ZIGZAG)
-      case (IntegerType, "FIXED32" | "SFIXED32") => Some(GpuFromProtobuf.ENC_FIXED)
-      case (LongType, "INT64" | "UINT64") => Some(GpuFromProtobuf.ENC_DEFAULT)
-      case (LongType, "SINT64") => Some(GpuFromProtobuf.ENC_ZIGZAG)
-      case (LongType, "FIXED64" | "SFIXED64") => Some(GpuFromProtobuf.ENC_FIXED)
-      case (LongType, "INT32" | "UINT32" | "SINT32" | "FIXED32" | "SFIXED32") =>
+      case (BooleanType, "BOOL") => Some(ENC_DEFAULT)
+      case (IntegerType, "INT32" | "UINT32") => Some(ENC_DEFAULT)
+      case (IntegerType, "SINT32") => Some(ENC_ZIGZAG)
+      case (IntegerType, "FIXED32" | "SFIXED32") => Some(ENC_FIXED)
+      case (LongType, "INT64" | "UINT64") => Some(ENC_DEFAULT)
+      case (LongType, "SINT64") => Some(ENC_ZIGZAG)
+      case (LongType, "FIXED64" | "SFIXED64") => Some(ENC_FIXED)
+      case (LongType, "INT32" | "UINT32" | "SINT32") =>
         val enc = protoTypeName match {
-          case "SINT32" => GpuFromProtobuf.ENC_ZIGZAG
-          case "FIXED32" | "SFIXED32" => GpuFromProtobuf.ENC_FIXED
-          case _ => GpuFromProtobuf.ENC_DEFAULT
+          case "SINT32" => ENC_ZIGZAG
+          case _ => ENC_DEFAULT
         }
         Some(enc)
-      case (FloatType, "FLOAT") => Some(GpuFromProtobuf.ENC_DEFAULT)
-      case (DoubleType, "DOUBLE") => Some(GpuFromProtobuf.ENC_DEFAULT)
-      case (StringType, "STRING") => Some(GpuFromProtobuf.ENC_DEFAULT)
-      case (BinaryType, "BYTES") => Some(GpuFromProtobuf.ENC_DEFAULT)
-      case (IntegerType, "ENUM") if enumsAsInts => Some(GpuFromProtobuf.ENC_DEFAULT)
-      case (StringType, "ENUM") if !enumsAsInts => Some(GpuFromProtobuf.ENC_ENUM_STRING)
+      case (FloatType, "FLOAT") => Some(ENC_DEFAULT)
+      case (DoubleType, "DOUBLE") => Some(ENC_DEFAULT)
+      case (StringType, "STRING") => Some(ENC_DEFAULT)
+      case (BinaryType, "BYTES") => Some(ENC_DEFAULT)
+      case (IntegerType, "ENUM") if enumsAsInts => Some(ENC_DEFAULT)
+      case (StringType, "ENUM") if !enumsAsInts => Some(ENC_ENUM_STRING)
       case _ => None
     }
 
@@ -211,14 +249,15 @@ object ProtobufSchemaExtractor {
         }
         (false,
           Some(reason),
-          GpuFromProtobuf.ENC_DEFAULT)
+          ENC_DEFAULT)
     }
   }
 
+  /** Maps a protobuf type and JNI encoding to its wire type, or Left for an unknown type. */
   def getWireType(protoTypeName: String, encoding: Int): Either[String, Int] = {
     val wireType = protoTypeName match {
       case "BOOL" | "INT32" | "UINT32" | "SINT32" | "INT64" | "UINT64" | "SINT64" | "ENUM" =>
-        if (encoding == GpuFromProtobuf.ENC_FIXED) {
+        if (encoding == ENC_FIXED) {
           if (protoTypeName.contains("64")) {
             WT_64BIT
           } else {

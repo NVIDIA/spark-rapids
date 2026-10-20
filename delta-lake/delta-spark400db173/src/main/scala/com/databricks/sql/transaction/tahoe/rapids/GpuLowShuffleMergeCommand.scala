@@ -1675,8 +1675,24 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
       context.deltaTxn.snapshot,
       Seq.empty,
       Seq.empty)
+    val outputCols = targetOutputCols
+    val existingOutput = targetDF.queryExecution.analyzed.output
+    val targetExprIds = outputCols.map(_.exprId).toSet
+    val extraCols = existingOutput.filterNot(attr => targetExprIds.contains(attr.exprId))
+    val expectedSchema = StructType((outputCols ++ extraCols).map { col =>
+      StructField(col.name, col.dataType, col.nullable, col.metadata)
+    })
+    val evolvedTargetDF = if (targetDF.schema != expectedSchema) {
+      // Untouched rows bypass the merge action expressions, so project typed NULLs for newly
+      // evolved columns before unioning with modified rows. Preserve row-tracking columns too.
+      val existingOutputById = existingOutput.map(attr => attr.exprId -> attr).toMap
+      val targetCols = outputCols.map(col => existingOutputById.getOrElse(col.exprId, col))
+      targetDF.select((targetCols ++ extraCols).map(DFUDFShims.exprToColumn): _*)
+    } else {
+      targetDF
+    }
     // Count only live, untouched rows from rewritten files, after temporary-DV filtering.
-    val unmodifiedDF = targetDF.filter(DFUDFShims.exprToColumn(incrCopiedCountExpr))
+    val unmodifiedDF = evolvedTargetDF.filter(DFUDFShims.exprToColumn(incrCopiedCountExpr))
     if (DeltaConfigs.CHANGE_DATA_FEED.fromMetaData(context.deltaTxn.metadata)) {
       unmodifiedDF.withColumn(
         CDC_TYPE_COLUMN_NAME, DFUDFShims.exprToColumn(CDC_TYPE_NOT_CDC_LITERAL))
