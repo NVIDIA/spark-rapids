@@ -20,7 +20,7 @@ import java.sql.{Date, Timestamp}
 import java.time.{Instant, LocalDate}
 
 import ai.rapids.cudf.DType
-import ai.rapids.cudf.ast.{BinaryOperation, BinaryOperator, ColumnNameReference, ColumnReference, Literal, UnaryOperation, UnaryOperator}
+import ai.rapids.cudf.ast.{AstExpression, BinaryOperation, BinaryOperator, ColumnNameReference, ColumnReference, Literal, UnaryOperation, UnaryOperator}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -153,11 +153,15 @@ class FilterToAstConverterSuite extends AnyFunSuite {
   // they catch a wrong operator, index, reference mode, or literal conversion -- none of which the
   // `isDefined` checks above can see. No GPU or evaluation is needed.
 
+  // Mirrors FilterToAstConverter's null-aware `=`: NOT(NOT_EQUAL(col, lit)).
+  private def eqAst(col: AstExpression, lit: Literal): AstExpression =
+    new UnaryOperation(UnaryOperator.NOT, new BinaryOperation(BinaryOperator.NOT_EQUAL, col, lit))
+
   test("convertFilter maps each comparison operator to the matching cuDF operator") {
     val c = converter()
     def ast(f: Filter): String = c.convertFilter(f).get.toString
     assert(ast(EqualTo("int_col", 1)) ==
-      new BinaryOperation(BinaryOperator.EQUAL, new ColumnReference(0), Literal.ofInt(1)).toString)
+      eqAst(new ColumnReference(0), Literal.ofInt(1)).toString)
     assert(ast(EqualNullSafe("int_col", 1)) ==
       new BinaryOperation(BinaryOperator.NULL_EQUAL, new ColumnReference(0),
         Literal.ofInt(1)).toString)
@@ -187,11 +191,9 @@ class FilterToAstConverterSuite extends AnyFunSuite {
     val c = converter()
     assert(c.convertFilter(Not(EqualTo("int_col", 1))).get.toString ==
       new UnaryOperation(UnaryOperator.NOT,
-        new BinaryOperation(BinaryOperator.EQUAL, new ColumnReference(0),
-          Literal.ofInt(1))).toString)
-    val eqInt = new BinaryOperation(BinaryOperator.EQUAL, new ColumnReference(0), Literal.ofInt(1))
-    val eqLong =
-      new BinaryOperation(BinaryOperator.EQUAL, new ColumnReference(1), Literal.ofLong(2L))
+        eqAst(new ColumnReference(0), Literal.ofInt(1))).toString)
+    val eqInt = eqAst(new ColumnReference(0), Literal.ofInt(1))
+    val eqLong = eqAst(new ColumnReference(1), Literal.ofLong(2L))
     assert(c.convertFilter(And(EqualTo("int_col", 1), EqualTo("long_col", 2L))).get.toString ==
       new BinaryOperation(BinaryOperator.NULL_LOGICAL_AND, eqInt, eqLong).toString)
     assert(c.convertFilter(Or(EqualTo("int_col", 1), EqualTo("long_col", 2L))).get.toString ==
@@ -200,18 +202,29 @@ class FilterToAstConverterSuite extends AnyFunSuite {
 
   test("convertFilter expands In to a null-aware OR of equalities") {
     val c = converter()
-    def eq(v: Int) =
-      new BinaryOperation(BinaryOperator.EQUAL, new ColumnReference(0), Literal.ofInt(v))
+    def eq(v: Int) = eqAst(new ColumnReference(0), Literal.ofInt(v))
     val expected = new BinaryOperation(BinaryOperator.NULL_LOGICAL_OR,
       new BinaryOperation(BinaryOperator.NULL_LOGICAL_OR, eq(1), eq(2)), eq(3))
     assert(c.convertFilter(In("int_col", Array[Any](1, 2, 3))).get.toString == expected.toString)
   }
 
+  test("convertFilter wraps In equalities so a negated In with null rejects a non-member") {
+    val c = converter()
+    // Not(int_col IN (1, null)) must reject 2: Spark computes the In as null, so Not is null and
+    // the row drops. The null-aware equality keeps `2 = null` null rather than false, which a bare
+    // cuDF EQUAL would have turned into a kept row.
+    val expectedIn = new BinaryOperation(BinaryOperator.NULL_LOGICAL_OR,
+      eqAst(new ColumnReference(0), Literal.ofInt(1)),
+      eqAst(new ColumnReference(0), Literal.ofNull(DType.INT32)))
+    assert(c.convertFilter(In("int_col", Array[Any](1, null))).get.toString == expectedIn.toString)
+    assert(c.convertFilter(Not(In("int_col", Array[Any](1, null)))).get.toString ==
+      new UnaryOperation(UnaryOperator.NOT, expectedIn).toString)
+  }
+
   test("convertFilter builds a literal of the right cuDF type for each column type") {
     val c = converter()
     def ast(f: Filter): String = c.convertFilter(f).get.toString
-    def eq(idx: Int, lit: Literal): String =
-      new BinaryOperation(BinaryOperator.EQUAL, new ColumnReference(idx), lit).toString
+    def eq(idx: Int, lit: Literal): String = eqAst(new ColumnReference(idx), lit).toString
     assert(ast(EqualTo("int_col", 42)) == eq(0, Literal.ofInt(42)))
     assert(ast(EqualTo("long_col", 100L)) == eq(1, Literal.ofLong(100L)))
     assert(ast(EqualTo("float_col", 3.14f)) == eq(2, Literal.ofFloat(3.14f)))
@@ -231,19 +244,16 @@ class FilterToAstConverterSuite extends AnyFunSuite {
     // Index mode resolves the attribute to its schema position.
     val byIndex = converter(useColumnNames = false).convertFilter(EqualTo("float_col", 1.0f))
     assert(byIndex.get.toString ==
-      new BinaryOperation(BinaryOperator.EQUAL, new ColumnReference(2),
-        Literal.ofFloat(1.0f)).toString)
+      eqAst(new ColumnReference(2), Literal.ofFloat(1.0f)).toString)
     // Name mode carries the attribute name instead of an index.
     val byName = converter(useColumnNames = true).convertFilter(EqualTo("int_col", 1))
     assert(byName.get.toString ==
-      new BinaryOperation(BinaryOperator.EQUAL, new ColumnNameReference("int_col"),
-        Literal.ofInt(1)).toString)
+      eqAst(new ColumnNameReference("int_col"), Literal.ofInt(1)).toString)
     // A case-insensitive match still resolves, keeping the original-case name.
     val byNameCi = converter(caseSensitive = false, useColumnNames = true)
         .convertFilter(EqualTo("INT_COL", 1))
     assert(byNameCi.get.toString ==
-      new BinaryOperation(BinaryOperator.EQUAL, new ColumnNameReference("INT_COL"),
-        Literal.ofInt(1)).toString)
+      eqAst(new ColumnNameReference("INT_COL"), Literal.ofInt(1)).toString)
   }
 
   test("planPushdown splits a float greater-than out of an And and pushes the rest") {

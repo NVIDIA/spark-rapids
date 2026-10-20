@@ -195,7 +195,23 @@ case class FilterToAstConverter(
       dataType <- getColumnType(attribute)
       if pushableFloatComparison(dataType, value, operator)
       literal <- convertLiteral(value, dataType)
-    } yield new BinaryOperation(operator, col, literal)
+    } yield operator match {
+      case BinaryOperator.EQUAL => nullAwareEqual(col, literal)
+      case _ => new BinaryOperation(operator, col, literal)
+    }
+  }
+
+  /**
+   * SQL `=` as a cuDF AST. cuDF's AST `EQUAL` treats a null operand as comparable -- null == null
+   * is true, null == x is false -- rather than returning null the way Spark's `=` does. That flips
+   * the result wherever the equality sits under a `NOT` or inside an `IN`, which would let the
+   * reader mark as exact a filter it does not actually match. `NOT(NOT_EQUAL(...))` restores SQL
+   * semantics: `NOT_EQUAL` returns null for a null operand and `NOT` keeps it null. Mirrors
+   * `GpuEqualTo.convertToAst`.
+   */
+  private def nullAwareEqual(col: AstExpression, literal: AstExpression): AstExpression = {
+    new UnaryOperation(UnaryOperator.NOT,
+      new BinaryOperation(BinaryOperator.NOT_EQUAL, col, literal))
   }
 
   private def isFloatingPoint(dataType: DataType): Boolean = dataType match {
@@ -238,7 +254,7 @@ case class FilterToAstConverter(
         literals <- allOrNothing(values.map(convertLiteral(_, dataType)))
       } yield {
         literals.map { literal =>
-          new BinaryOperation(BinaryOperator.EQUAL, col, literal): AstExpression
+          nullAwareEqual(col, literal)
         }.reduce((left, right) => nullAwareOr(left, right))
       }
     }
