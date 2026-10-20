@@ -42,7 +42,7 @@ case class GpuDeleteCommand(
       Option[(Seq[FileAction], Map[String, Long], Seq[AddFile])] = {
     val targetScan = DMLWithDeletionVectorsHelperShims.createTargetDfForGpuScanningForMatches(
       sparkSession, target, fileIndex)
-    val touchedFiles = GpuDeletionVectorBitmapGenerator.findTouchedFilesForDelete(
+    val touchedFiles = GpuDeletionVectorBitmapGenerator.findTouchedFilesWithGpuBitmap(
       sparkSession,
       txn,
       hasReadableDVs = DeletionVectorUtils.deletionVectorsReadable(txn.snapshot),

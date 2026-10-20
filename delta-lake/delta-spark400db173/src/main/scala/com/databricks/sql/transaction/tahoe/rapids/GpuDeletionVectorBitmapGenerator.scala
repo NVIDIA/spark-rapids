@@ -38,12 +38,22 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.TaskContext
 import org.apache.spark.paths.SparkPath
-import org.apache.spark.sql.{Column, Encoder, SparkSession}
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
+import org.apache.spark.sql.{Column, DataFrame, Encoder, SparkSession}
 import org.apache.spark.sql.execution.SQLExecution
-import org.apache.spark.sql.functions.{broadcast, col}
+import org.apache.spark.sql.execution.SparkPlan
+import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
+import org.apache.spark.sql.functions.{broadcast, col, input_file_name}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.nvidia.DFUDFShims
+import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
+import org.apache.spark.sql.types.{LongType, StringType}
+import org.apache.spark.unsafe.types.UTF8String
 
 private[rapids] object GpuDeletionVectorBitmapGenerator {
+  private val TargetFilesPerBitmapPartition = 64
   private val FilePathColumn = "__delta_gpu_dv_file_path"
   private val FileIdColumn = "__delta_gpu_dv_file_id"
   private val RowIndexColumn = "__delta_gpu_dv_row_index"
@@ -92,7 +102,7 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
     }
 
     def add(index: Long): Unit = {
-      require(index >= 0, s"Invalid DELETE physical row index: $index")
+      require(index >= 0, s"Invalid DML physical row index: $index")
       // NumericRange has an Int-sized length, so split exceptionally long consecutive runs.
       if (rangeStart < 0) {
         rangeStart = index
@@ -115,19 +125,26 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
   }
 
   /**
-   * DELETE keeps its predicate and file-ID lookup columnar on GPU. Each scan task copies only the
-   * matched file IDs and row indexes to host and builds compact partial bitmaps before the shuffle.
+   * DELETE and UPDATE keep their predicates and file-ID lookup columnar on GPU. Each scan task
+   * copies only matched file IDs and row indexes to host and builds compact partial bitmaps before
+   * the shuffle.
    * DBR's writer still merges any old DV and persists the replacement DV.
    */
-  def findTouchedFilesForDelete(
+  def findTouchedFilesWithGpuBitmap(
       spark: SparkSession,
       txn: OptimisticTransaction,
       hasReadableDVs: Boolean,
       targetScan: GpuTargetScan,
       condition: Column,
-      nameToAddFileMap: Map[String, AddFile]): Seq[TouchedFileWithDV] = {
-    import spark.implicits._
-
+      nameToAddFileMap: Map[String, AddFile],
+      prefilteredTargetDf: Option[DataFrame] = None): Seq[TouchedFileWithDV] = {
+    // This scan's broadcast join must be planned without AQE. A thread-local SQLConf override
+    // does not control QueryExecution's session-owned planner on DBR, so use an isolated session.
+    val scanSpark = spark.newSession()
+    spark.sessionState.conf.getAllConfs.foreach { case (key, value) =>
+      scanSpark.sessionState.conf.setConfString(key, value)
+    }
+    scanSpark.sessionState.conf.setConf(SQLConf.ADAPTIVE_EXECUTION_ENABLED, false)
     val fileMetadata = nameToAddFileMap.toSeq.sortBy(_._1).map { case (path, add) =>
       val existingDv = if (hasReadableDVs) {
         Option(add.deletionVector).map(_.serializeToBase64())
@@ -139,28 +156,43 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
     }.toArray
     require(fileMetadata.map(_._1).distinct.length == fileMetadata.length,
       "Different DELETE candidate files have the same encoded scan path")
-    val fileIds = spark.createDataset(fileMetadata.indices.map { id =>
-      (fileMetadata(id)._1, id.toLong)
-    }).toDF(FilePathColumn, FileIdColumn)
+    // Keep the small file-ID lookup local instead of scanning an ExternalRDD on the broadcast
+    // side of the matched-row query.
+    val filePathAttr = AttributeReference(FilePathColumn, StringType, nullable = false)()
+    val fileIdAttr = AttributeReference(FileIdColumn, LongType, nullable = false)()
+    val fileIdRows = fileMetadata.indices.map { id =>
+      InternalRow(UTF8String.fromString(fileMetadata(id)._1), id.toLong)
+    }
+    val fileIds = TrampolineConnectShims.createDataFrame(
+      scanSpark.asInstanceOf[TrampolineConnectShims.SparkSession],
+      LocalRelation(Seq(filePathAttr, fileIdAttr), fileIdRows))
 
+    // Keep the predicate below input_file_name(), whose non-deterministic projection otherwise
+    // prevents Spark from pushing the predicate into the Parquet scan.
+    val filteredTargetDf = prefilteredTargetDf.getOrElse {
+      targetScan.dataFrameWithoutFilePath.filter(condition)
+        .withColumn(targetScan.filePathColumnName, input_file_name())
+    }
     val gpuTargetDf = DMLWithDeletionVectorsHelperShims.withGpuExecutionContext(
-      spark, targetScan.dataFrame)
-    val matchedRows = gpuTargetDf.filter(condition)
-      .select(targetScan.filePathColumn.as(FilePathColumn),
+      scanSpark, filteredTargetDf)
+    val matchedRows = gpuTargetDf
+      .select(col(targetScan.filePathColumnName).as(FilePathColumn),
         targetScan.rowIndexColumn.as(RowIndexColumn))
       .join(broadcast(fileIds), Seq(FilePathColumn), "left_outer")
       .select(col(FileIdColumn), col(RowIndexColumn))
-    val queryExecution = matchedRows.queryExecution
-    val columnarPlan = queryExecution.executedPlan match {
-      case GpuColumnarToRowExec(child: GpuExec, _) => Some(child)
-      case plan: GpuExec if plan.supportsColumnar => Some(plan)
+    def gpuColumnarPlan(plan: SparkPlan): Option[GpuExec] = plan match {
+      case adaptive: AdaptiveSparkPlanExec => gpuColumnarPlan(adaptive.executedPlan)
+      case GpuColumnarToRowExec(child, _) => gpuColumnarPlan(child)
+      case gpu: GpuExec if gpu.supportsColumnar => Some(gpu)
       case _ => None
     }
+    val queryExecution = matchedRows.queryExecution
+    val columnarPlan = gpuColumnarPlan(queryExecution.executedPlan)
 
     columnarPlan match {
       case Some(plan) =>
         val storedResults = SQLExecution.withNewExecutionId(
-          queryExecution, Some("DELETE partial deletion vectors")) {
+          queryExecution, Some("DML partial deletion vectors")) {
           val fileCount = fileMetadata.length
           val partialBitmaps = plan.executeColumnar().mapPartitions { batches =>
             val bitmaps = mutable.HashMap.empty[Long, PartialBitmap]
@@ -170,7 +202,7 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
                 withResource(batch) { gpuBatch =>
                   val columns = GpuColumnVector.extractBases(gpuBatch)
                   require(columns.length == 2,
-                    "DELETE bitmap scan must return file ID and row index")
+                    "DML bitmap scan must return file ID and row index")
                   hostColumns = columns.safeMap(_.copyToHost())
                   gpuBatch.numRows()
                 }
@@ -186,12 +218,12 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
                 val indexes = copiedColumns(1)
                 for (row <- 0 until rowCount) {
                   require(!ids.isNull(row),
-                    "A matched DELETE file was absent from the candidate-file map")
+                    "A matched DML file was absent from the candidate-file map")
                   require(!indexes.isNull(row),
-                    "The DELETE scan produced a null physical row index")
+                    "The DML scan produced a null physical row index")
                   val fileId = ids.getLong(row)
                   require(fileId >= 0 && fileId < fileCount,
-                    s"Invalid DELETE file ID: $fileId")
+                    s"Invalid DML file ID: $fileId")
                   bitmaps.getOrElseUpdate(fileId, new PartialBitmap()).add(
                     indexes.getLong(row))
                 }
@@ -199,21 +231,30 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
             }
             bitmaps.iterator.map { case (fileId, bitmap) => fileId -> bitmap.toBytes }
           }
-          val rowIndexData = partialBitmaps
-            .groupByKey(spark.sessionState.conf.numShufflePartitions)
+          // The shuffle carries one compact bitmap per touched file, not the matched rows.
+          // Avoid hundreds of near-empty reduce tasks while retaining enough parallelism to
+          // persist larger sets of deletion vectors.
+          val filePartitions = math.ceil(
+            fileMetadata.length.toDouble / TargetFilesPerBitmapPartition).toInt
+          val bitmapPartitions = math.min(spark.sessionState.conf.numShufflePartitions,
+            math.max(spark.sparkContext.defaultParallelism, filePartitions))
+          val rowIndexData = partialBitmaps.groupByKey(bitmapPartitions)
             .map { case (fileId, parts) =>
               val bitmap = new RoaringBitmapArray()
               parts.foreach(bytes => bitmap.or(RoaringBitmapArray.readFrom(bytes)))
               bitmap.runOptimize()
               val (_, path, existingDv) = fileMetadata(fileId.toInt)
               newDvData(path, existingDv,
-                bitmap.serializeAsByteArray(RoaringBitmapArrayFormat.Portable), bitmap.cardinality)
+                bitmap.serializeAsByteArray(RoaringBitmapArrayFormat.Portable),
+                bitmap.cardinality)
             }
           val prefixLength = DeltaUtils.getRandomPrefixLength(txn.metadata)
-          spark.createDataset(rowIndexData)(dvDataEncoder)
-            .mapPartitions(dvWriter(spark, txn.deltaLog.newDeltaHadoopConf(),
-              txn.deltaLog.dataPath, prefixLength))(DeletionVectorResult.encoder)
-            .collect().toSeq
+          GpuDeltaCpuFallback.withRapidsDisabled(spark) {
+            spark.createDataset(rowIndexData)(dvDataEncoder)
+              .mapPartitions(dvWriter(spark, txn.deltaLog.newDeltaHadoopConf(),
+                txn.deltaLog.dataPath, prefixLength))(DeletionVectorResult.encoder)
+              .collect().toSeq
+          }
         }
         DMLWithDeletionVectorsHelper.findFilesWithMatchingRows(
           txn, nameToAddFileMap, storedResults)

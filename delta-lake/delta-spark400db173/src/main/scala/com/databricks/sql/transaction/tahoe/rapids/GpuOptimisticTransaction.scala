@@ -156,6 +156,13 @@ class GpuOptimisticTransaction(
     fileActions
   }
 
+  def writeDmlFilesWithOptimizedPartitioning(inputData: Dataset[_]): Seq[FileAction] = {
+    val (fileActions, _) = gpuWriteFiles(inputData, None, Nil, Some(false),
+      keepPartitionIdTag = false, forcePreserveInputOrder = false, context = None,
+      optimizeDmlRewrite = true)
+    fileActions
+  }
+
   override def writeFiles(
       inputData: Dataset[_],
       writeOptions: TransactionalWriteOptions,

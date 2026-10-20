@@ -31,7 +31,9 @@ import org.apache.spark.sql.types.StructType
 private[rapids] case class GpuTargetScan(
     dataFrame: DataFrame,
     filePathColumn: Column,
-    rowIndexColumn: Column)
+    rowIndexColumn: Column,
+    dataFrameWithoutFilePath: DataFrame,
+    filePathColumnName: String)
 
 /** DBR 17.3 adapters for the target scan used by persistent-DV DML. */
 private[rapids] object DMLWithDeletionVectorsHelperShims {
@@ -82,14 +84,16 @@ private[rapids] object DMLWithDeletionVectorsHelperShims {
       case project @ Project(projectList, _) =>
         project.copy(projectList = projectList :+ rowIndexCol)
     }
-    val targetDf = TrampolineConnectShims.createDataFrame(
+    val targetDfWithoutFilePath = TrampolineConnectShims.createDataFrame(
       spark.asInstanceOf[TrampolineConnectShims.SparkSession], newTarget)
-      .withColumn(filePathColumnName, input_file_name())
+    val targetDf = targetDfWithoutFilePath.withColumn(filePathColumnName, input_file_name())
     val filePathAttr = targetDf.queryExecution.analyzed.output
       .find(attr => resolver(attr.name, filePathColumnName)).get
     GpuTargetScan(
       targetDf,
       org.apache.spark.sql.nvidia.DFUDFShims.exprToColumn(filePathAttr),
-      org.apache.spark.sql.nvidia.DFUDFShims.exprToColumn(rowIndexCol))
+      org.apache.spark.sql.nvidia.DFUDFShims.exprToColumn(rowIndexCol),
+      targetDfWithoutFilePath,
+      filePathColumnName)
   }
 }

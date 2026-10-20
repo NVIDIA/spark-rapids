@@ -1526,6 +1526,47 @@ def test_delta_merge_insert_only_after_unmodified_match_metrics(
         assert plan_metric(command_plans[-1], key) == 0, key
 
 
+@allow_non_gpu("ExternalRDDScanExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Adaptive persistent-DV DELETE scans require DBR 17.3+")
+def test_delta_delete_dv_gpu_bitmap_scan_with_aqe(spark_tmp_path):
+    path = spark_tmp_path + "/DELTA_DATA"
+    conf = copy_and_update(delta_writes_enabled_conf, {
+        "spark.rapids.sql.command.DeleteCommand": "true",
+        "spark.rapids.sql.command.DeleteCommandEdge": "true",
+        "spark.sql.adaptive.enabled": "true",
+        "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true"})
+
+    def setup(spark):
+        for engine in ("CPU", "GPU"):
+            spark.createDataFrame([(1, 10), (2, 20), (3, 30)], "id INT, v INT") \
+                .coalesce(1).write.format("delta") \
+                .option("delta.enableDeletionVectors", "true") \
+                .save(path + "/" + engine)
+
+    def delete(spark, engine):
+        result = spark.sql(f"DELETE FROM delta.`{path}/{engine}` WHERE id = 2").collect()
+        assert spark.conf.get("spark.sql.adaptive.enabled") == "true"
+        return result
+
+    with_cpu_session(setup, conf=conf)
+    cpu_result = with_cpu_session(lambda spark: delete(spark, "CPU"), conf=conf)
+    gpu_result = assert_rapids_delta_write(
+        lambda spark: delete(spark, "GPU"), conf=conf, required_gpu_classes=[],
+        expected_command="GpuDeleteCommand",
+        expected_classes=["GpuFileSourceScanExec", "GpuBroadcastHashJoinExec"],
+        require_non_empty=True)
+    assert_equal(cpu_result, gpu_result)
+    cpu_rows, gpu_rows = [with_cpu_session(
+        lambda spark, engine=engine: spark.read.format("delta").load(path + "/" + engine)
+            .orderBy("id").collect(), conf=conf) for engine in ("CPU", "GPU")]
+    assert_equal(cpu_rows, gpu_rows)
+    assert [(row.id, row.v) for row in gpu_rows] == [(1, 10), (3, 30)]
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
