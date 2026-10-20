@@ -149,6 +149,15 @@ spark-rapids-shim-json-lines ***/
   JSON annotation (e.g., `delta-20x/`, `delta-spark330db/`). Each
   module compiles only for its target Spark+Delta combination.
 
+Before publishing, updating, or merging a PR that changes versioned shims,
+shared shim callers, or Spark/Databricks build profiles, use
+[`check-shim-compatibility`](.agents/skills/check-shim-compatibility/SKILL.md).
+Check related open PRs and changes since the last validated base, then check
+source selection on the proposed combination with current main. The offline
+entry point is `python3 build/check_shim_compatibility.py coverage`.
+Static results do not replace compilation of affected profiles, including
+newly added Databricks targets, or applicable CPU/GPU tests.
+
 ### Python Integration Tests
 
 - Use `assert_gpu_and_cpu_are_equal_collect` to compare GPU vs CPU results
