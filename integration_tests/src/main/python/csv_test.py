@@ -600,6 +600,23 @@ def test_csv_read_count(spark_tmp_path):
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
 
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+def test_csv_multiline_quoted_empty_lines(spark_tmp_path, v1_enabled_list):
+    path = spark_tmp_path + '/csv_multiline'
+    text = 'a,b\n"first\n\nquoted",1\nnormal,2\n'
+    with_cpu_session(lambda spark: spark.createDataFrame([(text,)], 'value string')
+                     .coalesce(1).write.text(path))
+
+    def read(spark):
+        return spark.read.schema('a string, b int').option('header', True) \
+            .option('multiLine', True).csv(path)
+
+    conf = {'spark.sql.sources.useV1SourceList': v1_enabled_list}
+    rows = with_cpu_session(lambda spark: read(spark).collect(), conf=conf)
+    assert [tuple(row) for row in rows] == [('first\n\nquoted', 1), ('normal', 2)]
+    assert_gpu_and_cpu_are_equal_collect(read, conf=conf)
+
+
 @pytest.mark.parametrize('compression', ['none', 'bzip2'])
 @pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
 @pytest.mark.parametrize('projection', ['all', 'pruned', 'count',

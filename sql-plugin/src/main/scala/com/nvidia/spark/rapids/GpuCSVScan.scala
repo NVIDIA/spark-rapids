@@ -391,6 +391,34 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
       dataSchema, readDataSchema, parsedOptions.lineSeparatorInRead, maxRowsPerChunk,
       maxBytesPerChunk, execMetrics, bufferFactory, Charset.forName(parsedOptions.charset)) {
 
+  override protected def readToTables(
+      dataBuffer: BUFF,
+      cudfDataSchema: Schema,
+      readDataSchema: StructType,
+      cudfReadDataSchema: Schema,
+      isFirstChunk: Boolean,
+      decodeTime: GpuMetric): Iterator[Table] = {
+    Iterator.single(readToTable(dataBuffer, cudfDataSchema, readDataSchema,
+      cudfReadDataSchema, isFirstChunk, decodeTime))
+  }
+
+  /**
+   * Read the host buffer to GPU table
+   * @param dataBuffer where the data is buffered
+   * @param cudfDataSchema the cudf schema of the data
+   * @param readDataSchema the Spark schema describing what will be read
+   * @param cudfReadDataSchema the cudf schema of just the data we want to read.
+   * @param isFirstChunk if it is the first chunk
+   * @return table
+   */
+  def readToTable(
+    dataBuffer: BUFF,
+    cudfDataSchema: Schema,
+    readDataSchema: StructType,
+    cudfReadDataSchema: Schema,
+    isFirstChunk: Boolean,
+    decodeTime: GpuMetric): Table
+
   /**
    * File format short name used for logging and other things to uniquely identity
    * which file format is being used.

@@ -650,10 +650,7 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
       readDataSchema: StructType,
       cudfReadDataSchema: Schema,
       isFirstChunk: Boolean,
-      decodeTime: GpuMetric): Iterator[Table] = {
-    Iterator.single(readToTable(dataBuffer, cudfDataSchema, readDataSchema,
-      cudfReadDataSchema, isFirstChunk, decodeTime))
-  }
+      decodeTime: GpuMetric): Iterator[Table]
 
   def dateFormat: Option[String]
   def timestampFormat: String
@@ -704,23 +701,6 @@ abstract class GpuTextBasedPartitionReader[BUFF <: LineBufferer, FACT <: LineBuf
       }
     }
   }
-
-  /**
-   * Read the host buffer to GPU table
-   * @param dataBuffer where the data is buffered
-   * @param cudfDataSchema the cudf schema of the data
-   * @param readDataSchema the Spark schema describing what will be read
-   * @param cudfReadDataSchema the cudf schema of just the data we want to read.
-   * @param isFirstChunk if it is the first chunk
-   * @return table
-   */
-  def readToTable(
-    dataBuffer: BUFF,
-    cudfDataSchema: Schema,
-    readDataSchema: StructType,
-    cudfReadDataSchema: Schema,
-    isFirstChunk: Boolean,
-    decodeTime: GpuMetric): Table
 
   /**
    * File format short name used for logging and other things to uniquely identity

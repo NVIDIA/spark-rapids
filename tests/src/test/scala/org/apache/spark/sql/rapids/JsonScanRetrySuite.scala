@@ -38,7 +38,6 @@ import org.apache.spark.sql.types._
 class JsonScanRetrySuite extends RmmSparkRetrySuiteBase {
   private val dataSchema = StructType(Seq(
     StructField("a", IntegerType), StructField("b", StringType)))
-  private val parsedOptions = new JSONOptions(Map.empty[String, String], "UTC", "_corrupt_record")
 
   private def collectTableRows(table: Table): Seq[(Option[Int], Option[String])] = {
     withResource(table.getColumn(0).copyToHost()) { a =>
@@ -438,27 +437,6 @@ class JsonScanRetrySuite extends RmmSparkRetrySuiteBase {
       }
       assert(rows == 16)
       assert(batches > 1)
-    }
-  }
-
-  test("JSON readToTable remains compatible with retry without splitting") {
-    withResource(FilterEmptyHostLineBuffererFactory.createBufferer(100,
-      Array('\n'.toByte))) { bufferer =>
-      val bytes = """{"a":1,"b":"value"}""".getBytes(StandardCharsets.UTF_8)
-      bufferer.add(bytes, 0, bytes.length)
-      val cudfSchema = GpuJsonReadCommon.makeSchema(dataSchema)
-      val opts = GpuJsonReadCommon.baseCudfJsonOptionsBuilder().withLines(true).build()
-      RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
-        RmmSpark.OomInjectionType.GPU.ordinal, 0)
-      withResource(JsonPartitionReader.readToTable(bufferer, cudfSchema, NoopMetric,
-        opts, "JSON", null)) { table =>
-        withResource(GpuJsonReadCommon.convertTableToDesiredType(table,
-          dataSchema, parsedOptions)) { columns =>
-          withResource(new Table(columns: _*)) { typed =>
-            assert(collectTableRows(typed) == Seq((Some(1), Some("value"))))
-          }
-        }
-      }
     }
   }
 }

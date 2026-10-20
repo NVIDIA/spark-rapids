@@ -408,24 +408,6 @@ object JsonPartitionReader {
       override def close(): Unit = chunks.close()
     }
   }
-
-  def readToTable(
-      dataBufferer: HostLineBufferer,
-      cudfSchema: Schema,
-      decodeTime: GpuMetric,
-      jsonOpts:  cudf.JSONOptions,
-      formatName: String,
-      partFile: PartitionedFile): Table = {
-    val dataSize = dataBufferer.getLength
-    try {
-      RmmRapidsRetryIterator.withRetryNoSplit(dataBufferer.getBufferAndRelease) { dataBuffer =>
-        decode(dataBuffer, dataSize, cudfSchema, decodeTime, jsonOpts, partFile)
-      }
-    } catch {
-      case e: Exception =>
-        throw new IOException(s"Error when processing file [$partFile]", e)
-    }
-  }
 }
 
 class JsonPartitionReader(
@@ -456,29 +438,6 @@ class JsonPartitionReader(
     JsonPartitionReader.readToTables(dataBufferer, cudfReadDataSchema, decodeTime,
       buildJsonOptions(parsedOptions), partFile,
       table => projectTable(table, readDataSchema, cudfReadDataSchema))
-  }
-
-  /**
-   * Read the host buffer to GPU table
-   *
-   * @param dataBuffer     host buffer to be read
-   * @param dataSize       the size of host buffer
-   * @param cudfDataSchema     the cudf schema of the data
-   * @param readDataSchema the Spark schema describing what will be read
-   * @param hasHeader      if it has header
-   * @return table
-   */
-  override def readToTable(
-      dataBufferer: HostLineBufferer,
-      cudfDataSchema: Schema,
-      readDataSchema: StructType,
-      cudfReadDataSchema: Schema,
-      hasHeader: Boolean,
-      decodeTime: GpuMetric): Table = {
-    val jsonOpts = buildJsonOptions(parsedOptions)
-    val jsonTbl = JsonPartitionReader.readToTable(dataBufferer, cudfReadDataSchema, decodeTime,
-      jsonOpts, getFileFormatShortName, partFile)
-    projectTable(jsonTbl, readDataSchema, cudfReadDataSchema)
   }
 
   private def projectTable(table: Table, readDataSchema: StructType,
