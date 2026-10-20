@@ -30,6 +30,7 @@ from marks import allow_non_gpu, ignore_order
 from protobuf_data_gen import call_protobuf_function, materialize_protobuf_data
 from spark_session import (
     is_before_spark_340,
+    is_before_spark_350,
     is_spark_protobuf_available,
     with_cpu_session,
 )
@@ -47,6 +48,22 @@ pytestmark = [
         not is_spark_protobuf_available(),
         reason="from_protobuf is unavailable"),
 ]
+
+# Spark 3.4 PERMISSIVE returns a struct of null fields for malformed rows, so the GPU falls back.
+_permissive_marks = [allow_non_gpu("ProtobufDataToCatalyst")] if is_before_spark_350() else []
+
+
+def _permissive_test(fn):
+    for mark in _permissive_marks:
+        fn = mark(fn)
+    return fn
+
+
+def _assert_permissive_gpu_and_cpu_equal(run_on_spark):
+    if is_before_spark_350():
+        assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
+    else:
+        assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
 # Random data generation configurations for simple scalars
@@ -299,9 +316,9 @@ def _build_enum_descriptor_set_bytes(spark):
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @pytest.mark.parametrize("enum_case", [
     "as_int",
-    "unknown_as_int",
+    pytest.param("unknown_as_int", marks=_permissive_marks),
     "as_string",
-    "unknown_as_string",
+    pytest.param("unknown_as_string", marks=_permissive_marks),
 ], ids=lambda x: x)
 @ignore_order(local=True)
 def test_from_protobuf_enum_cases(
@@ -367,7 +384,10 @@ def test_from_protobuf_enum_cases(
                 decoded.getField("count").alias("count"))
         return df.select(decoded.alias("decoded"))
 
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    if options and options.get("mode") == "PERMISSIVE":
+        _assert_permissive_gpu_and_cpu_equal(run_on_spark)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
 def _build_out_of_order_enum_descriptor_set_bytes(spark):
@@ -449,6 +469,7 @@ def _build_repeated_enum_descriptor_set_bytes(spark):
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
+@_permissive_test
 def test_from_protobuf_repeated_enum_invalid_permissive(local_tmp_path, from_protobuf_fn):
     """Unknown proto2 enum occurrences are omitted from repeated fields."""
     desc_path, desc_bytes = _setup_protobuf_desc(
@@ -473,11 +494,12 @@ def test_from_protobuf_repeated_enum_invalid_permissive(local_tmp_path, from_pro
             options={"mode": "PERMISSIVE"})
         return df.select(decoded.alias("decoded"))
 
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    _assert_permissive_gpu_and_cpu_equal(run_on_spark)
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
+@_permissive_test
 def test_from_protobuf_repeated_enum_string_invalid_permissive_drops_unknown_values(
         local_tmp_path, from_protobuf_fn):
     """String enum mode drops unknown values without invalidating sibling fields."""
@@ -503,7 +525,7 @@ def test_from_protobuf_repeated_enum_string_invalid_permissive_drops_unknown_val
             decoded.getField("id").alias("id"),
             decoded.getField("priority").alias("priority")).orderBy("idx")
 
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    _assert_permissive_gpu_and_cpu_equal(run_on_spark)
 
 
 def _build_required_field_descriptor_set_bytes(spark):
@@ -569,11 +591,12 @@ def test_from_protobuf_required_field_missing_failfast(local_tmp_path, from_prot
             from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
         return df.select(decoded.alias("decoded")).collect()
 
-    assert_gpu_and_cpu_error(run_on_spark, conf={}, error_message="Malformed")
+    assert_gpu_and_cpu_error(run_on_spark, conf={}, error_message="MALFORMED_PROTOBUF_MESSAGE")
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
+@_permissive_test
 def test_from_protobuf_required_field_missing_permissive(local_tmp_path, from_protobuf_fn):
     """Required-field violations should null the whole row in PERMISSIVE mode."""
     desc_path, desc_bytes = _setup_protobuf_desc(
@@ -594,11 +617,12 @@ def test_from_protobuf_required_field_missing_permissive(local_tmp_path, from_pr
             decoded.getField("count").alias("count")
         )
 
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    _assert_permissive_gpu_and_cpu_equal(run_on_spark)
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("mode", ["PERMISSIVE", "FAILFAST"], ids=idfn)
+@pytest.mark.parametrize("mode", [
+    pytest.param("PERMISSIVE", marks=_permissive_marks), "FAILFAST"], ids=idfn)
 @ignore_order(local=True)
 def test_from_protobuf_visible_known_field_wrong_wire_type_matches_spark_error_policy(
         local_tmp_path, from_protobuf_fn, mode):
@@ -618,9 +642,10 @@ def test_from_protobuf_visible_known_field_wrong_wire_type_matches_spark_error_p
         return result.collect() if mode == "FAILFAST" else result
 
     if mode == "FAILFAST":
-        assert_gpu_and_cpu_error(run_on_spark, conf={}, error_message="Malformed")
+        assert_gpu_and_cpu_error(
+            run_on_spark, conf={}, error_message="MALFORMED_PROTOBUF_MESSAGE")
     else:
-        assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+        _assert_permissive_gpu_and_cpu_equal(run_on_spark)
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -1732,7 +1757,7 @@ def test_from_protobuf_bool_noncanonical_varint_repeated(local_tmp_path, from_pr
 @allow_non_gpu("ProtobufDataToCatalyst")
 def test_from_protobuf_dropmalformed_mode_falls_back(
         local_tmp_path, from_protobuf_fn, options, malformed):
-    """Spark rejects DROPMALFORMED only when a malformed row reaches its error handler."""
+    """Spark 3.5+ rejects DROPMALFORMED only when a malformed row reaches its error handler."""
     desc_path, desc_bytes = _setup_protobuf_desc(
         local_tmp_path, "dropmalformed.desc", _build_simple_descriptor_set_bytes)
     message_name = "test.Simple"
@@ -1745,7 +1770,8 @@ def test_from_protobuf_dropmalformed_mode_falls_back(
             options=options)
         return df.select(decoded.alias("decoded"))
 
-    if malformed:
+    # Spark 3.4 rejects DROPMALFORMED during analysis, even for valid rows.
+    if malformed or is_before_spark_350():
         assert_gpu_and_cpu_error(
             lambda spark: run_on_spark(spark).collect(), {}, "DROPMALFORMED")
     else:
@@ -1775,11 +1801,12 @@ def test_from_protobuf_failfast_malformed_data(local_tmp_path, from_protobuf_fn)
         # Must call .collect() so the exception surfaces inside with_*_session
         return df.select(decoded.getField("b").alias("b")).collect()
 
-    assert_gpu_and_cpu_error(run_on_spark, {}, "Malformed")
+    assert_gpu_and_cpu_error(run_on_spark, {}, "MALFORMED_PROTOBUF_MESSAGE")
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
 @ignore_order(local=True)
+@_permissive_test
 def test_from_protobuf_permissive_malformed_returns_null(local_tmp_path, from_protobuf_fn):
     """PERMISSIVE mode should return null for malformed rows, not throw.
 
@@ -1805,7 +1832,7 @@ def test_from_protobuf_permissive_malformed_returns_null(local_tmp_path, from_pr
             decoded.getField("i32").alias("i32"),
         )
 
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    _assert_permissive_gpu_and_cpu_equal(run_on_spark)
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")

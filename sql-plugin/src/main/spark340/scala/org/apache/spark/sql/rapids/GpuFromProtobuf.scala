@@ -14,6 +14,38 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
+{"spark": "350"}
+{"spark": "350db143"}
+{"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "359"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "403"}
+{"spark": "404"}
+{"spark": "410db183"}
+{"spark": "411"}
+{"spark": "412"}
+{"spark": "413"}
+{"spark": "420"}
+{"spark": "500"}
+spark-rapids-shim-json-lines ***/
+
 package org.apache.spark.sql.rapids
 
 import java.util.{Arrays, Objects}
@@ -26,6 +58,7 @@ import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
+import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types._
 
 /**
@@ -34,16 +67,11 @@ import org.apache.spark.sql.types._
  * This is designed to replace `org.apache.spark.sql.protobuf.ProtobufDataToCatalyst` when
  * supported.
  *
- * The implementation uses a flattened schema representation where nested fields have parent
- * indices pointing to their containing message field. For pure scalar schemas, all fields
- * are top-level (parentIndices == -1, depthLevels == 0, isRepeated == false).
- *
- * `decodedSchema` describes the visible output after projection. Flattened entries can also
- * include validation-only fields with isOutput=false, so pruning preserves malformed-message
- * checks. Struct field accessors derive their ordinals from the converted output schema.
+ * The schema uses the JNI flattened representation. The planner currently emits only top-level
+ * fields, so every entry has parentIndices == -1, depthLevels == 0 and isOutput == true.
  * Array payloads are compared by content; callers must not mutate them after construction.
  *
- * @param decodedSchema Spark output schema after projection, excluding validation-only fields.
+ * @param decodedSchema Spark output schema, one field per flattened entry
  * @param fieldNumbers Protobuf field numbers for all fields in flattened schema
  * @param parentIndices Parent indices for all fields (-1 for top-level)
  * @param depthLevels Nesting depth for all fields (0 for top-level)
@@ -53,8 +81,7 @@ import org.apache.spark.sql.types._
  * @param isRepeated Whether each field is repeated
  * @param isRequired Whether each field is required
  * @param hasDefaultValue Whether each field has a default value
- * @param isOutput Whether each field should be included in the returned cudf STRUCT. Fields
- *                 marked false are decoded only to validate projected-out protobuf fields.
+ * @param isOutput Whether each field should be included in the returned cudf STRUCT
  * @param defaultInts Default int/long values
  * @param defaultFloats Default float/double values
  * @param defaultBools Default bool values
@@ -149,8 +176,9 @@ case class GpuFromProtobuf(
     try {
       Protobuf.decodeToStruct(input.getBase, protobufSchema, failOnErrors)
     } catch {
+      // ProtobufSchemaDescriptor already validated the schema, so the decoder fails only on input.
       case e: CudfException if failOnErrors =>
-        throw new org.apache.spark.SparkException("Malformed protobuf message", e)
+        throw QueryExecutionErrors.malformedProtobufMessageDetectedInMessageParsingError(e)
       case e: CudfException =>
         logWarning(s"Unexpected CudfException in PERMISSIVE mode: ${e.getMessage}", e)
         throw e
@@ -159,12 +187,6 @@ case class GpuFromProtobuf(
 }
 
 object GpuFromProtobuf {
-  /** JNI encoding identifiers shared with the Spark-version planner. */
-  val ENC_DEFAULT = 0
-  val ENC_FIXED   = 1
-  val ENC_ZIGZAG  = 2
-  val ENC_ENUM_STRING = 3
-
   /**
    * Maps a Spark DataType to the corresponding cuDF native type ID.
    * Note: The encoding (varint/zigzag/fixed) is determined by the protobuf field type,
@@ -182,11 +204,6 @@ object GpuFromProtobuf {
     case BinaryType => Some(DType.LIST.getTypeId.getNativeId)
     case _ => None
   }
-
-  /**
-   * Whether a leaf type has a cuDF mapping; message types are handled separately by the planner.
-   */
-  def isTypeSupported(dt: DataType): Boolean = sparkTypeToCudfIdOpt(dt).isDefined
 
   private def deepEquals[T](left: Array[T], right: Array[T]): Boolean =
     Arrays.deepEquals(left.asInstanceOf[Array[Object]], right.asInstanceOf[Array[Object]])
