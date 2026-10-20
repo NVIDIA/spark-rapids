@@ -77,8 +77,17 @@ class WithRetrySuite
       }
     })
     thread.start()
-    thread.join(10000)
-    assert(!thread.isAlive, "task thread did not finish")
+    var timedOut = false
+    try {
+      thread.join(10000)
+      timedOut = thread.isAlive
+    } finally {
+      if (thread.isAlive) {
+        thread.interrupt()
+        thread.join()
+      }
+    }
+    assert(!timedOut, "task thread did not finish")
     val thrown = failure.get()
     if (thrown != null) {
       throw thrown
