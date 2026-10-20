@@ -33,6 +33,7 @@ import com.nvidia.spark.rapids.spill.SpillableDeviceBufferHandle
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong, contains, isNull}
 import org.mockito.Mockito._
+import org.mockito.invocation.InvocationOnMock
 import org.openucx.jucx.UcxCallback
 
 import org.apache.spark.shuffle.rapids.RapidsShuffleFetchFailedException
@@ -345,6 +346,41 @@ class RapidsShuffleErrorReplySuite extends RapidsShuffleTestHelper {
       assert(bounceBuffer.isClosed)
       assertResult(1)(closes.get)
       assertResult(allocated - 1024)(Rmm.getTotalBytesAllocated)
+    }
+  }
+
+  test("a window that fails copying into a new partial table closes that table's buffer once") {
+    val requester = new Requester
+    val failed = reader()
+    // the table is larger than a window, so the first window starts it in a new buffer
+    val requests = Seq(PendingTransferRequest(requester.client, tableMeta(1, 2048), failed))
+    withReceiveState(1024, requests, spied = false) { (state, bounceBuffer, closes) =>
+      requester.client.doIssueBufferReceives(state)
+      state.getBufferWhenReady(_ => (), 1024)
+      val partial = mock[DeviceMemoryBuffer]
+      val copyFailure = new IllegalStateException("copying the window failed in test")
+      doThrow(copyFailure)
+        .when(partial).copyFromDeviceBufferAsync(anyLong(), any(), anyLong(), anyLong(), any())
+      val windowReceived = receivedWindow()
+
+      // consumeWindow allocates the table's buffer itself, so Rmm hands it the mock, on this
+      // thread only
+      val allocs = mockStatic(classOf[Rmm], (invocation: InvocationOnMock) =>
+        invocation.getMethod.getName match {
+          case "alloc" if invocation.getArgument[Long](0) == 2048L => partial
+          case _ => invocation.callRealMethod()
+        })
+      try {
+        requester.client.doHandleBounceBufferReceive(windowReceived, state)
+      } finally {
+        allocs.close()
+      }
+
+      // the copy's failure reaches the reader, and only the state's close closes the buffer
+      verify(failed, times(1)).transferError(any(), ArgumentMatchers.same(copyFailure))
+      verify(partial, times(1)).close()
+      assert(bounceBuffer.isClosed)
+      assertResult(1)(closes.get)
     }
   }
 
