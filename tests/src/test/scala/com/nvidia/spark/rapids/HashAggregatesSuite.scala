@@ -18,15 +18,15 @@ package com.nvidia.spark.rapids
 
 import java.sql.Timestamp
 
-import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType, HostColumnVector}
+import ai.rapids.cudf.{ColumnVector => CudfColumnVector, DType, HostColumnVector, Rmm}
 import org.apache.spark
 
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference, Expression,
-  ExprId, Literal}
+import org.apache.spark.sql.catalyst.expressions.{Alias, Attribute, AttributeReference,
+  CheckOverflowInSum, Expression, ExprId, If, Literal}
 import org.apache.spark.sql.catalyst.expressions.aggregate.{Final, Partial}
 import org.apache.spark.sql.execution.{LeafExecNode, SparkPlan, WholeStageCodegenExec}
 import org.apache.spark.sql.execution.adaptive.{AdaptiveSparkPlanExec, BroadcastQueryStageExec, QueryStageExec, ShuffleQueryStageExec}
@@ -36,10 +36,10 @@ import org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
 import org.apache.spark.sql.rapids.aggregate.{CudfAggregate, CudfMergeM2, GpuAggregateExpression,
   GpuAggregateFunction, GpuCheckOverflowAfterSum}
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims._
-import org.apache.spark.sql.types.{BooleanType, DataType, DataTypes, DecimalType, IntegerType}
+import org.apache.spark.sql.types.{BooleanType, DataType, DataTypes, Decimal, DecimalType, IntegerType}
 
 class HashAggregatesSuite extends SparkQueryCompareTestSuite {
-  test("merge M2 reduction returns an owning scalar after closing its input") {
+  test("merge M2 reduction result") {
     import Arm.withResource
 
     val structType = new HostColumnVector.StructType(false,
@@ -69,26 +69,92 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
   test("decimal sum overflow check keeps empty, null, and ANSI behavior") {
     import Arm.withResource
 
+    val inputType = DecimalType(6, 0)
     val decimalType = DecimalType(5, 0)
-    def checked(isEmpty: Boolean, nullOnOverflow: Boolean): GpuCheckOverflowAfterSum =
-      GpuCheckOverflowAfterSum(GpuLiteral(null, decimalType),
-        GpuLiteral(isEmpty, BooleanType), decimalType, nullOnOverflow)
+    val data = GpuBoundReference(0, inputType, nullable = true)(ExprId(0), "sum")
+    val isEmpty = GpuBoundReference(1, BooleanType, nullable = false)(ExprId(1), "isEmpty")
+    val allocatedBefore = Rmm.getTotalBytesAllocated
+    val cachedNullsBefore = GpuExpressionsUtils.cachedNullVectors.get.size()
 
-    withResource(new org.apache.spark.sql.vectorized.ColumnarBatch(
-      Array.empty[org.apache.spark.sql.vectorized.ColumnVector], 1)) { batch =>
-      for ((isEmpty, nullOnOverflow) <- Seq((true, false), (false, true))) {
-        withResource(checked(isEmpty, nullOnOverflow).columnarEval(batch)) { result =>
-          withResource(result.copyToHost()) { host =>
-            assert(host.isNullAt(0))
+    def cpuValue(value: java.lang.Integer, empty: Boolean, nullOnOverflow: Boolean): Any = {
+      val decimal = Option(value).map(v => Decimal(v.intValue())).orNull
+      If(Literal(empty), Literal.create(null, decimalType),
+        CheckOverflowInSum(Literal.create(decimal, inputType), decimalType, nullOnOverflow))
+        .eval(InternalRow.empty)
+    }
+
+    def withBatch(values: Seq[java.lang.Integer], empty: Seq[Boolean])(
+        f: org.apache.spark.sql.vectorized.ColumnarBatch => Unit): Unit = {
+      val sumValues = withResource(CudfColumnVector.fromBoxedInts(values: _*)) { unscaled =>
+        unscaled.castTo(DType.create(DType.DTypeEnum.DECIMAL32, 0))
+      }
+      withResource(sumValues) { _ =>
+        withResource(CudfColumnVector.fromBooleans(empty: _*)) { emptyColumn =>
+          withResource(new org.apache.spark.sql.vectorized.ColumnarBatch(Array(
+              GpuColumnVector.from(sumValues.incRefCount(), inputType),
+              GpuColumnVector.from(emptyColumn.incRefCount(), BooleanType)),
+              values.size)) { batch =>
+            f(batch)
           }
         }
       }
-      intercept[ArithmeticException] {
-        withResource(checked(isEmpty = false, nullOnOverflow = false).columnarEval(batch)) {
-          _ => ()
+    }
+
+    def checkRows(values: Seq[java.lang.Integer], empty: Seq[Boolean],
+        nullOnOverflow: Boolean, expected: Seq[Option[Int]]): Unit = {
+      // Evaluate Spark's original post-SUM expression before the GPU equivalent.
+      val cpu = values.zip(empty).map { case (value, isEmptyRow) =>
+        Option(cpuValue(value, isEmptyRow, nullOnOverflow))
+          .map(_.asInstanceOf[Decimal].toUnscaledLong.toInt)
+      }
+      assert(cpu == expected)
+      withBatch(values, empty) { batch =>
+        withResource(GpuCheckOverflowAfterSum(data, isEmpty, decimalType, nullOnOverflow)
+            .columnarEval(batch)) { result =>
+          withResource(result.copyToHost()) { host =>
+            val gpu = values.indices.map { index =>
+              if (host.isNullAt(index)) None else Some(host.getInt(index))
+            }
+            assert(gpu == cpu)
+          }
         }
       }
     }
+
+    checkRows(Seq[java.lang.Integer](99999, 123456, null, 42, null),
+      Seq(false, false, false, true, true), nullOnOverflow = true,
+      Seq(Some(99999), None, None, None, None))
+    checkRows(Seq[java.lang.Integer](99999, 42, null),
+      Seq(false, true, true), nullOnOverflow = false, Seq(Some(99999), None, None))
+
+    val cpuOverflow = intercept[ArithmeticException] {
+      cpuValue(123456, empty = false, nullOnOverflow = false)
+    }
+    withBatch(Seq[java.lang.Integer](99999, 123456, null), Seq(false, false, true)) { batch =>
+      val gpuOverflow = intercept[ArithmeticException] {
+        withResource(GpuCheckOverflowAfterSum(data, isEmpty, decimalType, nullOnOverflow = false)
+            .columnarEval(batch)) { _ => () }
+      }
+      for (error <- Seq(cpuOverflow, gpuOverflow)) {
+        assert(error.getMessage.contains("123456"))
+        assert(error.getMessage.toLowerCase.replace(" ", "").contains("decimal(5,0)"))
+      }
+    }
+
+    val cpuNullOverflow = intercept[ArithmeticException] {
+      cpuValue(null, empty = false, nullOnOverflow = false)
+    }
+    withBatch(Seq[java.lang.Integer](99999, null), Seq(false, false)) { batch =>
+      val gpuNullOverflow = intercept[ArithmeticException] {
+        withResource(GpuCheckOverflowAfterSum(data, isEmpty, decimalType, nullOnOverflow = false)
+            .columnarEval(batch)) { _ => () }
+      }
+      for (error <- Seq(cpuNullOverflow, gpuNullOverflow)) {
+        assert(error.getMessage.toLowerCase.contains("overflow in sum of decimals"))
+      }
+    }
+    assert(GpuExpressionsUtils.cachedNullVectors.get.size() == cachedNullsBefore)
+    assert(Rmm.getTotalBytesAllocated == allocatedBefore)
   }
 
   private def floatAggConf: SparkConf = enableCsvConf()
