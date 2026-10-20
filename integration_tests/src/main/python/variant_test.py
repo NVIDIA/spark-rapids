@@ -454,6 +454,44 @@ def test_parquet_nested_struct_variant_try_get(spark_tmp_path):
 
 @incompat
 @pytest.mark.skipif(is_before_spark_400(), reason='VariantType is available in Spark 4.0+')
+def test_parquet_nested_array_map_variant_try_get(spark_tmp_path):
+    data_path = spark_tmp_path + '/NESTED_ARRAY_MAP_VARIANT_PARQUET'
+
+    def write_data(spark):
+        spark.sql("""
+          SELECT id,
+            array(parse_json(object_json), parse_json(array_json)) AS items,
+            map('object', parse_json(object_json), 'array', parse_json(array_json)) AS attributes
+          FROM VALUES
+            (0, '{"x":7}', '[11]'),
+            (1, '{}', '[]'),
+            (2, NULL, 'null')
+          AS source(id, object_json, array_json)
+        """).write.mode('overwrite').parquet(data_path)
+
+    # Generate Parquet data on CPU with the logical schema:
+    #   id: INT
+    #   items: ARRAY<VARIANT>
+    #   attributes: MAP<STRING, VARIANT>
+    _with_cpu_variant_session(write_data)
+
+    # items[0] and items[1] access the outer SQL array (GpuGetArrayItem).
+    # attributes['object'] and attributes['array'] access SQL map values (GpuGetMapValue).
+    # try_variant_get(..., '$.x', 'int') and try_variant_get(..., '$[0]', 'int')
+    # extract an object field or array element inside a Variant (GpuVariantGet).
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.parquet(data_path).selectExpr(
+            "id",
+            "try_variant_get(items[0], '$.x', 'int') AS array_object_x",
+            "try_variant_get(items[1], '$[0]', 'int') AS array_value",
+            "try_variant_get(attributes['object'], '$.x', 'int') AS map_object_x",
+            "try_variant_get(attributes['array'], '$[0]', 'int') AS map_array_value"),
+        exist_classes='GpuGetArrayItem,GpuGetMapValue,GpuVariantGet',
+        conf=_variant_parquet_conf)
+
+
+@incompat
+@pytest.mark.skipif(is_before_spark_400(), reason='VariantType is available in Spark 4.0+')
 def test_parquet_variant_try_get_null_variant_rows(spark_tmp_path):
     data_path = spark_tmp_path + '/VARIANT_NULL_PARQUET'
 
