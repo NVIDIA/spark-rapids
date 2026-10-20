@@ -85,7 +85,8 @@ def check_termination(info):
     # These explicit capacity codes describe infrastructure shortages even when the API
     # categorizes the termination as CLIENT_ERROR. Do not extend that exception to other codes.
     retryable = code in CAPACITY_TERMINATIONS or (
-        code in RETRYABLE_TERMINATIONS and reason.get("type") != "CLIENT_ERROR")
+        code in RETRYABLE_TERMINATIONS and reason.get("type") != "CLIENT_ERROR") or (
+        code == "BOOTSTRAP_TIMEOUT" and reason.get("type") == "SERVICE_FAULT")
     print("Cluster termination: code=%s, type=%s, retryable=%s" %
           (code, reason.get("type", "UNKNOWN"), retryable), flush=True)
     raise PreparationError(code, retryable)
@@ -102,8 +103,8 @@ def wait_for_driver(cluster_id, timeout=START_TIMEOUT):
             if re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9.-]*", address):
                 return address
         time.sleep(20)
-    # An unclassified startup timeout can also be an init-script/configuration defect.
-    raise PreparationError("CLUSTER_READINESS_TIMEOUT")
+    # Retry this pre-build startup deadline on a fresh cluster only after confirmed cleanup.
+    raise PreparationError("CLUSTER_READINESS_TIMEOUT", retryable=True)
 
 
 def wait_for_ssh(address, cluster_id):
@@ -282,7 +283,8 @@ def spark_readiness(path, operation):
 
     # This marker is written only by the plugin-free preflight. READY/missing markers must
     # never turn a later compilation, smoke-test or pytest failure into a provider retry.
-    state.update(retryable=False, reason="NOT_A_CLASSIFIED_SPARK_STARTUP_FAILURE")
+    state.update(retryable=False, classification_available=False,
+                 reason="SPARK_STARTUP_CLASSIFICATION_UNAVAILABLE")
     save_state(path, state)
     results = {}
     for mode in ("databricks", "upstream"):
@@ -297,8 +299,11 @@ def spark_readiness(path, operation):
                 or readiness.get("phase") not in {"STARTING", "READY", "FAILED"}):
             raise PreparationError("INVALID_SPARK_READINESS_RESULT")
         results[mode] = readiness
+        state["spark_readiness"] = results
+        save_state(path, state)
         print("Spark readiness %s: %s" % (mode, readiness["phase"]), flush=True)
     state["spark_readiness"] = results
+    state.update(reason="NOT_A_CLASSIFIED_SPARK_STARTUP_FAILURE")
     save_state(path, state)
     if operation == "verify-readiness":
         print("Required Spark readiness checks: " + ", ".join(modes), flush=True)
@@ -329,6 +334,7 @@ def spark_readiness(path, operation):
                 check_termination(info)
             except PreparationError as error:
                 state.update(retryable=error.retryable, reason=str(error))
+    state["classification_available"] = True
     save_state(path, state)
     print("Spark readiness classification: %s (retryable=%s)" %
           (state["reason"], state["retryable"]), flush=True)
