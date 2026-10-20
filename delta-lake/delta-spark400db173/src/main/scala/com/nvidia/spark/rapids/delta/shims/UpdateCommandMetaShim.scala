@@ -16,26 +16,34 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
-import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat
+import com.databricks.sql.transaction.tahoe.{DeltaParquetFileFormat, DeltaTableUtils, RowTracking}
 import com.databricks.sql.transaction.tahoe.commands.DeletionVectorUtils
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids.delta.{UpdateCommandEdgeMeta, UpdateCommandMeta}
 
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.expressions.{Expression, Literal}
+
 object UpdateCommandMetaShim {
   def tagForGpu(meta: UpdateCommandMeta): Unit = {
     val deltaLog = meta.updateCmd.tahoeFileIndex.deltaLog
-    val dvFeatureEnabled =
-      DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot)
+    val snapshot = deltaLog.unsafeVolatileSnapshot
+    val dvFeatureEnabled = DeletionVectorUtils.deletionVectorsWritable(snapshot)
+    val persistentDvEnabled = dvFeatureEnabled && meta.updateCmd.conf.getConf(
+      DeltaSQLConf.UPDATE_USE_PERSISTENT_DELETION_VECTORS)
 
-    if (dvFeatureEnabled && meta.updateCmd.conf.getConf(
-      DeltaSQLConf.UPDATE_USE_PERSISTENT_DELETION_VECTORS) &&
-        !supportsPersistentDeletionVectorWrites(meta)) {
+    if (persistentDvEnabled && !supportsPersistentDeletionVectorWrites(meta)) {
       meta.willNotWorkOnGpu(
         "Persistent deletion vector writes on GPU require DBR metadata row indexes and " +
           "native cuDF deletion-vector predicate pushdown")
     }
-    if (dvFeatureEnabled && meta.updateCmd.conf.getConf(
-        DeltaSQLConf.UPDATE_USE_PERSISTENT_DELETION_VECTORS) &&
+    if (persistentDvEnabled && RowTracking.isEnabled(snapshot.protocol, snapshot.metadata) &&
+        hasDataPredicate(meta.updateCmd.condition, snapshot.metadata.partitionColumns,
+          meta.updateCmd.tahoeFileIndex.spark)) {
+      meta.willNotWorkOnGpu(
+        "Persistent deletion vector UPDATE with row tracking is not supported on GPU")
+    }
+    if (persistentDvEnabled &&
         hasUserRowIndexColumn(
           meta.updateCmd.target.schema.fieldNames, meta.updateCmd.conf.resolver)) {
       meta.willNotWorkOnGpu(
@@ -46,18 +54,23 @@ object UpdateCommandMetaShim {
 
   def tagForGpu(meta: UpdateCommandEdgeMeta): Unit = {
     val deltaLog = meta.updateCmd.tahoeFileIndex.deltaLog
-    val dvFeatureEnabled =
-      DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot)
+    val snapshot = deltaLog.unsafeVolatileSnapshot
+    val dvFeatureEnabled = DeletionVectorUtils.deletionVectorsWritable(snapshot)
+    val persistentDvEnabled = dvFeatureEnabled && meta.updateCmd.conf.getConf(
+      DeltaSQLConf.UPDATE_USE_PERSISTENT_DELETION_VECTORS)
 
-    if (dvFeatureEnabled && meta.updateCmd.conf.getConf(
-      DeltaSQLConf.UPDATE_USE_PERSISTENT_DELETION_VECTORS) &&
-        !supportsPersistentDeletionVectorWrites(meta)) {
+    if (persistentDvEnabled && !supportsPersistentDeletionVectorWrites(meta)) {
       meta.willNotWorkOnGpu(
         "Persistent deletion vector writes on GPU require DBR metadata row indexes and " +
           "native cuDF deletion-vector predicate pushdown")
     }
-    if (dvFeatureEnabled && meta.updateCmd.conf.getConf(
-        DeltaSQLConf.UPDATE_USE_PERSISTENT_DELETION_VECTORS) &&
+    if (persistentDvEnabled && RowTracking.isEnabled(snapshot.protocol, snapshot.metadata) &&
+        hasDataPredicate(meta.updateCmd.condition, snapshot.metadata.partitionColumns,
+          meta.updateCmd.tahoeFileIndex.spark)) {
+      meta.willNotWorkOnGpu(
+        "Persistent deletion vector UPDATE with row tracking is not supported on GPU")
+    }
+    if (persistentDvEnabled &&
         hasUserRowIndexColumn(
           meta.updateCmd.target.schema.fieldNames, meta.updateCmd.conf.resolver)) {
       meta.willNotWorkOnGpu(
@@ -78,5 +91,14 @@ object UpdateCommandMetaShim {
       fieldNames: Array[String],
       resolver: (String, String) => Boolean): Boolean = {
     fieldNames.exists(resolver(_, DeltaParquetFileFormat.ROW_INDEX_STRUCT_FIELD.name))
+  }
+
+  private def hasDataPredicate(
+      condition: Option[Expression],
+      partitionColumns: Seq[String],
+      spark: SparkSession): Boolean = {
+    val (_, dataPredicates) = DeltaTableUtils.splitMetadataAndDataPredicates(
+      condition.getOrElse(Literal.TrueLiteral), partitionColumns, spark)
+    dataPredicates.nonEmpty
   }
 }

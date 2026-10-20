@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import pytest
+from pyspark.sql import Row
 
 from asserts import assert_gpu_and_cpu_writes_are_equal_collect, assert_gpu_fallback_write, \
     assert_equal, assert_spark_exception
@@ -257,6 +258,160 @@ def test_delta_update_partitioned_dv_optimize_write_disabled(spark_tmp_path):
     assert gpu_metrics == cpu_metrics, f"CPU {cpu_metrics} vs GPU {gpu_metrics}"
     assert gpu_metrics == {
         "numUpdatedRows": 1, "numCopiedRows": 0, "numDeletionVectorsAdded": 1}
+
+
+@allow_non_gpu('InMemoryTableScanExec', 'ColumnarToRowExec', 'ExternalRDDScanExec',
+               *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Persistent-DV command acceleration requires DBR 17.3+")
+def test_delta_update_persistent_dv_reused_matches_with_existing_dv(spark_tmp_path):
+    conf = copy_and_update(delta_update_enabled_conf, {
+        "spark.databricks.delta.update.deletionVectors.persistent": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.databricks.delta.optimizeWrite.enabled": "false",
+        "spark.databricks.delta.autoCompact.enabled": "false"})
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    with_cpu_session(lambda spark: setup_delta_dest_tables(
+        spark, data_path,
+        lambda spark: spark.createDataFrame(
+            [(i, i * 10, i % 2) for i in range(8)], "id INT, v INT, p INT").coalesce(1),
+        use_cdf=False, enable_deletion_vectors=True, partition_columns=["p"]), conf=conf)
+
+    cpu_path = data_path + "/CPU"
+    gpu_path = data_path + "/GPU"
+    updates = [("id IN (1, 3)", 2, 1, 0), ("id = 5", 1, 0, 1), ("id = 99", 0, 0, 0)]
+    for predicate, expected_rows, expected_added, expected_updated in updates:
+        def update(spark, path):
+            return spark.sql(f"UPDATE delta.`{path}` SET v = v + 1 WHERE {predicate}").collect()
+
+        cpu_result = with_cpu_session(lambda spark: update(spark, cpu_path), conf=conf)
+        captured_plans = []
+        gpu_result = assert_rapids_delta_write(
+            lambda spark: update(spark, gpu_path), conf=conf,
+            required_gpu_classes=delta_write if expected_rows else [],
+            expected_command="GpuUpdateCommand", captured_plans_out=captured_plans)
+        if predicate == "id IN (1, 3)":
+            # In local mode the executor shares the driver's storage entry. A cache scan in
+            # the rewrite verifies that this test actually exercises matched-row reuse.
+            local_mode = with_gpu_session(lambda spark:
+                spark.sparkContext.master == "local" or
+                spark.sparkContext.master.startswith("local["), conf=conf)
+            if local_mode:
+                callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
+                assert any(callback.contains(plan, "InMemoryTableScanExec") or
+                           callback.contains(plan, "GpuInMemoryTableScanExec")
+                           for plan in captured_plans), "UPDATE did not reuse its cached matches"
+        assert_equal(cpu_result, gpu_result)
+        assert_equal(gpu_result, [Row(expected_rows)])
+        if expected_rows:
+            def dv_metrics(spark, path):
+                row = spark.sql(f"DESCRIBE HISTORY delta.`{path}`") \
+                    .where("operation = 'UPDATE'").orderBy("version", ascending=False).first()
+                return {key: int(row["operationMetrics"].get(key, 0)) for key in
+                        ("numDeletionVectorsAdded", "numDeletionVectorsUpdated")}
+
+            cpu_metrics = with_cpu_session(lambda spark: dv_metrics(spark, cpu_path), conf=conf)
+            gpu_metrics = with_cpu_session(lambda spark: dv_metrics(spark, gpu_path), conf=conf)
+            assert_equal(cpu_metrics, gpu_metrics)
+            assert_equal(gpu_metrics, {
+                "numDeletionVectorsAdded": expected_added,
+                "numDeletionVectorsUpdated": expected_updated})
+
+    def read_data(spark, path):
+        return spark.read.format("delta").load(path).sort("id").collect()
+
+    cpu_data = with_cpu_session(lambda spark: read_data(spark, cpu_path), conf=conf)
+    gpu_data = with_cpu_session(lambda spark: read_data(spark, gpu_path), conf=conf)
+    assert_equal(cpu_data, gpu_data)
+
+
+@allow_non_gpu('ColumnarToRowExec', 'ExternalRDDScanExec', *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Persistent-DV command acceleration requires DBR 17.3+")
+def test_delta_update_persistent_dv_cdf_fallback(spark_tmp_path):
+    conf = copy_and_update(delta_update_enabled_conf, {
+        "spark.databricks.delta.update.deletionVectors.persistent": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.databricks.delta.optimizeWrite.enabled": "false"})
+    assert_delta_sql_update_collect(
+        spark_tmp_path,
+        use_cdf=True,
+        enable_deletion_vectors=True,
+        dest_table_func=lambda spark: spark.createDataFrame(
+            [(1, 10), (2, 20)], "id INT, v INT").coalesce(1),
+        update_sql="UPDATE delta.`{path}` SET v = v + 1 WHERE id = 1",
+        conf=conf)
+
+
+@allow_non_gpu('ColumnarToRowExec', 'ExternalRDDScanExec', *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Persistent-DV command acceleration requires DBR 17.3+")
+def test_delta_update_persistent_dv_broad_match_fallback(spark_tmp_path):
+    conf = copy_and_update(delta_update_enabled_conf, {
+        "spark.databricks.delta.update.deletionVectors.persistent": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.databricks.delta.optimizeWrite.enabled": "false"})
+    assert_delta_sql_update_collect(
+        spark_tmp_path,
+        use_cdf=False,
+        enable_deletion_vectors=True,
+        dest_table_func=lambda spark: spark.createDataFrame(
+            [(i, i * 10) for i in range(8)], "id INT, v INT").coalesce(1),
+        update_sql="UPDATE delta.`{path}` SET v = v + 1 WHERE id < 6",
+        conf=conf)
+
+
+@allow_non_gpu('ColumnarToRowExec', delta_write_fallback_allow, *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Persistent-DV command acceleration requires DBR 17.3+")
+def test_delta_update_persistent_dv_row_tracking_fallback(spark_tmp_path):
+    conf = copy_and_update(delta_update_enabled_conf, delta_row_tracking_dml_conf)
+    conf["spark.databricks.delta.update.deletionVectors.persistent"] = "true"
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    with_cpu_session(lambda spark: setup_delta_row_tracking_dest_tables(
+        spark, data_path, row_tracking_dml_test_df, enable_deletion_vectors=True), conf=conf)
+
+    def update(spark, path):
+        result = spark.sql(
+            f"UPDATE delta.`{path}` SET c = b WHERE a IN (2, 3)").collect()
+        assert_equal(result, [Row(2)])
+
+    assert_gpu_fallback_write(
+        update, read_delta_path, data_path, delta_write_fallback_check, conf)
+
+
+@allow_non_gpu('ColumnarToRowExec', 'ExternalRDDScanExec', *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Persistent-DV command acceleration requires DBR 17.3+")
+def test_delta_update_persistent_dv_row_tracking_without_bitmap(spark_tmp_path):
+    conf = copy_and_update(delta_update_enabled_conf, delta_row_tracking_dml_conf)
+    conf["spark.databricks.delta.update.deletionVectors.persistent"] = "true"
+    data_path = spark_tmp_path + "/DELTA_DATA"
+    with_cpu_session(lambda spark: setup_delta_row_tracking_dest_tables(
+        spark, data_path, row_tracking_dml_test_df, enable_deletion_vectors=True), conf=conf)
+
+    cpu_path = data_path + "/CPU"
+    gpu_path = data_path + "/GPU"
+    update_sql = "UPDATE delta.`{path}` SET c = b"
+    cpu_result = with_cpu_session(
+        lambda spark: spark.sql(update_sql.format(path=cpu_path)).collect(), conf=conf)
+    gpu_result = assert_rapids_delta_write(
+        lambda spark: spark.sql(update_sql.format(path=gpu_path)).collect(), conf=conf,
+        expected_command="GpuUpdateCommand")
+    assert_equal(cpu_result, gpu_result)
+    assert_equal(gpu_result, [Row(4)])
+    with_cpu_session(lambda spark: assert_gpu_and_cpu_latest_delta_log_equivalent(
+        spark, data_path), conf=conf)
 
 
 fallback_test_params = [{"spark.rapids.sql.format.delta.write.enabled": "false"},

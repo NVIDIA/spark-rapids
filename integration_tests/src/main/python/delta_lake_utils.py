@@ -488,18 +488,22 @@ def setup_delta_dest_tables(spark, data_path, dest_table_func, use_cdf, enable_d
         path = "{}/{}".format(data_path, name)
         setup_delta_dest_table(spark, path, dest_table_func, use_cdf, partition_columns, enable_deletion_vectors)
 
-def setup_delta_row_tracking_dest_table(spark, path, dest_table_func):
+def setup_delta_row_tracking_dest_table(spark, path, dest_table_func,
+                                        enable_deletion_vectors=False):
     dest_df = dest_table_func(spark)
     ddl = schema_to_ddl(spark, dest_df.schema)
     spark.sql("CREATE TABLE delta.`{}` ({}) USING DELTA "
               "TBLPROPERTIES (delta.enableRowTracking = true, "
-              "delta.enableDeletionVectors = false)".format(path, ddl))
+              "delta.enableDeletionVectors = {})".format(
+                  path, ddl, str(enable_deletion_vectors).lower()))
     dest_df.write.format("delta").mode("append").save(path)
 
-def setup_delta_row_tracking_dest_tables(spark, data_path, dest_table_func):
+def setup_delta_row_tracking_dest_tables(spark, data_path, dest_table_func,
+                                         enable_deletion_vectors=False):
     for name in ["CPU", "GPU"]:
         path = "{}/{}".format(data_path, name)
-        setup_delta_row_tracking_dest_table(spark, path, dest_table_func)
+        setup_delta_row_tracking_dest_table(
+            spark, path, dest_table_func, enable_deletion_vectors)
 
 def row_tracking_dml_test_df(spark):
     return spark.createDataFrame(

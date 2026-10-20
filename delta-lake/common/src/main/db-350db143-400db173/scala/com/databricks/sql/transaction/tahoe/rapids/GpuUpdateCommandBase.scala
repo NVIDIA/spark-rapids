@@ -55,6 +55,8 @@ abstract class GpuUpdateCommandBase(
 
   protected trait PersistentDvTouchedFiles {
     def files: Seq[AddFile]
+    def matchedRows: Option[DataFrame] = None
+    def release(): Unit = {}
   }
 
   /** DBR-version-specific scan for rows that require replacement deletion vectors. */
@@ -188,16 +190,21 @@ abstract class GpuUpdateCommandBase(
     scanTimeMs = (System.nanoTime() - startTime) / 1000 / 1000
     numTouchedFiles = filesToRewrite.length
 
-    val newActions = if (filesToRewrite.isEmpty) {
-      // Do nothing if no row qualifies the UPDATE condition.
-      Nil
-    } else {
-      // Generate the new files containing the updated values.
-      withStatusCode("DELTA", UpdateCommand.rewritingFilesMsg(filesToRewrite.size)) {
-        rewriteFiles(sparkSession, txn, tahoeFileIndex.path,
-          filesToRewrite, nameToAddFile, updateCondition,
-          copyUnmodifiedRows = !shouldWriteDVs)
+    val newActions = try {
+      if (filesToRewrite.isEmpty) {
+        // Do nothing if no row qualifies the UPDATE condition.
+        Nil
+      } else {
+        // Generate the new files containing the updated values.
+        withStatusCode("DELTA", UpdateCommand.rewritingFilesMsg(filesToRewrite.size)) {
+          rewriteFiles(sparkSession, txn, tahoeFileIndex.path,
+            filesToRewrite, nameToAddFile, updateCondition,
+            copyUnmodifiedRows = !shouldWriteDVs,
+            matchedRows = persistentDvTouchedFiles.flatMap(_.matchedRows))
+        }
       }
+    } finally {
+      persistentDvTouchedFiles.foreach(_.release())
     }
 
     rewriteTimeMs = (System.nanoTime() - startTime) / 1000 / 1000 - scanTimeMs
@@ -217,6 +224,9 @@ abstract class GpuUpdateCommandBase(
             sparkSession, txn, persistentDvTouchedFiles.get) match {
             case Some((actions, metricMap)) =>
               metrics("numUpdatedRows").set(metricMap("numModifiedRows"))
+              if (persistentDvTouchedFiles.get.matchedRows.isDefined) {
+                metrics("numTouchedRows").set(metricMap("numModifiedRows"))
+              }
               numDeletionVectorsAdded = metricMap("numDeletionVectorsAdded")
               numDeletionVectorsRemoved = metricMap("numDeletionVectorsRemoved")
               numDeletionVectorsUpdated = metricMap("numDeletionVectorsUpdated")
@@ -311,14 +321,18 @@ abstract class GpuUpdateCommandBase(
       inputLeafFiles: Seq[AddFile],
       nameToAddFileMap: Map[String, AddFile],
       condition: Expression,
-      copyUnmodifiedRows: Boolean): Seq[FileAction] = {
+      copyUnmodifiedRows: Boolean,
+      matchedRows: Option[DataFrame]): Seq[FileAction] = {
     // Containing the map from the relative file path to AddFile.
-    val baseRelation = buildBaseRelation(
-      spark, txn, "update", rootPath, inputLeafFiles.map(_.path), nameToAddFileMap)
-    val newTarget = DeltaTableUtils.replaceFileIndex(target, baseRelation.location)
+    val targetRows = matchedRows.getOrElse {
+      val baseRelation = buildBaseRelation(
+        spark, txn, "update", rootPath, inputLeafFiles.map(_.path), nameToAddFileMap)
+      val newTarget = DeltaTableUtils.replaceFileIndex(target, baseRelation.location)
+      createDataFrame(spark, newTarget)
+    }
     val (targetDf, finalOutput, finalUpdateExpressions) =
       UpdateCommandShims.preserveRowTrackingColumns(
-        createDataFrame(spark, newTarget), txn.snapshot, target.output, updateExpressions)
+        targetRows, txn.snapshot, target.output, updateExpressions)
 
     // Number of total rows that we have seen, i.e. are either copying or updating (sum of both).
     // This will be used later, along with numUpdatedRows, to determine numCopiedRows.
@@ -327,20 +341,28 @@ abstract class GpuUpdateCommandBase(
       new GpuDeltaMetricUpdateUDF(numTouchedRows)
     }.asNondeterministic()
 
+    // The cached scan contains only rows selected by the original condition. Re-evaluating it
+    // after caching can change file-scan metadata and needlessly move the rewrite to CPU.
+    val rewriteCondition = if (matchedRows.isDefined) Literal.TrueLiteral else condition
     val targetDfWithEvaluatedCondition =
-      targetDf.withColumn(UpdateCommand.CONDITION_COLUMN_NAME, exprToColumn(condition))
-    val rowsToWrite = if (copyUnmodifiedRows) {
+      targetDf.withColumn(UpdateCommand.CONDITION_COLUMN_NAME, exprToColumn(rewriteCondition))
+    val rowsToWrite = if (copyUnmodifiedRows || matchedRows.isDefined) {
       targetDfWithEvaluatedCondition
     } else {
       import org.apache.spark.sql.functions.col
       targetDfWithEvaluatedCondition.filter(col(UpdateCommand.CONDITION_COLUMN_NAME))
     }
 
+    val rowsWithMetrics = if (matchedRows.isDefined) {
+      rowsToWrite
+    } else {
+      rowsToWrite.filter(numTouchedRowsUdf())
+    }
     val updatedDataFrame = UpdateCommand.withUpdatedColumns(
       finalOutput,
       finalUpdateExpressions,
-      condition,
-      rowsToWrite.filter(numTouchedRowsUdf()),
+      rewriteCondition,
+      rowsWithMetrics,
       UpdateCommand.shouldOutputCdc(txn))
 
     txn.writeFiles(updatedDataFrame)

@@ -41,7 +41,7 @@ import org.apache.spark.paths.SparkPath
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.AttributeReference
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
-import org.apache.spark.sql.{Column, Encoder, SparkSession}
+import org.apache.spark.sql.{Column, DataFrame, Encoder, SparkSession}
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
@@ -144,7 +144,8 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
       hasReadableDVs: Boolean,
       targetScan: GpuTargetScan,
       condition: Column,
-      nameToAddFileMap: Map[String, AddFile]): Seq[TouchedFileWithDV] = {
+      nameToAddFileMap: Map[String, AddFile],
+      prefilteredTargetDf: Option[DataFrame] = None): Seq[TouchedFileWithDV] = {
     // This scan's broadcast join must be planned without AQE. A thread-local SQLConf override
     // does not control QueryExecution's session-owned planner on DBR, so use an isolated session.
     val scanSpark = isolatedSession(spark)
@@ -173,8 +174,10 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
 
     // Keep the predicate below input_file_name(), whose non-deterministic projection otherwise
     // prevents Spark from pushing the predicate into the Parquet scan.
-    val filteredTargetDf = targetScan.dataFrameWithoutFilePath.filter(condition)
-      .withColumn(targetScan.filePathColumnName, input_file_name())
+    val filteredTargetDf = prefilteredTargetDf.getOrElse {
+      targetScan.dataFrameWithoutFilePath.filter(condition)
+        .withColumn(targetScan.filePathColumnName, input_file_name())
+    }
     val gpuTargetDf = DMLWithDeletionVectorsHelperShims.withGpuExecutionContext(
       scanSpark, filteredTargetDf)
     val matchedRows = gpuTargetDf
