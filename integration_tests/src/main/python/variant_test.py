@@ -469,8 +469,16 @@ def test_parquet_nested_array_map_variant_try_get(spark_tmp_path):
           AS source(id, object_json, array_json)
         """).write.mode('overwrite').parquet(data_path)
 
+    # Generate Parquet data on CPU with the logical schema:
+    #   id: INT
+    #   items: ARRAY<VARIANT>
+    #   attributes: MAP<STRING, VARIANT>
     _with_cpu_variant_session(write_data)
 
+    # items[0] and items[1] access the outer SQL array (GpuGetArrayItem).
+    # attributes['object'] and attributes['array'] access SQL map values (GpuGetMapValue).
+    # try_variant_get(..., '$.x', 'int') and try_variant_get(..., '$[0]', 'int')
+    # extract an object field or array element inside a Variant (GpuVariantGet).
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: spark.read.parquet(data_path).selectExpr(
             "id",
