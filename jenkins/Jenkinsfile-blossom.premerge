@@ -142,6 +142,11 @@ pipeline {
                             (normal_build && databricksTestNeeded())) {
                         db_build = true
                     }
+                    // TEST ONLY: two small Databricks diagnostic cases, no ordinary builds/tests.
+                    normal_build = false
+                    skills_build = false
+                    TEMP_SKILLS_IMAGE_BUILD = false
+                    db_build = true
                 }
             }
         } // end of Init githubHelper
@@ -234,7 +239,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
             }
             // Parallel run mvn verify (build and integration tests) and unit tests (for multiple Spark versions)
             // If any one is failed will abort another if not finish yet and will upload failure log to Github
-            failFast true
+            failFast false // TEST ONLY: the simulated failure must not abort the passing case.
             parallel {
                 stage('Skills Premerge Test') {
                     when {
@@ -509,12 +514,8 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     githubHelper.updateCommitStatus("", "Success", GitHubCommitState.SUCCESS)
                 } else {
                     // upload log only in case of build failure
-                    def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com",
-                                      "artifactory.*?\\.com", "sonar.*?\\.com",
-                                      "dbc.*?azuredatabricks\\.net", "adb.*?databricks\\.com"]
-                    guardWords.add("nvidia-smi(?s)(.*?)(?=jenkins/version-def.sh)") // hide GPU info
-                    guardWords.add("sc-ipp*") // hide cloud info
-                    githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
+                    // TEST ONLY: keep full GPU/host diagnostics in the CI console.
+                    echo 'Diagnostic validation: no automatic public log upload'
 
                     if (currentBuild.currentResult != "ABORTED") { // skip ABORTED result to avoid status overwrite
                         githubHelper.updateCommitStatus("", "Fail", GitHubCommitState.FAILURE)
