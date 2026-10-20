@@ -83,34 +83,6 @@ class FilterToAstConverterSuite extends AnyFunSuite {
     assert(!FilterToAstConverter.isSupportedFilter(In("int_col", Array.empty)))
   }
 
-  test("canPruneRowGroups accepts comparisons and IsNull but not IsNotNull") {
-    assert(FilterToAstConverter.canPruneRowGroups(EqualTo("int_col", 1)))
-    assert(FilterToAstConverter.canPruneRowGroups(GreaterThan("int_col", 1)))
-    assert(FilterToAstConverter.canPruneRowGroups(LessThanOrEqual("int_col", 1)))
-    assert(FilterToAstConverter.canPruneRowGroups(In("int_col", Array(1, 2))))
-    assert(FilterToAstConverter.canPruneRowGroups(IsNull("int_col")))
-    assert(!FilterToAstConverter.canPruneRowGroups(IsNotNull("int_col")))
-    assert(!FilterToAstConverter.canPruneRowGroups(In("int_col", Array.empty)))
-    assert(!FilterToAstConverter.canPruneRowGroups(StringStartsWith("string_col", "a")))
-  }
-
-  test("canPruneRowGroups sees through a negation to what it means") {
-    assert(FilterToAstConverter.canPruneRowGroups(Not(IsNotNull("int_col"))))
-    assert(!FilterToAstConverter.canPruneRowGroups(Not(IsNull("int_col"))))
-    assert(FilterToAstConverter.canPruneRowGroups(Not(EqualTo("int_col", 1))))
-  }
-
-  test("canPruneRowGroups needs one side of an And and both sides of an Or") {
-    assert(FilterToAstConverter.canPruneRowGroups(
-      And(IsNotNull("int_col"), GreaterThan("int_col", 1))))
-    assert(!FilterToAstConverter.canPruneRowGroups(
-      And(IsNotNull("int_col"), IsNotNull("string_col"))))
-    assert(FilterToAstConverter.canPruneRowGroups(
-      Or(EqualTo("int_col", 1), EqualTo("int_col", 2))))
-    assert(!FilterToAstConverter.canPruneRowGroups(
-      Or(EqualTo("int_col", 1), IsNotNull("string_col"))))
-  }
-
   test("canPruneWithDictionary accepts only equality and In") {
     assert(FilterToAstConverter.canPruneWithDictionary(EqualTo("int_col", 1)))
     assert(FilterToAstConverter.canPruneWithDictionary(EqualNullSafe("int_col", 1)))

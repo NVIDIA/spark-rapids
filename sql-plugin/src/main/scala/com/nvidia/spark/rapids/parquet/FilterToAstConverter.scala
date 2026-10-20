@@ -361,28 +361,6 @@ object FilterToAstConverter {
   }
 
   /**
-   * Whether a filter can rule out a row group, without which the hybrid scan reader only adds
-   * cost over parquet-mr.
-   *
-   * `IsNotNull` counts as never pruning: it needs a chunk that is entirely null, which is rare.
-   * An `Or` prunes only if both sides can.
-   */
-  def canPruneRowGroups(filter: Filter): Boolean = filter match {
-    case _: EqualTo | _: EqualNullSafe => true
-    case _: GreaterThan | _: GreaterThanOrEqual => true
-    case _: LessThan | _: LessThanOrEqual => true
-    case _: IsNull => true
-    case _: IsNotNull => false
-    case In(_, values) => values.nonEmpty
-    case Not(IsNull(_)) => false
-    case Not(IsNotNull(_)) => true
-    case And(left, right) => canPruneRowGroups(left) || canPruneRowGroups(right)
-    case Or(left, right) => canPruneRowGroups(left) && canPruneRowGroups(right)
-    case Not(child) => canPruneRowGroups(child)
-    case _ => false
-  }
-
-  /**
    * Whether a filter can rule out a row group using its dictionary pages. libcudf's dictionary
    * filter only acts on `EQUAL` and `NOT_EQUAL`.
    */
