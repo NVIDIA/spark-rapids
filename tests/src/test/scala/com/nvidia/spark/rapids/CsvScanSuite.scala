@@ -151,7 +151,8 @@ class CsvScanSuite extends SparkQueryCompareTestSuite {
     ("custom null value", "\uFEFF", Map("nullValue" -> "NULL")),
     ("custom null marker", "\uFEFFNULL,tail", Map("nullValue" -> "NULL")),
     ("quote disabled", "\uFEFF", Map("quote" -> "")),
-    ("quoted delimiter", "\uFEFF\"quoted,value\",tail", Map("lineSep" -> "\r\n")))
+    ("quoted delimiter", "\uFEFF\"quoted,value\",tail",
+      Map("lineSep" -> (if (isSpark340OrLater) "\r\n" else "\n"))))
 
   for ((name, record, options) <- bomCases; numColumns <- Seq(1, 2)) {
     test(s"BOM record matches the CPU CSV file reader: $name, columns=$numColumns") {
