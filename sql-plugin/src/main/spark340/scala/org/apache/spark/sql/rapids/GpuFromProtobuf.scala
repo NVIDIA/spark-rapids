@@ -14,6 +14,38 @@
  * limitations under the License.
  */
 
+/*** spark-rapids-shim-json-lines
+{"spark": "340"}
+{"spark": "341"}
+{"spark": "341db"}
+{"spark": "342"}
+{"spark": "343"}
+{"spark": "344"}
+{"spark": "350"}
+{"spark": "350db143"}
+{"spark": "351"}
+{"spark": "352"}
+{"spark": "353"}
+{"spark": "354"}
+{"spark": "355"}
+{"spark": "356"}
+{"spark": "357"}
+{"spark": "358"}
+{"spark": "359"}
+{"spark": "400"}
+{"spark": "400db173"}
+{"spark": "401"}
+{"spark": "402"}
+{"spark": "403"}
+{"spark": "404"}
+{"spark": "410db183"}
+{"spark": "411"}
+{"spark": "412"}
+{"spark": "413"}
+{"spark": "420"}
+{"spark": "500"}
+spark-rapids-shim-json-lines ***/
+
 package org.apache.spark.sql.rapids
 
 import java.util.{Arrays, Objects}
@@ -26,6 +58,7 @@ import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
+import org.apache.spark.sql.errors.QueryExecutionErrors
 import org.apache.spark.sql.types._
 
 /**
@@ -149,8 +182,9 @@ case class GpuFromProtobuf(
     try {
       Protobuf.decodeToStruct(input.getBase, protobufSchema, failOnErrors)
     } catch {
+      // ProtobufSchemaDescriptor already validated the schema, so the decoder fails only on input.
       case e: CudfException if failOnErrors =>
-        throw new org.apache.spark.SparkException("Malformed protobuf message", e)
+        throw QueryExecutionErrors.malformedProtobufMessageDetectedInMessageParsingError(e)
       case e: CudfException =>
         logWarning(s"Unexpected CudfException in PERMISSIVE mode: ${e.getMessage}", e)
         throw e
@@ -159,12 +193,6 @@ case class GpuFromProtobuf(
 }
 
 object GpuFromProtobuf {
-  /** JNI encoding identifiers shared with the Spark-version planner. */
-  val ENC_DEFAULT = 0
-  val ENC_FIXED   = 1
-  val ENC_ZIGZAG  = 2
-  val ENC_ENUM_STRING = 3
-
   /**
    * Maps a Spark DataType to the corresponding cuDF native type ID.
    * Note: The encoding (varint/zigzag/fixed) is determined by the protobuf field type,
@@ -182,11 +210,6 @@ object GpuFromProtobuf {
     case BinaryType => Some(DType.LIST.getTypeId.getNativeId)
     case _ => None
   }
-
-  /**
-   * Whether a leaf type has a cuDF mapping; message types are handled separately by the planner.
-   */
-  def isTypeSupported(dt: DataType): Boolean = sparkTypeToCudfIdOpt(dt).isDefined
 
   private def deepEquals[T](left: Array[T], right: Array[T]): Boolean =
     Arrays.deepEquals(left.asInstanceOf[Array[Object]], right.asInstanceOf[Array[Object]])

@@ -42,6 +42,12 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
   /** Option keys whose semantics the GPU decoder handles. */
   val SupportedOptions: Set[String] = Set("enums.as.ints", "mode")
 
+  /** Whether this Spark version reads `enums.as.ints`; older versions ignore the key. */
+  protected def honorsEnumsAsInts: Boolean = true
+
+  /** Why PERMISSIVE decoding must stay on CPU for this Spark version, if it must. */
+  protected def permissiveFallbackReason: Option[String] = None
+
   /**
    * Reads arguments from ProtobufDataToCatalyst after runtime replacement, not an analyzed wrapper.
    * Left explains a missing or incompatible Spark API.
@@ -66,26 +72,30 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
   }
 
   /**
-   * Parses enum representation and parse mode, returning Left for invalid booleans/DROPMALFORMED.
+   * Parses enum representation and parse mode, returning Left for unsupported modes or booleans.
    * Defaults to FAILFAST; unrecognized mode strings use permissive behavior, matching Spark.
    */
   def parsePlannerOptions(
       options: Map[String, String]): Either[String, ProtobufPlannerOptions] = {
     val mode = options.getOrElse("mode", "FAILFAST")
+    val failOnErrors = mode.equalsIgnoreCase("FAILFAST")
     if (mode.equalsIgnoreCase("DROPMALFORMED")) {
       Left("from_protobuf DROPMALFORMED mode is not supported on GPU")
+    } else if (!failOnErrors && permissiveFallbackReason.isDefined) {
+      Left(permissiveFallbackReason.get)
     } else {
-      val enumsAsInts = Try(options.getOrElse("enums.as.ints", "false").toBoolean)
-        .toEither
-        .left
-        .map { _ =>
-          "Invalid value for from_protobuf option 'enums.as.ints': " +
-            s"'${options.getOrElse("enums.as.ints", "")}' (expected true/false)"
-        }
-      enumsAsInts.map(v =>
-        ProtobufPlannerOptions(
-          enumsAsInts = v,
-          failOnErrors = mode.equalsIgnoreCase("FAILFAST")))
+      val enumsAsInts = if (!honorsEnumsAsInts) {
+        Right(false)
+      } else {
+        Try(options.getOrElse("enums.as.ints", "false").toBoolean)
+          .toEither
+          .left
+          .map { _ =>
+            "Invalid value for from_protobuf option 'enums.as.ints': " +
+              s"'${options.getOrElse("enums.as.ints", "")}' (expected true/false)"
+          }
+      }
+      enumsAsInts.map(v => ProtobufPlannerOptions(enumsAsInts = v, failOnErrors = failOnErrors))
     }
   }
 

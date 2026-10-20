@@ -49,6 +49,8 @@ spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.shims
 
 import ai.rapids.cudf.DType
+import com.nvidia.spark.rapids.VersionUtils
+import com.nvidia.spark.rapids.jni.Protobuf
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.expressions.{
@@ -83,7 +85,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       depth = depth,
       wireType = 0,
       outputTypeId = outputTypeId,
-      encoding = GpuFromProtobuf.ENC_DEFAULT,
+      encoding = Protobuf.ENC_DEFAULT,
       isRepeated = isRepeated,
       isRequired = false,
       hasDefaultValue = false,
@@ -237,10 +239,25 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       }
   }
 
-  test("compat parses permissive enum planner options") {
-    assert(SparkProtobufCompat.parsePlannerOptions(
-      Map("mode" -> "PERMISSIVE", "enums.as.ints" -> "true")) ==
-      Right(ProtobufPlannerOptions(enumsAsInts = true, failOnErrors = false)))
+  private val isSpark350OrLater = VersionUtils.cmpSparkVersion(3, 5, 0) >= 0
+
+  private def assertPermissive(result: Either[String, ProtobufPlannerOptions]): Unit = {
+    if (isSpark350OrLater) {
+      assert(result == Right(ProtobufPlannerOptions(enumsAsInts = false, failOnErrors = false)))
+    } else {
+      // Spark 3.4 returns a struct of null fields for malformed PERMISSIVE input.
+      assert(result.left.toOption.exists(_.contains("PERMISSIVE")))
+    }
+  }
+
+  test("compat parses permissive planner options") {
+    assertPermissive(SparkProtobufCompat.parsePlannerOptions(Map("mode" -> "PERMISSIVE")))
+  }
+
+  test("compat follows Spark support for enums.as.ints") {
+    // Spark 3.4 ignores enums.as.ints and decodes enums as strings.
+    assert(SparkProtobufCompat.parsePlannerOptions(Map("enums.as.ints" -> "true")) ==
+      Right(ProtobufPlannerOptions(enumsAsInts = isSpark350OrLater, failOnErrors = true)))
   }
 
   test("compat rejects DROPMALFORMED mode") {
@@ -251,9 +268,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
   }
 
   test("compat treats unknown parse modes as permissive") {
-    val result = SparkProtobufCompat.parsePlannerOptions(Map("mode" -> "unknown"))
-
-    assert(result == Right(ProtobufPlannerOptions(enumsAsInts = false, failOnErrors = false)))
+    assertPermissive(SparkProtobufCompat.parsePlannerOptions(Map("mode" -> "unknown")))
   }
 
   test("compat distinguishes decode semantics across message descriptor and options") {
@@ -540,7 +555,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fieldNumber = 2,
       protoTypeName = "ENUM",
       sparkType = StringType,
-      encoding = GpuFromProtobuf.ENC_ENUM_STRING,
+      encoding = Protobuf.ENC_ENUM_STRING,
       isSupported = true,
       unsupportedReason = None,
       isRequired = false,
@@ -571,7 +586,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fieldNumber = 2,
       protoTypeName = "ENUM",
       sparkType = StringType,
-      encoding = GpuFromProtobuf.ENC_ENUM_STRING,
+      encoding = Protobuf.ENC_ENUM_STRING,
       isSupported = true,
       unsupportedReason = None,
       isRequired = false,
@@ -600,7 +615,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fieldNumber = 1,
       protoTypeName = "ENUM",
       sparkType = StringType,
-      encoding = GpuFromProtobuf.ENC_ENUM_STRING,
+      encoding = Protobuf.ENC_ENUM_STRING,
       isSupported = true,
       unsupportedReason = None,
       isRequired = false,
@@ -624,7 +639,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fieldNumber = 1,
       protoTypeName = "BYTES",
       sparkType = BinaryType,
-      encoding = GpuFromProtobuf.ENC_DEFAULT,
+      encoding = Protobuf.ENC_DEFAULT,
       isSupported = true,
       unsupportedReason = None,
       isRequired = false,
@@ -648,7 +663,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fieldNumber = 3,
       protoTypeName = "FLOAT",
       sparkType = DoubleType,
-      encoding = GpuFromProtobuf.ENC_DEFAULT,
+      encoding = Protobuf.ENC_DEFAULT,
       isSupported = true,
       unsupportedReason = None,
       isRequired = false,
@@ -677,7 +692,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
         depth = 0,
         wireType = 0,
         outputTypeId = DType.INT32.getTypeId.getNativeId,
-        encoding = GpuFromProtobuf.ENC_DEFAULT,
+        encoding = Protobuf.ENC_DEFAULT,
         isRepeated = false,
         isRequired = false,
         hasDefaultValue = false,
@@ -694,7 +709,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
         depth = 1,
         wireType = 0,
         outputTypeId = DType.INT32.getTypeId.getNativeId,
-        encoding = GpuFromProtobuf.ENC_DEFAULT,
+        encoding = Protobuf.ENC_DEFAULT,
         isRepeated = false,
         isRequired = false,
         hasDefaultValue = false,
