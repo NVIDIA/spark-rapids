@@ -160,7 +160,7 @@ private[rapids] object GpuRangeBoundaryPlan {
         originalOutput = selectedData.map(_._1) ++ originalPartitionOutput,
         requiredSchema = StructType(selectedData.map(_._2)),
         requiredPartitionSchema = Some(StructType(selectedPartitions.map(_._2))))(
-        scan.rapidsConf, scan.cpuScan))
+        scan.rapidsConf, scan.partitionPlanningScan))
     }
   }
 }

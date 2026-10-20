@@ -431,7 +431,7 @@ class GpuTransitionOverrides(sparkSession: SparkSession = null) extends Rule[Spa
       case fileSourceScan: GpuFileSourceScanExec =>
         if ((disableUntilInput || disableScanUntilInput(fileSourceScan))) {
           fileSourceScan.copy(queryUsesInputFile = true)(
-            fileSourceScan.rapidsConf, fileSourceScan.cpuScan)
+            fileSourceScan.rapidsConf, fileSourceScan.partitionPlanningScan)
         } else {
           fileSourceScan
         }
@@ -469,7 +469,7 @@ class GpuTransitionOverrides(sparkSession: SparkSession = null) extends Rule[Spa
     }
 
     val prunedPartSchema = Some(StructType(neededPartIndexes.map(fss.relation.partitionSchema)))
-    fss.copy(requiredPartitionSchema = prunedPartSchema)(fss.rapidsConf, fss.cpuScan)
+    fss.copy(requiredPartitionSchema = prunedPartSchema)(fss.rapidsConf, fss.partitionPlanningScan)
   }
 
   // This tries to prune the partition schema for GpuFileSourceScanExec by leveraging

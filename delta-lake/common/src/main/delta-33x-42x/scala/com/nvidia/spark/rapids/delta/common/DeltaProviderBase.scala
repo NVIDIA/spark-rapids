@@ -183,7 +183,7 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
               dataAndPartitionOutput.filterNot(_.name == "_tmp_metadata_row_index"),
             requiredSchema = StructType(
               scan.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
-            ))(scan.rapidsConf, scan.cpuScan)))
+            ))(scan.rapidsConf, scan.partitionPlanningScan)))
     }
 
     // Liquid clustering can insert unary projections and transitions between the output
@@ -342,7 +342,7 @@ object DVPredicatePushdown extends ShimPredicateHelper {
             // the IS_ROW_DELETED_COLUMN_NAME column from scan's output, we should
             // remove the DV condition as well from the dataFilters.
             dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(
-            fsse.rapidsConf, fsse.cpuScan)
+            fsse.rapidsConf, fsse.partitionPlanningScan)
       }
     }
 

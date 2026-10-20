@@ -77,7 +77,7 @@ case class GpuFileSourceScanExec(
     queryUsesInputFile: Boolean = false,
     requiredPartitionSchema: Option[StructType] = None)(
     @transient val rapidsConf: RapidsConf,
-    @transient val cpuScan: Option[FileSourceScanExec] = None)
+    @transient val partitionPlanningScan: Option[FileSourceScanExec] = None)
     extends GpuDataSourceScanExec with GpuExec {
 
   import GpuMetric._
@@ -100,7 +100,7 @@ case class GpuFileSourceScanExec(
 
   private val isPerFileReadEnabled = gpuFormat.isPerFileReadEnabled(rapidsConf)
 
-  override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf, cpuScan)
+  override def otherCopyArgs: Seq[AnyRef] = Seq(rapidsConf, partitionPlanningScan)
 
   // All expressions are filter expressions used on the CPU.
   override def gpuExpressions: Seq[Expression] = Nil

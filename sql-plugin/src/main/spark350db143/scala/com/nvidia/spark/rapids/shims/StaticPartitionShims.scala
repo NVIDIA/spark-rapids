@@ -37,7 +37,7 @@ object StaticPartitionShims {
 
   def getPartitions(scan: GpuFileSourceScanExec): Option[Seq[FilePartition]] = {
     getStaticPartitions(scan.relation).orElse {
-      scan.cpuScan.map(FilePartitionShims.getCsvPartitions(_, scan))
+      scan.partitionPlanningScan.map(FilePartitionShims.getCsvPartitions(_, scan))
     }
   }
 
