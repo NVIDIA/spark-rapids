@@ -56,10 +56,11 @@ import org.apache.spark.shuffle.rapids.{RapidsShuffleSendPrepareException,
  *     +-----------------------------------+
  *     +-- output gone ------> [MissingOutput] -+
  *     +-- OOM at deadline --> [OomExpired] ----+--> error reply eligible
- *     +-- other failure ----> [Failed] -------+
- *     +-- data send fails --> [SendFailed] ---+
- *     +-- server stops -----> [ServerClosed] -+--> no error reply
- *     +-- close ------------> [Closed] -------+
+ *     +-- other failure ----> [Failed] --------+
+ *     |
+ *     +-- data send fails --> [SendFailed] ----+
+ *     +-- server stops -----> [ServerClosed] --+--> no error reply
+ *     +-- close ------------> [Closed] --------+
  * }}}
  *
  * The first finish wins. An in-flight data send leaves completion to its callback until the
