@@ -845,9 +845,10 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       defaultInts = Array(0L, 0L),
       defaultFloats = Array(0.0, 0.0),
       defaultBools = Array(false, false),
-      defaultStrings = Array(Array.emptyByteArray, Array.emptyByteArray),
-      enumValidValues = Array(Array.emptyIntArray, Array.emptyIntArray),
-      enumNames = Array(emptyEnumNames, emptyEnumNames),
+      defaultStrings = Array(Array[Byte](1, 2), Array[Byte](3)),
+      enumValidValues = Array(Array(0, 1), Array.emptyIntArray),
+      enumNames = Array(Array("UNKNOWN".getBytes("UTF-8"), "EN".getBytes("UTF-8")),
+        emptyEnumNames),
       failOnErrors = true,
       child = FakeExprChild())
 
@@ -866,12 +867,16 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       defaultInts = Array(0L, 0L),
       defaultFloats = Array(0.0, 0.0),
       defaultBools = Array(false, false),
-      defaultStrings = Array(Array.emptyByteArray, Array.emptyByteArray),
-      enumValidValues = Array(Array.emptyIntArray, Array.emptyIntArray),
-      enumNames = Array(emptyEnumNames.map(identity), emptyEnumNames.map(identity)),
+      defaultStrings = Array(Array[Byte](1, 2), Array[Byte](3)),
+      enumValidValues = Array(Array(0, 1), Array.emptyIntArray),
+      enumNames = Array(Array("UNKNOWN".getBytes("UTF-8"), "EN".getBytes("UTF-8")),
+        emptyEnumNames),
       failOnErrors = true,
       child = FakeExprChild())
 
+    assert(expr1 == expr2)
+    assert(expr1.hashCode() == expr2.hashCode())
+    assert(scala.collection.immutable.HashSet(expr1).contains(expr2))
     assert(expr1.semanticEquals(expr2))
     assert(expr1.semanticHash() == expr2.semanticHash())
   }

@@ -37,6 +37,9 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
   private[this] val sparkProtobufUtilsObjectClassName =
     "org.apache.spark.sql.protobuf.utils.ProtobufUtils$"
 
+  private val PROTO2_MAGIC_STRING = "PROTO2"
+
+  /** Option keys whose semantics the GPU decoder handles. */
   val SupportedOptions: Set[String] = Set("enums.as.ints", "mode")
 
   /**
@@ -51,6 +54,10 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
     } yield ProtobufExprInfo(messageName, descriptorSource, options)
   }
 
+  /**
+   * Compares message, descriptor and options; unreadable expressions are treated as different.
+   * This prevents schema pruning from combining expressions with incompatible decode semantics.
+   */
   def sameDecodeSemantics(left: Expression, right: Expression): Boolean = {
     (extractExprInfo(left), extractExprInfo(right)) match {
       case (Right(leftInfo), Right(rightInfo)) => leftInfo == rightInfo
@@ -58,6 +65,10 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
     }
   }
 
+  /**
+   * Parses enum representation and parse mode, returning Left for invalid booleans/DROPMALFORMED.
+   * Defaults to FAILFAST; unrecognized mode strings use permissive behavior, matching Spark.
+   */
   def parsePlannerOptions(
       options: Map[String, String]): Either[String, ProtobufPlannerOptions] = {
     val mode = options.getOrElse("mode", "FAILFAST")
@@ -78,12 +89,18 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
     }
   }
 
+  /** Unrecognized option keys, sorted for stable fallback diagnostics. */
   def unsupportedOptions(options: Map[String, String]): Seq[String] =
     options.keys.filterNot(SupportedOptions.contains).toSeq.sorted
 
+  /** Only uppercase PROTO2 syntax is supported; unrecognized syntax strings are rejected. */
   def isGpuSupportedProtoSyntax(syntax: String): Boolean =
-    syntax == "PROTO2"
+    syntax == PROTO2_MAGIC_STRING
 
+  /**
+   * Checks root/referenced syntax and UTF-8 requirements before schema pruning can hide them.
+   * Left describes an unsupported schema; lazy descriptor reads may still throw.
+   */
   private[shims] def validateDescriptorGraphSyntax(
       schema: StructType,
       root: ProtobufMessageDescriptor): Either[String, Unit] = {
@@ -405,7 +422,7 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
         invoke0[AnyRef](fileProto, "getSyntax")
       }
       val syntax = typeNameFn(syntaxObj).trim
-      if (syntax.isEmpty) "PROTO2" else syntax.toUpperCase(Locale.ROOT)
+      if (syntax.isEmpty) PROTO2_MAGIC_STRING else syntax.toUpperCase(Locale.ROOT)
     }.getOrElse("")
   }
 }

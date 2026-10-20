@@ -16,7 +16,7 @@
 
 package org.apache.spark.sql.rapids
 
-import java.util.Arrays
+import java.util.{Arrays, Objects}
 
 import ai.rapids.cudf
 import ai.rapids.cudf.{CudfException, DType}
@@ -38,15 +38,12 @@ import org.apache.spark.sql.types._
  * indices pointing to their containing message field. For pure scalar schemas, all fields
  * are top-level (parentIndices == -1, depthLevels == 0, isRepeated == false).
  *
- * Schema projection is supported: `decodedSchema` contains only the top-level fields and
- * nested children that are actually referenced by downstream operators. Downstream
- * `GetStructField` and `GetArrayStructFields` nodes derive their GPU ordinals from the
- * converted child schema, so they index into the pruned schema directly. Unreferenced fields
- * are never accessed, so no null-column filling is needed.
+ * `decodedSchema` describes the visible output after projection. Flattened entries can also
+ * include validation-only fields with isOutput=false, so pruning preserves malformed-message
+ * checks. Struct field accessors derive their ordinals from the converted output schema.
+ * Array payloads are compared by content; callers must not mutate them after construction.
  *
- * @param decodedSchema The pruned schema containing only the fields decoded by the GPU.
- *                      Only fields referenced by downstream operators are included;
- *                      ordinal remapping ensures correct field access into the pruned output.
+ * @param decodedSchema Spark output schema after projection, excluding validation-only fields.
  * @param fieldNumbers Protobuf field numbers for all fields in flattened schema
  * @param parentIndices Parent indices for all fields (-1 for top-level)
  * @param depthLevels Nesting depth for all fields (0 for top-level)
@@ -64,7 +61,8 @@ import org.apache.spark.sql.types._
  * @param defaultStrings Default string/bytes values
  * @param enumValidValues Valid enum values for each field
  * @param enumNames Enum value names for enum-as-string fields. Parallel to enumValidValues.
- * @param failOnErrors If true, throw exception on malformed data
+ * @param failOnErrors If true, throw on malformed data; otherwise return null for malformed rows
+ * @param child BinaryType expression containing serialized protobuf messages
  */
 case class GpuFromProtobuf(
     decodedSchema: StructType,
@@ -118,28 +116,25 @@ case class GpuFromProtobuf(
     case _ => false
   }
 
-  override def hashCode(): Int = {
-    var result = decodedSchema.hashCode()
-    result = 31 * result + Arrays.hashCode(fieldNumbers)
-    result = 31 * result + Arrays.hashCode(parentIndices)
-    result = 31 * result + Arrays.hashCode(depthLevels)
-    result = 31 * result + Arrays.hashCode(wireTypes)
-    result = 31 * result + Arrays.hashCode(outputTypeIds)
-    result = 31 * result + Arrays.hashCode(encodings)
-    result = 31 * result + Arrays.hashCode(isRepeated)
-    result = 31 * result + Arrays.hashCode(isRequired)
-    result = 31 * result + Arrays.hashCode(hasDefaultValue)
-    result = 31 * result + Arrays.hashCode(isOutput)
-    result = 31 * result + Arrays.hashCode(defaultInts)
-    result = 31 * result + Arrays.hashCode(defaultFloats)
-    result = 31 * result + Arrays.hashCode(defaultBools)
-    result = 31 * result + GpuFromProtobuf.deepHashCode(defaultStrings)
-    result = 31 * result + GpuFromProtobuf.deepHashCode(enumValidValues)
-    result = 31 * result + GpuFromProtobuf.deepHashCode(enumNames)
-    result = 31 * result + failOnErrors.hashCode()
-    result = 31 * result + child.hashCode()
-    result
-  }
+  override def hashCode(): Int = Objects.hash(
+    decodedSchema,
+    Int.box(Arrays.hashCode(fieldNumbers)),
+    Int.box(Arrays.hashCode(parentIndices)),
+    Int.box(Arrays.hashCode(depthLevels)),
+    Int.box(Arrays.hashCode(wireTypes)),
+    Int.box(Arrays.hashCode(outputTypeIds)),
+    Int.box(Arrays.hashCode(encodings)),
+    Int.box(Arrays.hashCode(isRepeated)),
+    Int.box(Arrays.hashCode(isRequired)),
+    Int.box(Arrays.hashCode(hasDefaultValue)),
+    Int.box(Arrays.hashCode(isOutput)),
+    Int.box(Arrays.hashCode(defaultInts)),
+    Int.box(Arrays.hashCode(defaultFloats)),
+    Int.box(Arrays.hashCode(defaultBools)),
+    Int.box(GpuFromProtobuf.deepHashCode(defaultStrings)),
+    Int.box(GpuFromProtobuf.deepHashCode(enumValidValues)),
+    Int.box(GpuFromProtobuf.deepHashCode(enumNames)),
+    Boolean.box(failOnErrors), child)
 
   // ProtobufSchemaDescriptor is a pure-Java immutable holder for validated schema arrays.
   // It does not own native resources, so task-scoped close hooks are not required here.
@@ -164,6 +159,7 @@ case class GpuFromProtobuf(
 }
 
 object GpuFromProtobuf {
+  /** JNI encoding identifiers shared with the Spark-version planner. */
   val ENC_DEFAULT = 0
   val ENC_FIXED   = 1
   val ENC_ZIGZAG  = 2
@@ -188,7 +184,7 @@ object GpuFromProtobuf {
   }
 
   /**
-   * Check if a Spark DataType is supported by the GPU protobuf decoder.
+   * Whether a leaf type has a cuDF mapping; message types are handled separately by the planner.
    */
   def isTypeSupported(dt: DataType): Boolean = sparkTypeToCudfIdOpt(dt).isDefined
 

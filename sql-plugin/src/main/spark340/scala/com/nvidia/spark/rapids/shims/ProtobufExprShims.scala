@@ -75,6 +75,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
   private[this] val protobufDataToCatalystClassName =
     "org.apache.spark.sql.protobuf.ProtobufDataToCatalyst"
 
+  /** GPU expression rules, or an empty map when the optional spark-protobuf APIs cannot load. */
   def exprs: Map[Class[_ <: Expression], ExprRule[_ <: Expression]] = {
     try {
       val clazz = ShimReflectionUtils.loadClass(protobufDataToCatalystClassName)
