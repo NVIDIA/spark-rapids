@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -35,97 +37,120 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 public class TestSparkRapidsJarTool {
-  @TempDir
-  Path tempDir;
-
   @Test
   public void testPayloadChecksumIgnoresPublicationMetadata() throws IOException {
-    Path rapidsJar = tempDir.resolve("rapids-4-spark.jar");
-    Path renamedJar = tempDir.resolve("cudf-plugin.jar");
-    Path changedPayloadJar = tempDir.resolve("changed-payload.jar");
+    withTempDir(tempDir -> {
+      Path rapidsJar = tempDir.resolve("rapids-4-spark.jar");
+      Path renamedJar = tempDir.resolve("cudf-plugin.jar");
+      Path changedPayloadJar = tempDir.resolve("changed-payload.jar");
 
-    Map<String, byte[]> rapidsEntries = entries(
-        "Rapids-Plugin", "26.10.0-SNAPSHOT", new byte[] {1, 2, 3, 4});
-    Map<String, byte[]> renamedEntries = entries(
-        "cuDF-Plugin", "26.12.0-SNAPSHOT", new byte[] {1, 2, 3, 4});
-    Map<String, byte[]> changedPayloadEntries = entries(
-        "cuDF-Plugin", "26.12.0-SNAPSHOT", new byte[] {1, 2, 3, 5});
+      Map<String, byte[]> rapidsEntries = entries(
+          "Rapids-Plugin", "26.10.0-SNAPSHOT", new byte[] {1, 2, 3, 4});
+      Map<String, byte[]> renamedEntries = entries(
+          "cuDF-Plugin", "26.12.0-SNAPSHOT", new byte[] {1, 2, 3, 4});
+      Map<String, byte[]> changedPayloadEntries = entries(
+          "cuDF-Plugin", "26.12.0-SNAPSHOT", new byte[] {1, 2, 3, 5});
 
-    writeJar(rapidsJar, rapidsEntries, false, 1_600_000_000_000L);
-    writeJar(renamedJar, reverse(renamedEntries), true, 1_700_000_000_000L);
-    writeJar(changedPayloadJar, changedPayloadEntries, false, 1_800_000_000_000L);
+      writeJar(rapidsJar, rapidsEntries, false, 1_600_000_000_000L);
+      writeJar(renamedJar, reverse(renamedEntries), true, 1_700_000_000_000L);
+      writeJar(changedPayloadJar, changedPayloadEntries, false, 1_800_000_000_000L);
 
-    assertEquals("Rapids-Plugin", title(rapidsJar));
-    assertEquals("cuDF-Plugin", title(renamedJar));
-    assertEquals(checksum(rapidsJar), checksum(renamedJar));
-    assertNotEquals(checksum(rapidsJar), checksum(changedPayloadJar));
+      assertEquals("Rapids-Plugin", title(rapidsJar));
+      assertEquals("cuDF-Plugin", title(renamedJar));
+      assertEquals(checksum(rapidsJar), checksum(renamedJar));
+      assertNotEquals(checksum(rapidsJar), checksum(changedPayloadJar));
+    });
   }
 
   @Test
   public void testDistributionTitleIsRequired() throws IOException {
-    Map<String, byte[]> missingManifest = entries(
-        "unused", "26.10.0-SNAPSHOT", new byte[] {1});
-    missingManifest.remove("META-INF/MANIFEST.MF");
-    Path missingManifestJar = tempDir.resolve("missing-manifest.jar");
-    writeJar(missingManifestJar, missingManifest, false, 1_600_000_000_000L);
+    withTempDir(tempDir -> {
+      Map<String, byte[]> missingManifest = entries(
+          "unused", "26.10.0-SNAPSHOT", new byte[] {1});
+      missingManifest.remove("META-INF/MANIFEST.MF");
+      Path missingManifestJar = tempDir.resolve("missing-manifest.jar");
+      writeJar(missingManifestJar, missingManifest, false, 1_600_000_000_000L);
 
-    Path blankTitleJar = tempDir.resolve("blank-title.jar");
-    writeJar(blankTitleJar,
-        entries(" ", "26.10.0-SNAPSHOT", new byte[] {1}), false, 1_600_000_000_000L);
+      Path blankTitleJar = tempDir.resolve("blank-title.jar");
+      writeJar(blankTitleJar,
+          entries(" ", "26.10.0-SNAPSHOT", new byte[] {1}), false, 1_600_000_000_000L);
 
-    assertThrows(IOException.class, () -> title(missingManifestJar));
-    assertThrows(IOException.class, () -> title(blankTitleJar));
+      assertThrows(IOException.class, () -> title(missingManifestJar));
+      assertThrows(IOException.class, () -> title(blankTitleJar));
+    });
   }
 
   @Test
   public void testPayloadChecksumIncludesNonSignatureEntries() throws IOException {
-    Map<String, byte[]> baseEntries = entries(
-        "Rapids-Plugin", "26.10.0-SNAPSHOT", new byte[] {1, 2, 3, 4});
-    Map<String, byte[]> invalidExtensionEntries = new LinkedHashMap<>(baseEntries);
-    invalidExtensionEntries.put("META-INF/SIG-PLUGIN.CONFIG", new byte[] {1});
-    Map<String, byte[]> misleadingDirectoryEntries = new LinkedHashMap<>(baseEntries);
-    misleadingDirectoryEntries.put("assets/NOTMETA-INF/SIG-PLUGIN", new byte[] {1});
+    withTempDir(tempDir -> {
+      Map<String, byte[]> baseEntries = entries(
+          "Rapids-Plugin", "26.10.0-SNAPSHOT", new byte[] {1, 2, 3, 4});
+      Map<String, byte[]> invalidExtensionEntries = new LinkedHashMap<>(baseEntries);
+      invalidExtensionEntries.put("META-INF/SIG-PLUGIN.CONFIG", new byte[] {1});
+      Map<String, byte[]> misleadingDirectoryEntries = new LinkedHashMap<>(baseEntries);
+      misleadingDirectoryEntries.put("assets/NOTMETA-INF/SIG-PLUGIN", new byte[] {1});
 
-    Path baseJar = tempDir.resolve("base.jar");
-    Path invalidExtensionJar = tempDir.resolve("invalid-extension.jar");
-    Path misleadingDirectoryJar = tempDir.resolve("misleading-directory.jar");
-    writeJar(baseJar, baseEntries, false, 1_600_000_000_000L);
-    writeJar(invalidExtensionJar, invalidExtensionEntries, false, 1_600_000_000_000L);
-    writeJar(misleadingDirectoryJar, misleadingDirectoryEntries, false, 1_600_000_000_000L);
+      Path baseJar = tempDir.resolve("base.jar");
+      Path invalidExtensionJar = tempDir.resolve("invalid-extension.jar");
+      Path misleadingDirectoryJar = tempDir.resolve("misleading-directory.jar");
+      writeJar(baseJar, baseEntries, false, 1_600_000_000_000L);
+      writeJar(invalidExtensionJar, invalidExtensionEntries, false, 1_600_000_000_000L);
+      writeJar(misleadingDirectoryJar, misleadingDirectoryEntries, false, 1_600_000_000_000L);
 
-    assertNotEquals(checksum(baseJar), checksum(invalidExtensionJar));
-    assertNotEquals(checksum(baseJar), checksum(misleadingDirectoryJar));
+      assertNotEquals(checksum(baseJar), checksum(invalidExtensionJar));
+      assertNotEquals(checksum(baseJar), checksum(misleadingDirectoryJar));
+    });
   }
 
   @Test
   public void testNativeLibraryArchitectureSelection() throws IOException {
-    Path jarPath = tempDir.resolve("native-libraries.jar");
-    Map<String, byte[]> jarEntries = new LinkedHashMap<>();
-    jarEntries.put("amd64/Linux/libcudfjni.so", new byte[] {1});
-    jarEntries.put("aarch64/Linux/libcudfjni.so.chunks.properties", new byte[] {2});
-    jarEntries.put("aarch64/Linux/libcudfjni.so.chunks/00000", new byte[] {3});
-    jarEntries.put("aarch64/Linux/libcudf.so.chunks.properties", new byte[] {4});
-    jarEntries.put("amd64/Windows/cudfjni.dll", new byte[] {5});
-    writeJar(jarPath, jarEntries, false, 1_600_000_000_000L);
+    withTempDir(tempDir -> {
+      Path jarPath = tempDir.resolve("native-libraries.jar");
+      Map<String, byte[]> jarEntries = new LinkedHashMap<>();
+      jarEntries.put("amd64/Linux/libcudfjni.so", new byte[] {1});
+      jarEntries.put("aarch64/Linux/libcudfjni.so.chunks.properties", new byte[] {2});
+      jarEntries.put("aarch64/Linux/libcudfjni.so.chunks/00000", new byte[] {3});
+      jarEntries.put("aarch64/Linux/libcudf.so.chunks.properties", new byte[] {4});
+      jarEntries.put("amd64/Windows/cudfjni.dll", new byte[] {5});
+      writeJar(jarPath, jarEntries, false, 1_600_000_000_000L);
 
-    try (JarFile jar = new JarFile(jarPath.toFile())) {
-      Map<String, Set<String>> libraries =
-          SparkRapidsJarTool.nativeLibrariesByArchitecture(jar, "Linux");
-      assertEquals(new TreeSet<>(Arrays.asList("amd64", "aarch64")), libraries.keySet());
-      assertEquals(new TreeSet<>(Arrays.asList("cudfjni")), libraries.get("amd64"));
-      assertEquals(new TreeSet<>(Arrays.asList("cudf", "cudfjni")), libraries.get("aarch64"));
-      assertEquals("amd64", SparkRapidsJarTool.selectNativeArchitecture(
-          libraries, "cudfjni", "amd64"));
-      assertEquals("aarch64", SparkRapidsJarTool.selectNativeArchitecture(
-          libraries, "cudf", "amd64"));
-      assertThrows(IOException.class, () -> SparkRapidsJarTool.selectNativeArchitecture(
-          libraries, "cudfjni", "unknown"));
-      assertThrows(IOException.class, () -> SparkRapidsJarTool.selectNativeArchitecture(
-          libraries, "missing", "amd64"));
+      try (JarFile jar = new JarFile(jarPath.toFile())) {
+        Map<String, Set<String>> libraries =
+            SparkRapidsJarTool.nativeLibrariesByArchitecture(jar, "Linux");
+        assertEquals(new TreeSet<>(Arrays.asList("amd64", "aarch64")), libraries.keySet());
+        assertEquals(new TreeSet<>(Arrays.asList("cudfjni")), libraries.get("amd64"));
+        assertEquals(new TreeSet<>(Arrays.asList("cudf", "cudfjni")), libraries.get("aarch64"));
+        assertEquals("amd64", SparkRapidsJarTool.selectNativeArchitecture(
+            libraries, "cudfjni", "amd64"));
+        assertEquals("aarch64", SparkRapidsJarTool.selectNativeArchitecture(
+            libraries, "cudf", "amd64"));
+        assertThrows(IOException.class, () -> SparkRapidsJarTool.selectNativeArchitecture(
+            libraries, "cudfjni", "unknown"));
+        assertThrows(IOException.class, () -> SparkRapidsJarTool.selectNativeArchitecture(
+            libraries, "missing", "amd64"));
+      }
+    });
+  }
+
+  private static void withTempDir(TestBody testBody) throws IOException {
+    Path tempDir = Files.createTempDirectory("spark-rapids-jar-tool-");
+    try {
+      testBody.run(tempDir);
+    } finally {
+      try (DirectoryStream<Path> files = Files.newDirectoryStream(tempDir)) {
+        for (Path file : files) {
+          Files.delete(file);
+        }
+      }
+      Files.delete(tempDir);
     }
+  }
+
+  @FunctionalInterface
+  private interface TestBody {
+    void run(Path tempDir) throws IOException;
   }
 
   private static Map<String, byte[]> entries(
