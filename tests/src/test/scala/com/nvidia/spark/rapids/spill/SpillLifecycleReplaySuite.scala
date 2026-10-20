@@ -70,6 +70,8 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
       super.synchronizeDevice()
     }
 
+    override protected def failExecutorOnSyncFailure(): Unit = ()
+
     override def postSpill(plan: SpillPlan): Unit = {
       beforeRelease.countDown()
       await(resumeRelease)
@@ -534,6 +536,43 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
     assert(!handle.spilling)
     handle.releaseSpilled()
     assertResult(1)(closedResources)
+    assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
+  }
+
+  test("device close failure clears ownership and completes host cleanup") {
+    val closeFailure = new IllegalStateException("injected device close failure")
+    var deviceCloseAttempts = 0
+    var hostClosed = false
+    val handle = new DeviceSpillableHandle[AutoCloseable] {
+      override val approxSizeInBytes: Long = 1L
+      private[spill] override var dev: Option[AutoCloseable] = Some(new AutoCloseable {
+        override def close(): Unit = {
+          deviceCloseAttempts += 1
+          throw closeFailure
+        }
+      })
+
+      override def spill(): Long = {
+        spilling = true
+        approxSizeInBytes
+      }
+
+      override private[spill] def doClose(): Unit = {
+        releaseDeviceResource()
+        hostClosed = true
+      }
+    }
+    SpillFramework.stores.deviceStore.track(handle)
+    handle.spill()
+    handle.close()
+    val failure = intercept[IllegalStateException] {
+      handle.releaseSpilled()
+    }
+    assert(failure eq closeFailure)
+    assertResult(1)(deviceCloseAttempts)
+    assert(handle.dev.isEmpty)
+    assert(hostClosed)
+    assert(!handle.spilling)
     assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
   }
 

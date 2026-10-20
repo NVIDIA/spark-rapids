@@ -303,8 +303,7 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends DeviceStoreHandle {
   protected def releaseDeviceResource(): Unit = {
     SpillFramework.removeFromDeviceStore(this)
     synchronized {
-      dev.foreach(_.close())
-      dev = None
+      try dev.foreach(_.close()) finally dev = None
     }
   }
 
@@ -2087,7 +2086,7 @@ class SpillableDeviceStore extends SpillableStore[DeviceStoreHandle] {
   protected def synchronizeDevice(): Unit = Cuda.deviceSynchronize()
 
   protected def failExecutorOnSyncFailure(): Unit = {
-    RapidsExecutorPlugin.exitWithHaltOnTimeout(20)
+    RapidsExecutorPlugin.exitOnCudaFatalError(20)
   }
 
   override def postSpill(plan: SpillPlan): Unit = {
