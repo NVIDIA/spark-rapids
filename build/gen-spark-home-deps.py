@@ -24,6 +24,7 @@ import argparse
 import glob
 import os
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape
 
 MAVEN_POM_NS = {'m': 'http://maven.apache.org/POM/4.0.0'}
 
@@ -57,13 +58,26 @@ def collect_jars(jar_dirs, excludes):
     return jars
 
 
-def system_dependencies(jars):
+def jar_dir_properties(jars):
+    """Map each distinct jar directory to a property name, in first-seen order."""
+    props = {}
+    for jar in jars:
+        props.setdefault(os.path.dirname(jar), f"spark.home.jar.dir.{len(props)}")
+    return props
+
+
+def system_properties(dir_props):
+    return [f"        <{prop}>{escape(jar_dir)}</{prop}>" for jar_dir, prop in dir_props.items()]
+
+
+def system_dependencies(jars, dir_props):
+    # systemPath references a property so Maven does not warn about hard-coded paths
     return [f"""        <dependency>
             <groupId>com.nvidia.spark_home</groupId>
             <artifactId>jar-{i}</artifactId>
             <version>1.0</version>
             <scope>system</scope>
-            <systemPath>{jar}</systemPath>
+            <systemPath>${{{dir_props[os.path.dirname(jar)]}}}/{escape(os.path.basename(jar))}</systemPath>
         </dependency>""" for i, jar in enumerate(jars)]
 
 
@@ -84,10 +98,13 @@ def main():
 
     with open(args.pom_template) as f:
         pom = f.read()
-    deps = system_dependencies(collect_jars(args.jar_dir, args.exclude))
+    jars = collect_jars(args.jar_dir, args.exclude)
+    dir_props = jar_dir_properties(jars)
+    deps = system_dependencies(jars, dir_props)
     pom = (pom
            .replace('@SCALA_BINARY_VERSION@', args.scala_binary_version)
            .replace('<!--PROJECT_VERSION_PLACEHOLDER-->', read_project_version(args.project_pom))
+           .replace('<!--SYSTEM_PROPERTIES_PLACEHOLDER-->', '\n'.join(system_properties(dir_props)))
            .replace('<!--SYSTEM_DEPENDENCIES_PLACEHOLDER-->', '\n'.join(deps)))
     os.makedirs(os.path.dirname(os.path.abspath(args.output_pom)), exist_ok=True)
     with open(args.output_pom, 'w') as f:
