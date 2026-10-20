@@ -142,11 +142,6 @@ pipeline {
                             (normal_build && databricksTestNeeded())) {
                         db_build = true
                     }
-                    // TEST ONLY: two small Databricks diagnostic cases, no ordinary builds/tests.
-                    normal_build = false
-                    skills_build = false
-                    TEMP_SKILLS_IMAGE_BUILD = false
-                    db_build = true
                 }
             }
         } // end of Init githubHelper
@@ -239,7 +234,7 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
             }
             // Parallel run mvn verify (build and integration tests) and unit tests (for multiple Spark versions)
             // If any one is failed will abort another if not finish yet and will upload failure log to Github
-            failFast false // TEST ONLY: the simulated failure must not abort the passing case.
+            failFast true
             parallel {
                 stage('Skills Premerge Test') {
                     when {
@@ -514,8 +509,18 @@ git --no-pager diff --name-only HEAD \$BASE -- ${PREMERGE_DOCKERFILE} || true"""
                     githubHelper.updateCommitStatus("", "Success", GitHubCommitState.SUCCESS)
                 } else {
                     // upload log only in case of build failure
-                    // TEST ONLY: keep full GPU/host diagnostics in the CI console.
-                    echo 'Diagnostic validation: no automatic public log upload'
+                    def guardWords = ["gitlab.*?\\.com", "urm.*?\\.com",
+                                      "artifactory.*?\\.com", "sonar.*?\\.com",
+                                      "dbc.*?azuredatabricks\\.net", "adb.*?databricks\\.com"]
+                    // Keep host/cloud/GPU identities in Jenkins, not the public log upload.
+                    // An interrupted diagnostic block is redacted through the end of the log.
+                    guardWords.add('(?s)Spark readiness: pre-test host diagnostics.*?' +
+                        '(?=Spark readiness (?:databricks|upstream): starting|\\Z)')
+                    guardWords.add('(?s)=== Databricks GPU diagnostics ===.*?' +
+                        '(?:=== End Databricks GPU diagnostics ===|\\Z)')
+                    guardWords.add("nvidia-smi(?s)(.*?)(?=jenkins/version-def.sh)") // hide GPU info
+                    guardWords.add("sc-ipp*") // hide cloud info
+                    githubHelper.uploadParallelLogs(this, env.JOB_NAME, env.BUILD_NUMBER, null, guardWords)
 
                     if (currentBuild.currentResult != "ABORTED") { // skip ABORTED result to avoid status overwrite
                         githubHelper.updateCommitStatus("", "Fail", GitHubCommitState.FAILURE)

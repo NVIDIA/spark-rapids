@@ -61,7 +61,7 @@ pipeline {
         GITHUB_TOKEN = credentials("github-token")
         CUSTOM_WORKSPACE = "/home/jenkins/agent/workspace/${BUILD_TAG}"
         // DB related ENVs
-        IDLE_TIMEOUT = '30' // TEST ONLY: short diagnostic cases; normal cleanup still runs.
+        IDLE_TIMEOUT = '390' // 6.5 hours
         NUM_WORKERS = '0'
         DB_TYPE = getDbType()
         DATABRICKS_HOST = DbUtils.getHost("$DB_TYPE")
@@ -97,7 +97,7 @@ pipeline {
                         // 'name' and 'value' only supprt literal string in the declarative Jenkins
                         // Refer to Jenkins issue https://issues.jenkins.io/browse/JENKINS-62127
                         name 'DB_RUNTIME'
-                        values '14.3' // TEST ONLY: one cluster per pass/failure case.
+                        values '14.3', '17.3', '18.3'
                     }
                 }
                 stages {
@@ -116,7 +116,7 @@ pipeline {
                             BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS = DbUtils.getInstallVer("$DB_RUNTIME")
                             INIT_SCRIPTS = DbUtils.getInitScripts("$DB_RUNTIME")
                             INIT_SCRIPTS_DIR = "/databricks/init_scripts/${BUILD_TAG}-${DB_RUNTIME}"
-                            EXTRA_ENVS = "TEST_MODE=$TEST_MODE,WITH_DEFAULT_UPSTREAM_SHIM=0"
+                            EXTRA_ENVS = "TEST_MODE=$TEST_MODE,REDUCED_IT=$REDUCED_IT"
                         }
                         steps {
                             script {
@@ -124,10 +124,19 @@ pipeline {
                                     try {
                                         unstash('source_tree')
                                         load('jenkins/databricks/fallback.groovy').run(this, DbUtils,
-                                            { clusterId -> echo 'TEST ONLY: skip plugin build for GPU diagnostics' },
+                                            { clusterId -> databricksBuild(clusterId) },
                                             { clusterId -> databricksTest(clusterId) })
                                     } catch (e) {
-                                        echo 'TEST ONLY: diagnostics are console-only; no debug bundle upload'
+                                        try {
+                                            withCredentials([usernamePassword(
+                                                credentialsId: 'urm_creds',
+                                                usernameVariable: 'ART_CREDS_USR',
+                                                passwordVariable: 'ART_CREDS_PSW')]) {
+                                                common.uploadDebugBundle(this, 'spark-rapids', "databricks-${DB_RUNTIME}")
+                                            }
+                                        } catch (debugError) {
+                                            echo "Failed to collect or upload debug bundle: ${debugError}"
+                                        }
                                         throw e
                                     }
                                 }
@@ -159,22 +168,21 @@ void databricksBuild(String clusterId) {
 }
 
 void databricksTest(String clusterId) {
-    def stageName = params.TEST_MODE == 'CI_PART1' ?
-        'TEST ONLY: Databricks quick pass' : 'TEST ONLY: Databricks simulated CUDA failure'
-    stage(stageName) {
-        withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
-            withEnv(["DIAGNOSTIC_CLUSTER_ID=$clusterId"]) {
-                sh '''
-                    set +x
-                    python3 jenkins/databricks/run-tests.py \
-                        -c "$DIAGNOSTIC_CLUSTER_ID" -w "$DATABRICKS_HOST" \
-                        -t "$DATABRICKS_TOKEN" -p "$DATABRICKS_PRIVKEY" \
-                        -v "$BASE_SPARK_VERSION" -e "$EXTRA_ENVS" \
-                        -l jenkins/databricks/gpu-diagnostics-mimic.sh \
-                        -d /home/ubuntu/gpu-diagnostics-mimic.sh
-                '''
+    def SPARK_MAJOR = BASE_SPARK_VERSION_TO_INSTALL_DATABRICKS_JARS.replace('.', '')
+    // TODO(#16317): Re-enable DBR 18.3 integration tests and remove the compile-only stage label.
+    // Preserve the permanent readiness checks when restoring integration coverage.
+    def readinessOnly = env.DB_RUNTIME == '18.3'
+    def stageName = readinessOnly ? "Compile only against ${SPARK_MAJOR}DB" :
+        "Test against $SPARK_MAJOR DB"
+    try {
+        stage(stageName) {
+            withCredentials([file(credentialsId: 'SPARK_DATABRICKS_PRIVKEY', variable: 'DATABRICKS_PRIVKEY')]) {
+                def TEST_PARAMS = DbUtils.getParameters(this, 'TEST', "-c $clusterId")
+                sh "python3 ./jenkins/databricks/run-tests.py $TEST_PARAMS"
             }
         }
+    } finally {
+        common.publishPytestResult(this, "Test against $SPARK_MAJOR DB")
     }
 }
 

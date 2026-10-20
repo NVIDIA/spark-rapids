@@ -204,7 +204,11 @@ if [[ "${statuses[0]}" == 0 && "${statuses[1]}" == 0 ]] &&
     printf 'Spark readiness %s: READY\n' "$1"
     # Take one full GPU snapshot after native readiness, not again for upstream Spark.
     if [[ "$1" == databricks ]]; then
-        diagnostic nvidia-smi -q || :
+        {
+            printf '\n=== Databricks GPU diagnostics ===\n'
+            diagnostic nvidia-smi -q
+            printf '=== End Databricks GPU diagnostics ===\n'
+        } || :
     fi
     exit 0
 fi

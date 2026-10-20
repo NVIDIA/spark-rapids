@@ -221,7 +221,9 @@ void printFailureSummary(script, String stateFile, String failureFile, String op
         lines.add("Cluster cleanup complete: ${state.cleanup_complete == true}")
         if (gpuDiagnostics) {
             lines.add('GPU snapshot collected after test failure, before cluster cleanup:')
+            lines.add('=== Databricks GPU diagnostics ===')
             lines.add(gpuDiagnostics)
+            lines.add('=== End Databricks GPU diagnostics ===')
         }
         lines.add('=== End Databricks failure summary ===')
         script.echo lines.join('\n')
