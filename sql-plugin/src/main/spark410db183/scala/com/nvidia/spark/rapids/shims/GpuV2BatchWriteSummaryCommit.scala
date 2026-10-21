@@ -26,7 +26,7 @@ package com.nvidia.spark.rapids.shims
 import org.apache.spark.sql.connector.write.{BatchWrite, WriterCommitMessage, WriteSummary}
 
 /**
- * Forward [[BatchWrite.commit]] with a [[WriteSummary]] to the CPU delegate.
+ * Forward `BatchWrite.commit` with a `WriteSummary` to the CPU delegate.
  *
  * Without this override, the default interface method calls `commit(messages)` and drops the
  * summary, so Iceberg/Delta commit metadata would miss DML metrics on the GPU path.

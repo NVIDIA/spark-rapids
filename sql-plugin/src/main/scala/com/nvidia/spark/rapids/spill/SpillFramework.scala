@@ -1621,7 +1621,7 @@ class DiskHandle private(
    * @param mb the host memory buffer to copy data into. The buffer's capacity
    *           must be exactly equal to the decompressed data length. Note that this
    *           may differ from `sizeInBytes` since data on disk may be compressed.
-   * @throws IllegalStateException if the actual bytes read from disk does not match
+   * @throws java.lang.IllegalStateException if the actual bytes read from disk does not match
    *                               the buffer's length
    */
   def materializeToHostMemoryBuffer(mb: HostMemoryBuffer): Unit = {
@@ -1642,7 +1642,7 @@ class DiskHandle private(
    * @param dmb the device memory buffer to copy data into. The buffer's capacity
    *            must be exactly equal to the decompressed data length. Note that this
    *            may differ from `sizeInBytes` since data on disk may be compressed.
-   * @throws IllegalStateException if the actual bytes read from disk does not match
+   * @throws java.lang.IllegalStateException if the actual bytes read from disk does not match
    *                               the buffer's length
    */
   def materializeToDeviceMemoryBuffer(dmb: DeviceMemoryBuffer): Unit = {
