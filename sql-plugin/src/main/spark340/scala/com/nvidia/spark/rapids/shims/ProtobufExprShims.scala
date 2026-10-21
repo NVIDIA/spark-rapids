@@ -177,13 +177,23 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           arrays)
 
         override def recheckConsumersAfterTag(): Unit = unprunedPlan.foreach { unpruned =>
-          // CPU consumers read the struct with Spark's field ordinals.
-          if (willUseGpuCpuBridge ||
-              structConsumers.exists(c => !c.canThisBeReplaced && !c.shouldThisBeRemoved)) {
+          if (willUseGpuCpuBridge || structConsumers.exists(readsStructOnCpu)) {
             decodePlan = unpruned
             unprunedPlan = None
             overrideDataType(fullSchema)
           }
+        }
+
+        // CPU plans, and consumer expressions moved into the CPU bridge, read the struct with
+        // Spark's field ordinals.
+        private def readsStructOnCpu(consumer: SparkPlanMeta[_]): Boolean = {
+          def bridgedRead(expr: BaseExprMeta[_]): Boolean =
+            (expr.willUseGpuCpuBridge &&
+              expr.wrapped.asInstanceOf[Expression].references.exists { attr =>
+                protobufOutputExprIds.contains(attr.exprId)
+              }) || expr.childExprs.exists(bridgedRead)
+          (!consumer.canThisBeReplaced && !consumer.shouldThisBeRemoved) ||
+            consumer.childExprs.exists(bridgedRead)
         }
 
         private def checkSupportedOptions(options: Map[String, String]): Either[String, Unit] = {

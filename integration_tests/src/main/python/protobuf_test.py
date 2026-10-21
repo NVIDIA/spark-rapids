@@ -19,6 +19,7 @@ import struct
 import pytest
 
 from asserts import (
+    assert_cpu_and_gpu_are_equal_collect_with_capture,
     assert_gpu_and_cpu_are_equal_collect,
     assert_gpu_and_cpu_error,
     assert_gpu_fallback_collect,
@@ -2893,6 +2894,37 @@ def test_from_protobuf_cpu_consumer_reads_full_struct(local_tmp_path, from_proto
     }
     assert_gpu_and_cpu_are_equal_collect(run_on_spark, conf=conf)
     _assert_gpu_decoded_schemas(run_on_spark, ["struct<a:int,b:int,c:int>"], conf=conf)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@pytest.mark.parametrize("consumer, expected_schemas", [
+    # The CPU-bridged field access in the next project reads the struct with Spark's ordinals.
+    ("next_project", ["struct<a:int,b:int,c:int>"]),
+    # The bridge moves the access and its own decode copy to the CPU; the other copy is pruned.
+    ("same_project", ["struct<b:int,c:int>"]),
+], ids=idfn)
+@allow_non_gpu("Abs", "GetStructField", "ProtobufDataToCatalyst")
+@ignore_order(local=True)
+def test_from_protobuf_cpu_bridge_consumer(
+        local_tmp_path, from_protobuf_fn, consumer, expected_schemas):
+    decoded_df = _setup_three_int_projection(local_tmp_path, from_protobuf_fn)
+
+    def run_on_spark(spark):
+        df, decoded = decoded_df(spark)
+        if consumer == "same_project":
+            return df.select(f.abs(decoded.getField("b")).alias("abs_b"),
+                             decoded.getField("c").alias("c"))
+        return df.select(decoded.alias("decoded")).select(
+            f.abs(f.col("decoded").getField("b")).alias("abs_b"),
+            f.col("decoded").getField("c").alias("c"))
+
+    conf = {
+        "spark.rapids.sql.expression.cpuBridge.enabled": "true",
+        "spark.rapids.sql.expression.Abs": "false",
+    }
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        run_on_spark, exist_classes="GpuCpuBridgeExpression", conf=conf)
+    _assert_gpu_decoded_schemas(run_on_spark, expected_schemas, conf=conf)
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
