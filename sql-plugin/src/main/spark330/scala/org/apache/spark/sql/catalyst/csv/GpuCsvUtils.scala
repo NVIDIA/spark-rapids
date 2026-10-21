@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * Copyright (c) 2022-2026, NVIDIA CORPORATION.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,16 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.catalyst.csv
 
+import java.nio.charset.StandardCharsets
+
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.internal.SQLConf
 
 object GpuCsvUtils {
+  def csvLineToParse(line: Array[Byte], offset: Int, len: Int,
+      options: CSVOptions, normalizedNewline: Char): String =
+    new String(line, offset, len, StandardCharsets.UTF_8)
+
   def dateFormatInRead(options: CSVOptions): String =
     options.dateFormatInRead.getOrElse(DateFormatter.defaultPattern)
 

@@ -49,11 +49,9 @@ import org.apache.spark.sql.types.{MetadataBuilder, StructType}
 /**
  * GPU Delta Parquet file format for Databricks 18.3.
  *
- * DB-18.3 uses a fundamentally different DV mechanism than DB-14.3:
- * - No broadcastDvMap / broadcastHadoopConf
- * - Per-file DV via PartitionedFile.otherConstantMetadataColumnValues or TahoeFileIndex metadata
- * - The CPU constructor starts with (protocol, metadata, ...); this GPU wrapper also carries the
- *   relation so it can inspect DBR file-index metadata.
+ * Applies Delta column mapping and validates GPU scan support. The relation supplies file-index
+ * metadata for deletion-vector eligibility checks; per-file bitmap lookup is handled by the
+ * shared deletion-vector utilities.
  */
 case class GpuDeltaParquetFileFormat(
     @transient relation: HadoopFsRelation,
@@ -269,7 +267,7 @@ object GpuDeltaParquetFileFormat {
 
   /**
    * Convert a CPU Delta Parquet file format to the GPU version.
-   * Called from DatabricksDeltaProviderBase.getReadFileFormat.
+   * Preserves the CPU format settings and relation for reader construction.
    */
   def convertToGpu(relation: HadoopFsRelation): GpuDeltaParquetFileFormat = {
     val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]

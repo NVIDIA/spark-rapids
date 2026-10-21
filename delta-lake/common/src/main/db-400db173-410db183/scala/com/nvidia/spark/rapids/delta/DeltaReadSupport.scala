@@ -67,7 +67,7 @@ object DeltaReadSupport {
     hasMetricSkipRowFilter(meta.parent)
   }
 
-  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
+  private[delta] def isDeletionVectorSkipRowColumn(name: String): Boolean =
     name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
       name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
 }

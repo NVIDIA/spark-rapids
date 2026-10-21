@@ -2509,7 +2509,7 @@ case class ParquetSingleDataBlockMeta(
  *
  * Provides all the Parquet-specific block-copy machinery shared between the plain coalescing
  * reader and the Delta-aware coalescing reader: header/footer writing, block-split predicate,
- * batch runner, and the [[populateCurrentBlockChunk]] template method with the
+ * batch runner, and the [[populateCurrentBlockChunk():*]] template method with the
  * [[augmentChunkMeta]] extension point.
  *
  * Both [[MultiFileParquetPartitionReader]] and the Delta-aware coalescing reader extend this
@@ -2701,7 +2701,7 @@ abstract class MultiFileCoalescingParquetPartitionReaderBase(
   }
 
   /**
-   * Extension point called after each batch is assembled by [[populateCurrentBlockChunk]].
+   * Extension point called after each batch is assembled by [[populateCurrentBlockChunk():*]].
    * Subclasses override this to inject additional per-batch metadata (e.g. DV entries) into
    * the returned [[CurrentChunkMeta]] without touching the assembly loop.
    * Default implementation returns the meta unchanged.
@@ -3624,7 +3624,7 @@ object MakeParquetTableProducer extends Logging {
 }
 
 /**
- * An interator that reads Parquet files in chunks and produce a [[Table]] for each chunk.
+ * An interator that reads Parquet files in chunks and produce a `Table` for each chunk.
  */
 trait ChunkedReader extends AutoCloseable {
   def hasNext: Boolean
