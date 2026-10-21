@@ -47,13 +47,13 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
-import com.nvidia.spark.rapids.VersionUtils
+import com.nvidia.spark.rapids.{GpuLiteral, VersionUtils}
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
 import org.apache.spark.sql.rapids.GpuFromProtobuf
-import org.apache.spark.sql.rapids.protobuf.ProtobufPlannerOptions
+import org.apache.spark.sql.rapids.protobuf.{FlattenedSchemaArrays, ProtobufPlannerOptions}
 import org.apache.spark.sql.types._
 
 class ProtobufExprShimsSuite extends AnyFunSuite {
@@ -77,17 +77,28 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
 
   private val isSpark350OrLater = VersionUtils.cmpSparkVersion(3, 5, 0) >= 0
 
-  private def assertPermissive(result: Either[String, ProtobufPlannerOptions]): Unit = {
-    if (isSpark350OrLater) {
-      assert(result == Right(ProtobufPlannerOptions(enumsAsInts = false, failOnErrors = false)))
-    } else {
-      // Spark 3.4 returns a struct of null fields for malformed PERMISSIVE input.
-      assert(result.left.toOption.exists(_.contains("PERMISSIVE")))
-    }
+  private val permissiveOnGpu =
+    Right(ProtobufPlannerOptions(enumsAsInts = false, failOnErrors = false))
+
+  // Shaped like ProtobufDataToCatalyst before SPARK-46275.
+  private class LegacyPermissiveExpr(val nullResultRow: Any)
+
+  test("compat detects Spark versions that return a struct of null fields") {
+    val legacy = SparkProtobufCompat.permissiveReturnsNullFieldsRow(classOf[LegacyPermissiveExpr])
+    val current = SparkProtobufCompat.permissiveReturnsNullFieldsRow(classOf[FakeExprChild])
+    assert(legacy)
+    assert(!current)
   }
 
   test("compat parses permissive planner options") {
-    assertPermissive(SparkProtobufCompat.parsePlannerOptions(Map("mode" -> "PERMISSIVE")))
+    assert(SparkProtobufCompat.parsePlannerOptions(Map("mode" -> "PERMISSIVE"),
+      permissiveReturnsNullRow = false) == permissiveOnGpu)
+    assert(SparkProtobufCompat.parsePlannerOptions(Map("mode" -> "PERMISSIVE"),
+      permissiveReturnsNullRow = true).left.toOption.exists(_.contains("PERMISSIVE")))
+    // FAILFAST never produces the struct of null fields.
+    assert(SparkProtobufCompat.parsePlannerOptions(Map.empty[String, String],
+      permissiveReturnsNullRow = true) ==
+      Right(ProtobufPlannerOptions(enumsAsInts = false, failOnErrors = true)))
   }
 
   test("compat follows Spark support for enums.as.ints") {
@@ -104,7 +115,17 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
   }
 
   test("compat treats unknown parse modes as permissive") {
-    assertPermissive(SparkProtobufCompat.parsePlannerOptions(Map("mode" -> "unknown")))
+    assert(SparkProtobufCompat.parsePlannerOptions(Map("mode" -> "unknown"),
+      permissiveReturnsNullRow = false) == permissiveOnGpu)
+  }
+
+  test("compat reads option keys case-insensitively like Spark") {
+    assert(SparkProtobufCompat.parsePlannerOptions(Map("MODE" -> "PERMISSIVE"),
+      permissiveReturnsNullRow = false) == permissiveOnGpu)
+    assert(SparkProtobufCompat.parsePlannerOptions(Map("Enums.As.Ints" -> "true")) ==
+      Right(ProtobufPlannerOptions(enumsAsInts = isSpark350OrLater, failOnErrors = true)))
+    assert(SparkProtobufCompat.unsupportedOptions(
+      Map("MODE" -> "FAILFAST", "Enums.As.Ints" -> "true")).isEmpty)
   }
 
   test("compat detects unsupported options") {
@@ -112,57 +133,43 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       Seq("foo"))
   }
 
+  private def twoFieldSchemaArrays(): FlattenedSchemaArrays = FlattenedSchemaArrays(
+    fieldNumbers = Array(1, 2),
+    parentIndices = Array(-1, -1),
+    depthLevels = Array(0, 0),
+    wireTypes = Array(0, 2),
+    outputTypeIds = Array(3, 6),
+    encodings = Array(0, 0),
+    isRepeated = Array(false, false),
+    isRequired = Array(false, false),
+    hasDefaultValue = Array(false, false),
+    isOutput = Array(true, true),
+    defaultInts = Array(0L, 0L),
+    defaultFloats = Array(0.0, 0.0),
+    defaultBools = Array(false, false),
+    defaultStrings = Array(Array[Byte](1, 2), Array[Byte](3)),
+    enumValidValues = Array(Array(0, 1), Array.emptyIntArray),
+    enumNames = Array(Array("UNKNOWN".getBytes("UTF-8"), "EN".getBytes("UTF-8")),
+      Array.empty[Array[Byte]]))
+
   test("GpuFromProtobuf semantic equality is content-based for schema arrays") {
-    def emptyEnumNames: Array[Array[Byte]] = Array.empty[Array[Byte]]
-
-    val expr1 = GpuFromProtobuf(
-      decodedSchema = outputSchema,
-      fieldNumbers = Array(1, 2),
-      parentIndices = Array(-1, -1),
-      depthLevels = Array(0, 0),
-      wireTypes = Array(0, 2),
-      outputTypeIds = Array(3, 6),
-      encodings = Array(0, 0),
-      isRepeated = Array(false, false),
-      isRequired = Array(false, false),
-      hasDefaultValue = Array(false, false),
-      isOutput = Array(true, true),
-      defaultInts = Array(0L, 0L),
-      defaultFloats = Array(0.0, 0.0),
-      defaultBools = Array(false, false),
-      defaultStrings = Array(Array[Byte](1, 2), Array[Byte](3)),
-      enumValidValues = Array(Array(0, 1), Array.emptyIntArray),
-      enumNames = Array(Array("UNKNOWN".getBytes("UTF-8"), "EN".getBytes("UTF-8")),
-        emptyEnumNames),
-      failOnErrors = true,
-      child = FakeExprChild())
-
-    val expr2 = GpuFromProtobuf(
-      decodedSchema = outputSchema,
-      fieldNumbers = Array(1, 2),
-      parentIndices = Array(-1, -1),
-      depthLevels = Array(0, 0),
-      wireTypes = Array(0, 2),
-      outputTypeIds = Array(3, 6),
-      encodings = Array(0, 0),
-      isRepeated = Array(false, false),
-      isRequired = Array(false, false),
-      hasDefaultValue = Array(false, false),
-      isOutput = Array(true, true),
-      defaultInts = Array(0L, 0L),
-      defaultFloats = Array(0.0, 0.0),
-      defaultBools = Array(false, false),
-      defaultStrings = Array(Array[Byte](1, 2), Array[Byte](3)),
-      enumValidValues = Array(Array(0, 1), Array.emptyIntArray),
-      enumNames = Array(Array("UNKNOWN".getBytes("UTF-8"), "EN".getBytes("UTF-8")),
-        emptyEnumNames),
-      failOnErrors = true,
-      child = FakeExprChild())
+    val expr1 = GpuFromProtobuf(outputSchema, twoFieldSchemaArrays(), failOnErrors = true,
+      FakeExprChild())
+    val expr2 = GpuFromProtobuf(outputSchema, twoFieldSchemaArrays(), failOnErrors = true,
+      FakeExprChild())
 
     assert(expr1 == expr2)
     assert(expr1.hashCode() == expr2.hashCode())
     assert(scala.collection.immutable.HashSet(expr1).contains(expr2))
     assert(expr1.semanticEquals(expr2))
     assert(expr1.semanticHash() == expr2.semanticHash())
+  }
+
+  test("GpuFromProtobuf has side effects only when malformed input throws") {
+    def expr(failOnErrors: Boolean) = GpuFromProtobuf(
+      outputSchema, twoFieldSchemaArrays(), failOnErrors, GpuLiteral(null, BinaryType))
+
+    assert(expr(failOnErrors = true).hasSideEffects)
+    assert(!expr(failOnErrors = false).hasSideEffects)
   }
 }

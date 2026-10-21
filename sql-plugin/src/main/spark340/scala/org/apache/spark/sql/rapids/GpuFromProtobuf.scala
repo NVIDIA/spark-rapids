@@ -17,7 +17,6 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "340"}
 {"spark": "341"}
-{"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
 {"spark": "344"}
@@ -48,17 +47,15 @@ spark-rapids-shim-json-lines ***/
 
 package org.apache.spark.sql.rapids
 
-import java.util.{Arrays, Objects}
-
 import ai.rapids.cudf
-import ai.rapids.cudf.{CudfException, DType}
+import ai.rapids.cudf.{CudfColumnSizeOverflowException, CudfException, DType}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuUnaryExpression}
-import com.nvidia.spark.rapids.jni.{Protobuf, ProtobufSchemaDescriptor}
+import com.nvidia.spark.rapids.jni.Protobuf
 import com.nvidia.spark.rapids.shims.NullIntolerantShim
 
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.{ExpectsInputTypes, Expression}
 import org.apache.spark.sql.errors.QueryExecutionErrors
+import org.apache.spark.sql.rapids.protobuf.FlattenedSchemaArrays
 import org.apache.spark.sql.types._
 
 /**
@@ -69,49 +66,18 @@ import org.apache.spark.sql.types._
  *
  * The schema uses the JNI flattened representation. The planner currently emits only top-level
  * fields, so every entry has parentIndices == -1, depthLevels == 0 and isOutput == true.
- * Array payloads are compared by content; callers must not mutate them after construction.
  *
  * @param decodedSchema Spark output schema, one field per flattened entry
- * @param fieldNumbers Protobuf field numbers for all fields in flattened schema
- * @param parentIndices Parent indices for all fields (-1 for top-level)
- * @param depthLevels Nesting depth for all fields (0 for top-level)
- * @param wireTypes Wire types for all fields
- * @param outputTypeIds cuDF type IDs for all fields
- * @param encodings Encodings for all fields
- * @param isRepeated Whether each field is repeated
- * @param isRequired Whether each field is required
- * @param hasDefaultValue Whether each field has a default value
- * @param isOutput Whether each field should be included in the returned cudf STRUCT
- * @param defaultInts Default int/long values
- * @param defaultFloats Default float/double values
- * @param defaultBools Default bool values
- * @param defaultStrings Default string/bytes values
- * @param enumValidValues Valid enum values for each field
- * @param enumNames Enum value names for enum-as-string fields. Parallel to enumValidValues.
+ * @param schema Flattened JNI schema; callers must not mutate its arrays after construction.
  * @param failOnErrors If true, throw on malformed data; otherwise return null for malformed rows
  * @param child BinaryType expression containing serialized protobuf messages
  */
 case class GpuFromProtobuf(
     decodedSchema: StructType,
-    fieldNumbers: Array[Int],
-    parentIndices: Array[Int],
-    depthLevels: Array[Int],
-    wireTypes: Array[Int],
-    outputTypeIds: Array[Int],
-    encodings: Array[Int],
-    isRepeated: Array[Boolean],
-    isRequired: Array[Boolean],
-    hasDefaultValue: Array[Boolean],
-    isOutput: Array[Boolean],
-    defaultInts: Array[Long],
-    defaultFloats: Array[Double],
-    defaultBools: Array[Boolean],
-    defaultStrings: Array[Array[Byte]],
-    enumValidValues: Array[Array[Int]],
-    enumNames: Array[Array[Array[Byte]]],
+    schema: FlattenedSchemaArrays,
     failOnErrors: Boolean,
     child: Expression)
-  extends GpuUnaryExpression with ExpectsInputTypes with NullIntolerantShim with Logging {
+  extends GpuUnaryExpression with ExpectsInputTypes with NullIntolerantShim {
 
   override def inputTypes: Seq[AbstractDataType] = Seq(BinaryType)
 
@@ -119,56 +85,10 @@ case class GpuFromProtobuf(
 
   override def nullable: Boolean = true
 
-  override def equals(other: Any): Boolean = other match {
-    case that: GpuFromProtobuf =>
-      decodedSchema == that.decodedSchema &&
-        Arrays.equals(fieldNumbers, that.fieldNumbers) &&
-        Arrays.equals(parentIndices, that.parentIndices) &&
-        Arrays.equals(depthLevels, that.depthLevels) &&
-        Arrays.equals(wireTypes, that.wireTypes) &&
-        Arrays.equals(outputTypeIds, that.outputTypeIds) &&
-        Arrays.equals(encodings, that.encodings) &&
-        Arrays.equals(isRepeated, that.isRepeated) &&
-        Arrays.equals(isRequired, that.isRequired) &&
-        Arrays.equals(hasDefaultValue, that.hasDefaultValue) &&
-        Arrays.equals(isOutput, that.isOutput) &&
-        Arrays.equals(defaultInts, that.defaultInts) &&
-        Arrays.equals(defaultFloats, that.defaultFloats) &&
-        Arrays.equals(defaultBools, that.defaultBools) &&
-        GpuFromProtobuf.deepEquals(defaultStrings, that.defaultStrings) &&
-        GpuFromProtobuf.deepEquals(enumValidValues, that.enumValidValues) &&
-        GpuFromProtobuf.deepEquals(enumNames, that.enumNames) &&
-        failOnErrors == that.failOnErrors &&
-        child == that.child
-    case _ => false
-  }
+  // FAILFAST throws on malformed rows, so conditionals must not decode rows they do not select.
+  override def hasSideEffects: Boolean = super.hasSideEffects || failOnErrors
 
-  override def hashCode(): Int = Objects.hash(
-    decodedSchema,
-    Int.box(Arrays.hashCode(fieldNumbers)),
-    Int.box(Arrays.hashCode(parentIndices)),
-    Int.box(Arrays.hashCode(depthLevels)),
-    Int.box(Arrays.hashCode(wireTypes)),
-    Int.box(Arrays.hashCode(outputTypeIds)),
-    Int.box(Arrays.hashCode(encodings)),
-    Int.box(Arrays.hashCode(isRepeated)),
-    Int.box(Arrays.hashCode(isRequired)),
-    Int.box(Arrays.hashCode(hasDefaultValue)),
-    Int.box(Arrays.hashCode(isOutput)),
-    Int.box(Arrays.hashCode(defaultInts)),
-    Int.box(Arrays.hashCode(defaultFloats)),
-    Int.box(Arrays.hashCode(defaultBools)),
-    Int.box(GpuFromProtobuf.deepHashCode(defaultStrings)),
-    Int.box(GpuFromProtobuf.deepHashCode(enumValidValues)),
-    Int.box(GpuFromProtobuf.deepHashCode(enumNames)),
-    Boolean.box(failOnErrors), child)
-
-  // ProtobufSchemaDescriptor is a pure-Java immutable holder for validated schema arrays.
-  // It does not own native resources, so task-scoped close hooks are not required here.
-  @transient private lazy val protobufSchema = new ProtobufSchemaDescriptor(
-    fieldNumbers, parentIndices, depthLevels, wireTypes, outputTypeIds, encodings,
-    isRepeated, isRequired, hasDefaultValue, isOutput, defaultInts, defaultFloats, defaultBools,
-    defaultStrings, enumValidValues, enumNames)
+  @transient private lazy val protobufSchema = schema.toJniDescriptor
 
   override protected def doColumnar(input: GpuColumnVector): cudf.ColumnVector = {
     // Input null mask is propagated to the output struct by the C++ decoder,
@@ -176,12 +96,10 @@ case class GpuFromProtobuf(
     try {
       Protobuf.decodeToStruct(input.getBase, protobufSchema, failOnErrors)
     } catch {
-      // ProtobufSchemaDescriptor already validated the schema, so the decoder fails only on input.
+      case e: CudfColumnSizeOverflowException => throw e
+      // The decoder reports malformed input and its own limits through the same exception type.
       case e: CudfException if failOnErrors =>
         throw QueryExecutionErrors.malformedProtobufMessageDetectedInMessageParsingError(e)
-      case e: CudfException =>
-        logWarning(s"Unexpected CudfException in PERMISSIVE mode: ${e.getMessage}", e)
-        throw e
     }
   }
 }
@@ -204,10 +122,4 @@ object GpuFromProtobuf {
     case BinaryType => Some(DType.LIST.getTypeId.getNativeId)
     case _ => None
   }
-
-  private def deepEquals[T](left: Array[T], right: Array[T]): Boolean =
-    Arrays.deepEquals(left.asInstanceOf[Array[Object]], right.asInstanceOf[Array[Object]])
-
-  private def deepHashCode[T](arr: Array[T]): Int =
-    Arrays.deepHashCode(arr.asInstanceOf[Array[Object]])
 }
