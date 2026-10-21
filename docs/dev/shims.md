@@ -49,6 +49,18 @@ compatible across the supported Spark APIs. When a file has Databricks-specific,
 or otherwise divergent siblings, keep the version-specific source and move only the API-safe part
 behind the one-way boundary.
 
+## Source Inheritance Metadata
+
+A build target profile may declare `shim.source.inherits` to name another target whose shim
+sources it will inherit. Shimplify validates these parent links and rejects missing parents or
+cycles. The first declared links are `359` to `358`, `402` to `401`, and Spark master `500` to
+`420`. The latter two targets exist only in the Scala 2.13 build tree.
+
+This is preparatory metadata: source generation still uses the exact
+`spark-rapids-shim-json-lines` membership lists. The parent does not change dependency resolution,
+generated package identity, binary deduplication, or runtime compatibility. Source selection will
+use the lineage only after an inheritance resolver and equivalence checks are in place.
+
 ## Reducing Parallel-World Classes
 
 The long-term goal is to maximize bytecode in the conventional jar layout and shrink the amount

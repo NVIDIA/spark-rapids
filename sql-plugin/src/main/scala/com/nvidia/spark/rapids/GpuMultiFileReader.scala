@@ -1244,7 +1244,8 @@ abstract class MultiFileCoalescingPartitionReaderBase(
       return true
     }
     batchIter = EmptyGpuColumnarBatchIterator
-    if (!isDone) {
+    // Row-level deletes can empty a batch while later row groups still contain live rows.
+    while (!batchIter.hasNext && !isDone) {
       if (!blockIterator.hasNext) {
         isDone = true
       } else {
