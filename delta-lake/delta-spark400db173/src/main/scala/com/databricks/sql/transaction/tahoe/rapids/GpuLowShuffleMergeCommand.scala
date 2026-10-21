@@ -21,6 +21,7 @@
 
 package com.databricks.sql.transaction.tahoe.rapids
 
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 import scala.annotation.nowarn
@@ -621,6 +622,19 @@ class InsertOnlyMergeExecutor(override val context: MergeExecutorContext) extend
  */
 class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extends MergeExecutor {
 
+  private def buildRewriteTargetDFWithFiles(files: Seq[AddFile]): DataFrame = {
+    val targetDF = buildTargetDFWithFiles(files)
+    val markedPlan = targetDF.queryExecution.analyzed.transform {
+      case r: LogicalRelation if r.relation.isInstanceOf[HadoopFsRelation] =>
+        val relation = r.relation.asInstanceOf[HadoopFsRelation]
+        r.copy(relation = relation.copy(
+          options = relation.options +
+            (GpuDeltaParquetFileFormat.LOW_SHUFFLE_MERGE_REWRITE_SCAN_OPTION -> "true"))(
+          context.spark))
+    }
+    Dataset.ofRows(context.spark, markedPlan)
+  }
+
   private case class TouchedFileDiscoveryPlan(
       df: DataFrame,
       filePathAttr: Attribute,
@@ -684,8 +698,30 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
    * 1. Low shuffle merge requires GPU file scans for touched-file discovery and both write passes.
    * 2. The temporary deletion vectors introduce extra overhead, so it may be better to fall back
    * when the changeset is too large.
+   *
+   * See [[DeltaSpark400DB173Provider.getReadFileFormat]] for the reader-mode capability table
+   * and the discovery-reader mapping that requires these checks before reader selection.
    */
   def shouldFallback(): Boolean = {
+    // The unmodified-row rewrite must apply temporary DVs to exclude the old versions of
+    // updated/deleted rows. The DBR 17.3 legacy readers ignore those DVs and can copy old rows
+    // alongside their replacements. Honor disabled native DV processing for every reader mode.
+    if (!DeltaSpark400DB173Provider.isPushDVPredicateDownEnabled(context.rapidsConf)) {
+      logWarning("Low shuffle merge requires native deletion-vector pushdown, " +
+        "fallback to classic GPU merge.")
+      return true
+    }
+
+    // The native DV reader overwrites physical skip-row-named columns during discovery
+    // and the unmodified-row rewrite pass. Reject affected schemas before either scan.
+    // Use classic merge until https://github.com/NVIDIA/cudf-spark/issues/16381 is fixed.
+    if (GpuDeltaParquetFileFormat.hasPhysicalDeletionVectorSkipRowColumn(
+        context.deltaTxn.metadata.schema)) {
+      logWarning("Physical deletion-vector skip-row column is not supported by low shuffle " +
+        "merge, fallback to classic GPU merge (NVIDIA/cudf-spark#16381).")
+      return true
+    }
+
     // Check the transaction snapshot, not the potentially older planning snapshot. Existing
     // persistent DVs are handled by classic merge; do not load and combine them on the driver.
     if (!DeletionVectorUtils.isTableDVFree(context.deltaTxn.snapshot)) {
@@ -1026,13 +1062,15 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
       relation: HadoopFsRelation,
       dataSchema: StructType,
       rowIndexColumnName: String): HadoopFsRelation = {
+    // The legacy PERFILE reader counts rows from zero and requires whole-file reads.
+    // Native readers preserve file-relative offsets through filtering and splitting.
     val fileFormat = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-      .copy(optimizationsEnabled = false)
+      .copy(optimizationsEnabled = !context.rapidsConf.isParquetPerFileReadEnabled)
     relation.copy(
       dataSchema = dataSchema,
       fileFormat = fileFormat,
       options = relation.options +
-        (GpuDeltaParquetFileFormat.LOW_SHUFFLE_MERGE_SCAN_OPTION -> "true") +
+        (GpuDeltaParquetFileFormat.LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION -> "true") +
         (GpuDeltaParquetFileFormat.LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION ->
           rowIndexColumnName))(
       context.spark)
@@ -1040,9 +1078,12 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
 
   private def uniqueColumnName(base: String, existing: Seq[String]): String = {
     val resolver = context.cmd.conf.resolver
-    Iterator.from(0)
-        .map(i => if (i == 0) base else s"$base$i")
-        .find(candidate => !existing.exists(name => resolver(name, candidate)))
+    // Column mapping can retain old physical names after renames or drops. Randomize generated
+    // names so discovery does not read a dropped column absent from the current schema.
+    val physicalNames = context.deltaTxn.metadata.schema.map(DeltaColumnMapping.getPhysicalName)
+    val reservedNames = existing ++ physicalNames
+    Iterator.continually(s"${base}_${UUID.randomUUID().toString.replace('-', '_')}")
+        .find(candidate => !reservedNames.exists(name => resolver(name, candidate)))
         .get
   }
 
@@ -1144,7 +1185,7 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
     val sourcePlanDF = context.cmd.mergeSourceDF
     val (targetPlanDF, rowTrackingCols, rowTrackingUpdateExprs) =
       UpdateCommandShims.preserveRowTrackingColumns(
-        buildTargetDFWithFiles(touchedFiles.values.map(_._2).toSeq),
+        buildRewriteTargetDFWithFiles(touchedFiles.values.map(_._2).toSeq),
         context.deltaTxn.snapshot,
         Seq.empty,
         Seq.empty)
@@ -1429,7 +1470,7 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
     val sourcePlanDF = context.cmd.mergeSourceDF
     val (targetPlanDF, rowTrackingCols, rowTrackingUpdateExprs) =
       UpdateCommandShims.preserveRowTrackingColumns(
-        buildTargetDFWithFiles(touchedFiles.values.map(_._2).toSeq),
+        buildRewriteTargetDFWithFiles(touchedFiles.values.map(_._2).toSeq),
         context.deltaTxn.snapshot,
         Seq.empty,
         Seq.empty)
@@ -1671,12 +1712,28 @@ class LowShuffleMergeExecutor(override val context: MergeExecutorContext) extend
         tablePath))
     }.toSeq
     val (targetDF, _, _) = UpdateCommandShims.preserveRowTrackingColumns(
-      buildTargetDFWithFiles(filesWithTemporaryDVs),
+      buildRewriteTargetDFWithFiles(filesWithTemporaryDVs),
       context.deltaTxn.snapshot,
       Seq.empty,
       Seq.empty)
+    val outputCols = targetOutputCols
+    val existingOutput = targetDF.queryExecution.analyzed.output
+    val targetExprIds = outputCols.map(_.exprId).toSet
+    val extraCols = existingOutput.filterNot(attr => targetExprIds.contains(attr.exprId))
+    val expectedSchema = StructType((outputCols ++ extraCols).map { col =>
+      StructField(col.name, col.dataType, col.nullable, col.metadata)
+    })
+    val evolvedTargetDF = if (targetDF.schema != expectedSchema) {
+      // Untouched rows bypass the merge action expressions, so project typed NULLs for newly
+      // evolved columns before unioning with modified rows. Preserve row-tracking columns too.
+      val existingOutputById = existingOutput.map(attr => attr.exprId -> attr).toMap
+      val targetCols = outputCols.map(col => existingOutputById.getOrElse(col.exprId, col))
+      targetDF.select((targetCols ++ extraCols).map(DFUDFShims.exprToColumn): _*)
+    } else {
+      targetDF
+    }
     // Count only live, untouched rows from rewritten files, after temporary-DV filtering.
-    val unmodifiedDF = targetDF.filter(DFUDFShims.exprToColumn(incrCopiedCountExpr))
+    val unmodifiedDF = evolvedTargetDF.filter(DFUDFShims.exprToColumn(incrCopiedCountExpr))
     if (DeltaConfigs.CHANGE_DATA_FEED.fromMetaData(context.deltaTxn.metadata)) {
       unmodifiedDF.withColumn(
         CDC_TYPE_COLUMN_NAME, DFUDFShims.exprToColumn(CDC_TYPE_NOT_CDC_LITERAL))

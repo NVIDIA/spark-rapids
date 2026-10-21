@@ -25,10 +25,16 @@
 spark-rapids-shim-json-lines ***/
 package org.apache.spark.sql.catalyst.csv
 
+import java.nio.charset.StandardCharsets
+
 import org.apache.spark.sql.catalyst.util.DateFormatter
 import org.apache.spark.sql.internal.SQLConf
 
 object GpuCsvUtils {
+  def csvLineToParse(line: Array[Byte], offset: Int, len: Int,
+      options: CSVOptions, normalizedNewline: Char): String =
+    new String(line, offset, len, StandardCharsets.UTF_8)
+
   def dateFormatInRead(options: CSVOptions): String =
     options.dateFormatInRead.getOrElse(DateFormatter.defaultPattern)
 
