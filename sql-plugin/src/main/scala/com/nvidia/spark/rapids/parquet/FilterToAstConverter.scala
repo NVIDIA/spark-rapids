@@ -71,7 +71,7 @@ case class FilterToAstConverter(
 
   private val columnsByName: Map[String, (Int, StructField)] =
     schema.fields.zipWithIndex.map { case (field, idx) =>
-      normalize(FilterToAstConverter.filterColumnName(field.name)) -> (idx, field)
+      normalize(FilterToAstConverter.filterColumnName(field.name)) -> ((idx, field))
     }.toMap
 
   /**
