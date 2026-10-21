@@ -1021,7 +1021,7 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     assert(ShimUtils.lastUpdatedSequenceNumberFieldId() == 2147483539)
   }
 
-  test("FetchRowPosition uses hybrid generation across filtered row-group gaps") {
+  test("FetchRowPosition generates ranges across filtered row-group gaps") {
     import com.nvidia.spark.rapids.Arm.withResource
     import com.nvidia.spark.rapids.GpuColumnVector
     import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkColumnVector}
@@ -1032,7 +1032,7 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
       Types.NestedField.optional(rowPosId, "_pos", Types.LongType.get()))
 
     // The row group between file positions 600 and 899 was filtered out. The last two
-    // selected row groups are adjacent so their GPU sequences can be coalesced.
+    // selected row groups are adjacent so their position ranges can be coalesced.
     val (parquetInfo, shadedSchema) = createMultiBlockParquetInfo(
       parquetSchema,
       blockRowCounts = Seq(100L, 100L, 50L),
@@ -1059,7 +1059,7 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
       }
     }
 
-    // This small batch crosses a filtered row-group gap and uses the CPU fromLongs path.
+    // This batch expands two non-contiguous file-position ranges through JNI.
     withResource(processor.process(emptyBatch(150))) { batch =>
       assertPositions(batch, (500L until 600L) ++ (900L until 950L))
     }

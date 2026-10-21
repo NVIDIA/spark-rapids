@@ -124,7 +124,7 @@ class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
       }
     }
 
-    // Skip 1 GPU allocation (FetchRowPosition.sequence, which commits counters as soon as
+    // Skip 1 GPU allocation (RangeSequence output, which commits counters as soon as
     // it succeeds), then OOM on the next allocation (FillNull's columnVectorFromNull).
     // withRetryNoSplit catches it and reruns the whole block; snapshot/restore must reset
     // _pos counters back to their pre-block values so the rerun emits 500..799, not
@@ -145,18 +145,16 @@ class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
     }
   }
 
-  test("FetchRowPosition retries GPU sequence concatenation across a row-group gap") {
-    // Keep this boundary synchronized with multiRangeGpuMinRows in the processor.
-    val gpuMinRows = 512 * 1024
-    val rowsPerFullBlock = gpuMinRows / 2
+  test("FetchRowPosition retries range metadata allocation across a row-group gap") {
+    val batchRows = 8
+    val rowsPerFullBlock = batchRows / 2
     val secondBlockStart = 1000000L
     val rowPosId = MetadataColumns.ROW_POSITION.fieldId()
     val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
     val expectedSchema = new Schema(
       Types.NestedField.optional(rowPosId, "_pos", Types.LongType.get()))
 
-    // The gap between the two blocks forces multiple position ranges. A batch exactly at the
-    // hybrid threshold uses two GPU sequences followed by a concatenate.
+    // The gap between the two blocks forces two ranges in one native output column.
     val blocks = Seq(rowsPerFullBlock.toLong, rowsPerFullBlock.toLong + 50L)
       .map(createBlockMetaData)
     val parquetInfo = ParquetFileInfoWithBlockMeta(
@@ -191,11 +189,11 @@ class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
       }
     }
 
-    // Skip both sequence allocations and inject the retry OOM into concatenate. State must not
-    // advance until the entire GPU position column has been materialized successfully.
+    // Skip output and starts allocations, then fail the ends metadata allocation.
+    // Position counters must remain unchanged until the whole column is generated.
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.GPU.ordinal, 2)
-    withResource(processor.process(emptyBatch(gpuMinRows))) { batch =>
+    withResource(processor.process(emptyBatch(batchRows))) { batch =>
       assertPositions(batch,
         (500L until 500L + rowsPerFullBlock) ++
           (secondBlockStart until secondBlockStart + rowsPerFullBlock))

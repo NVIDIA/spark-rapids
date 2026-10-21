@@ -23,7 +23,6 @@ import scala.collection.mutable.{ArrayBuffer, Stack}
 
 import ai.rapids.cudf.{BinaryOp, ColumnVector => CudfColumnVector, ColumnView, DType}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.AutoClosableArrayBuffer
 import com.nvidia.spark.rapids.CastOptions
 import com.nvidia.spark.rapids.GpuCast
 import com.nvidia.spark.rapids.GpuColumnVector
@@ -35,6 +34,7 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.SpillableColumnarBatch
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.iceberg.ShimUtils
+import com.nvidia.spark.rapids.jni.RangeSequence
 import com.nvidia.spark.rapids.parquet.ParquetFileInfoWithBlockMeta
 import org.apache.iceberg.{MetadataColumns, Schema}
 import org.apache.iceberg.parquet.ParquetSchemaUtil
@@ -634,10 +634,6 @@ class GpuParquetReaderPostProcessor(
     shadedFileReadSchema: ShadedMessageType,
     metrics: Map[String, com.nvidia.spark.rapids.GpuMetric]
 ) {
-  // Microbenchmarks on an NVIDIA L4 show that sequence + concatenate overtakes the CPU
-  // fromLongs path between 256K and 512K rows when a batch spans multiple position ranges.
-  private val multiRangeGpuMinRows = 512 * 1024
-
   private val icebergBuildActionTimeMetricName = "icebergBuildActionTime"
   private val icebergPostProcessTimeMetricName = "icebergPostProcessTime"
 
@@ -685,8 +681,7 @@ class GpuParquetReaderPostProcessor(
         Array.empty, curBlockIndex, processedRowCount, processedBlockRowCounts)
     }
 
-    // Predicate filtering can remove row groups, so a batch can contain non-contiguous
-    // file-global positions and may require multiple sequences followed by a concatenate.
+    // Predicate filtering can remove row groups, so ranges use file-global positions.
     val positionRanges = new ArrayBuffer[(Long, Int)]
 
     // Advance state in locals and commit only after position materialization succeeds.
@@ -734,46 +729,17 @@ class GpuParquetReaderPostProcessor(
 
   private def materializePositionPlan(
       plan: RowPositionPlan,
-      numRows: Int,
       offset: Long): CudfColumnVector = {
-    def makeSequence(start: Long, length: Int): CudfColumnVector = {
-      withResource(GpuScalar.from(Math.addExact(offset, start), LongType)) { startScalar =>
-        CudfColumnVector.sequence(startScalar, length)
-      }
+    val starts = new Array[Long](plan.ranges.length)
+    val sizes = new Array[Int](plan.ranges.length)
+    var i = 0
+    while (i < plan.ranges.length) {
+      val (start, length) = plan.ranges(i)
+      starts(i) = Math.addExact(offset, start)
+      sizes(i) = length
+      i += 1
     }
-
-    def makeHostPositions(): CudfColumnVector = {
-      val rowPositions = new Array[Long](numRows)
-      var outputIndex = 0
-      plan.ranges.foreach { case (start, length) =>
-        var position = Math.addExact(offset, start)
-        val outputEnd = outputIndex + length
-        while (outputIndex < outputEnd) {
-          rowPositions(outputIndex) = position
-          outputIndex += 1
-          position += 1
-        }
-      }
-      CudfColumnVector.fromLongs(rowPositions: _*)
-    }
-
-    if (plan.ranges.isEmpty) {
-      CudfColumnVector.fromLongs()
-    } else if (plan.ranges.length == 1) {
-      val (start, length) = plan.ranges.head
-      makeSequence(start, length)
-    } else if (numRows < multiRangeGpuMinRows) {
-      // Multiple GPU kernels plus concatenate cost more than the CPU fill/upload path for
-      // small batches. Keep the GPU path for larger batches where it wins decisively.
-      makeHostPositions()
-    } else {
-      withResource(new AutoClosableArrayBuffer[CudfColumnVector]) { sequences =>
-        plan.ranges.foreach { case (start, length) =>
-          sequences.append(makeSequence(start, length))
-        }
-        CudfColumnVector.concatenate(sequences.toArray: _*)
-      }
-    }
+    RangeSequence.generate(starts, sizes)
   }
 
   private def commitPositionPlan(plan: RowPositionPlan): Unit = {
@@ -785,7 +751,7 @@ class GpuParquetReaderPostProcessor(
   private[iceberg] def getRowPositions(numRows: Int): CudfColumnVector = {
     if (currentRowPositions == null) {
       val plan = planRowPositions(numRows)
-      currentRowPositions = materializePositionPlan(plan, numRows, offset = 0L)
+      currentRowPositions = materializePositionPlan(plan, offset = 0L)
       currentMaxRowPosition = plan.maxPosition
       commitPositionPlan(plan)
     } else {
@@ -839,7 +805,7 @@ class GpuParquetReaderPostProcessor(
       // CPU position array, its host-to-device copy, and a separate GPU addition.
       val plan = planRowPositions(numRows)
       checkRowIdRange(firstRowId, plan.maxPosition)
-      val rowIds = materializePositionPlan(plan, numRows, offset = firstRowId)
+      val rowIds = materializePositionPlan(plan, offset = firstRowId)
       commitPositionPlan(plan)
       rowIds
     }
