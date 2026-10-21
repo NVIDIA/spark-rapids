@@ -40,7 +40,7 @@ class ShuffleReceivedBufferCatalogSuite extends AnyFunSuite with BeforeAndAfterE
     }
   }
 
-  private def verifyReceivedCompressedBatch(codecName: String): Unit = {
+  private def verifyReceivedCompressedBatch(codecName: String, spillFirst: Boolean): Unit = {
     val codec = TableCompressionCodec.getCodec(codecName,
       TableCompressionCodec.makeCodecConfig(new RapidsConf(new SparkConf)))
     val catalog = new ShuffleReceivedBufferCatalog
@@ -51,20 +51,29 @@ class ShuffleReceivedBufferCatalogSuite extends AnyFunSuite with BeforeAndAfterE
         val source = compressed.head
         val copied = source.buffer.sliceWithCopy(0, source.buffer.getLength)
         val handle = catalog.addBuffer(copied, source.meta, -1)
+        if (spillFirst) {
+          assertResult(copied.getLength)(
+            SpillFramework.stores.deviceStore.spill(copied.getLength))
+        }
         val (received, bytesUsed) =
           catalog.getColumnarBatchAndRemove(handle, Array(IntegerType))
         withResource(received) { batch =>
           assert(GpuCompressedColumnVector.isBatchCompressed(batch))
+          assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
           assertResult(1000)(batch.numRows())
           assertResult(source.buffer.getLength)(bytesUsed)
           val column = batch.column(0).asInstanceOf[GpuCompressedColumnVector]
+          assertResult(1)(column.getTableBuffer.getRefCount)
+          // Decode with the received metadata, as the post-shuffle coalesce does.
+          val meta = column.getTableMeta
+          assertResult(codec.codecId)(meta.bufferMeta.codecBufferDescrs(0).codec)
           withResource(codec.createBatchDecompressor(1024 * 1024, Cuda.DEFAULT_STREAM)) {
               decompressor =>
             column.getTableBuffer.incRefCount()
             decompressor.addBufferToDecompress(
-              column.getTableBuffer, source.meta.bufferMeta())
+              column.getTableBuffer, meta.bufferMeta())
             withResource(decompressor.finishAsync()) { output =>
-              withResource(MetaUtils.getTableFromMeta(output.head, source.meta)) { table =>
+              withResource(MetaUtils.getTableFromMeta(output.head, meta)) { table =>
                 withResource(table.getColumn(0).copyToHost()) { actual =>
                   assertResult(1000)(actual.getRowCount)
                   assert((0 until 1000).forall(index => actual.getInt(index) == index))
@@ -77,12 +86,10 @@ class ShuffleReceivedBufferCatalogSuite extends AnyFunSuite with BeforeAndAfterE
     }
   }
 
-  test("received COPY-compressed payload remains compressed until decoded") {
-    verifyReceivedCompressedBatch("copy")
-  }
-
-  test("received LZ4-compressed payload remains compressed until decoded") {
-    verifyReceivedCompressedBatch("lz4")
+  for (codecName <- Seq("copy", "lz4", "zstd"); spillFirst <- Seq(false, true)) {
+    test(s"received $codecName payload stays compressed, spilled first: $spillFirst") {
+      verifyReceivedCompressedBatch(codecName, spillFirst)
+    }
   }
 
   test("received uncompressed payload remains uncompressed") {
@@ -95,12 +102,14 @@ class ShuffleReceivedBufferCatalogSuite extends AnyFunSuite with BeforeAndAfterE
         catalog.getColumnarBatchAndRemove(handle, Array(IntegerType))
       withResource(received) { batch =>
         assert(!GpuCompressedColumnVector.isBatchCompressed(batch))
+        assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
         assertResult(1000)(batch.numRows())
         assertResult(source.getBuffer.getLength)(bytesUsed)
         withResource(batch.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { actual =>
           assert((0 until 1000).forall(index => actual.getInt(index) == index))
         }
       }
+      assertResult(0)(copied.getRefCount)
     }
   }
 }
