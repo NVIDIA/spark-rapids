@@ -26,11 +26,13 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 from get_buildvers import _get_buildvers
 
 
 SHIM_TAG = "spark-rapids-shim-json-lines"
+MAX_PEER_CHECKS = 5
 VERSIONED = re.compile(r"^(.*)/src/main/spark([^/]+)/(scala|java)/(.+)$")
 PACKAGE = re.compile(r"(?m)^\s*package\s+([\w.]+)")
 DECLARATION = re.compile(
@@ -44,8 +46,12 @@ class PreflightError(Exception):
     pass
 
 
-def run(command, root):
-    result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=90)
+class MergeConflict(PreflightError):
+    pass
+
+
+def run(command, root, timeout=90):
+    result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=timeout)
     if result.returncode:
         # Do not echo gh stderr: it may contain authentication diagnostics.
         raise PreflightError("{} failed (exit {})".format(command[0], result.returncode))
@@ -312,7 +318,8 @@ def candidate_files(root, owner, name, pr):
 
 
 def path_signals(paths):
-    families = {m[3] + "/" + m[4] for p in paths if (m := VERSIONED.fullmatch(p))}
+    families = {m[3] + "/" + m[4] for p in paths
+                if p.endswith((".scala", ".java")) and (m := VERSIONED.fullmatch(p))}
     matrix = any(p in ("pom.xml", "scala2.13/pom.xml", "build/get_buildvers.py",
                        "build/shimplify.py", "build/dyn_shim_detection.py", "build/buildall",
                        "jenkins/version-def.sh", "jenkins/spark-premerge-build.sh",
@@ -357,15 +364,18 @@ def overlap_reasons(current, other, references=()):
     families.update(references)
     peer_families, peer_matrix = path_signals(other)
     reasons = []
-    if current & other:
-        reasons.append("same files: " + ", ".join(sorted(current & other)))
+    # Documentation/tooling overlaps do not establish a shim dependency.
+    overlap = {p for p in current & other if (VERSIONED.fullmatch(p) and p.endswith((".scala", ".java")))
+               or re.search(r"/src/main/(?:scala|java)/.*\.(?:scala|java)$", p)
+               or path_signals({p})[1]}
+    if overlap:
+        reasons.append("same files: " + ", ".join(sorted(overlap)))
     if families & peer_families:
         reasons.append("same shim family: " + ", ".join(sorted(families & peer_families)))
     if (families and peer_matrix) or (peer_families and matrix) or (matrix and peer_matrix):
         reasons.append("shim implementation and/or build matrix changes; inspect actual diffs")
-    # Peer source is not fetched or executed. A shared caller can depend on our
-    # shim/profile without changing a versioned path, so require manual review
-    # rather than declaring these combinations unrelated.
+    # Discovery uses paths only; the advisory can inspect selected combined trees.
+    # Shared callers may depend on our shim/profile without changing a versioned path.
     peer_shared = any(re.search(r"/src/main/(?:scala|java)/", path)
                       and path.endswith((".scala", ".java")) for path in other)
     if (families or matrix) and peer_shared:
@@ -414,7 +424,10 @@ def related_prs(root, repo, base_ref, head_ref, validated_base, branch, own_pr,
             if reasons:
                 related.append(dict(number=pr["number"], title=pr["title"], url=pr["url"],
                                     state=pr["state"], head=live_head, draft=pr["isDraft"],
-                                    reasons=reasons, files=sorted(paths)))
+                                    reasons=reasons, files=sorted(paths),
+                                    joint_candidate=bool(path_signals(current)[0]
+                                                         or path_signals(current)[1]
+                                                         or references)))
     if git(root, "rev-parse", base_ref) != base or git(root, "rev-parse", head_ref) != head:
         raise PreflightError("Local base/head refs changed during scan; retry")
     live_open = open_prs(root, owner, name, branch)
@@ -543,7 +556,7 @@ def advisory(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
                   "source-selection check, not confirmed incompatibilities")
     try:
         base, head = commit_sha(root, base_ref), commit_sha(root, head_ref)
-        report.update(base=base, head=head, pr=own_pr)
+        report.update(base=base, head=head, pr=own_pr, base_branch=branch)
         common = git(root, "merge-base", base, head)
         changed = git_paths(root, "diff", "--name-only", common, head)
         if not review_scope(changed):
@@ -552,10 +565,128 @@ def advisory(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
             return report
         report.update(related_prs(root, repo, base_ref, head_ref, validated_base, branch,
                                   own_pr, include_worktree=False, require_pr_head=True))
+        report["scope"] = "cross-PR associations and bounded joint source-selection checks; not compilation"
+        if check_peer_combinations(root, repo, report):
+            verify_review_refs(root, repo, base_ref, head_ref, base, head, branch, own_pr)
     except (PreflightError, OSError, ValueError, KeyError, TypeError,
             subprocess.TimeoutExpired) as error:
+        report["status"] = "INCOMPLETE"
         report["error"] = str(error)
     return report
+
+
+def merge_snapshot(root, left, right):
+    result = subprocess.run(["git", "merge-tree", "--write-tree", left, right], cwd=root,
+                            text=True, capture_output=True, timeout=30)
+    if result.returncode == 1:
+        raise MergeConflict("Source trees have merge conflicts")
+    if result.returncode:
+        raise PreflightError("Cannot construct a combined source tree")
+    return result.stdout.splitlines()[0]
+
+
+def fetch_peer(root, repo, head):
+    if not re.fullmatch(r"[0-9a-f]{40}", head) or not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
+        raise PreflightError("Invalid peer repository or commit identity")
+    present = subprocess.run(["git", "cat-file", "-e", head + "^{commit}"], cwd=root,
+                             capture_output=True, timeout=30)
+    if present.returncode:
+        # Fetch an immutable commit, without changing refs, FETCH_HEAD, or the worktree.
+        run(["git", "fetch", "--quiet", "--no-tags", "--no-write-fetch-head",
+             "--no-recurse-submodules", "https://github.com/" + repo + ".git", head], root, timeout=30)
+    return commit_sha(root, head)
+
+
+def tree_coverage(root, tree, temporary, cache):
+    if tree not in cache:
+        snapshot = temporary / tree
+        source_snapshot(root, tree, snapshot)
+        cache[tree] = coverage(snapshot, ["sql-plugin"], None)
+    return cache[tree]
+
+
+def peer_combination(root, repo, base, current_commit, current_coverage, peer, temporary, cache):
+    result = dict(status="INCOMPLETE", base=base, peer_head=peer["head"], stage="fetch")
+    try:
+        peer_head = fetch_peer(root, repo, peer["head"])
+        result["stage"] = "peer_target"
+        peer_tree = merge_snapshot(root, base, peer_head)
+        result["peer_tree"] = peer_tree
+        peer_coverage = tree_coverage(root, peer_tree, temporary, cache)
+        result["stage"] = "joint"
+        joint_tree = merge_snapshot(root, current_commit, peer_head)
+        result["joint_tree"] = joint_tree
+        joint_coverage = tree_coverage(root, joint_tree, temporary, cache)
+        # Existing current/peer defects are not new cross-PR interaction findings.
+        existing = {finding_key(f) for r in (current_coverage, peer_coverage) for f in r["findings"]}
+        result.update(current_findings=current_coverage["findings"],
+                      peer_findings=peer_coverage["findings"],
+                      buildvers=joint_coverage["buildvers"],
+                      new_findings=[f for f in joint_coverage["findings"]
+                                    if finding_key(f) not in existing])
+        result["status"] = ("NEW_INTERACTION_FINDINGS" if result["new_findings"]
+                            else "NO_NEW_INTERACTION_FINDINGS")
+    except MergeConflict as error:
+        result.update(status="COMBINATION_CONFLICT" if result["stage"] == "joint" else "INCOMPLETE",
+                      error=str(error))
+    except (PreflightError, OSError, ValueError, KeyError, TypeError,
+            subprocess.TimeoutExpired) as error:
+        result["error"] = str(error)
+    return result
+
+
+def check_peer_combinations(root, repo, report):
+    report["joint_scope"] = ("sql-plugin explicit imports and generated source collisions; "
+                             "compare joint findings against each PR combined with target; "
+                             "not compilation, signatures, runtime validation, or merge readiness")
+    report["joint_check_limit"] = MAX_PEER_CHECKS
+    candidates = []
+    for peer in report["related"]:
+        if peer["state"] == "MERGED":
+            peer["joint_check"] = dict(status="ALREADY_IN_TARGET",
+                                      reason="Already in the target snapshot; inspect the core report")
+        elif not peer["joint_candidate"]:
+            peer["joint_check"] = dict(status="NOT_CHECKED",
+                                      reason="Shared-source overlap without a shim/profile signal")
+        else:
+            candidates.append(peer)
+    # Prefer explicit family associations over broad path/matrix matches.
+    candidates.sort(key=lambda p: (not any(r.startswith("same shim family:") for r in p["reasons"]),
+                                   not any(path_signals(p["files"])), -p["number"]))
+    for peer in candidates[MAX_PEER_CHECKS:]:
+        peer["joint_check"] = dict(status="NOT_CHECKED", reason="Per-run joint-check limit reached")
+    selected = candidates[:MAX_PEER_CHECKS]
+    if not selected:
+        return False
+    deadline = time.monotonic() + 150
+    base, head = report["base"], report["head"]
+    current_tree = merge_snapshot(root, base, head)
+    report["current_tree"] = current_tree
+    # Synthetic commit objects provide ancestry for merge-tree; no refs or hooks change.
+    current_commit = git(root, "-c", "commit.gpgsign=false", "-c", "user.name=Shim preflight", "-c",
+                         "user.email=shim-preflight@example.invalid", "commit-tree", current_tree,
+                         "-p", base, "-p", head, "-m", "Temporary shim source-selection combination")
+    with tempfile.TemporaryDirectory(prefix="shim-peers-") as directory:
+        temporary, cache = Path(directory), {}
+        current_coverage = tree_coverage(root, current_tree, temporary, cache)
+        for peer in selected:
+            if time.monotonic() >= deadline:
+                peer["joint_check"] = dict(status="NOT_CHECKED", reason="Joint-check time budget reached")
+                continue
+            peer["joint_check"] = peer_combination(root, repo, base, current_commit,
+                                                  current_coverage, peer, temporary, cache)
+    owner, name = repo.split("/")
+    query = ('query($owner:String!, $name:String!) { repository(owner:$owner,name:$name) {'
+             + " ".join('p%d: pullRequest(number:%d) { state headRefOid baseRefName }'
+                        % (p["number"], p["number"]) for p in selected) + "} }")
+    live = graphql(root, query, owner=owner, name=name)
+    for peer in selected:
+        pr = live.get("p" + str(peer["number"]))
+        if (not pr or pr["state"] != "OPEN" or pr["headRefOid"] != peer["head"]
+                or pr["baseRefName"] != report["base_branch"]):
+            peer["joint_check"].update(status="INCOMPLETE", error="Peer changed during joint verification; "
+                                      "observed snapshot evidence is stale, refresh before attributing findings")
+    return True
 
 
 def finding_message(finding):
@@ -643,24 +774,44 @@ def write_advisory(report, output, github_actions=False):
                   "No conclusion about related PRs; refresh this advisory when needed."]
     if "reason" in report:
         lines += ["", report["reason"]]
+    if "joint_scope" in report:
+        lines += ["", html.escape(report["joint_scope"]),
+                  "Joint-check limit: {} open peers; unverified peers remain explicit.".
+                  format(report["joint_check_limit"])]
     for pr in report.get("related", []):
         lines += ["", "- [#{}]({}): {} ({})".format(
             pr["number"], pr["url"], html.escape(pr["title"]), pr["state"]),
             "  Observed head: `{}`. {}".format(pr["head"],
                                                html.escape("; ".join(pr["reasons"])))]
+        joint = pr.get("joint_check")
+        if joint:
+            lines += ["  Joint check: `{}`. {}".format(
+                joint["status"], html.escape(joint.get("error", joint.get("reason", ""))))]
+            lines += ["  - " + html.escape(finding_message(f)) for f in joint.get("new_findings", [])]
     if report["status"] == "NO_RELATED_PRS":
         lines += ["", "No related PRs found in this scan."]
-    lines += ["", "Associations require diff inspection; they are not confirmed defects. "
+    lines += ["", "Associations require diff inspection. Joint findings are static source-selection "
+              "evidence; matching compilation and semantic validation remain necessary. "
+              "No new static interaction findings does not prove compatibility. "
               "See report.json for full inputs and file lists.", ""]
     (output / "report.md").write_text("\n".join(lines), encoding="utf-8")
     if github_actions:
+        warnings = []
         if report["status"] == "INCOMPLETE":
-            print("::warning title=Related PR advisory::" + actions_escape(
-                "Discovery incomplete: " + report["error"] + "; core result is unchanged"))
-        for pr in report.get("related", [])[:10]:
-            print("::warning title=Related PR advisory::" + actions_escape(
-                "Inspect related PR #{}: {}. Association only; not a confirmed defect".
-                format(pr["number"], pr["url"])))
+            warnings.append("Advisory incomplete: " + report["error"] + "; core result is unchanged")
+        for pr in report.get("related", []):
+            joint = pr.get("joint_check", {})
+            if joint.get("status") in ("NO_NEW_INTERACTION_FINDINGS", "ALREADY_IN_TARGET"):
+                continue
+            if report["status"] == "INCOMPLETE":
+                continue
+            details = ("; ".join(finding_message(f) for f in joint.get("new_findings", [])[:3])
+                       if joint.get("status") == "NEW_INTERACTION_FINDINGS" else "")
+            warnings.append("Inspect related PR #{}: {}. {} {}".format(
+                pr["number"], pr["url"], joint.get("status", "Association only; not a confirmed defect"),
+                details or joint.get("error", joint.get("reason", ""))))
+        for warning in warnings[:10]:
+            print("::warning title=Related PR advisory::" + actions_escape(warning))
 
 
 def main(argv=None):

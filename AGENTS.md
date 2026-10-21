@@ -167,7 +167,9 @@ Check source selection on the proposed combination with current main, and run
 the independent `advisory` command or read both current CI reports. Cross-PR
 discovery runs automatically as `shim-related-prs`; its failures or moving peers
 produce warnings without invalidating the core result. Report unavailable
-advisory evidence explicitly. The offline
+advisory evidence explicitly. The advisory excludes documentation-only overlaps
+and checks bounded peer combinations for new static interaction findings; inspect
+deferred, stale, and unmodelled cases as described in the skill. The offline
 entry point is `python3 build/check_shim_compatibility.py coverage`.
 Static results do not replace compilation of affected profiles, including
 newly added Databricks targets, or applicable CPU/GPU tests.

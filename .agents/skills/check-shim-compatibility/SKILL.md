@@ -11,7 +11,9 @@ validation, review, and mutation requirements.
 
 The repository helper is `build/check_shim_compatibility.py` (Python 3.10+,
 standard library only). The online modes need authenticated
-`gh` and Git history; `review` requires Git 2.38+ for `merge-tree --write-tree`.
+`gh` and Git history; `review` and `advisory` require Git 2.38+ for
+`merge-tree --write-tree`. Advisory joint checks may fetch observed peer commits
+from the canonical GitHub repository over HTTPS.
 The helper never posts comments or changes GitHub state.
 
 ## Automated review evidence
@@ -107,14 +109,40 @@ their own checks but fail when combined.
 The helper paginates the open PRs and examines PRs merged in that base-commit
 range. It compares actual changed paths, explicit
 imports in our changed sources, shim families across version directories, and
-matrix/implementation interactions.
+matrix/implementation interactions. Pure documentation/tooling file overlaps,
+such as two changes to `AGENTS.md`, do not create an association.
 A matrix path match is deliberately broad. A shim/profile change also flags
-peer shared-source changes conservatively because their imports are not read;
+peer shared-source changes conservatively because discovery does not read their imports;
 inspect those diffs to establish whether a caller actually depends on the change.
 The scan records each related PR's observed head and reports advisory `INCOMPLETE` on
 API failure, truncated file lists,
-or base/open-head movement during the scan. In CI this produces a warning and
-retains the core result. It does not fetch other PR branches or execute their code.
+or base/open-head movement during discovery. In CI this produces a warning and
+retains the core result. The lower-level `related-prs` command stops at association.
+
+The automatic `advisory` command additionally checks up to five related open
+peers with shim/profile signals, prioritizing explicit family matches, then
+shim/matrix changes and newer PR numbers. It fetches
+immutable observed heads without changing refs or the worktree, exports source
+blobs, and compares three snapshots: current PR plus target, peer plus target,
+and both PRs plus target. Synthetic Git commit objects preserve ancestry for
+`merge-tree`; no checkout, build hooks, or peer code are executed.
+
+Only findings absent from both individual combinations are reported as
+`NEW_INTERACTION_FINDINGS`, with the affected profile, symbol/caller or duplicate
+destination/providers. Existing individual defects are retained separately.
+Merged peers are `ALREADY_IN_TARGET`; inspect the core report for that combination.
+`COMBINATION_CONFLICT` means the two changes cannot be combined automatically.
+API/fetch failures or changed peer identities produce `INCOMPLETE` evidence.
+Candidates beyond the five-peer limit, or not started within the 150-second
+joint-check budget, remain explicitly `NOT_CHECKED`. These states warn without
+changing the core result.
+
+`NO_NEW_INTERACTION_FINDINGS` reports only the modelled `sql-plugin` checks; it
+does not establish API/signature or runtime compatibility. Such results and
+already-merged peers stay in the report without association-only warning
+annotations. Do not attribute findings from stale/incomplete evidence to the
+current peer. The helper revalidates the analyzed peers and own head/base after
+verification. It checks each peer separately, not combinations of multiple peers.
 
 `NEEDS_REVIEW` is an association report, not a confirmed incompatibility.
 For each match, determine whether it introduces a profile requiring our shim,

@@ -16,6 +16,10 @@ verify head/base. Report confirmed gaps with file/symbol/profile and observed
 evidence. Inspect advisory matches before attributing a defect. If discovery
 failed or peers moved, state that limitation without invalidating the core
 combined-tree result. Separate base debt; Drafts/associations alone are not defects.
+Prefer exact-head `NEW_INTERACTION_FINDINGS` with profile/symbol/file evidence;
+inspect `COMBINATION_CONFLICT`, `INCOMPLETE` and `NOT_CHECKED` separately. Existing
+individual findings are not cross-PR regressions. No new static interaction
+findings is not compilation or runtime proof; stale evidence requires refresh.
 Use the read-only helper when possible;
 state missing evidence. Static success is not compilation; rerun stale reports.
 

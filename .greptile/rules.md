@@ -22,6 +22,11 @@ gate the core combined-tree check. Inspect its matches targeting the same branch
 Prioritize related merges from the last 48 hours, but retain older changes in
 that commit range. Earlier green premerge checks justify a narrower range only
 when they included those changes and covered the affected profiles/shim APIs.
+Pure documentation overlaps are excluded. For bounded open-peer joint checks,
+report `NEW_INTERACTION_FINDINGS` with exact profile/symbol/file evidence and
+distinguish existing individual findings. Inspect combination conflicts and
+explicitly deferred/incomplete candidates separately. No new static interaction
+findings does not establish full compatibility; do not attribute stale evidence.
 Comment on confirmed new gaps with the file, symbol, profile, related PR links,
 and observed evidence. Keep unchanged base findings separate. An association or
 Draft alone is not a defect. Advisory `INCOMPLETE` means discovery evidence is
