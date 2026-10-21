@@ -394,13 +394,13 @@ def related_prs(root, repo, base_ref, head_ref, validated_base, branch, own_pr,
         root, "merge-base", base, head)
     git(root, "merge-base", "--is-ancestor", start, base)
     common = git(root, "merge-base", base, head)
-    current = git_paths(root, "diff", "--name-only", common, head)
+    current = git_paths(root, "diff", "--name-only", "--no-renames", common, head)
     # Include work in progress when preparing a new PR; record that it is not an exact-head scan.
     is_worktree_head = head == git(root, "rev-parse", "HEAD")
     dirty = include_worktree and is_worktree_head and bool(
         git(root, "status", "--porcelain", "--untracked-files=normal"))
     if dirty:
-        current.update(git_paths(root, "diff", "--name-only", "HEAD"))
+        current.update(git_paths(root, "diff", "--name-only", "--no-renames", "HEAD"))
         current.update(git_paths(root, "ls-files", "--others", "--exclude-standard"))
     references = changed_imports(root, current, head, dirty)
     commits = git(root, "rev-list", start + ".." + base).splitlines()
@@ -516,7 +516,7 @@ def review(root, repo, base_ref, head_ref, branch, own_pr):
         base, head = commit_sha(root, base_ref), commit_sha(root, head_ref)
         report.update(base=base, head=head, pr=own_pr)
         common = git(root, "merge-base", base, head)
-        changed = git_paths(root, "diff", "--name-only", common, head)
+        changed = git_paths(root, "diff", "--name-only", "--no-renames", common, head)
         report["changed_files"] = sorted(changed)
         if not review_scope(changed):
             report.update(status="NOT_APPLICABLE", reason="No shim, shared JVM source, "
@@ -558,7 +558,7 @@ def advisory(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
         base, head = commit_sha(root, base_ref), commit_sha(root, head_ref)
         report.update(base=base, head=head, pr=own_pr, base_branch=branch)
         common = git(root, "merge-base", base, head)
-        changed = git_paths(root, "diff", "--name-only", common, head)
+        changed = git_paths(root, "diff", "--name-only", "--no-renames", common, head)
         if not review_scope(changed):
             report.update(status="NOT_APPLICABLE", reason="No shim, shared JVM source, "
                           "profile/matrix, or preflight implementation changes")
