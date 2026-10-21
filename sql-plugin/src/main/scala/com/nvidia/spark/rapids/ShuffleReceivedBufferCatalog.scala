@@ -73,7 +73,12 @@ class ShuffleReceivedBufferCatalog() extends Logging {
       val cb = if (spillable != null) {
         memoryUsedBytes = spillable.sizeInBytes
         withResource(spillable.materialize()) { buff =>
-          MetaUtils.getBatchFromMeta(buff, handle.tableMeta, sparkTypes)
+          val bufferMeta = handle.tableMeta.bufferMeta()
+          if (bufferMeta == null || bufferMeta.codecBufferDescrsLength == 0) {
+            MetaUtils.getBatchFromMeta(buff, handle.tableMeta, sparkTypes)
+          } else {
+            GpuCompressedColumnVector.from(buff, handle.tableMeta)
+          }
         }
       } else {
         val rowCount = handle.tableMeta.rowCount
