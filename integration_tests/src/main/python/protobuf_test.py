@@ -3849,6 +3849,46 @@ def test_from_protobuf_unselected_oneof_message_with_malformed_payload_falls_bac
     assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
 
 
+def _build_empty_message_field_descriptor_set_bytes(spark, label):
+    return _build_proto2_descriptor(spark, f"empty_field_{label}.proto", [
+        _msg("Empty", []),
+        _msg("Root", [
+            _field("id", 1, "INT32"),
+            _field("empty", 2, "MESSAGE", label=label, type_name=".test.Empty"),
+        ]),
+    ])
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@pytest.mark.parametrize("label", ["optional", "required"], ids=idfn)
+@allow_non_gpu("ProtobufDataToCatalyst")
+@ignore_order(local=True)
+def test_from_protobuf_field_missing_from_spark_schema_falls_back(
+        local_tmp_path, from_protobuf_fn, label):
+    """Spark drops empty-message fields from its schema but still validates them."""
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        local_tmp_path, f"empty_field_{label}.desc",
+        lambda spark: _build_empty_message_field_descriptor_set_bytes(spark, label))
+    id_7 = _encode_tag(1, 0) + _encode_varint(7)
+    rows = [
+        (0, id_7 + _encode_tag(2, 2) + _encode_varint(0)),
+        # Missing, malformed and wrongly encoded values for the dropped field.
+        (1, id_7),
+        (2, id_7 + _encode_tag(2, 2) + _encode_varint(1) + b"\x80"),
+        (3, id_7 + _encode_tag(2, 0) + _encode_varint(1)),
+        (4, None),
+    ]
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(rows, schema="idx int, bin binary")
+        decoded = _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), "test.Root", desc_path, desc_bytes,
+            options={"mode": "PERMISSIVE"})
+        return df.select("idx", decoded.alias("decoded"))
+
+    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
+
+
 # ---------------------------------------------------------------------------
 # Non-canonical bool varints: protobuf-java reads any non-zero varint as true, including
 # values whose low byte is zero, such as 256.

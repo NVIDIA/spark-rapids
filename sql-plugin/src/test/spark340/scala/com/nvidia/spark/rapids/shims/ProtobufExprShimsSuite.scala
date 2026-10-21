@@ -192,6 +192,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fields: Map[String, ProtobufFieldDescriptor],
       override val javaStringCheckUtf8: Boolean = false) extends ProtobufMessageDescriptor {
     override def findField(name: String): Option[ProtobufFieldDescriptor] = fields.get(name)
+    override def fieldNames: Seq[String] = fields.keys.toSeq
   }
 
   private case class FakeFieldDescriptor(
@@ -328,7 +329,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     val messageSchema = StructType(Seq(
       StructField("child", childSchema, nullable = true)))
 
-    val messageResult = SparkProtobufCompat.validateDescriptorGraphSyntax(
+    val messageResult = SparkProtobufCompat.validateDescriptorGraph(
       messageSchema, messageRoot)
     assert(messageResult.left.toOption.exists(_.contains("field 'child'")))
 
@@ -341,7 +342,7 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
         referencedTypeSyntax = Some("PROTO3"))))
     val enumSchema = StructType(Seq(StructField("status", StringType, nullable = true)))
 
-    val enumResult = SparkProtobufCompat.validateDescriptorGraphSyntax(enumSchema, enumRoot)
+    val enumResult = SparkProtobufCompat.validateDescriptorGraph(enumSchema, enumRoot)
     assert(enumResult.left.toOption.exists(_.contains("field 'status'")))
   }
 
@@ -352,8 +353,44 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       fields = Map("value" -> FakeFieldDescriptor("value", 1, "STRING")),
       javaStringCheckUtf8 = true)
 
-    val result = SparkProtobufCompat.validateDescriptorGraphSyntax(schema, root)
+    val result = SparkProtobufCompat.validateDescriptorGraph(schema, root)
     assert(result.left.toOption.exists(_.contains("strict protobuf UTF-8 validation")))
+  }
+
+  test("compat rejects descriptor fields missing from the Spark schema") {
+    // Spark drops fields of empty message types, but still validates them when parsing.
+    val empty = FakeMessageDescriptor(syntax = "PROTO2", fields = Map.empty)
+    val emptyField = FakeFieldDescriptor(
+      name = "empty",
+      fieldNumber = 2,
+      protoTypeName = "MESSAGE",
+      isRequired = true,
+      messageDescriptor = Some(empty),
+      referencedTypeSyntax = Some("PROTO2"))
+    val child = FakeMessageDescriptor(
+      syntax = "PROTO2",
+      fields = Map(
+        "value" -> FakeFieldDescriptor("value", 1, "INT32"),
+        "empty" -> emptyField))
+    val childSchema = StructType(Seq(StructField("value", IntegerType, nullable = true)))
+
+    val rootResult = SparkProtobufCompat.validateDescriptorGraph(childSchema, child)
+    assert(rootResult.left.toOption.exists(
+      _.contains("root message has fields missing from the Spark schema: empty")))
+
+    val root = FakeMessageDescriptor(
+      syntax = "PROTO2",
+      fields = Map("child" -> FakeFieldDescriptor(
+        name = "child",
+        fieldNumber = 1,
+        protoTypeName = "MESSAGE",
+        messageDescriptor = Some(child),
+        referencedTypeSyntax = Some("PROTO2"))))
+    val schema = StructType(Seq(StructField("child", childSchema, nullable = true)))
+
+    val nestedResult = SparkProtobufCompat.validateDescriptorGraph(schema, root)
+    assert(nestedResult.left.toOption.exists(
+      _.contains("protobuf field 'child' has fields missing from the Spark schema: empty")))
   }
 
   test("compat returns Left for unsupported default value types") {

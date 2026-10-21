@@ -136,7 +136,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           plannerOptions <- SparkProtobufCompat.parsePlannerOptions(exprInfo.options)
           _ <- checkSupportedOptions(exprInfo.options)
           msgDesc <- SparkProtobufCompat.resolveMessageDescriptor(exprInfo)
-          _ <- SparkProtobufCompat.validateDescriptorGraphSyntax(fullSchema, msgDesc)
+          _ <- SparkProtobufCompat.validateDescriptorGraph(fullSchema, msgDesc)
           fieldsInfoMap <- ProtobufSchemaExtractor.analyzeAllFields(
             fullSchema, msgDesc, plannerOptions.enumsAsInts, exprInfo.messageName)
           _ <- checkTopLevelFieldsSupported(fieldsInfoMap)

@@ -130,10 +130,11 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
     syntax == PROTO2_MAGIC_STRING
 
   /**
-   * Checks root/referenced syntax and UTF-8 requirements before schema pruning can hide them.
+   * Checks root/referenced syntax, UTF-8 requirements and fields missing from the Spark schema
+   * before schema pruning can hide them.
    * Left describes an unsupported schema; lazy descriptor reads may still throw.
    */
-  private[shims] def validateDescriptorGraphSyntax(
+  private[shims] def validateDescriptorGraph(
       schema: StructType,
       root: ProtobufMessageDescriptor): Either[String, Unit] = {
     def nestedStruct(dataType: org.apache.spark.sql.types.DataType): Option[StructType] = {
@@ -149,6 +150,15 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
       if (!isGpuSupportedProtoSyntax(desc.syntax)) {
         val location = if (path.isEmpty) "root message" else s"protobuf field '$path'"
         return Left(s"$location uses unsupported ${desc.syntax} syntax; only proto2 is supported")
+      }
+
+      // Spark drops empty-message fields from its schema but still checks their presence and
+      // encoding, which the GPU decoder cannot do without them.
+      val omitted = desc.fieldNames.filterNot(schema.fieldNames.contains)
+      if (omitted.nonEmpty) {
+        val location = if (path.isEmpty) "root message" else s"protobuf field '$path'"
+        return Left(s"$location has fields missing from the Spark schema: " +
+          omitted.mkString(", "))
       }
 
       if (desc.javaStringCheckUtf8 && schema.fields.exists { field =>
@@ -267,6 +277,8 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
 
     override def findField(name: String): Option[ProtobufFieldDescriptor] =
       Option(ProtobufReflection.findFieldByName(raw, name)).map(new ReflectiveFieldDescriptor(_))
+
+    override lazy val fieldNames: Seq[String] = ProtobufReflection.getFieldNames(raw)
   }
 
   private final class ReflectiveFieldDescriptor(raw: AnyRef) extends ProtobufFieldDescriptor {
@@ -411,6 +423,12 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
 
     def findFieldByName(msgDesc: AnyRef, name: String): AnyRef =
       invoke1[AnyRef](msgDesc, "findFieldByName", classOf[String], name)
+
+    def getFieldNames(msgDesc: AnyRef): Seq[String] = {
+      import scala.collection.JavaConverters._
+      invoke0[java.util.List[AnyRef]](msgDesc, "getFields").asScala
+        .map(invoke0[String](_, "getName")).toList
+    }
 
     def getFieldNumber(fd: AnyRef): Int =
       invoke0[java.lang.Integer](fd, "getNumber").intValue()
