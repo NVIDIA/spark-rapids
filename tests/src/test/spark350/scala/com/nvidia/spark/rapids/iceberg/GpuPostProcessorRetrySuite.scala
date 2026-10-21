@@ -53,10 +53,10 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector => SparkColu
 
 /**
  * Verifies the snapshot/restore around `withRetryNoSplit` in
- * GpuParquetReaderPostProcessor.process under simulated retry. FetchRowPosition commits its
+ * GpuParquetReaderPostProcessor.process under simulated retry. Position generation commits its
  * counter advance to the processor as soon as GPU sequence generation succeeds; if a later field
  * action in the same safeMap iteration OOMs, withRetryNoSplit reruns the whole block. Without the
- * snapshot/restore the rerun would see already-advanced counters and emit wrong _pos values.
+ * snapshot/restore the rerun would see already-advanced counters and emit wrong positions or IDs.
  */
 class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
 
@@ -66,20 +66,21 @@ class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
     block
   }
 
-  test("FetchRowPosition counters survive a retry when a later action OOMs") {
-    val rowPosId = MetadataColumns.ROW_POSITION.fieldId()
+  private def assertCountersSurviveRetry(
+      fieldId: Int,
+      fieldName: String,
+      offset: Long): Unit = {
     // A second projected field that does NOT exist in the file schema and is not in
     // idToConstant. ActionBuildingVisitor lowers this to FillNull, whose execute() allocates
-    // a fresh GPU column. That second allocation is what we OOM, so FetchRowPosition is the
+    // a fresh GPU column. That second allocation is what we OOM, so position generation is the
     // earlier action that has already committed counter state when the retry fires.
-    // Use an ordinary non-metadata field id (1) — `rowPosId + 1` would collide with
-    // FILE_PATH.fieldId() (Integer.MAX_VALUE - 1) and route to FetchFilePath instead.
+    // Use an ordinary field ID to avoid accidentally selecting another metadata action.
     val fillFieldId = 1
 
     val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
 
     val expectedSchema = new Schema(
-      Types.NestedField.optional(rowPosId, "_pos", Types.LongType.get()),
+      Types.NestedField.optional(fieldId, fieldName, Types.LongType.get()),
       Types.NestedField.optional(fillFieldId, "fill", Types.LongType.get())
     )
 
@@ -99,9 +100,13 @@ class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
       hasInt96Timestamps = false,
       blocksFirstRowIndices = firstRowIndices
     )
+    val constants = new JHashMap[Integer, Any]()
+    if (fieldName == "_row_id") {
+      constants.put(fieldId, offset)
+    }
     val processor = new GpuParquetReaderPostProcessor(
       parquetInfo,
-      new JHashMap[Integer, Any](),
+      constants,
       expectedSchema,
       parquetSchema,
       Map.empty)
@@ -109,16 +114,16 @@ class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
     def emptyBatch(rows: Int): ColumnarBatch =
       new ColumnarBatch(Array.empty[SparkColumnVector], rows)
 
-    def assertPosColumnRange(batch: ColumnarBatch, expectedStart: Long): Unit = {
-      val posCol = batch.column(0).asInstanceOf[GpuColumnVector]
-      withResource(posCol.copyToHost()) { hostCol =>
+    def assertColumnRange(batch: ColumnarBatch, expectedStart: Long): Unit = {
+      val column = batch.column(0).asInstanceOf[GpuColumnVector]
+      withResource(column.copyToHost()) { hostCol =>
         val base = hostCol.getBase
         var i = 0
         while (i < batch.numRows()) {
           val actual = base.getLong(i)
           val expected = expectedStart + i
           assert(actual == expected,
-            s"_pos[$i] expected $expected, got $actual")
+            s"$fieldName[$i] expected $expected, got $actual")
           i += 1
         }
       }
@@ -127,13 +132,13 @@ class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
     // Skip 1 GPU allocation (RangeSequence output, which commits counters as soon as
     // it succeeds), then OOM on the next allocation (FillNull's columnVectorFromNull).
     // withRetryNoSplit catches it and reruns the whole block; snapshot/restore must reset
-    // _pos counters back to their pre-block values so the rerun emits 500..799, not
+    // position counters back to their pre-block values so the rerun uses 500..799, not
     // 800..1099.
     RmmSpark.forceRetryOOM(RmmSpark.getCurrentThreadId, 1,
       RmmSpark.OomInjectionType.GPU.ordinal, 1)
     withResource(processor.process(emptyBatch(300))) { batch =>
       assert(batch.numRows() == 300)
-      assertPosColumnRange(batch, 500L)
+      assertColumnRange(batch, offset + 500L)
     }
 
     // Follow-up call without OOM injection: counters should now be exactly where a single
@@ -141,8 +146,19 @@ class GpuPostProcessorRetrySuite extends RmmSparkRetrySuiteBase {
     // failed to re-advance, the next batch's start would be wrong.
     withResource(processor.process(emptyBatch(200))) { batch =>
       assert(batch.numRows() == 200)
-      assertPosColumnRange(batch, 800L)
+      assertColumnRange(batch, offset + 800L)
     }
+  }
+
+  test("FetchRowPosition counters survive a retry when a later action OOMs") {
+    assertCountersSurviveRetry(MetadataColumns.ROW_POSITION.fieldId(), "_pos", offset = 0L)
+  }
+
+  test("Inherited row ID counters survive a retry when a later action OOMs") {
+    val majorMinor = IcebergProvider.detectedVersion.split("\\.").take(2).mkString(".")
+    assume(Set("1.10", "1.11").contains(majorMinor),
+      "The selected Iceberg runtime does not support row lineage inheritance")
+    assertCountersSurviveRetry(ShimUtils.rowIdFieldId(), "_row_id", offset = 1000L)
   }
 
   test("FetchRowPosition retries range metadata allocation across a row-group gap") {
