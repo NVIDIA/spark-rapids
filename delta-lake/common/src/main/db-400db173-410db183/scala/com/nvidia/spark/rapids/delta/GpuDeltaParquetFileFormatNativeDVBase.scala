@@ -26,7 +26,6 @@ import com.databricks.sql.io.{RowIndexFilterProvider, RowIndexFilterType}
 import com.databricks.sql.transaction.tahoe.{
   DeltaColumnMapping,
   DeltaColumnMappingMode,
-  DeltaParquetFileFormat,
   IdMapping,
   NameMapping,
   NoMapping
@@ -1854,13 +1853,9 @@ private case class DeltaParquetTableReader(
 }
 
 private object MakeParquetTableWithDVProducer extends Logging {
-  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
-    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
-      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
-
   private[delta] def deletionVectorSkipRowIndexes(readDataSchema: StructType): Array[Int] =
     readDataSchema.fields.zipWithIndex.collect {
-      case (field, index) if isDeletionVectorSkipRowColumn(field.name) => index
+      case (field, index) if DeltaReadSupport.isDeletionVectorSkipRowColumn(field.name) => index
     }
 
   // Returns the input table unchanged when the planner has pruned skip-row columns.

@@ -16,8 +16,6 @@
 
 package com.nvidia.spark.rapids.delta
 
-import java.util.Locale
-
 import com.databricks.sql.transaction.tahoe.actions.{Metadata, Protocol}
 import com.nvidia.spark.rapids.delta.GpuDeltaParquetFileFormatUtils.METADATA_ROW_IDX_COL
 
@@ -40,9 +38,4 @@ case class GpuDeltaParquetFileFormatNativeDV(
     nullableRowTrackingConstantFields, nullableRowTrackingGeneratedFields, optimizationsEnabled,
     tablePath, isCDCRead,
     lowShuffleMergeDiscoveryScan = false,
-    lowShuffleMergeRowIndexColumn = METADATA_ROW_IDX_COL) {
-  // Until this runtime supports low-shuffle MERGE, do not interpret marked scans as normal reads.
-  require(!relation.options.keys.exists { key =>
-    key.toLowerCase(Locale.ROOT).startsWith("spark.rapids.internal.delta.lowshufflemerge.")
-  }, "Low-shuffle MERGE scan options are not supported by the DBR 18.3 native Delta reader")
-}
+    lowShuffleMergeRowIndexColumn = METADATA_ROW_IDX_COL)

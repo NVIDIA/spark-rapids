@@ -195,6 +195,10 @@ object GpuDeltaParquetFileFormat {
     generateRowIndexFilterId || generateRowIndexFilterColumn || tablePath.isDefined
 
   def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
+    // #16282 will add DBR 18.3 low-shuffle MERGE support. Keep marked scans on CPU until then.
+    if (DeltaReadSupport.hasLowShuffleMergeOptions(meta.wrapped.relation.options)) {
+      meta.willNotWorkOnGpu("DBR 18.3 low-shuffle MERGE scans are not supported on GPU")
+    }
     val requiredSchema = meta.wrapped.requiredSchema
     val hasDeletionVectorSkipRowColumn = requiredSchema.exists { field =>
       field.name == EDGE_COMPUTED_COLUMN_SKIP_ROW ||

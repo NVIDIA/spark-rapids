@@ -1,8 +1,8 @@
 # Databricks 18.3 Delta reader layer
 
 This module compiles the DBR 18.3 reader dependency subset. Native deletion-vector decoding and
-bitmap utilities and reader eligibility helpers are shared with DBR 17.3. The DBR 18.3 native
-reader rejects low-shuffle MERGE scan options.
+bitmap utilities and reader eligibility helpers are shared with DBR 17.3. The DBR 18.3 scan
+eligibility check marks low-shuffle MERGE scans for CPU fallback.
 
 Build the actual reader module with Java 17 after its SQL-plugin dependencies are available:
 
