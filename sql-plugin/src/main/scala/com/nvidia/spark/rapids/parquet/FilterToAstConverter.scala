@@ -16,6 +16,7 @@
 
 package com.nvidia.spark.rapids.parquet
 
+import java.lang.{Boolean => JBoolean, Byte => JByte, Double => JDouble, Float => JFloat, Long => JLong, Short => JShort}
 import java.sql.{Date, Timestamp}
 import java.time.{Instant, LocalDate}
 import java.util.Locale
@@ -24,21 +25,24 @@ import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
-import ai.rapids.cudf.ast.{AstExpression, BinaryOperation, BinaryOperator, ColumnNameReference, ColumnReference, CompiledExpression, Literal, UnaryOperation, UnaryOperator}
+import ai.rapids.cudf.ast.{AstExpression, BinaryOperation, BinaryOperator, ColumnNameReference, ColumnReference, Literal, UnaryOperation, UnaryOperator}
 
 import org.apache.spark.internal.Logging
+import org.apache.spark.sql.catalyst.util.{quoteIfNeeded, DateTimeUtils}
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 
 /**
  * How a set of Spark filters was split for a hybrid scan read.
  *
- * @param ast      compiled AST for `pushed`, or None if nothing was pushed. Owned by the caller.
+ * @param ast      uncompiled AST for `pushed`, or None if nothing was pushed. The reader only
+ *                 references the compiled form, so compile it where it can stay open until every
+ *                 reader using it is closed.
  * @param pushed   conjuncts the reader applies exactly
  * @param residual conjuncts the reader cannot apply; Spark's filter above the scan applies them
  */
 case class FilterPushdownPlan(
-    ast: Option[CompiledExpression],
+    ast: Option[AstExpression],
     pushed: Array[Filter],
     residual: Array[Filter])
 
@@ -47,11 +51,14 @@ case class FilterPushdownPlan(
  * them to prune row groups and filter rows.
  *
  * The reader treats the AST as exact, so a conjunct that cannot be converted exactly is left
- * residual rather than approximated.
+ * residual rather than approximated. Literals take their type from `schema`, not the file, so the
+ * caller must not push a conjunct on a column the file lacks, decodes as another type, stores as
+ * INT96, or wrote with LEGACY datetime rebasing.
  *
- * @param schema          schema of the columns being read, for column index and type lookup
+ * @param schema          the reader's include columns, in include order, since a
+ *                        `ColumnReference(i)` is the i-th of them
  * @param isCaseSensitive whether column name matching is case-sensitive
- * @param useColumnNames  reference columns by name rather than by projection index
+ * @param useColumnNames  reference columns by name rather than by include index
  */
 case class FilterToAstConverter(
     schema: StructType,
@@ -62,11 +69,10 @@ case class FilterToAstConverter(
     if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
   }
 
-  private val columnNameToIndex: Map[String, Int] =
-    schema.fields.zipWithIndex.map { case (field, idx) => normalize(field.name) -> idx }.toMap
-
-  private val columnNameToType: Map[String, DataType] =
-    schema.fields.map(field => normalize(field.name) -> field.dataType).toMap
+  private val columnsByName: Map[String, (Int, StructField)] =
+    schema.fields.zipWithIndex.map { case (field, idx) =>
+      normalize(FilterToAstConverter.filterColumnName(field.name)) -> (idx, field)
+    }.toMap
 
   /**
    * Split `filters`, an implicit conjunction, into the conjuncts the reader can evaluate and
@@ -92,24 +98,18 @@ case class FilterToAstConverter(
       val redundant = FilterToAstConverter.notNullCheckColumn(conjunct)
           .exists(column => provenNotNull.contains(normalize(column)))
       expr match {
-        case Some(_) if redundant =>
-          logDebug(s"Hybrid scan is not pushing $conjunct; another pushed conjunct on the same " +
-            "column already rules out a null")
-          residual += conjunct
-        case Some(e) =>
+        case Some(e) if !redundant =>
           pushed += conjunct
           exprs += e
-        case None =>
-          logDebug(s"Hybrid scan cannot push $conjunct; it will be applied after the scan")
+        case _ =>
           residual += conjunct
       }
     }
-    val ast = if (exprs.isEmpty) {
-      None
-    } else {
-      Some(exprs.reduce((left, right) => nullAwareAnd(left, right)).compile())
+    if (residual.nonEmpty) {
+      logDebug(s"Hybrid scan pushing [${pushed.mkString(", ")}]; " +
+        s"[${residual.mkString(", ")}] will be applied after the scan")
     }
-    FilterPushdownPlan(ast, pushed.toArray, residual.toArray)
+    FilterPushdownPlan(exprs.reduceOption(nullAwareAnd), pushed.toArray, residual.toArray)
   }
 
   /**
@@ -136,13 +136,13 @@ case class FilterToAstConverter(
       case LessThanOrEqual(attribute, value) =>
         convertComparison(attribute, value, BinaryOperator.LESS_EQUAL)
 
-      case IsNull(attribute) =>
-        makeColumnRef(attribute).map { col =>
+      case IsNull(attribute) if !isNested(attribute) =>
+        lookupColumn(attribute).map { case (col, _) =>
           new UnaryOperation(UnaryOperator.IS_NULL, col)
         }
 
-      case IsNotNull(attribute) =>
-        makeColumnRef(attribute).map { col =>
+      case IsNotNull(attribute) if !isNested(attribute) =>
+        lookupColumn(attribute).map { case (col, _) =>
           new UnaryOperation(UnaryOperator.NOT,
             new UnaryOperation(UnaryOperator.IS_NULL, col))
         }
@@ -151,16 +151,10 @@ case class FilterToAstConverter(
         convertIn(attribute, values)
 
       case And(left, right) =>
-        for {
-          leftExpr <- convertFilter(left)
-          rightExpr <- convertFilter(right)
-        } yield nullAwareAnd(leftExpr, rightExpr)
+        convertFilter(left).flatMap(l => convertFilter(right).map(nullAwareAnd(l, _)))
 
       case Or(left, right) =>
-        for {
-          leftExpr <- convertFilter(left)
-          rightExpr <- convertFilter(right)
-        } yield nullAwareOr(leftExpr, rightExpr)
+        convertFilter(left).flatMap(l => convertFilter(right).map(nullAwareOr(l, _)))
 
       case Not(child) =>
         convertFilter(child).map(new UnaryOperation(UnaryOperator.NOT, _))
@@ -190,24 +184,22 @@ case class FilterToAstConverter(
       attribute: String,
       value: Any,
       operator: BinaryOperator): Option[AstExpression] = {
-    for {
-      col <- makeColumnRef(attribute)
-      dataType <- getColumnType(attribute)
-      if pushableFloatComparison(dataType, value, operator)
-      literal <- convertLiteral(value, dataType)
-    } yield operator match {
-      case BinaryOperator.EQUAL => nullAwareEqual(col, literal)
-      case _ => new BinaryOperation(operator, col, literal)
-    }
+    lookupColumn(attribute)
+      .filter { case (_, dataType) => pushableFloatComparison(dataType, value, operator) }
+      .flatMap { case (col, dataType) =>
+        convertLiteral(value, dataType).map { literal =>
+          operator match {
+            case BinaryOperator.EQUAL => nullAwareEqual(col, literal)
+            case _ => new BinaryOperation(operator, col, literal)
+          }
+        }
+      }
   }
 
   /**
-   * SQL `=` as a cuDF AST. cuDF's AST `EQUAL` treats a null operand as comparable -- null == null
-   * is true, null == x is false -- rather than returning null the way Spark's `=` does. That flips
-   * the result wherever the equality sits under a `NOT` or inside an `IN`, which would let the
-   * reader mark as exact a filter it does not actually match. `NOT(NOT_EQUAL(...))` restores SQL
-   * semantics: `NOT_EQUAL` returns null for a null operand and `NOT` keeps it null. Mirrors
-   * `GpuEqualTo.convertToAst`.
+   * SQL `=` as `NOT(NOT_EQUAL(...))`, the shape `GpuEqualTo.convertToAst` uses. cuDF's `EQUAL` also
+   * returns null for a null operand, so the two agree; this one keeps the plugin's AST producers
+   * matching, and the Parquet reader folds it back to `EQUAL` before pruning.
    */
   private def nullAwareEqual(col: AstExpression, literal: AstExpression): AstExpression = {
     new UnaryOperation(UnaryOperator.NOT,
@@ -229,34 +221,37 @@ case class FilterToAstConverter(
   /**
    * cuDF ASTs compare floats with IEEE-754 semantics: a NaN equals nothing, not even itself, and
    * loses every ordered comparison. Spark instead orders NaN above every value and equal to
-   * itself. The two agree for `=`, `<`, `<=`, and `!=` against a non-NaN literal, so those push;
-   * `>`, `>=`, and any NaN literal diverge -- Spark keeps NaN rows the cuDF AST would drop -- so
-   * they stay residual for Spark's post-scan filter to evaluate.
+   * itself, so `>`, `>=` and any NaN literal would drop NaN rows Spark keeps. `=` agrees on rows
+   * but not in statistics pruning: parquet-mr writes `max = NaN` for a row group holding a NaN,
+   * and cuDF prunes `=` on `vmax >= lit`. That leaves `<`, `<=` and `<=>` against a non-NaN
+   * literal; the rest stay residual for Spark's post-scan filter.
    */
   private def pushableFloatComparison(
       dataType: DataType, value: Any, operator: BinaryOperator): Boolean = {
     !isFloatingPoint(dataType) ||
       (!isNaNLiteral(value) &&
         operator != BinaryOperator.GREATER &&
-        operator != BinaryOperator.GREATER_EQUAL)
+        operator != BinaryOperator.GREATER_EQUAL &&
+        operator != BinaryOperator.EQUAL)
   }
 
-  /** Convert `IN` to OR-ed equalities. Every value must convert. */
+  /**
+   * Convert `IN` to OR-ed equalities. Every value must convert. The chain is one level deeper per
+   * value and cuDF walks it recursively, so a long one overflows the stack; lists longer than
+   * `MaxInValues` stay residual.
+   */
   private def convertIn(attribute: String, values: Array[Any]): Option[AstExpression] = {
     // The AST has no "always false" literal for an empty list.
-    if (values.isEmpty) {
+    if (values.isEmpty || values.length > FilterToAstConverter.MaxInValues) {
       None
     } else {
-      for {
-        col <- makeColumnRef(attribute)
-        dataType <- getColumnType(attribute)
-        if !isFloatingPoint(dataType) || !values.exists(isNaNLiteral)
-        literals <- allOrNothing(values.map(convertLiteral(_, dataType)))
-      } yield {
-        literals.map { literal =>
-          nullAwareEqual(col, literal)
-        }.reduce((left, right) => nullAwareOr(left, right))
-      }
+      lookupColumn(attribute)
+        .filter { case (_, dataType) => !isFloatingPoint(dataType) }
+        .flatMap { case (col, dataType) =>
+          allOrNothing(values.map(convertLiteral(_, dataType))).map { literals =>
+            literals.map(nullAwareEqual(col, _)).reduce(nullAwareOr)
+          }
+        }
     }
   }
 
@@ -265,73 +260,71 @@ case class FilterToAstConverter(
     if (converted.forall(_.isDefined)) Some(converted.map(_.get)) else None
   }
 
-  private def getColumnType(attribute: String): Option[DataType] =
-    columnNameToType.get(normalize(attribute))
+  /** The type of the column a filter calls `attribute`, or None if it is not being read. */
+  def columnType(attribute: String): Option[DataType] =
+    columnsByName.get(normalize(attribute)).map(_._2.dataType)
 
-  /** A reference to `attribute`, or None if it is not one of the columns being read. */
-  private def makeColumnRef(attribute: String): Option[AstExpression] = {
-    columnNameToIndex.get(normalize(attribute)).map { colIdx =>
-      if (useColumnNames) {
-        new ColumnNameReference(attribute)
+  /** Whether every column `filters` reference is in the schema, so its rows can be filtered. */
+  def resolvesAllColumns(filters: Array[Filter]): Boolean =
+    filters.forall(FilterToAstConverter.getReferencedColumns(_).forall(columnType(_).isDefined))
+
+  /** A reference to `attribute` and its type, or None if it is not a column being read. */
+  private def lookupColumn(attribute: String): Option[(AstExpression, DataType)] = {
+    columnsByName.get(normalize(attribute)).map { case (colIdx, field) =>
+      val col = if (useColumnNames) {
+        new ColumnNameReference(field.name)
       } else {
         new ColumnReference(colIdx)
       }
+      (col, field.dataType)
     }
   }
 
-  private def convertLiteral(value: Any, dataType: DataType): Option[Literal] = {
-    if (value == null) {
-      sparkTypeToCudfType(dataType).map(cudfType => Literal.ofNull(cudfType))
-    } else {
-      try {
-        dataType match {
-          case BooleanType => Some(Literal.ofBoolean(value.asInstanceOf[Boolean]))
-          case ByteType => Some(Literal.ofByte(value.asInstanceOf[Number].byteValue()))
-          case ShortType => Some(Literal.ofShort(value.asInstanceOf[Number].shortValue()))
-          case IntegerType => Some(Literal.ofInt(value.asInstanceOf[Number].intValue()))
-          case LongType => Some(Literal.ofLong(value.asInstanceOf[Number].longValue()))
-          case FloatType => Some(Literal.ofFloat(value.asInstanceOf[Number].floatValue()))
-          case DoubleType => Some(Literal.ofDouble(value.asInstanceOf[Number].doubleValue()))
-          case StringType => Some(Literal.ofString(value.asInstanceOf[String]))
-          case DateType => convertDateLiteral(value)
-          case TimestampType => convertTimestampLiteral(value)
-          case other =>
-            // Decimal needs the column's precision and scale; nested types have no AST form.
-            logDebug(s"No cuDF AST literal for $other")
-            None
-        }
-      } catch {
-        case e: Exception =>
-          logDebug(s"Failed to convert literal $value to $dataType: ${e.getMessage}")
-          None
+  /** Whether `attribute` is a list, map or struct column, which cuDF cannot null check. */
+  private def isNested(attribute: String): Boolean =
+    lookupColumn(attribute).exists { case (_, dataType) =>
+      dataType match {
+        case _: ArrayType | _: MapType | _: StructType => true
+        case _ => false
       }
     }
-  }
 
-  /** Spark pushes dates as days since the epoch, boxed as `Date`, `LocalDate`, or a number. */
-  private def convertDateLiteral(value: Any): Option[Literal] = value match {
-    case d: Date => Some(Literal.ofTimestampDaysFromInt(d.toLocalDate.toEpochDay.toInt))
-    case d: LocalDate => Some(Literal.ofTimestampDaysFromInt(d.toEpochDay.toInt))
-    case n: Number => Some(Literal.ofTimestampDaysFromInt(n.intValue()))
-    case other =>
-      logDebug(s"Unsupported date literal type: ${other.getClass}")
-      None
-  }
-
-  /** Spark pushes timestamps as microseconds since the epoch. */
-  private def convertTimestampLiteral(value: Any): Option[Literal] = value match {
-    case ts: Timestamp =>
-      // getTime is floored milliseconds; getNanos adds the sub-millisecond part.
-      val micros = ts.getTime * 1000L + (ts.getNanos / 1000) % 1000
-      Some(Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS, micros))
-    case i: Instant =>
-      val micros = i.getEpochSecond * 1000000L + i.getNano / 1000
-      Some(Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS, micros))
-    case n: Number =>
-      Some(Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS, n.longValue()))
-    case other =>
-      logDebug(s"Unsupported timestamp literal type: ${other.getClass}")
-      None
+  /**
+   * The literal for `value` in the column's type, or None if `value` is not a type
+   * `ParquetFilters.valueCanMakeFilterOn` accepts for it. A value outside the column's range is
+   * rejected rather than narrowed, since a narrowed value would prune rows it should keep.
+   * Datetimes convert as `ParquetFilters` converts them outside `LEGACY` rebase mode; the
+   * reader's gate admits only `EXCEPTION`.
+   */
+  private def convertLiteral(value: Any, dataType: DataType): Option[Literal] = {
+    (dataType, value) match {
+      case (_, null) => sparkTypeToCudfType(dataType).map(cudfType => Literal.ofNull(cudfType))
+      case (BooleanType, v: JBoolean) => Some(Literal.ofBoolean(v))
+      case (ByteType, FilterToAstConverter.IntegralValue(v)) if v.isValidByte =>
+        Some(Literal.ofByte(v.toByte))
+      case (ShortType, FilterToAstConverter.IntegralValue(v)) if v.isValidShort =>
+        Some(Literal.ofShort(v.toShort))
+      case (IntegerType, FilterToAstConverter.IntegralValue(v)) if v.isValidInt =>
+        Some(Literal.ofInt(v.toInt))
+      case (LongType, v: JLong) => Some(Literal.ofLong(v))
+      case (FloatType, v: JFloat) => Some(Literal.ofFloat(v))
+      case (DoubleType, v: JDouble) => Some(Literal.ofDouble(v))
+      case (StringType, v: String) => Some(Literal.ofString(v))
+      case (DateType, d: Date) =>
+        Some(Literal.ofTimestampDaysFromInt(DateTimeUtils.fromJavaDate(d)))
+      case (DateType, d: LocalDate) =>
+        Some(Literal.ofTimestampDaysFromInt(DateTimeUtils.localDateToDays(d)))
+      case (TimestampType, t: Timestamp) =>
+        Some(Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS,
+          DateTimeUtils.fromJavaTimestamp(t)))
+      case (TimestampType, i: Instant) =>
+        Some(Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS,
+          DateTimeUtils.instantToMicros(i)))
+      case _ =>
+        // Decimal needs the column's precision and scale; nested types have no AST form.
+        logDebug(s"No cuDF AST literal for $value as $dataType")
+        None
+    }
   }
 
   private def sparkTypeToCudfType(dataType: DataType): Option[DType] = dataType match {
@@ -351,6 +344,27 @@ case class FilterToAstConverter(
 
 object FilterToAstConverter {
 
+  /** The longest `IN` list pushed, the default of Spark's `parquet.pushdown.inFilterThreshold`. */
+  private[parquet] val MaxInValues = 10
+
+  /**
+   * How a pushed filter names top-level column `name`. With nested predicate pushdown, on by
+   * default for Parquet, Spark writes struct field `b` of `a` as `a.b` and a column named `a.b` as
+   * `` `a.b` ``, quoting any name that is not plain letters, digits and underscores.
+   */
+  private def filterColumnName(name: String): String = quoteIfNeeded(name)
+
+  /** A boxed integer that `ParquetFilters` accepts for a byte, short or int column. */
+  private object IntegralValue {
+    def unapply(value: Any): Option[Long] = value match {
+      case v: JByte => Some(v.longValue())
+      case v: JShort => Some(v.longValue())
+      case v: Integer => Some(v.longValue())
+      case v: JLong => Some(v.longValue())
+      case _ => None
+    }
+  }
+
   /** Flatten nested `And`s into top-level conjuncts, so each can be pushed or left residual. */
   def splitConjuncts(filters: Array[Filter]): Array[Filter] = {
     def split(filter: Filter): Seq[Filter] = filter match {
@@ -369,7 +383,7 @@ object FilterToAstConverter {
     case _: GreaterThan | _: GreaterThanOrEqual => true
     case _: LessThan | _: LessThanOrEqual => true
     case _: IsNull | _: IsNotNull => true
-    case In(_, values) => values.nonEmpty
+    case In(_, values) => values.nonEmpty && values.length <= MaxInValues
     case And(left, right) => isSupportedFilter(left) && isSupportedFilter(right)
     case Or(left, right) => isSupportedFilter(left) && isSupportedFilter(right)
     case Not(child) => isSupportedFilter(child)
@@ -382,7 +396,7 @@ object FilterToAstConverter {
    */
   def canPruneWithDictionary(filter: Filter): Boolean = filter match {
     case _: EqualTo | _: EqualNullSafe => true
-    case In(_, values) => values.nonEmpty
+    case In(_, values) => values.nonEmpty && values.length <= MaxInValues
     case And(left, right) => canPruneWithDictionary(left) || canPruneWithDictionary(right)
     case Or(left, right) => canPruneWithDictionary(left) && canPruneWithDictionary(right)
     case Not(child) => canPruneWithDictionary(child)
@@ -437,15 +451,5 @@ object FilterToAstConverter {
     case Or(left, right) => getReferencedColumns(left) ++ getReferencedColumns(right)
     case Not(child) => getReferencedColumns(child)
     case _ => Set.empty
-  }
-
-  /** Whether every residual filter only references columns in `schema`, the scan's output. */
-  def residualsEvaluableOn(residual: Array[Filter], schema: StructType,
-      isCaseSensitive: Boolean): Boolean = {
-    def normalize(name: String): String = {
-      if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
-    }
-    val available = schema.fields.map(field => normalize(field.name)).toSet
-    residual.forall(getReferencedColumns(_).forall(col => available.contains(normalize(col))))
   }
 }

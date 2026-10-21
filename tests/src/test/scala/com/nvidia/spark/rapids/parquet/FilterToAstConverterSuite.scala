@@ -16,14 +16,17 @@
 
 package com.nvidia.spark.rapids.parquet
 
-import java.sql.{Date, Timestamp}
+import java.sql.Date
 import java.time.{Instant, LocalDate}
 
-import ai.rapids.cudf.DType
-import ai.rapids.cudf.ast.{AstExpression, BinaryOperation, BinaryOperator, ColumnNameReference, ColumnReference, Literal, UnaryOperation, UnaryOperator}
+import ai.rapids.cudf.{ColumnVector, DType, Table}
+import ai.rapids.cudf.ast.{AstExpression, BinaryOperation, BinaryOperator, ColumnNameReference, ColumnReference, CompiledExpression, Literal, UnaryOperation, UnaryOperator}
 import com.nvidia.spark.rapids.Arm.withResource
 import org.scalatest.funsuite.AnyFunSuite
 
+import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types._
 
@@ -40,18 +43,16 @@ class FilterToAstConverterSuite extends AnyFunSuite {
     StructField("ts_col", TimestampType),
     StructField("dec_col", DecimalType(10, 2)),
     StructField("byte_col", ByteType),
-    StructField("short_col", ShortType)
+    StructField("short_col", ShortType),
+    StructField("arr_col", ArrayType(IntegerType)),
+    StructField("map_col", MapType(StringType, IntegerType))
   ))
 
   private def converter(caseSensitive: Boolean = true, useColumnNames: Boolean = false) =
     FilterToAstConverter(testSchema, caseSensitive, useColumnNames)
 
-  /** Runs `body` on a pushdown plan, closing the compiled AST it owns. */
   private def withPlan(filters: Filter*)(body: FilterPushdownPlan => Unit): Unit = {
-    val plan = converter().planPushdown(filters.toArray)
-    withResource(plan.ast) { _ =>
-      body(plan)
-    }
+    body(converter().planPushdown(filters.toArray))
   }
 
   test("isSupportedFilter accepts comparisons, null checks and non-empty In") {
@@ -76,11 +77,14 @@ class FilterToAstConverterSuite extends AnyFunSuite {
       And(EqualTo("int_col", 1), StringContains("string_col", "x"))))
   }
 
-  test("isSupportedFilter rejects string predicates and empty In") {
+  test("isSupportedFilter rejects string predicates, empty In and long In") {
     assert(!FilterToAstConverter.isSupportedFilter(StringStartsWith("string_col", "foo")))
     assert(!FilterToAstConverter.isSupportedFilter(StringEndsWith("string_col", "bar")))
     assert(!FilterToAstConverter.isSupportedFilter(StringContains("string_col", "baz")))
     assert(!FilterToAstConverter.isSupportedFilter(In("int_col", Array.empty)))
+    val tooMany = (0 to FilterToAstConverter.MaxInValues).toArray[Any]
+    assert(!FilterToAstConverter.isSupportedFilter(In("int_col", tooMany)))
+    assert(!FilterToAstConverter.canPruneWithDictionary(In("int_col", tooMany)))
   }
 
   test("canPruneWithDictionary accepts only equality and In") {
@@ -97,39 +101,20 @@ class FilterToAstConverterSuite extends AnyFunSuite {
       Or(EqualTo("int_col", 1), GreaterThan("int_col", 2))))
   }
 
-  test("convertFilter converts every supported literal type") {
-    val c = converter()
-    assert(c.convertFilter(EqualTo("int_col", 42)).isDefined)
-    assert(c.convertFilter(EqualTo("long_col", 100L)).isDefined)
-    assert(c.convertFilter(EqualTo("float_col", 3.14f)).isDefined)
-    assert(c.convertFilter(EqualTo("double_col", 2.718)).isDefined)
-    assert(c.convertFilter(EqualTo("string_col", "test")).isDefined)
-    assert(c.convertFilter(EqualTo("bool_col", true)).isDefined)
-  }
-
-  test("convertFilter converts every comparison operator and null check") {
-    val c = converter()
-    assert(c.convertFilter(GreaterThan("int_col", 10)).isDefined)
-    assert(c.convertFilter(GreaterThanOrEqual("int_col", 10)).isDefined)
-    assert(c.convertFilter(LessThan("int_col", 10)).isDefined)
-    assert(c.convertFilter(LessThanOrEqual("int_col", 10)).isDefined)
-    assert(c.convertFilter(EqualNullSafe("int_col", 10)).isDefined)
-    assert(c.convertFilter(IsNull("int_col")).isDefined)
-    assert(c.convertFilter(IsNotNull("int_col")).isDefined)
-  }
-
-  test("convertFilter leaves float and double greater-than comparisons residual") {
+  test("convertFilter leaves float and double greater-than and equality comparisons residual") {
     // cuDF ASTs use IEEE-754, where NaN loses every ordered comparison; Spark keeps NaN rows for
-    // `>`/`>=`, so those must stay residual. `=`, `<`, `<=` and `!=` agree and still push.
+    // `>`/`>=`. `=` agrees on rows, but parquet-mr writes max = NaN and cuDF prunes `=` on
+    // vmax >= lit. `<`, `<=` and `<=>` still push.
     val c = converter()
-    for (col <- Seq("float_col", "double_col")) {
-      assert(c.convertFilter(GreaterThan(col, 1.0)).isEmpty, s"$col > should be residual")
-      assert(c.convertFilter(GreaterThanOrEqual(col, 1.0)).isEmpty, s"$col >= should be residual")
-      assert(c.convertFilter(EqualTo(col, 1.0)).isDefined, s"$col = should push")
-      assert(c.convertFilter(LessThan(col, 1.0)).isDefined, s"$col < should push")
-      assert(c.convertFilter(LessThanOrEqual(col, 1.0)).isDefined, s"$col <= should push")
-      assert(c.convertFilter(EqualNullSafe(col, 1.0)).isDefined, s"$col <=> should push")
-      assert(c.convertFilter(Not(EqualTo(col, 1.0))).isDefined, s"$col != should push")
+    for ((col, one) <- Seq[(String, Any)]("float_col" -> 1.0f, "double_col" -> 1.0)) {
+      assert(c.convertFilter(GreaterThan(col, one)).isEmpty, s"$col > should be residual")
+      assert(c.convertFilter(GreaterThanOrEqual(col, one)).isEmpty, s"$col >= should be residual")
+      assert(c.convertFilter(EqualTo(col, one)).isEmpty, s"$col = should be residual")
+      assert(c.convertFilter(Not(EqualTo(col, one))).isEmpty, s"$col != should be residual")
+      assert(c.convertFilter(In(col, Array[Any](one))).isEmpty, s"$col IN should be residual")
+      assert(c.convertFilter(LessThan(col, one)).isDefined, s"$col < should push")
+      assert(c.convertFilter(LessThanOrEqual(col, one)).isDefined, s"$col <= should push")
+      assert(c.convertFilter(EqualNullSafe(col, one)).isDefined, s"$col <=> should push")
       assert(c.convertFilter(IsNull(col)).isDefined, s"$col IsNull should push")
       assert(c.convertFilter(IsNotNull(col)).isDefined, s"$col IsNotNull should push")
     }
@@ -138,122 +123,207 @@ class FilterToAstConverterSuite extends AnyFunSuite {
   }
 
   test("convertFilter leaves any NaN-literal float or double comparison residual") {
-    // Every cuDF comparison against NaN is false, so Spark's `= NaN`, `< NaN`, etc. all diverge.
+    // Every cuDF comparison against NaN is false, so Spark's `< NaN`, `<=> NaN`, etc. all diverge.
     val c = converter()
-    assert(c.convertFilter(EqualTo("float_col", Float.NaN)).isEmpty)
     assert(c.convertFilter(LessThan("float_col", Float.NaN)).isEmpty)
+    assert(c.convertFilter(LessThanOrEqual("double_col", Double.NaN)).isEmpty)
     assert(c.convertFilter(EqualNullSafe("double_col", Double.NaN)).isEmpty)
-    assert(c.convertFilter(In("double_col", Array[Any](1.0, Double.NaN))).isEmpty)
-    // A NaN-free In on the same column still pushes.
-    assert(c.convertFilter(In("double_col", Array[Any](1.0, 2.0))).isDefined)
   }
 
-  // Structural round-trip: the converted AST must match the one we would build by hand. These
-  // compare `toString`, which encodes operator, column (index or name) and literal type+value, so
-  // they catch a wrong operator, index, reference mode, or literal conversion -- none of which the
-  // `isDefined` checks above can see. No GPU or evaluation is needed.
+  // Expected-AST builders. Each mirrors a shape FilterToAstConverter emits, so a test states the
+  // tree it expects in one line. Literals stay explicit, so a test names the cuDF type it expects.
 
-  // Mirrors FilterToAstConverter's null-aware `=`: NOT(NOT_EQUAL(col, lit)).
-  private def eqAst(col: AstExpression, lit: Literal): AstExpression =
-    new UnaryOperation(UnaryOperator.NOT, new BinaryOperation(BinaryOperator.NOT_EQUAL, col, lit))
+  /** A `testSchema` column, referenced by index or by name as the converter would. */
+  private def col(name: String, byName: Boolean = false): AstExpression =
+    if (byName) new ColumnNameReference(name) else new ColumnReference(testSchema.fieldIndex(name))
 
-  test("convertFilter maps each comparison operator to the matching cuDF operator") {
-    val c = converter()
-    def ast(f: Filter): String = c.convertFilter(f).get.toString
-    assert(ast(EqualTo("int_col", 1)) ==
-      eqAst(new ColumnReference(0), Literal.ofInt(1)).toString)
-    assert(ast(EqualNullSafe("int_col", 1)) ==
-      new BinaryOperation(BinaryOperator.NULL_EQUAL, new ColumnReference(0),
-        Literal.ofInt(1)).toString)
-    assert(ast(GreaterThan("int_col", 1)) ==
-      new BinaryOperation(BinaryOperator.GREATER, new ColumnReference(0),
-        Literal.ofInt(1)).toString)
-    assert(ast(GreaterThanOrEqual("int_col", 1)) ==
-      new BinaryOperation(BinaryOperator.GREATER_EQUAL, new ColumnReference(0),
-        Literal.ofInt(1)).toString)
-    assert(ast(LessThan("int_col", 1)) ==
-      new BinaryOperation(BinaryOperator.LESS, new ColumnReference(0), Literal.ofInt(1)).toString)
-    assert(ast(LessThanOrEqual("int_col", 1)) ==
-      new BinaryOperation(BinaryOperator.LESS_EQUAL, new ColumnReference(0),
-        Literal.ofInt(1)).toString)
+  private def micros(value: Long): Literal =
+    Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS, value)
+
+  private def days(value: Int): Literal = Literal.ofTimestampDaysFromInt(value)
+
+  private def binary(op: BinaryOperator, l: AstExpression, r: AstExpression): AstExpression =
+    new BinaryOperation(op, l, r)
+
+  private def not(e: AstExpression): AstExpression = new UnaryOperation(UnaryOperator.NOT, e)
+
+  /** SQL `=` as the converter builds it: NOT(NOT_EQUAL), which keeps a null operand null. */
+  private def eqTo(c: AstExpression, l: AstExpression): AstExpression =
+    not(binary(BinaryOperator.NOT_EQUAL, c, l))
+
+  private def nullSafeEq(c: AstExpression, l: AstExpression): AstExpression =
+    binary(BinaryOperator.NULL_EQUAL, c, l)
+
+  private def gt(c: AstExpression, l: AstExpression): AstExpression =
+    binary(BinaryOperator.GREATER, c, l)
+
+  private def ge(c: AstExpression, l: AstExpression): AstExpression =
+    binary(BinaryOperator.GREATER_EQUAL, c, l)
+
+  private def lt(c: AstExpression, l: AstExpression): AstExpression =
+    binary(BinaryOperator.LESS, c, l)
+
+  private def le(c: AstExpression, l: AstExpression): AstExpression =
+    binary(BinaryOperator.LESS_EQUAL, c, l)
+
+  private def isNull(c: AstExpression): AstExpression =
+    new UnaryOperation(UnaryOperator.IS_NULL, c)
+
+  private def notNull(c: AstExpression): AstExpression = not(isNull(c))
+
+  private def and(l: AstExpression, r: AstExpression): AstExpression =
+    binary(BinaryOperator.NULL_LOGICAL_AND, l, r)
+
+  private def or(l: AstExpression, r: AstExpression): AstExpression =
+    binary(BinaryOperator.NULL_LOGICAL_OR, l, r)
+
+  /** `IN` as the converter builds it: a left-deep Kleene OR of SQL equalities. */
+  private def in(c: AstExpression, literals: Literal*): AstExpression =
+    literals.map(eqTo(c, _)).reduce((l, r) => or(l, r))
+
+  /** Asserts that `filter` converts to exactly `expected`, compared structurally. */
+  private def assertPushes(filter: Filter, expected: AstExpression,
+      c: FilterToAstConverter = converter()): Unit = {
+    val actual = c.convertFilter(filter)
+    assert(actual.isDefined, s"$filter should push")
+    assertResult(expected.toString, s"for $filter")(actual.get.toString)
   }
 
-  test("convertFilter builds IsNull and IsNotNull as cuDF unary operations") {
-    val c = converter()
-    assert(c.convertFilter(IsNull("int_col")).get.toString ==
-      new UnaryOperation(UnaryOperator.IS_NULL, new ColumnReference(0)).toString)
-    assert(c.convertFilter(IsNotNull("int_col")).get.toString ==
-      new UnaryOperation(UnaryOperator.NOT,
-        new UnaryOperation(UnaryOperator.IS_NULL, new ColumnReference(0))).toString)
+  private def assertResidual(filter: Filter, c: FilterToAstConverter = converter()): Unit =
+    assert(c.convertFilter(filter).isEmpty, s"$filter should stay residual")
+
+  private def isFloatingPoint(name: String): Boolean = testSchema(name).dataType match {
+    case FloatType | DoubleType => true
+    case _ => false
   }
 
-  test("convertFilter builds Not, And and Or with null-aware boolean operators") {
-    val c = converter()
-    assert(c.convertFilter(Not(EqualTo("int_col", 1))).get.toString ==
-      new UnaryOperation(UnaryOperator.NOT,
-        eqAst(new ColumnReference(0), Literal.ofInt(1))).toString)
-    val eqInt = eqAst(new ColumnReference(0), Literal.ofInt(1))
-    val eqLong = eqAst(new ColumnReference(1), Literal.ofLong(2L))
-    assert(c.convertFilter(And(EqualTo("int_col", 1), EqualTo("long_col", 2L))).get.toString ==
-      new BinaryOperation(BinaryOperator.NULL_LOGICAL_AND, eqInt, eqLong).toString)
-    assert(c.convertFilter(Or(EqualTo("int_col", 1), EqualTo("long_col", 2L))).get.toString ==
-      new BinaryOperation(BinaryOperator.NULL_LOGICAL_OR, eqInt, eqLong).toString)
+  /** A Spark comparison and the cuDF operation it must become. */
+  private case class Comparison(
+      symbol: String,
+      filter: (String, Any) => Filter,
+      expected: (AstExpression, AstExpression) => AstExpression)
+
+  private val comparisons = Seq(
+    Comparison("=", EqualTo(_, _), eqTo),
+    Comparison("<=>", EqualNullSafe(_, _), nullSafeEq),
+    Comparison(">", GreaterThan(_, _), gt),
+    Comparison(">=", GreaterThanOrEqual(_, _), ge),
+    Comparison("<", LessThan(_, _), lt),
+    Comparison("<=", LessThanOrEqual(_, _), le))
+
+  /** A value Spark may push for each column type, and the cuDF literal it must become. */
+  private val literalCases: Seq[(String, Any, Literal)] = Seq(
+    ("int_col", 42, Literal.ofInt(42)),
+    ("long_col", 100L, Literal.ofLong(100L)),
+    ("float_col", 3.14f, Literal.ofFloat(3.14f)),
+    ("double_col", 2.718, Literal.ofDouble(2.718)),
+    ("string_col", "x", Literal.ofString("x")),
+    ("bool_col", true, Literal.ofBoolean(true)),
+    ("byte_col", 5.toByte, Literal.ofByte(5.toByte)),
+    ("short_col", 5.toShort, Literal.ofShort(5.toShort)),
+    ("date_col", Date.valueOf("2026-08-04"), days(20669)),
+    ("date_col", LocalDate.of(2026, 8, 4), days(20669)),
+    // Spark pushes DateTimeUtils.toJavaDate(days): before the epoch, and before 1582.
+    ("date_col", DateTimeUtils.toJavaDate(-1), days(-1)),
+    ("date_col", DateTimeUtils.toJavaDate(-200000), days(-200000)),
+    ("ts_col", Instant.ofEpochSecond(1786000000L, 123000L), micros(1786000000000123L)),
+    ("ts_col", DateTimeUtils.toJavaTimestamp(1786000000000123L), micros(1786000000000123L)),
+    // Before the epoch with sub-millisecond digits: Timestamp.getTime floors to the millisecond.
+    ("ts_col", DateTimeUtils.toJavaTimestamp(-1L), micros(-1L)))
+
+  test("convertFilter maps every comparison over every column type to its cuDF operation") {
+    // Float and double `=`, `>` and `>=` stay residual; the tests above say why.
+    val floatResidual = Set("=", ">", ">=")
+    for (Comparison(symbol, filter, expected) <- comparisons; (name, value, lit) <- literalCases) {
+      if (isFloatingPoint(name) && floatResidual.contains(symbol)) {
+        assertResidual(filter(name, value))
+      } else {
+        assertPushes(filter(name, value), expected(col(name), lit))
+      }
+    }
   }
 
-  test("convertFilter expands In to a null-aware OR of equalities") {
-    val c = converter()
-    def eq(v: Int) = eqAst(new ColumnReference(0), Literal.ofInt(v))
-    val expected = new BinaryOperation(BinaryOperator.NULL_LOGICAL_OR,
-      new BinaryOperation(BinaryOperator.NULL_LOGICAL_OR, eq(1), eq(2)), eq(3))
-    assert(c.convertFilter(In("int_col", Array[Any](1, 2, 3))).get.toString == expected.toString)
+  test("convertFilter builds null checks and Kleene Not, And, Or and In") {
+    val (intCol, longCol) = (col("int_col"), col("long_col"))
+    assertPushes(IsNull("int_col"), isNull(intCol))
+    assertPushes(IsNotNull("int_col"), notNull(intCol))
+    assertPushes(EqualNullSafe("int_col", null), nullSafeEq(intCol, Literal.ofNull(DType.INT32)))
+    assertPushes(Not(EqualTo("int_col", 1)), not(eqTo(intCol, Literal.ofInt(1))))
+    assertPushes(And(EqualTo("int_col", 1), EqualTo("long_col", 2L)),
+      and(eqTo(intCol, Literal.ofInt(1)), eqTo(longCol, Literal.ofLong(2L))))
+    assertPushes(Or(EqualTo("int_col", 1), EqualTo("long_col", 2L)),
+      or(eqTo(intCol, Literal.ofInt(1)), eqTo(longCol, Literal.ofLong(2L))))
+    assertPushes(In("int_col", Array[Any](1, 2, 3)),
+      in(intCol, Literal.ofInt(1), Literal.ofInt(2), Literal.ofInt(3)))
+    // Not(int_col IN (1, null)) must reject 2: Spark computes the In as null, so Not is null.
+    assertPushes(Not(In("int_col", Array[Any](1, null))),
+      not(in(intCol, Literal.ofInt(1), Literal.ofNull(DType.INT32))))
   }
 
-  test("convertFilter wraps In equalities so a negated In with null rejects a non-member") {
-    val c = converter()
-    // Not(int_col IN (1, null)) must reject 2: Spark computes the In as null, so Not is null and
-    // the row drops. The null-aware equality keeps `2 = null` null rather than false, which a bare
-    // cuDF EQUAL would have turned into a kept row.
-    val expectedIn = new BinaryOperation(BinaryOperator.NULL_LOGICAL_OR,
-      eqAst(new ColumnReference(0), Literal.ofInt(1)),
-      eqAst(new ColumnReference(0), Literal.ofNull(DType.INT32)))
-    assert(c.convertFilter(In("int_col", Array[Any](1, null))).get.toString == expectedIn.toString)
-    assert(c.convertFilter(Not(In("int_col", Array[Any](1, null)))).get.toString ==
-      new UnaryOperation(UnaryOperator.NOT, expectedIn).toString)
+  test("convertFilter builds the micros Spark means for a pushed java.sql.Timestamp") {
+    // Spark pushes DateTimeUtils.toJavaTimestamp(micros), which rebases to the hybrid calendar,
+    // so the converter has to undo that rebase. 1500-01-01T00:00:00.123456Z is the first value.
+    Seq(-14831769599876544L, -1L, 1786000000000123L).foreach { m =>
+      assertPushes(EqualTo("ts_col", DateTimeUtils.toJavaTimestamp(m)),
+        eqTo(col("ts_col"), micros(m)))
+    }
   }
 
-  test("convertFilter builds a literal of the right cuDF type for each column type") {
+  test("convertLiteral accepts the boxed types ParquetFilters does, and only in range") {
     val c = converter()
-    def ast(f: Filter): String = c.convertFilter(f).get.toString
-    def eq(idx: Int, lit: Literal): String = eqAst(new ColumnReference(idx), lit).toString
-    assert(ast(EqualTo("int_col", 42)) == eq(0, Literal.ofInt(42)))
-    assert(ast(EqualTo("long_col", 100L)) == eq(1, Literal.ofLong(100L)))
-    assert(ast(EqualTo("float_col", 3.14f)) == eq(2, Literal.ofFloat(3.14f)))
-    assert(ast(EqualTo("double_col", 2.718)) == eq(3, Literal.ofDouble(2.718)))
-    assert(ast(EqualTo("string_col", "x")) == eq(4, Literal.ofString("x")))
-    assert(ast(EqualTo("bool_col", true)) == eq(5, Literal.ofBoolean(true)))
-    assert(ast(EqualTo("byte_col", 5)) == eq(9, Literal.ofByte(5.toByte)))
-    assert(ast(EqualTo("short_col", 5)) == eq(10, Literal.ofShort(5.toShort)))
-    // A date becomes days since the epoch (TIMESTAMP_DAYS); a timestamp stays micros.
-    assert(ast(EqualTo("date_col", Date.valueOf("2026-08-04"))) ==
-      eq(6, Literal.ofTimestampDaysFromInt(LocalDate.of(2026, 8, 4).toEpochDay.toInt)))
-    assert(ast(EqualTo("ts_col", 1786000000000000L)) ==
-      eq(7, Literal.ofTimestampFromLong(DType.TIMESTAMP_MICROSECONDS, 1786000000000000L)))
+    def pushes(f: Filter): Boolean = c.convertFilter(f).isDefined
+    // Byte, short and int columns take any boxed integer that fits.
+    for (col <- Seq("byte_col", "short_col", "int_col")) {
+      for (v <- Seq[Any](5.toByte, 5.toShort, 5, 5L)) {
+        assert(pushes(LessThan(col, v)), s"$col < ${v.getClass.getSimpleName} should push")
+      }
+    }
+    assertPushes(EqualTo("byte_col", 5L), eqTo(col("byte_col"), Literal.ofByte(5.toByte)))
+    // Narrowing would compare against a different value, so an out-of-range literal stays residual.
+    assert(!pushes(LessThan("byte_col", 300)))
+    assert(!pushes(LessThan("short_col", 40000)))
+    assert(!pushes(LessThan("int_col", 4294967296L)))
+    assert(!pushes(In("int_col", Array[Any](1, 4294967301L))))
+    // Every other type takes only its own box.
+    assert(!pushes(EqualTo("long_col", 1)))
+    assert(!pushes(LessThan("float_col", 1.0)))
+    assert(!pushes(LessThan("double_col", 1.0f)))
+    assert(!pushes(EqualTo("bool_col", 1)))
+    assert(!pushes(EqualTo("string_col", 1)))
+    // A date or timestamp has to arrive as a date or time object, as ParquetFilters requires.
+    assert(!pushes(EqualTo("date_col", 20669)))
+    assert(!pushes(EqualTo("ts_col", 1786000000000000L)))
   }
 
   test("convertFilter references a column by index or by name per useColumnNames") {
     // Index mode resolves the attribute to its schema position.
-    val byIndex = converter(useColumnNames = false).convertFilter(EqualTo("float_col", 1.0f))
-    assert(byIndex.get.toString ==
-      eqAst(new ColumnReference(2), Literal.ofFloat(1.0f)).toString)
+    assertPushes(EqualTo("long_col", 1L), eqTo(new ColumnReference(1), Literal.ofLong(1L)),
+      converter(useColumnNames = false))
     // Name mode carries the attribute name instead of an index.
-    val byName = converter(useColumnNames = true).convertFilter(EqualTo("int_col", 1))
-    assert(byName.get.toString ==
-      eqAst(new ColumnNameReference("int_col"), Literal.ofInt(1)).toString)
-    // A case-insensitive match still resolves, keeping the original-case name.
-    val byNameCi = converter(caseSensitive = false, useColumnNames = true)
-        .convertFilter(EqualTo("INT_COL", 1))
-    assert(byNameCi.get.toString ==
-      eqAst(new ColumnNameReference("INT_COL"), Literal.ofInt(1)).toString)
+    assertPushes(EqualTo("int_col", 1), eqTo(col("int_col", byName = true), Literal.ofInt(1)),
+      converter(useColumnNames = true))
+    // A case-insensitive match still resolves, to the schema's name.
+    assertPushes(EqualTo("INT_COL", 1), eqTo(col("int_col", byName = true), Literal.ofInt(1)),
+      converter(caseSensitive = false, useColumnNames = true))
+  }
+
+  test("convertFilter matches a column by the quoted name Spark pushes") {
+    // Spark writes struct field b of a as a.b, and quotes a column whose name has a dot or space.
+    val schema = StructType(Seq(
+      StructField("a", StructType(Seq(StructField("b", IntegerType)))),
+      StructField("a.b", IntegerType),
+      StructField("my col", IntegerType)))
+    val byIndex = FilterToAstConverter(schema, isCaseSensitive = true, useColumnNames = false)
+    assert(byIndex.convertFilter(EqualTo("a.b", 1)).isEmpty)
+    assertPushes(EqualTo("`a.b`", 1), eqTo(new ColumnReference(1), Literal.ofInt(1)), byIndex)
+    assertPushes(EqualTo("`my col`", 1), eqTo(new ColumnReference(2), Literal.ofInt(1)), byIndex)
+    val byName = FilterToAstConverter(schema, isCaseSensitive = true, useColumnNames = true)
+    assertPushes(EqualTo("`my col`", 1), eqTo(new ColumnNameReference("my col"), Literal.ofInt(1)),
+      byName)
+    assert(byName.resolvesAllColumns(Array(StringContains("`my col`", "x"))))
+    assert(!byName.resolvesAllColumns(Array(StringContains("a.b", "x"))))
+    assert(byName.columnType("`a.b`").contains(IntegerType))
+    assert(byName.columnType("a.b").isEmpty)
   }
 
   test("planPushdown splits a float greater-than out of an And and pushes the rest") {
@@ -266,29 +336,6 @@ class FilterToAstConverterSuite extends AnyFunSuite {
   test("convertFilter leaves a whole Or residual when a float greater-than side cannot push") {
     assert(converter().convertFilter(
       Or(GreaterThan("float_col", 1.0f), EqualTo("int_col", 42))).isEmpty)
-  }
-
-  test("convertFilter keeps a null element in an In as a null literal") {
-    // The null converts to a null literal rather than making the whole In residual.
-    assert(converter().convertFilter(In("int_col", Array[Any](1, null))).isDefined)
-  }
-
-  test("convertFilter converts date literals from Date, LocalDate and day counts") {
-    val c = converter()
-    assert(c.convertFilter(EqualTo("date_col", Date.valueOf("2026-08-04"))).isDefined)
-    assert(c.convertFilter(EqualTo("date_col", LocalDate.of(2026, 8, 4))).isDefined)
-    assert(c.convertFilter(EqualTo("date_col", 20669)).isDefined)
-  }
-
-  test("convertFilter converts timestamp literals from Timestamp, Instant and micros") {
-    val c = converter()
-    assert(c.convertFilter(EqualTo("ts_col", Timestamp.valueOf("2026-08-04 12:00:00"))).isDefined)
-    assert(c.convertFilter(EqualTo("ts_col", Instant.ofEpochSecond(1786000000L))).isDefined)
-    assert(c.convertFilter(EqualTo("ts_col", 1786000000000000L)).isDefined)
-  }
-
-  test("convertFilter converts null literals for typed columns") {
-    assert(converter().convertFilter(EqualNullSafe("int_col", null)).isDefined)
   }
 
   test("convertFilter rejects a column outside the read schema") {
@@ -307,13 +354,6 @@ class FilterToAstConverterSuite extends AnyFunSuite {
   test("convertFilter honors case sensitivity") {
     assert(converter(caseSensitive = true).convertFilter(EqualTo("INT_COL", 1)).isEmpty)
     assert(converter(caseSensitive = false).convertFilter(EqualTo("INT_COL", 1)).isDefined)
-  }
-
-  test("convertFilter converts compound filters") {
-    val c = converter()
-    assert(c.convertFilter(And(EqualTo("int_col", 1), EqualTo("long_col", 100L))).isDefined)
-    assert(c.convertFilter(Or(EqualTo("int_col", 1), EqualTo("int_col", 2))).isDefined)
-    assert(c.convertFilter(Not(EqualTo("int_col", 1))).isDefined)
   }
 
   test("convertFilter negates every filter it can convert") {
@@ -365,6 +405,17 @@ class FilterToAstConverterSuite extends AnyFunSuite {
 
   test("convertFilter rejects an empty In") {
     assert(converter().convertFilter(In("int_col", Array.empty)).isEmpty)
+  }
+
+  test("planPushdown leaves an In longer than MaxInValues residual") {
+    // Each value adds a level to the OR chain, and cuDF walks it recursively.
+    val maxValues = (1 to FilterToAstConverter.MaxInValues).toArray[Any]
+    assert(converter().convertFilter(In("int_col", maxValues)).isDefined)
+    val tooMany = In("int_col", (0 to FilterToAstConverter.MaxInValues).toArray[Any])
+    withPlan(tooMany, EqualTo("long_col", 1L)) { plan =>
+      assert(plan.pushed.toSeq == Seq(EqualTo("long_col", 1L)))
+      assert(plan.residual.toSeq == Seq(tooMany))
+    }
   }
 
   test("planPushdown returns no AST and no residual for no filters") {
@@ -467,9 +518,18 @@ class FilterToAstConverterSuite extends AnyFunSuite {
   test("planPushdown matches the null check column case-insensitively when asked to") {
     val plan = converter(caseSensitive = false)
         .planPushdown(Array[Filter](IsNotNull("INT_COL"), EqualTo("int_col", 42)))
-    withResource(plan.ast) { _ =>
-      assert(plan.pushed.toSeq == Seq(EqualTo("int_col", 42)))
-      assert(plan.residual.toSeq == Seq(IsNotNull("INT_COL")))
+    assert(plan.pushed.toSeq == Seq(EqualTo("int_col", 42)))
+    assert(plan.residual.toSeq == Seq(IsNotNull("INT_COL")))
+  }
+
+  test("convertFilter leaves a null check on a nested column residual") {
+    // Spark infers these beside array_contains(arr_col, 1) and map_col['a'] = 1.
+    val c = converter()
+    assert(c.convertFilter(IsNotNull("arr_col")).isEmpty)
+    assert(c.convertFilter(IsNull("map_col")).isEmpty)
+    withPlan(IsNotNull("arr_col"), EqualTo("int_col", 1)) { plan =>
+      assert(plan.pushed.toSeq == Seq(EqualTo("int_col", 1)))
+      assert(plan.residual.toSeq == Seq(IsNotNull("arr_col")))
     }
   }
 
@@ -481,21 +541,16 @@ class FilterToAstConverterSuite extends AnyFunSuite {
     assert(split.toSeq == Seq(EqualTo("int_col", 1), IsNotNull("long_col"), or, not))
   }
 
-  test("residualsEvaluableOn requires every residual column to be read") {
-    assert(FilterToAstConverter.residualsEvaluableOn(
-      Array(StringContains("string_col", "x")), testSchema, isCaseSensitive = true))
-    assert(!FilterToAstConverter.residualsEvaluableOn(
-      Array(StringContains("absent_col", "x")), testSchema, isCaseSensitive = true))
-    assert(FilterToAstConverter.residualsEvaluableOn(
-      Array.empty, testSchema, isCaseSensitive = true))
+  test("resolvesAllColumns requires every referenced column to be read") {
+    assert(converter().resolvesAllColumns(Array(StringContains("string_col", "x"))))
+    assert(!converter().resolvesAllColumns(Array(StringContains("absent_col", "x"))))
+    assert(converter().resolvesAllColumns(Array.empty))
   }
 
-  test("residualsEvaluableOn honors case sensitivity") {
+  test("resolvesAllColumns honors case sensitivity") {
     val residual = Array[Filter](StringContains("STRING_COL", "x"))
-    assert(!FilterToAstConverter.residualsEvaluableOn(residual, testSchema,
-      isCaseSensitive = true))
-    assert(FilterToAstConverter.residualsEvaluableOn(residual, testSchema,
-      isCaseSensitive = false))
+    assert(!converter(caseSensitive = true).resolvesAllColumns(residual))
+    assert(converter(caseSensitive = false).resolvesAllColumns(residual))
   }
 
   test("getReferencedColumns collects columns through compound filters") {
@@ -509,5 +564,113 @@ class FilterToAstConverterSuite extends AnyFunSuite {
       In("int_col", Array(1, 2, 3))) == Set("int_col"))
     assert(FilterToAstConverter.getReferencedColumns(
       StringContains("string_col", "x")) == Set("string_col"))
+  }
+
+  // ---- Evaluation against Spark. These compile the AST and run it on the GPU, so they need the
+  // cuDF native library and a CUDA device. Neither RMM nor a Spark session has to be set up.
+
+  private val evalSchema = StructType(Seq(
+    StructField("i", IntegerType), StructField("f", FloatType), StructField("d", DoubleType)))
+
+  // Each null-handling choice changes a kept row here: a null beside a true and beside a false,
+  // NaN in both float columns, and -0.0 and infinity.
+  private val evalInts = Seq[java.lang.Integer](1, 2, null, 3, 1, null, null)
+  private val evalFloats = Seq[java.lang.Float](
+    1.0f, Float.NaN, null, -0.0f, 2.0f, Float.PositiveInfinity, 2.0f)
+  private val evalDoubles = Seq[java.lang.Double](
+    1.0, Double.NaN, null, 0.0, -1.0, Double.NaN, 1.0)
+
+  private def evalConverter = FilterToAstConverter(evalSchema, isCaseSensitive = true,
+    useColumnNames = false)
+
+  private def withEvalTable[T](body: Table => T): T = {
+    withResource(ColumnVector.fromBoxedInts(evalInts: _*)) { ints =>
+      withResource(ColumnVector.fromBoxedFloats(evalFloats: _*)) { floats =>
+        withResource(ColumnVector.fromBoxedDoubles(evalDoubles: _*)) { doubles =>
+          withResource(new Table(ints, floats, doubles))(body)
+        }
+      }
+    }
+  }
+
+  /** Rows where `compiled` is true. A null result drops the row, as a filter does. */
+  private def gpuKeptRows(compiled: CompiledExpression): Seq[Int] = withEvalTable { table =>
+    withResource(compiled.computeColumn(table)) { result =>
+      withResource(result.copyToHost()) { host =>
+        (0 until host.getRowCount.toInt).filter(r => !host.isNull(r) && host.getBoolean(r))
+      }
+    }
+  }
+
+  /** `filter` as a Catalyst predicate over `evalSchema`, so that Spark itself is the oracle. */
+  private def toCatalyst(filter: Filter): expressions.Expression = {
+    def ref(name: String): expressions.Expression = {
+      val idx = evalSchema.fieldIndex(name)
+      expressions.BoundReference(idx, evalSchema(idx).dataType, nullable = true)
+    }
+    def lit(name: String, value: Any): expressions.Expression =
+      expressions.Literal.create(value, evalSchema(name).dataType)
+    filter match {
+      case EqualTo(a, v) => expressions.EqualTo(ref(a), lit(a, v))
+      case EqualNullSafe(a, v) => expressions.EqualNullSafe(ref(a), lit(a, v))
+      case GreaterThan(a, v) => expressions.GreaterThan(ref(a), lit(a, v))
+      case GreaterThanOrEqual(a, v) => expressions.GreaterThanOrEqual(ref(a), lit(a, v))
+      case LessThan(a, v) => expressions.LessThan(ref(a), lit(a, v))
+      case LessThanOrEqual(a, v) => expressions.LessThanOrEqual(ref(a), lit(a, v))
+      case IsNull(a) => expressions.IsNull(ref(a))
+      case IsNotNull(a) => expressions.IsNotNull(ref(a))
+      case In(a, values) => expressions.In(ref(a), values.toSeq.map(lit(a, _)))
+      case And(l, r) => expressions.And(toCatalyst(l), toCatalyst(r))
+      case Or(l, r) => expressions.Or(toCatalyst(l), toCatalyst(r))
+      case Not(child) => expressions.Not(toCatalyst(child))
+      case other => throw new IllegalArgumentException(s"No Catalyst form for $other")
+    }
+  }
+
+  /** Rows where Spark's own evaluation of `filter` is true. */
+  private def sparkKeptRows(filter: Filter): Seq[Int] = {
+    val predicate = toCatalyst(filter)
+    evalInts.indices.filter { r =>
+      predicate.eval(InternalRow(evalInts(r), evalFloats(r), evalDoubles(r))) match {
+        case true => true
+        case _ => false
+      }
+    }
+  }
+
+  test("every pushed filter keeps the rows Spark keeps, over nulls, NaN and -0.0") {
+    val c = evalConverter
+    Seq[Filter](
+      EqualTo("i", 1), Not(EqualTo("i", 1)), EqualNullSafe("i", null),
+      Not(EqualNullSafe("i", 1)), LessThanOrEqual("i", 2), Not(GreaterThan("i", 1)),
+      IsNull("i"), Not(IsNull("i")), In("i", Array[Any](1, 3)),
+      In("i", Array[Any](1, null)), Not(In("i", Array[Any](1, null))),
+      // Rows 5 and 6 pair a null with a false and with a true, so only Kleene AND and OR keep
+      // what Spark keeps.
+      Not(And(EqualTo("i", 2), LessThan("f", 1.0f))),
+      Or(EqualTo("i", 1), LessThanOrEqual("f", 2.0f)),
+      Not(Or(EqualTo("i", 1), LessThanOrEqual("f", 2.0f))),
+      // Spark orders -0.0 equal to 0.0, as IEEE-754 does.
+      LessThanOrEqual("f", 0.0f), LessThanOrEqual("d", -0.0),
+      LessThanOrEqual("f", Float.PositiveInfinity), Not(LessThan("f", 1.5f)),
+      Not(LessThan("d", 1.0))
+    ).foreach { filter =>
+      val ast = c.convertFilter(filter)
+      assert(ast.isDefined, s"$filter should push")
+      val gpuRows = withResource(ast.get.compile())(gpuKeptRows)
+      assertResult(sparkKeptRows(filter), s"rows kept by $filter")(gpuRows)
+    }
+  }
+
+  test("planPushdown's AST plus its residual keeps the rows Spark keeps") {
+    val filters = Array[Filter](IsNotNull("i"), LessThanOrEqual("i", 3),
+      Not(EqualTo("d", 1.0)), LessThanOrEqual("f", 2.0f), GreaterThan("f", -1.0f))
+    val plan = evalConverter.planPushdown(filters)
+    withResource(plan.ast.map(_.compile())) { ast =>
+      assert(ast.isDefined)
+      val kept = gpuKeptRows(ast.get)
+        .filter(r => plan.residual.forall(f => sparkKeptRows(f).contains(r)))
+      assertResult(sparkKeptRows(filters.reduce[Filter](And(_, _))))(kept)
+    }
   }
 }
