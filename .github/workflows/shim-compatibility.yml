@@ -31,8 +31,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  shim-compatibility:
+  shim-scope:
     if: github.event.action != 'edited' || github.event.changes.base.ref
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      relevant: ${{ steps.scope.outputs.relevant }}
+    env:
+      SHIM_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+      SHIM_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch current target branch
+        run: git fetch --no-tags origin "+refs/heads/${SHIM_BASE_BRANCH}:refs/remotes/origin/shim-review-base"
+      - name: Classify the complete PR diff
+        id: scope
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import sys
+
+          sys.path.insert(0, 'build')
+          from check_shim_compatibility import git, git_paths, review_scope
+
+          root = Path.cwd()
+          head = os.environ['SHIM_HEAD']
+          common = git(root, 'merge-base', 'origin/shim-review-base', head)
+          # Avoid API file-count limits and retain both sides of moved sources.
+          changed = git_paths(root, 'diff', '--name-only', '--no-renames', common, head)
+          relevant = str(review_scope(changed)).lower()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'relevant={relevant}\n')
+          print(f'Shim-related changes: {relevant} ({len(changed)} changed paths)')
+          PY
+
+  shim-compatibility:
+    needs: shim-scope
+    if: needs.shim-scope.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -78,7 +118,8 @@ jobs:
           retention-days: 14
 
   shim-related-prs:
-    if: github.event.action != 'edited' || github.event.changes.base.ref
+    needs: shim-scope
+    if: needs.shim-scope.outputs.relevant == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Advisory setup/API failures must not fail the core check or the workflow.

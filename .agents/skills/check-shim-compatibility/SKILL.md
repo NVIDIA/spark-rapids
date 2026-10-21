@@ -18,9 +18,17 @@ The helper never posts comments or changes GitHub state.
 
 ## Automated review evidence
 
-The `Shim compatibility` workflow runs the `shim-compatibility` check on PR
-events, using read-only repository/PR permissions. It exports immutable Git
-source blobs, checks `sql-plugin` on current base and the proposed combined tree,
+The `Shim compatibility` workflow first classifies the complete PR diff using
+the helper's applicability rules, using read-only repository/PR permissions.
+Only shim implementations, shared production JVM sources that may call shims,
+profile/build-matrix changes, and the preflight helper, workflow or skill run
+the core `shim-compatibility` check and independent advisory. Ordinary
+documentation-only and test-only PRs skip both scans. The classifier uses local
+Git history without API file-count limits and includes deleted or moved source
+paths. Scope detection failures fail the workflow rather than declare the PR
+unrelated.
+The core check exports immutable Git source blobs, checks `sql-plugin` on current
+base and the proposed combined tree,
 without depending on unrelated PR activity. No product code, Maven build, or
 GPU test is executed. A separate `shim-related-prs` job automatically discovers
 related PRs for relevant changes and publishes its own summary/artifact and
@@ -51,7 +59,7 @@ state that limitation. Never fabricate a successful run or report missing
 access as a product defect. A green check is not merge authorization.
 
 The workflow runs on PR opening, head updates, reopening, ready-for-review, and
-target-branch changes. Title/body-only edits skip both jobs and use an isolated
+target-branch changes. Title/body-only edits skip all jobs and use an isolated
 concurrency group so they cannot cancel a useful scan. It does not run on every
 merge to the target branch. Before
 merge, compare the report's base/head to current refs and rerun when relevant
