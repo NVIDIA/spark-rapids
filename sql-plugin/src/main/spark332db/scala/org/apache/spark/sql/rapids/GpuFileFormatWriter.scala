@@ -372,7 +372,7 @@ trait GpuFileFormatWriterBase extends Serializable with Logging {
   }
 
   /**
-   * Write files using [[SparkPlan.executeWrite]]
+   * Write files using `SparkPlan.executeWrite`
    */
   def executeWrite(
       session: SparkSession,

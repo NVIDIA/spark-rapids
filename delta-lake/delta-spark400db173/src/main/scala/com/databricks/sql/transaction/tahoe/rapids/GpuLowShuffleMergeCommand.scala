@@ -103,7 +103,7 @@ import org.apache.spark.sql.types.{BooleanType, LongType, StringType, StructFiel
  * Phase 1: Find the input files in target that are touched by the rows that satisfy
  * the condition and verify that no two source rows match with the same target row.
  * This is implemented as an inner join using the given condition, or a right outer join when
- * NOT MATCHED BY SOURCE clauses also need target-only rows. See [[findTouchedFiles]] for details.
+ * NOT MATCHED BY SOURCE clauses also need target-only rows. See `findTouchedFiles` for details.
  *
  * Phase 2: Read the touched files again and write new files with updated and/or inserted rows
  * without copying unmodified rows.
