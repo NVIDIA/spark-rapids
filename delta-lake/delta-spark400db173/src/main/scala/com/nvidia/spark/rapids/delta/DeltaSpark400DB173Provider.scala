@@ -207,7 +207,7 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
             originalOutput = scan.originalOutput.filterNot(_.name == "_tmp_metadata_row_index"),
             requiredSchema = StructType(
               scan.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
-            ))(scan.rapidsConf)))
+            ))(scan.rapidsConf, scan.partitionPlanningScan)))
     }
 
     plan match {
@@ -495,7 +495,8 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
             // It will not reuse the stage of the scan otherwise. Since we are removing
             // the deletion-vector skip-row column from scan's output, remove the
             // corresponding filter from dataFilters as well.
-            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(fsse.rapidsConf)
+            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(
+            fsse.rapidsConf, fsse.partitionPlanningScan)
       }
     }
 
