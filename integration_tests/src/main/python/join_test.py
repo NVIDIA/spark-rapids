@@ -1102,6 +1102,21 @@ def test_half_cache_join(join_type, cache_side, cpu_side):
         'spark.sql.autoBroadcastJoinThreshold': '1',
     })
 
+# The condition reads only the stream side, so column pruning leaves a rows-only build.
+@pytest.mark.parametrize('build_length', [0, 3], ids=idfn)
+@pytest.mark.parametrize('batch_size', [100, '1g'], ids=idfn)
+def test_broadcast_nested_loop_join_rows_only_build(build_length, batch_size):
+    def do_join(spark):
+        left = gen_df(spark, [('a', SetValuesGen(IntegerType(), [None, 0, 5, 6, 9]))],
+                      length=100, num_slices=1)
+        right = gen_df(spark, [('b', int_gen)], length=build_length, num_slices=1)
+        return left.join(broadcast(right), col('a') > 5, 'left_anti').agg(f.count(lit(1)))
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_join,
+        exist_classes='GpuBroadcastNestedLoopJoinExec',
+        conf={'spark.sql.adaptive.enabled': 'false',
+              'spark.rapids.sql.batchSizeBytes': batch_size})
+
 # Tests a GPU hash exchange of rows-only batches: the null-safe join on a literal leaves the
 # right side with no columns.
 @shuffle_test
