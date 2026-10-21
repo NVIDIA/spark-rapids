@@ -23,12 +23,15 @@ import com.databricks.sql.transaction.tahoe.{
   DeltaParquetFileFormat,
   IdMapping,
   NameMapping,
-  NoMapping
+  NoMapping,
+  VariantShreddingPreviewTableFeature,
+  VariantShreddingTableFeature
 }
 import com.databricks.sql.transaction.tahoe.actions.{Metadata, Protocol}
 import com.databricks.sql.transaction.tahoe.files.TahoeFileIndex
 import com.databricks.sql.transaction.tahoe.schema.SchemaMergingUtils
-import com.nvidia.spark.rapids.{GpuMetric, SparkPlanMeta}
+import com.nvidia.spark.rapids.{GpuColumnVector, GpuMetric, SparkPlanMeta}
+import com.nvidia.spark.rapids.parquet.GpuParquetScan
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 
@@ -38,6 +41,7 @@ import org.apache.spark.sql.catalyst.expressions.Literal.TrueLiteral
 import org.apache.spark.sql.execution.FileSourceScanExec
 import org.apache.spark.sql.execution.datasources.{HadoopFsRelation, PartitionedFile}
 import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{MetadataBuilder, StructType}
@@ -45,11 +49,9 @@ import org.apache.spark.sql.types.{MetadataBuilder, StructType}
 /**
  * GPU Delta Parquet file format for Databricks 18.3.
  *
- * DB-18.3 uses a fundamentally different DV mechanism than DB-14.3:
- * - No broadcastDvMap / broadcastHadoopConf
- * - Per-file DV via PartitionedFile.otherConstantMetadataColumnValues or TahoeFileIndex metadata
- * - The CPU constructor starts with (protocol, metadata, ...); this GPU wrapper also carries the
- *   relation so it can inspect DBR file-index metadata.
+ * Applies Delta column mapping and validates GPU scan support. The relation supplies file-index
+ * metadata for deletion-vector eligibility checks; per-file bitmap lookup is handled by the
+ * shared deletion-vector utilities.
  */
 case class GpuDeltaParquetFileFormat(
     @transient relation: HadoopFsRelation,
@@ -207,6 +209,18 @@ object GpuDeltaParquetFileFormat {
         s"reading metadata columns starting with prefix _databricks_internal is not supported")
     }
     val format = meta.wrapped.relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
+    val mayContainShreddedVariant =
+      format.protocol.isFeatureSupported(VariantShreddingPreviewTableFeature) ||
+        format.protocol.isFeatureSupported(VariantShreddingTableFeature)
+    if (mayContainShreddedVariant && requiredSchema.exists { field =>
+      TrampolineUtil.dataTypeExistsRecursively(field.dataType, GpuColumnVector.isVariantType)
+    }) {
+      // The protocol can retain this feature after shredded writes are disabled, because
+      // existing files can still be shredded. Keep their VARIANT consumers on CPU as well.
+      GpuParquetScan.tagVariantScanPrefixForCpu(meta,
+        "GPU Delta reader does not support VARIANT columns when the table protocol " +
+          "supports variant shredding")
+    }
     val hasRowIndexFilters = hasRowIndexFiltersInTahoeFileIndex(meta.wrapped.relation)
     if (hasDeletionVectorSkipRowColumn &&
         DeltaReadSupport.isDmlMetricDVScan(meta)) {
@@ -253,7 +267,7 @@ object GpuDeltaParquetFileFormat {
 
   /**
    * Convert a CPU Delta Parquet file format to the GPU version.
-   * Called from DatabricksDeltaProviderBase.getReadFileFormat.
+   * Preserves the CPU format settings and relation for reader construction.
    */
   def convertToGpu(relation: HadoopFsRelation): GpuDeltaParquetFileFormat = {
     val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]

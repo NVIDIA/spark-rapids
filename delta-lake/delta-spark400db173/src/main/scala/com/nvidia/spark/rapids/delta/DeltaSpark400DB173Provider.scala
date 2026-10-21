@@ -21,7 +21,6 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.databricks.sql.execution.metric.IncrementMetric
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaOptions}
 import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat
 import com.databricks.sql.transaction.tahoe.commands.{OptimizeTableCommand,
@@ -39,8 +38,8 @@ import com.databricks.sql.transaction.tahoe.rapids.{
   GpuWriteIntoDelta,
   GpuWriteIntoDeltaCommandMeta
 }
-import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaReadSupport.isDeletionVectorSkipRowColumn
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 import com.nvidia.spark.rapids.shims.ShimPredicateHelper
 
@@ -122,12 +121,50 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
       format == classOf[GpuDeltaParquetFileFormat] ||
       format == classOf[GpuDeltaParquetFileFormatNativeDV]
 
+  /**
+   * DBR 17.3 low shuffle MERGE unmodified-row rewrites require temporary-DV filtering:
+   * {{{
+   * Reader | Mode          | Temp DVs | Row-index output
+   * legacy | PERFILE       | no       | yes, whole-file
+   * legacy | MULTITHREADED | no       | no
+   * legacy | COALESCING    | no       | no
+   * native | PERFILE       | yes      | no
+   * native | MULTITHREADED | yes      | yes, file-relative
+   * native | COALESCING    | yes      | no
+   * }}}
+   * Row-index output means the discovery column, distinct from indexes used to apply DVs.
+   * DV pushdown requires both predicatePushdown.enabled and useMetadataRowIndex to be true.
+   * With either setting disabled, shouldFallback selects classic GPU MERGE for every mode
+   * before reader selection. Ordinary reads retain their DV-setting-controlled reader selection.
+   *
+   * Native DV discovery row-index output is currently implemented only for MULTITHREADED.
+   * For discovery, the native reader maps configured COALESCING (including AUTO when coalescing
+   * is eligible) to MULTITHREADED so it can produce file-relative row indexes. PERFILE discovery
+   * uses the legacy row-index path. Rewrites follow normal reader-mode eligibility rules.
+   * The rewrite marker only enables the prerequisite check below; once native DV processing is
+   * enabled, marked rewrites and ordinary reads select the same reader.
+   * TODO: Native PERFILE/COALESCING discovery row indexes: NVIDIA/cudf-spark#16323.
+   */
   override def getReadFileFormat(
       relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat = {
     val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    if (GpuDeltaParquetFileFormat.isLowShuffleMergeScan(relation.options)) {
-      GpuDeltaParquetFileFormat.convertToGpu(relation)
-    } else if (isPushDVPredicateDownEnabled(rapidsConf)) {
+    val isLowShuffleMergeDiscoveryScan =
+      GpuDeltaParquetFileFormat.isLowShuffleMergeDiscoveryScan(relation.options)
+    val isLowShuffleMergeRewriteScan =
+      GpuDeltaParquetFileFormat.isLowShuffleMergeRewriteScan(relation.options)
+    val useNativeReader = if (!isLowShuffleMergeDiscoveryScan && !isLowShuffleMergeRewriteScan) {
+      isPushDVPredicateDownEnabled(rapidsConf)
+    } else {
+      require(isPushDVPredicateDownEnabled(rapidsConf),
+        "Low shuffle MERGE scans with disabled native DV processing must fall back " +
+          "to classic GPU MERGE before reader selection")
+      if (isLowShuffleMergeDiscoveryScan) {
+        !rapidsConf.isParquetPerFileReadEnabled
+      } else {
+        true
+      }
+    }
+    if (useNativeReader) {
       GpuDeltaParquetFileFormatNativeDV(
         relation = relation,
         protocol = fmt.protocol,
@@ -144,15 +181,8 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
     }
   }
 
-  override def isPushDVPredicateDownEnabled(conf: RapidsConf): Boolean = {
-    val dvConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
-    val useMetadataRowIndex = conf.getStr(dvConf.key)
-      .getOrElse(dvConf.defaultValueString).toBoolean
-    // Delta deletion-vector filtering is row-position based in both DBR modes. The native GPU
-    // pushdown below only handles the DBR metadata-row-index plan shape, where Spark provides the
-    // temporary row-index metadata column that we can prune after moving DV filtering into cuDF.
-    useMetadataRowIndex && conf.isDeltaDeletionVectorPredicatePushdownEnabled
-  }
+  override def isPushDVPredicateDownEnabled(conf: RapidsConf): Boolean =
+    DeltaReadSupport.isPushDVPredicateDownEnabled(conf)
 
   override def tryPushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
     val pushed = DB173DVPredicatePushdown.pushToScan(plan)
@@ -169,7 +199,7 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
             originalOutput = scan.originalOutput.filterNot(_.name == "_tmp_metadata_row_index"),
             requiredSchema = StructType(
               scan.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
-            ))(scan.rapidsConf)))
+            ))(scan.rapidsConf, scan.partitionPlanningScan)))
     }
 
     plan match {
@@ -210,36 +240,11 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
     }
   }
 
-  override def isDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = {
-    val maybeDVScan = meta.parent.flatMap(_.parent).flatMap(_.parent).map(_.wrapped)
-    maybeDVScan.exists {
-      case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _))) =>
-        condition.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) &&
-          inputList.exists(_.name == "_metadata") &&
-          !outputList.flatMap(_.references).exists(_.name == "_metadata")
-      case _ => false
-    }
-  }
+  override def isDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean =
+    DeltaReadSupport.isDVScan(meta)
 
-  def isDmlMetricDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = {
-    def hasMetricSkipRowFilter(parent: Option[RapidsMeta[_, _, _]]): Boolean = {
-      parent.exists { p =>
-        p.wrapped match {
-          case FilterExec(condition, _) =>
-            condition.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) &&
-              condition.exists(_.isInstanceOf[IncrementMetric])
-          case _ =>
-            hasMetricSkipRowFilter(p.parent)
-        }
-      }
-    }
-
-    hasMetricSkipRowFilter(meta.parent)
-  }
-
-  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
-    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
-      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
+  def isDmlMetricDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean =
+    DeltaReadSupport.isDmlMetricDVScan(meta)
 
   override protected def toGpuWrite(
      writeConfig: DeltaWriteV1Config,
@@ -457,7 +462,8 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
             // It will not reuse the stage of the scan otherwise. Since we are removing
             // the deletion-vector skip-row column from scan's output, remove the
             // corresponding filter from dataFilters as well.
-            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(fsse.rapidsConf)
+            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(
+            fsse.rapidsConf, fsse.partitionPlanningScan)
       }
     }
 
@@ -531,8 +537,4 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
         }
     }
   }
-
-  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
-    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
-      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
 }

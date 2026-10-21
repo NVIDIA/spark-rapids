@@ -86,6 +86,11 @@ for log in "$@"; do
         break
     fi
     log_files+=("$log")
+    # Shutdown thread dumps can push the initiating error out of the tail.
+    printf '\n----- First Spark failure records: %s (bounded context) -----\n' "$log"
+    timeout --kill-after=1s 3s grep -m 3 -E -A 35 \
+        '\[ERROR\]|(^|[[:space:]])ERROR[[:space:]]|Exception in the executor plugin|cudaError' \
+        "$log" | head -c 65536 || true
     printf '\n----- Spark driver/pytest log: %s (last 200 lines, at most 64 KiB) -----\n' "$log"
     timeout --kill-after=1s 3s tail -c 65536 "$log" | tail -n 200 || true
     # Include both default Spark and pytest file-log formats.
@@ -94,6 +99,11 @@ for log in "$@"; do
         'Spark process identity:|[ .](Master|Worker|ExecutorRunner|StandaloneAppClient|StandaloneSchedulerBackend|TaskSchedulerImpl)[: ]' \
         "$log" | tail -c 65536 | tail -n 200 || true
 done
+if (( ${#log_files[@]} > 0 )) &&
+    grep -qE '15002|Could not start Spark Connect GRPC service' "${log_files[@]}"; then
+    printf '\n----- Spark Connect port 15002 listener ownership -----\n'
+    timeout --kill-after=1s 3s ss -ltnp 'sport = :15002' || true
+fi
 if (( ${#log_files[@]} > 0 )); then
     # Restrict executor logs to application IDs in this run's logs.
     while IFS= read -r app_id; do

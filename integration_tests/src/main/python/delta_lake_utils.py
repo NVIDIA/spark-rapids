@@ -438,9 +438,9 @@ def assert_gpu_and_cpu_latest_delta_log_equivalent(spark, data_path):
 def read_delta_path(spark, path):
     return spark.read.format("delta").load(path)
 
-def read_delta_path_with_cdf(spark, path):
+def read_delta_path_with_cdf(spark, path, starting_version=0):
     df = spark.read.format("delta") \
-        .option("readChangeFeed", "true").option("startingVersion", 0) \
+        .option("readChangeFeed", "true").option("startingVersion", starting_version) \
         .load(path)
     assert "_change_type" in df.columns
     assert "_commit_version" in df.columns
@@ -674,10 +674,12 @@ def assert_rapids_delta_write(
             assert any(
                 callback.contains(plan, expected_command) for plan in captured_plans), \
                 f"{expected_command} is not found in any captured plan"
-        if expected_command == "GpuMergeIntoCommand" and \
-                "BroadcastHashJoinExec" in get_non_gpu_allowed() and is_oss_delta_lake_40():
-            # OSS Delta 4.0 uses a CPU broadcast join to attach stats to the table-state
-            # metadata during DV MERGE. Keep the allowance confined to that metadata query.
+        if expected_command and expected_command.startswith(
+                ("GpuMergeIntoCommand", "GpuDeleteCommand", "GpuUpdateCommand")) and \
+                "BroadcastHashJoinExec" in get_non_gpu_allowed() and \
+                (is_oss_delta_lake_40() or is_oss_delta_lake_42_or_43()):
+            # OSS Delta uses a CPU broadcast join to attach stats to the table-state
+            # metadata during DV DML. Keep the allowance confined to that metadata query.
             _assert_oss_delta_40_merge_metadata_broadcasts(callback, captured_plans)
         for cls in expected_classes or ():
             assert any(
