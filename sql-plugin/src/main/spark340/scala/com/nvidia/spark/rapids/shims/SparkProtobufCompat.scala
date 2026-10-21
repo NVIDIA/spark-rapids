@@ -35,10 +35,6 @@ private[shims] object SparkProtobufCompat extends SparkProtobufCompatBase {
   // Spark 3.4 ProtobufOptions has no enums.as.ints, so the CPU always decodes enums as strings.
   override protected def honorsEnumsAsInts: Boolean = false
 
-  override protected def permissiveFallbackReason: Option[String] = Some(
-    "Spark 3.4 from_protobuf PERMISSIVE mode returns a struct of null fields for malformed " +
-      "input, which the GPU decoder does not produce")
-
   override protected def reflectDescriptorSource(
       e: Expression): Either[String, ProtobufDescriptorSource] =
     Try(ProtobufReflection.invoke0[Option[String]](e, "descFilePath"))

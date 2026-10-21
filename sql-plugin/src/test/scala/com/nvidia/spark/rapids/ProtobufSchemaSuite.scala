@@ -18,19 +18,12 @@ package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.jni.Protobuf._
-import com.nvidia.spark.rapids.jni.ProtobufSchemaDescriptor
 import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.sql.rapids.protobuf._
 import org.apache.spark.sql.types._
 
 class ProtobufSchemaSuite extends AnyFunSuite {
-  private def toJniDescriptor(a: FlattenedSchemaArrays): ProtobufSchemaDescriptor =
-    new ProtobufSchemaDescriptor(a.fieldNumbers, a.parentIndices, a.depthLevels,
-      a.wireTypes, a.outputTypeIds, a.encodings, a.isRepeated, a.isRequired,
-      a.hasDefaultValue, a.isOutput, a.defaultInts, a.defaultFloats, a.defaultBools,
-      a.defaultStrings, a.enumValidValues, a.enumNames)
-
   private case class FakeMessageDescriptor(
       syntax: String,
       fields: Map[String, ProtobufFieldDescriptor],
@@ -143,7 +136,7 @@ class ProtobufSchemaSuite extends AnyFunSuite {
       assert(schema.enumValidValues(0).sameElements(Array(0, 1)))
       assert(schema.enumNames(0).map(new String(_, "UTF-8"))
         .sameElements(Array("UNKNOWN", "EN")))
-      assert(toJniDescriptor(schema).numFields() == 1)
+      assert(schema.toJniDescriptor.numFields() == 1)
     }
   }
 
@@ -302,8 +295,8 @@ class ProtobufSchemaSuite extends AnyFunSuite {
     assert(flat.toOption.get.enumNames
       .map(new String(_, "UTF-8"))
       .sameElements(Array("UNKNOWN", "EN")))
-    assert(toJniDescriptor(ProtobufSchemaValidator.toFlattenedSchemaArrays(
-      Array(flat.toOption.get))).numFields() == 1)
+    assert(ProtobufSchemaValidator.toFlattenedSchemaArrays(
+      Array(flat.toOption.get)).toJniDescriptor.numFields() == 1)
   }
 
   test("validator rejects enum-string field without enum metadata") {
@@ -480,7 +473,7 @@ class ProtobufSchemaSuite extends AnyFunSuite {
     assert(arrays.parentIndices.toSeq == Seq(-1, 0, -1, 2))
     assert(arrays.depthLevels.toSeq == Seq(0, 1, 0, 1))
     assert(arrays.isRepeated.toSeq == Seq(false, false, true, false))
-    assert(toJniDescriptor(arrays).numFields() == 4)
+    assert(arrays.toJniDescriptor.numFields() == 4)
   }
 
   test("validator enforces top-level repeated-field capacity") {
@@ -585,6 +578,6 @@ class ProtobufSchemaSuite extends AnyFunSuite {
     assert(arrays.isRepeated.toSeq == Seq(false, false, false, true))
     assert(arrays.encodings.toSeq == Seq(ENC_DEFAULT, ENC_DEFAULT, ENC_ENUM_STRING, ENC_ZIGZAG))
     assert(new String(arrays.defaultStrings(2), "UTF-8") == "EN")
-    assert(toJniDescriptor(arrays).numFields() == 4)
+    assert(arrays.toJniDescriptor.numFields() == 4)
   }
 }

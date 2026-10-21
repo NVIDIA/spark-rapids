@@ -17,7 +17,6 @@
 /*** spark-rapids-shim-json-lines
 {"spark": "340"}
 {"spark": "341"}
-{"spark": "341db"}
 {"spark": "342"}
 {"spark": "343"}
 {"spark": "344"}
@@ -50,6 +49,7 @@ package com.nvidia.spark.rapids.shims
 
 import scala.collection.mutable
 import scala.reflect.ClassTag
+import scala.util.Try
 
 import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids._
@@ -62,6 +62,7 @@ import org.apache.spark.sql.execution.{ProjectExec, SparkPlan}
 import org.apache.spark.sql.rapids.GpuFromProtobuf
 import org.apache.spark.sql.rapids.protobuf.{
   FlattenedFieldDescriptor,
+  FlattenedSchemaArrays,
   ProtobufFieldInfo,
   ProtobufMessageDescriptor,
   ProtobufSchemaExtractor,
@@ -85,14 +86,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         .asInstanceOf[Class[_ <: UnaryExpression]]
       Map(clazz.asInstanceOf[Class[_ <: Expression]] -> fromProtobufRule(clazz))
     } catch {
-      case _: ClassNotFoundException => Map.empty
-      case e: Exception =>
-        logWarning(s"Failed to load $protobufDataToCatalystClassName: ${e.getMessage}")
-        Map.empty
-      case e: Error =>
-        logWarning(
-          s"JVM error while loading $protobufDataToCatalystClassName: ${e.getMessage}")
-        Map.empty
+      case _: ClassNotFoundException | _: NoClassDefFoundError => Map.empty
     }
   }
 
@@ -112,330 +106,186 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
 
         private var fullSchema: StructType = _
         private var failOnErrors: Boolean = _
-
-        // Flattened schema variables for GPU decoding
-        private var flatFieldNumbers: Array[Int] = _
-        private var flatParentIndices: Array[Int] = _
-        private var flatDepthLevels: Array[Int] = _
-        private var flatWireTypes: Array[Int] = _
-        private var flatOutputTypeIds: Array[Int] = _
-        private var flatEncodings: Array[Int] = _
-        private var flatIsRepeated: Array[Boolean] = _
-        private var flatIsRequired: Array[Boolean] = _
-        private var flatHasDefaultValue: Array[Boolean] = _
-        private var flatIsOutput: Array[Boolean] = _
-        private var flatDefaultInts: Array[Long] = _
-        private var flatDefaultFloats: Array[Double] = _
-        private var flatDefaultBools: Array[Boolean] = _
-        private var flatDefaultStrings: Array[Array[Byte]] = _
-        private var flatEnumValidValues: Array[Array[Int]] = _
-        private var flatEnumNames: Array[Array[Array[Byte]]] = _
+        private var flatSchema: FlattenedSchemaArrays = _
         // Indices in fullSchema for top-level fields visible in the returned decoded schema.
         private var decodedTopLevelIndices: Array[Int] = _
 
         override def tagExprForGpu(): Unit = {
-          fullSchema = e.dataType match {
-            case st: StructType => st
+          val planned = e.dataType match {
+            case st: StructType =>
+              fullSchema = st
+              planGpuDecode()
             case other =>
-              willNotWorkOnGpu(
-                s"Only StructType output is supported for from_protobuf, got $other")
-              return
+              Left(s"Only StructType output is supported for from_protobuf, got $other")
           }
-
-          val exprInfo = SparkProtobufCompat.extractExprInfo(e) match {
-            case Right(info) => info
-            case Left(reason) =>
-              willNotWorkOnGpu(reason)
-              return
-          }
-          val plannerOptions = SparkProtobufCompat.parsePlannerOptions(exprInfo.options) match {
-            case Right(opts) => opts
-            case Left(reason) =>
-              willNotWorkOnGpu(reason)
-              return
-          }
-          val enumsAsInts = plannerOptions.enumsAsInts
-          failOnErrors = plannerOptions.failOnErrors
-          val unsupportedOptions = SparkProtobufCompat.unsupportedOptions(exprInfo.options)
-          if (unsupportedOptions.nonEmpty) {
-            val keys = unsupportedOptions.mkString(",")
-            willNotWorkOnGpu(
-              s"from_protobuf options are not supported yet on GPU: $keys")
-            return
-          }
-          val messageName = exprInfo.messageName
-
-          val msgDesc = SparkProtobufCompat.resolveMessageDescriptor(exprInfo) match {
-            case Right(desc) => desc
-            case Left(reason) =>
-              willNotWorkOnGpu(reason)
-              return
-          }
-
-          SparkProtobufCompat.validateDescriptorGraphSyntax(fullSchema, msgDesc) match {
-            case Left(reason) =>
-              willNotWorkOnGpu(reason)
-              return
+          planned match {
+            case Left(reason) => willNotWorkOnGpu(reason)
             case Right(_) =>
           }
+        }
 
-          // Step 1: Analyze all fields and build field info map
-          val fieldsInfoMap =
-            ProtobufSchemaExtractor.analyzeAllFields(fullSchema, msgDesc, enumsAsInts, messageName)
-              .fold({ reason =>
-                willNotWorkOnGpu(reason)
-                return
-              }, identity)
+        private def planGpuDecode(): Either[String, Unit] = for {
+          exprInfo <- SparkProtobufCompat.extractExprInfo(e)
+          plannerOptions <- SparkProtobufCompat.parsePlannerOptions(exprInfo.options)
+          _ <- checkSupportedOptions(exprInfo.options)
+          msgDesc <- SparkProtobufCompat.resolveMessageDescriptor(exprInfo)
+          _ <- SparkProtobufCompat.validateDescriptorGraphSyntax(fullSchema, msgDesc)
+          fieldsInfoMap <- ProtobufSchemaExtractor.analyzeAllFields(
+            fullSchema, msgDesc, plannerOptions.enumsAsInts, exprInfo.messageName)
+          _ <- checkTopLevelFieldsSupported(fieldsInfoMap)
+          outputIndices = outputTopLevelIndices(fieldsInfoMap, msgDesc)
+          flatFields <- flattenSchema(
+            fieldsInfoMap, msgDesc, outputIndices.toSet, plannerOptions.enumsAsInts)
+          _ <- ProtobufSchemaValidator.validateFlattenedSchema(flatFields)
+          arrays = ProtobufSchemaValidator.toFlattenedSchemaArrays(flatFields)
+          // The JNI constructor has checks of its own; fail here rather than on executors.
+          _ <- Try(arrays.toJniDescriptor).toEither.left.map { t =>
+            s"Protobuf schema is not supported by the GPU decoder: ${t.getMessage}"
+          }
+        } yield {
+          failOnErrors = plannerOptions.failOnErrors
+          flatSchema = arrays
+          decodedTopLevelIndices = outputIndices
+          overrideDataType(buildDecodedSchema(buildPrunedFieldsMap()))
+        }
 
-          // Step 2: Determine which fields are actually required by downstream operations
+        private def checkSupportedOptions(options: Map[String, String]): Either[String, Unit] = {
+          val unsupported = SparkProtobufCompat.unsupportedOptions(options)
+          Either.cond(unsupported.isEmpty, (),
+            s"from_protobuf options are not supported yet on GPU: ${unsupported.mkString(",")}")
+        }
+
+        // Every root field is decoded, even when projected out, to keep Spark's validation.
+        private def checkTopLevelFieldsSupported(
+            fieldsInfoMap: Map[String, ProtobufFieldInfo]): Either[String, Unit] = {
+          val reasons = fullSchema.fields.flatMap { sf =>
+            fieldsInfoMap.get(sf.name).filterNot(_.isSupported).map { info =>
+              s"${sf.name}: ${info.unsupportedReason.getOrElse("unknown reason")}"
+            }
+          }
+          Either.cond(reasons.isEmpty, (),
+            s"Fields not supported for from_protobuf: ${reasons.mkString(", ")}")
+        }
+
+        /** Top-level fields the query reads, plus proto2 required fields Spark validates. */
+        private def outputTopLevelIndices(
+            fieldsInfoMap: Map[String, ProtobufFieldInfo],
+            msgDesc: ProtobufMessageDescriptor): Array[Int] = {
           val requiredFieldNames = analyzeRequiredFields(fieldsInfoMap.keySet)
-
-          // Step 2b: Proto2 required fields must always be decoded so the GPU can
-          // detect missing-required and null the struct row (PERMISSIVE) or throw
-          // (FAILFAST), matching CPU behavior. Without this, schema projection
-          // can prune a required field and the GPU silently produces a non-null
-          // struct where CPU would have returned null.
+          // Pruning a proto2 required field would hide a missing value that Spark reports.
           val protoRequiredFieldNames = fieldsInfoMap.collect {
             case (name, info) if info.isRequired => name
           }.toSet
           val outputFieldNames = requiredFieldNames ++ protoRequiredFieldNames
-
-          // Step 2c: Preserve validation semantics when nested pruning selects only some children.
           augmentNestedRequirementsForValidation(msgDesc)
-
-          // Step 3: Check if all fields to be decoded are supported
-          val unsupportedRequired = outputFieldNames.filter { name =>
-            fieldsInfoMap.get(name).exists(!_.isSupported)
-          }
-
-          if (unsupportedRequired.nonEmpty) {
-            val reasons = unsupportedRequired.map { name =>
-              val info = fieldsInfoMap(name)
-              s"${name}: ${info.unsupportedReason.getOrElse("unknown reason")}"
-            }
-            willNotWorkOnGpu(
-              s"Required fields not supported for from_protobuf: ${reasons.mkString(", ")}")
-            return
-          }
-
-          // Step 4: Keep every root descriptor for Spark's root unknown-field/type validation,
-          // while using isOutput to avoid materializing fields that were projected out.
-          val outputTopLevelIndices = fullSchema.fields.zipWithIndex.collect {
+          fullSchema.fields.zipWithIndex.collect {
             case (sf, idx) if outputFieldNames.contains(sf.name) => idx
           }
-          val outputIndexSet = outputTopLevelIndices.toSet
-          val indicesToDecode = fullSchema.fields.indices.toArray
+        }
 
-          // Verify all fields to be decoded are actually supported
-          // (This catches edge cases where field analysis might have issues)
-          val unsupportedInDecode = indicesToDecode.filter { idx =>
-            val sf = fullSchema.fields(idx)
-            fieldsInfoMap.get(sf.name).exists(!_.isSupported)
-          }
-          if (unsupportedInDecode.nonEmpty) {
-            val reasons = unsupportedInDecode.map { idx =>
-              val sf = fullSchema.fields(idx)
-              val info = fieldsInfoMap(sf.name)
-              s"${sf.name}: ${info.unsupportedReason.getOrElse("unknown reason")}"
+        /**
+         * Flattens every root field and its selected nested children for the JNI decoder.
+         * Fields outside outputIndices are decoded only for validation.
+         */
+        private def flattenSchema(
+            fieldsInfoMap: Map[String, ProtobufFieldInfo],
+            msgDesc: ProtobufMessageDescriptor,
+            outputIndices: Set[Int],
+            enumsAsInts: Boolean): Either[String, Array[FlattenedFieldDescriptor]] = {
+          val flatFields = mutable.ArrayBuffer[FlattenedFieldDescriptor]()
+
+          // pathPrefix is the dot-path of ancestor fields (empty for top-level).
+          def addFieldWithChildren(
+              sf: StructField,
+              info: ProtobufFieldInfo,
+              parentIdx: Int,
+              depth: Int,
+              containingMsgDesc: ProtobufMessageDescriptor,
+              isOutput: Boolean,
+              pathPrefix: String = ""): Either[String, Unit] = {
+            val currentIdx = flatFields.size
+            val outputTypeOpt = sf.dataType match {
+              // Repeated message field: ArrayType(StructType) - element type is STRUCT
+              case ArrayType(_: StructType, _) | _: StructType =>
+                Some(DType.STRUCT.getTypeId.getNativeId)
+              case ArrayType(elemType, _) => GpuFromProtobuf.sparkTypeToCudfIdOpt(elemType)
+              case other => GpuFromProtobuf.sparkTypeToCudfIdOpt(other)
             }
-            willNotWorkOnGpu(
-              s"Fields not supported for from_protobuf: ${reasons.mkString(", ")}")
-            return
-          }
-
-          // Step 5: Build flattened schema for GPU decoding.
-          // The flattened schema represents nested fields with parent indices.
-          // For pure scalar schemas, all fields are top-level (parentIdx == -1, depth == 0).
-          {
-            val flatFields = mutable.ArrayBuffer[FlattenedFieldDescriptor]()
-            var step5Failed = false
-
-            def failStep5(reason: String): Unit = {
-              step5Failed = true
-              willNotWorkOnGpu(reason)
-            }
-
-            // Helper to add a field and its children recursively.
-            // pathPrefix is the dot-path of ancestor fields (empty for top-level).
-            def addFieldWithChildren(
-                sf: StructField,
-                info: ProtobufFieldInfo,
-                parentIdx: Int,
-                depth: Int,
-                containingMsgDesc: ProtobufMessageDescriptor,
-                isOutput: Boolean,
-                pathPrefix: String = ""): Unit = {
-
-              val currentIdx = flatFields.size
-
-              if (depth >= ProtobufSchemaValidator.MAX_NESTING_DEPTH) {
-                failStep5(
-                  "Protobuf nesting depth exceeds maximum supported depth of " +
-                    ProtobufSchemaValidator.MAX_NESTING_DEPTH)
-                return
-              }
-
-              val outputTypeOpt = sf.dataType match {
-                case ArrayType(elemType, _) =>
-                  elemType match {
-                    case _: StructType =>
-                      // Repeated message field: ArrayType(StructType) - element type is STRUCT
-                      Some(DType.STRUCT.getTypeId.getNativeId)
-                    case other =>
-                      GpuFromProtobuf.sparkTypeToCudfIdOpt(other)
-                  }
-                case _: StructType =>
-                  Some(DType.STRUCT.getTypeId.getNativeId)
-                case other =>
-                  GpuFromProtobuf.sparkTypeToCudfIdOpt(other)
-              }
-              val outputType = outputTypeOpt.getOrElse {
-                failStep5(
-                  s"Unsupported Spark type for protobuf field '${sf.name}': ${sf.dataType}")
-                return
-              }
-
-              val path = if (pathPrefix.isEmpty) sf.name else s"$pathPrefix.${sf.name}"
-              ProtobufSchemaValidator.toFlattenedFieldDescriptor(
-                path,
-                sf,
-                info,
-                parentIdx,
-                depth,
-                outputType,
-                isOutput).fold({ reason =>
-                failStep5(reason)
-                return
-              }, flatFields += _)
-
-              // For nested struct types (including repeated message = ArrayType(StructType)),
-              // add child fields
-              sf.dataType match {
+            val path = if (pathPrefix.isEmpty) sf.name else s"$pathPrefix.${sf.name}"
+            for {
+              _ <- Either.cond(depth < ProtobufSchemaValidator.MAX_NESTING_DEPTH, (),
+                "Protobuf nesting depth exceeds maximum supported depth of " +
+                  ProtobufSchemaValidator.MAX_NESTING_DEPTH)
+              outputType <- outputTypeOpt.toRight(
+                s"Unsupported Spark type for protobuf field '${sf.name}': ${sf.dataType}")
+              flatField <- ProtobufSchemaValidator.toFlattenedFieldDescriptor(
+                path, sf, info, parentIdx, depth, outputType, isOutput)
+              _ = flatFields += flatField
+              // Repeated message parents and plain struct parents share the same child
+              // expansion path; the flat parent entry's isRepeated flag distinguishes them.
+              _ <- sf.dataType match {
                 case st: StructType if containingMsgDesc != null =>
-                  // Repeated message parents and plain struct parents share the same child
-                  // expansion path; the flat parent entry's isRepeated flag distinguishes them.
                   addChildFieldsFromStruct(
                     st, containingMsgDesc, sf.name, currentIdx, depth, isOutput, pathPrefix)
-
                 case ArrayType(st: StructType, _) if containingMsgDesc != null =>
                   addChildFieldsFromStruct(
                     st, containingMsgDesc, sf.name, currentIdx, depth, isOutput, pathPrefix)
-
-                case _ => // Not a struct, no children to add
+                case _ => Right(())
               }
-            }
+            } yield ()
+          }
 
-            // Helper to add child fields from a struct type.
-            // Applies nested schema pruning at arbitrary depth using path-based
-            // lookup into nestedFieldRequirements.
-            def addChildFieldsFromStruct(
-                st: StructType,
-                containingMsgDesc: ProtobufMessageDescriptor,
-                fieldName: String,
-                parentIdx: Int,
-                parentDepth: Int,
-                isOutput: Boolean,
-                pathPrefix: String): Unit = {
-              val path = if (pathPrefix.isEmpty) fieldName else s"$pathPrefix.$fieldName"
+          // Applies nested schema pruning at arbitrary depth using path-based
+          // lookup into nestedFieldRequirements.
+          def addChildFieldsFromStruct(
+              st: StructType,
+              containingMsgDesc: ProtobufMessageDescriptor,
+              fieldName: String,
+              parentIdx: Int,
+              parentDepth: Int,
+              isOutput: Boolean,
+              pathPrefix: String): Either[String, Unit] = {
+            val path = if (pathPrefix.isEmpty) fieldName else s"$pathPrefix.$fieldName"
+            val filteredFields = nestedFieldRequirements.get(path) match {
+              case Some(Some(childNames)) if isOutput =>
+                st.fields.filter(f => childNames.contains(f.name))
+              case _ =>
+                st.fields
+            }
+            for {
               // containingMsgDesc is the descriptor of the message that directly contains
               // fieldName.
-              val parentField = containingMsgDesc.findField(fieldName)
-              if (parentField.isEmpty) {
-                failStep5(
-                  s"Nested field '$fieldName' not found in protobuf descriptor at '$path'")
-                return
-              } else {
-                parentField.get.messageDescriptor match {
-                  case Some(childMsgDesc) =>
-                    val filteredFields = if (!isOutput) {
-                      st.fields
-                    } else {
-                      nestedFieldRequirements.get(path) match {
-                        case Some(Some(childNames)) =>
-                          st.fields.filter(f => childNames.contains(f.name))
-                        case _ =>
-                          st.fields
-                      }
-                    }
-                    filteredFields.foreach { childSf =>
-                      childMsgDesc.findField(childSf.name) match {
-                        case None =>
-                          failStep5(
-                            s"Nested field '${childSf.name}' not found in protobuf " +
-                              s"descriptor for message at '$path'")
-                          return
-                        case Some(childFd) =>
-                          ProtobufSchemaExtractor
-                            .extractFieldInfo(childSf, childFd, enumsAsInts) match {
-                            case Left(reason) =>
-                              failStep5(reason)
-                              return
-                            case Right(childInfo) =>
-                              if (!childInfo.isSupported) {
-                                failStep5(
-                                  s"Nested field '${childSf.name}' at '$path': " +
-                                    childInfo.unsupportedReason.getOrElse("unsupported type"))
-                                return
-                              } else {
-                                addFieldWithChildren(
-                                  childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc,
-                                  isOutput, path)
-                              }
-                          }
-                      }
-                    }
-                  case None =>
-                    failStep5(
-                      s"Nested field '$fieldName' at '$path' did not resolve to a message type")
-                    return
-                }
+              parentField <- containingMsgDesc.findField(fieldName).toRight(
+                s"Nested field '$fieldName' not found in protobuf descriptor at '$path'")
+              childMsgDesc <- parentField.messageDescriptor.toRight(
+                s"Nested field '$fieldName' at '$path' did not resolve to a message type")
+              _ <- forEachUntilLeft(filteredFields.toSeq) { childSf =>
+                for {
+                  childFd <- childMsgDesc.findField(childSf.name).toRight(
+                    s"Nested field '${childSf.name}' not found in protobuf " +
+                      s"descriptor for message at '$path'")
+                  childInfo <- ProtobufSchemaExtractor
+                    .extractFieldInfo(childSf, childFd, enumsAsInts)
+                  _ <- Either.cond(childInfo.isSupported, (),
+                    s"Nested field '${childSf.name}' at '$path': " +
+                      childInfo.unsupportedReason.getOrElse("unsupported type"))
+                  _ <- addFieldWithChildren(
+                    childSf, childInfo, parentIdx, parentDepth + 1, childMsgDesc, isOutput, path)
+                } yield ()
               }
-            }
-
-            // Only add top-level fields that are actually required (schema projection).
-            // This significantly reduces GPU memory and computation for schemas with many
-            // fields when only a few are needed. Struct extractors remap ordinals from the
-            // converted child schema during GPU conversion.
-            decodedTopLevelIndices = outputTopLevelIndices
-            indicesToDecode.foreach { schemaIdx =>
-              if (!step5Failed) {
-                val sf = fullSchema.fields(schemaIdx)
-                val info = fieldsInfoMap(sf.name)
-                addFieldWithChildren(sf, info, -1, 0, msgDesc, outputIndexSet.contains(schemaIdx))
-              }
-            }
-
-            if (step5Failed) {
-              return
-            }
-
-            // Populate flattened schema variables
-            val flat = flatFields.toArray
-            ProtobufSchemaValidator.validateFlattenedSchema(flat).fold({ reason =>
-              failStep5(reason)
-              return
-            }, identity)
-            val arrays = ProtobufSchemaValidator.toFlattenedSchemaArrays(flat)
-            flatFieldNumbers = arrays.fieldNumbers
-            flatParentIndices = arrays.parentIndices
-            flatDepthLevels = arrays.depthLevels
-            flatWireTypes = arrays.wireTypes
-            flatOutputTypeIds = arrays.outputTypeIds
-            flatEncodings = arrays.encodings
-            flatIsRepeated = arrays.isRepeated
-            flatIsRequired = arrays.isRequired
-            flatHasDefaultValue = arrays.hasDefaultValue
-            flatIsOutput = arrays.isOutput
-            flatDefaultInts = arrays.defaultInts
-            flatDefaultFloats = arrays.defaultFloats
-            flatDefaultBools = arrays.defaultBools
-            flatDefaultStrings = arrays.defaultStrings
-            flatEnumValidValues = arrays.enumValidValues
-            flatEnumNames = arrays.enumNames
-
-            overrideDataType(buildDecodedSchema(buildPrunedFieldsMap()))
+            } yield ()
           }
+
+          forEachUntilLeft(fullSchema.fields.indices) { idx =>
+            val sf = fullSchema.fields(idx)
+            addFieldWithChildren(sf, fieldsInfoMap(sf.name), -1, 0, msgDesc,
+              outputIndices.contains(idx))
+          }.map(_ => flatFields.toArray)
         }
+
+        private def forEachUntilLeft[A](items: Seq[A])(
+            f: A => Either[String, Unit]): Either[String, Unit] =
+          items.foldLeft[Either[String, Unit]](Right(()))((acc, item) => acc.flatMap(_ => f(item)))
 
         /**
          * Analyze which fields are actually required by downstream operations.
@@ -598,14 +448,12 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         /** Preserve validation-only nested fields that generic wire skipping cannot validate. */
         private def augmentNestedRequirementsForValidation(
             rootMsgDesc: ProtobufMessageDescriptor): Unit = {
-          if (nestedFieldRequirements.isEmpty) return
           val augmentedRequirements = nestedFieldRequirements.map {
             case entry @ (pathKey, Some(childNames)) =>
               val pathParts = pathKey.split("\\.").toSeq
               resolveProtoMsgDesc(rootMsgDesc, pathParts) match {
                 case Some(childMsgDesc) =>
-                  val schemaType = resolveSchemaAtPath(fullSchema, pathParts)
-                  if (schemaType != null) {
+                  resolveSchemaAtPath(fullSchema, pathParts).map { schemaType =>
                     val childDescriptors = schemaType.fields.flatMap { sf =>
                       childMsgDesc.findField(sf.name).map(sf.name -> _)
                     }
@@ -621,9 +469,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                       if (requiredChildNames.subsetOf(childNames)) entry
                       else pathKey -> Some(childNames ++ requiredChildNames)
                     }
-                  } else {
-                    entry
-                  }
+                  }.getOrElse(entry)
                 case None => entry
               }
             case other => other
@@ -639,21 +485,17 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         /**
          * Navigate the Spark schema tree by following a dot-separated path of
          * field names. Returns the StructType at the end of the path, unwrapping
-         * ArrayType(StructType) along the way, or null if the path is invalid.
+         * ArrayType(StructType) along the way, or None if the path is invalid.
          */
-        private def resolveSchemaAtPath(root: StructType, path: Seq[String]): StructType = {
-          var current: StructType = root
-          for (name <- path) {
-            val field = current.fields.find(_.name == name).orNull
-            if (field == null) return null
-            field.dataType match {
-              case st: StructType => current = st
-              case ArrayType(st: StructType, _) => current = st
-              case _ => return null
-            }
+        private def resolveSchemaAtPath(
+            root: StructType, path: Seq[String]): Option[StructType] =
+          path.foldLeft(Option(root)) { (current, name) =>
+            current.flatMap(_.fields.find(_.name == name)).flatMap(_.dataType match {
+              case st: StructType => Some(st)
+              case ArrayType(st: StructType, _) => Some(st)
+              case _ => None
+            })
           }
-          current
-        }
 
         /**
          * Walk a GetStructField chain upward until it reaches the protobuf
@@ -673,12 +515,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
                 Some(Seq(getFieldName(ordinal, nameOpt, fullSchema)))
               } else {
                 resolveFieldAccessChain(child, allowSemanticReferenceMatch).flatMap { parentPath =>
-                  val parentSchema = if (parentPath.isEmpty) fullSchema
-                                     else resolveSchemaAtPath(fullSchema, parentPath)
-                  if (parentSchema != null) {
-                    Some(parentPath :+ getFieldName(ordinal, nameOpt, parentSchema))
-                  } else {
-                    None
+                  resolveSchemaAtPath(fullSchema, parentPath).map { parentSchema =>
+                    parentPath :+ getFieldName(ordinal, nameOpt, parentSchema)
                   }
                 }
               }
@@ -734,22 +572,21 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             case GetStructField(child, ordinal, nameOpt) =>
               resolveFieldAccessChain(child, allowSemanticReferenceMatch) match {
                 case Some(parentPath) =>
-                  val parentSchema = if (parentPath.isEmpty) fullSchema
-                                     else resolveSchemaAtPath(fullSchema, parentPath)
-                  if (parentSchema != null) {
-                    val fieldName = getFieldName(ordinal, nameOpt, parentSchema)
-                    if (parentPath.isEmpty) {
-                      // Direct top-level access: decoded.field_name (whole field)
-                      fieldReqs(fieldName) = None
-                    } else {
-                      registerPathRequirements(fieldReqs, parentPath, fieldName)
-                      if (isStructLike(expr.dataType)) {
-                        fieldReqs((parentPath :+ fieldName).mkString(".")) = None
+                  resolveSchemaAtPath(fullSchema, parentPath) match {
+                    case Some(parentSchema) =>
+                      val fieldName = getFieldName(ordinal, nameOpt, parentSchema)
+                      if (parentPath.isEmpty) {
+                        // Direct top-level access: decoded.field_name (whole field)
+                        fieldReqs(fieldName) = None
+                      } else {
+                        registerPathRequirements(fieldReqs, parentPath, fieldName)
+                        if (isStructLike(expr.dataType)) {
+                          fieldReqs((parentPath :+ fieldName).mkString(".")) = None
+                        }
                       }
-                    }
-                  } else {
-                    collectStructFieldReferences(
-                      child, fieldReqs, hasDirectStructRefHolder, allowSemanticReferenceMatch)
+                    case None =>
+                      collectStructFieldReferences(
+                        child, fieldReqs, hasDirectStructRefHolder, allowSemanticReferenceMatch)
                   }
                 case None =>
                   collectStructFieldReferences(
@@ -795,17 +632,13 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           nestedFieldRequirements.collect {
             case (pathKey, Some(childNames)) =>
               val pathParts = pathKey.split("\\.").toSeq
-              val childSchema = resolveSchemaAtPath(fullSchema, pathParts)
-              if (childSchema != null) {
-                val orderedNames = childSchema.fields
-                  .map(_.name)
-                  .filter(childNames.contains)
-                  .toSeq
-                pathKey -> orderedNames
-              } else {
-                // This path should be unreachable for valid schema paths, but keep the fallback
-                // deterministic rather than relying on Set iteration order.
-                pathKey -> childNames.toSeq.sorted
+              resolveSchemaAtPath(fullSchema, pathParts) match {
+                case Some(childSchema) =>
+                  pathKey -> childSchema.fields.map(_.name).filter(childNames.contains).toSeq
+                case None =>
+                  // This path should be unreachable for valid schema paths, but keep the
+                  // fallback deterministic rather than relying on Set iteration order.
+                  pathKey -> childNames.toSeq.sorted
               }
           }
         }
@@ -846,7 +679,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           val decodedFields = decodedTopLevelIndices.map { idx =>
             applyPruning(fullSchema.fields(idx), "")
           }
-          StructType(decodedFields.map(f => f.copy(nullable = true)))
+          StructType(decodedFields)
         }
 
         /**
@@ -859,46 +692,33 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         private def isProtobufStructReference(
             expr: Expression,
             allowSemanticReferenceMatch: Boolean): Boolean = {
-          if ((expr eq e) || expr.semanticEquals(e)) {
-            return true
-          }
-
           // Catalyst may create duplicate ProtobufDataToCatalyst
           // instances for each GetStructField access. Match copies
           // by class + identical input child + identical decode
           // semantics so that
           // analyzeRequiredFields detects all field accesses in one
           // pass, keeping schema projection correct.
-          if (allowSemanticReferenceMatch &&
+          def isEquivalentDecode: Boolean =
+            allowSemanticReferenceMatch &&
               expr.getClass == e.getClass &&
               expr.children.nonEmpty &&
               e.children.nonEmpty &&
               ((expr.children.head eq e.children.head) ||
                 expr.children.head.semanticEquals(
                   e.children.head)) &&
-              SparkProtobufCompat.sameDecodeSemantics(expr, e)) {
-            return true
-          }
+              SparkProtobufCompat.sameDecodeSemantics(expr, e)
 
-          expr match {
+          (expr eq e) || expr.semanticEquals(e) || isEquivalentDecode || (expr match {
             case attr: AttributeReference =>
               protobufOutputExprIds.contains(attr.exprId) ||
                 protobufOutputExprId.exists(_ == attr.exprId)
             case _ => false
-          }
+          })
         }
 
         override def convertToGpu(child: Expression): GpuExpression = {
-          val prunedFieldsMap = buildPrunedFieldsMap()
-          val decodedSchema = buildDecodedSchema(prunedFieldsMap)
-
           GpuFromProtobuf(
-            decodedSchema,
-            flatFieldNumbers, flatParentIndices,
-            flatDepthLevels, flatWireTypes, flatOutputTypeIds, flatEncodings,
-            flatIsRepeated, flatIsRequired, flatHasDefaultValue, flatIsOutput, flatDefaultInts,
-            flatDefaultFloats, flatDefaultBools, flatDefaultStrings, flatEnumValidValues,
-            flatEnumNames, failOnErrors, child)
+            buildDecodedSchema(buildPrunedFieldsMap()), flatSchema, failOnErrors, child)
         }
       }
     )

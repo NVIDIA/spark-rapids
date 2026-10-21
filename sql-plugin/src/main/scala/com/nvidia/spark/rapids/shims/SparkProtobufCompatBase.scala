@@ -26,6 +26,7 @@ import com.nvidia.spark.rapids.ShimReflectionUtils
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.rapids.protobuf._
 import org.apache.spark.sql.types.{ArrayType, StructType}
 
@@ -39,14 +40,26 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
 
   private val PROTO2_MAGIC_STRING = "PROTO2"
 
+  private val ProtobufDataToCatalystClassName =
+    "org.apache.spark.sql.protobuf.ProtobufDataToCatalyst"
+
   /** Option keys whose semantics the GPU decoder handles. */
   val SupportedOptions: Set[String] = Set("enums.as.ints", "mode")
 
   /** Whether this Spark version reads `enums.as.ints`; older versions ignore the key. */
   protected def honorsEnumsAsInts: Boolean = true
 
-  /** Why PERMISSIVE decoding must stay on CPU for this Spark version, if it must. */
-  protected def permissiveFallbackReason: Option[String] = None
+  /**
+   * Spark without SPARK-46275 (before 3.4.3, and 3.5.0) returns a struct of null fields for
+   * malformed PERMISSIVE rows. Probe for the member that fix removed so vendor backports count.
+   */
+  private[shims] def permissiveReturnsNullFieldsRow(exprClass: Class[_]): Boolean =
+    exprClass.getDeclaredFields.exists(_.getName == "nullResultRow")
+
+  // The rule is registered only when the class loads, so a missing class never reaches planning.
+  private lazy val permissiveNeedsCpu: Boolean =
+    Try(ShimReflectionUtils.loadClass(ProtobufDataToCatalystClassName))
+      .toOption.exists(permissiveReturnsNullFieldsRow)
 
   /**
    * Reads arguments from ProtobufDataToCatalyst after runtime replacement, not an analyzed wrapper.
@@ -76,23 +89,32 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
    * Defaults to FAILFAST; unrecognized mode strings use permissive behavior, matching Spark.
    */
   def parsePlannerOptions(
-      options: Map[String, String]): Either[String, ProtobufPlannerOptions] = {
-    val mode = options.getOrElse("mode", "FAILFAST")
+      options: Map[String, String]): Either[String, ProtobufPlannerOptions] =
+    parsePlannerOptions(options, permissiveNeedsCpu)
+
+  private[shims] def parsePlannerOptions(
+      options: Map[String, String],
+      permissiveReturnsNullRow: Boolean): Either[String, ProtobufPlannerOptions] = {
+    // Spark reads protobuf options case-insensitively.
+    val caseInsensitiveOptions = CaseInsensitiveMap(options)
+    val mode = caseInsensitiveOptions.getOrElse("mode", "FAILFAST")
     val failOnErrors = mode.equalsIgnoreCase("FAILFAST")
     if (mode.equalsIgnoreCase("DROPMALFORMED")) {
       Left("from_protobuf DROPMALFORMED mode is not supported on GPU")
-    } else if (!failOnErrors && permissiveFallbackReason.isDefined) {
-      Left(permissiveFallbackReason.get)
+    } else if (!failOnErrors && permissiveReturnsNullRow) {
+      Left("from_protobuf PERMISSIVE mode on this Spark version returns a struct of null " +
+        "fields for malformed input, which the GPU decoder does not produce")
     } else {
       val enumsAsInts = if (!honorsEnumsAsInts) {
         Right(false)
       } else {
-        Try(options.getOrElse("enums.as.ints", "false").toBoolean)
+        val value = caseInsensitiveOptions.getOrElse("enums.as.ints", "false")
+        Try(value.toBoolean)
           .toEither
           .left
           .map { _ =>
             "Invalid value for from_protobuf option 'enums.as.ints': " +
-              s"'${options.getOrElse("enums.as.ints", "")}' (expected true/false)"
+              s"'$value' (expected true/false)"
           }
       }
       enumsAsInts.map(v => ProtobufPlannerOptions(enumsAsInts = v, failOnErrors = failOnErrors))
@@ -101,7 +123,7 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
 
   /** Unrecognized option keys, sorted for stable fallback diagnostics. */
   def unsupportedOptions(options: Map[String, String]): Seq[String] =
-    options.keys.filterNot(SupportedOptions.contains).toSeq.sorted
+    options.keys.filterNot(k => SupportedOptions.contains(k.toLowerCase(Locale.ROOT))).toSeq.sorted
 
   /** Only uppercase PROTO2 syntax is supported; unrecognized syntax strings are rejected. */
   def isGpuSupportedProtoSyntax(syntax: String): Boolean =
