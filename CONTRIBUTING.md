@@ -127,15 +127,15 @@ mvn -pl dist -PnoSnapshots package -DskipTests
 Verify that shim-specific classes are hidden from a conventional classloader.
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.10.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.12.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl
 Error: class not found: com.nvidia.spark.rapids.shims.SparkShimImpl
 ```
 
 However, its bytecode can be loaded if prefixed with `spark3XY` not contained in the package name
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.10.0-SNAPSHOT-cuda12.jar spark330.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
-Warning: File dist/target/rapids-4-spark_2.12-26.10.0-SNAPSHOT-cuda12.jar(/spark330/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark330.com.nvidia.spark.rapids.shims.SparkShimImpl
+$ javap -cp dist/target/rapids-4-spark_2.12-26.12.0-SNAPSHOT-cuda12.jar spark330.com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+Warning: File dist/target/rapids-4-spark_2.12-26.12.0-SNAPSHOT-cuda12.jar(/spark330/com/nvidia/spark/rapids/shims/SparkShimImpl.class) does not contain class spark330.com.nvidia.spark.rapids.shims.SparkShimImpl
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -177,7 +177,7 @@ mvn package -pl dist -am -Dbuildver=340 -DallowConventionalDistJar=true
 Verify `com.nvidia.spark.rapids.shims.SparkShimImpl` is conventionally loadable:
 
 ```bash
-$ javap -cp dist/target/rapids-4-spark_2.12-26.10.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
+$ javap -cp dist/target/rapids-4-spark_2.12-26.12.0-SNAPSHOT-cuda12.jar com.nvidia.spark.rapids.shims.SparkShimImpl | head -2
 Compiled from "SparkShims.scala"
 public final class com.nvidia.spark.rapids.shims.SparkShimImpl {
 ```
@@ -659,10 +659,10 @@ find the uploaded log.
 Options:
 1. Skip tests run by adding `[skip ci]` to the title. This should only be used for doc-only changes.
 2. Run build and tests in Databricks runtimes by adding `[databricks]` to the title. This adds around 30-40 minutes.
-3. Run Scala unit tests in parallel by adding `[fast-ut]` to the title. This does not reduce test coverage, but is opt-in while the parallel runner is still being evaluated. Parallel mode does not support `-Dsuffixes` or `-Dtests`; use `-DwildcardSuites` instead. GPU memory is divided across test forks, and each suite has a 1800-second timeout.
+3. Run Scala unit tests serially by adding `[serial ut]` or `[serial-ut]` to the title. Parallel execution is the default.
 4. Reduce pre-commit integration-test parameter combinations by adding `[reduced-it]` to the title. This is appropriate for documentation, CI, build, script, and other low-risk localized changes, but should not be used when correctness may depend on parameter combinations such as types, formats, time zones, ANSI mode, code generation, or shims. Nightly runs still exercise the full parameter product.
 
-CI title tags (`[skip ci]`, `[databricks]`, `[fast-ut]`, and `[reduced-it]`) should be placed at the end of the pull request title, separated from the subject and from each other by a single space. Category prefixes such as `[DOC]` remain at the beginning of the title.
+CI title tags (`[skip ci]`, `[databricks]`, `[serial ut]`/`[serial-ut]`, and `[reduced-it]`) should be placed at the end of the pull request title, separated from the subject and from each other by a single space. Category prefixes such as `[DOC]` remain at the beginning of the title.
 
 
 ### Code Review Guidelines

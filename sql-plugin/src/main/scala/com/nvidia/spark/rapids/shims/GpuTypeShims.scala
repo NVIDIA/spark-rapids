@@ -64,6 +64,7 @@ object GpuTypeShims {
     otherType match {
       case DayTimeIntervalType(_, _) => true
       case YearMonthIntervalType(_, _) => true
+      case t if VariantTypeShims.isVariantType(t) => true
       case _ => false
     }
   }
@@ -81,6 +82,8 @@ object GpuTypeShims {
       case (DayTimeIntervalType(_, _), false) => NotNullLongConverter
       case (YearMonthIntervalType(_, _), true) => IntConverter
       case (YearMonthIntervalType(_, _), false) => NotNullIntConverter
+      case (otherType, isNullable) if VariantTypeShims.isVariantType(otherType) =>
+        VariantTypeShims.getRowToColumnConverter(isNullable)
       case _ => throw new RuntimeException(s"No converter is found for type $t.")
     }
   }
@@ -217,7 +220,8 @@ object GpuTypeShims {
   /**
    * Get additional Parquet read supported types for this Shim
    */
-  def additionalParquetReadSupportedTypes: TypeSig = additionalParquetCommonSupportedTypes
+  def additionalParquetReadSupportedTypes: TypeSig =
+    additionalParquetCommonSupportedTypes + VariantTypeShims.additionalParquetReadSupportedTypes
 
   /**
    * Get additional Parquet write supported types for this Shim
@@ -230,13 +234,17 @@ object GpuTypeShims {
   def additionalParquetSupportedTypes: TypeSig =
     additionalParquetReadSupportedTypes + additionalParquetWriteSupportedTypes
 
-  def supportsVariantType: Boolean = false
+  def supportsVariantType: Boolean = VariantTypeShims.supportsVariantType
+
+  def additionalVariantSupportedTypes: TypeSig =
+    VariantTypeShims.additionalCommonOperatorSupportedTypes
 
   /**
    * Get additional common operators supported types for this Shim
    * (filter, sample, project, alias, table scan ...... which GPU supports from 330)
    */
-  def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.ansiIntervals
+  def additionalCommonOperatorSupportedTypes: TypeSig =
+    TypeSig.ansiIntervals + additionalVariantSupportedTypes
 
   def hasSideEffectsIfCastIntToYearMonth(ym: DataType): Boolean =
       // if cast(int as interval year), multiplication by 12 can cause overflow

@@ -401,6 +401,11 @@ class GpuParquetWriter(
     fileIO: RapidsFileIO)
   extends ColumnarOutputWriter(context, dataSchema, NvtxRegistry.FILE_FORMAT_WRITE, true,
     statsTrackers, debugDumpPath, holdGpuBetweenBatches, useAsyncWrite, fileIO) {
+  // cuDF encodes into temporary data before updating Parquet writer state or writing to the
+  // sink. With the JNI sink, GPU allocation failures can occur only during that first phase;
+  // host allocation failures can also occur after the writer state has advanced.
+  override protected def canRetryGpuOomFromNativeWrite: Boolean = true
+
   override def throwIfRebaseNeededInExceptionMode(batch: ColumnarBatch): Unit = {
     val cols = GpuColumnVector.extractBases(batch)
     cols.foreach { col =>
@@ -478,7 +483,7 @@ class GpuParquetWriter(
     }
   }
 
-  override val tableWriter: TableWriter = {
+  override val tableWriter: ParquetTableWriter = {
     val writeContext = new ParquetWriteSupport().init(conf)
     // Use the value resolved in prepareWrite. Reading SQLConf here would discard
     // a per-write option.
@@ -502,5 +507,9 @@ class GpuParquetWriter(
       builder.withDictionaryPolicy(dictionaryPolicy)
     }
     Table.writeParquetChunked(builder.build(), this)
+  }
+
+  private[rapids] def closeAndGetFooter(): HostMemoryBuffer = {
+    closeAndReturn(tableWriter.closeAndGetFooter())
   }
 }

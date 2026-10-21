@@ -22,13 +22,13 @@
     <parent>
         <groupId>com.nvidia</groupId>
         <artifactId>rapids-4-spark-parent_2.13</artifactId>
-        <version>26.10.0-SNAPSHOT</version>
+        <version>26.12.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>rapids-4-spark-shim-deps-parent_2.13</artifactId>
     <packaging>pom</packaging>
     <description>Shim Dependencies Profiles</description>
-    <version>26.10.0-SNAPSHOT</version>
+    <version>26.12.0-SNAPSHOT</version>
     <profiles>
         <profile>
             <id>release330cdh</id>
@@ -38,6 +38,9 @@
                     <value>330cdh</value>
                 </property>
             </activation>
+            <properties>
+                <spark.protobuf.copy.skip>true</spark.protobuf.copy.skip>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -56,6 +59,9 @@
                     <value>332cdh</value>
                 </property>
             </activation>
+            <properties>
+                <spark.protobuf.copy.skip>true</spark.protobuf.copy.skip>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>
@@ -210,6 +216,9 @@
                     <name>databricks</name>
                 </property>
             </activation>
+            <properties>
+                <spark.protobuf.copy.skip>true</spark.protobuf.copy.skip>
+            </properties>
             <dependencies>
                 <dependency>
                     <groupId>com.nvidia</groupId>

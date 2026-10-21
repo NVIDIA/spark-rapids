@@ -24,13 +24,14 @@ import java.util
 import java.util.UUID
 import java.util.concurrent.ArrayBlockingQueue
 
+import scala.annotation.tailrec
 import scala.collection.mutable
 
 import ai.rapids.cudf._
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuColumnVectorFromBuffer,
   GpuCompressedColumnVector, GpuDeviceManager, HashedPriorityQueue, HostAlloc,
   HostMemoryOutputStream, MemoryBufferToHostByteBufferIterator, NvtxId, NvtxRegistry,
-  RapidsConf, RapidsHostColumnVector, TaskRegistryTracker}
+  RapidsConf, RapidsHostColumnVector, SpillPriorities, TaskRegistryTracker}
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.RapidsPluginImplicits.AutoCloseableSeq
 import com.nvidia.spark.rapids.format.TableMeta
@@ -281,11 +282,18 @@ trait SpillableHandle extends StoreHandle with Logging {
 }
 
 /**
+ * Contract for handles tracked by the device spill store (see [[SpillableHandle]]).
+ */
+trait DeviceStoreHandle extends SpillableHandle {
+  def releaseSpilled(): Unit
+}
+
+/**
  * Spillable handles that can be materialized on the device.
  * @tparam T an auto closeable subclass. `dev` tracks an instance of this object,
  *           on the device.
  */
-trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
+trait DeviceSpillableHandle[T <: AutoCloseable] extends DeviceStoreHandle {
   private[spill] var dev: Option[T]
 
   private[spill] override def spillable: Boolean = synchronized {
@@ -308,7 +316,7 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
    * free a device buffer that the worker thread isn't done with).
    * See https://github.com/NVIDIA/spark-rapids/issues/8610 for more info.
    */
-  def releaseSpilled(): Unit = {
+  override def releaseSpilled(): Unit = {
     releaseDeviceResource()
   }
 
@@ -319,6 +327,313 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends SpillableHandle {
       TrampolineUtil.incTaskMetricsMemoryBytesSpilled(spilledBytes)
       spilledBytes
     }
+  }
+}
+
+object SharedRecomputableHandle {
+  private sealed trait AcquireAction[+T]
+  private final case class UseResident[T](resource: T) extends AcquireAction[T]
+  private case object WaitForRebuild extends AcquireAction[Nothing]
+  private case object Rebuild extends AcquireAction[Nothing]
+
+  /**
+   * A scoped lease that pins a shared recomputable device object.
+   * Holding a lease prevents the object from being closed.
+   * 
+   * @param handle the handle that the lease is on
+   * @param resource the object that the lease is on
+   */
+  final class Lease[T <: AutoCloseable] private[spill] (
+      handle: SharedRecomputableHandle[T],
+      val resource: T,
+      val rebuilt: Boolean) extends AutoCloseable {
+    private[this] var closed = false
+
+    override def close(): Unit = synchronized {
+      if (closed) {
+        throw new IllegalStateException("Close called too many times on recomputable handle lease")
+      }
+      closed = true
+      handle.releaseLease()
+    }
+  }
+
+  /**
+   * A lease that its owner can release while it is not using the object, e.g. while waiting to
+   * retry after an OOM, so that the object can be spilled. The constructor acquires a lease,
+   * `release` drops it, and the next access to `resource` acquires a new one, rebuilding the
+   * object if it was spilled in between. This is not thread-safe.
+   *
+   * @param handle the handle to acquire leases on
+   * @param onRebuild callback that is invoked after an acquire rebuilds the object
+   */
+  final class ReacquirableLease[T <: AutoCloseable](
+      handle: SharedRecomputableHandle[T],
+      onRebuild: () => Unit) extends AutoCloseable {
+    private[this] var lease: Option[Lease[T]] = Some(acquire())
+
+    private def acquire(): Lease[T] = {
+      closeOnExcept(handle.acquire()) { acquired =>
+        if (acquired.rebuilt) {
+          onRebuild()
+        }
+        acquired
+      }
+    }
+
+    def resource: T = {
+      if (lease.isEmpty) {
+        lease = Some(acquire())
+      }
+      lease.get.resource
+    }
+
+    def release(): Unit = {
+      val held = lease
+      lease = None
+      held.foreach(_.close())
+    }
+
+    override def close(): Unit = release()
+  }
+
+  def apply[T <: AutoCloseable](
+      approxSizeInBytes: Long,
+      initialValue: T)(
+      rebuild: => T): SharedRecomputableHandle[T] = {
+    closeOnExcept(initialValue) { value =>
+      Cuda.DEFAULT_STREAM.sync()
+      val handle = new SharedRecomputableHandle(approxSizeInBytes, value, () => rebuild)
+      SpillFramework.stores.deviceStore.track(handle)
+      handle
+    }
+  }
+}
+
+/**
+ * Handle for device-only object that is shared amongst threads and is cheap to recompute.
+ *
+ * When this handle is selected for spilling, it does not copy anything to host or disk. Instead
+ * it marks the current device object as evicted and returns `approxSizeInBytes` so the spill
+ * framework accounts for the memory expected to be freed. The actual close of the evicted object
+ * is deferred to `releaseSpilled` after device synchronization.
+ *
+ * The protected device object may not expose cuDF-style reference counts (e.g. cuDF hash tables).
+ * Instead we maintain a pin count on the object, and callers must pin the object through `acquire`.
+ * The object is spillable only when the pin count is 0.
+ *
+ * The `rebuild` function is used to recreate the device object after it has been evicted. It is
+ * called by the first thread that calls `acquire` after a successful spill.
+ */
+class SharedRecomputableHandle[T <: AutoCloseable] private[spill] (
+    override val approxSizeInBytes: Long,
+    initialValue: T,
+    rebuild: () => T) extends DeviceStoreHandle with Logging {
+  import SharedRecomputableHandle.{AcquireAction, Lease, Rebuild, UseResident, WaitForRebuild}
+
+  taskPriority = SpillPriorities.RECOMPUTABLE_CACHE_PRIORITY
+
+  private[spill] var dev: Option[T] = Some(initialValue)
+  private[this] var pendingRelease: Seq[T] = Seq.empty
+  private[this] var pinCount: Int = 0
+  private[this] var rebuilding: Boolean = false
+
+  def isReady: Boolean = synchronized {
+    !closed && dev.isDefined
+  }
+
+  private[spill] override def spillable: Boolean = synchronized {
+    super.spillable && dev.isDefined && pinCount == 0
+  }
+
+  /**
+   * Acquire a lease on the shared recomputable device object:
+   * - If `dev` is defined, increment the pin count and return a lease on it.
+   * - If `dev` is missing and another thread is rebuilding, wait for build completion.
+   * - If `dev` is missing and no other thread is rebuilding, set `rebuilding=true` (exclusively)
+   *   and rebuild the object. After rebuild, set `dev`, notify waiters, and track the handle.
+   */
+  @tailrec
+  final def acquire(): Lease[T] = {
+    // All threads decide whether to build, wait, or reuse under the lock.
+    val action: AcquireAction[T] = synchronized {
+      if (closed) {
+        throw new IllegalStateException("attempting to materialize a closed handle")
+      }
+      dev match {
+        case Some(resource) =>
+          pinCount += 1
+          UseResident(resource)
+        case None if rebuilding =>
+          WaitForRebuild
+        case None =>
+          rebuilding = true
+          Rebuild
+      }
+    }
+
+    action match {
+      case UseResident(resource) =>
+        new Lease(this, resource, rebuilt = false)
+      case WaitForRebuild =>
+        synchronized {
+          while (!closed && rebuilding && dev.isEmpty) {
+            wait()
+          }
+        }
+        acquire()
+      case Rebuild =>
+        rebuildAndAcquire()
+    }
+  }
+
+  private def rebuildAndAcquire(): Lease[T] = {
+    var candidate: Option[T] = None
+    var published = false
+    try {
+      // Call rebuild and sync the stream to ensure the GPU rebuild completes.
+      candidate = Some(rebuild())
+      Cuda.DEFAULT_STREAM.sync()
+      val lease = new Lease(this, candidate.get, rebuilt = true)
+      synchronized {
+        if (closed) {
+          throw new IllegalStateException("attempting to materialize a closed handle")
+        }
+        SpillFramework.stores.deviceStore.track(this)
+        dev = candidate
+        pinCount += 1
+        published = true
+        rebuilding = false
+        notifyAll()
+      }
+      lease
+    } catch {
+      case t: Throwable =>
+        // Rebuild failed; release and notify waiters before rethrowing
+        try {
+          if (!published) {
+            candidate.toSeq.safeClose(t)
+          }
+        } finally {
+          synchronized {
+            rebuilding = false
+            notifyAll()
+          }
+        }
+        throw t
+    }
+  }
+
+  private[spill] def releaseLease(): Unit = {
+    val shouldClose = synchronized {
+      if (pinCount <= 0) {
+        throw new IllegalStateException("releaseLease called without a matching acquire")
+      }
+      pinCount -= 1
+      closed && pinCount == 0 && !spilling
+    }
+    if (shouldClose) {
+      doClose()
+    }
+  }
+
+  override def close(): Unit = {
+    val (firstClose, shouldWaitForRebuild) = synchronized {
+      if (closed) {
+        (false, rebuilding)
+      } else {
+        closed = true
+        notifyAll()
+        (true, rebuilding)
+      }
+    }
+    if (shouldWaitForRebuild) {
+      // Wait for an in-flight rebuild to exit, so that the caller can
+      // close input resources captured by the rebuild callback.
+      var interrupted = false
+      synchronized {
+        while (rebuilding) {
+          try {
+            wait()
+          } catch {
+            case _: InterruptedException => interrupted = true
+          }
+        }
+      }
+      if (interrupted) {
+        Thread.currentThread().interrupt()
+      }
+    }
+    // Only the first close() caller initiates doClose().
+    if (firstClose) {
+      // If there is an active lease or spill the cleanup will be done by
+      // the final releaseLease() or releaseSpilled().
+      val shouldClose = synchronized {
+        pinCount == 0 && !spilling
+      }
+      if (shouldClose) {
+        doClose()
+      }
+    }
+  }
+
+  override def spill(): Long = {
+    // Logically evict the object under the handle lock but do not free it yet.
+    // The thread that spills removes dev and sets spilling to true so that only
+    // one thread spills.
+    var evicted: Option[T] = None
+    val thisThreadSpills = synchronized {
+      if (!closed && dev.isDefined && pinCount == 0 && !spilling) {
+        spilling = true
+        evicted = dev
+        dev = None
+        SpillFramework.removeFromDeviceStore(this)
+        true
+      } else {
+        false
+      }
+    }
+    // spilling remains true until releaseSpilled() so that a newly rebuilt dev
+    // isn't spilled before the pendingRelease passes through post-spill device sync.
+    if (thisThreadSpills) {
+      executeSpill {
+        synchronized {
+          pendingRelease = pendingRelease ++ evicted.toSeq
+        }
+        0L
+      }
+      approxSizeInBytes
+    } else {
+      0L
+    }
+  }
+
+  override def releaseSpilled(): Unit = {
+    // For a recomputable handle simply clear the release queue,
+    // mark the spill complete, and then close the detached objects.
+    val (toClose, shouldClose) = synchronized {
+      val release = pendingRelease
+      pendingRelease = Seq.empty
+      spilling = false
+      (release, closed && pinCount == 0 && !rebuilding)
+    }
+    try {
+      toClose.safeClose()
+    } finally {
+      if (shouldClose) {
+        doClose()
+      }
+    }
+  }
+
+  override def doClose(): Unit = {
+    SpillFramework.removeFromDeviceStore(this)
+    val toClose = synchronized {
+      val current = dev
+      dev = None
+      current.toSeq
+    }
+    toClose.safeClose()
   }
 }
 
@@ -445,6 +760,50 @@ class SpillableHostBufferHandle private (
       }
     }
     materialized
+  }
+
+  /**
+   * Copy this handle's bytes into `dst` starting at `dstOffset`, without
+   * allocating a buffer of our own. When the data is on disk it is read
+   * directly into a slice of `dst`.
+   *
+   * A caller assembling many handles into one staging buffer makes a single
+   * host allocation rather than one per handle, which matters because the
+   * pinned pool serializes every allocation on one lock.
+   */
+  def materializeInto(dst: HostMemoryBuffer, dstOffset: Long): Unit = {
+    var hostBuf: HostMemoryBuffer = null
+    var diskHandle: DiskHandle = null
+    synchronized {
+      if (closed) {
+        throw new IllegalStateException(
+          "attempting to materialize a closed handle")
+      // after spilling, the host can get removed asynchronously, so let's
+      // use disk if it's defined even if host is still present
+      } else if (disk.isDefined) {
+        diskHandle = disk.get
+      } else if (host.isDefined) {
+        hostBuf = host.get
+        hostBuf.incRefCount()
+      } else {
+        throw new IllegalStateException(
+          "open handle has no underlying buffer")
+      }
+    }
+    if (hostBuf != null) {
+      withResource(hostBuf) { hb =>
+        dst.copyFromHostBuffer(dstOffset, hb, 0, sizeInBytes)
+      }
+    } else {
+      com.nvidia.spark.rapids.jni.RmmSpark.spillRangeStart()
+      try {
+        withResource(dst.slice(dstOffset, sizeInBytes)) { slice =>
+          diskHandle.materializeToHostMemoryBuffer(slice)
+        }
+      } finally {
+        com.nvidia.spark.rapids.jni.RmmSpark.spillRangeDone()
+      }
+    }
   }
 
   override def spill(): Long = {
@@ -1742,7 +2101,7 @@ class SpillableHostStore(val maxSize: Option[Long] = None)
   override protected def spillNvtxRange: NvtxId = NvtxRegistry.DISK_SPILL
 }
 
-class SpillableDeviceStore extends SpillableStore[DeviceSpillableHandle[_]] {
+class SpillableDeviceStore extends SpillableStore[DeviceStoreHandle] {
   override protected def spillNvtxRange: NvtxId = NvtxRegistry.DEVICE_SPILL
 
   override def postSpill(plan: SpillPlan): Unit = {
@@ -2155,7 +2514,7 @@ object SpillFramework extends Logging {
   // if the stores have already shut down, we don't want to create them here
   // so we use `storesInternal` directly in these remove functions.
 
-  private[spill] def removeFromDeviceStore(handle: DeviceSpillableHandle[_]): Unit = {
+  private[spill] def removeFromDeviceStore(handle: DeviceStoreHandle): Unit = {
     synchronized {
       Option(storesInternal).map(_.deviceStore)
     }.foreach(_.remove(handle))

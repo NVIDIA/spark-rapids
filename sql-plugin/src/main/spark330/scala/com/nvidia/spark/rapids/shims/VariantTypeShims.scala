@@ -42,8 +42,15 @@ spark-rapids-shim-json-lines ***/
 
 package com.nvidia.spark.rapids.shims
 
+import com.nvidia.spark.rapids.{TypeConverter, TypeSig}
+
 import org.apache.spark.sql.types.DataType
 
 object VariantTypeShims {
   def isVariantType(_dataType: DataType): Boolean = false
+  def additionalParquetReadSupportedTypes: TypeSig = TypeSig.none
+  def supportsVariantType: Boolean = false
+  def additionalCommonOperatorSupportedTypes: TypeSig = TypeSig.none
+  def getRowToColumnConverter(_nullable: Boolean): TypeConverter =
+    throw new UnsupportedOperationException("VariantType is not supported by this Spark version")
 }

@@ -146,6 +146,13 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     )
   }
 
+  test("hex- and octal-escaped line terminators before end anchors in replace mode") {
+    val patterns = Seq("\\x0A$", "\\x{A}$", "\\012$", "\\x0D\\Z")
+    patterns.foreach(pattern =>
+      assertUnsupported(pattern, RegexReplaceMode,
+        "End of line/string anchor is not supported in this context"))
+  }
+
   test("cuDF does not support possessive quantifier") {
     val patterns = Seq(
       "a*+" -> "*+",
@@ -1010,6 +1017,11 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
     test(raw"[^a\n]", raw"(?:[\r]|[^a\n])")
     test(raw"[^a\r]", raw"[^a\r]")
     test(raw"[^a\r\n]", raw"[^a\r\n]")
+    test(raw"[^\x0D]", raw"[^\r]")
+    test(raw"[^\x{D}]", raw"[^\r]")
+    test(raw"[^\015]", raw"[^\r]")
+    test(raw"\S", "[^ \u000b\\n\\t\\r\\f]")
+    test(raw"\V", "[^\u000B\u0085\u2028\u2029\\n\\f\\r]")
   }
 
   test("compare CPU and GPU: regexp replace negated character class") {
@@ -1022,7 +1034,8 @@ class RegularExpressionTranspilerSuite extends AnyFunSuite {
       "[a]", "[a\r]", "[a\n]", "[a\r\n]",
       "[^b]", "[^b\r]", "[^b\n]", "[^b\r\n]",
       "[^z]", "[^\r]", "[^\n]", "[^\r]",
-      "[^\r\n]", "[^b\r]", "[^bc\r\n]", "[^\\r\\n]", "[^\r\r]", "[^\r\n\r]", "[^\n\n\r\r]")
+      "[^\r\n]", "[^b\r]", "[^bc\r\n]", "[^\\r\\n]", "[^\r\r]", "[^\r\n\r]", "[^\n\n\r\r]",
+      "[^\\x0D]", "[^\\x{D}]", "[^\\015]")
     assertCpuGpuMatchesRegexpReplace(patterns, inputs)
   }
 
@@ -1714,26 +1727,23 @@ class FuzzRegExp(suggestedChars: String, skipKnownIssues: Boolean = true,
   }
 
   private def repetition(depth: Int) = {
-    val modes = Seq[RegexQuantifier.Mode](
-      RegexQuantifier.Greedy,
-      RegexQuantifier.Reluctant,
-      RegexQuantifier.Possessive)
+    import RegexQuantifier._
+    val modes = Seq(Greedy, Reluctant, Possessive)
     val mode = modes(rr.nextInt(modes.length))
-    RegexRepetition(generate(depth + 1), quantifier.withMode(mode))
+    RegexRepetition(generate(depth + 1), RegexQuantifier(quantifierBase, mode))
   }
 
-  private def quantifier: RegexQuantifier = {
-    val generators = Seq[() => RegexQuantifier](
-      () => SimpleQuantifier('+'),
-      () => SimpleQuantifier('*'),
-      () => SimpleQuantifier('?'),
-      () => QuantifierFixedLength(rr.nextInt(3)),
-      () => QuantifierVariableLength(rr.nextInt(3), None),
+  private def quantifierBase: RegexQuantifier.Base = {
+    import RegexQuantifier._
+    val generators = Seq(
+      () => OneOrMore,
+      () => ZeroOrMore,
+      () => ZeroOrOne,
+      () => Fixed(rr.nextInt(3)),
+      () => Variable(rr.nextInt(3), None),
       () => {
-        // this intentionally generates some invalid quantifiers where the maxLength
-        // is less than the minLength, such as "{2,1}" which should be handled as a
-        // literal string match on "{2,1}" rather than as a valid quantifier.
-        QuantifierVariableLength(rr.nextInt(3), Some(rr.nextInt(3)))
+        val minLength = rr.nextInt(3)
+        Variable(minLength, Some(minLength + rr.nextInt(3)))
       }
     )
     generators(rr.nextInt(generators.length))()

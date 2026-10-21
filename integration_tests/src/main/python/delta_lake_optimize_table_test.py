@@ -18,13 +18,28 @@ from data_gen import *
 from delta_lake_utils import *
 from marks import *
 from spark_session import with_cpu_session, with_gpu_session, with_spark_session, is_before_spark_353, \
-    supports_delta_lake_deletion_vectors, is_databricks_runtime, is_databricks173_or_later
+    supports_delta_lake_deletion_vectors, is_databricks_runtime, is_databricks143, \
+    is_databricks173_or_later
 from pyspark.sql.types import IntegerType, StringType
 
 _optimize_conf = copy_and_update(delta_writes_enabled_conf, {
     "spark.rapids.sql.command.OptimizeTableCommand": "true",
     "spark.rapids.sql.command.OptimizeTableCommandEdge": "true",
     "spark.databricks.delta.autoCompact.enabled": "false"
+})
+
+_native_optimize_write_conf = copy_and_update(delta_writes_enabled_conf, {
+    "spark.rapids.sql.command.OptimizeTableCommand": "false",
+    "spark.rapids.sql.command.OptimizeTableCommandEdge": "false",
+    "spark.databricks.delta.autoCompact.enabled": "false",
+    "spark.databricks.delta.optimizeWrite.enabled": "false",
+    "spark.sql.adaptive.enabled": "false"
+})
+
+_native_optimize_dv_write_conf = copy_and_update(_native_optimize_write_conf, {
+    "spark.databricks.delta.delete.deletionVectors.persistent": "true",
+    # A DV DELETE can force background compaction, overriding the normal auto-compact setting.
+    "spark.databricks.delta.delete.enableForceBackgroundAutoCompact": "false"
 })
 
 _liquid_optimize_dv_conf = copy_and_update(_optimize_conf, {
@@ -132,6 +147,39 @@ def _write_many_small_files(spark, enable_deletion_vectors, path, partition_colu
         assert len(num_files) > 63, f"Expected more than 63 files, but got {num_files}"
 
 
+def _write_mixed_timestamp_partition_files(
+        spark, enable_deletion_vectors, path, partition_columns=None, clustering_columns=None):
+    if enable_deletion_vectors or partition_columns or clustering_columns:
+        raise ValueError("Mixed timestamp partition coverage requires deletion vectors disabled "
+                         "and supplies its own timestamp partition column")
+
+    spark.sql(f"""
+        CREATE TABLE delta.`{path}` (id LONG, ts TIMESTAMP)
+        USING DELTA
+        TBLPROPERTIES ('delta.enableDeletionVectors' = 'false')
+        PARTITIONED BY (ts)
+    """)
+
+    utc_partition_conf = "spark.databricks.delta.write.utcTimestampPartitionValues"
+    previous_value = spark.conf.get(utc_partition_conf, None)
+    try:
+        spark.conf.set(utc_partition_conf, "false")
+        spark.sql(f"INSERT INTO delta.`{path}` VALUES (0, '2000-01-01 12:00:00')")
+        spark.sql(f"INSERT INTO delta.`{path}` VALUES (1, '2000-01-01 12:00:00')")
+
+        spark.conf.set(utc_partition_conf, "true")
+        spark.sql(f"INSERT INTO delta.`{path}` VALUES (2, '2000-01-01T12:00:00.000Z')")
+        spark.sql(f"INSERT INTO delta.`{path}` VALUES (3, '2000-01-01T12:00:00.000Z')")
+    finally:
+        if previous_value is None:
+            spark.conf.unset(utc_partition_conf)
+        else:
+            spark.conf.set(utc_partition_conf, previous_value)
+
+    input_files = spark.read.format("delta").load(path).inputFiles()
+    assert len(input_files) == 4, f"Expected 4 input files, but got {input_files}"
+
+
 def _write_many_small_row_tracking_files(
         spark, enable_deletion_vectors, path, partition_columns=None, clustering_columns=None):
     if enable_deletion_vectors:
@@ -220,6 +268,9 @@ def _delete_rows_and_disable_deletion_vectors(spark, path):
 def _delete_rows_with_deletion_vectors(spark, path):
     num_deleted = spark.sql(f"DELETE FROM delta.`{path}` WHERE b = 'a'").collect()[0][0]
     assert num_deleted > 0, "Expected DELETE to create deletion vectors"
+    dv_adds = spark.read.json(path + "/_delta_log/*.json") \
+        .where("add.deletionVector IS NOT NULL").count()
+    assert dv_adds > 0, "Expected the table to contain deletion-vector AddFiles"
 
 
 def _delete_liquid_rows_with_deletion_vectors(spark, path):
@@ -275,7 +326,7 @@ def _setup_tables(enable_deletion_vectors, cpu_path, gpu_path, partition_columns
 
 def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=None, clustering_columns=None,
                             conf=_optimize_conf, write_func=_write_many_small_files,
-                            require_gpu_write=True, use_gpu_test_mode=True):
+                            require_gpu_write=True, use_gpu_test_mode=True, check_delta_log=True):
     data_path = spark_tmp_path + "/DELTA_OPTIMIZE"
     cpu_path = data_path + "/CPU"
     gpu_path = data_path + "/GPU"
@@ -313,7 +364,8 @@ def _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_c
     assert_equal(cpu_optimize_count, 1)
     assert_equal(gpu_optimize_count, 1)
 
-    with_cpu_session(lambda s: assert_gpu_and_cpu_latest_delta_log_equivalent(s, data_path))
+    if check_delta_log:
+        with_cpu_session(lambda s: assert_gpu_and_cpu_latest_delta_log_equivalent(s, data_path))
 
 
 def _assert_optimize_fallback(enable_deletion_vectors, spark_tmp_path, partition_columns=None,
@@ -406,6 +458,49 @@ def _assert_liquid_optimize_gpu_write_parity(
         assert_data_and_log_parity()
 
 
+def _assert_native_optimize_gpu_write_parity(spark_tmp_path, enable_deletion_vectors):
+    data_path = spark_tmp_path + "/DELTA_NATIVE_OPTIMIZE_WRITE"
+    cpu_path = data_path + "/CPU"
+    gpu_path = data_path + "/GPU"
+    conf = _native_optimize_dv_write_conf if enable_deletion_vectors \
+        else _native_optimize_write_conf
+    post_setup_func = _delete_rows_with_deletion_vectors if enable_deletion_vectors else None
+    _setup_tables(
+        enable_deletion_vectors, cpu_path, gpu_path, None, None, conf,
+        post_setup_func=post_setup_func)
+    files_before = {
+        path: with_cpu_session(
+            lambda spark: len(spark.read.format("delta").load(path).inputFiles()), conf=conf)
+        for path in [cpu_path, gpu_path]
+    }
+
+    cpu_result = with_cpu_session(
+        lambda spark: spark.sql(_optimize_sql(cpu_path)).collect(), conf=conf)
+    gpu_result = assert_rapids_delta_write(
+        lambda spark: spark.sql(_optimize_sql(gpu_path)).collect(), conf=conf,
+        required_gpu_classes=["GpuDataWritingCommandExec", "GpuWriteFilesExec"],
+        require_same_plan=True,
+        forbidden_cpu_fallback_classes=["DataWritingCommandExec", "WriteFilesExec"])
+
+    assert str(cpu_result[0][0]).rstrip('/').endswith('/CPU')
+    assert str(gpu_result[0][0]).rstrip('/').endswith('/GPU')
+    cpu_data = with_cpu_session(lambda spark: _read_sorted(spark, cpu_path).collect(), conf=conf)
+    gpu_data = with_cpu_session(lambda spark: _read_sorted(spark, gpu_path).collect(), conf=conf)
+    assert_equal(cpu_data, gpu_data)
+    for path in [cpu_path, gpu_path]:
+        files_after = with_cpu_session(
+            lambda spark: len(spark.read.format("delta").load(path).inputFiles()), conf=conf)
+        assert files_after < files_before[path], \
+            f"OPTIMIZE did not reduce the file count for {path}"
+        optimize_count = with_cpu_session(lambda spark: spark.sql(
+            f"DESCRIBE HISTORY delta.`{path}`").filter("operation = 'OPTIMIZE'").count(),
+            conf=conf)
+        assert_equal(optimize_count, 1)
+    with_cpu_session(
+        lambda spark: assert_gpu_and_cpu_latest_delta_log_equivalent(spark, data_path),
+        conf=conf)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -417,6 +512,15 @@ def test_delta_optimize_unpartitioned_table(spark_tmp_path, enable_deletion_vect
     _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=None)
 
 
+@allow_non_gpu('ExecutedCommandExec', 'HashAggregateExec', *delta_meta_allow)
+@delta_lake
+@pytest.mark.skipif(not (is_databricks143() or is_databricks173_or_later()),
+                    reason="Native DBR OPTIMIZE write coverage is for DBR 14.3 and 17.3+")
+@pytest.mark.parametrize("enable_deletion_vectors", deletion_vector_values, ids=idfn)
+def test_delta_native_optimize_gpu_write(spark_tmp_path, enable_deletion_vectors):
+    _assert_native_optimize_gpu_write_parity(spark_tmp_path, enable_deletion_vectors)
+
+
 @allow_non_gpu(*delta_meta_allow)
 @delta_lake
 @ignore_order
@@ -426,6 +530,39 @@ def test_delta_optimize_unpartitioned_table(spark_tmp_path, enable_deletion_vect
 @pytest.mark.parametrize("enable_deletion_vectors", _optimize_deletion_vector_values, ids=idfn)
 def test_delta_optimize_partitioned_table(spark_tmp_path, enable_deletion_vectors):
     _assert_optimize_parity(enable_deletion_vectors, spark_tmp_path, partition_columns=["a"])
+
+
+@allow_non_gpu(*delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_oss_delta_lake_43(),
+                    reason="Normalized timestamp partition grouping was added in Delta Lake 4.3")
+@pytest.mark.parametrize("normalize_partition_values_on_read", [False, True], ids=idfn)
+def test_delta_optimize_normalized_timestamp_partitions(
+        spark_tmp_path, normalize_partition_values_on_read):
+    data_path = spark_tmp_path + "/DELTA_OPTIMIZE"
+    conf = copy_and_update(_optimize_conf, {
+        "spark.sql.session.timeZone": "UTC",
+        "spark.databricks.delta.normalizePartitionValuesOnRead":
+            str(normalize_partition_values_on_read).lower()
+    })
+
+    _assert_optimize_parity(
+        False,
+        spark_tmp_path,
+        conf=conf,
+        write_func=_write_mixed_timestamp_partition_files,
+        check_delta_log=False)
+
+    expected_file_count = 1 if normalize_partition_values_on_read else 2
+
+    def assert_compacted_file_count(spark, path):
+        input_files = spark.read.format("delta").load(path).inputFiles()
+        assert len(input_files) == expected_file_count, \
+            f"Expected {expected_file_count} compacted files, but got {input_files}"
+
+    with_cpu_session(lambda spark: assert_compacted_file_count(spark, data_path + "/CPU"), conf)
+    with_cpu_session(lambda spark: assert_compacted_file_count(spark, data_path + "/GPU"), conf)
 
 
 @allow_non_gpu(*delta_meta_allow)

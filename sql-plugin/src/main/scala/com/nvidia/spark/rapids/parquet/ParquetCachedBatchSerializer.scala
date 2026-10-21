@@ -26,10 +26,11 @@ import scala.collection.mutable.ListBuffer
 import ai.rapids.cudf._
 import ai.rapids.cudf.ParquetWriterOptions.StatisticsFrequency
 import com.nvidia.spark.GpuCachedBatchSerializer
-import com.nvidia.spark.rapids.{ByteBufferInputStream, ColumnCastUtil, DecimalUtil, GpuColumnVector, GpuRowToColumnConverter, GpuSemaphore, RapidsConf, RequireSingleBatch, RowToColumnarIterator, SchemaUtils}
+import com.nvidia.spark.rapids.{ByteBufferInputStream, ColumnCastUtil, DecimalUtil, GpuColumnVector, GpuRowToColumnConverter, GpuSemaphore, RapidsConf, RowToColumnarIterator, SchemaUtils, TargetSize}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuColumnVector.GpuColumnarBatchBuilder
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.ScalableTaskCompletion.onTaskCompletion
 import com.nvidia.spark.rapids.shims.{LegacyBehaviorPolicyShim, ParquetVariantShims, SparkShimImpl}
 import com.nvidia.spark.rapids.shims.parquet.{ParquetFieldIdShims, ParquetLegacyNanoAsLongShims, ParquetTimestampNTZShims}
@@ -94,7 +95,7 @@ private class ByteArrayOutputFile(stream: ByteArrayOutputStream) extends OutputF
 
       override def write(b: Int): Unit = {
         super.write(b)
-        pos += Integer.BYTES
+        pos += 1
       }
 
       override def write(b: Array[Byte]): Unit = {
@@ -141,14 +142,14 @@ private class ParquetBufferConsumer(val numRows: Int) extends HostBufferConsumer
 
   private def writeBuffers(): Unit = {
     val toProcess = offHeapBuffers.dequeueAll(_ => true)
-    // We are making sure the input is smaller than 2gb so the parquet written should never be more
-    // than Int.MAX_SIZE.
-    val bytes = toProcess.map(_._2).sum
-
-    // for now assert bytes are less than Int.MaxValue
-    assert(bytes <= Int.MaxValue)
-    buffer = new Array(bytes.toInt)
     try {
+      // The GPU budget keeps a slice's expected Parquet output under 2 GiB, but slices are cut
+      // by average row size, so a skewed slice can still exceed what one array holds.
+      val bytes = toProcess.map(_._2).sum
+
+      // for now assert bytes are less than Int.MaxValue
+      assert(bytes <= Int.MaxValue)
+      buffer = new Array(bytes.toInt)
       var offset: Int = 0
       toProcess.foreach(ops => {
         val origBuffer = ops._1
@@ -250,7 +251,7 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
     val rapidsConf = new RapidsConf(conf)
     val useCompression = conf.useCompression
-    val bytesAllowedPerBatch = getBytesAllowedPerBatch(conf)
+    val bytesAllowedPerBatch = getGpuBytesAllowedPerBatch(conf)
     val (schemaWithUnambiguousNames, _) = getSupportedSchemaFromUnsupported(schema)
     val structSchema = schemaWithUnambiguousNames.toStructType
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU &&
@@ -333,7 +334,8 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
       GpuColumnVector.from(v, schema(i).dataType)
     }
     withResource(new ColumnarBatch(columns.toArray, oldGpuCB.numRows())) { gpuCB =>
-      val rowsAllowedInBatch = (bytesAllowedPerBatch / estimatedRowSize).toInt
+      // A batch whose average row is larger than the budget still gets one row per slice.
+      val rowsAllowedInBatch = math.max(1, (bytesAllowedPerBatch / estimatedRowSize).toInt)
       val splitIndices = scala.Range(rowsAllowedInBatch, gpuCB.numRows(), rowsAllowedInBatch)
       val buffers = new ListBuffer[ParquetCachedBatch]
       if (splitIndices.nonEmpty) {
@@ -453,38 +455,43 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
         GpuSemaphore.acquireIfNecessary(TaskContext.get())
         val parquetOptions = ParquetOptions.builder()
             .includeColumn(selectedAttributes.map(_.name).asJavaCollection).build()
-        val table = try {
-          Table.readParquet(parquetOptions, parquetCB.buffer, 0, parquetCB.sizeInBytes)
-        } catch {
-          case e: Exception =>
-            throw new IOException("Error when processing file " +
-                s"[range: 0-${parquetCB.sizeInBytes}]", e)
-        }
-        withResource(table) { table =>
-          withResource {
-            for (i <- 0 until table.getNumberOfColumns) yield {
-              ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(table.getColumn(i),
-                originalSelectedAttributes(i).dataType,
-                (dataType, _) => dataType match {
-                  case d: DecimalType if d.scale < 0 => true
-                  case _ => false
-                },
-                (dataType, cv) => {
-                  dataType match {
-                    case d: DecimalType =>
-                      withResource(cv.bitCastTo(DecimalUtil.createCudfDecimal(d))) {
-                        _.copyToColumnVector()
-                      }
-                    case _ =>
-                      throw new IllegalStateException("We don't cast any type besides Decimal " +
-                          "with scale < 0")
+        withRetryNoSplit {
+          val table = try {
+            Table.readParquet(parquetOptions, parquetCB.buffer, 0, parquetCB.sizeInBytes)
+          } catch {
+            case e: Exception =>
+              throw new IOException("Error when processing file " +
+                  s"[range: 0-${parquetCB.sizeInBytes}]", e)
+          }
+          withResource(table) { table =>
+            withResource(new mutable.ArrayBuffer[ColumnVector]) { columns =>
+              for (i <- 0 until table.getNumberOfColumns) {
+                columns += ColumnCastUtil.ifTrueThenDeepConvertTypeAtoTypeB(table.getColumn(i),
+                  originalSelectedAttributes(i).dataType,
+                  (dataType, cv) => dataType match {
+                    case BinaryType if cv.getType == DType.STRING => true
+                    case d: DecimalType if d.scale < 0 => true
+                    case _ => false
+                  },
+                  (dataType, cv) => {
+                    dataType match {
+                      case BinaryType =>
+                        ParquetSchemaUtils.convertStringToBinary(cv)
+                      case d: DecimalType =>
+                        withResource(cv.bitCastTo(DecimalUtil.createCudfDecimal(d))) {
+                          _.copyToColumnVector()
+                        }
+                      case _ =>
+                        throw new IllegalStateException("We only cast STRING-backed BinaryType " +
+                            "and DecimalType with scale < 0")
+                    }
                   }
-                }
-              )
-            }
-          } { col =>
-            withResource(new Table(col: _*)) { t =>
-              GpuColumnVector.from(t, originalSelectedAttributes.map(_.dataType).toArray)
+                )
+              }
+              withResource(new Table(columns.toArray: _*)) { convertedTable =>
+                GpuColumnVector.from(convertedTable,
+                  originalSelectedAttributes.map(_.dataType).toArray)
+              }
             }
           }
         }
@@ -925,6 +932,33 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
     (gpuBatchSize - approxMetaDataSizeBytes).toLong
   }
 
+  // A slice's Parquet output is copied into one Java array, so the GPU writer's budget stays
+  // 10 MiB below 2 GiB however large batchSizeBytes is. The CPU writer keeps its own budget.
+  private val maxGpuBytesAllowedPerBatch = 2L * 1024 * 1024 * 1024 - 10L * 1024 * 1024
+
+  // The row entry sets no batch size target, so its builders' first allocation would otherwise
+  // follow batchSizeBytes, which can be set far above what any column can hold.
+  private val maxInitialBuilderBytes = 1024L * 1024 * 1024
+
+  private def getGpuBytesAllowedPerBatch(conf: SQLConf): Long =
+    math.min(getBytesAllowedPerBatch(conf), maxGpuBytesAllowedPerBatch)
+
+  /** The row entry's cached batches for a schema with no columns: row counts only. */
+  private def zeroColumnBatches(iter: Iterator[InternalRow]): Iterator[CachedBatch] = {
+    new Iterator[CachedBatch] {
+      override def hasNext: Boolean = iter.hasNext
+
+      override def next(): CachedBatch = {
+        var rows = 0
+        while (rows < Int.MaxValue && iter.hasNext) {
+          iter.next()
+          rows += 1
+        }
+        ParquetCachedBatch(rows, new Array[Byte](0))
+      }
+    }
+  }
+
   /**
    * This is a private helper class to return Iterator to convert InternalRow or ColumnarBatch to
    * CachedBatch. There is no type checking so if the type of T is anything besides InternalRow
@@ -1285,22 +1319,29 @@ class ParquetCachedBatchSerializer extends GpuCachedBatchSerializer {
 
     val rapidsConf = new RapidsConf(conf)
     val useCompression = conf.useCompression
-    val bytesAllowedPerBatch = getBytesAllowedPerBatch(conf)
     val (schemaWithUnambiguousNames, _) = getSupportedSchemaFromUnsupported(schema)
     if (rapidsConf.isSqlEnabled && rapidsConf.isSqlExecuteOnGPU &&
         isSchemaSupportedByCudf(schema)) {
       val structSchema = schemaWithUnambiguousNames.toStructType
-      val converters = new GpuRowToColumnConverter(structSchema)
-      val batchSizeBytes = rapidsConf.gpuTargetBatchSizeBytes
-      val enableR2cRetry = rapidsConf.isR2cRetryEnabled
-      val columnarBatchRdd = input.mapPartitions(iter => {
-        new RowToColumnarIterator(iter, structSchema, RequireSingleBatch, batchSizeBytes,
-        converters, enableR2cRetry)
-      })
-      columnarBatchRdd.flatMap(cb => {
-        withResource(cb)(cb => compressColumnarBatchWithParquet(cb, structSchema,
-          schema.toStructType, bytesAllowedPerBatch, useCompression))
-      })
+      if (structSchema.isEmpty) {
+        input.mapPartitions(zeroColumnBatches)
+      } else {
+        val bytesAllowedPerBatch = getGpuBytesAllowedPerBatch(conf)
+        val converters = new GpuRowToColumnConverter(structSchema)
+        // This only sizes each batch's builders. The goal sets no size target: a partition stays
+        // one batch unless the iterator has to split it, as at a column's size limit.
+        val initialBuilderBytes = math.min(rapidsConf.gpuTargetBatchSizeBytes,
+          maxInitialBuilderBytes)
+        val enableR2cRetry = rapidsConf.isR2cRetryEnabled
+        val columnarBatchRdd = input.mapPartitions(iter => {
+          new RowToColumnarIterator(iter, structSchema, TargetSize(Long.MaxValue),
+            initialBuilderBytes, converters, enableR2cRetry)
+        })
+        columnarBatchRdd.flatMap(cb => {
+          withResource(cb)(cb => compressColumnarBatchWithParquet(cb, structSchema,
+            schema.toStructType, bytesAllowedPerBatch, useCompression))
+        })
+      }
     } else {
       val broadcastedConf = SparkSession.active.sparkContext.broadcast(conf.getAllConfs)
       input.mapPartitions {
