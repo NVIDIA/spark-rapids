@@ -120,10 +120,24 @@ object DeltaSpark410DB183Provider extends DatabricksDeltaProviderBase {
       cpuExec: OverwriteByExpressionExecV1,
       meta: OverwriteByExpressionExecV1Meta): Unit = {
     if (isNativeStagedDeltaTable(cpuExec.table.getClass)) {
-      meta.willNotWorkOnGpu(
-        "Delta native staged tables are only supported by AppendDataExecV1")
+      // The native writer captures the replacement query; the staged table owns atomic commit.
+      if (!meta.conf.isDeltaWriteEnabled) {
+        meta.willNotWorkOnGpu("Delta Lake output acceleration has been disabled. To enable set " +
+          s"${RapidsConf.ENABLE_DELTA_WRITE} to true")
+      }
     } else {
       super.tagForGpu(cpuExec, meta)
+    }
+  }
+
+  override def convertToGpu(
+      cpuExec: OverwriteByExpressionExecV1,
+      meta: OverwriteByExpressionExecV1Meta): GpuExec = {
+    if (isNativeStagedDeltaTable(cpuExec.table.getClass)) {
+      GpuOverwriteByExpressionExecV1(
+        cpuExec.table, cpuExec.plan, cpuExec.refreshCache, cpuExec.write)
+    } else {
+      super.convertToGpu(cpuExec, meta)
     }
   }
 
@@ -167,10 +181,50 @@ object DeltaSpark410DB183Provider extends DatabricksDeltaProviderBase {
       format == classOf[GpuDeltaParquetFileFormat] ||
       format == classOf[GpuDeltaParquetFileFormatNativeDV]
 
+  /**
+   * DBR 18.3 low shuffle MERGE unmodified-row rewrites require temporary-DV filtering:
+   * {{{
+   * Reader | Mode          | Temp DVs | Row-index output
+   * legacy | PERFILE       | no       | yes, whole-file
+   * legacy | MULTITHREADED | no       | no
+   * legacy | COALESCING    | no       | no
+   * native | PERFILE       | yes      | no
+   * native | MULTITHREADED | yes      | yes, file-relative
+   * native | COALESCING    | yes      | no
+   * }}}
+   * Row-index output means the discovery column, distinct from indexes used to apply DVs.
+   * DV pushdown requires both predicatePushdown.enabled and useMetadataRowIndex to be true.
+   * With either setting disabled, shouldFallback selects classic GPU MERGE for every mode
+   * before reader selection. Ordinary reads retain their DV-setting-controlled reader selection.
+   *
+   * Native DV discovery row-index output is currently implemented only for MULTITHREADED.
+   * For discovery, the native reader maps configured COALESCING (including AUTO when coalescing
+   * is eligible) to MULTITHREADED so it can produce file-relative row indexes. PERFILE discovery
+   * uses the legacy row-index path. Rewrites follow normal reader-mode eligibility rules.
+   * The rewrite marker only enables the prerequisite check below; once native DV processing is
+   * enabled, marked rewrites and ordinary reads select the same reader.
+   * TODO: Native PERFILE/COALESCING discovery row indexes: NVIDIA/cudf-spark#16323.
+   */
   override def getReadFileFormat(
       relation: HadoopFsRelation, rapidsConf: RapidsConf): FileFormat = {
     val fmt = relation.fileFormat.asInstanceOf[DeltaParquetFileFormat]
-    if (isPushDVPredicateDownEnabled(rapidsConf)) {
+    val isLowShuffleMergeDiscoveryScan =
+      GpuDeltaParquetFileFormat.isLowShuffleMergeDiscoveryScan(relation.options)
+    val isLowShuffleMergeRewriteScan =
+      GpuDeltaParquetFileFormat.isLowShuffleMergeRewriteScan(relation.options)
+    val useNativeReader = if (!isLowShuffleMergeDiscoveryScan && !isLowShuffleMergeRewriteScan) {
+      isPushDVPredicateDownEnabled(rapidsConf)
+    } else {
+      require(isPushDVPredicateDownEnabled(rapidsConf),
+        "Low shuffle MERGE scans with disabled native DV processing must fall back " +
+          "to classic GPU MERGE before reader selection")
+      if (isLowShuffleMergeDiscoveryScan) {
+        !rapidsConf.isParquetPerFileReadEnabled
+      } else {
+        true
+      }
+    }
+    if (useNativeReader) {
       GpuDeltaParquetFileFormatNativeDV(
         relation = relation,
         protocol = fmt.protocol,
@@ -205,7 +259,7 @@ object DeltaSpark410DB183Provider extends DatabricksDeltaProviderBase {
             originalOutput = scan.originalOutput.filterNot(_.name == "_tmp_metadata_row_index"),
             requiredSchema = StructType(
               scan.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
-            ))(scan.rapidsConf)))
+            ))(scan.rapidsConf, scan.partitionPlanningScan)))
     }
 
     plan match {
@@ -472,7 +526,8 @@ private object DB183DVPredicatePushdown extends ShimPredicateHelper {
             // It will not reuse the stage of the scan otherwise. Since we are removing
             // the deletion-vector skip-row column from scan's output, remove the
             // corresponding filter from dataFilters as well.
-            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(fsse.rapidsConf)
+            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(
+            fsse.rapidsConf, fsse.partitionPlanningScan)
       }
     }
 

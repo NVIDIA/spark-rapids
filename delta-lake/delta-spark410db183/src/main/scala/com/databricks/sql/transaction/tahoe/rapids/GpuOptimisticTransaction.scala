@@ -215,8 +215,10 @@ class GpuOptimisticTransaction(
       cdcTypeForAllFiles: Option[String],
       isEagerClustering: Boolean,
       clusteringColumnsOpt: Option[Seq[ClusteringColumn]]): (Seq[FileAction], QueryExecution) = {
+    // Native clustering columns select optional Photon page indexes. Some(empty) suppresses
+    // metadata defaults; None uses them. The GPU writer emits neither kind of page index.
     val requiresCpuWrite = isRemoveColumnMapping || cdcTypeForAllFiles.nonEmpty ||
-      isEagerClustering || clusteringColumnsOpt.nonEmpty
+      isEagerClustering
     if (requiresCpuWrite) {
       super.writeFilesAndGetQueryExecution(
         inputData, writeOptions, isOptimize, keepPartitionIdTag, additionalConstraints,
@@ -242,7 +244,9 @@ class GpuOptimisticTransaction(
       cdcTypeForAllFiles: Option[String],
       isEagerClustering: Boolean,
       clusteringColumnsOpt: Option[Seq[ClusteringColumn]]): (Seq[FileAction], SparkPlan) = {
-    if (cdcTypeForAllFiles.nonEmpty || isEagerClustering || clusteringColumnsOpt.nonEmpty) {
+    // Explicit and default clustering columns only select Photon page indexes on this path.
+    // The GPU writer emits neither, so Some(empty) and None need no separate handling here.
+    if (cdcTypeForAllFiles.nonEmpty || isEagerClustering) {
       return super.writeFilesAndGetExecutedPlan(
         inputData, writeOptions, isOptimize, keepPartitionIdTag, additionalConstraints,
         cdcTypeForAllFiles, isEagerClustering, clusteringColumnsOpt)

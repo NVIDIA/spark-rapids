@@ -25,12 +25,15 @@ import com.databricks.sql.transaction.tahoe.{CheckOverflowInTableWrite, DeltaErr
 import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Cast, Expression, ExpressionProxy}
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 /** GPU version of Delta's CheckOverflowInTableWrite expression. */
-case class GpuCheckOverflowInTableWrite(child: GpuCast, columnName: String)
+case class GpuCheckOverflowInTableWrite(
+    child: GpuExpression,
+    columnName: String,
+    sourceType: Option[DataType])
     extends ShimUnaryExpression with GpuExpression {
 
   override def dataType: DataType = child.dataType
@@ -39,11 +42,13 @@ case class GpuCheckOverflowInTableWrite(child: GpuCast, columnName: String)
     try {
       child.columnarEval(batch)
     } catch {
-      case _: ArithmeticException =>
-        throw DeltaErrors.castingCauseOverflowErrorInTableWrite(
-          child.child.dataType,
-          dataType,
-          columnName)
+      case error: ArithmeticException =>
+        sourceType match {
+          case Some(fromType) =>
+            throw DeltaErrors.castingCauseOverflowErrorInTableWrite(
+              fromType, dataType, columnName)
+          case None => throw error
+        }
     }
   }
 
@@ -60,9 +65,19 @@ object GpuCheckOverflowInTableWrite {
       (check, conf, parent, rule) =>
         new UnaryExprMeta[CheckOverflowInTableWrite](check, conf, parent, rule) {
           override def convertToGpu(child: Expression): GpuExpression = child match {
-            case cast: GpuCast => GpuCheckOverflowInTableWrite(cast, check.columnName)
+            case gpuChild: GpuExpression =>
+              // Native DBR only replaces overflow errors for a cast or a proxy around a cast.
+              val sourceType = check.child match {
+                case cast: Cast => Some(cast.child.dataType)
+                case proxy: ExpressionProxy => proxy.child match {
+                  case cast: Cast => Some(cast.child.dataType)
+                  case _ => None
+                }
+                case _ => None
+              }
+              GpuCheckOverflowInTableWrite(gpuChild, check.columnName, sourceType)
             case _ =>
-              throw new IllegalStateException("Expression child is not of type GpuCast")
+              throw new IllegalStateException("Expression child cannot run on the GPU")
           }
         })
 }

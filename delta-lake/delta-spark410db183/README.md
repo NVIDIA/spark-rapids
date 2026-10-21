@@ -1,14 +1,25 @@
 # Databricks 18.3 Delta Lake implementation
 
 This module contains the DBR 18.3 reader, transaction, catalog, and write implementations.
-The default DBR 18.3 build continues to use `delta-stub` until build activation is enabled.
+The default DBR 18.3 release profile continues to use `delta-stub` until build activation.
 
-After installing the DBR 18.3 root reactor dependencies, build this module explicitly
-with Java 17:
+The low-shuffle MERGE command and Parquet reader implementations are shared with DBR 17.3.
+Both classic and Edge MERGE commands select low-shuffle MERGE when enabled. Discovery and
+rewrite scans retain the established reader-mode mapping and classic GPU MERGE fallbacks
+for unsupported scan settings, row-tracking tables, and existing deletion vectors.
+
+Runtime-specific transaction hooks preserve DBR 18.3 CDC, eager-clustering, and column-mapping
+removal semantics through native fallback. Explicit clustering columns alone do not require
+fallback: their native use selects optional Photon Parquet page indexes, which the GPU writer
+does not emit.
+
+After installing the DBR 18.3 SQL-plugin dependencies, build this module with Java 17:
 
 ```bash
 mvn -B -f scala2.13/delta-lake/delta-spark410db183/pom.xml \
-  -Ddatabricks -Dbuildver=410db183 -DskipTests -Dmaven.scaladoc.skip clean verify
+  -Ddatabricks -Dbuildver=410db183 -DskipTests -Dmaven.test.skip=true \
+  -Dmaven.scaladoc.skip clean install
 ```
 
-Runtime integration coverage is tracked in NVIDIA/cudf-spark#16282.
+Runtime integration coverage and feature parity are tracked in NVIDIA/cudf-spark#16282.
+The DBR 18.3 pre-merge integration-test guard remains unchanged.
