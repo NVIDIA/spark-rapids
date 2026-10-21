@@ -86,11 +86,7 @@ trait RapidsErrorUtils340PlusBase extends RapidsErrorUtilsFor330plus with Rapids
   def cannotChangeDecimalPrecisionError(
       value: Decimal,
       toType: DecimalType,
-      context: SQLQueryContext = null): ArithmeticException = {
-    QueryExecutionErrors.cannotChangeDecimalPrecisionError(
-      value, toType.precision, toType.scale, context
-    )
-  }
+      context: SQLQueryContext = null): ArithmeticException
 
   def overflowInIntegralDivideError(context: SQLQueryContext = null): ArithmeticException = {
     QueryExecutionErrors.arithmeticOverflowError(
