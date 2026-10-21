@@ -1333,7 +1333,7 @@ def test_regexp_replace_unicode_support():
         conf=_regexp_conf)
 
 # JDK 19+ made \b and \B ASCII-only (JDK-8264160), while cuDF treats non-ASCII letters and digits
-# as word characters. This is a known GPU/CPU difference, see docs/compatibility.md.
+# as word characters, so \b and \B next to non-ASCII text are a known GPU/CPU difference.
 @pytest.mark.skipif(get_java_major_version() >= 19,
                     reason="\\b and \\B on non-ASCII text differ between CPU and GPU on JDK 19+")
 def test_regexp_replace_unicode_word_boundary():
