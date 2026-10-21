@@ -35,10 +35,7 @@ import org.apache.spark.sql.rapids.shims.RapidsErrorUtils
 import org.apache.spark.sql.types.{AbstractDataType, AnyDataType, ArrayType, BooleanType, DataType, IntegralType, LongType, MapType, StructField, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
-case class GpuGetStructField(
-    child: Expression,
-    ordinal: Int,
-    name: Option[String] = None)
+case class GpuGetStructField(child: Expression, ordinal: Int, name: Option[String] = None)
     extends ShimUnaryExpression
     with GpuExpression
     with ShimGetStructField
@@ -47,23 +44,15 @@ case class GpuGetStructField(
   lazy val childSchema: StructType = child.dataType.asInstanceOf[StructType]
 
   override def dataType: DataType = childSchema(ordinal).dataType
-
-  override def nullable: Boolean =
-    child.nullable || childSchema(ordinal).nullable
+  override def nullable: Boolean = child.nullable || childSchema(ordinal).nullable
 
   override def toString: String = {
-    val fieldName = if (resolved) {
-      childSchema(ordinal).name
-    } else {
-      s"_$ordinal"
-    }
+    val fieldName = if (resolved) childSchema(ordinal).name else s"_$ordinal"
     s"$child.${name.getOrElse(fieldName)}"
   }
 
-  override def sql: String = {
-    val fieldName = childSchema(ordinal).name
-    child.sql + s".${quoteIdentifier(name.getOrElse(fieldName))}"
-  }
+  override def sql: String =
+    child.sql + s".${quoteIdentifier(name.getOrElse(childSchema(ordinal).name))}"
 
   override def columnarEvalAny(batch: ColumnarBatch): Any = {
     val dt = dataType
@@ -73,6 +62,7 @@ case class GpuGetStructField(
           GpuColumnVector.from(view.copyToColumnVector(), dt)
         }
       case s: GpuScalar =>
+        // For a scalar in we want a scalar out.
         if (!s.isValid) {
           GpuScalar(null, dt)
         } else {
@@ -439,7 +429,9 @@ class GpuGetStructFieldMeta(
   }
 
   override def convertToGpu(child: Expression): GpuExpression = {
-    val effectiveOrd = GpuGetStructFieldMeta.effectiveOrdinal(expr, child)
+    val (effectiveOrd, _) = GpuGetStructFieldMeta.resolveField(expr, child.dataType).fold(
+      reason => throw new IllegalStateException(reason),
+      identity)
     GpuGetStructField(child, effectiveOrd, expr.name)
   }
 }
@@ -451,19 +443,13 @@ object GpuGetStructFieldMeta {
     GpuStructFieldRemap.resolveField(
       expr.child.dataType, convertedChildType, expr.ordinal, "GetStructField")
   }
-
-  def effectiveOrdinal(expr: GetStructField, child: Expression): Int = {
-    resolveField(expr, child.dataType).fold(
-      reason => throw new IllegalStateException(reason),
-      _._1)
-  }
 }
 
 class GpuGetArrayStructFieldsMeta(
-    expr: GetArrayStructFields,
-    conf: RapidsConf,
-    parent: Option[RapidsMeta[_, _, _]],
-    rule: DataFromReplacementRule)
+     expr: GetArrayStructFields,
+     conf: RapidsConf,
+     parent: Option[RapidsMeta[_, _, _]],
+     rule: DataFromReplacementRule)
   extends UnaryExprMeta[GetArrayStructFields](expr, conf, parent, rule) {
 
   override def tagExprForGpu(): Unit = {
@@ -496,24 +482,6 @@ object GpuGetArrayStructFieldsMeta {
       convertedChildType: DataType): Either[String, (Int, StructField, Int)] = {
     GpuStructFieldRemap.resolveArrayStructField(
       expr.child.dataType, convertedChildType, expr.ordinal, "GetArrayStructFields")
-  }
-
-  def effectiveOrdinal(expr: GetArrayStructFields, child: Expression): Int = {
-    resolveField(expr, child.dataType).fold(
-      reason => throw new IllegalStateException(reason),
-      _._1)
-  }
-
-  def effectiveField(expr: GetArrayStructFields, child: Expression): StructField = {
-    resolveField(expr, child.dataType).fold(
-      reason => throw new IllegalStateException(reason),
-      _._2)
-  }
-
-  def effectiveNumFields(expr: GetArrayStructFields, child: Expression): Int = {
-    resolveField(expr, child.dataType).fold(
-      reason => throw new IllegalStateException(reason),
-      _._3)
   }
 }
 

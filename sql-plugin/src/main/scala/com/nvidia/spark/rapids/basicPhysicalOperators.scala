@@ -55,7 +55,8 @@ class GpuProjectExecMeta(
     p: Option[RapidsMeta[_, _, _]],
     r: DataFromReplacementRule) extends SparkPlanMeta[ProjectExec](proj, conf, p, r)
     with Logging {
-  override protected lazy val outputTypeMetas: Option[Seq[DataTypeMeta]] =
+  // Not cached: expression types can still change in post-tag rules.
+  override protected def outputTypeMetas: Option[Seq[DataTypeMeta]] =
     Some(childExprs.map(_.typeMeta))
 
   override def outputAttributes: Seq[Attribute] = {
@@ -424,6 +425,7 @@ trait GpuProjectExecLike extends GpuPartitioningPreservingUnaryExecNode with Gpu
   override def doExecute(): RDD[InternalRow] =
     throw new IllegalStateException(s"Row-based execution should not occur for $this")
 
+  // The same as what feeds us
   override def outputBatching: CoalesceGoal = GpuExec.outputBatching(child)
 }
 
@@ -892,6 +894,8 @@ case class GpuProjectExec(
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
   override def outputBatching: CoalesceGoal = if (enablePreSplit) {
+    // Pre-split will make sure the size of each output batch will not be larger
+    // than the splitUntilSize.
     TargetSize(PreProjectSplitIterator.getSplitUntilSize)
   } else {
     super.outputBatching
@@ -1328,6 +1332,10 @@ case class GpuFilterExecMeta(
   parentMetaOpt: Option[RapidsMeta[_, _, _]],
   rule: DataFromReplacementRule
 ) extends SparkPlanMeta[FilterExec](filter, conf, parentMetaOpt, rule) {
+  // FilterExec passes its child's attributes through, so propagate converted child types, such
+  // as a pruned from_protobuf struct, to the operators above it.
+  override protected val useOutputAttributesOfChild: Boolean = true
+
   override def convertToGpu(): GpuExec = {
     GpuFilterExec(childExprs.head.convertToGpu(),
       childPlans.head.convertIfNeeded())()

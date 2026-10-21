@@ -16,16 +16,11 @@
 
 package org.apache.spark.sql.rapids.protobuf
 
-import ai.rapids.cudf.DType
 import com.nvidia.spark.rapids.jni.Protobuf._
 
 import org.apache.spark.sql.types._
 
 object ProtobufSchemaValidator {
-  // Keep planner rejection aligned with JNI so unsupported schemas fall back before execution.
-  val MAX_NESTING_DEPTH: Int = 10
-  val MAX_REPEATED_FIELDS_PER_MESSAGE: Int = 32
-
   private final case class JniDefaultValues(
       defaultInt: Long,
       defaultFloat: Double,
@@ -78,62 +73,6 @@ object ProtobufSchemaValidator {
           }
         }
     }
-  }
-
-  /**
-   * Checks parent/depth consistency, output visibility, per-message repeated capacity and enums.
-   * This does not replace ProtobufSchemaDescriptor's constructor validation.
-   */
-  def validateFlattenedSchema(flatFields: Seq[FlattenedFieldDescriptor]): Either[String, Unit] = {
-    val structTypeId = DType.STRUCT.getTypeId.getNativeId
-    val repeatedFieldsByParent = scala.collection.mutable.Map.empty[Int, Int]
-    flatFields.zipWithIndex.foreach { case (field, idx) =>
-      if (field.parentIdx >= idx) {
-        return Left(s"Flattened protobuf schema has invalid parent index at position $idx")
-      }
-      if (field.parentIdx == -1 && field.depth != 0) {
-        return Left(s"Top-level protobuf field at position $idx must have depth 0")
-      }
-      if (field.parentIdx >= 0 && field.depth <= 0) {
-        return Left(s"Nested protobuf field at position $idx must have positive depth")
-      }
-      if (field.depth >= MAX_NESTING_DEPTH) {
-        return Left(
-          s"Protobuf nesting depth exceeds maximum supported depth of $MAX_NESTING_DEPTH")
-      }
-      if (field.parentIdx >= 0 && flatFields(field.parentIdx).outputTypeId != structTypeId) {
-        return Left(
-          s"Protobuf field at position $idx has a non-STRUCT parent at ${field.parentIdx}")
-      }
-      if (field.parentIdx >= 0 && field.depth != flatFields(field.parentIdx).depth + 1) {
-        return Left(
-          s"Protobuf field at position $idx has depth inconsistent with parent " +
-            s"${field.parentIdx}")
-      }
-      if (field.parentIdx >= 0 && field.isOutput != flatFields(field.parentIdx).isOutput) {
-        return Left(
-          s"Protobuf field at position $idx has an output flag different from parent " +
-            s"${field.parentIdx}")
-      }
-      if (field.isRepeated) {
-        val repeatedCount = repeatedFieldsByParent.getOrElse(field.parentIdx, 0) + 1
-        if (repeatedCount > MAX_REPEATED_FIELDS_PER_MESSAGE) {
-          return Left(
-            s"Protobuf schema exceeds maximum supported repeated fields per message " +
-              s"($MAX_REPEATED_FIELDS_PER_MESSAGE) at parent index ${field.parentIdx}")
-        }
-        repeatedFieldsByParent.update(field.parentIdx, repeatedCount)
-      }
-      if (field.encoding == ENC_ENUM_STRING) {
-        if (field.enumValidValues == null || field.enumNames == null) {
-          return Left(s"Enum-string field at position $idx is missing enum metadata")
-        }
-        if (field.enumValidValues.length != field.enumNames.length) {
-          return Left(s"Enum-string field at position $idx has mismatched enum metadata")
-        }
-      }
-    }
-    Right(())
   }
 
   /**

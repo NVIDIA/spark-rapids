@@ -72,31 +72,6 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     StructField("id", IntegerType, nullable = true),
     StructField("name", StringType, nullable = true)))
 
-  private def flattenedField(
-      fieldNumber: Int,
-      parentIdx: Int,
-      depth: Int,
-      outputTypeId: Int = DType.INT32.getTypeId.getNativeId,
-      isRepeated: Boolean = false): FlattenedFieldDescriptor = {
-    FlattenedFieldDescriptor(
-      fieldNumber = fieldNumber,
-      parentIdx = parentIdx,
-      depth = depth,
-      wireType = 0,
-      outputTypeId = outputTypeId,
-      encoding = Protobuf.ENC_DEFAULT,
-      isRepeated = isRepeated,
-      isRequired = false,
-      hasDefaultValue = false,
-      isOutput = true,
-      defaultInt = 0L,
-      defaultFloat = 0.0,
-      defaultBool = false,
-      defaultString = Array.emptyByteArray,
-      enumValidValues = null,
-      enumNames = null)
-  }
-
   private case class FakeExprChild() extends Expression {
     override def children: Seq[Expression] = Nil
     override def nullable: Boolean = true
@@ -704,127 +679,6 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
       _.contains("Incompatible default value for protobuf field 'common.score'")))
   }
 
-  test("validator rejects flattened schema with non-STRUCT parent") {
-    val flatFields = Seq(
-      FlattenedFieldDescriptor(
-        fieldNumber = 1,
-        parentIdx = -1,
-        depth = 0,
-        wireType = 0,
-        outputTypeId = DType.INT32.getTypeId.getNativeId,
-        encoding = Protobuf.ENC_DEFAULT,
-        isRepeated = false,
-        isRequired = false,
-        hasDefaultValue = false,
-        isOutput = true,
-        defaultInt = 0L,
-        defaultFloat = 0.0,
-        defaultBool = false,
-        defaultString = Array.emptyByteArray,
-        enumValidValues = null,
-        enumNames = null),
-      FlattenedFieldDescriptor(
-        fieldNumber = 2,
-        parentIdx = 0,
-        depth = 1,
-        wireType = 0,
-        outputTypeId = DType.INT32.getTypeId.getNativeId,
-        encoding = Protobuf.ENC_DEFAULT,
-        isRepeated = false,
-        isRequired = false,
-        hasDefaultValue = false,
-        isOutput = true,
-        defaultInt = 0L,
-        defaultFloat = 0.0,
-        defaultBool = false,
-        defaultString = Array.emptyByteArray,
-        enumValidValues = null,
-        enumNames = null))
-
-    val validation = ProtobufSchemaValidator.validateFlattenedSchema(flatFields)
-    assert(validation.left.toOption.exists(_.contains("non-STRUCT parent")))
-  }
-
-  test("validator allows 32 repeated fields under one parent") {
-    val flatFields = (1 to 32).map { fieldNumber =>
-      flattenedField(fieldNumber, parentIdx = -1, depth = 0, isRepeated = true)
-    }
-
-    assert(ProtobufSchemaValidator.validateFlattenedSchema(flatFields).isRight)
-  }
-
-  test("validator rejects more than 32 repeated fields under one parent") {
-    val flatFields = (1 to 33).map { fieldNumber =>
-      flattenedField(fieldNumber, parentIdx = -1, depth = 0, isRepeated = true)
-    }
-
-    val validation = ProtobufSchemaValidator.validateFlattenedSchema(flatFields)
-
-    assert(validation.left.toOption.exists(
-      _.contains("maximum supported repeated fields per message (32)")))
-  }
-
-  test("validator counts repeated fields independently for each parent") {
-    val firstParent = flattenedField(
-      fieldNumber = 1,
-      parentIdx = -1,
-      depth = 0,
-      outputTypeId = DType.STRUCT.getTypeId.getNativeId)
-    val firstChildren = (1 to 32).map { fieldNumber =>
-      flattenedField(fieldNumber, parentIdx = 0, depth = 1, isRepeated = true)
-    }
-    val secondParentIdx = 1 + firstChildren.size
-    val secondParent = flattenedField(
-      fieldNumber = 2,
-      parentIdx = -1,
-      depth = 0,
-      outputTypeId = DType.STRUCT.getTypeId.getNativeId)
-    val secondChildren = (1 to 32).map { fieldNumber =>
-      flattenedField(
-        fieldNumber,
-        parentIdx = secondParentIdx,
-        depth = 1,
-        isRepeated = true)
-    }
-    val flatFields = Seq(firstParent) ++ firstChildren ++ Seq(secondParent) ++ secondChildren
-
-    assert(ProtobufSchemaValidator.validateFlattenedSchema(flatFields).isRight)
-  }
-
-  test("validator enforces the JNI nesting depth boundary") {
-    def schemaThroughDepth(maxDepth: Int): Seq[FlattenedFieldDescriptor] =
-      (0 to maxDepth).map { depth =>
-        flattenedField(
-          fieldNumber = depth + 1,
-          parentIdx = depth - 1,
-          depth = depth,
-          outputTypeId = if (depth < maxDepth) {
-            DType.STRUCT.getTypeId.getNativeId
-          } else {
-            DType.INT32.getTypeId.getNativeId
-          })
-      }
-
-    assert(ProtobufSchemaValidator.validateFlattenedSchema(
-      schemaThroughDepth(ProtobufSchemaValidator.MAX_NESTING_DEPTH - 1)).isRight)
-    assert(ProtobufSchemaValidator.validateFlattenedSchema(
-      schemaThroughDepth(ProtobufSchemaValidator.MAX_NESTING_DEPTH)).isLeft)
-  }
-
-  test("validator rejects child depth inconsistent with parent") {
-    val flatFields = Seq(
-      flattenedField(
-        fieldNumber = 1,
-        parentIdx = -1,
-        depth = 0,
-        outputTypeId = DType.STRUCT.getTypeId.getNativeId),
-      flattenedField(fieldNumber = 2, parentIdx = 0, depth = 2))
-
-    val validation = ProtobufSchemaValidator.validateFlattenedSchema(flatFields)
-
-    assert(validation.left.toOption.exists(_.contains("depth inconsistent with parent")))
-  }
-
   test("struct field meta resolves ordinal from converted child schema") {
     val originalStruct = StructType(Seq(
       StructField("a", IntegerType, nullable = true),
@@ -835,11 +689,8 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
     val sparkExpr = GetStructField(originalChild, 2, Some("c"))
     val prunedChild = FakeTypedUnaryExpr(prunedStruct)
 
-    assert(GpuGetStructFieldMeta.effectiveOrdinal(sparkExpr, prunedChild) == 0)
-    GpuGetStructFieldMeta.resolveField(sparkExpr, prunedChild.dataType) match {
-      case Right((_, field)) => assert(field == prunedStruct.fields.head)
-      case Left(reason) => fail(reason)
-    }
+    assert(GpuGetStructFieldMeta.resolveField(sparkExpr, prunedChild.dataType) ==
+      Right((0, prunedStruct.fields.head)))
   }
 
   test("array struct field meta resolves ordinal and numFields from converted child schema") {
@@ -858,10 +709,8 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
 
     val prunedChild = FakeTypedUnaryExpr(ArrayType(prunedStruct, containsNull = true))
 
-    assert(GpuGetArrayStructFieldsMeta.effectiveOrdinal(sparkExpr, prunedChild) == 0)
-    assert(GpuGetArrayStructFieldsMeta.effectiveField(sparkExpr, prunedChild) ==
-      prunedStruct.fields.head)
-    assert(GpuGetArrayStructFieldsMeta.effectiveNumFields(sparkExpr, prunedChild) == 1)
+    assert(GpuGetArrayStructFieldsMeta.resolveField(sparkExpr, prunedChild.dataType) ==
+      Right((0, prunedStruct.fields.head, 1)))
   }
 
   private def twoFieldSchemaArrays(): FlattenedSchemaArrays = FlattenedSchemaArrays(

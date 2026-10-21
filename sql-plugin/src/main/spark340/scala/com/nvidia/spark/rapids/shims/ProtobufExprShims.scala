@@ -90,6 +90,10 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
     }
   }
 
+  private final case class DecodePlan(
+      decodedSchema: StructType,
+      flatSchema: FlattenedSchemaArrays)
+
   private def fromProtobufRule(clazz: Class[_ <: UnaryExpression]): ExprRule[_ <: Expression] = {
     // Name the rule config and docs after ProtobufDataToCatalyst instead of UnaryExpression.
     implicit val tag: ClassTag[UnaryExpression] = ClassTag(clazz)
@@ -102,13 +106,16 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         TypeSig.all,
         TypeSig.BINARY,
         TypeSig.BINARY),
-      (e, conf, p, r) => new UnaryExprMeta[UnaryExpression](e, conf, p, r) {
+      (e, conf, p, r) => new UnaryExprMeta[UnaryExpression](e, conf, p, r)
+          with ConsumerDependentExprMeta {
 
         private var fullSchema: StructType = _
         private var failOnErrors: Boolean = _
-        private var flatSchema: FlattenedSchemaArrays = _
-        // Indices in fullSchema for top-level fields visible in the returned decoded schema.
-        private var decodedTopLevelIndices: Array[Int] = _
+        private var decodePlan: DecodePlan = _
+        // Full-output plan to switch to if a plan reading the pruned struct runs on the CPU.
+        private var unprunedPlan: Option[DecodePlan] = None
+        // Plans after the decoding plan that receive the decoded struct as input.
+        private var structConsumers: Seq[SparkPlanMeta[_]] = Seq.empty
 
         override def tagExprForGpu(): Unit = {
           val planned = e.dataType match {
@@ -134,19 +141,49 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             fullSchema, msgDesc, plannerOptions.enumsAsInts, exprInfo.messageName)
           _ <- checkTopLevelFieldsSupported(fieldsInfoMap)
           outputIndices = outputTopLevelIndices(fieldsInfoMap, msgDesc)
-          flatFields <- flattenSchema(
-            fieldsInfoMap, msgDesc, outputIndices.toSet, plannerOptions.enumsAsInts)
-          _ <- ProtobufSchemaValidator.validateFlattenedSchema(flatFields)
-          arrays = ProtobufSchemaValidator.toFlattenedSchemaArrays(flatFields)
-          // The JNI constructor has checks of its own; fail here rather than on executors.
-          _ <- Try(arrays.toJniDescriptor).toEither.left.map { t =>
-            s"Protobuf schema is not supported by the GPU decoder: ${t.getMessage}"
+          plan <- buildDecodePlan(fieldsInfoMap, msgDesc, outputIndices,
+            nestedFieldRequirements, plannerOptions.enumsAsInts)
+          // Keep the struct decodable in full while its consumers can still end up on the CPU.
+          unpruned <- if (structConsumers.isEmpty || plan.decodedSchema == fullSchema) {
+            Right(None)
+          } else {
+            buildDecodePlan(fieldsInfoMap, msgDesc, fullSchema.fields.indices.toArray,
+              Map.empty, plannerOptions.enumsAsInts).map(Some(_)).left.map { reason =>
+              s"Decoded protobuf struct is read by later operators, which need a full decode: " +
+                reason
+            }
           }
         } yield {
           failOnErrors = plannerOptions.failOnErrors
-          flatSchema = arrays
-          decodedTopLevelIndices = outputIndices
-          overrideDataType(buildDecodedSchema(buildPrunedFieldsMap()))
+          decodePlan = plan
+          unprunedPlan = unpruned
+          overrideDataType(plan.decodedSchema)
+        }
+
+        private def buildDecodePlan(
+            fieldsInfoMap: Map[String, ProtobufFieldInfo],
+            msgDesc: ProtobufMessageDescriptor,
+            outputIndices: Array[Int],
+            nestedReqs: Map[String, Option[Set[String]]],
+            enumsAsInts: Boolean): Either[String, DecodePlan] = for {
+          flatFields <- flattenSchema(
+            fieldsInfoMap, msgDesc, outputIndices.toSet, nestedReqs, enumsAsInts)
+          arrays = ProtobufSchemaValidator.toFlattenedSchemaArrays(flatFields)
+          // The JNI constructor validates the schema; fail here rather than on executors.
+          _ <- Try(arrays.toJniDescriptor).toEither.left.map { t =>
+            s"Protobuf schema is not supported by the GPU decoder: ${t.getMessage}"
+          }
+        } yield DecodePlan(buildDecodedSchema(outputIndices, buildPrunedFieldsMap(nestedReqs)),
+          arrays)
+
+        override def recheckConsumersAfterTag(): Unit = unprunedPlan.foreach { unpruned =>
+          // CPU consumers read the struct with Spark's field ordinals.
+          if (willUseGpuCpuBridge ||
+              structConsumers.exists(c => !c.canThisBeReplaced && !c.shouldThisBeRemoved)) {
+            decodePlan = unpruned
+            unprunedPlan = None
+            overrideDataType(fullSchema)
+          }
         }
 
         private def checkSupportedOptions(options: Map[String, String]): Either[String, Unit] = {
@@ -191,6 +228,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             fieldsInfoMap: Map[String, ProtobufFieldInfo],
             msgDesc: ProtobufMessageDescriptor,
             outputIndices: Set[Int],
+            nestedReqs: Map[String, Option[Set[String]]],
             enumsAsInts: Boolean): Either[String, Array[FlattenedFieldDescriptor]] = {
           val flatFields = mutable.ArrayBuffer[FlattenedFieldDescriptor]()
 
@@ -213,9 +251,6 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             }
             val path = if (pathPrefix.isEmpty) sf.name else s"$pathPrefix.${sf.name}"
             for {
-              _ <- Either.cond(depth < ProtobufSchemaValidator.MAX_NESTING_DEPTH, (),
-                "Protobuf nesting depth exceeds maximum supported depth of " +
-                  ProtobufSchemaValidator.MAX_NESTING_DEPTH)
               outputType <- outputTypeOpt.toRight(
                 s"Unsupported Spark type for protobuf field '${sf.name}': ${sf.dataType}")
               flatField <- ProtobufSchemaValidator.toFlattenedFieldDescriptor(
@@ -236,7 +271,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
 
           // Applies nested schema pruning at arbitrary depth using path-based
-          // lookup into nestedFieldRequirements.
+          // lookup into nestedReqs.
           def addChildFieldsFromStruct(
               st: StructType,
               containingMsgDesc: ProtobufMessageDescriptor,
@@ -246,7 +281,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               isOutput: Boolean,
               pathPrefix: String): Either[String, Unit] = {
             val path = if (pathPrefix.isEmpty) fieldName else s"$pathPrefix.$fieldName"
-            val filteredFields = nestedFieldRequirements.get(path) match {
+            val filteredFields = nestedReqs.get(path) match {
               case Some(Some(childNames)) if isOutput =>
                 st.fields.filter(f => childNames.contains(f.name))
               case _ =>
@@ -289,10 +324,10 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
 
         /**
          * Analyze which fields are actually required by downstream operations.
-         * Traverses parent plan nodes upward, collecting struct field references from
-         * ProjectExec, FilterExec, and transparent pass-through nodes (AggregateExec,
-         * SortExec, WindowExec, etc.), then returns the set of required top-level
-         * field names.
+         * Traverses parent plan nodes upward while they can still see the decoded struct,
+         * collecting struct field references from ProjectExec, FilterExec, AggregateExec,
+         * SortExec and WindowExec, then returns the set of required top-level field names.
+         * Plans that receive the struct are recorded in structConsumers.
          *
          * @param allFieldNames All field names in the full schema
          * @return Set of field names that are actually required
@@ -300,82 +335,86 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         private def analyzeRequiredFields(allFieldNames: Set[String]): Set[String] = {
           val fieldReqs = mutable.Map[String, Option[Set[String]]]()
           protobufOutputExprIds = Set.empty
+          structConsumers = Seq.empty
           var hasDirectStructRef = false
           val holder = () => { hasDirectStructRef = true }
 
-          var currentMeta: Option[SparkPlanMeta[_]] = findParentPlanMeta()
+          val startingPlanMeta = RapidsMeta.findParentPlanMeta(this)
+          var currentMeta = startingPlanMeta
           var safeToPrune = true
-          val startingPlanMeta = currentMeta
 
-          def advanceToParent(): Unit = {
-            currentMeta = currentMeta.get.parent match {
-              case Some(pm: SparkPlanMeta[_]) => Some(pm)
-              case _ => None
-            }
-          }
-
-          while (currentMeta.isDefined && safeToPrune) {
+          while (currentMeta.isDefined && safeToPrune && !hasDirectStructRef) {
             val planMeta = currentMeta.get
-            val allowSemanticReferenceMatch = currentMeta == startingPlanMeta
+            val allowSemanticReferenceMatch = startingPlanMeta.exists(_ eq planMeta)
             planMeta.wrapped match {
               case p: ProjectExec =>
-                val directAliases = p.projectList.collect {
-                  case alias: org.apache.spark.sql.catalyst.expressions.Alias
-                      if isProtobufStructReference(
-                        alias.child, allowSemanticReferenceMatch) =>
-                    alias.exprId
+                if (allowSemanticReferenceMatch) {
+                  // Only the decoding plan's aliases carry the pruned type to later plans.
+                  protobufOutputExprIds ++= p.projectList.collect {
+                    case alias: org.apache.spark.sql.catalyst.expressions.Alias
+                        if isProtobufStructReference(alias.child, allowSemanticReferenceMatch) =>
+                      alias.exprId
+                  }
                 }
-                protobufOutputExprIds ++= directAliases
                 p.projectList.foreach(
                   collectStructFieldReferences(
                     _, fieldReqs, holder, allowSemanticReferenceMatch))
-                advanceToParent()
               case f: org.apache.spark.sql.execution.FilterExec =>
                 collectStructFieldReferences(
                   f.condition, fieldReqs, holder, allowSemanticReferenceMatch)
-                advanceToParent()
               case a: org.apache.spark.sql.execution.aggregate.BaseAggregateExec =>
                 val exprs = a.aggregateExpressions ++ a.groupingExpressions
                 exprs.foreach(
                   collectStructFieldReferences(
                     _, fieldReqs, holder, allowSemanticReferenceMatch))
-                advanceToParent()
               case s: org.apache.spark.sql.execution.SortExec =>
                 val exprs = s.sortOrder
                 exprs.foreach(
                   collectStructFieldReferences(
                     _, fieldReqs, holder, allowSemanticReferenceMatch))
-                advanceToParent()
               case window: SparkPlan if SparkShimImpl.isWindowFunctionExec(window) =>
                 planMeta match {
                   case windowMeta: GpuBaseWindowExecMeta[_] =>
                     windowMeta.getInputWindowExpressions.foreach(
                       collectStructFieldReferences(
                         _, fieldReqs, holder, allowSemanticReferenceMatch))
-                    advanceToParent()
                   case _ =>
                     logDebug("Schema pruning disabled: WindowExec metadata does not expose " +
                       "cross-version window expressions")
                     safeToPrune = false
                 }
               case other =>
-                // Keep schema projection conservative for less common plan shapes above
-                // from_protobuf. Those plans currently fall back to full-schema decode
-                // until we add dedicated coverage for pruning through them.
+                // Keep schema projection conservative for less common plan shapes that read
+                // the decoded struct. Those plans fall back to full-schema decode until we add
+                // dedicated coverage for pruning through them.
                 logDebug(s"Schema pruning disabled: unrecognized plan node " +
-                  s"${other.getClass.getSimpleName} above from_protobuf")
+                  s"${other.getClass.getSimpleName} reads from_protobuf output")
                 safeToPrune = false
             }
-            if (planMeta.parent.isEmpty &&
-                planMeta.wrapped.asInstanceOf[SparkPlan].output.exists { attr =>
-                  protobufOutputExprIds.contains(attr.exprId)
-                }) {
-              holder()
+            val passesStruct = planMeta.wrapped.asInstanceOf[SparkPlan].output.exists { attr =>
+              protobufOutputExprIds.contains(attr.exprId)
+            }
+            currentMeta = if (!safeToPrune || hasDirectStructRef || !passesStruct) {
+              // Later plans cannot read a struct that this plan does not output.
+              None
+            } else {
+              planMeta.parent match {
+                case Some(next: SparkPlanMeta[_])
+                    if allowSemanticReferenceMatch || passesConvertedChildTypes(planMeta) =>
+                  structConsumers :+= next
+                  Some(next)
+                case _ =>
+                  // The query result, or a plan that only reports Spark's declared types,
+                  // receives the struct, so keep it whole.
+                  holder()
+                  None
+              }
             }
           }
 
           // An empty fieldReqs also subsumes the "no relevant expressions collected" case.
           if (!safeToPrune || hasDirectStructRef || fieldReqs.isEmpty) {
+            structConsumers = Seq.empty
             allFieldNames
           } else {
             nestedFieldRequirements = fieldReqs.toMap
@@ -383,19 +422,13 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
         }
 
-        /**
-         * Find the parent SparkPlanMeta by traversing up the parent chain.
-         */
-        private def findParentPlanMeta(): Option[SparkPlanMeta[_]] = {
-          def traverse(meta: Option[RapidsMeta[_, _, _]]): Option[SparkPlanMeta[_]] = {
-            meta match {
-              case Some(p: SparkPlanMeta[_]) => Some(p)
-              case Some(p: RapidsMeta[_, _, _]) => traverse(p.parent)
-              case _ => None
-            }
+        // These plan metas pass their child's converted output types through to their parent.
+        private def passesConvertedChildTypes(planMeta: SparkPlanMeta[_]): Boolean =
+          planMeta.wrapped match {
+            case _: org.apache.spark.sql.execution.FilterExec |
+                 _: org.apache.spark.sql.execution.SortExec => true
+            case _ => false
           }
-          traverse(parent)
-        }
 
         /**
          * Nested field requirements: maps a field path to child requirements.
@@ -615,6 +648,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
               if (!isProtobufStructReference(alias.child, allowSemanticReferenceMatch)) {
                 collectStructFieldReferences(
                   alias.child, fieldReqs, hasDirectStructRefHolder, allowSemanticReferenceMatch)
+              } else if (!protobufOutputExprIds.contains(alias.exprId)) {
+                // Other aliases publish Spark's declared struct type to later plans.
+                hasDirectStructRefHolder()
               }
 
             case _ =>
@@ -628,8 +664,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
         }
 
-        private def buildPrunedFieldsMap(): Map[String, Seq[String]] = {
-          nestedFieldRequirements.collect {
+        private def buildPrunedFieldsMap(
+            nestedReqs: Map[String, Option[Set[String]]]): Map[String, Seq[String]] = {
+          nestedReqs.collect {
             case (pathKey, Some(childNames)) =>
               val pathParts = pathKey.split("\\.").toSeq
               resolveSchemaAtPath(fullSchema, pathParts) match {
@@ -643,7 +680,9 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           }
         }
 
-        private def buildDecodedSchema(prunedFieldsMap: Map[String, Seq[String]]): StructType = {
+        private def buildDecodedSchema(
+            outputIndices: Array[Int],
+            prunedFieldsMap: Map[String, Seq[String]]): StructType = {
           def applyPruning(field: StructField, prefix: String): StructField = {
             val path = if (prefix.isEmpty) field.name else s"$prefix.${field.name}"
             prunedFieldsMap.get(path) match {
@@ -676,7 +715,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
             }
           }
 
-          val decodedFields = decodedTopLevelIndices.map { idx =>
+          val decodedFields = outputIndices.map { idx =>
             applyPruning(fullSchema.fields(idx), "")
           }
           StructType(decodedFields)
@@ -717,8 +756,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
         }
 
         override def convertToGpu(child: Expression): GpuExpression = {
-          GpuFromProtobuf(
-            buildDecodedSchema(buildPrunedFieldsMap()), flatSchema, failOnErrors, child)
+          GpuFromProtobuf(decodePlan.decodedSchema, decodePlan.flatSchema, failOnErrors, child)
         }
       }
     )

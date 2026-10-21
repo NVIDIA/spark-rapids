@@ -65,28 +65,15 @@ case class AttributeReferenceRuleMeta(
   extends BaseExprMeta[AttributeReference](att, conf, p, r) {
   // This is the only NOOP operator.  It goes away when things are bound
   override def convertToGpuImpl(): Expression = {
-    def findParentPlan(meta: Option[RapidsMeta[_, _, _]]): Option[SparkPlanMeta[_]] = {
-      meta match {
-        case Some(planMeta: SparkPlanMeta[_]) => Some(planMeta)
-        case Some(other) => findParentPlan(other.parent)
-        case None => None
+    // A GPU child can produce a different type than Spark declares, e.g. a pruned protobuf struct.
+    RapidsMeta.findParentPlanMeta(this)
+      .flatMap(_.convertedChildOutputs.get(att.exprId))
+      .filter(_.dataType != att.dataType)
+      .map { converted =>
+        AttributeReference(att.name, converted.dataType, converted.nullable, att.metadata)(
+          att.exprId, att.qualifier)
       }
-    }
-
-    val maybeResolvedAttr = for {
-      planMeta <- findParentPlan(parent)
-      matched <- planMeta.childPlans.iterator
-        .flatMap(_.outputAttributes.iterator)
-        .find(a => a.exprId == att.exprId && a.dataType != att.dataType)
-    } yield AttributeReference(
-      att.name,
-      matched.dataType,
-      matched.nullable,
-      att.metadata)(att.exprId, att.qualifier)
-
-    // matched.dataType can still be the wrapped plan's un-pruned protobuf struct; binding
-    // guarantees the final runtime type from the actual input column.
-    maybeResolvedAttr.getOrElse(att)
+      .getOrElse(att)
   }
 
   // There are so many of these that we don't need to print them out, unless it

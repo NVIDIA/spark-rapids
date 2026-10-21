@@ -35,6 +35,7 @@ from spark_session import (
     is_spark_protobuf_available,
     spark_version,
     with_cpu_session,
+    with_gpu_session,
 )
 import pyspark.sql.functions as f
 from pyspark.sql.window import Window
@@ -141,6 +142,38 @@ def _call_from_protobuf(from_protobuf_fn, col, message_name,
     """Call from_protobuf using the right API variant."""
     return call_protobuf_function(
         from_protobuf_fn, col, message_name, desc_path, desc_bytes, options)
+
+
+def _gpu_decoded_schemas(df):
+    """Output schemas of the GpuFromProtobuf expressions in df's executed plan."""
+    schemas = set()
+
+    def visit_expr(expr):
+        if expr.getClass().getSimpleName() == "GpuFromProtobuf":
+            schemas.add(expr.dataType().simpleString())
+        children = expr.children().iterator()
+        while children.hasNext():
+            visit_expr(children.next())
+
+    def visit_plan(plan):
+        exprs = plan.expressions().iterator()
+        while exprs.hasNext():
+            visit_expr(exprs.next())
+        children = plan.children().iterator()
+        while children.hasNext():
+            visit_plan(children.next())
+
+    visit_plan(df._jdf.queryExecution().executedPlan())
+    return schemas
+
+
+def _assert_gpu_decoded_schemas(run_on_spark, expected, conf={}):
+    """Equal results alone cannot show whether schema pruning happened, so check the plan."""
+    # AQE plans stages lazily, so inspect a fully planned query instead.
+    plan_conf = dict(conf, **{"spark.sql.adaptive.enabled": "false"})
+    actual = with_gpu_session(
+        lambda spark: _gpu_decoded_schemas(run_on_spark(spark)), conf=plan_conf)
+    assert actual == set(expected)
 
 
 def test_call_from_protobuf_preserves_options_for_legacy_signature():
@@ -2616,6 +2649,7 @@ def test_from_protobuf_projection_through_aggregate(
     assert_gpu_and_cpu_are_equal_collect(run_on_spark, conf={
         "spark.sql.adaptive.enabled": "false",
     })
+    _assert_gpu_decoded_schemas(run_on_spark, ["struct<detail:struct<a:int>>"])
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -2648,6 +2682,8 @@ def test_from_protobuf_projection_through_sort(
                 f.col("decoded.detail.b").alias("decoded_detail_b"))
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    _assert_gpu_decoded_schemas(
+        run_on_spark, ["struct<id:int,name:string,detail:struct<b:int>>"])
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -2714,6 +2750,9 @@ def test_from_protobuf_projection_across_plan_boundary(
                 f.col("decoded").getField("id").alias("id"))
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    expected = ("struct<id:int,detail:struct<a:int>>" if boundary == "alias"
+                else "struct<id:int,items:array<struct<a:int>>>")
+    _assert_gpu_decoded_schemas(run_on_spark, [expected])
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
@@ -2778,6 +2817,124 @@ def test_from_protobuf_cpu_project_does_not_publish_pruned_schema(
         "spark.rapids.sql.expression.cpuBridge.enabled": "true",
         "spark.rapids.sql.expression.Rand": "false",
     })
+
+
+def _build_three_int_projection_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(spark, "three_int_projection.proto", [
+        _msg("ThreeInts", [
+            _field("a", 1, "INT32"),
+            _field("b", 2, "INT32"),
+            _field("c", 3, "INT32"),
+        ]),
+    ])
+
+
+def _three_int_rows():
+    rows = [(i % 2, _encode_tag(1, 0) + _encode_varint(10 + i) +
+             _encode_tag(2, 0) + _encode_varint(20 + i) +
+             _encode_tag(3, 0) + _encode_varint(30 + i)) for i in range(8)]
+    return rows + [(0, None)]
+
+
+def _setup_three_int_projection(local_tmp_path, from_protobuf_fn):
+    desc_path, desc_bytes = _setup_protobuf_desc(
+        local_tmp_path, "three_int_projection.desc",
+        _build_three_int_projection_descriptor_set_bytes)
+
+    def decoded_df(spark):
+        df = spark.createDataFrame(_three_int_rows(), schema="k int, bin binary")
+        return df, _call_from_protobuf(
+            from_protobuf_fn, f.col("bin"), "test.ThreeInts", desc_path, desc_bytes)
+    return decoded_df
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@pytest.mark.parametrize("ancestor", ["none", "repartition", "aggregate", "sort"], ids=idfn)
+@ignore_order(local=True)
+def test_from_protobuf_pruning_with_unrelated_ancestors(
+        local_tmp_path, from_protobuf_fn, ancestor):
+    """Plans that never see the decoded struct must not disable pruning."""
+    decoded_df = _setup_three_int_projection(local_tmp_path, from_protobuf_fn)
+
+    def run_on_spark(spark):
+        df, decoded = decoded_df(spark)
+        result = df.select(decoded.getField("b").alias("b"), decoded.getField("c").alias("c"))
+        if ancestor == "repartition":
+            return result.repartition(3)
+        if ancestor == "aggregate":
+            return result.groupBy("b").agg(f.max("c").alias("c"))
+        if ancestor == "sort":
+            return result.orderBy("b")
+        return result
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    _assert_gpu_decoded_schemas(run_on_spark, ["struct<b:int,c:int>"])
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@allow_non_gpu("ProjectExec")
+@validate_execs_in_gpu_plan("GpuProjectExec")
+@ignore_order(local=True)
+def test_from_protobuf_cpu_consumer_reads_full_struct(local_tmp_path, from_protobuf_fn):
+    """A CPU plan reads the struct with Spark's field ordinals, so it must not be pruned."""
+    decoded_df = _setup_three_int_projection(local_tmp_path, from_protobuf_fn)
+
+    def run_on_spark(spark):
+        df, decoded = decoded_df(spark)
+        # Two references keep the decoding project separate from the consuming one.
+        return df.select(decoded.alias("decoded")).select(
+            f.col("decoded").getField("b").alias("b"),
+            f.col("decoded").getField("c").alias("c"),
+            f.rand(42).alias("force_cpu"))
+
+    conf = {
+        "spark.rapids.sql.expression.cpuBridge.enabled": "true",
+        "spark.rapids.sql.expression.Rand": "false",
+    }
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark, conf=conf)
+    _assert_gpu_decoded_schemas(run_on_spark, ["struct<a:int,b:int,c:int>"], conf=conf)
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_pruned_struct_through_filter(local_tmp_path, from_protobuf_fn):
+    """A filter that cannot be pushed below the decode passes the pruned struct through."""
+    decoded_df = _setup_three_int_projection(local_tmp_path, from_protobuf_fn)
+
+    def run_on_spark(spark):
+        df, decoded = decoded_df(spark)
+        # The nondeterministic column keeps Spark from pushing the filter below the decode.
+        return df.select(decoded.alias("decoded")) \
+            .withColumn("r", f.rand(42)) \
+            .filter(f.col("r") < 2.0) \
+            .select(f.col("decoded").getField("b").alias("b"),
+                    f.col("decoded").getField("c").alias("c"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    _assert_gpu_decoded_schemas(run_on_spark, ["struct<b:int,c:int>"])
+
+
+@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@ignore_order(local=True)
+def test_from_protobuf_realiased_struct_is_not_pruned(local_tmp_path, from_protobuf_fn):
+    """A later alias publishes Spark's declared struct type, so the decode keeps every field."""
+    decoded_df = _setup_three_int_projection(local_tmp_path, from_protobuf_fn)
+
+    def run_on_spark(spark):
+        df, decoded = decoded_df(spark)
+        # The nondeterministic column keeps Spark from collapsing the re-aliasing project.
+        realiased = df.select(decoded.alias("decoded")).select(
+            f.col("decoded").alias("renamed"),
+            f.col("decoded").getField("a").alias("a"),
+            f.rand(42).alias("r"))
+        return realiased.select(
+            f.col("renamed").getField("b").alias("b"),
+            f.col("renamed").getField("c").alias("c"),
+            "a",
+            (f.col("r") >= 0).alias("r_valid"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    _assert_gpu_decoded_schemas(run_on_spark, ["struct<a:int,b:int,c:int>"])
 
 
 def _build_dual_message_projection_descriptor_set_bytes(spark):
@@ -3047,35 +3204,12 @@ def _build_many_repeated_fields_descriptor_set_bytes(spark, field_count):
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+@pytest.mark.parametrize("field_count", [32, 33, 65], ids=idfn)
 @pytest.mark.parametrize("select_whole_message", [True, False], ids=["whole", "pruned"])
-@allow_non_gpu("ProtobufDataToCatalyst")
 @ignore_order(local=True)
-def test_from_protobuf_repeated_field_capacity_falls_back(
-        local_tmp_path, from_protobuf_fn, select_whole_message):
-    field_count = 33
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path,
-        "many_repeated_33.desc",
-        lambda spark: _build_many_repeated_fields_descriptor_set_bytes(spark, field_count))
-    row = (_encode_tag(1, 0) + _encode_varint(7) +
-           _encode_tag(field_count, 0) + _encode_varint(9))
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(0, row), (1, None)], schema="idx int, bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.ManyRepeated", desc_path, desc_bytes)
-        if select_whole_message:
-            return df.select("idx", decoded.alias("decoded"))
-        return df.select("idx", decoded.getField("values_1").alias("values_1"))
-
-    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_repeated_field_capacity_boundary(
-        local_tmp_path, from_protobuf_fn):
-    field_count = 32
+def test_from_protobuf_many_repeated_fields(
+        local_tmp_path, from_protobuf_fn, field_count, select_whole_message):
+    """The decoder scans repeated fields in batches, so their count per message is unlimited."""
     desc_path, desc_bytes = _setup_protobuf_desc(
         local_tmp_path,
         f"many_repeated_{field_count}.desc",
@@ -3087,7 +3221,9 @@ def test_from_protobuf_repeated_field_capacity_boundary(
         df = spark.createDataFrame([(0, row), (1, None)], schema="idx int, bin binary")
         decoded = _call_from_protobuf(
             from_protobuf_fn, f.col("bin"), "test.ManyRepeated", desc_path, desc_bytes)
-        return df.select("idx", decoded.alias("decoded"))
+        if select_whole_message:
+            return df.select("idx", decoded.alias("decoded"))
+        return df.select("idx", decoded.getField(f"values_{field_count}").alias("values"))
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
