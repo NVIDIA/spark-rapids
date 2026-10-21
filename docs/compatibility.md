@@ -561,9 +561,7 @@ The following regular expression patterns are not yet supported on the GPU and w
 - Named capture groups: `(?<n>a)`
 - Empty groups: `()`
 - Inline flags other than case-insensitive matching, such as `(?m)`, `(?s)`, or `(?x)`
-- Case-insensitive matching (`(?i)`) whose scope would extend across a choice, such as `(?i)a|b`
-  or `a(?i)b|c` (in Java the flag applies to the end of the enclosing group, crossing `|`), or that
-  applies to a letter-valued escape, such as `(?i)\x61`
+- Case-insensitive matching (`(?i)`) that applies to a letter-valued escape, such as `(?i)\x61`
 - Case-insensitive matching of `\p{Lower}` and `\p{Upper}` (and their `\P` counterparts) on Spark versions
   below 4.0, to preserve pre-[JDK-8214245](https://bugs.openjdk.org/browse/JDK-8214245) behavior
 - Empty pattern: `""`
