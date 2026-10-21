@@ -28,6 +28,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.util.CaseInsensitiveMap
 import org.apache.spark.sql.rapids.protobuf._
+import org.apache.spark.sql.types.StructType
 
 /**
  * Provides protobuf schema metadata through a common interface across Spark versions.
@@ -111,6 +112,18 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
   def unsupportedOptions(options: Map[String, String]): Seq[String] =
     options.keys.filterNot(k => SupportedOptions.contains(k.toLowerCase(Locale.ROOT))).toSeq.sorted
 
+  /**
+   * Spark drops empty-message fields from its schema but still checks their presence and
+   * encoding, which the GPU decoder cannot do without them.
+   */
+  def checkNoFieldsMissingFromSchema(
+      schema: StructType,
+      desc: ProtobufMessageDescriptor): Either[String, Unit] = {
+    val omitted = desc.fieldNames.filterNot(schema.fieldNames.contains)
+    Either.cond(omitted.isEmpty, (),
+      s"root message has fields missing from the Spark schema: ${omitted.mkString(", ")}")
+  }
+
   /** Resolves the schema or returns a failure reason; lazy metadata reads may still throw. */
   def resolveMessageDescriptor(
       exprInfo: ProtobufExprInfo): Either[String, ProtobufMessageDescriptor] = {
@@ -192,6 +205,8 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
 
     override def findField(name: String): Option[ProtobufFieldDescriptor] =
       Option(ProtobufReflection.findFieldByName(raw, name)).map(new ReflectiveFieldDescriptor(_))
+
+    override lazy val fieldNames: Seq[String] = ProtobufReflection.getFieldNames(raw)
   }
 
   private final class ReflectiveFieldDescriptor(raw: AnyRef) extends ProtobufFieldDescriptor {
@@ -336,6 +351,12 @@ private[shims] abstract class SparkProtobufCompatBase extends Logging {
 
     def findFieldByName(msgDesc: AnyRef, name: String): AnyRef =
       invoke1[AnyRef](msgDesc, "findFieldByName", classOf[String], name)
+
+    def getFieldNames(msgDesc: AnyRef): Seq[String] = {
+      import scala.collection.JavaConverters._
+      invoke0[java.util.List[AnyRef]](msgDesc, "getFields").asScala
+        .map(invoke0[String](_, "getName")).toList
+    }
 
     def getFieldNumber(fd: AnyRef): Int =
       invoke0[java.lang.Integer](fd, "getNumber").intValue()

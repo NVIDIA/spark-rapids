@@ -53,7 +53,8 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.codegen.{CodegenContext, ExprCode}
 import org.apache.spark.sql.rapids.GpuFromProtobuf
-import org.apache.spark.sql.rapids.protobuf.{FlattenedSchemaArrays, ProtobufPlannerOptions}
+import org.apache.spark.sql.rapids.protobuf.{FlattenedSchemaArrays, ProtobufFieldDescriptor,
+  ProtobufMessageDescriptor, ProtobufPlannerOptions}
 import org.apache.spark.sql.types._
 
 class ProtobufExprShimsSuite extends AnyFunSuite {
@@ -131,6 +132,20 @@ class ProtobufExprShimsSuite extends AnyFunSuite {
   test("compat detects unsupported options") {
     assert(SparkProtobufCompat.unsupportedOptions(Map("mode" -> "FAILFAST", "foo" -> "bar")) ==
       Seq("foo"))
+  }
+
+  test("compat rejects descriptor fields missing from the Spark schema") {
+    // Spark drops fields of empty message types, but still validates them when parsing.
+    val descriptor = new ProtobufMessageDescriptor {
+      def syntax: String = "PROTO2"
+      def findField(name: String): Option[ProtobufFieldDescriptor] = None
+      def fieldNames: Seq[String] = Seq("id", "empty")
+    }
+    val schema = StructType(Seq(StructField("id", IntegerType)))
+    assert(SparkProtobufCompat.checkNoFieldsMissingFromSchema(schema, descriptor) ==
+      Left("root message has fields missing from the Spark schema: empty"))
+    assert(SparkProtobufCompat.checkNoFieldsMissingFromSchema(
+      schema.add("empty", StructType(Seq(StructField("x", IntegerType)))), descriptor).isRight)
   }
 
   private def twoFieldSchemaArrays(): FlattenedSchemaArrays = FlattenedSchemaArrays(

@@ -111,6 +111,7 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           plannerOptions <- SparkProtobufCompat.parsePlannerOptions(exprInfo.options)
           _ <- checkSupportedOptions(exprInfo.options)
           msgDesc <- SparkProtobufCompat.resolveMessageDescriptor(exprInfo)
+          _ <- SparkProtobufCompat.checkNoFieldsMissingFromSchema(schema, msgDesc)
           fieldsInfoMap <- ProtobufSchemaExtractor.analyzeAllFields(
             schema, msgDesc, plannerOptions.enumsAsInts, exprInfo.messageName)
           // Every field is decoded and returned until schema projection is supported.

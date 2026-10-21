@@ -29,6 +29,7 @@ class ProtobufSchemaSuite extends AnyFunSuite {
       fields: Map[String, ProtobufFieldDescriptor],
       override val javaStringCheckUtf8: Boolean = false) extends ProtobufMessageDescriptor {
     override def findField(name: String): Option[ProtobufFieldDescriptor] = fields.get(name)
+    override def fieldNames: Seq[String] = fields.keys.toSeq
   }
 
   private case class FakeFieldDescriptor(
@@ -502,6 +503,7 @@ class ProtobufSchemaSuite extends AnyFunSuite {
       def syntax: String = "PROTO2"
       def findField(name: String): Option[ProtobufFieldDescriptor] =
         throw new UnsupportedOperationException("field lookup failed")
+      def fieldNames: Seq[String] = Seq("id")
     }
     val result = ProtobufSchemaExtractor.analyzeAllFields(
       StructType(Seq(StructField("id", IntegerType))), descriptor, false, "test.Message")
