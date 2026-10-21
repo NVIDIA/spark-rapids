@@ -36,17 +36,34 @@ class ParquetCombineSuite extends RmmSparkRetrySuiteBase {
   private val dataSchema = MessageTypeParser.parseMessageType("message test { optional int32 b; }")
   private val emptySchema = new MessageType("test", java.util.Collections.emptyList[Type]())
   private val readSchema = new StructType().add("b", IntegerType)
+  private var taskContext: MockTaskContext = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
-    TrampolineUtil.setTaskContext(new MockTaskContext(1, 0))
+    taskContext = new MockTaskContext(1, 0) {
+      private var completed = false
+
+      override def isCompleted(): Boolean = completed
+
+      override def markTaskComplete(): Unit = {
+        if (!completed) {
+          completed = true
+          super.markTaskComplete()
+        }
+      }
+    }
+    TrampolineUtil.setTaskContext(taskContext)
   }
 
   override def afterEach(): Unit = {
     try {
-      TrampolineUtil.unsetTaskContext()
+      taskContext.markTaskComplete()
     } finally {
-      super.afterEach()
+      try {
+        TrampolineUtil.unsetTaskContext()
+      } finally {
+        super.afterEach()
+      }
     }
   }
 
