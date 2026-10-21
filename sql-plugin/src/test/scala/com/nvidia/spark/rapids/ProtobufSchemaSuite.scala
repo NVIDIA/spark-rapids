@@ -441,22 +441,18 @@ class ProtobufSchemaSuite extends AnyFunSuite {
       StructField("status", StringType), field, enumsAsInts = false).toOption.get.isSupported)
   }
 
-  test("validator enforces top-level repeated-field capacity") {
+  test("repeated fields per message are not capped by the occurrence-scan batch size") {
     val info = ProtobufFieldInfo(1, "INT32", ArrayType(IntegerType), ENC_DEFAULT,
       isSupported = true, None, isRequired = false, None, None, isRepeated = true)
     val flat = ProtobufSchemaValidator.toFlattenedFieldDescriptor("items",
       StructField("items", ArrayType(IntegerType)), info, -1, 0,
       DType.INT32.getTypeId.getNativeId, isOutput = true).toOption.get
-    val fields = (1 to 32).map(number => flat.copy(fieldNumber = number))
-    assert(ProtobufSchemaValidator.validateFlattenedSchema(fields).isRight)
-    assert(ProtobufSchemaValidator.validateFlattenedSchema(fields :+
-      flat.copy(fieldNumber = 33)).isLeft)
-    assert(ProtobufSchemaValidator.validateFlattenedSchema(
-      Seq(flat.copy(parentIdx = 0, depth = 1))).isLeft)
+    val fields = (1 to 33).map(number => flat.copy(fieldNumber = number))
     val arrays = ProtobufSchemaValidator.toFlattenedSchemaArrays(fields.toArray)
-    assert(arrays.fieldNumbers.toSeq == (1 to 32))
+    assert(arrays.fieldNumbers.toSeq == (1 to 33))
     assert(arrays.isRepeated.forall(identity))
     assert(arrays.parentIndices.forall(_ == -1))
+    assert(arrays.toJniDescriptor.numFields() == 33)
   }
 
   test("extractor rejects fixed32 widening to LongType") {
@@ -534,7 +530,6 @@ class ProtobufSchemaSuite extends AnyFunSuite {
       ProtobufSchemaValidator.toFlattenedFieldDescriptor(field.name, field, infos(field.name),
         -1, 0, dtype.getTypeId.getNativeId, isOutput = true).toOption.get
     }
-    assert(ProtobufSchemaValidator.validateFlattenedSchema(fields.toSeq).isRight)
     val arrays = ProtobufSchemaValidator.toFlattenedSchemaArrays(fields)
     assert(arrays.fieldNumbers.toSeq == Seq(1, 2, 3, 4))
     assert(arrays.defaultInts.toSeq == Seq(7L, 0L, 1L, 0L))

@@ -116,9 +116,8 @@ object ProtobufExprShims extends org.apache.spark.internal.Logging {
           // Every field is decoded and returned until schema projection is supported.
           _ <- checkFieldsSupported(schema, fieldsInfoMap)
           flatFields <- flattenTopLevelFields(schema, fieldsInfoMap)
-          _ <- ProtobufSchemaValidator.validateFlattenedSchema(flatFields)
           arrays = ProtobufSchemaValidator.toFlattenedSchemaArrays(flatFields)
-          // The JNI constructor has checks of its own; fail here rather than on executors.
+          // The JNI constructor validates the schema; fail here rather than on executors.
           _ <- Try(arrays.toJniDescriptor).toEither.left.map { t =>
             s"Protobuf schema is not supported by the GPU decoder: ${t.getMessage}"
           }

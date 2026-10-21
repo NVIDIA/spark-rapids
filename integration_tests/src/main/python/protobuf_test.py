@@ -1244,35 +1244,12 @@ def _build_many_repeated_fields_descriptor_set_bytes(spark, field_count):
 
 
 @pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("select_whole_message", [True, False], ids=["whole", "pruned"])
-@allow_non_gpu("ProtobufDataToCatalyst")
+@pytest.mark.parametrize("field_count", [32, 33, 65], ids=idfn)
+@pytest.mark.parametrize("select_whole_message", [True, False], ids=["whole", "field"])
 @ignore_order(local=True)
-def test_from_protobuf_repeated_field_capacity_falls_back(
-        local_tmp_path, from_protobuf_fn, select_whole_message):
-    field_count = 33
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path,
-        "many_repeated_33.desc",
-        lambda spark: _build_many_repeated_fields_descriptor_set_bytes(spark, field_count))
-    row = (_encode_tag(1, 0) + _encode_varint(7) +
-           _encode_tag(field_count, 0) + _encode_varint(9))
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(0, row), (1, None)], schema="idx int, bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.ManyRepeated", desc_path, desc_bytes)
-        if select_whole_message:
-            return df.select("idx", decoded.alias("decoded"))
-        return df.select("idx", decoded.getField("values_1").alias("values_1"))
-
-    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_repeated_field_capacity_boundary(
-        local_tmp_path, from_protobuf_fn):
-    field_count = 32
+def test_from_protobuf_many_repeated_fields(
+        local_tmp_path, from_protobuf_fn, field_count, select_whole_message):
+    """The decoder scans repeated fields in batches, so their count per message is unlimited."""
     desc_path, desc_bytes = _setup_protobuf_desc(
         local_tmp_path,
         f"many_repeated_{field_count}.desc",
@@ -1284,7 +1261,9 @@ def test_from_protobuf_repeated_field_capacity_boundary(
         df = spark.createDataFrame([(0, row), (1, None)], schema="idx int, bin binary")
         decoded = _call_from_protobuf(
             from_protobuf_fn, f.col("bin"), "test.ManyRepeated", desc_path, desc_bytes)
-        return df.select("idx", decoded.alias("decoded"))
+        if select_whole_message:
+            return df.select("idx", decoded.alias("decoded"))
+        return df.select("idx", decoded.getField(f"values_{field_count}").alias("values"))
 
     assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
