@@ -100,6 +100,29 @@ class GpuIcebergVariantSchemaSuite extends AnyFunSuite {
       MapType(StringType, VariantType, valueContainsNull = true))
   }
 
+  test("recursive conversion preserves nested Variant annotations, IDs, and repetition") {
+    val shaded = ShadedTypes.buildMessage()
+      .requiredGroup().id(1)
+      .optionalGroup().as(ShadedLogicalTypeAnnotation.variantType(1.toByte)).id(2)
+      .required(BINARY).id(3).named("metadata")
+      .required(BINARY).id(4).named("value")
+      .named("variant_value")
+      .named("payload")
+      .named("variant_schema")
+    val expected = org.apache.parquet.schema.Types.buildMessage()
+      .requiredGroup().id(1)
+      .optionalGroup().as(LogicalTypeAnnotation.variantType(1.toByte)).id(2)
+      .required(org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BINARY)
+      .id(3).named("metadata")
+      .required(org.apache.parquet.schema.PrimitiveType.PrimitiveTypeName.BINARY)
+      .id(4).named("value")
+      .named("variant_value")
+      .named("payload")
+      .named("variant_schema")
+
+    assert(ShimUtils.unshadeParquetSchema(shaded) == expected)
+  }
+
   test("the selected converter preserves ordinary nested Parquet schemas") {
     val schema = new Schema(
       Types.NestedField.required(1, "id", Types.IntegerType.get()),
