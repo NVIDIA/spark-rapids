@@ -149,11 +149,8 @@ case class ApproxPercentileFromTDigestExpr(
           // For the scalar case, we still pass cuDF an array of percentiles
           // (containing a single item) and then extract the child column from the resulting
           // array and return that (after converting from Double to finalDataType)
-          val childCv = withResource(percentileColumn.extractListElement(0)) { childView =>
-            doCast(childView, DataTypes.DoubleType, finalDataType)
-          }
-          withResource(childCv) { _ =>
-            GpuColumnVector.from(childCv.copyToColumnVector(), dataType)
+          withResource(percentileColumn.extractListElement(0)) { childView =>
+            GpuColumnVector.from(doCast(childView, DataTypes.DoubleType, finalDataType), dataType)
           }
 
         case Right(_) =>
