@@ -19,6 +19,7 @@ package com.nvidia.spark.rapids
 import java.util.concurrent.CompletableFuture
 
 import com.nvidia.spark.rapids.Arm.withResource
+import com.nvidia.spark.rapids.io.async.AsyncRunner
 import com.nvidia.spark.rapids.parquet._
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
@@ -26,10 +27,12 @@ import org.apache.hadoop.fs.Path
 import org.apache.parquet.hadoop.metadata.BlockMetaData
 import org.apache.parquet.schema.{MessageType, MessageTypeParser, Type}
 
+import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.rapids.execution.TrampolineUtil
 import org.apache.spark.sql.rapids.metrics.source.MockTaskContext
+import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.{IntegerType, StructType}
 
 class ParquetCombineSuite extends RmmSparkRetrySuiteBase {
@@ -70,12 +73,17 @@ class ParquetCombineSuite extends RmmSparkRetrySuiteBase {
   private class Reader(
       ordered: Boolean,
       filterFunc: PartitionedFile => ParquetFileInfoWithBlockMeta =
-        _ => throw new UnsupportedOperationException) extends MultiFileCloudParquetPartitionReader(
-      null, new Configuration(false), Array.empty, filterFunc,
+        _ => throw new UnsupportedOperationException,
+      files: Array[PartitionedFile] = Array.empty,
+      ignoreCorrupt: Boolean = false,
+      queryUsesInputFile: Boolean = false,
+      combineThreshold: Long = 1L << 20) extends MultiFileCloudParquetPartitionReader(
+      null, new Configuration(false), files, filterFunc,
       true, None, false, 1000, 1L << 20, 1L << 20, 1L << 20, false, 0,
       false, CpuCompressionConfig.disabled(), Map.empty, new StructType(),
       new ThreadPoolConfBuilder(1, true, 1L << 20, 10000L, false).build(),
-      1, false, false, false, false, ordered, CombineConf(1L << 20, 0)) {
+      1, false, ignoreCorrupt, false, queryUsesInputFile, ordered,
+      CombineConf(combineThreshold, 0)) {
     var failRowCount = false
     var failBuild = false
     var numDeletedRows = 0L
@@ -318,6 +326,43 @@ class ParquetCombineSuite extends RmmSparkRetrySuiteBase {
             s"maximum supported batch row count of ${Int.MaxValue}"))
         }
       }
+    }
+  }
+
+  for (ignoreCorrupt <- Seq(false, true);
+      mode <- Seq("threshold-zero", "input-file");
+      rows <- Seq(Int.MaxValue.toLong, Int.MaxValue.toLong + 1)) {
+    test(s"metadata-only row limits without combining, corrupt=$ignoreCorrupt, $mode, rows=$rows") {
+      val file = PartitionedFileUtilsShim.newPartitionedFile(
+        InternalRow(0), "file:///tmp/part-0", 0, 1)
+      var released = 0
+      val reader = new Reader(ordered = true, files = Array(file),
+          ignoreCorrupt = ignoreCorrupt, queryUsesInputFile = mode == "input-file",
+          combineThreshold = if (mode == "threshold-zero") 0 else 1L << 20) {
+        private val metadata = empty(0, rows, new StructType())
+        metadata.addReleaseResourceCallback(() => released += 1)
+
+        override def getBatchRunner(tc: TaskContext, file: PartitionedFile,
+            conf: Configuration, filters: Array[Filter])
+            : AsyncRunner[HostMemoryBuffersWithMetaDataBase] =
+          AsyncRunner.newUnboundedTask(() => metadata)
+      }
+      withResource(reader) { _ =>
+        assert(!reader.canUseCombine)
+        if (rows > Int.MaxValue) {
+          val error = intercept[ArithmeticException](reader.next())
+          assert(error.getMessage.contains(file.filePath.toString()))
+          assert(error.getMessage.contains(s"row count $rows"))
+          assert(error.getMessage.contains(
+            s"maximum supported batch row count of ${Int.MaxValue}"))
+        } else {
+          assert(reader.next())
+          withResource(reader.get()) { batch => assert(batch.numRows().toLong == rows) }
+          assert(!reader.next())
+        }
+        assert(released == 1)
+      }
+      assert(released == 1)
     }
   }
 

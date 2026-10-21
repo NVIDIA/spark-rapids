@@ -3003,6 +3003,12 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
     }
   }
 
+  override protected def validateHostBuffers(
+      fileHostBuffers: HostMemoryBuffersWithMetaDataBase): Unit = fileHostBuffers match {
+    case empty: HostMemoryEmptyMetaData => validateEmptyRowCount(empty)
+    case _ =>
+  }
+
   private def selectCombineHMBs(
       input: Array[HostMemoryBuffersWithMetaDataBase]):
       (Array[HostMemoryBuffersWithMetaDataBase], Array[HostMemoryBuffersWithMetaDataBase]) = {

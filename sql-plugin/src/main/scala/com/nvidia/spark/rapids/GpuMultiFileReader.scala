@@ -668,6 +668,9 @@ abstract class MultiFileCloudPartitionReaderBase(
    */
   def readBatches(fileBufsAndMeta: HostMemoryBuffersWithMetaDataBase): Iterator[ColumnarBatch]
 
+  /** Validate format limits that must fail even when corrupt files are ignored. */
+  protected def validateHostBuffers(fileHostBuffers: HostMemoryBuffersWithMetaDataBase): Unit = {}
+
   /**
    * File format short name used for logging and other things to uniquely identity
    * which file format is being used.
@@ -682,6 +685,8 @@ abstract class MultiFileCloudPartitionReaderBase(
    */
   private def readBuffersToBatch(fileHostBuffers: HostMemoryBuffersWithMetaDataBase,
       addTaskIfNeeded: Boolean): Unit = {
+    // Unsupported input must not be mistaken for corruption and silently skipped.
+    closeOnExcept(fileHostBuffers) { _ => validateHostBuffers(fileHostBuffers) }
     if (getNumRowsInHostBuffers(fileHostBuffers) == 0) {
       // Close the currentFileHostBuffers on the deck if it is the fileHostBuffers being passed
       // in, otherwise close the fileHostBuffers passed in. It assumes that we will always handle
