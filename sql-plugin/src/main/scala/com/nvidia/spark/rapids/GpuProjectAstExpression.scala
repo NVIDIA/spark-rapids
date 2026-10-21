@@ -133,7 +133,8 @@ object GpuProjectAstExpression {
     }
   }
 
-  private[rapids] def tableFromBatch(batch: ColumnarBatch): Table = {
+  /** The dummy column for a rows-only input must remain unreferenced by the AST. */
+  def tableFromBatch(batch: ColumnarBatch): Table = {
     if (batch.numCols() != 0) {
       GpuColumnVector.from(batch)
     } else {

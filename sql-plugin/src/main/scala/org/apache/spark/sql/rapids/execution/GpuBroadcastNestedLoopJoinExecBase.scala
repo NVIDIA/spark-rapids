@@ -244,7 +244,7 @@ class ConditionalNestedLoopJoinIterator(
       builtBatch.checkpoint()
       withRetryNoSplit {
         withRestoreOnRetry(Seq(builtBatch, scb)) {
-          withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
+          withResource(GpuProjectAstExpression.tableFromBatch(builtBatch.getBatch)) { builtTable =>
             withResource(GpuColumnVector.from(scb.getBatch)) { streamTable =>
               val (left, right) = buildSide match {
                 case GpuBuildLeft => (builtTable, streamTable)
@@ -279,7 +279,7 @@ class ConditionalNestedLoopJoinIterator(
     batches.foreach(_.checkpoint())
     withRetryNoSplit {
       withRestoreOnRetry(batches) {
-        withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
+        withResource(GpuProjectAstExpression.tableFromBatch(builtBatch.getBatch)) { builtTable =>
           withResource(GpuColumnVector.from(cb.getBatch)) { streamTable =>
           // We need a new LSCB that will be taken over by the gatherer, or closed
           closeOnExcept(LazySpillableColumnarBatch(spillOnlyCb.getBatch, "stream_data")) {
