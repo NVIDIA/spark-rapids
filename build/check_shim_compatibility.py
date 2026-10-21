@@ -537,6 +537,27 @@ def review(root, repo, base_ref, head_ref, branch, own_pr):
     return report
 
 
+def advisory(root, repo, base_ref, head_ref, validated_base, branch, own_pr):
+    """Collect peer evidence independently, retaining a report when discovery fails."""
+    report = dict(status="INCOMPLETE", scope="cross-PR associations; independent of the core "
+                  "source-selection check, not confirmed incompatibilities")
+    try:
+        base, head = commit_sha(root, base_ref), commit_sha(root, head_ref)
+        report.update(base=base, head=head, pr=own_pr)
+        common = git(root, "merge-base", base, head)
+        changed = git_paths(root, "diff", "--name-only", common, head)
+        if not review_scope(changed):
+            report.update(status="NOT_APPLICABLE", reason="No shim, shared JVM source, "
+                          "profile/matrix, or preflight implementation changes")
+            return report
+        report.update(related_prs(root, repo, base_ref, head_ref, validated_base, branch,
+                                  own_pr, include_worktree=False, require_pr_head=True))
+    except (PreflightError, OSError, ValueError, KeyError, TypeError,
+            subprocess.TimeoutExpired) as error:
+        report["error"] = str(error)
+    return report
+
+
 def finding_message(finding):
     if finding["kind"] == "missing_implementation":
         return "{}: {} imports {}, but no implementation is selected".format(
@@ -592,7 +613,7 @@ def write_review(root, report, output, github_actions=False):
         lines += ["", "Profiles: " + ", ".join(result["buildvers"]),
                   "", "Unmodelled wildcard imports: {}. See report.json for full inputs and limits.".
                   format(len(result["unmodelled_wildcard_imports"]))]
-    lines += ["", "Cross-PR discovery is optional; run related-prs separately when useful. "
+    lines += ["", "Cross-PR evidence is published separately by the shim-related-prs advisory. "
               "Static PASS does not establish compilation or merge readiness.", ""]
     (output / "report.md").write_text("\n".join(lines), encoding="utf-8")
     if github_actions:
@@ -608,6 +629,40 @@ def write_review(root, report, output, github_actions=False):
             print("::error title=Shim compatibility::" + actions_escape(report["error"]))
 
 
+def write_advisory(report, output, github_actions=False):
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n",
+                                      encoding="utf-8")
+    lines = ["# Related PR advisory: " + report["status"], "",
+             "This advisory does not change the core shim-compatibility result.", ""]
+    for key in ("head", "base", "history_start", "candidates_scanned"):
+        if key in report:
+            lines.append("- {}: `{}`".format(key, report[key]))
+    if "error" in report:
+        lines += ["", "Discovery incomplete: " + html.escape(report["error"]),
+                  "No conclusion about related PRs; refresh this advisory when needed."]
+    if "reason" in report:
+        lines += ["", report["reason"]]
+    for pr in report.get("related", []):
+        lines += ["", "- [#{}]({}): {} ({})".format(
+            pr["number"], pr["url"], html.escape(pr["title"]), pr["state"]),
+            "  Observed head: `{}`. {}".format(pr["head"],
+                                               html.escape("; ".join(pr["reasons"])))]
+    if report["status"] == "NO_RELATED_PRS":
+        lines += ["", "No related PRs found in this scan."]
+    lines += ["", "Associations require diff inspection; they are not confirmed defects. "
+              "See report.json for full inputs and file lists.", ""]
+    (output / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    if github_actions:
+        if report["status"] == "INCOMPLETE":
+            print("::warning title=Related PR advisory::" + actions_escape(
+                "Discovery incomplete: " + report["error"] + "; core result is unchanged"))
+        for pr in report.get("related", [])[:10]:
+            print("::warning title=Related PR advisory::" + actions_escape(
+                "Inspect related PR #{}: {}. Association only; not a confirmed defect".
+                format(pr["number"], pr["url"])))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path.cwd())
@@ -616,18 +671,19 @@ def main(argv=None):
     static.add_argument("--module", action="append", help="default: sql-plugin")
     static.add_argument("--buildver", action="append", help="default: all supported release profiles")
     for mode, description in (("related-prs", "read-only GitHub PR association scan"),
-                              ("review", "combined-tree source-selection check")):
+                              ("review", "combined-tree source-selection check"),
+                              ("advisory", "independent cross-PR report for relevant changes")):
         online = subparsers.add_parser(mode, help=description)
         online.add_argument("--repo", default="NVIDIA/cudf-spark")
         online.add_argument("--base-ref", default="origin/main")
         online.add_argument("--head-ref", default="HEAD")
         online.add_argument("--base-branch", default="main")
-        online.add_argument("--pr", type=int, help=("PR to validate" if mode == "review"
+        online.add_argument("--pr", type=int, help=("PR to validate" if mode != "related-prs"
                                                   else "exclude this PR from candidates"))
-        if mode == "review":
+        if mode != "related-prs":
             online.add_argument("--output-dir", type=Path, required=True)
             online.add_argument("--github-actions", action="store_true")
-        else:
+        if mode != "review":
             online.add_argument("--validated-base", help="base SHA used in the last relevant validation")
     args = parser.parse_args(argv)
     try:
@@ -638,6 +694,10 @@ def main(argv=None):
             result = review(root, args.repo, args.base_ref, args.head_ref,
                             args.base_branch, args.pr)
             write_review(root, result, args.output_dir, args.github_actions)
+        elif args.mode == "advisory":
+            result = advisory(root, args.repo, args.base_ref, args.head_ref,
+                              args.validated_base, args.base_branch, args.pr)
+            write_advisory(result, args.output_dir, args.github_actions)
         else:
             result = related_prs(root, args.repo, args.base_ref, args.head_ref,
                                  args.validated_base, args.base_branch, args.pr)

@@ -76,3 +76,53 @@ jobs:
           path: ${{ runner.temp }}/shim-compatibility/
           if-no-files-found: warn
           retention-days: 14
+
+  shim-related-prs:
+    if: github.event.action != 'edited' || github.event.changes.base.ref
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Advisory setup/API failures must not fail the core check or the workflow.
+    continue-on-error: true
+    env:
+      SHIM_BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+      SHIM_HEAD: ${{ github.event.pull_request.head.sha }}
+      SHIM_REPO: ${{ github.repository }}
+      SHIM_PR: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Fetch current target branch
+        run: git fetch --no-tags origin "+refs/heads/${SHIM_BASE_BRANCH}:refs/remotes/origin/shim-review-base"
+      - name: Discover related PRs
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 build/check_shim_compatibility.py advisory
+          --repo "$SHIM_REPO" --pr "$SHIM_PR"
+          --head-ref "$SHIM_HEAD" --base-ref origin/shim-review-base
+          --base-branch "$SHIM_BASE_BRANCH"
+          --output-dir "$RUNNER_TEMP/shim-related-prs" --github-actions
+      - name: Publish related PR advisory
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/shim-related-prs/report.md" ]; then
+            cat "$RUNNER_TEMP/shim-related-prs/report.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '::warning title=Related PR advisory::No report was produced; core result is unchanged'
+            echo 'Related PR advisory unavailable; core result is unchanged.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload related PR evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: shim-related-prs-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/shim-related-prs/
+          if-no-files-found: warn
+          retention-days: 14

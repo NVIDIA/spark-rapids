@@ -163,13 +163,16 @@ before declaring implementation or review complete, and before publishing,
 updating, or merging the PR. If the client cannot discover repository skills,
 read the linked `SKILL.md` and follow its workflow directly.
 
-Check source selection on the proposed combination with current main. Cross-PR
-discovery is an optional advisory step using the separate `related-prs` command;
-it is not a prerequisite for the core check. The offline
+Check source selection on the proposed combination with current main, and run
+the independent `advisory` command or read both current CI reports. Cross-PR
+discovery runs automatically as `shim-related-prs`; its failures or moving peers
+produce warnings without invalidating the core result. Report unavailable
+advisory evidence explicitly. The offline
 entry point is `python3 build/check_shim_compatibility.py coverage`.
 Static results do not replace compilation of affected profiles, including
 newly added Databricks targets, or applicable CPU/GPU tests.
-During review, inspect the `shim-compatibility` check's current-head report.
+During review, inspect both the `shim-compatibility` and `shim-related-prs`
+current-head reports.
 Distinguish new findings, unchanged base debt,
 and incomplete evidence; the shared skill describes the report and rerun rules.
 If required tools or GitHub access are unavailable, report `INCOMPLETE` with the

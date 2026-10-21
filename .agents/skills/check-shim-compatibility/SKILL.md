@@ -1,6 +1,6 @@
 ---
 name: check-shim-compatibility
-description: Check cudf-spark shim source selection on a PR combined with its current target branch and identify required profile validation. Use for versioned sources, shared shim callers, or Spark/Databricks build profiles; cross-PR discovery is a separate optional advisory step.
+description: Check cudf-spark shim source selection on a PR combined with its current target branch, provide independent cross-PR advisories, and identify required profile validation. Use for versioned sources, shared shim callers, or Spark/Databricks build profiles.
 ---
 
 # Check shim compatibility
@@ -10,7 +10,7 @@ authorization to publish, comment, push, or merge. Preserve the calling workflow
 validation, review, and mutation requirements.
 
 The repository helper is `build/check_shim_compatibility.py` (Python 3.10+,
-standard library only). The `related-prs` and `review` modes need authenticated
+standard library only). The online modes need authenticated
 `gh` and Git history; `review` requires Git 2.38+ for `merge-tree --write-tree`.
 The helper never posts comments or changes GitHub state.
 
@@ -20,12 +20,17 @@ The `Shim compatibility` workflow runs the `shim-compatibility` check on PR
 events, using read-only repository/PR permissions. It exports immutable Git
 source blobs, checks `sql-plugin` on current base and the proposed combined tree,
 without depending on unrelated PR activity. No product code, Maven build, or
-GPU test is executed. Cross-PR discovery is available separately through
-`related-prs` when useful; the automated check does not run it.
+GPU test is executed. A separate `shim-related-prs` job automatically discovers
+related PRs for relevant changes and publishes its own summary/artifact and
+warning annotations. It runs independently, without making the core check wait.
+API failures, moving peers, and advisory timeouts do not change the core result
+or fail the workflow. An unavailable advisory is missing evidence, not a clean scan.
 
 ```bash
 python3 build/check_shim_compatibility.py review \
   --base-ref origin/main --pr 12345 --output-dir /tmp/shim-review
+python3 build/check_shim_compatibility.py advisory \
+  --base-ref origin/main --pr 12345 --output-dir /tmp/shim-related-prs
 ```
 
 `report.json` and `report.md` record exact head/base/combined-tree identities,
@@ -37,14 +42,14 @@ the check, retaining any static evidence already collected. Unrelated diffs are
 reported as `NOT_APPLICABLE`. The automated source-selection scope is currently
 `sql-plugin`; inspect other affected modules separately.
 
-Copilot and Greptile reviewers should read this evidence,
+Copilot and Greptile reviewers should read both reports,
 then report confirmed new gaps with file/symbol/profile and
 observed output. If no execution/API tools or current report are available,
 state that limitation. Never fabricate a successful run or report missing
 access as a product defect. A green check is not merge authorization.
 
 The workflow runs on PR opening, head updates, reopening, ready-for-review, and
-target-branch changes. Title/body-only edits skip the job and use an isolated
+target-branch changes. Title/body-only edits skip both jobs and use an isolated
 concurrency group so they cannot cancel a useful scan. It does not run on every
 merge to the target branch. Before
 merge, compare the report's base/head to current refs and rerun when relevant
@@ -64,14 +69,17 @@ setting; this change does not enable it or the reviewers' execution features.
    changes. For a genuinely unrelated change, report that scope and stop this
    specialized preflight; normal publication/merge requirements still apply.
 
-## Optional related-PR discovery
+## Independent related-PR advisory
 
-This advisory command is separate from `review` and is not required for the
-core check to pass. Use it when investigating concurrent changes or when a
-reviewer asks for cross-PR analysis. Its API failures or moving peer refs affect
-only that advisory result, not a completed core report.
+For relevant work, run `advisory` alongside `review`, or read both current CI
+reports. This is an automatic early warning, not a prerequisite for the core
+check to pass. Its API failures or moving peer refs affect only the advisory;
+report the limitation without invalidating a completed core report. Both modes
+skip unrelated diffs without GitHub discovery requests.
 
-For an existing PR (replace `12345`), run:
+For an existing PR (replace `12345`), the advisory command above writes reports
+even if discovery fails. The lower-level `related-prs` command remains available
+for manual investigation, including uncommitted work:
 
 ```bash
 python3 build/check_shim_compatibility.py related-prs \
@@ -103,10 +111,10 @@ matrix/implementation interactions.
 A matrix path match is deliberately broad. A shim/profile change also flags
 peer shared-source changes conservatively because their imports are not read;
 inspect those diffs to establish whether a caller actually depends on the change.
-The scan records each related PR's observed head and refuses a clean result on
+The scan records each related PR's observed head and reports advisory `INCOMPLETE` on
 API failure, truncated file lists,
-or base/open-head movement during the scan. It does not fetch other PR branches
-or execute their code.
+or base/open-head movement during the scan. In CI this produces a warning and
+retains the core result. It does not fetch other PR branches or execute their code.
 
 `NEEDS_REVIEW` is an association report, not a confirmed incompatibility.
 For each match, determine whether it introduces a profile requiring our shim,
@@ -158,19 +166,20 @@ alone cannot select the correct behavioral implementation.
   Report base debt separately; do not change unrelated code to silence it.
 - `INCOMPLETE` (exit 2): missing/malformed input, API/permission failure,
   truncated pagination, or moved refs. Report the reason; do not interpret it as
-  no related PRs or permission to merge.
+  no related PRs or permission to merge. A core `INCOMPLETE` fails the core check;
+  an advisory `INCOMPLETE` only warns in CI and does not overwrite core evidence.
 - A dependency on an open PR needs an explicit merge order and validation after
   that dependency lands. A justified Draft can describe the remaining work.
 - Related PRs with complete coverage and valid combined-tree evidence may
   proceed through normal review and CI gates without an extra human approval.
 
-Exit 0 means the requested check completed. The optional `related-prs` command
+Exit 0 means the requested check completed. The advisory or `related-prs` command
 can return `NEEDS_REVIEW`, requiring disposition of its matches. No exit code
 alone establishes merge readiness.
 
 Report head/base SHAs, profile matrix, static findings, actual build/test
-evidence, and remaining gaps. Include related PR links and dispositions only
-when the optional advisory scan was requested. A report with
+evidence, and remaining gaps. Include advisory matches and dispositions, or its
+unavailability reason. A report with
 `dirty: true` includes work in progress and must be rerun on the final committed
 head before merge. Immediately before publication or merge, refresh the base,
 current head and matrix. Relevant movement invalidates prior

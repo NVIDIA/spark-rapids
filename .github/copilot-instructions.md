@@ -11,10 +11,11 @@ instructions must not weaken the repository policy.
 
 For shim/shared-caller or Spark/Databricks matrix changes, follow
 [check-shim-compatibility](../.agents/skills/check-shim-compatibility/SKILL.md).
-Read the `shim-compatibility` report; verify head/base. Report confirmed gaps
-with file/symbol/profile and observed evidence. Cross-PR discovery is an optional
-advisory step using the separate `related-prs` command; it does not gate the core
-combined-tree check. Separate base debt; Drafts/associations alone are not defects.
+Read the `shim-compatibility` and automatic `shim-related-prs` advisory reports;
+verify head/base. Report confirmed gaps with file/symbol/profile and observed
+evidence. Inspect advisory matches before attributing a defect. If discovery
+failed or peers moved, state that limitation without invalidating the core
+combined-tree result. Separate base debt; Drafts/associations alone are not defects.
 Use the read-only helper when possible;
 state missing evidence. Static success is not compilation; rerun stale reports.
 
