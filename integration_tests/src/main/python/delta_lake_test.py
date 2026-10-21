@@ -211,8 +211,10 @@ def test_delta_deletion_vector_combine_files_missing_all_requested_cols(
         assert len(spark.read.format('delta').load(data_path).inputFiles()) == 3
 
     with_cpu_session(setup_tables, conf=conf)
-    assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.read.format('delta').load(data_path).select('b', 'key'), conf=conf)
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        lambda spark: spark.read.format('delta').load(data_path).select('b', 'key'),
+        exist_classes=r"Gpu(FileSourceScanExec|FileGpuScan)",
+        conf=conf)
 
 
 @allow_non_gpu("FileSourceScanExec", "ColumnarToRowExec", *delta_meta_allow)
