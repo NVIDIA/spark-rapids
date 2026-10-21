@@ -801,27 +801,29 @@ abstract class MultiFileCloudPartitionReaderBase(
   private def getNextBuffersAndMetaAndCombine(): HostMemoryBuffersWithMetaDataBase = {
     var sizeRead = 0L
     var numRowsRead = 0L
-    val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
-    readReadyFiles(0, 0, results)
-    if (results.isEmpty) {
-      // none were ready yet so wait as long as need for first one
-      val hostBuffersWithMeta = if (keepReadsInOrder) {
-        convertAsyncResult(tasks.poll().get())
-      } else {
-        val bufMetaFut = fcs.take()
-        tasks.remove(bufMetaFut)
-        convertAsyncResult(bufMetaFut.get())
-      }
-      sizeRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.bytes).sum
-      numRowsRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.numRows).sum
+    closeOnExcept(ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()) { results =>
+      readReadyFiles(0, 0, results)
+      if (results.isEmpty) {
+        // none were ready yet so wait as long as need for first one
+        val hostBuffersWithMeta = if (keepReadsInOrder) {
+          convertAsyncResult(tasks.poll().get())
+        } else {
+          val bufMetaFut = fcs.take()
+          tasks.remove(bufMetaFut)
+          convertAsyncResult(bufMetaFut.get())
+        }
+        // Own the result before inspecting its metadata, which may itself throw.
+        results.append(hostBuffersWithMeta)
+        sizeRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.bytes).sum
+        numRowsRead += hostBuffersWithMeta.memBuffersAndSizes.map(_.numRows).sum
 
-      filesToRead -= 1
-      results.append(hostBuffersWithMeta)
-      // since we had to wait for one to be ready,
-      // check if more are ready as well
-      readReadyFiles(sizeRead, numRowsRead, results)
+        filesToRead -= 1
+        // since we had to wait for one to be ready,
+        // check if more are ready as well
+        readReadyFiles(sizeRead, numRowsRead, results)
+      }
+      combineHMBs(results.toArray)
     }
-    combineHMBs(results.toArray)
   }
 
   private def getNextBuffersAndMetaSingleFile(): HostMemoryBuffersWithMetaDataBase = {
@@ -852,12 +854,14 @@ abstract class MultiFileCloudPartitionReaderBase(
     val leftOvers = combineLeftOverFiles.get
     // unset leftOverFiles because it will get reset in combineHMBs again if needed
     combineLeftOverFiles = None
-    val results = ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()
-    val curSize = leftOvers.map(_.memBuffersAndSizes.map(_.bytes).sum).sum
-    val curNumRows = leftOvers.map(_.memBuffersAndSizes.map(_.numRows).sum).sum
-    readReadyFiles(curSize, curNumRows, results)
-    val allReady = leftOvers ++ results
-    val fileBufsAndMeta = combineHMBs(allReady)
+    val fileBufsAndMeta = closeOnExcept(leftOvers) { _ =>
+      closeOnExcept(ArrayBuffer[HostMemoryBuffersWithMetaDataBase]()) { results =>
+        val curSize = leftOvers.map(_.memBuffersAndSizes.map(_.bytes).sum).sum
+        val curNumRows = leftOvers.map(_.memBuffersAndSizes.map(_.numRows).sum).sum
+        readReadyFiles(curSize, curNumRows, results)
+        combineHMBs(leftOvers ++ results)
+      }
+    }
 
     TrampolineUtil.incBytesRead(inputMetrics, fileBufsAndMeta.bytesRead)
     // this is combine mode so input file shouldn't be used at all but update to
@@ -1006,18 +1010,35 @@ abstract class MultiFileCloudPartitionReaderBase(
     currentFileHostBuffers = None
     combineLeftOverFiles.foreach(needToClose ++= _)
     combineLeftOverFiles = None
-    withResource(needToClose) { _ =>
-      tasks.asScala.foreach {
-        case task if task.isCancelled => // Do nothing if already cancelled
-        case task if task.isDone => // Close all produced hmbs
-          needToClose += convertAsyncResult(task.get())
-        case task => // Task is still running
-          // Note we are not interrupting thread here so it
-          // will finish reading and then just discard. If we
-          // interrupt HDFS logs warnings about being interrupted.
-          task.cancel(false)
+    closeOnExcept(needToClose) { _ =>
+      var firstError: Throwable = null
+      var task = tasks.poll()
+      while (task != null) {
+        try {
+          task match {
+            case t if t.isCancelled => // Do nothing if already cancelled
+            case t if t.isDone => // Close all produced hmbs
+              needToClose += convertAsyncResult(t.get())
+            case t =>
+              // Let running reads observe isDone without interrupting file system operations.
+              // If completion wins the cancellation race, we still own the result.
+              if (!t.cancel(false) && !t.isCancelled) {
+                needToClose += convertAsyncResult(t.get())
+              }
+          }
+        } catch {
+          case t: Throwable =>
+            if (firstError == null) {
+              firstError = t
+            } else if (firstError ne t) {
+              firstError.addSuppressed(t)
+            }
+        }
+        task = tasks.poll()
       }
+      if (firstError != null) throw firstError
     }
+    needToClose.safeClose()
   }
 }
 

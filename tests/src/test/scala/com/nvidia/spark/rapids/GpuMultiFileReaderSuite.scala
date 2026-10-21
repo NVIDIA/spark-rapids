@@ -17,12 +17,15 @@
 package com.nvidia.spark.rapids
 
 import java.io.{FileNotFoundException, IOException}
+import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue, ExecutionException, Executor, ExecutorCompletionService, Future, LinkedBlockingQueue}
+import java.util.concurrent.atomic.AtomicBoolean
 
 import scala.collection.mutable.ArrayBuffer
 
 import ai.rapids.cudf.HostMemoryBuffer
-import com.nvidia.spark.rapids.Arm.withResource
-import com.nvidia.spark.rapids.io.async.AsyncRunner
+import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
+import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.io.async.{AsyncMetrics, AsyncResult, AsyncRunner, FastReleaseResult}
 import com.nvidia.spark.rapids.parquet._
 import com.nvidia.spark.rapids.shims.PartitionedFileUtilsShim
 import org.apache.hadoop.conf.Configuration
@@ -169,6 +172,150 @@ class GpuMultiFileReaderSuite extends AnyFunSuite with RmmSparkRetrySuiteBase {
       assert(reader.released == 1)
     }
     assert(reader.released == 2)
+  }
+
+  private class CleanupReader(ordered: Boolean) extends MultiFileCloudPartitionReaderBase(
+      new Configuration(false), Array.empty,
+      new ThreadPoolConfBuilder(1, true, 1L << 20, 10000L, false).build(),
+      1, Array.empty, Map.empty, 1000, 1L << 20,
+      keepReadsInOrder = ordered, combineConf = CombineConf(1L << 20, 0)) {
+
+    override def canUseCombine: Boolean = true
+
+    override def getBatchRunner(tc: TaskContext, file: PartitionedFile,
+        conf: Configuration, filters: Array[Filter]): AsyncRunner[BufferInfo] =
+      throw new UnsupportedOperationException("All futures are already seeded")
+
+    override def readBatches(meta: BufferInfo): Iterator[ColumnarBatch] =
+      throw new UnsupportedOperationException("Read failure should precede decoding")
+
+    override def getFileFormatShortName: String = "test"
+
+    def defer(meta: BufferInfo): Unit = combineLeftOverFiles = Some(Array(meta))
+
+    def setCurrent(meta: BufferInfo): Unit = currentFileHostBuffers = Some(meta)
+
+    // Seed futures directly so failure and cancellation ordering does not depend on timing.
+    def seed(futures: Seq[Future[AsyncResult[BufferInfo]]]): Unit = {
+      def field(name: String): java.lang.reflect.Field = {
+        val result = classOf[MultiFileCloudPartitionReaderBase].getDeclaredField(name)
+        result.setAccessible(true)
+        result
+      }
+      val pending = field("tasks").get(this)
+        .asInstanceOf[ConcurrentLinkedQueue[Future[AsyncResult[BufferInfo]]]]
+      futures.foreach(pending.add)
+      field("filesToRead").setInt(this, futures.size)
+      field("isInit").get(this).asInstanceOf[AtomicBoolean].set(true)
+      if (!ordered) {
+        val completed = new LinkedBlockingQueue[Future[AsyncResult[BufferInfo]]]()
+        futures.filter(_.isDone).foreach(completed.add)
+        val executor = new Executor {
+          override def execute(command: Runnable): Unit =
+            throw new UnsupportedOperationException("All futures are already seeded")
+        }
+        field("fcs").set(this, new ExecutorCompletionService[AsyncResult[BufferInfo]](
+          executor, completed))
+      }
+    }
+  }
+
+  private def completedRead(meta: HostMemoryBuffersWithMetaDataBase)
+      : CompletableFuture[AsyncResult[HostMemoryBuffersWithMetaDataBase]] =
+    CompletableFuture.completedFuture(new FastReleaseResult(meta, AsyncMetrics(0, 0)))
+
+  private def failedRead(error: Throwable)
+      : CompletableFuture[AsyncResult[HostMemoryBuffersWithMetaDataBase]] = {
+    val future = new CompletableFuture[AsyncResult[HostMemoryBuffersWithMetaDataBase]]()
+    future.completeExceptionally(error)
+    future
+  }
+
+  for (ordered <- Seq(true, false)) {
+    test(s"close drains failed futures and cancels remaining reads, ordered=$ordered") {
+      val released = ArrayBuffer[Int]()
+      val buffers = ArrayBuffer[HostMemoryBuffer]()
+      val metadata = (0 until 5).map { id =>
+        val host = HostMemoryBuffer.allocate(1)
+        buffers += host
+        val spillable = SpillableHostBuffer(host, 1, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+        val result = new HostMemoryBuffersWithMetaDataBase {
+          override val partitionedFile: PartitionedFile =
+            PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty, s"file:///tmp/$id", 0, 1)
+          override val memBuffersAndSizes: Array[SingleHMBAndMeta] =
+            Array(SingleHMBAndMeta(Array(spillable), 1, 1, Seq.empty))
+          override val bytesRead: Long = 1
+        }
+        result.addReleaseResourceCallback(() => released += id)
+        result
+      }.toArray
+      closeOnExcept(metadata) { _ =>
+        val first = new IOException("first failed read")
+        val second = new IOException("second failed read")
+        val closeError = new IOException("buffer cleanup failed")
+        metadata(2).addReleaseResourceCallback(() => throw closeError)
+        val pending = new CompletableFuture[AsyncResult[HostMemoryBuffersWithMetaDataBase]]()
+        val cancelled = new CompletableFuture[AsyncResult[HostMemoryBuffersWithMetaDataBase]]()
+        cancelled.cancel(false)
+        val completing = new CompletableFuture[AsyncResult[HostMemoryBuffersWithMetaDataBase]]() {
+          override def cancel(interrupt: Boolean): Boolean = {
+            complete(new FastReleaseResult(metadata(4), AsyncMetrics(0, 0)))
+            false
+          }
+        }
+        val reader = new CleanupReader(ordered)
+        reader.setCurrent(metadata(0))
+        reader.defer(metadata(1))
+        reader.seed(Seq(failedRead(first), completedRead(metadata(2)), cancelled,
+          failedRead(second), pending, completedRead(metadata(3)), completing))
+        val error = intercept[ExecutionException] {
+          withResource(reader) { _ => () }
+        }
+        assert(error.getCause eq first)
+        assert(released.sorted.toSeq == metadata.indices)
+        assert(buffers.forall(_.getRefCount == 0))
+        assert(pending.isCancelled)
+        assert(error.getSuppressed.exists(_.getCause eq second))
+        assert(error.getSuppressed.contains(closeError))
+        withResource(reader) { _ => () } // Repeated close must not revisit failed futures.
+        metadata.safeClose()
+      }
+    }
+
+    for (withLeftovers <- Seq(false, true)) {
+      test(s"failed combine reads close collected inputs, ordered=$ordered, " +
+          s"deferred=$withLeftovers") {
+        val released = ArrayBuffer[Int]()
+        val metadata = (0 until (if (withLeftovers) 2 else 1)).map { id =>
+          val result = new HostMemoryBuffersWithMetaDataBase {
+            override val partitionedFile: PartitionedFile =
+              PartitionedFileUtilsShim.newPartitionedFile(InternalRow.empty,
+                s"file:///tmp/$id", 0, 1)
+            override val memBuffersAndSizes: Array[SingleHMBAndMeta] =
+              Array(SingleHMBAndMeta.empty(1))
+            override val bytesRead: Long = 1
+          }
+          result.addReleaseResourceCallback(() => released += id)
+          result
+        }.toArray
+        closeOnExcept(metadata) { _ =>
+          val failure = new IOException("read failed after collecting a result")
+          val closeError = new IOException("collected input cleanup failed")
+          metadata(0).addReleaseResourceCallback(() => throw closeError)
+          val reader = new CleanupReader(ordered)
+          if (withLeftovers) reader.defer(metadata(1))
+          reader.seed(Seq(completedRead(metadata(0)), failedRead(failure)))
+          withResource(reader) { _ =>
+            val error = intercept[ExecutionException](reader.next())
+            assert(error.getCause eq failure)
+            assert(released.sorted.toSeq == metadata.indices)
+            assert(error.getSuppressed.contains(closeError))
+          }
+          assert(released.sorted.toSeq == metadata.indices)
+          metadata.safeClose()
+        }
+      }
+    }
   }
 
   private class CorruptFileReader(failingChunk: Int, withHealthyFile: Boolean)
