@@ -231,9 +231,16 @@ trait SpillableHandle extends StoreHandle with Logging {
   private[spill] def doClose(): Unit
 
   /**
+   * Whether a failed spill must complete a `close` deferred to it. Called while holding this
+   * handle's lock, after `spilling` is reset.
+   */
+  protected def closeAfterFailedSpill: Boolean = closed
+
+  /**
    * Executes a spill operation while handling exceptions.
    * If an exception occurs during spilling (e.g. InterruptedException), this method
-   * catches it, logs a warning, resets the spilling state to false, and rethrows the exception.
+   * catches it, logs a warning, resets the spilling state to false, completes any close
+   * deferred during the spill, and rethrows the exception.
    *
    * Subclasses override this method to wrap the spill operation with appropriate metrics tracking:
    * - DeviceSpillableHandle tracks spillToHostTime and memory bytes spilled
@@ -250,8 +257,14 @@ trait SpillableHandle extends StoreHandle with Logging {
       } catch {
         case e: Throwable =>
           logWarning(s"Failed to spill $this", e)
-          synchronized {
+          val closeNow = synchronized {
             spilling = false
+            closeAfterFailedSpill
+          }
+          if (closeNow) {
+            try doClose() catch {
+              case t: Throwable => SpillFramework.addFailure(e, t)
+            }
           }
           throw e
       }
@@ -628,6 +641,10 @@ class SharedRecomputableHandle[T <: AutoCloseable] private[spill] (
       0L
     }
   }
+
+  // Same condition as releaseSpilled; with a lease outstanding, releaseLease closes instead.
+  override protected def closeAfterFailedSpill: Boolean =
+    closed && pinCount == 0 && !rebuilding
 
   override def releaseSpilled(): Unit = {
     // For a recomputable handle simply clear the release queue,

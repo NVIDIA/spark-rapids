@@ -17,7 +17,7 @@
 package com.nvidia.spark.rapids.spill
 
 import java.io.File
-import java.util.concurrent.{Callable, CountDownLatch, Executors, TimeUnit}
+import java.util.concurrent.{Callable, CountDownLatch, ExecutionException, Executors, TimeUnit}
 
 import ai.rapids.cudf.{Cuda, DeviceMemoryBuffer, HostMemoryBuffer}
 import com.nvidia.spark.rapids.{GpuColumnVector, TestUtils}
@@ -86,6 +86,39 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
       val file = super.getFile(blockId)
       spillFile = file
       file
+    }
+  }
+
+  private class PausingFailingHostStore extends SpillableHostStore(Some(1L << 20)) {
+    val copyStarted = new CountDownLatch(1)
+    val resumeCopy = new CountDownLatch(1)
+
+    override def makeBuilder(
+        handle: SpillableHostBufferHandle): SpillableHostBufferHandleBuilder = {
+      val underlying = super.makeBuilder(handle)
+      new SpillableHostBufferHandleBuilder {
+        override def copyNext(buffer: DeviceMemoryBuffer, length: Long,
+            stream: Cuda.Stream): Unit = {
+          copyStarted.countDown()
+          await(resumeCopy)
+          throw new IllegalStateException("injected host copy failure")
+        }
+
+        override def build: SpillableHostBufferHandle = underlying.build
+
+        override def close(): Unit = underlying.close()
+      }
+    }
+  }
+
+  private class PausingFailingDiskStore extends DiskHandleStore(new SparkConf) {
+    val writeStarted = new CountDownLatch(1)
+    val resumeWrite = new CountDownLatch(1)
+
+    override def getFile(blockId: BlockId): File = {
+      writeStarted.countDown()
+      await(resumeWrite)
+      throw new IllegalStateException("injected disk write failure")
     }
   }
 
@@ -597,5 +630,114 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
     assert(handle.spilling)
     handle.releaseSpilled()
     assertResult(0)(deviceStore.numHandles)
+  }
+
+  private def runFailedSpillClose(
+      handle: SpillableHandle,
+      started: CountDownLatch,
+      resume: CountDownLatch,
+      released: () => Boolean): Unit = {
+    val executor = Executors.newSingleThreadExecutor()
+    try {
+      val spilled = executor.submit(new Callable[Long] {
+        override def call(): Long = handle.spill()
+      })
+      await(started)
+      handle.close()
+      resume.countDown()
+      val failure = intercept[ExecutionException] {
+        spilled.get(timeoutSeconds, TimeUnit.SECONDS)
+      }
+      assert(failure.getCause.getMessage.startsWith("injected"))
+      assert(!handle.spilling)
+      assert(released())
+      assert(!handle.spillable)
+      assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
+      assertResult(0)(SpillFramework.stores.hostStore.numHandles)
+      assertResult(0)(SpillFramework.stores.diskStore.numHandles)
+    } finally {
+      resume.countDown()
+      executor.shutdown()
+      if (!executor.awaitTermination(timeoutSeconds, TimeUnit.SECONDS)) {
+        executor.shutdownNow()
+      }
+      handle.close()
+    }
+  }
+
+  test("device buffer completes a close deferred by a failed spill") {
+    val hostStore = new PausingFailingHostStore
+    SpillFramework.stores.hostStore = hostStore
+    val handle = createHandle()
+    runFailedSpillClose(handle, hostStore.copyStarted, hostStore.resumeCopy,
+      () => handle.dev.isEmpty)
+  }
+
+  for (handleCase <- siblingHandles if !handleCase.diskBacked) {
+    test(s"${handleCase.name} completes a close deferred by a failed spill") {
+      val hostStore = new PausingFailingHostStore
+      SpillFramework.stores.hostStore = hostStore
+      val replay = handleCase.create()
+      runFailedSpillClose(replay.handle, hostStore.copyStarted, hostStore.resumeCopy,
+        () => replay.handle.dev.isEmpty)
+    }
+  }
+
+  test("host buffer completes a close deferred by a failed disk spill") {
+    val diskStore = new PausingFailingDiskStore
+    SpillFramework.stores.diskStore = diskStore
+    val handle = closeOnExcept(HostMemoryBuffer.allocate(expectedBytes.length)) { buffer =>
+      buffer.setBytes(0, expectedBytes, 0, expectedBytes.length)
+      SpillableHostBufferHandle(buffer)
+    }
+    runFailedSpillClose(handle, diskStore.writeStarted, diskStore.resumeWrite,
+      () => handle.host.isEmpty)
+  }
+
+  test("host columnar batch completes a close deferred by a failed disk spill") {
+    val diskStore = new PausingFailingDiskStore
+    SpillFramework.stores.diskStore = diskStore
+    val (batch, _) = buildHostBatch()
+    val handle = SpillableHostColumnarBatchHandle(batch)
+    runFailedSpillClose(handle, diskStore.writeStarted, diskStore.resumeWrite,
+      () => handle.host.isEmpty)
+  }
+
+  test("failed spill keeps its error primary when the deferred close fails") {
+    val spillFailure = new IllegalStateException("injected spill failure")
+    val closeFailure = new IllegalStateException("injected close failure")
+    var closes = 0
+    val handle = new DeviceStoreHandle {
+      override val approxSizeInBytes: Long = 1L
+
+      override def spill(): Long = {
+        synchronized {
+          spilling = true
+        }
+        executeSpill {
+          close()
+          throw spillFailure
+        }
+      }
+
+      override def releaseSpilled(): Unit = ()
+
+      override private[spill] def doClose(): Unit = {
+        closes += 1
+        SpillFramework.removeFromDeviceStore(this)
+        throw closeFailure
+      }
+    }
+    SpillFramework.stores.deviceStore.track(handle)
+    val failure = intercept[IllegalStateException] {
+      handle.spill()
+    }
+    assert(failure eq spillFailure)
+    assert(failure.getSuppressed.toSeq == Seq(closeFailure))
+    assert(!handle.spilling)
+    assertResult(1)(closes)
+    handle.close()
+    assertResult(1)(closes)
+    assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
   }
 }
