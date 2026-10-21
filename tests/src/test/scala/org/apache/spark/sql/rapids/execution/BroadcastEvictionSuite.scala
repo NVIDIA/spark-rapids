@@ -18,11 +18,11 @@ package org.apache.spark.sql.rapids.execution
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream,
   ObjectOutputStream}
-import java.util.concurrent.{Callable, Executors, TimeoutException, TimeUnit}
+import java.util.concurrent.{Callable, CountDownLatch, Executors, TimeoutException, TimeUnit}
 
 import ai.rapids.cudf.Table
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuDeviceManager, GpuSemaphore, NoopMetric,
-  SpillableColumnarBatchFromBufferImpl, TestUtils}
+  SpillableColumnarBatch, SpillableColumnarBatchFromBufferImpl, TestUtils}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.spill.{SpillFramework, SpillUnitTestBase}
 import org.apache.commons.lang3.SerializationUtils
@@ -145,6 +145,52 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
           pool.shutdown()
           assert(pool.awaitTermination(30, TimeUnit.SECONDS))
           evictorContext.markTaskComplete()
+        }
+      }
+    }
+  }
+
+  test("evicting a broadcast does not wait for a task building its GPU batch") {
+    withResource(buildBatch()) { expected =>
+      val bytes = withBroadcast(makeBroadcastBatch(expected))(write)
+      val building = new CountDownLatch(1)
+      val mayBuild = new CountDownLatch(1)
+      // A task pauses while building the GPU batch, as it would while waiting for device memory
+      val broadcast = new SerializeConcatHostBuffersDeserializeBatch(null, Seq.empty, 0, 0L) {
+        override protected def buildGpuBatch(): SpillableColumnarBatch = {
+          building.countDown()
+          assert(mayBuild.await(30, TimeUnit.SECONDS))
+          super.buildGpuBatch()
+        }
+      }
+      withResource(new ObjectInputStream(new ByteArrayInputStream(bytes))) { ois =>
+        broadcast.doReadObject(ois)
+      }
+      withBroadcast(broadcast) { _ =>
+        val memoryManager = SparkEnv.get.memoryManager
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+          val materializer = pool.submit(new Callable[SpillableColumnarBatch] {
+            override def call(): SpillableColumnarBatch = broadcast.batch
+          })
+          assert(building.await(30, TimeUnit.SECONDS))
+          val evictor = pool.submit(new Callable[Array[Byte]] {
+            override def call(): Array[Byte] = memoryManager.synchronized(write(broadcast))
+          })
+          val evicted = try {
+            evictor.get(30, TimeUnit.SECONDS)
+          } catch {
+            case _: TimeoutException =>
+              fail("deadlock: eviction waits for a task building the GPU batch")
+          }
+          mayBuild.countDown()
+          materializer.get(30, TimeUnit.SECONDS)
+          withBroadcast(read(evicted))(assertSameData(expected, _))
+          assertSameData(expected, broadcast)
+        } finally {
+          mayBuild.countDown()
+          pool.shutdown()
+          assert(pool.awaitTermination(30, TimeUnit.SECONDS))
         }
       }
     }

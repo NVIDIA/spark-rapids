@@ -33,6 +33,7 @@ import com.nvidia.spark.rapids._
 import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
+import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.lore.{GpuLoreDumpRDD, SimpleRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.LORE_DUMP_RDD_TAG
 import com.nvidia.spark.rapids.shims.{BroadcastExchangeShims, ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
@@ -106,26 +107,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
     // valid while we hold `materializeLock`.
     this.synchronized(maybeGpuBatch).getOrElse {
       NvtxRegistry.BROADCAST_MANIFEST_BATCH {
-        val spillable =
-          if (packedData != null) {
-            SpillableColumnarBatch(packedDeviceBatch, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-          } else if (data == null || data.getTableHeader.getNumColumns == 0) {
-            // If `data` is null or there are no columns, this is a rows-only batch
-            SpillableColumnarBatch(
-              new ColumnarBatch(Array.empty, numRows),
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-          } else if (data.getTableHeader.getNumRows == 0) {
-            // If we have columns but no rows, we can use the emptyBatchFromTypes optimization
-            SpillableColumnarBatch(
-              GpuColumnVector.emptyBatchFromTypes(dataTypes),
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-          } else {
-            // Regular GPU batch with rows/cols
-            SpillableColumnarBatch(
-              data.toContiguousTable,
-              dataTypes,
-              SpillPriorities.ACTIVE_BATCHING_PRIORITY)
-          }
+        val spillable = buildGpuBatch()
         // At this point we no longer need the host data and should not need to touch it again.
         // Note that we don't close this using `withResources` around the creation of the
         // `SpillableColumnarBatch`. That is because if a retry exception is thrown we want to
@@ -140,6 +122,32 @@ class SerializeConcatHostBuffersDeserializeBatch(
         }
         spillable
       }
+    }
+  }
+
+  /**
+   * Build the GPU batch from `packedData` or `data`. Called by `batch` while holding
+   * `materializeLock` but not this object's monitor. Protected for tests that pause it.
+   */
+  protected def buildGpuBatch(): SpillableColumnarBatch = {
+    if (packedData != null) {
+      SpillableColumnarBatch(packedDeviceBatch, SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    } else if (data == null || data.getTableHeader.getNumColumns == 0) {
+      // If `data` is null or there are no columns, this is a rows-only batch
+      SpillableColumnarBatch(
+        new ColumnarBatch(Array.empty, numRows),
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    } else if (data.getTableHeader.getNumRows == 0) {
+      // If we have columns but no rows, we can use the emptyBatchFromTypes optimization
+      SpillableColumnarBatch(
+        GpuColumnVector.emptyBatchFromTypes(dataTypes),
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
+    } else {
+      // Regular GPU batch with rows/cols
+      SpillableColumnarBatch(
+        data.toContiguousTable,
+        dataTypes,
+        SpillPriorities.ACTIVE_BATCHING_PRIORITY)
     }
   }
 
@@ -171,10 +179,12 @@ class SerializeConcatHostBuffersDeserializeBatch(
       new ColumnarBatch(hostColumns, numRows)
     }
     maybeGpuBatch.map { spillable =>
-      withResource(spillable.getColumnarBatch())(copyToHost)
+      withRetryNoSplit[ColumnarBatch](withResource(spillable.getColumnarBatch())(copyToHost))
     }.orElse {
       // Only an executor that evicted a materialized batch writes packed data
-      Option(packedData).map(_ => withResource(packedDeviceBatch)(copyToHost))
+      Option(packedData).map { _ =>
+        withRetryNoSplit[ColumnarBatch](withResource(packedDeviceBatch)(copyToHost))
+      }
     }.getOrElse {
       NvtxRegistry.BROADCAST_MANIFEST_BATCH {
         if (data == null) {
