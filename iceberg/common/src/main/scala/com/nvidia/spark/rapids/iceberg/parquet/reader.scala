@@ -167,7 +167,7 @@ object GpuIcebergParquetReader {
     defaultFieldIds.exists(id => !containsFieldId(fileSchema, id.intValue()))
   }
 
-  /** Keep physical parent validity when all projected struct children are missing from a file. */
+  /** Keep physical container paths when their projected children are missing from a file. */
   private[iceberg] def preserveStructValidity(
       fileSchema: ShadedMessageType,
       projectedSchema: ShadedMessageType,
@@ -185,6 +185,15 @@ object GpuIcebergParquetReader {
       }
     }
 
+    def isRequested(field: ShadedType): Boolean = {
+      if (field.getId != null) {
+        requiredSchema.findField(field.getId.intValue()) != null
+      } else {
+        // Parquet's repeated list and map wrapper groups do not have Iceberg field IDs.
+        !field.isPrimitive && field.asGroupType().getFields.asScala.exists(isRequested)
+      }
+    }
+
     def preserveChildren(
         fileGroup: ShadedGroupType,
         projectedGroup: ShadedGroupType): Seq[ShadedType] = {
@@ -192,11 +201,15 @@ object GpuIcebergParquetReader {
       fileGroup.getFields.asScala.flatMap { field =>
         projectedByName.get(field.getName) match {
           case Some(projectedField) => Some(preserve(field, projectedField))
-          case None if !field.isPrimitive && field.getId != null &&
-              requiredSchema.findField(field.getId.intValue()) != null =>
-            // Iceberg can drop a whole list or map when every requested child is missing.
-            // Field IDs distinguish a requested physical container from an unrelated sibling.
-            Some(firstLeaf(field))
+          case None if isRequested(field) =>
+            // Restore every requested path before choosing helper leaves. One leaf under an
+            // ancestor cannot preserve a sibling collection's validity or element counts.
+            val emptyProjection = if (field.isPrimitive) {
+              field
+            } else {
+              field.asGroupType().withNewFields(Collections.emptyList[ShadedType]())
+            }
+            Some(preserve(field, emptyProjection))
           case _ => None
         }
       }.toSeq
@@ -207,14 +220,14 @@ object GpuIcebergParquetReader {
         projectedField
       } else {
         val projectedGroup = projectedField.asGroupType()
-        if (projectedGroup.getFieldCount == 0) {
+        val children = preserveChildren(fileField.asGroupType(), projectedGroup)
+        if (children.isEmpty) {
           // ParquetSchemaUtil.convert drops empty structs. A retained physical leaf carries
           // definition levels for the parent even when the leaf itself is null. The
           // post-processor removes this helper field while applying the projected defaults.
           firstLeaf(fileField)
         } else {
-          projectedGroup.withNewFields(
-            preserveChildren(fileField.asGroupType(), projectedGroup).asJava)
+          projectedGroup.withNewFields(children.asJava)
         }
       }
     }

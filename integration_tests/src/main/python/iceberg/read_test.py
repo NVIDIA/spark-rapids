@@ -164,6 +164,87 @@ def test_iceberg_v3_project_only_defaulted_struct_child(spark_tmp_table_factory,
 
 @iceberg
 @pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
+@pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.parametrize('shape', ['list', 'map', 'multiple'])
+@ignore_order(local=True)
+def test_iceberg_v3_defaulted_collection_paths(spark_tmp_table_factory, reader_type, shape):
+    table_name = get_full_table_name(spark_tmp_table_factory)
+    old_element, new_element = 'STRUCT<present: BIGINT>', 'STRUCT<present: BIGINT, added: INT>'
+    if shape == 'multiple':
+        old_fields = f'b ARRAY<{old_element}>, c MAP<STRING, {old_element}>'
+        new_fields = f'b ARRAY<{new_element}>, c MAP<STRING, {new_element}>'
+        old = [(0, None), (1, (1, None, {'x': (7,)})), (2, (2, [], None)),
+               (3, (3, [None], {})),
+               (4, (4, [(None,), (7,), None], {'a': (None,), 'b': None}))]
+        current = [(5, (5, [(9, 99), (None, None), None],
+                        {'x': (8, 77), 'y': (None, None), 'z': None}))]
+        defaults = [('s.b.element', 11), ('s.c.value', 22)]
+        expressions = ['s.b.added', 'map_values(s.c).added']
+        map_columns = [2]
+        expected = [(0, None, None), (1, None, [22]), (2, [], None), (3, [None], []),
+                    (4, [11, 11, None], [22, None]),
+                    (5, [99, None, None], [77, None, None])]
+    else:
+        is_map = shape == 'map'
+        old_fields = f'b MAP<STRING, {old_element}>' if is_map else f'b ARRAY<{old_element}>'
+        new_fields = f'b MAP<STRING, {new_element}>' if is_map else f'b ARRAY<{new_element}>'
+        values = [None, {}, {'a': None}, {'a': (None,), 'b': (7,), 'c': None}] if is_map else \
+            [None, [], [None], [(None,), (7,), None]]
+        old = [(0, None)] + [(i, (i, value)) for i, value in enumerate(values, start=1)]
+        current_value = {'a': (9, 99), 'b': (None, None), 'c': None} if is_map else \
+            [(9, 99), (None, None), None]
+        current = [(5, (5, current_value))]
+        defaults = [('s.b.value' if is_map else 's.b.element', 11)]
+        expressions = ['map_values(s.b).added' if is_map else 's.b.added']
+        map_columns = [1] if is_map else []
+        expected = [(0, None), (1, None), (2, []), (3, [None]),
+                    (4, [11, 11, None]), (5, [99, None, None])]
+
+    def setup(spark):
+        spark.sql(f'CREATE TABLE {table_name} '
+                  f'(id BIGINT, s STRUCT<unrelated: BIGINT, {old_fields}>) USING ICEBERG '
+                  "TBLPROPERTIES ('format-version'='3')")
+        spark.createDataFrame(old, f'id BIGINT, s STRUCT<unrelated: BIGINT, {old_fields}>') \
+            .coalesce(1).writeTo(table_name).append()
+        jvm = spark_jvm()
+        table = jvm.org.apache.iceberg.spark.Spark3Util.loadIcebergTable(
+            spark._jsparkSession, table_name)
+        update = table.updateSchema()
+        for parent, value in defaults:
+            update.addColumn(parent, 'added', jvm.org.apache.iceberg.types.Types.IntegerType.get(),
+                             jvm.org.apache.iceberg.expressions.Literal.of(value))
+        update.commit()
+        spark.sql(f'REFRESH TABLE {table_name}')
+        spark.createDataFrame(current, f'id BIGINT, s STRUCT<unrelated: BIGINT, {new_fields}>') \
+            .coalesce(1).writeTo(table_name).append()
+
+    with_cpu_session(setup)
+
+    def read(spark):
+        # Keep an unpruned CPU reference because Iceberg's CPU pruning also loses these paths.
+        spark.conf.set('spark.sql.optimizer.nestedSchemaPruning.enabled',
+                       spark.conf.get('spark.rapids.sql.enabled') == 'true')
+        projections = ', '.join(f'{expr} AS added_{i}' for i, expr in enumerate(expressions))
+        return spark.sql(f'SELECT id, {projections} FROM {table_name}')
+
+    def normalize(rows):
+        return [tuple(sorted(value, key=repr) if i in map_columns and value is not None else value
+                      for i, value in enumerate(row)) for row in rows]
+
+    def check(cpu_rows, gpu_rows):
+        normalized_cpu, normalized_gpu = normalize(cpu_rows), normalize(gpu_rows)
+        _check_default_rows(normalize(expected))(normalized_cpu, normalized_gpu)
+        return normalized_cpu, normalized_gpu
+
+    assert_gpu_and_cpu_are_equal_collect(
+        read,
+        conf={'spark.rapids.sql.format.iceberg.v3.enabled': 'true',
+              'spark.rapids.sql.format.parquet.reader.type': reader_type},
+        result_canonicalize_func_before_compare=check)
+
+
+@iceberg
+@pytest.mark.skipif(not supports_iceberg_v3, reason=ICEBERG_V3_UNSUPPORTED_REASON)
 @allow_non_gpu("BatchScanExec", "ColumnarToRowExec")
 @ignore_order(local=True)
 def test_iceberg_v3_unsupported_initial_defaults_fallback(spark_tmp_table_factory):
