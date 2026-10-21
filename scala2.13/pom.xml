@@ -585,6 +585,7 @@
             </activation>
             <properties>
                 <buildver>359</buildver>
+                <shim.source.inherits>358</shim.source.inherits>
                 <spark.version>${spark359.version}</spark.version>
                 <spark.test.version>${spark359.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
@@ -690,6 +691,7 @@
             </activation>
             <properties>
                 <buildver>402</buildver>
+                <shim.source.inherits>401</shim.source.inherits>
                 <spark.version>${spark402.version}</spark.version>
                 <spark.test.version>${spark402.version}</spark.test.version>
                 <parquet.hadoop.version>1.13.1</parquet.hadoop.version>
@@ -984,6 +986,7 @@
             </activation>
             <properties>
                 <buildver>500</buildver>
+                <shim.source.inherits>420</shim.source.inherits>
                 <spark.version>${spark500.version}</spark.version>
                 <spark.test.version>${spark500.version}</spark.test.version>
                 <cudf-spark-private.artifactId>cudf-spark-private_${scala.binary.version}-spark-master</cudf-spark-private.artifactId>
@@ -1545,12 +1548,14 @@
                                                   property="rapids.shimplify.detection.checksum"/>
                                         <checksum file="${spark.rapids.source.basedir}/build/shimplify.py"
                                                   property="rapids.shimplify.generator.checksum"/>
+                                        <checksum file="${spark.rapids.source.basedir}/build/shimpler_source_graph.py"
+                                                  property="rapids.shimpler.source.graph.checksum"/>
                                         <checksum file="${spark.rapids.source.basedir}/build/get_buildvers.py"
                                                   property="rapids.shimplify.buildvers.checksum"/>
                                         <checksum file="${spark.rapids.project.basedir}/pom.xml"
                                                   property="rapids.shimplify.pom.checksum"/>
                                         <property name="rapids.shimplify.cache.marker"
-                                                  value="${spark.shim.dest}/.shimplify-${rapids.shimplify.sources.checksum}-${rapids.shimplify.detection.checksum}-${rapids.shimplify.generator.checksum}-${rapids.shimplify.buildvers.checksum}-${rapids.shimplify.pom.checksum}"/>
+                                                  value="${spark.shim.dest}/.shimplify-${rapids.shimplify.sources.checksum}-${rapids.shimplify.detection.checksum}-${rapids.shimplify.generator.checksum}-${rapids.shimpler.source.graph.checksum}-${rapids.shimplify.buildvers.checksum}-${rapids.shimplify.pom.checksum}"/>
                                         <available file="${rapids.shimplify.cache.marker}"
                                                    property="rapids.shimplify.cache.hit"/>
                                         <property name="dyn.shim.buildver" value="all.buildvers"/>

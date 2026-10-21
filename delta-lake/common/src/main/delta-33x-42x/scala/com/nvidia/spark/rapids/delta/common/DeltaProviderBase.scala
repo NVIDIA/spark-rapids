@@ -100,7 +100,10 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
   override def tagSupportForGpuFileSourceScan(meta: SparkPlanMeta[FileSourceScanExec]): Unit = {
     val format = meta.wrapped.relation.fileFormat
     if (format.getClass == classOf[DeltaParquetFileFormat]) {
-      GpuReadParquetFileFormat.tagSupport(meta)
+      val deltaFormat = format.asInstanceOf[DeltaParquetFileFormat]
+      val mayContainShreddedVariant =
+        DeltaRuntimeShim.mayContainShreddedVariant(deltaFormat.protocol)
+      GpuReadParquetFileFormat.tagSupport(meta, Some(mayContainShreddedVariant))
     } else {
       meta.willNotWorkOnGpu(s"format ${format.getClass} is not supported")
     }
@@ -183,7 +186,7 @@ abstract class DeltaProviderBase extends DeltaIOProvider {
               dataAndPartitionOutput.filterNot(_.name == "_tmp_metadata_row_index"),
             requiredSchema = StructType(
               scan.requiredSchema.filterNot(_.name == "_tmp_metadata_row_index")
-            ))(scan.rapidsConf)))
+            ))(scan.rapidsConf, scan.partitionPlanningScan)))
     }
 
     // Liquid clustering can insert unary projections and transitions between the output
@@ -341,7 +344,8 @@ object DVPredicatePushdown extends ShimPredicateHelper {
             // It will not reuse the stage of the scan otherwise. Since we are removing
             // the IS_ROW_DELETED_COLUMN_NAME column from scan's output, we should
             // remove the DV condition as well from the dataFilters.
-            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(fsse.rapidsConf)
+            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(
+            fsse.rapidsConf, fsse.partitionPlanningScan)
       }
     }
 

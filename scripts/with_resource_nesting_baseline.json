@@ -29,21 +29,6 @@
       "resource": "withResource(valueColumn.isNull)"
     },
     {
-      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/SamplingUtils.scala",
-      "fingerprint": "1b271f866d9bad5f247d",
-      "resource": "withResource(concat)"
-    },
-    {
-      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/SamplingUtils.scala",
-      "fingerprint": "875424e1a922ad29fd4a",
-      "resource": "withResource(filtered)"
-    },
-    {
-      "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/SamplingUtils.scala",
-      "fingerprint": "ed89e60559df2992cca0",
-      "resource": "withResource(GpuColumnVector.from(cb))"
-    },
-    {
       "path": "sql-plugin/src/main/scala/com/nvidia/spark/rapids/higherOrderFunctions.scala",
       "fingerprint": "7f869aeb1f10af718805",
       "resource": "withResource(updatedMapView.getChildColumnView(0))"
