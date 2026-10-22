@@ -42,6 +42,7 @@ import org.apache.iceberg.shaded.org.apache.parquet.schema.{MessageType => Shade
 import org.apache.iceberg.spark.SparkSchemaUtil
 import org.apache.iceberg.types.{Type, Types}
 
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.rapids.GpuTaskMetrics
 import org.apache.spark.sql.types.{DataType, LongType, StringType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
@@ -52,6 +53,9 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
  */
 private[iceberg] sealed trait ColumnAction {
   def execute(ctx: ColumnActionContext): CudfColumnVector
+
+  // Some(null) is a supported null constant; None means input columns or row positions are needed.
+  def constantValue(processor: GpuParquetReaderPostProcessor): Option[Any] = None
 
   /**
    * Display this action as a tree structure for debugging and testing.
@@ -126,8 +130,11 @@ private[iceberg] case class FetchConstant(
     fieldId: Int,
     sparkType: DataType
 ) extends ColumnAction {
+  override def constantValue(processor: GpuParquetReaderPostProcessor): Option[Any] =
+    Some(processor.idToConstant.get(fieldId))
+
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
-    val value = ctx.processor.idToConstant.get(fieldId)
+    val value = constantValue(ctx.processor).get
     withResource(GpuScalar.from(value, sparkType)) { scalar =>
       CudfColumnVector.fromScalar(scalar, ctx.numRows)
     }
@@ -140,6 +147,8 @@ private[iceberg] case class FetchConstant(
 
 /** Fill with null values for missing optional column. */
 private[iceberg] case class FillNull(sparkType: DataType) extends ColumnAction {
+  override def constantValue(processor: GpuParquetReaderPostProcessor): Option[Any] = Some(null)
+
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
     GpuColumnVector.columnVectorFromNull(ctx.numRows, sparkType)
   }
@@ -205,10 +214,14 @@ private[iceberg] case object InheritRowId extends ColumnAction {
 
 /** Fill null lineage sequence numbers from the data file's sequence number. */
 private[iceberg] case class InheritLastUpdatedSequenceNumber(fieldId: Int) extends ColumnAction {
+  override def constantValue(processor: GpuParquetReaderPostProcessor): Option[Any] = {
+    val firstRowId = processor.idToConstant.get(ShimUtils.rowIdFieldId())
+    Some(if (firstRowId == null) null else processor.idToConstant.get(fieldId))
+  }
+
   override def execute(ctx: ColumnActionContext): CudfColumnVector = {
-    val firstRowId = ctx.processor.idToConstant.get(ShimUtils.rowIdFieldId())
-    val value = ctx.processor.idToConstant.get(fieldId)
-    if (firstRowId == null || value == null) {
+    val value = constantValue(ctx.processor).get
+    if (value == null) {
       GpuColumnVector.columnVectorFromNull(ctx.numRows, LongType)
     } else {
       ctx.column match {
@@ -770,6 +783,30 @@ class GpuParquetReaderPostProcessor(
 
   // Check if we can pass through the entire batch without any processing.
   private lazy val canPassThroughBatch: Boolean = rootAction == PassThrough
+
+  /** Output values for one file when every projected field can be generated without input. */
+  private[iceberg] lazy val metadataOnlyOutputRow: Option[InternalRow] = rootAction match {
+    case ProcessStruct(actions, indices) if indices.forall(_.isEmpty) =>
+      val values = actions.map(_.constantValue(this))
+      if (values.forall(_.isDefined)) {
+        Some(InternalRow.fromSeq(values.map(_.get)))
+      } else {
+        None
+      }
+    case _ => None
+  }
+
+  /** Account for output built from several files' constants instead of process(). */
+  private[iceberg] def materializeMetadataOnlyBatch(
+      materialize: => ColumnarBatch): ColumnarBatch = {
+    val batch = postProcessTimeMetric.ns { materialize }
+    closeOnExcept(batch) { _ =>
+      val bytes = GpuColumnVector.getTotalDeviceMemoryUsed(batch)
+      outputBatchBytesMetric += bytes
+      GpuTaskMetrics.get.recordOutputBatchBytes(bytes)
+      batch
+    }
+  }
 
   // Only constants that affect projected output need to participate in combining checks. Most
   // physical fields ignore constants, but physical lineage fields use file constants to fill

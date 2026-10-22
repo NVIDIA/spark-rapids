@@ -1444,6 +1444,27 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     assert(same.compatibleForCombining(first))
     assert(!first.compatibleForCombining(different))
     assert(!different.compatibleForCombining(first))
+    assert(first.metadataOnlyOutputRow.contains(InternalRow(10L)))
+    assert(same.metadataOnlyOutputRow.contains(InternalRow(10L)))
+    assert(different.metadataOnlyOutputRow.contains(InternalRow(20L)))
+  }
+
+  test("Metadata-only output distinguishes null values from unsupported actions") {
+    val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
+    val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+    val constants = new JHashMap[Integer, Any]()
+    constants.put(1, null)
+    val expectedSchema = new Schema(
+      Types.NestedField.optional(1, "a", Types.LongType.get()),
+      Types.NestedField.optional(2, "missing", Types.StringType.get()))
+    val processor = new GpuParquetReaderPostProcessor(
+      parquetInfo, constants, expectedSchema, shadedSchema, Map.empty)
+    assert(processor.metadataOnlyOutputRow.contains(InternalRow(null, null)))
+
+    val positionSchema = new Schema(MetadataColumns.ROW_POSITION)
+    val positionProcessor = new GpuParquetReaderPostProcessor(
+      parquetInfo, constants, positionSchema, shadedSchema, Map.empty)
+    assert(positionProcessor.metadataOnlyOutputRow.isEmpty)
   }
 
   test("Physical lineage constants prevent incompatible file combining") {
