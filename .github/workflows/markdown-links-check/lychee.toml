@@ -19,6 +19,9 @@ max_retries = 3
 retry_wait_time = 5
 accept = [200, 403, 429]
 hidden = true
+cache = true
+max_cache_age = "1d"
+cache_exclude_status = "403,429,500.."
 
 exclude = [
   '^https://github\.com/NVIDIA/(spark-rapids|cudf-spark)/(pull|issues)/',
