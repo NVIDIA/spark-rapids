@@ -17,15 +17,15 @@ import uuid
 import pytest
 
 from asserts import (assert_cpu_and_gpu_are_equal_collect_with_capture,
-                     assert_gpu_fallback_collect)
+                     assert_gpu_and_cpu_error, assert_gpu_fallback_collect)
 from conftest import spark_jvm
-from delta_lake_utils import is_oss_delta_lake_42
+from delta_lake_utils import is_oss_delta_lake_42_or_43
 from marks import allow_non_gpu, delta_lake, ignore_order
 from spark_session import with_cpu_session
 
 
 pytestmark = [delta_lake, pytest.mark.skipif(
-    not is_oss_delta_lake_42(), reason="Server-side planning requires OSS Delta Lake 4.2.0")]
+    not is_oss_delta_lake_42_or_43(), reason="Server-side planning requires OSS Delta Lake 4.2 or 4.3")]
 
 
 @pytest.fixture
@@ -43,6 +43,12 @@ def planned_scan_conf(spark_tmp_path, request):
         if not pushed:
             # Valid Parquet data outside the authoritative manifest must never be scanned.
             spark.range(100, 110).write.parquet(spark_tmp_path + "/unplanned")
+        path = spark._jvm.org.apache.hadoop.fs.Path(spark_tmp_path + "/corrupt.parquet")
+        stream = path.getFileSystem(spark._jsc.hadoopConfiguration()).create(path)
+        try:
+            stream.writeBytes("not parquet data")
+        finally:
+            stream.close()
 
     with_cpu_session(write)
     # Spark caches catalog instances across test sessions; each fixture needs its own options.
@@ -128,3 +134,41 @@ def test_server_side_planned_scan_input_file_fallback(planned_scan_conf, reader)
              "input_file_block_length() FROM " + catalog + ".db.table")
     assert_gpu_fallback_collect(
         lambda spark: spark.sql(query), "BatchScanExec", conf=conf)
+
+
+@ignore_order
+@allow_non_gpu("BatchScanExec")
+@pytest.mark.parametrize("reader", ["PERFILE", "MULTITHREADED", "COALESCING"])
+@pytest.mark.parametrize("setting", ["ignoreMissingFiles", "ignoreCorruptFiles"])
+def test_server_side_planned_scan_file_skipping_fallback(planned_scan_conf, reader, setting):
+    catalog, settings = planned_scan_conf
+    conf = dict(settings, **{"spark.rapids.sql.format.parquet.reader.type": reader,
+                            "spark.sql.files." + setting: "true"})
+    assert_gpu_fallback_collect(
+        lambda spark: spark.sql("SELECT id FROM " + catalog + ".db.table"),
+        "BatchScanExec", conf=conf)
+
+
+@allow_non_gpu("BatchScanExec")
+@pytest.mark.parametrize("reader", ["PERFILE", "MULTITHREADED", "COALESCING"])
+@pytest.mark.parametrize("table,setting,error", [
+    ("missing", "ignoreMissingFiles", "does not exist"),
+    ("corrupt", "ignoreCorruptFiles", "is not a Parquet file"),
+])
+def test_server_side_planned_scan_file_errors(planned_scan_conf, reader, table, setting, error):
+    catalog, settings = planned_scan_conf
+    conf = dict(settings, **{"spark.rapids.sql.format.parquet.reader.type": reader,
+                            "spark.sql.files." + setting: "true"})
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.sql("SELECT id FROM " + catalog + ".db." + table).collect(),
+        conf=conf, error_message=error)
+
+
+@allow_non_gpu("BatchScanExec")
+@pytest.mark.parametrize("reader", ["PERFILE", "MULTITHREADED", "COALESCING"])
+def test_server_side_planned_scan_missing_required_column(planned_scan_conf, reader):
+    catalog, settings = planned_scan_conf
+    conf = dict(settings, **{"spark.rapids.sql.format.parquet.reader.type": reader})
+    assert_gpu_and_cpu_error(
+        lambda spark: spark.sql("SELECT absent FROM " + catalog + ".db.required").collect(),
+        conf=conf, error_message="Required column is missing")

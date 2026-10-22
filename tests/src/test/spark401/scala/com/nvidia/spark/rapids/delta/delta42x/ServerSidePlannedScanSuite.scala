@@ -16,7 +16,6 @@
 
 /*** spark-rapids-shim-json-lines
 {"spark": "401"}
-{"spark": "411"}
 spark-rapids-shim-json-lines ***/
 package com.nvidia.spark.rapids.delta.delta42x
 
@@ -86,7 +85,25 @@ class ServerSidePlannedScanSuite extends AnyFunSuite {
     access.plan.credentials.foreach(_.configure(conf))
     assert(conf.get("fs.s3a.session.token") == "temporary-test-token")
     assert(conf.getBoolean("fs.s3a.impl.disable.cache", false))
-    assert(gpu.withInputFile().asInstanceOf[GpuServerSidePlannedScan].queryUsesInputFile)
+    assert(gpu.withInputFile() eq gpu)
+  }
+
+  test("scan equality depends only on the original Delta scan") {
+    val client = new Client(ScanPlan(Seq.empty))
+    def scan = new ServerSidePlannedScan(null, "db", "table", schema, client,
+      Array.empty, schema, None)
+    val cpu = scan
+    def gpu(s: ServerSidePlannedScan) = GpuServerSidePlannedScan(s,
+      new ServerSidePlannedScanAccess(s), new RapidsConf(Map.empty[String, String]))
+    val first = gpu(cpu)
+    val second = gpu(cpu)
+    assert(first == second)
+    assert(second == first)
+    assert(first.hashCode() == second.hashCode())
+    assert(Set(first, second).size == 1)
+    assert(first != gpu(scan))
+    assert(!first.equals(cpu))
+    assert(client.calls == 0)
   }
 
   test("empty plans and full projections preserve Delta's planning semantics") {
@@ -152,6 +169,30 @@ class ServerSidePlannedScanSuite extends AnyFunSuite {
         new RapidsConf(Map.empty[String, String]), None, rule)
       unsupported.tagForGpu()
       assert(!unsupported.canThisBeReplaced)
+      for (setting <- Seq("ignoreMissingFiles", "ignoreCorruptFiles")) {
+        val key = s"spark.sql.files.$setting"
+        val previous = spark.conf.get(key)
+        try {
+          spark.conf.set(key, "true")
+          val skippedFiles = new ServerSidePlannedScanMeta(tagScan,
+            new RapidsConf(Map.empty[String, String]), None, rule)
+          skippedFiles.tagForGpu()
+          assert(!skippedFiles.canThisBeReplaced)
+        } finally {
+          spark.conf.set(key, previous)
+        }
+      }
+      for (requiredSchema <- Seq(
+          StructType(Seq(StructField("id", IntegerType, nullable = false))),
+          StructType(Seq(StructField("nested", StructType(Seq(
+            StructField("a.b", StringType, nullable = false)))))))) {
+        val requiredScan = new ServerSidePlannedScan(spark, "db", "table", requiredSchema,
+          tagClient, Array.empty, requiredSchema, None)
+        val required = new ServerSidePlannedScanMeta(requiredScan,
+          new RapidsConf(Map.empty[String, String]), None, rule)
+        required.tagForGpu()
+        assert(!required.canThisBeReplaced)
+      }
       assert(tagClient.calls == 0 && tagClient.closes == 0)
 
       for (readerType <- Seq("PERFILE", "MULTITHREADED", "COALESCING")) {

@@ -33,11 +33,11 @@ import org.apache.spark.sql.delta.serverSidePlanning.{ScanPlan, ServerSidePlanne
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
 import org.apache.spark.sql.execution.exchange.{BroadcastExchangeLike, ShuffleExchangeLike}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{ArrayType, DataType, MapType, StructType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 import org.apache.spark.util.SerializableConfiguration
 
-/** Delta 4.2 has no public accessors for the reader schema or the cached plan. */
+/** Delta 4.2/4.3 have no public accessors for the reader schema or the cached plan. */
 private[delta42x] class ServerSidePlannedScanAccess(scan: ServerSidePlannedScan) {
   private def field(name: String): java.lang.reflect.Field = {
     val result = classOf[ServerSidePlannedScan].getDeclaredField(name)
@@ -70,6 +70,14 @@ class ServerSidePlannedScanMeta(
 
   private var access: Option[ServerSidePlannedScanAccess] = None
 
+  private def hasRequiredField(dataType: DataType): Boolean = dataType match {
+    case schema: StructType =>
+      schema.fields.exists(f => !f.nullable || hasRequiredField(f.dataType))
+    case ArrayType(elementType, _) => hasRequiredField(elementType)
+    case MapType(keyType, valueType, _) => hasRequiredField(keyType) || hasRequiredField(valueType)
+    case _ => false
+  }
+
   override def tagSelfForGpu(): Unit = {
     access = try {
       Some(new ServerSidePlannedScanAccess(scan))
@@ -78,7 +86,19 @@ class ServerSidePlannedScanMeta(
         willNotWorkOnGpu("Delta server-side planned scan reader state is not accessible")
         None
     }
-    access.foreach(a => GpuParquetScan.tagSupport(a.spark, scan.readSchema(), this))
+    access.foreach { a =>
+      GpuParquetScan.tagSupport(a.spark, scan.readSchema(), this)
+      // Delta reads the authoritative manifest without Spark's file-skipping wrapper.
+      if (a.spark.sessionState.conf.ignoreMissingFiles ||
+          a.spark.sessionState.conf.ignoreCorruptFiles) {
+        willNotWorkOnGpu("Delta server-side planned reads must fail on missing or corrupt files")
+      }
+    }
+    // GPU readers synthesize nulls for absent fields, whereas Delta's CPU reader fails
+    // for required fields. Conservatively fall back without reading file footers here.
+    if (hasRequiredField(scan.readSchema())) {
+      willNotWorkOnGpu("Delta server-side planned reads with required fields are not supported")
+    }
     // Delta's reader does not set InputFileBlockHolder. GPU file readers do, so using
     // them below input_file_* expressions would change the query's results.
     var ancestor = parent
@@ -104,8 +124,7 @@ class ServerSidePlannedScanMeta(
 private[delta42x] case class GpuServerSidePlannedScan(
     cpuScan: ServerSidePlannedScan,
     access: ServerSidePlannedScanAccess,
-    rapidsConf: RapidsConf,
-    queryUsesInputFile: Boolean = false) extends GpuScan with Batch {
+    rapidsConf: RapidsConf) extends GpuScan with Batch {
 
   override def readSchema(): StructType = cpuScan.readSchema()
   override def description(): String = cpuScan.description()
@@ -113,7 +132,14 @@ private[delta42x] case class GpuServerSidePlannedScan(
   override def columnarSupportMode(): Scan.ColumnarSupportMode =
     Scan.ColumnarSupportMode.SUPPORTED
   override def planInputPartitions(): Array[InputPartition] = cpuScan.planInputPartitions()
-  override def withInputFile(): GpuScan = copy(queryUsesInputFile = true)
+  override def withInputFile(): GpuScan = this
+
+  override def equals(other: Any): Boolean = other match {
+    case that: GpuServerSidePlannedScan => cpuScan == that.cpuScan
+    case _ => false
+  }
+
+  override def hashCode(): Int = cpuScan.hashCode()
 
   override def createReaderFactory(): PartitionReaderFactory = {
     val spark = access.spark
@@ -128,7 +154,7 @@ private[delta42x] case class GpuServerSidePlannedScan(
     } else {
       GpuParquetMultiFilePartitionReaderFactory(spark.sessionState.conf, broadcastConf,
         access.tableSchema, readSchema(), StructType(Nil), Array.empty, rapidsConf,
-        ThreadPoolConfBuilder(rapidsConf), metrics, queryUsesInputFile)
+        ThreadPoolConfBuilder(rapidsConf), metrics, queryUsesInputFile = false)
     }
     new ServerSidePlannedGpuReaderFactory(reader)
   }

@@ -29,7 +29,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.{Identifier, Table, TableCatalog, TableChange}
 import org.apache.spark.sql.connector.expressions.Transform
 import org.apache.spark.sql.sources.{And, Filter, GreaterThanOrEqual, IsNotNull}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{IntegerType, StructField, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 /** Creates Delta's real server-side planned table without an external planning service. */
@@ -48,9 +48,13 @@ class ServerSidePlannedTestCatalog extends TableCatalog {
   override def loadTable(ident: Identifier): Table = {
     val spark = SparkSession.active
     val selected = new Path(root, "selected")
-    val schema = spark.read.parquet(selected.toString).schema
+    val fileSchema = spark.read.parquet(selected.toString).schema
+    val schema = ident.name() match {
+      case "required" => fileSchema.add(StructField("absent", IntegerType, nullable = false))
+      case _ => fileSchema
+    }
     // Delta is optional and has incompatible versions in the test matrix. Resolve
-    // its 4.2 APIs only when this catalog is actually used.
+    // its 4.2/4.3 APIs only when this catalog is actually used.
     val loader = Thread.currentThread().getContextClassLoader
     val fileClass = loader.loadClass(deltaPackage + "ScanFile")
     def scanFiles(path: Path): List[AnyRef] = {
@@ -68,7 +72,14 @@ class ServerSidePlannedTestCatalog extends TableCatalog {
     def scanPlan(files: List[AnyRef]): AnyRef =
       planConstructor.newInstance(files, None).asInstanceOf[AnyRef]
 
-    val files = if (ident.name() == "empty") List.empty[AnyRef] else scanFiles(selected)
+    val files = ident.name() match {
+      case "empty" => List.empty[AnyRef]
+      case "missing" | "corrupt" =>
+        List(fileClass.getConstructor(classOf[String], java.lang.Long.TYPE, classOf[String])
+          .newInstance(new Path(root, ident.name() + ".parquet").toString,
+            Long.box(16), "parquet").asInstanceOf[AnyRef])
+      case _ => scanFiles(selected)
+    }
     val plan = scanPlan(files)
     val pushFilters = ident.name() == "pushed"
     val matchingFiles = if (pushFilters) scanFiles(new Path(root, "matching")) else Nil
@@ -107,7 +118,8 @@ class ServerSidePlannedTestCatalog extends TableCatalog {
   }
 
   override def listTables(namespace: Array[String]): Array[Identifier] =
-    Array("table", "empty", "pushed").map(Identifier.of(namespace, _))
+    Array("table", "empty", "pushed", "required", "missing", "corrupt")
+      .map(Identifier.of(namespace, _))
 
   override def createTable(ident: Identifier, schema: StructType, partitions: Array[Transform],
       properties: util.Map[String, String]): Table = throw new UnsupportedOperationException
