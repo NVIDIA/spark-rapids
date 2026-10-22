@@ -439,10 +439,11 @@ run_delta_lake_uc_tests() {
       ./run_pyspark_from_build.sh -m unity_catalog --delta_lake --unity_catalog
 }
 
-# Pipeline jobs supply ICEBERG_VERSIONS and TEST_TAGS to choose their runtime(s)
-# and full/fast suite. A single requested version runs only that version; this
-# function does not add or schedule other versions. Without overrides, run every
-# JSON-selected version with the full Iceberg suite. An unmatched TEST_TAGS filter
+# Pipeline jobs supply ICEBERG_VERSIONS and ICEBERG_FAST_TEST (1=fast, 0=full,
+# default 0) to choose their runtime(s) and suite. TEST_TAGS adds a marker filter.
+# A single requested version runs only that version; this function does not add
+# or schedule other versions. Without overrides, run every JSON-selected version
+# with the full Iceberg suite. An unmatched marker filter
 # retains pytest's failure status (5); it is not a successful matrix skip.
 run_iceberg_tests() {
   # get the major/minor version of Spark
@@ -467,6 +468,9 @@ run_iceberg_tests() {
   local iceberg_test_tags="iceberg"
   if [[ -n "${TEST_TAGS:-}" ]]; then
     iceberg_test_tags="iceberg and ($TEST_TAGS)"
+  fi
+  if [[ "${ICEBERG_FAST_TEST:-0}" == "1" ]]; then
+    iceberg_test_tags="$iceberg_test_tags and iceberg_fast_test"
   fi
 
   if [[ "$ICEBERG_SPARK_VER" == "4.0" || "$ICEBERG_SPARK_VER" == "4.1" ]]; then
