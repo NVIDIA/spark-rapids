@@ -1477,8 +1477,10 @@ def test_degenerate_broadcast_nested_loop_existence_join(spark_tmp_table_factory
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
 
-# Spark 4.0 keeps a sequence predicate in an existence join's condition too. With the outer value
-# folded to a literal, the condition reads only the subquery side, so the stream has no columns.
+# Spark 4.0 keeps a sequence predicate in an existence join's condition too. Spark folds
+# IF(t.id = t.id, k, 0) to k only after it pulls the correlated predicate out of the subquery, so
+# the condition reads only the subquery side and the stream has no columns. A literal outer value
+# lets Databricks 17.3 plan the EXISTS as a scalar subquery with no join.
 @ignore_order(local=True)
 @allow_non_gpu(*non_utc_allow)
 @pytest.mark.skipif(is_before_spark_340(),
@@ -1494,8 +1496,8 @@ def test_broadcast_nested_loop_existence_join_one_sided_sequence_condition(
         spark.range(0, 30).selectExpr('CAST(id AS INT) AS b').createOrReplaceTempView(sub_table_name)
         return spark.sql(
             'SELECT EXISTS (SELECT 1 FROM {} AS s '
-            'WHERE size(sequence(s.b, 30, 1)) > s.b + k) AS e '
-            'FROM (SELECT {} AS k FROM {})'.format(sub_table_name, k, outer_table_name))
+            'WHERE size(sequence(s.b, 30, 1)) > s.b + IF(t.id = t.id, {}, 0)) AS e '
+            'FROM {} AS t'.format(sub_table_name, k, outer_table_name))
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         do_join,
         exist_classes='GpuBroadcastNestedLoopJoinExec',
