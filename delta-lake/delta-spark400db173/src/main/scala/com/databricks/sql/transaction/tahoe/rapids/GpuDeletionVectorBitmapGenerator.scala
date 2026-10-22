@@ -38,14 +38,14 @@ import org.apache.hadoop.fs.Path
 
 import org.apache.spark.TaskContext
 import org.apache.spark.paths.SparkPath
-import org.apache.spark.sql.{Column, DataFrame, Encoder, SparkSession}
+import org.apache.spark.sql.{Column, Encoder, SparkSession}
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.AttributeReference
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, PythonUDF, SubqueryExpression}
 import org.apache.spark.sql.catalyst.plans.logical.LocalRelation
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.SQLExecution
 import org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec
-import org.apache.spark.sql.functions.{broadcast, col, input_file_name}
+import org.apache.spark.sql.functions.{broadcast, col, input_file_name, lit, raise_error, when}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.nvidia.DFUDFShims
 import org.apache.spark.sql.rapids.shims.TrampolineConnectShims
@@ -133,6 +133,18 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
   }
 
   /**
+   * input_file_name() reflects the file of the batch being processed. Python UDFs may merge batches
+   * from different files and subqueries may plan as shuffled joins, so conditions containing them
+   * must be evaluated after the file path has been attached to each row.
+   */
+  private def canFilterBeforeFileName(condition: Column): Boolean = {
+    DFUDFShims.columnToExpr(condition).find {
+      case _: PythonUDF | _: SubqueryExpression => true
+      case _ => false
+    }.isEmpty
+  }
+
+  /**
    * DELETE and UPDATE keep their predicates and file-ID lookup columnar on GPU. Each scan task
    * copies only matched file IDs and row indexes to host and builds compact partial bitmaps before
    * the shuffle.
@@ -144,8 +156,7 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
       hasReadableDVs: Boolean,
       targetScan: GpuTargetScan,
       condition: Column,
-      nameToAddFileMap: Map[String, AddFile],
-      prefilteredTargetDf: Option[DataFrame] = None): Seq[TouchedFileWithDV] = {
+      nameToAddFileMap: Map[String, AddFile]): Seq[TouchedFileWithDV] = {
     // This scan's broadcast join must be planned without AQE. A thread-local SQLConf override
     // does not control QueryExecution's session-owned planner on DBR, so use an isolated session.
     val scanSpark = isolatedSession(spark)
@@ -172,11 +183,13 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
       scanSpark.asInstanceOf[TrampolineConnectShims.SparkSession],
       LocalRelation(Seq(filePathAttr, fileIdAttr), fileIdRows))
 
-    // Keep the predicate below input_file_name(), whose non-deterministic projection otherwise
-    // prevents Spark from pushing the predicate into the Parquet scan.
-    val filteredTargetDf = prefilteredTargetDf.getOrElse {
+    val filteredTargetDf = if (canFilterBeforeFileName(condition)) {
+      // Keep the predicate below input_file_name(), whose non-deterministic projection otherwise
+      // prevents Spark from pushing the predicate into the Parquet scan.
       targetScan.dataFrameWithoutFilePath.filter(condition)
         .withColumn(targetScan.filePathColumnName, input_file_name())
+    } else {
+      targetScan.dataFrame.filter(condition)
     }
     val gpuTargetDf = DMLWithDeletionVectorsHelperShims.withGpuExecutionContext(
       scanSpark, filteredTargetDf)
@@ -286,6 +299,12 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
       spark, targetScan.dataFrame)
     val candidatesHaveDVs =
       hasReadableDVs && candidateFiles.exists(_.deletionVector != null)
+    // Every row reaching the condition comes from the target scan. Only the GPU reader fills the
+    // row index, and DBR's bitmap aggregation silently skips null indexes, which would leave
+    // matched rows undeleted. Fail instead of writing a wrong result.
+    val guardedCondition = when(targetScan.rowIndexColumn.isNull,
+      raise_error(lit("The DML target scan did not produce physical row indexes, so it must " +
+        "run on the GPU"))).otherwise(condition)
     val storedResults = DeletionVectorBitmapGenerator
       .buildRowIndexSetsForFilesMatchingCondition(
         spark,
@@ -293,7 +312,7 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
         candidatesHaveDVs,
         gpuTargetDf,
         candidateFiles,
-        DFUDFShims.columnToExpr(condition),
+        DFUDFShims.columnToExpr(guardedCondition),
         Some(targetScan.filePathColumn),
         Some(targetScan.rowIndexColumn))
 
@@ -308,10 +327,10 @@ private[rapids] object GpuDeletionVectorBitmapGenerator {
     // This helper works on file actions and snapshot statistics, not table rows. Keeping its
     // metadata joins on CPU avoids GPU broadcasts/transfers and CPU JSON bridges for small
     // driver-originated datasets. Bitmap generation above and subsequent DML remain GPU-enabled.
-    val metadataSpark = isolatedSession(spark)
-    val (actions, metrics) = GpuDeltaCpuFallback.withRapidsDisabled(metadataSpark) {
-      DMLWithDeletionVectorsHelper.processUnmodifiedData(
-        metadataSpark, touchedFiles, txn.snapshot)
+    // The snapshot's DataFrames are bound to the command's session, so RAPIDS must be disabled
+    // there; an isolated session would not stop those joins from being planned on the GPU.
+    val (actions, metrics) = GpuDeltaCpuFallback.withRapidsDisabled(spark) {
+      DMLWithDeletionVectorsHelper.processUnmodifiedData(spark, touchedFiles, txn.snapshot)
     }
     // DBR rehydrates the replacement AddFile stats from the snapshot, but the paired RemoveFile
     // can retain the numRecords-only stats from the data-skipping candidate. Both actions describe

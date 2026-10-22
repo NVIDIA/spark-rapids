@@ -29,7 +29,7 @@ import org.apache.spark.sql.connector.read.PartitionReaderFactory
 import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.rapids.GpuFileSourceScanExec
 import org.apache.spark.sql.sources.Filter
-import org.apache.spark.sql.types.{LongType, Metadata, MetadataBuilder, StructField, StructType}
+import org.apache.spark.sql.types.{MetadataBuilder, StructField, StructType}
 import org.apache.spark.util.SerializableConfiguration
 
 object GpuDeltaParquetFileFormatBase {
@@ -40,12 +40,6 @@ object GpuDeltaParquetFileFormatBase {
       .withMetadata(field.metadata)
       .putBoolean(GPU_ROW_INDEX_METADATA_KEY, value = true)
       .build())
-
-  val GPU_ROW_INDEX_STRUCT_FIELD: StructField = markGpuRowIndexColumn(StructField(
-    "_tmp_metadata_row_index",
-    LongType,
-    nullable = false,
-    metadata = Metadata.empty))
 
   private[delta] def isGpuRowIndexColumn(field: StructField): Boolean =
     field.metadata.contains(GPU_ROW_INDEX_METADATA_KEY) &&

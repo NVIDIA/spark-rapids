@@ -16,9 +16,9 @@
 
 package com.nvidia.spark.rapids.delta.shims
 
-import com.databricks.sql.transaction.tahoe.{DeltaLog, DeltaParquetFileFormat}
-import com.databricks.sql.transaction.tahoe.commands.{DeletionVectorUtils, MergeIntoCommand,
-  MergeIntoCommandBase, MergeIntoCommandEdge}
+import com.databricks.sql.transaction.tahoe.RowTracking
+import com.databricks.sql.transaction.tahoe.commands.{MergeIntoCommand, MergeIntoCommandBase,
+  MergeIntoCommandEdge}
 import com.databricks.sql.transaction.tahoe.rapids.{GpuDeltaLog, GpuLowShuffleMergeCommand,
   GpuMergeIntoCommand}
 import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
@@ -39,36 +39,16 @@ object MergeIntoCommandMetaShim {
   private def tagForGpuCommon(
       meta: RapidsMeta[_, _, _],
       mergeCmd: MergeIntoCommandBase): Unit = {
-    val usePersistentDeletionVectors =
-      mergeCmd.conf.getConf(DeltaSQLConf.MERGE_USE_PERSISTENT_DELETION_VECTORS)
-    tagPersistentDeletionVectorFallback(
+    val snapshot = mergeCmd.targetFileIndex.deltaLog.unsafeVolatileSnapshot
+    val persistentDvEnabled = PersistentDeletionVectorMetaShim.tagForGpu(
       meta,
-      mergeCmd.targetFileIndex.deltaLog,
-      usePersistentDeletionVectors,
-      mergeCmd.conf.getConf(DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX))
-    val targetSchema = mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema)
-    if (DeletionVectorUtils.deletionVectorsWritable(
-        mergeCmd.targetFileIndex.deltaLog.unsafeVolatileSnapshot) &&
-        usePersistentDeletionVectors &&
-        targetSchema.fieldNames.exists(mergeCmd.conf.resolver(
-          _, DeltaParquetFileFormat.ROW_INDEX_STRUCT_FIELD.name))) {
+      mergeCmd.conf,
+      snapshot,
+      DeltaSQLConf.MERGE_USE_PERSISTENT_DELETION_VECTORS,
+      mergeCmd.migratedSchema.getOrElse(mergeCmd.target.schema))
+    if (persistentDvEnabled && RowTracking.isEnabled(snapshot.protocol, snapshot.metadata)) {
       meta.willNotWorkOnGpu(
-        s"user column ${DeltaParquetFileFormat.ROW_INDEX_STRUCT_FIELD.name} " +
-          "conflicts with the DV row index")
-    }
-  }
-
-  private def tagPersistentDeletionVectorFallback(
-      meta: RapidsMeta[_, _, _],
-      deltaLog: DeltaLog,
-      usePersistentDeletionVectors: Boolean,
-      useMetadataRowIndex: Boolean): Unit = {
-    if (DeletionVectorUtils.deletionVectorsWritable(deltaLog.unsafeVolatileSnapshot) &&
-        usePersistentDeletionVectors &&
-        !(useMetadataRowIndex && meta.conf.isDeltaDeletionVectorPredicatePushdownEnabled)) {
-      meta.willNotWorkOnGpu(
-        "Persistent deletion vector writes on GPU require DBR metadata row indexes and " +
-          "native cuDF deletion-vector predicate pushdown")
+        "Persistent deletion vector MERGE with row tracking is not supported on GPU")
     }
   }
 

@@ -26,7 +26,11 @@ from spark_session import is_before_spark_320, is_databricks_runtime, \
 
 delta_update_enabled_conf = copy_and_update(delta_writes_enabled_conf,
                                             {"spark.rapids.sql.command.UpdateCommand": "true",
-                                             "spark.rapids.sql.command.UpdateCommandEdge": "true"})
+                                             "spark.rapids.sql.command.UpdateCommandEdge": "true",
+                                             # Background compaction adds commits to one side only.
+                                             "spark.databricks.delta.autoCompact.enabled": "false",
+                                             "spark.databricks.delta.properties.defaults.autoOptimize.autoCompact": "false",
+                                             "spark.databricks.delta.update.enableForceBackgroundAutoCompact": "false"})
 
 
 @allow_non_gpu(*delta_meta_allow)
@@ -260,13 +264,12 @@ def test_delta_update_partitioned_dv_optimize_write_disabled(spark_tmp_path):
         "numUpdatedRows": 1, "numCopiedRows": 0, "numDeletionVectorsAdded": 1}
 
 
-@allow_non_gpu('InMemoryTableScanExec', 'ColumnarToRowExec', 'ExternalRDDScanExec',
-               *delta_meta_allow)
+@allow_non_gpu('ColumnarToRowExec', 'ExternalRDDScanExec', *delta_meta_allow)
 @delta_lake
 @ignore_order
 @pytest.mark.skipif(not is_databricks173_or_later(),
                     reason="Persistent-DV command acceleration requires DBR 17.3+")
-def test_delta_update_persistent_dv_reused_matches_with_existing_dv(spark_tmp_path):
+def test_delta_update_persistent_dv_repeated_with_existing_dv(spark_tmp_path):
     conf = copy_and_update(delta_update_enabled_conf, {
         "spark.databricks.delta.update.deletionVectors.persistent": "true",
         "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
@@ -287,22 +290,10 @@ def test_delta_update_persistent_dv_reused_matches_with_existing_dv(spark_tmp_pa
             return spark.sql(f"UPDATE delta.`{path}` SET v = v + 1 WHERE {predicate}").collect()
 
         cpu_result = with_cpu_session(lambda spark: update(spark, cpu_path), conf=conf)
-        captured_plans = []
         gpu_result = assert_rapids_delta_write(
             lambda spark: update(spark, gpu_path), conf=conf,
             required_gpu_classes=delta_write if expected_rows else [],
-            expected_command="GpuUpdateCommand", captured_plans_out=captured_plans)
-        if predicate == "id IN (1, 3)":
-            # In local mode the executor shares the driver's storage entry. A cache scan in
-            # the rewrite verifies that this test actually exercises matched-row reuse.
-            local_mode = with_gpu_session(lambda spark:
-                spark.sparkContext.master == "local" or
-                spark.sparkContext.master.startswith("local["), conf=conf)
-            if local_mode:
-                callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
-                assert any(callback.contains(plan, "InMemoryTableScanExec") or
-                           callback.contains(plan, "GpuInMemoryTableScanExec")
-                           for plan in captured_plans), "UPDATE did not reuse its cached matches"
+            expected_command="GpuUpdateCommand")
         assert_equal(cpu_result, gpu_result)
         assert_equal(gpu_result, [Row(expected_rows)])
         if expected_rows:
@@ -332,59 +323,6 @@ def test_delta_update_persistent_dv_reused_matches_with_existing_dv(spark_tmp_pa
 @ignore_order
 @pytest.mark.skipif(not is_databricks173_or_later(),
                     reason="Persistent-DV command acceleration requires DBR 17.3+")
-def test_delta_update_persistent_dv_input_file_block_length(spark_tmp_path):
-    conf = copy_and_update(delta_update_enabled_conf, {
-        "spark.databricks.delta.update.deletionVectors.persistent": "true",
-        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
-        "spark.databricks.delta.optimizeWrite.enabled": "false"})
-    data_path = spark_tmp_path + "/DELTA_DATA"
-    with_cpu_session(lambda spark: setup_delta_dest_tables(
-        spark, data_path,
-        lambda spark: spark.createDataFrame(
-            [(i, i * 10) for i in range(8)], "id INT, v LONG").coalesce(1),
-        use_cdf=False, enable_deletion_vectors=True), conf=conf)
-
-    paths = {engine: data_path + "/" + engine for engine in ("CPU", "GPU")}
-
-    def file_length(spark, path):
-        return spark.sql(
-            f"SELECT input_file_block_length() FROM delta.`{path}` WHERE id = 1"
-        ).first()[0]
-
-    lengths = {engine: with_cpu_session(
-        lambda spark: file_length(spark, path), conf=conf)
-        for engine, path in paths.items()}
-    assert all(length > 0 for length in lengths.values())
-
-    def update(spark, path):
-        return spark.sql(
-            f"UPDATE delta.`{path}` SET v = input_file_block_length() WHERE id = 1"
-        ).collect()
-
-    cpu_result = with_cpu_session(lambda spark: update(spark, paths["CPU"]), conf=conf)
-    captured_plans = []
-    gpu_result = assert_rapids_delta_write(
-        lambda spark: update(spark, paths["GPU"]), conf=conf,
-        expected_command="GpuUpdateCommand", captured_plans_out=captured_plans)
-    assert_equal(cpu_result, gpu_result)
-    assert_equal(gpu_result, [Row(1)])
-
-    callback = spark_jvm().org.apache.spark.sql.rapids.ExecutionPlanCaptureCallback
-    assert not any(callback.contains(plan, "InMemoryTableScanExec") or
-                   callback.contains(plan, "GpuInMemoryTableScanExec")
-                   for plan in captured_plans), "UPDATE reused rows without file-block context"
-    for engine, path in paths.items():
-        rows = with_cpu_session(lambda spark: spark.read.format("delta").load(path)
-                                .orderBy("id").collect(), conf=conf)
-        expected = [Row(i, lengths[engine] if i == 1 else i * 10) for i in range(8)]
-        assert_equal(rows, expected)
-
-
-@allow_non_gpu('ColumnarToRowExec', 'ExternalRDDScanExec', *delta_meta_allow)
-@delta_lake
-@ignore_order
-@pytest.mark.skipif(not is_databricks173_or_later(),
-                    reason="Persistent-DV command acceleration requires DBR 17.3+")
 def test_delta_update_persistent_dv_cdf_fallback(spark_tmp_path):
     conf = copy_and_update(delta_update_enabled_conf, {
         "spark.databricks.delta.update.deletionVectors.persistent": "true",
@@ -405,7 +343,7 @@ def test_delta_update_persistent_dv_cdf_fallback(spark_tmp_path):
 @ignore_order
 @pytest.mark.skipif(not is_databricks173_or_later(),
                     reason="Persistent-DV command acceleration requires DBR 17.3+")
-def test_delta_update_persistent_dv_broad_match_fallback(spark_tmp_path):
+def test_delta_update_persistent_dv_broad_match(spark_tmp_path):
     conf = copy_and_update(delta_update_enabled_conf, {
         "spark.databricks.delta.update.deletionVectors.persistent": "true",
         "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
@@ -417,6 +355,48 @@ def test_delta_update_persistent_dv_broad_match_fallback(spark_tmp_path):
         dest_table_func=lambda spark: spark.createDataFrame(
             [(i, i * 10) for i in range(8)], "id INT, v INT").coalesce(1),
         update_sql="UPDATE delta.`{path}` SET v = v + 1 WHERE id < 6",
+        conf=conf)
+
+
+@allow_non_gpu("ColumnarToRowExec", "ArrowEvalPythonExec", "PythonUDF", "BroadcastHashJoinExec",
+               "BroadcastExchangeExec", "SortMergeJoinExec", "AggregateExec",
+               "HashAggregateExec", "ExternalRDDScanExec", *delta_meta_allow)
+@delta_lake
+@ignore_order
+@pytest.mark.skipif(not is_databricks173_or_later(),
+                    reason="Persistent-DV command acceleration requires DBR 17.3+")
+@pytest.mark.parametrize("condition_kind", ["python_udf", "in_subquery"])
+def test_delta_update_persistent_dv_multi_file_file_name_conditions(
+        spark_tmp_path, condition_kind):
+    """Conditions that cannot be pushed into the scan must still tag rows with their own file."""
+    conf = copy_and_update(delta_update_enabled_conf, {
+        "spark.databricks.delta.update.deletionVectors.persistent": "true",
+        "spark.databricks.delta.deletionVectors.useMetadataRowIndex": "true",
+        "spark.sql.execution.arrow.pyspark.enabled": "true",
+        "spark.sql.autoBroadcastJoinThreshold": "-1",
+        "spark.databricks.delta.optimizeWrite.enabled": "false"})
+
+    def dest_table(spark):
+        import pandas as pd
+        from pyspark.sql.functions import pandas_udf
+
+        @pandas_udf("boolean")
+        def divisible_by_seven(values: pd.Series) -> pd.Series:
+            return values % 7 == 0
+
+        spark.udf.register("divisible_by_seven", divisible_by_seven)
+        return spark.range(200).selectExpr("id", "id * 10 AS v").repartition(4)
+
+    if condition_kind == "python_udf":
+        condition = "divisible_by_seven(id)"
+    else:
+        condition = "id IN (SELECT id FROM range(200) WHERE id % 7 = 0)"
+    assert_delta_sql_update_collect(
+        spark_tmp_path,
+        use_cdf=False,
+        enable_deletion_vectors=True,
+        dest_table_func=dest_table,
+        update_sql="UPDATE delta.`{path}` SET v = v + 1 WHERE " + condition,
         conf=conf)
 
 

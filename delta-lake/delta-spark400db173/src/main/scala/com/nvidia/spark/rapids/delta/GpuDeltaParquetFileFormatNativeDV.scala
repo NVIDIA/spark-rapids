@@ -118,7 +118,44 @@ private object DeletionVectorOutputColumns {
   }
 }
 
-private object LowShuffleMergeRowIndexes {
+/** File-relative physical row indexes, kept as (offset, count) ranges until built on the GPU. */
+private object PhysicalRowIndexes {
+  /**
+   * Row-group ranges minus the rows marked in a deletion vector. Only the marked rows are visited,
+   * so a file without a deletion vector costs nothing and memory is bounded by the number of
+   * surviving runs rather than the number of rows.
+   */
+  def survivingRanges(
+      rowGroupOffsets: Array[Long],
+      rowGroupNumRows: Array[Int],
+      deletedRows: RoaringBitmapArray): Array[(Long, Int)] = {
+    require(rowGroupOffsets.length == rowGroupNumRows.length)
+    val ranges = ArrayBuffer.empty[(Long, Int)]
+    def emit(from: Long, until: Long): Unit = {
+      if (until > from) ranges += ((from, Math.toIntExact(until - from)))
+    }
+    var group = 0
+    var next = if (rowGroupOffsets.nonEmpty) rowGroupOffsets(0) else 0L
+    def groupEnd: Long = rowGroupOffsets(group) + rowGroupNumRows(group)
+    def finishGroup(): Unit = {
+      emit(next, groupEnd)
+      group += 1
+      if (group < rowGroupOffsets.length) next = rowGroupOffsets(group)
+    }
+    if (deletedRows.cardinality > 0) {
+      // Marked rows are visited in ascending order, as are the row groups.
+      deletedRows.forEach { deleted: Long =>
+        while (group < rowGroupOffsets.length && deleted >= groupEnd) finishGroup()
+        if (group < rowGroupOffsets.length && deleted >= rowGroupOffsets(group)) {
+          emit(next, deleted)
+          next = deleted + 1
+        }
+      }
+    }
+    while (group < rowGroupOffsets.length) finishGroup()
+    ranges.toArray
+  }
+
   /** Includes the temporary index chunks held while concatenating a batch. */
   def maxBatchRows(
       readSchema: StructType,
@@ -351,86 +388,42 @@ case class GpuDeltaParquetFileFormatNativeDV(
   private def totalNumRows(rowGroupNumRows: Array[Int]): Long =
     rowGroupNumRows.foldLeft(0L)(_ + _)
 
-  private def physicalRowIndexBatch(
+  /**
+   * Builds batches holding only the surviving physical row indexes of the given row groups. Every
+   * other requested column is null. The indexes are expanded on the GPU from row ranges, one
+   * bounded batch at a time.
+   */
+  private def physicalRowIndexBatches(
       schema: StructType,
-      indices: Array[Long]): ColumnarBatch = {
-    val rows = indices.length
-    RmmRapidsRetryIterator.withRetryNoSplit {
-      val columns = schema.fields.safeMap { field =>
-        val column = if (GpuDeltaParquetFileFormatBase.isGpuRowIndexColumn(field)) {
-          GpuColumnVector.from(ColumnVector.fromLongs(indices: _*), LongType)
-        } else {
-          GpuColumnVector.fromNull(rows, field.dataType)
-        }
-        column.asInstanceOf[org.apache.spark.sql.vectorized.ColumnVector]
-      }
-      closeOnExcept(columns) { ownedColumns =>
-        new ColumnarBatch(ownedColumns.toArray, rows)
-      }
-    }
-  }
-
-  // Apply the normal batch limits to the 8-byte physical row-index column, even when a
-  // single Parquet row group is larger than those limits.
-  private def maxPhysicalRowIndexBatchRows(
-      rowLimit: Integer,
-      byteLimit: Long,
-      targetBytes: Long,
-      columnByteLimit: Long): Int = {
-    val indexBytes = java.lang.Long.BYTES
-    math.max(1L, Seq(rowLimit.longValue(), byteLimit / indexBytes,
-      targetBytes / indexBytes, columnByteLimit / indexBytes).min).toInt
-  }
-
-  private def physicalRowIndexArrays(
+      partitionSchema: StructType,
       rowGroupOffsets: Array[Long],
       rowGroupNumRows: Array[Int],
       deletedRows: RoaringBitmapArray,
-      maxRows: Int,
-      expectedRows: Option[Int] = None): Iterator[Array[Long]] = {
-    require(rowGroupOffsets.length == rowGroupNumRows.length)
-    require(maxRows > 0)
-    new Iterator[Array[Long]] {
-      private var group = 0
-      private var rowIndex = if (rowGroupOffsets.nonEmpty) rowGroupOffsets(0) else 0L
-      private var pending = -1L
-      private var emittedRows = 0L
-      private var validated = false
-
-      override def hasNext: Boolean = {
-        while (pending < 0 && group < rowGroupNumRows.length) {
-          if (rowIndex >= rowGroupOffsets(group) + rowGroupNumRows(group)) {
-            group += 1
-            if (group < rowGroupNumRows.length) rowIndex = rowGroupOffsets(group)
-          } else {
-            val candidate = rowIndex
-            rowIndex += 1
-            if (!deletedRows.contains(candidate)) pending = candidate
+      rowLimit: Int,
+      byteLimit: Long,
+      expectedRows: Option[Int] = None): Iterator[ColumnarBatch] = {
+    val ranges = PhysicalRowIndexes.survivingRanges(rowGroupOffsets, rowGroupNumRows, deletedRows)
+    expectedRows.foreach { rows =>
+      val survivors = ranges.iterator.map(_._2.toLong).sum
+      require(survivors == rows, s"Expected $rows surviving rows but found $survivors")
+    }
+    val maxRows = PhysicalRowIndexes.maxBatchRows(schema, partitionSchema, rowLimit, byteLimit)
+    PhysicalRowIndexes.batchRanges(ranges, maxRows).map { batchRanges =>
+      val rows = batchRanges.iterator.map(_._2).sum
+      RmmRapidsRetryIterator.withRetryNoSplit {
+        GpuSemaphore.acquireIfNecessary(TaskContext.get())
+        withResource(PhysicalRowIndexes.buildColumn(batchRanges)) { indexes =>
+          val columns = schema.fields.safeMap { field =>
+            if (GpuDeltaParquetFileFormatBase.isGpuRowIndexColumn(field)) {
+              GpuColumnVector.from(indexes.incRefCount(), LongType).asInstanceOf[SparkVector]
+            } else {
+              GpuColumnVector.fromNull(rows, field.dataType).asInstanceOf[SparkVector]
+            }
+          }
+          closeOnExcept(columns) { _ =>
+            new ColumnarBatch(columns, rows)
           }
         }
-        if (pending < 0 && !validated) {
-          expectedRows.foreach(rows => require(emittedRows == rows,
-            s"Expected $rows surviving rows but found $emittedRows"))
-          validated = true
-        }
-        pending >= 0
-      }
-
-      override def next(): Array[Long] = {
-        if (!hasNext) throw new NoSuchElementException()
-        var indices = new Array[Long](math.min(maxRows, 1024))
-        var size = 0
-        while (size < maxRows && hasNext) {
-          if (size == indices.length) {
-            val capacity = math.min(maxRows.toLong, indices.length.toLong * 2).toInt
-            indices = java.util.Arrays.copyOf(indices, capacity)
-          }
-          indices(size) = pending
-          pending = -1L
-          size += 1
-          emittedRows += 1
-        }
-        if (size == indices.length) indices else java.util.Arrays.copyOf(indices, size)
       }
     }
   }
@@ -655,12 +648,10 @@ case class GpuDeltaParquetFileFormatNativeDV(
         val deletedRows = tablePathOpt.map(path =>
           RapidsDeletionVectors.loadScalaBitmap(conf, split, path, deletionVectorReadInfo))
           .getOrElse(new RoaringBitmapArray())
-        val maxRows = maxPhysicalRowIndexBatchRows(maxReadBatchSizeRows,
-          maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes)
-        physicalRowIndexArrays(offsets, counts, deletedRows, maxRows, Some(rows)).map { indices =>
-          GpuSemaphore.acquireIfNecessary(TaskContext.get())
-          physicalRowIndexBatch(readDataSchema, indices)
-        }
+        physicalRowIndexBatches(readDataSchema, StructType(Nil), offsets, counts, deletedRows,
+          maxReadBatchSizeRows,
+          math.min(maxGpuColumnSizeBytes, math.min(maxReadBatchSizeBytes, targetBatchSizeBytes)),
+          Some(rows))
       }
     }
   }
@@ -1020,13 +1011,11 @@ case class GpuDeltaParquetFileFormatNativeDV(
           meta.partitionedFile.partitionValues)
       }
 
-      val maxRows = maxPhysicalRowIndexBatchRows(maxReadBatchSizeRows,
-        maxReadBatchSizeBytes, targetBatchSizeBytes, maxGpuColumnSizeBytes)
-      val indexBatches = physicalRowIndexArrays(offsets, counts, deletedRows, maxRows)
+      val indexBatches = physicalRowIndexBatches(schema, partitionSchema, offsets, counts,
+        deletedRows, maxReadBatchSizeRows,
+        math.min(maxGpuColumnSizeBytes, math.min(maxReadBatchSizeBytes, targetBatchSizeBytes)))
 
-      indexBatches.flatMap { indices =>
-        GpuSemaphore.acquireIfNecessary(TaskContext.get())
-        val batch = physicalRowIndexBatch(schema, indices)
+      indexBatches.flatMap { batch =>
         BatchWithPartitionDataUtils.addSinglePartitionValueToBatch(batch,
           partitionValues, partitionSchema, maxGpuColumnSizeBytes)
       }
@@ -1100,9 +1089,9 @@ case class GpuDeltaParquetFileFormatNativeDV(
         var consumedPartRows = 0L
         val byteLimit = math.min(maxGpuColumnSizeBytes,
           math.min(maxReadBatchSizeBytes, targetBatchSizeBytes))
-        val batchRowLimit = LowShuffleMergeRowIndexes.maxBatchRows(
+        val batchRowLimit = PhysicalRowIndexes.maxBatchRows(
           schema, partitionSchema, maxReadBatchSizeRows, byteLimit)
-        LowShuffleMergeRowIndexes.batchRanges(rowGroupRanges, batchRowLimit).flatMap { ranges =>
+        PhysicalRowIndexes.batchRanges(rowGroupRanges, batchRowLimit).flatMap { ranges =>
           val numRows = ranges.iterator.map(_._2).sum
           val batchPartitions = ArrayBuffer.empty[(Long, InternalRow)]
           var remainingRows = numRows.toLong
@@ -1121,7 +1110,7 @@ case class GpuDeltaParquetFileFormatNativeDV(
           // CPU iterator progress is outside the retry; every attempt rebuilds only this batch.
           RmmRapidsRetryIterator.withRetryNoSplit {
             GpuSemaphore.acquireIfNecessary(TaskContext.get())
-            withResource(LowShuffleMergeRowIndexes.buildColumn(ranges)) { indexes =>
+            withResource(PhysicalRowIndexes.buildColumn(ranges)) { indexes =>
               val columns = schema.fields.zipWithIndex.safeMap { case (field, index) =>
                 if (outputColumns.rowIndexColumn.contains(index)) {
                   GpuColumnVector.from(indexes.incRefCount(), field.dataType)

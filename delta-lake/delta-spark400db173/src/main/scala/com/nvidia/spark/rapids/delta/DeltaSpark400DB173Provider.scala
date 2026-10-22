@@ -201,8 +201,6 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
     def pruneMetadataProject(
         project: GpuProjectExec,
         scan: GpuFileSourceScanExec): SparkPlan = {
-      def isMarkedGpuRowIndex(field: StructField): Boolean =
-        GpuDeltaParquetFileFormatBase.isGpuRowIndexColumn(field)
       // A table may have a real column with the same name as DBR's temporary row index.
       val hasUserRowIndexColumn = scan.relation.fileFormat match {
         case format: GpuDeltaParquetFileFormatBase =>
@@ -214,7 +212,7 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
       def isUnusedRowIndex(field: StructField): Boolean =
         !hasUserRowIndexColumn &&
           field.name == DeltaParquetFileFormat.ROW_INDEX_STRUCT_FIELD.name &&
-          !isMarkedGpuRowIndex(field)
+          !GpuDeltaParquetFileFormatBase.isGpuRowIndexColumn(field)
 
       project.copy(projectList = project.projectList.filterNot(_.name == "_metadata"))
         .withNewChildren(Seq(

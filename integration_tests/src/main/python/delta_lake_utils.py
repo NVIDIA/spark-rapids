@@ -183,8 +183,8 @@ def deletion_vector_values_with_xfail_reasons(enabled_xfail_reason=None, disable
 
 def dml_deletion_vector_values_with_xfail_reasons(
         enabled_xfail_reason=None, disabled_xfail_reason=None):
-    # DELETE, UPDATE, and MERGE support DVs on OSS Delta 3.3+. Keep Databricks xfails
-    # without suppressing OSS coverage.
+    # DELETE, UPDATE, and MERGE support DVs on OSS Delta 3.3+ and DBR 17.3+. Keep the DV-enabled
+    # xfail only for Databricks runtimes before 17.3, without suppressing OSS or DBR 17.3 coverage.
     if is_databricks_runtime() and disabled_xfail_reason is not None:
         enable_deletion_vector = [
             pytest.param(False, marks=pytest.mark.xfail(reason=disabled_xfail_reason))]
@@ -193,7 +193,8 @@ def dml_deletion_vector_values_with_xfail_reasons(
 
     if supports_delta_lake_deletion_vectors() and (
             is_databricks_runtime() or is_spark_353_or_later()):
-        if is_databricks_runtime() and enabled_xfail_reason is not None:
+        if is_databricks_runtime() and not is_databricks173_or_later() \
+                and enabled_xfail_reason is not None:
             enable_deletion_vector.append(
                 pytest.param(True, marks=pytest.mark.xfail(reason=enabled_xfail_reason)))
         else:
