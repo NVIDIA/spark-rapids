@@ -20,7 +20,7 @@ on:
     types: [opened, synchronize, reopened]
   # Saves the result cache on the default branch, where every PR can restore it.
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '17 5 * * *'
 
 permissions:
   contents: read
