@@ -705,8 +705,14 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
           })
       }))
 
-  private def runFailedSpill(spill: FailedSpill, closeDuringSpill: Boolean): Unit = {
+  /**
+   * Fails `spill` and closes its handle at `closeAt`: "copy" while the spill is paused,
+   * "failure" after the spill has failed but before the post-spill synchronize (device spills
+   * only), or "never".
+   */
+  private def runFailedSpill(spill: FailedSpill, closeAt: String): Unit = {
     val handle = spill.handle
+    val closed = closeAt != "never"
     val executor = Executors.newSingleThreadExecutor()
     try {
       val spilled = executor.submit(new Callable[Long] {
@@ -716,13 +722,15 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
         }
       })
       await(spill.started)
-      if (closeDuringSpill) handle.close()
+      if (closeAt == "copy") handle.close()
       spill.resume.countDown()
       spill.deviceStore.foreach { store =>
         await(store.beforeRelease)
         store.resumeRelease.countDown()
         await(store.beforeSync)
-        // A failed device spill must not release the device data before the synchronize
+        if (closeAt == "failure") handle.close()
+        // A failed device spill keeps ownership and its device data until the synchronize
+        assert(handle.spilling)
         assert(!spill.released())
         store.resumeSync.countDown()
       }
@@ -731,7 +739,7 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
       }
       assert(failure.getCause.getMessage.startsWith("injected"))
       assert(!handle.spilling)
-      if (closeDuringSpill) {
+      if (closed) {
         assert(spill.released())
         assert(!handle.spillable)
       } else {
@@ -761,11 +769,48 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
 
   for ((name, failedSpill) <- failedSpillCases) {
     test(s"$name completes a close deferred by a failed spill") {
-      runFailedSpill(failedSpill(), closeDuringSpill = true)
+      runFailedSpill(failedSpill(), closeAt = "copy")
     }
 
     test(s"$name keeps its data after a failed spill") {
-      runFailedSpill(failedSpill(), closeDuringSpill = false)
+      runFailedSpill(failedSpill(), closeAt = "never")
+    }
+  }
+
+  for ((name, failedSpill) <- failedSpillCases.take(1 + siblingHandles.size)) {
+    test(s"$name defers a close after a failed spill until post-spill") {
+      runFailedSpill(failedSpill(), closeAt = "failure")
+    }
+  }
+
+  for (closed <- Seq(false, true)) {
+    test(s"direct failed device spill completes in releaseSpilled, closed: $closed") {
+      val hostStore = new PausingFailingHostStore(1L << 20)
+      SpillFramework.stores.hostStore = hostStore
+      val handle = createHandle()
+      try {
+        hostStore.resumeCopy.countDown()
+        intercept[IllegalStateException] {
+          handle.spill()
+        }
+        if (closed) handle.close()
+        assert(handle.spilling)
+        assert(handle.dev.isDefined)
+        Cuda.deviceSynchronize()
+        handle.releaseSpilled()
+        assert(!handle.spilling)
+        if (closed) {
+          assert(handle.dev.isEmpty)
+        } else {
+          assert(handle.spillable)
+          withResource(handle.materialize())(assertContents)
+          handle.close()
+        }
+        assertResult(0)(SpillFramework.stores.deviceStore.numHandles)
+        assertResult(0)(SpillFramework.stores.hostStore.numHandles)
+      } finally {
+        handle.close()
+      }
     }
   }
 

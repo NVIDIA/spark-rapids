@@ -197,9 +197,11 @@ trait SpillableHandle extends StoreHandle with Logging {
    *
    * If the spill fails (e.g. the disk is full or a device error occurs), the exception
    * propagates to the caller. The handle keeps its data and can be spilled again, unless it
-   * was closed during the spill, in which case the failed spill completes the close. A device
-   * handle instead leaves `spilling` set and hands the close to `releaseSpilled`, so that it
-   * runs after the post-spill synchronize.
+   * was closed during the spill, in which case the failed spill completes the close. A failed
+   * device spill instead leaves `spilling` set, as a successful one does, and `releaseSpilled`
+   * resets it and completes any close after the post-spill synchronize. A caller that spills
+   * a device handle directly must therefore synchronize the device and call `releaseSpilled`
+   * after `spill` returns a positive size or throws.
    *
    * @note The size returned from this method is only used by the spill framework
    *       to track the approximate size. It should just return `approxSizeInBytes`, as
@@ -233,32 +235,24 @@ trait SpillableHandle extends StoreHandle with Logging {
   private[spill] def doClose(): Unit
 
   /**
-   * Whether a close deferred to a failed spill must wait for `releaseSpilled`, which
-   * runs after the post-spill synchronize, instead of completing in the spilling thread.
+   * Whether a failed spill keeps `spilling` set until `releaseSpilled`, which runs after the
+   * post-spill synchronize, instead of resetting it in the spilling thread.
    */
-  protected def closeFailedSpillAfterSync: Boolean = false
-
-  // Set when a failed spill leaves `spilling` set for `releaseSpilled` to complete the close.
-  private var failedSpillClosePending = false
+  protected def failedSpillAwaitsSync: Boolean = false
 
   /**
-   * Claims a close that a failed spill left for `releaseSpilled`. Returns true at most once
-   * per such spill, so that exactly one caller passes the handle to `releaseSpilled`.
+   * Set while a failed spill keeps `spilling` set for `releaseSpilled`. Only the thread that
+   * owns the spill sets it, and no other spill can start until `releaseSpilled` clears it.
    */
-  private[spill] def claimFailedSpillClose(): Boolean = synchronized {
-    val pending = failedSpillClosePending
-    failedSpillClosePending = false
-    pending
-  }
+  private[spill] var spillFailed: Boolean = false
 
   /**
    * Executes a spill operation while handling exceptions.
    * If an exception occurs during spilling (e.g. InterruptedException), this method
    * catches it, logs a warning, resets the spilling state to false, completes any close
    * deferred to a spill that had not yet released `spilling`, and rethrows the exception.
-   * If `closeFailedSpillAfterSync` is set, a deferred close instead keeps `spilling` set
-   * and is left for the caller to claim with `claimFailedSpillClose` and pass to
-   * `releaseSpilled`.
+   * If `failedSpillAwaitsSync` is set, it instead keeps `spilling` set and sets
+   * `spillFailed`, leaving the reset and any close to `releaseSpilled`.
    *
    * Subclasses override this method to wrap the spill operation with appropriate metrics tracking:
    * - DeviceSpillableHandle tracks spillToHostTime and memory bytes spilled
@@ -278,8 +272,8 @@ trait SpillableHandle extends StoreHandle with Logging {
           val closeNow = synchronized {
             // A block that already reset spilling has also handled any deferred close.
             val ownsSpill = spilling
-            if (ownsSpill && closed && closeFailedSpillAfterSync) {
-              failedSpillClosePending = true
+            if (ownsSpill && failedSpillAwaitsSync) {
+              spillFailed = true
               false
             } else {
               spilling = false
@@ -355,15 +349,19 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends DeviceStoreHandle {
    *
    * Subclasses' `spill` must leave `spilling` set on success; this method clears it and
    * completes any `close` deferred during the spill, only after the post-spill synchronize.
-   * A failed spill of a closed handle also leaves `spilling` set for this method.
+   * A failed spill also leaves `spilling` set; this method then keeps the device data.
    */
   override def releaseSpilled(): Unit = {
     synchronized {
       var failure: Throwable = null
-      try {
-        releaseDeviceResource()
-      } catch {
-        case t: Throwable => failure = t
+      if (spillFailed) {
+        spillFailed = false
+      } else {
+        try {
+          releaseDeviceResource()
+        } catch {
+          case t: Throwable => failure = t
+        }
       }
       spilling = false
       if (closed) {
@@ -377,7 +375,7 @@ trait DeviceSpillableHandle[T <: AutoCloseable] extends DeviceStoreHandle {
     }
   }
 
-  override protected def closeFailedSpillAfterSync: Boolean = true
+  override protected def failedSpillAwaitsSync: Boolean = true
 
   // Wrap spill execution with memory spill metrics tracking
   override protected def executeSpill(block: => Long): Long = {
@@ -1794,8 +1792,8 @@ trait SpillableStore[T <: SpillableHandle]
         val handle = it.next()
         val spilled = try handle.spill() catch {
           case t: Throwable =>
-            // postSpill releases a closed handle whose failed spill left it to releaseSpilled
-            if (handle.claimFailedSpillClose()) {
+            // postSpill calls releaseSpilled for a failed spill that awaits the synchronize
+            if (handle.synchronized(handle.spillFailed)) {
               spilledHandles.add(handle)
             }
             throw t
