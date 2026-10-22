@@ -954,7 +954,7 @@ class GpuDeltaParquetFileFormatBase2(
       val combinedDVMeta = DeletionVectorMetadata.combine(toCombine.flatMap(_.dvMetadata))
 
       DeltaParquetHostMemoryEmptyMetaData(
-        metaForEmpty.partitionedFile, // retain the combined group's representative
+        metaForEmpty.partitionedFile, // just pick one since not used
         emptyMeta.emptyBufferSize,
         emptyMeta.emptyTotalBytesRead,
         metaForEmpty.dateRebaseMode, // these shouldn't matter since data is empty

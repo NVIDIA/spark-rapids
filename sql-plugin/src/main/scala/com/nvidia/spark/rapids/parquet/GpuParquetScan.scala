@@ -3190,13 +3190,11 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
   ): HostMemoryEmptyMetaData
 
   /**
-   * Constructs the metadata for a combined group of metadata-only results.
+   * Constructs metadata for a combined group of metadata-only results.
    *
-   * Implementations must retain emptyMeta.metaForEmpty.partitionedFile as the result's
-   * partitionedFile. When the group has positive rows, this is the reference file used by
-   * checkIfNeedToSplitEmpty to check compatibility. File-specific post-processing, such as
-   * Iceberg's output constants, uses the retained file identity for every combined row;
-   * selecting another file could apply constants that were not checked for compatibility.
+   * The result's partitionedFile identifies a representative input file.
+   * Any file-specific processing selected through that representative must
+   * be valid for every row it processes.
    */
   protected def newCombinedHMEmptyMetadata(emptyMeta: CombinedEmptyMeta,
       nonEmptyMeta: CombinedMeta): HostMemoryEmptyMetaData
