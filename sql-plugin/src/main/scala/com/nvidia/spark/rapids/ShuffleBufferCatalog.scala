@@ -276,8 +276,11 @@ class ShuffleBufferCatalog(val mapIdsCanRepeat: Boolean = false) extends Logging
   }
 
   /**
-   * The handle and metadata of a buffer that its block's lookup returned, or
-   * `ShuffleOutputGoneException` if a removal has dropped the buffer since.
+   * Looks up a buffer's handle and metadata.
+   *
+   * @param bId a buffer id that `blockIdToBuffersIds` returned for the buffer's block
+   * @return the handle, `None` for a degenerate table, and the metadata
+   * @note throws `ShuffleOutputGoneException` if a removal dropped the buffer after that lookup
    */
   private def liveEntry(
       bId: ShuffleBufferId): (Option[SpillableDeviceBufferHandle], TableMeta) = {
@@ -295,7 +298,7 @@ class ShuffleBufferCatalog(val mapIdsCanRepeat: Boolean = false) extends Logging
     val bufferIDs = blockIdToBuffersIds(blockId)
     bufferIDs.iterator.map { bId =>
       GpuSemaphore.acquireIfNecessary(TaskContext.get)
-      // _1 and _2, since a tuple pattern would copy the entry into a new tuple per batch
+      // Uses _1 and _2 because val (handle, meta) = ... would allocate a new Tuple2 per batch
       val entry = liveEntry(bId)
       val meta = entry._2
       entry._1.map { handle =>
