@@ -852,16 +852,7 @@ class SpillableHostBufferHandle private (
     }
     if (hostBuf != null) {
       withResource(hostBuf) { hb =>
-        val outputChannel = Channels.newChannel(out)
-        new HostByteBufferIterator(hb).foreach { bb =>
-          try {
-            while (bb.hasRemaining) {
-              outputChannel.write(bb)
-            }
-          } finally {
-            RapidsStorageUtils.dispose(bb)
-          }
-        }
+        SpillFramework.writeBuffers(new HostByteBufferIterator(hb), Channels.newChannel(out))
       }
     } else {
       diskHandle.withInputWrappedStream { in =>
@@ -1319,7 +1310,8 @@ class SpillableColumnarBatchFromBufferHandle private (
    * way spilling copies it, and spilled data is streamed from host memory or disk.
    *
    * Callers may hold locks that GPU tasks need, such as Spark's memory manager lock during
-   * `MemoryStore` eviction, so this must not wait for GPU resources.
+   * `MemoryStore` eviction, so this must not wait for GPU resources. Device-resident data
+   * cannot spill until the write to `out` finishes.
    *
    * @return the metadata needed to unpack the bytes written
    */
@@ -1344,21 +1336,12 @@ class SpillableColumnarBatchFromBufferHandle private (
     if (devBatch != null) {
       withResource(devBatch) { cb =>
         val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
-        val outputChannel = Channels.newChannel(out)
         SpillFramework.withHostSpillBounceBuffer { bounceBuffer =>
           val iter = new MemoryBufferToHostByteBufferIterator(
             cvFromBuffer.getBuffer,
             bounceBuffer,
             Cuda.DEFAULT_STREAM)
-          iter.foreach { bb =>
-            try {
-              while (bb.hasRemaining) {
-                outputChannel.write(bb)
-              }
-            } finally {
-              RapidsStorageUtils.dispose(bb)
-            }
-          }
+          SpillFramework.writeBuffers(iter, Channels.newChannel(out))
         }
         cvFromBuffer.getTableMeta
       }
@@ -2661,6 +2644,19 @@ object SpillFramework extends Logging {
   def withHostSpillBounceBuffer[T](body: HostMemoryBuffer => T): T = {
     withResource(hostSpillBounceBufferPool.nextBuffer()) { hmb =>
       body(hmb.buf)
+    }
+  }
+
+  /** Write each buffer from `buffers` fully to `out`, then dispose of it. */
+  def writeBuffers(buffers: Iterator[ByteBuffer], out: WritableByteChannel): Unit = {
+    buffers.foreach { bb =>
+      try {
+        while (bb.hasRemaining) {
+          out.write(bb)
+        }
+      } finally {
+        RapidsStorageUtils.dispose(bb)
+      }
     }
   }
 

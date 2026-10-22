@@ -37,7 +37,9 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.withRetryNoSplit
 import com.nvidia.spark.rapids.lore.{GpuLoreDumpRDD, SimpleRDD}
 import com.nvidia.spark.rapids.lore.GpuLore.LORE_DUMP_RDD_TAG
 import com.nvidia.spark.rapids.shims.{BroadcastExchangeShims, ShimBroadcastExchangeLike, ShimUnaryExecNode, SparkShimImpl}
+import com.nvidia.spark.rapids.spill.SpillFramework
 import org.apache.commons.io.IOUtils
+import org.apache.commons.io.output.CountingOutputStream
 
 import org.apache.spark.SparkException
 import org.apache.spark.broadcast.Broadcast
@@ -89,8 +91,9 @@ class SerializeConcatHostBuffersDeserializeBatch(
   // packed table bytes and metadata read back after an executor evicted a materialized batch
   @transient private var packedData: HostMemoryBuffer = null
   @transient private var packedMeta: Array[Byte] = null
-  // Serializes GPU materialization. `batch` must not hold this object's monitor while it waits
-  // for the GPU, because `doWriteObject` needs the monitor while Spark holds its memory lock.
+  // Serializes GPU work on this broadcast and guards `data` and `packedData` against release.
+  // GPU work must not hold this object's monitor, because `doWriteObject` needs the monitor while
+  // Spark holds its memory lock. Lock order: `materializeLock`, then this object's monitor.
   @transient private lazy val materializeLock = new Object
 
   private def maybeGpuBatch: Option[SpillableColumnarBatch] = Option(batchInternal)
@@ -102,11 +105,9 @@ class SerializeConcatHostBuffersDeserializeBatch(
     hashBuildCacheInternal
   }
 
-  def batch: SpillableColumnarBatch = materializeLock.synchronized {
-    // Only this method and `closeInternal` release `data` and `packedData`, so they remain
-    // valid while we hold `materializeLock`.
-    this.synchronized(maybeGpuBatch).getOrElse {
-      NvtxRegistry.BROADCAST_MANIFEST_BATCH {
+  def batch: SpillableColumnarBatch = this.synchronized(maybeGpuBatch).getOrElse {
+    materializeLock.synchronized {
+      this.synchronized(maybeGpuBatch).getOrElse(NvtxRegistry.BROADCAST_MANIFEST_BATCH {
         val spillable = buildGpuBatch()
         // At this point we no longer need the host data and should not need to touch it again.
         // Note that we don't close this using `withResources` around the creation of the
@@ -121,7 +122,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
           batchInternal = spillable
         }
         spillable
-      }
+      })
     }
   }
 
@@ -171,21 +172,22 @@ class SerializeConcatHostBuffersDeserializeBatch(
    *
    * NOTE: The caller is responsible to release these host columnar batches.
    */
-  def hostBatch: ColumnarBatch = this.synchronized {
+  def hostBatch: ColumnarBatch = materializeLock.synchronized {
     def copyToHost(batch: ColumnarBatch): ColumnarBatch = {
       val hostColumns: Array[ColumnVector] = GpuColumnVector
         .extractColumns(batch)
         .safeMap(_.copyToHost())
       new ColumnarBatch(hostColumns, numRows)
     }
-    maybeGpuBatch.map { spillable =>
+    // Device reads hold only `materializeLock`, which keeps `packedData` valid
+    this.synchronized(maybeGpuBatch).map { spillable =>
       withRetryNoSplit[ColumnarBatch](withResource(spillable.getColumnarBatch())(copyToHost))
     }.orElse {
       // Only an executor that evicted a materialized batch writes packed data
-      Option(packedData).map { _ =>
+      this.synchronized(Option(packedData)).map { _ =>
         withRetryNoSplit[ColumnarBatch](withResource(packedDeviceBatch)(copyToHost))
       }
-    }.getOrElse {
+    }.getOrElse(this.synchronized {
       NvtxRegistry.BROADCAST_MANIFEST_BATCH {
         if (data == null) {
           new ColumnarBatch(Array.empty, numRows)
@@ -198,7 +200,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
           new ColumnarBatch(hostColumns.toArray, rowCount)
         }
       }
-    }
+    })
   }
 
   /**
@@ -291,20 +293,16 @@ class SerializeConcatHostBuffersDeserializeBatch(
         case scb if scb.numRows() == 0 =>
           writeEmpty(out, 0, dataTypes)
         case scb: SpillableColumnarBatchFromBufferImpl =>
-          writePacked(out, scb.sizeInBytes) {
-            scb.writePackedTo(out).packedMetaAsByteBuffer()
+          writePacked(out, scb.sizeInBytes) { dataOut =>
+            scb.writePackedTo(dataOut).packedMetaAsByteBuffer()
           }
         case scb =>
           throw new IllegalStateException(s"Unexpected materialized broadcast batch $scb")
       }.getOrElse {
         if (hostPackedMeta != null) {
-          writePacked(out, hostBuffer.getLength) {
-            val outputChannel = Channels.newChannel(out)
-            new HostByteBufferIterator(hostBuffer).foreach { bb =>
-              while (bb.hasRemaining) {
-                outputChannel.write(bb)
-              }
-            }
+          writePacked(out, hostBuffer.getLength) { dataOut =>
+            SpillFramework.writeBuffers(
+              new HostByteBufferIterator(hostBuffer), Channels.newChannel(dataOut))
             ByteBuffer.wrap(hostPackedMeta)
           }
         } else if (header == null || header.getNumColumns == 0) {
@@ -335,13 +333,19 @@ class SerializeConcatHostBuffersDeserializeBatch(
 
   /**
    * Write packed table bytes followed by the cudf metadata needed to unpack them.
-   * @param writeData writes exactly `len` bytes to `out` and returns the packed metadata
+   * @param writeData writes `len` bytes to its stream and returns the packed metadata
    */
-  private def writePacked(out: ObjectOutputStream, len: Long)(writeData: => ByteBuffer): Unit = {
+  private def writePacked(out: ObjectOutputStream, len: Long)
+      (writeData: OutputStream => ByteBuffer): Unit = {
     out.writeByte(SerializeConcatHostBuffersDeserializeBatch.PACKED_FORMAT)
     out.writeInt(numRows)
     out.writeLong(len)
-    val meta = writeData
+    val dataOut = new CountingOutputStream(out)
+    val meta = writeData(dataOut)
+    if (dataOut.getByteCount != len) {
+      throw new IllegalStateException(
+        s"Expected to write $len packed bytes, but wrote ${dataOut.getByteCount} bytes")
+    }
     val metaBytes = new Array[Byte](meta.remaining())
     meta.get(metaBytes)
     out.writeInt(metaBytes.length)
@@ -417,13 +421,15 @@ class SerializeConcatHostBuffersDeserializeBatch(
    *
    * Public for tests.
    */
-  def closeInternal(): Unit = this.synchronized {
-    Seq(hashBuildCacheInternal, data, packedData, batchInternal).safeClose()
-    data = null
-    packedData = null
-    packedMeta = null
-    batchInternal = null
-    hashBuildCacheInternal = null
+  def closeInternal(): Unit = materializeLock.synchronized {
+    this.synchronized {
+      Seq(hashBuildCacheInternal, data, packedData, batchInternal).safeClose()
+      data = null
+      packedData = null
+      packedMeta = null
+      batchInternal = null
+      hashBuildCacheInternal = null
+    }
   }
 
   @scala.annotation.nowarn("msg=method finalize in class Object is deprecated")
