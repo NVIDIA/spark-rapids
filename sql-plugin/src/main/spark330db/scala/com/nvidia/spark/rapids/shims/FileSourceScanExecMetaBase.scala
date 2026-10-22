@@ -155,6 +155,6 @@ abstract class FileSourceScanExecMetaBase(plan: FileSourceScanExec,
       dataFilters,
       wrapped.tableIdentifier,
       wrapped.disableBucketedScan,
-      queryUsesInputFile = false)(conf)
+      queryUsesInputFile = false)(conf, StaticPartitionShims.getPartitionPlanningScan(wrapped))
   }
 }

@@ -27,7 +27,6 @@ env:
   COMMON_MVN_FLAGS: >-
     -Ddist.jar.compress=false
     -DskipTests
-    -Dmaven.scaladoc.skip
     -Dmaven.artifact.threads=10
     --batch-mode
     -Dmaven.wagon.http.retryHandler.count=3

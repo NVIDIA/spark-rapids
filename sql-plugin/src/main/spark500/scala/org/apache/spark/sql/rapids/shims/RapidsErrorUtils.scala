@@ -15,21 +15,23 @@
  */
 
 /*** spark-rapids-shim-json-lines
-{"spark": "411"}
-{"spark": "412"}
-{"spark": "413"}
-{"spark": "420"}
 {"spark": "500"}
 spark-rapids-shim-json-lines ***/
 
-package com.nvidia.spark.rapids.shims
+package org.apache.spark.sql.rapids.shims
 
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.catalyst.trees.SQLQueryContext
+import org.apache.spark.sql.errors.DataTypeErrors
+import org.apache.spark.sql.types.{Decimal, DecimalType}
 
-object ParquetMissingStructShims {
-  private val RETURN_NULL_STRUCT_IF_ALL_FIELDS_MISSING =
-    "spark.sql.legacy.parquet.returnNullStructIfAllFieldsMissing"
+object RapidsErrorUtils extends RapidsErrorUtils340PlusBase
+  with SequenceSizeExceededLimitErrorBuilder with ArrayInvalidArgumentErrorUtils {
 
-  def returnNullStructIfAllFieldsMissing(sqlConf: SQLConf): Boolean =
-    sqlConf.getConfString(RETURN_NULL_STRUCT_IF_ALL_FIELDS_MISSING, "false").toBoolean
+  override def cannotChangeDecimalPrecisionError(
+      value: Decimal,
+      toType: DecimalType,
+      context: SQLQueryContext = null): ArithmeticException = {
+    DataTypeErrors.cannotChangeDecimalPrecisionError(
+      value, toType.precision, toType.scale, context)
+  }
 }
