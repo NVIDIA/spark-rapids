@@ -18,17 +18,19 @@ package org.apache.spark.sql.rapids.execution
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream,
   ObjectOutputStream}
-import java.util.concurrent.{Callable, CountDownLatch, Executors, Future, TimeoutException,
-  TimeUnit}
+import java.util.concurrent.{Callable, CountDownLatch, Executors, ExecutorService, Future,
+  TimeoutException, TimeUnit}
 import java.util.concurrent.atomic.AtomicReference
 
 import ai.rapids.cudf.{Rmm, RmmAllocationMode, Table}
 import com.nvidia.spark.rapids.{GpuColumnVector, GpuDeviceManager, GpuSemaphore, NoopMetric,
-  SpillableColumnarBatch, SpillableColumnarBatchFromBufferImpl, TestUtils}
+  PrioritySemaphore, SpillableColumnarBatch, SpillableColumnarBatchFromBufferImpl, TestUtils}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
 import com.nvidia.spark.rapids.spill.{SpillFramework, SpillUnitTestBase}
 import org.apache.commons.lang3.SerializationUtils
+import org.scalatest.concurrent.Eventually
+import org.scalatest.time.{Seconds, Span}
 
 import org.apache.spark.SparkEnv
 import org.apache.spark.sql.SparkSession
@@ -43,16 +45,17 @@ import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
  * lock, which GPU tasks may also need. Writing a materialized GPU broadcast must therefore not
  * wait for the GPU semaphore (https://github.com/NVIDIA/cudf-spark/issues/16460).
  */
-class BroadcastEvictionSuite extends SpillUnitTestBase {
+class BroadcastEvictionSuite extends SpillUnitTestBase with Eventually {
   private var rmmWasInitialized = false
 
   override def beforeEach(): Unit = {
-    super.beforeEach()
-    // Tracks device allocations so tests can check that eviction makes none
+    // Tracks device allocations so tests can check that eviction makes none. Initialized before
+    // the spill framework so that RMM also tracks its bounce buffers.
     if (!Rmm.isInitialized) {
       rmmWasInitialized = true
       Rmm.initialize(RmmAllocationMode.CUDA_DEFAULT, null, 512 * 1024 * 1024)
     }
+    super.beforeEach()
     // The semaphore initializes the GPU for a task from the SparkEnv.
     SparkSession.builder.master("local[1]").appName(getClass.getSimpleName).getOrCreate()
     GpuDeviceManager.setRmmTaskInitEnabled(false)
@@ -61,13 +64,16 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
   }
 
   override def afterEach(): Unit = {
-    GpuSemaphore.shutdown()
-    SparkSession.getActiveSession.foreach(_.stop())
-    SparkSession.clearActiveSession()
-    super.afterEach()
-    if (rmmWasInitialized) {
-      rmmWasInitialized = false
-      Rmm.shutdown()
+    try {
+      GpuSemaphore.shutdown()
+      SparkSession.getActiveSession.foreach(_.stop())
+      SparkSession.clearActiveSession()
+      super.afterEach()
+    } finally {
+      if (rmmWasInitialized) {
+        rmmWasInitialized = false
+        Rmm.shutdown()
+      }
     }
   }
 
@@ -123,6 +129,12 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
     }
   }
 
+  /** Interrupt the tasks still running in `pool` and check that they stop. */
+  private def stop(pool: ExecutorService): Unit = {
+    pool.shutdownNow()
+    assert(pool.awaitTermination(30, TimeUnit.SECONDS), "a task did not stop")
+  }
+
   private def awaitOrFail[T](future: Future[T], failure: String): T = {
     try {
       future.get(30, TimeUnit.SECONDS)
@@ -167,9 +179,7 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
       awaitOrFail(evictor, failure)
     } finally {
       // Interrupt a stuck eviction so that it releases the memory manager lock
-      pool.shutdownNow()
-      pool.awaitTermination(30, TimeUnit.SECONDS)
-      evictorContext.markTaskComplete()
+      try stop(pool) finally evictorContext.markTaskComplete()
     }
   }
 
@@ -204,6 +214,12 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
             withBroadcast(read(bytes))(assertSameData(expected, _))
             withBroadcast(read(bytesAgain))(assertSameData(expected, _))
             assertSameData(expected, broadcast)
+            // Evict a copy that a task materialized from the packed bytes
+            withBroadcast(read(bytes)) { reloaded =>
+              reloaded.batch
+              val bytesRebuilt = whileGpuIsBusy(evict(gpuDeadlock)(write(reloaded)))
+              withBroadcast(read(bytesRebuilt))(assertSameData(expected, _))
+            }
           }
         }
       }
@@ -223,16 +239,15 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
     }
   }
 
-  /** Wait until `thread` is blocked in the GPU semaphore. */
+  /**
+   * Wait until `thread` is blocked in the GPU semaphore. A blocked task cannot signal this, so
+   * poll its state.
+   */
   private def awaitWaitingForGpu(thread: AtomicReference[Thread]): Unit = {
-    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
-    def waiting: Boolean = Option(thread.get).exists { t =>
-      (t.getState == Thread.State.WAITING || t.getState == Thread.State.TIMED_WAITING) &&
-        t.getStackTrace.exists(_.getClassName.contains("Semaphore"))
-    }
-    while (!waiting) {
-      assert(System.nanoTime() < deadline, "the task never waited for the GPU")
-      Thread.sleep(10)
+    eventually(timeout(Span(30, Seconds))) {
+      val t = thread.get()
+      assert(t != null && t.getState == Thread.State.WAITING)
+      assert(t.getStackTrace.exists(_.getClassName == classOf[PrioritySemaphore[_]].getName))
     }
   }
 
@@ -268,8 +283,7 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
           withBroadcast(read(bytes))(assertSameData(expected, _))
         } finally {
           readerContext.markTaskComplete()
-          pool.shutdownNow()
-          pool.awaitTermination(30, TimeUnit.SECONDS)
+          stop(pool)
         }
       }
     }
@@ -311,8 +325,7 @@ class BroadcastEvictionSuite extends SpillUnitTestBase {
             assertSameData(expected, broadcast)
           } finally {
             mayBuild.countDown()
-            pool.shutdownNow()
-            pool.awaitTermination(30, TimeUnit.SECONDS)
+            stop(pool)
           }
         }
       }

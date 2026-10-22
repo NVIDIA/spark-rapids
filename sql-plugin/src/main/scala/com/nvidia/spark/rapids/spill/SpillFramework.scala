@@ -1337,8 +1337,6 @@ class SpillableColumnarBatchFromBufferHandle private (
     if (devBatch != null) {
       withResource(devBatch) { cb =>
         val cvFromBuffer = cb.column(0).asInstanceOf[GpuColumnVectorFromBuffer]
-        // The caller may not have acquired the semaphore, which sets the task thread's device
-        GpuDeviceManager.getDeviceId().foreach(Cuda.setDevice)
         SpillFramework.withHostSpillBounceBuffer { bounceBuffer =>
           val iter = new MemoryBufferToHostByteBufferIterator(
             cvFromBuffer.getBuffer,

@@ -185,7 +185,8 @@ class SerializeConcatHostBuffersDeserializeBatch(
     this.synchronized(maybeGpuBatch).map { spillable =>
       withRetryNoSplit[ColumnarBatch](withResource(spillable.getColumnarBatch())(copyToHost))
     }.orElse {
-      // Only an executor that evicted a materialized batch writes packed data
+      // Only a JVM that materialized the batch on its GPU writes packed data, so this device
+      // read is no different from the read of `batchInternal` above
       this.synchronized(Option(packedData)).map { _ =>
         withRetryNoSplit[ColumnarBatch](withResource(packedDeviceBatch)(copyToHost))
       }
@@ -272,13 +273,14 @@ class SerializeConcatHostBuffersDeserializeBatch(
    * @param out the stream to write to
    */
   def doWriteObject(out: ObjectOutputStream): Unit = {
-    // Take a short snapshot, then write without holding this object's monitor
+    // Take a short snapshot, then write without holding this object's monitor. The references
+    // taken keep `closeInternal` from freeing the data while it is written.
     var gpuBatch: SpillableColumnarBatch = null
     var header: JCudfSerialization.SerializedTableHeader = null
     var hostBuffer: HostMemoryBuffer = null
     var hostPackedMeta: Array[Byte] = null
     this.synchronized {
-      gpuBatch = batchInternal
+      gpuBatch = maybeGpuBatch.map(_.incRefCount()).orNull
       if (gpuBatch == null) {
         if (packedData != null) {
           hostBuffer = packedData
@@ -290,7 +292,7 @@ class SerializeConcatHostBuffersDeserializeBatch(
         Option(hostBuffer).foreach(_.incRefCount())
       }
     }
-    withResource(Option(hostBuffer)) { _ =>
+    withResource(Seq[AutoCloseable](gpuBatch, hostBuffer).filter(_ != null)) { _ =>
       Option(gpuBatch).map {
         case justRows: JustRowsColumnarBatch =>
           writeEmpty(out, justRows.numRows(), Array.empty)
