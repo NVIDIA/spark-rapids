@@ -39,6 +39,7 @@ import com.databricks.sql.transaction.tahoe.rapids.{
   GpuWriteIntoDeltaCommandMeta
 }
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaReadSupport.isDeletionVectorSkipRowColumn
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 import com.nvidia.spark.rapids.shims.ShimPredicateHelper
 
@@ -305,10 +306,6 @@ object DeltaSpark410DB183Provider extends DatabricksDeltaProviderBase {
 
   def isDmlMetricDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean =
     DeltaReadSupport.isDmlMetricDVScan(meta)
-
-  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
-    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
-      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
 
   override protected def toGpuWrite(
      writeConfig: DeltaWriteV1Config,
@@ -602,7 +599,4 @@ private object DB183DVPredicatePushdown extends ShimPredicateHelper {
     }
   }
 
-  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
-    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
-      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
 }

@@ -30,6 +30,16 @@ import org.apache.spark.sql.execution.{FileSourceScanExec, FilterExec, ProjectEx
 
 /** Reader eligibility checks shared by file-format tagging and provider selection. */
 object DeltaReadSupport {
+  private val LOW_SHUFFLE_MERGE_OPTION_PREFIX =
+    "spark.rapids.internal.delta.lowShuffleMerge."
+
+  val LOW_SHUFFLE_MERGE_REWRITE_SCAN_OPTION =
+    LOW_SHUFFLE_MERGE_OPTION_PREFIX + "rewriteScan"
+  val LOW_SHUFFLE_MERGE_DISCOVERY_SCAN_OPTION =
+    LOW_SHUFFLE_MERGE_OPTION_PREFIX + "discoveryScan"
+  val LOW_SHUFFLE_MERGE_ROW_INDEX_COLUMN_OPTION =
+    LOW_SHUFFLE_MERGE_OPTION_PREFIX + "rowIndexColumn"
+
   def isPushDVPredicateDownEnabled(conf: RapidsConf): Boolean = {
     val dvConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
     val useMetadataRowIndex = conf.getStr(dvConf.key)
