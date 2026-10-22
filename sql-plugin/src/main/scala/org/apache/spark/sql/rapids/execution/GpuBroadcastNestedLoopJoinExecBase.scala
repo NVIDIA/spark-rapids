@@ -976,37 +976,45 @@ abstract class GpuBroadcastNestedLoopJoinExecBase(
 
   /** Special-case handling of an unconditional join that just needs to output a row count. */
   private def doUnconditionalJoinRowCount(relation: Any): RDD[ColumnarBatch] = {
-    if (joinType == LeftAnti) {
-      // degenerate case, no rows are returned.
-      left.executeColumnar().mapPartitions { _ =>
-        Iterator.single(new ColumnarBatch(Array(), 0))
+    val buildTime = gpuLongMetric(BUILD_TIME)
+    val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
+    // The output rows for each stream row. Only an existence join keeps every stream row
+    // whatever the build holds, so the others read the build row count.
+    lazy val rowsPerStreamRow: Long = {
+      lazy val buildRows = computeBuildRowCount(relation, buildTime, buildDataSize)
+      joinType match {
+        case _: ExistenceJoin => 1
+        case LeftSemi => if (buildRows > 0) 1 else 0
+        case LeftAnti => if (buildRows > 0) 0 else 1
+        case LeftOuter | RightOuter => math.max(buildRows, 1)
+        case _ => buildRows
       }
-    } else {
-      lazy val buildCount = if (joinType == LeftSemi || joinType.isInstanceOf[ExistenceJoin]) {
-        // one-to-one mapping from input rows to output rows
-        1
-      } else {
-        val buildTime = gpuLongMetric(BUILD_TIME)
-        val buildDataSize = gpuLongMetric(BUILD_DATA_SIZE)
-        computeBuildRowCount(relation, buildTime, buildDataSize)
-      }
-
-      def getRowCountAndClose(cb: ColumnarBatch): Long = {
-        val ret = cb.numRows()
-        cb.close()
-        GpuSemaphore.releaseIfNecessary(TaskContext.get())
-        ret
-      }
-
-      val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
-      val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
-      val counts = streamed.executeColumnar().map(getRowCountAndClose)
-      GpuBroadcastNestedLoopJoinExecBase.divideIntoBatches(
-        counts.map(s => s * buildCount),
-        targetSizeBytes,
-        numOutputRows,
-        numOutputBatches)
     }
+
+    def getRowCountAndClose(cb: ColumnarBatch): Long = {
+      val ret = cb.numRows()
+      cb.close()
+      GpuSemaphore.releaseIfNecessary(TaskContext.get())
+      ret
+    }
+
+    val numOutputRows = gpuLongMetric(NUM_OUTPUT_ROWS)
+    val numOutputBatches = gpuLongMetric(NUM_OUTPUT_BATCHES)
+    val leftExistence = joinType == LeftSemi || joinType == LeftAnti
+    val counts = streamed.executeColumnar().mapPartitions { iter =>
+      // A semi or anti join that keeps no stream row skips the stream, as leftExistenceJoin
+      // does. Other joins still compute it, as Spark does.
+      if (leftExistence && rowsPerStreamRow == 0) {
+        Iterator.empty
+      } else {
+        iter.map(cb => getRowCountAndClose(cb) * rowsPerStreamRow)
+      }
+    }
+    GpuBroadcastNestedLoopJoinExecBase.divideIntoBatches(
+      counts,
+      targetSizeBytes,
+      numOutputRows,
+      numOutputBatches)
   }
 
   private def doConditionalJoin(
