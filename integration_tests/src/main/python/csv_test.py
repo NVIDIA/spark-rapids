@@ -343,8 +343,7 @@ csv_supported_date_formats = ['yyyy-MM-dd', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy/MM',
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
-    # Date is also time zone related for csv since rebase.
-    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow)),
+    pytest.param('CORRECTED'),
     pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow))
 ])
 def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, ansi_enabled, time_parser_policy):
@@ -378,6 +377,31 @@ def test_date_formats_round_trip(spark_tmp_path, date_format, v1_enabled_list, a
                     .csv(data_path),
             conf=updated_conf)
 
+@pytest.mark.parametrize('v1_enabled_list', ["", "csv"])
+def test_date_read_corrected_non_utc_timezone(spark_tmp_path, v1_enabled_list):
+    data_path = spark_tmp_path + '/CSV_DATA'
+    schema = StructType([
+        StructField('id', IntegerType()),
+        StructField('d', DateType())])
+    updated_conf = copy_and_update(_enable_all_types_conf,
+        {'spark.sql.sources.useV1SourceList': v1_enabled_list,
+         'spark.sql.session.timeZone': 'America/New_York',
+         'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+         'spark.rapids.sql.incompatibleDateFormats.enabled': 'true'})
+    with_cpu_session(
+        lambda spark: spark.createDataFrame([
+            (1, '2026-01-15'),
+            (2, '2026-07-15'),
+            (3, '1500-01-01')], 'id INT, d STRING') \
+            .write.option('header', 'true').csv(data_path))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema) \
+            .option('header', 'true') \
+            .option('dateFormat', 'yyyy-MM-dd') \
+            .csv(data_path),
+        conf=updated_conf)
+
 non_utc_allow_for_test_read_valid_and_invalid_dates=['BatchScanExec', 'FileSourceScanExec'] if is_not_utc() else []
 
 @pytest.mark.parametrize('filename', ["date.csv"])
@@ -385,8 +409,7 @@ non_utc_allow_for_test_read_valid_and_invalid_dates=['BatchScanExec', 'FileSourc
 @pytest.mark.parametrize('ansi_enabled', ["true", "false"])
 @pytest.mark.parametrize('time_parser_policy', [
     pytest.param('LEGACY', marks=pytest.mark.allow_non_gpu('BatchScanExec,FileSourceScanExec')),
-    # Date is also time zone related for csv since rebasing.
-    pytest.param('CORRECTED', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates)),
+    pytest.param('CORRECTED'),
     pytest.param('EXCEPTION', marks=pytest.mark.allow_non_gpu(*non_utc_allow_for_test_read_valid_and_invalid_dates))
 ])
 def test_read_valid_and_invalid_dates(std_input_path, filename, v1_enabled_list, ansi_enabled, time_parser_policy):
@@ -577,6 +600,23 @@ def test_csv_read_count(spark_tmp_path):
         conf = {'spark.rapids.sql.explain': 'ALL'})
 
 
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+def test_csv_multiline_quoted_empty_lines(spark_tmp_path, v1_enabled_list):
+    path = spark_tmp_path + '/csv_multiline'
+    text = 'a,b\n"first\n\nquoted",1\nnormal,2\n'
+    with_cpu_session(lambda spark: spark.createDataFrame([(text,)], 'value string')
+                     .coalesce(1).write.text(path))
+
+    def read(spark):
+        return spark.read.schema('a string, b int').option('header', True) \
+            .option('multiLine', True).csv(path)
+
+    conf = {'spark.sql.sources.useV1SourceList': v1_enabled_list}
+    rows = with_cpu_session(lambda spark: read(spark).collect(), conf=conf)
+    assert [tuple(row) for row in rows] == [('first\n\nquoted', 1), ('normal', 2)]
+    assert_gpu_and_cpu_are_equal_collect(read, conf=conf)
+
+
 @pytest.mark.parametrize('compression', ['none', 'bzip2'])
 @pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
 @pytest.mark.parametrize('projection', ['all', 'pruned', 'count',
@@ -601,6 +641,98 @@ def test_csv_small_reader_budget(spark_tmp_path, compression, v1_enabled_list, p
     assert_gpu_and_cpu_are_equal_collect(read, conf={
         'spark.sql.sources.useV1SourceList': v1_enabled_list,
         'spark.rapids.sql.reader.batchSizeBytes': '2048'})
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('header', [False, True])
+@pytest.mark.parametrize('boundary', ['rows', 'bytes', 'partition'])
+@pytest.mark.parametrize('projection', ['all', 'pruned', 'count'])
+def test_csv_read_interior_bom(spark_tmp_path, v1_enabled_list, header, boundary, projection):
+    path = spark_tmp_path + '/csv_interior_bom'
+    prefix = '# x\n# y\na,b\n' if header else ''
+    values = ['plain', '\ufefffirst', '\ufeff#value', '\ufeff', 'normal'] * 8
+    text = '\ufeff' + prefix + '\n'.join(f'{value},{i}' for i, value in enumerate(values))
+    with_cpu_session(lambda spark: spark.createDataFrame([(text,)], 'value string')
+                     .coalesce(1).write.text(path))
+
+    def read(spark):
+        df = spark.read.schema('a string, b int').option('header', header).option('comment', '#').csv(path)
+        if projection == 'pruned':
+            return df.select('b')
+        if projection == 'count':
+            return df.selectExpr('count(*) as n')
+        return df
+
+    boundary_conf = {
+        'rows': {'spark.rapids.sql.reader.batchSizeRows': '1'},
+        'bytes': {'spark.rapids.sql.reader.batchSizeBytes': '1'},
+        'partition': {'spark.sql.files.maxPartitionBytes': '32'}
+    }
+    assert_gpu_and_cpu_are_equal_collect(read, conf={
+        'spark.sql.sources.useV1SourceList': v1_enabled_list,
+        **boundary_conf[boundary]})
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('header', [False, True])
+def test_csv_pruned_partition_bom_input_meta(spark_tmp_path, v1_enabled_list, header):
+    path = spark_tmp_path + '/csv_partition_bom'
+    prefix = '# x\n# y\na,b\n' if header else ''
+    values = ['plain', '\ufefffirst', '\ufeff#value', '\ufeff', 'normal'] * 8
+    text = '\ufeff' + prefix + '\n'.join(f'{value},{i}' for i, value in enumerate(values))
+    with_cpu_session(lambda spark: spark.createDataFrame([(text,)], 'value string')
+                     .coalesce(1).write.text(path + '/p=0'))
+
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema('a string, b int').option('header', header)
+            .option('comment', '#').csv(path)
+            .selectExpr('b', 'input_file_block_start()', 'input_file_block_length()'),
+        conf={
+            'spark.sql.sources.useV1SourceList': v1_enabled_list,
+            'spark.sql.files.maxPartitionBytes': '32'})
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('prefix', ['', '\n \t\n', '# leading comment\n \t\n'])
+@pytest.mark.parametrize('first_record,header,quote', [
+    ('\ufefffirst,1', False, '"'), ('\ufeff#value,1', False, '"'), ('\ufeff', False, '"'),
+    ('\ufeff \t', False, '"'), ('\ufeff\ufefffirst,1', False, '"'),
+    ('\ufeff"quoted,value",1', False, '"'), ('\ufeffa,b', True, '"'),
+    ('\ufeff#not_header,ignored', True, '"'), ('\ufeff"quoted,value",1', False, ''),
+    ('\ufeff', False, ''), ('\ufeff#value,1', False, '')])
+@pytest.mark.parametrize('schema', ['a string, b int', 'a string'])
+def test_csv_first_record_bom(spark_tmp_path, v1_enabled_list, prefix, first_record, header,
+                            schema, quote):
+    path = spark_tmp_path + '/csv_first_record_bom'
+    text = '\ufeff' + prefix + first_record + '\n\ufefflater,2\nnormal,3'
+    with_cpu_session(lambda spark: spark.createDataFrame([(text,)], 'value string')
+                     .coalesce(1).write.text(path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema(schema).option('comment', '#').option('quote', quote)
+            .option('header', header).csv(path),
+        conf={
+            'spark.sql.sources.useV1SourceList': v1_enabled_list,
+            'spark.sql.files.maxPartitionBytes': '1m',
+            'spark.rapids.sql.reader.batchSizeRows': '1'})
+
+
+@ignore_order(local=True)
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('null_value', ['', 'NULL'])
+def test_csv_first_record_bom_without_quotes(spark_tmp_path, v1_enabled_list, null_value):
+    path = spark_tmp_path + '/csv_first_record_bom_without_quotes'
+    text = '\ufeff\ufeff#value\n"later,quoted"\n\ufeffend'
+    with_cpu_session(lambda spark: spark.createDataFrame([(text,)], 'value string')
+                     .coalesce(1).write.text(path))
+    assert_gpu_and_cpu_are_equal_collect(
+        lambda spark: spark.read.schema('a string').option('comment', '#').option('quote', '')
+            .option('nullValue', null_value).csv(path),
+        conf={
+            'spark.sql.sources.useV1SourceList': v1_enabled_list,
+            'spark.sql.files.maxPartitionBytes': '1m'})
 
 
 spark_350_timestamp_inference_xfail_formats = {
