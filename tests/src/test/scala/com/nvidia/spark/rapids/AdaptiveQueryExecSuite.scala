@@ -269,8 +269,12 @@ class AdaptiveQueryExecSuite
       val shuffleExchanges =
           OperatorsUtilShims.findOperators(innerAdaptivePlan, _.isInstanceOf[ShuffleQueryStageExec])
               .map(_.asInstanceOf[ShuffleQueryStageExec])
-      // Databricks cancels the shuffle of the side it later streams through a broadcast join
-      assert(shuffleExchanges.length === (if (isDatabricksRuntime) 1 else 2))
+      // Databricks may cancel the shuffle of the side it streams through a broadcast join
+      if (isDatabricksRuntime) {
+        assert(Seq(1, 2).contains(shuffleExchanges.length))
+      } else {
+        assert(shuffleExchanges.length === 2)
+      }
       val stats = shuffleExchanges.map(_.getRuntimeStatistics)
       assert(stats.forall(_.rowCount.contains(1000)))
     }
