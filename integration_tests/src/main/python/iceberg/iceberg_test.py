@@ -19,7 +19,7 @@ import pytest
 
 from asserts import assert_cpu_and_gpu_are_equal_collect_with_capture, \
     assert_equal_with_local_sort, assert_gpu_and_cpu_are_equal_collect, \
-    assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception
+    assert_gpu_and_cpu_row_counts_equal, assert_gpu_fallback_collect, assert_spark_exception, plan_metric
 from conftest import is_iceberg_remote_catalog, is_iceberg_rest_catalog
 from data_gen import *
 from iceberg import get_full_table_name, iceberg_unsupported_mark, _build_tblprops, \
@@ -1469,12 +1469,19 @@ def test_iceberg_small_file_combine_with_schema_evolution(spark_tmp_table_factor
         conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
 
 
+def _assert_mixed_constant_metadata_combined(_cpu_plan, plan):
+    scans = _nodes_of_class(plan, 'GpuBatchScanExec')
+    assert len(scans) == 1, f"Expected one GPU scan:\n{plan}"
+    groups = plan_metric(scans[0], 'numMixedConstantMetadataGroups')
+    assert groups is not None and groups > 0, \
+        f"Expected metadata-only combining across different constants, found {groups}:\n{plan}"
+
+
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
-@pytest.mark.parametrize('projection', ['a, b, c, _spec_id, _partition', '_spec_id, _partition'])
 def test_iceberg_small_file_combine_with_partition_spec_evolution(
-        spark_tmp_table_factory, reader_type, projection):
+        spark_tmp_table_factory, reader_type):
     table = get_full_table_name(spark_tmp_table_factory)
     partition_evolution_gens = [('a', long_gen), ('b', int_gen), ('c', string_gen)]
     base_seed = get_datagen_seed()
@@ -1519,27 +1526,32 @@ def test_iceberg_small_file_combine_with_partition_spec_evolution(
 
     with_cpu_session(setup_iceberg_table)
 
-    def read_evolved_table(spark):
-        df = spark.sql(f"SELECT {projection} FROM {table}")
-        # Different partition specs and values must share a scan task for the combine check.
-        assert df.rdd.getNumPartitions() == 1
-        return df
+    for projection in ['a, b, c, _spec_id, _partition', '_spec_id, _partition']:
+        def read_evolved_table(spark):
+            df = spark.sql(f"SELECT {projection} FROM {table}")
+            # Different partition specs and values must share a scan task for the combine check.
+            assert df.rdd.getNumPartitions() == 1
+            return df
 
-    assert_gpu_and_cpu_are_equal_collect(
-        read_evolved_table,
-        conf={
-            'spark.rapids.sql.format.parquet.reader.type': reader_type,
-            'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
-            'spark.rapids.sql.reader.multithreaded.combine.waitTime': '1000'})
+        assert_cpu_and_gpu_are_equal_collect_with_capture(
+            read_evolved_table,
+            conf={
+                'spark.sql.adaptive.enabled': 'false',
+                'spark.rapids.sql.metrics.level': 'DEBUG',
+                'spark.rapids.sql.format.parquet.reader.type': reader_type,
+                'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+                'spark.rapids.sql.reader.multithreaded.combine.waitTime': '1000'},
+            gpu_plan_assertion=(
+                _assert_mixed_constant_metadata_combined
+                if reader_type == 'MULTITHREADED' and projection == '_spec_id, _partition' else None))
 
 
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason = "S3tables catalog is managed")
-@pytest.mark.parametrize('projection', ['a, b', 'a'])
 def test_iceberg_small_file_combine_with_add_files_identity_partition(
-        spark_tmp_table_factory, reader_type, projection):
+        spark_tmp_table_factory, reader_type):
     target_table = get_full_table_name(spark_tmp_table_factory)
     source_table = get_full_table_name(spark_tmp_table_factory)
     create_iceberg_table(
@@ -1587,15 +1599,21 @@ def test_iceberg_small_file_combine_with_add_files_identity_partition(
 
     # Imported partitioned Parquet files materialize `a` from the path, not the file payload.
     # Selecting only `a` exercises metadata-only combining, with no physical columns to read.
-    def read_imported_table(spark):
-        df = spark.sql(f"SELECT {projection} FROM {target_table}")
-        # All source partition values must share a scan task to exercise the split check.
-        assert df.rdd.getNumPartitions() == 1
-        return df
+    for projection in ['a, b', 'a']:
+        def read_imported_table(spark):
+            df = spark.sql(f"SELECT {projection} FROM {target_table}")
+            # All source partition values must share a scan task to exercise the split check.
+            assert df.rdd.getNumPartitions() == 1
+            return df
 
-    assert_gpu_and_cpu_are_equal_collect(
-        read_imported_table,
-        conf={
-            'spark.rapids.sql.format.parquet.reader.type': reader_type,
-            'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
-            'spark.rapids.sql.reader.multithreaded.combine.waitTime': '1000'})
+        assert_cpu_and_gpu_are_equal_collect_with_capture(
+            read_imported_table,
+            conf={
+                'spark.sql.adaptive.enabled': 'false',
+                'spark.rapids.sql.metrics.level': 'DEBUG',
+                'spark.rapids.sql.format.parquet.reader.type': reader_type,
+                'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+                'spark.rapids.sql.reader.multithreaded.combine.waitTime': '1000'},
+            gpu_plan_assertion=(
+                _assert_mixed_constant_metadata_combined
+                if reader_type == 'MULTITHREADED' and projection == 'a' else None))

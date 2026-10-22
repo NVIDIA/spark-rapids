@@ -39,8 +39,8 @@ import java.nio.file.Files
 import java.util.{HashMap => JHashMap}
 import java.util.concurrent.CompletableFuture
 
-import com.nvidia.spark.rapids.{CombineConf, GpuColumnVector, PerfIO, PerfIOConf,
-  RmmSparkRetrySuiteBase, ThreadPoolConfBuilder}
+import com.nvidia.spark.rapids.{CombineConf, GpuColumnVector, GpuMetric, LocalGpuMetric, PerfIO,
+  PerfIOConf, RmmSparkRetrySuiteBase, ThreadPoolConfBuilder}
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.fileio.iceberg.IcebergFileIO
 import com.nvidia.spark.rapids.iceberg.parquet._
@@ -128,6 +128,7 @@ class GpuMultiThreadIcebergParquetReaderSuite
           } else {
             new Schema(Types.NestedField.optional(partitionFieldId, "a", Types.LongType.get()))
           }
+          val mixedConstantGroups = new LocalGpuMetric
           val conf = GpuIcebergParquetReaderConf(
             caseSensitive = true,
             hadoopConf,
@@ -140,7 +141,7 @@ class GpuMultiThreadIcebergParquetReaderSuite
             skipReadEstimate = true,
             parquetDebugDumpPrefix = None,
             parquetDebugDumpAlways = false,
-            metrics = Map.empty,
+            metrics = Map(GpuMetric.NUM_MIXED_CONSTANT_METADATA_GROUPS -> mixedConstantGroups),
             threadConf = MultiThread(
               new ThreadPoolConfBuilder(1, true, 1L << 20, 10000L, false),
               maxNumFilesProcessed = files.size,
@@ -230,6 +231,7 @@ class GpuMultiThreadIcebergParquetReaderSuite
                       assert(actual == expected)
                       val expectedBatchSizes = if (maxColumnBytes == 8L) Seq(3, 2) else Seq(5)
                       assert(batchSizes.toSeq == expectedBatchSizes)
+                      assert(mixedConstantGroups.value == (if (sameConstants) 0L else 1L))
                     }
                   }
                 }

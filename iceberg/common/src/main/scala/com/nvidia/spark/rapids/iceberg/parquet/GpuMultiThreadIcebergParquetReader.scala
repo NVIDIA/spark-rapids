@@ -250,6 +250,8 @@ class GpuMultiThreadIcebergParquetReader(
               new ColumnarBatch(Array.empty, totalRows), rowCounts, values,
               SparkSchemaUtil.convert(readerConf.expectedSchema), readerConf.maxGpuColumnSizeBytes)
             closeOnExcept(output) { _ =>
+              readerConf.metrics.get(GpuMetric.NUM_MIXED_CONSTANT_METADATA_GROUPS)
+                .foreach(_ += 1)
               new GpuColumnarBatchIterator(true) {
                 override def hasNext: Boolean = output.hasNext
                 override def next(): ColumnarBatch =
