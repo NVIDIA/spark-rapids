@@ -120,7 +120,6 @@ class GpuMultiThreadIcebergParquetReader(
 
       private def checkIfNeedToSplitIcebergFiles(current: PartitionedFile,
           next: PartitionedFile): Boolean = {
-        if (multiThreadConf.disableCombining) return true
         val curFile = findIcebergFile(current)
         val nextFile = findIcebergFile(next)
         val curProcessor = postProcessors.get(curFile)
