@@ -1332,6 +1332,8 @@ def test_orc_with_null_column(spark_tmp_path, reader_confs):
 
 @ignore_order
 @large_data_test
+# AQE may replace the empty result of the c2 = 5 query with Spark's row-based EmptyRelationExec.
+@allow_non_gpu("EmptyRelationExec")
 @pytest.mark.parametrize("reader_confs", reader_opt_confs, ids=idfn)
 def test_orc_with_null_column_with_1m_rows(spark_tmp_path, reader_confs):
     data_path = spark_tmp_path + "/ORC_DATA"
