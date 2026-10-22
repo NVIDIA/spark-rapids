@@ -21,7 +21,6 @@
 
 package com.nvidia.spark.rapids.delta
 
-import com.databricks.sql.execution.metric.IncrementMetric
 import com.databricks.sql.transaction.tahoe.{DeltaConfigs, DeltaOptions}
 import com.databricks.sql.transaction.tahoe.DeltaParquetFileFormat
 import com.databricks.sql.transaction.tahoe.commands.{OptimizeTableCommand,
@@ -39,8 +38,8 @@ import com.databricks.sql.transaction.tahoe.rapids.{
   GpuWriteIntoDelta,
   GpuWriteIntoDeltaCommandMeta
 }
-import com.databricks.sql.transaction.tahoe.sources.DeltaSQLConf
 import com.nvidia.spark.rapids._
+import com.nvidia.spark.rapids.delta.DeltaReadSupport.isDeletionVectorSkipRowColumn
 import com.nvidia.spark.rapids.delta.shims.DeltaLogShim
 import com.nvidia.spark.rapids.shims.ShimPredicateHelper
 
@@ -182,15 +181,8 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
     }
   }
 
-  override def isPushDVPredicateDownEnabled(conf: RapidsConf): Boolean = {
-    val dvConf = DeltaSQLConf.DELETION_VECTORS_USE_METADATA_ROW_INDEX
-    val useMetadataRowIndex = conf.getStr(dvConf.key)
-      .getOrElse(dvConf.defaultValueString).toBoolean
-    // Delta deletion-vector filtering is row-position based in both DBR modes. The native GPU
-    // pushdown below only handles the DBR metadata-row-index plan shape, where Spark provides the
-    // temporary row-index metadata column that we can prune after moving DV filtering into cuDF.
-    useMetadataRowIndex && conf.isDeltaDeletionVectorPredicatePushdownEnabled
-  }
+  override def isPushDVPredicateDownEnabled(conf: RapidsConf): Boolean =
+    DeltaReadSupport.isPushDVPredicateDownEnabled(conf)
 
   override def tryPushDVPredicateDownToScan(plan: SparkPlan): SparkPlan = {
     val pushed = DB173DVPredicatePushdown.pushToScan(plan)
@@ -223,7 +215,7 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
             },
             requiredSchema = StructType(
               scan.requiredSchema.filterNot(isUnusedRowIndex)
-            ))(scan.rapidsConf)))
+            ))(scan.rapidsConf, scan.partitionPlanningScan)))
     }
 
     plan match {
@@ -264,36 +256,11 @@ object DeltaSpark400DB173Provider extends DatabricksDeltaProviderBase {
     }
   }
 
-  override def isDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = {
-    val maybeDVScan = meta.parent.flatMap(_.parent).flatMap(_.parent).map(_.wrapped)
-    maybeDVScan.exists {
-      case ProjectExec(outputList, FilterExec(condition, ProjectExec(inputList, _))) =>
-        condition.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) &&
-          inputList.exists(_.name == "_metadata") &&
-          !outputList.flatMap(_.references).exists(_.name == "_metadata")
-      case _ => false
-    }
-  }
+  override def isDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean =
+    DeltaReadSupport.isDVScan(meta)
 
-  def isDmlMetricDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean = {
-    def hasMetricSkipRowFilter(parent: Option[RapidsMeta[_, _, _]]): Boolean = {
-      parent.exists { p =>
-        p.wrapped match {
-          case FilterExec(condition, _) =>
-            condition.references.exists(ref => isDeletionVectorSkipRowColumn(ref.name)) &&
-              condition.exists(_.isInstanceOf[IncrementMetric])
-          case _ =>
-            hasMetricSkipRowFilter(p.parent)
-        }
-      }
-    }
-
-    hasMetricSkipRowFilter(meta.parent)
-  }
-
-  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
-    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
-      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
+  def isDmlMetricDVScan(meta: SparkPlanMeta[FileSourceScanExec]): Boolean =
+    DeltaReadSupport.isDmlMetricDVScan(meta)
 
   override protected def toGpuWrite(
      writeConfig: DeltaWriteV1Config,
@@ -511,7 +478,8 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
             // It will not reuse the stage of the scan otherwise. Since we are removing
             // the deletion-vector skip-row column from scan's output, remove the
             // corresponding filter from dataFilters as well.
-            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(fsse.rapidsConf)
+            dataFilters = fsse.dataFilters.filterNot(isDVCondition(_)))(
+            fsse.rapidsConf, fsse.partitionPlanningScan)
       }
     }
 
@@ -585,8 +553,4 @@ private object DB173DVPredicatePushdown extends ShimPredicateHelper {
         }
     }
   }
-
-  private def isDeletionVectorSkipRowColumn(name: String): Boolean =
-    name == DeltaParquetFileFormat.IS_ROW_DELETED_COLUMN_NAME ||
-      name == GpuDeltaParquetFileFormat.EDGE_COMPUTED_COLUMN_SKIP_ROW
 }
