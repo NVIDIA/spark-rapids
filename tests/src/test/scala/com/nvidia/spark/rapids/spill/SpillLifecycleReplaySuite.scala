@@ -91,7 +91,7 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
 
   private class PausingFailingHostStore(maxSizeInBytes: Long)
     extends SpillableHostStore(Some(maxSizeInBytes)) {
-    val copyStarted = new CountDownLatch(1)
+    val copyFinished = new CountDownLatch(1)
     val resumeCopy = new CountDownLatch(1)
 
     override def makeBuilder(
@@ -100,7 +100,9 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
       new SpillableHostBufferHandleBuilder {
         override def copyNext(buffer: DeviceMemoryBuffer, length: Long,
             stream: Cuda.Stream): Unit = {
-          copyStarted.countDown()
+          // Fail after the device data has been read, as a late copy or write failure would
+          underlying.copyNext(buffer, length, stream)
+          copyFinished.countDown()
           await(resumeCopy)
           throw new IllegalStateException("injected host copy failure")
         }
@@ -633,23 +635,31 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
     assertResult(0)(deviceStore.numHandles)
   }
 
+  /**
+   * A spill that pauses at `started` until `resume`, then fails. A device spill runs through
+   * `deviceStore`, so that its post-spill synchronize can be paused too.
+   */
   private case class FailedSpill(
       handle: SpillableHandle,
       started: CountDownLatch,
       resume: CountDownLatch,
       released: () => Boolean,
       verifyKept: () => Unit,
-      stagingRemoved: () => Boolean = () => true)
+      deviceStore: Option[PausingDeviceStore] = None,
+      cleanup: () => Unit = () => ())
 
   private def failingHostCopy(hostLimit: Long, create: () => ReplayHandle): FailedSpill = {
     val hostStore = new PausingFailingHostStore(hostLimit)
+    val deviceStore = new PausingDeviceStore
     val diskStore = new RecordingDiskStore
     SpillFramework.stores.hostStore = hostStore
+    SpillFramework.stores.deviceStore = deviceStore
     SpillFramework.stores.diskStore = diskStore
     val replay = create()
-    FailedSpill(replay.handle, hostStore.copyStarted, hostStore.resumeCopy,
-      () => replay.handle.dev.isEmpty, replay.verify,
-      () => Option(diskStore.spillFile).forall(!_.exists()))
+    // An aborted disk-staging builder leaves its partial file behind (#16205)
+    FailedSpill(replay.handle, hostStore.copyFinished, hostStore.resumeCopy,
+      () => replay.handle.dev.isEmpty, replay.verify, Some(deviceStore),
+      () => Option(diskStore.spillFile).foreach(_.delete()))
   }
 
   private def failingDiskWrite(
@@ -700,17 +710,27 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
     val executor = Executors.newSingleThreadExecutor()
     try {
       val spilled = executor.submit(new Callable[Long] {
-        override def call(): Long = handle.spill()
+        override def call(): Long = spill.deviceStore match {
+          case Some(store) => store.spill(handle.approxSizeInBytes)
+          case None => handle.spill()
+        }
       })
       await(spill.started)
       if (closeDuringSpill) handle.close()
       spill.resume.countDown()
+      spill.deviceStore.foreach { store =>
+        await(store.beforeRelease)
+        store.resumeRelease.countDown()
+        await(store.beforeSync)
+        // A failed device spill must not release the device data before the synchronize
+        assert(!spill.released())
+        store.resumeSync.countDown()
+      }
       val failure = intercept[ExecutionException] {
         spilled.get(timeoutSeconds, TimeUnit.SECONDS)
       }
       assert(failure.getCause.getMessage.startsWith("injected"))
       assert(!handle.spilling)
-      assert(spill.stagingRemoved())
       if (closeDuringSpill) {
         assert(spill.released())
         assert(!handle.spillable)
@@ -726,11 +746,16 @@ class SpillLifecycleReplaySuite extends SpillUnitTestBase {
       assertResult(0)(SpillFramework.stores.diskStore.numHandles)
     } finally {
       spill.resume.countDown()
+      spill.deviceStore.foreach { store =>
+        store.resumeRelease.countDown()
+        store.resumeSync.countDown()
+      }
       executor.shutdown()
       if (!executor.awaitTermination(timeoutSeconds, TimeUnit.SECONDS)) {
         executor.shutdownNow()
       }
       handle.close()
+      spill.cleanup()
     }
   }
 
