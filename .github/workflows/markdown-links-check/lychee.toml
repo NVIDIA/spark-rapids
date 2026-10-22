@@ -26,7 +26,6 @@ exclude = [
   '^http://localhost',
   '^https://www\.nvidia\.com/en-us/security/pgp-key',
   '^https://repo1\.maven\.org/maven2/com/nvidia/rapids-4-spark_2\.',
-  '^https://deepwiki\.com/',
 ]
 
 # Historical changelogs account for most repository links and are immutable.
