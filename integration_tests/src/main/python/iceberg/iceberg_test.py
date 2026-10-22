@@ -1526,8 +1526,9 @@ def test_iceberg_small_file_combine_with_partition_spec_evolution(
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
 @pytest.mark.skipif(is_iceberg_remote_catalog(), reason = "S3tables catalog is managed")
+@pytest.mark.parametrize('projection', ['a, b', 'a'])
 def test_iceberg_small_file_combine_with_add_files_identity_partition(
-        spark_tmp_table_factory, reader_type):
+        spark_tmp_table_factory, reader_type, projection):
     target_table = get_full_table_name(spark_tmp_table_factory)
     source_table = get_full_table_name(spark_tmp_table_factory)
     create_iceberg_table(
@@ -1567,12 +1568,23 @@ def test_iceberg_small_file_combine_with_add_files_identity_partition(
         spark.sql(
             f"ALTER TABLE {target_table} SET TBLPROPERTIES ("
             "'read.split.target-size' = '268435456', "
+            "'read.split.open-file-cost' = '0', "
             "'read.split.planning-lookback' = '100')")
         spark.sql(f"REFRESH TABLE {target_table}")
 
     with_cpu_session(setup_imported_table)
 
     # Imported partitioned Parquet files materialize `a` from the path, not the file payload.
+    # Selecting only `a` exercises metadata-only combining, with no physical columns to read.
+    def read_imported_table(spark):
+        df = spark.sql(f"SELECT {projection} FROM {target_table}")
+        # All source partition values must share a scan task to exercise the split check.
+        assert df.rdd.getNumPartitions() == 1
+        return df
+
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql(f"SELECT a, b FROM {target_table}"),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        read_imported_table,
+        conf={
+            'spark.rapids.sql.format.parquet.reader.type': reader_type,
+            'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+            'spark.rapids.sql.reader.multithreaded.combine.waitTime': '1000'})

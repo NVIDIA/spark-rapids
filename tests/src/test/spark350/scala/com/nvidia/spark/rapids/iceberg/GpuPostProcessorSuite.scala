@@ -1424,6 +1424,28 @@ class GpuPostProcessorSuite extends AnyFunSuite with BeforeAndAfterAll {
     assertBatch(numRows = 4, firstPosition = 502L)
   }
 
+  test("Metadata-only partition constants prevent incompatible file combining") {
+    val parquetSchema = new ShadedMessageType("test", Seq.empty[ShadedType].asJava)
+    val expectedSchema = new Schema(
+      Types.NestedField.optional(1, "a", Types.LongType.get()))
+    val (parquetInfo, shadedSchema) = createParquetInfo(parquetSchema)
+
+    def processor(value: Long): GpuParquetReaderPostProcessor = {
+      val constants = new JHashMap[Integer, Any]()
+      constants.put(1, value)
+      new GpuParquetReaderPostProcessor(
+        parquetInfo, constants, expectedSchema, shadedSchema, Map.empty)
+    }
+
+    val first = processor(10L)
+    val same = processor(10L)
+    val different = processor(20L)
+    assert(first.compatibleForCombining(same))
+    assert(same.compatibleForCombining(first))
+    assert(!first.compatibleForCombining(different))
+    assert(!different.compatibleForCombining(first))
+  }
+
   test("Physical lineage constants prevent incompatible file combining") {
     assume(supportsRowLineageInheritance,
       "The selected Iceberg runtime does not support row lineage inheritance")
