@@ -495,13 +495,17 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
     }
   }
 
-  testExpectedGpuException(
-    "Old dates in EXCEPTION mode",
-    if (isSpark400OrLater) {
+  // Databricks 17.3 raises SparkUpgradeException on both CPU and GPU
+  private lazy val rebaseInWriteExceptionClass: Class[_] =
+    if (isSpark400OrLater && !isDatabricksRuntime) {
       classOf[org.apache.spark.sql.AnalysisException]
     } else {
       SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass
-    },
+    }
+
+  testExpectedGpuException(
+    "Old dates in EXCEPTION mode",
+    rebaseInWriteExceptionClass,
     oldDatesDf,
     new SparkConf().set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")) {
     val tempFile = File.createTempFile("oldDates", "parquet")
@@ -515,11 +519,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old timestamps millis in EXCEPTION mode",
-    if (isSpark400OrLater) {
-      classOf[org.apache.spark.sql.AnalysisException]
-    } else {
-      SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass
-    },
+    rebaseInWriteExceptionClass,
     oldTsDf,
     new SparkConf()
       .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")
@@ -534,11 +534,7 @@ class ParquetWriterSuite extends SparkQueryCompareTestSuite {
 
   testExpectedGpuException(
     "Old timestamps in EXCEPTION mode",
-    if (isSpark400OrLater) {
-      classOf[org.apache.spark.sql.AnalysisException]
-    } else {
-      SparkUpgradeExceptionShims.getSparkUpgradeExceptionClass
-    },
+    rebaseInWriteExceptionClass,
     oldTsDf,
     new SparkConf()
       .set("spark.sql.legacy.parquet.datetimeRebaseModeInWrite", "EXCEPTION")

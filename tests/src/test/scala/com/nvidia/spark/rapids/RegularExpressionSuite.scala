@@ -54,7 +54,10 @@ class RegularExpressionSuite extends SparkQueryCompareTestSuite {
     nullableStringsFromCsv,
     execsAllowedNonGpu = Seq("ProjectExec", "Alias",
       "RegExpReplace", "AttributeReference"), conf = conf) {
-    frame => frame.selectExpr("regexp_replace(strings,'a',strings)")
+    frame =>
+      // Databricks rewrites regexp_replace with a literal pattern to replace
+      assume(!isDatabricksRuntime, "no RegExpReplace in the Databricks plan")
+      frame.selectExpr("regexp_replace(strings,'a',strings)")
   }
 
   testGpuFallback("String regexp_replace null cpu fall back",

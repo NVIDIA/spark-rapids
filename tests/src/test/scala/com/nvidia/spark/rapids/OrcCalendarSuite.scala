@@ -52,6 +52,7 @@ class OrcCalendarSuite extends SparkQueryCompareTestSuite {
   }
 
   private def readLegacyDateResource(spark: SparkSession) = {
+    assume(!isDatabricksRuntime, "Spark test-jar resources are not on the Databricks classpath")
     val resource = Option(Thread.currentThread().getContextClassLoader
       .getResource(legacyDateResource)).getOrElse {
       throw new IllegalStateException(s"Missing Spark test resource: $legacyDateResource")

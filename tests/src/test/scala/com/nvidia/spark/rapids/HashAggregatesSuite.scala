@@ -18,6 +18,8 @@ package com.nvidia.spark.rapids
 
 import java.sql.Timestamp
 
+import com.nvidia.spark.rapids.shims.AggregationTagging
+
 import org.apache.spark
 
 import org.apache.spark.SparkConf
@@ -290,7 +292,8 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     repart: Integer,
     conf: SparkConf,
     sortBeforeRepart: Boolean = false,
-    assumeCondition: SparkSession => (Boolean, String) = null)
+    // every caller replaces only some aggregation modes
+    assumeCondition: SparkSession => (Boolean, String) = mixedAggReplacement)
     (fun: DataFrame => DataFrame)
     (validateCapturedPlans: (SparkPlan, SparkPlan) => Unit): Unit = {
     configMatrix.zipWithIndex.foreach { case (config, i) =>
@@ -397,8 +400,10 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
 
           case GpuColumnarToRowExec(plan, _) => // Codegen disabled
             assert(plan.isInstanceOf[GpuHashAggregateExec])
-            // if local aggregate being folded, child of (Complete)Aggregate becomes GpuSort
-            if (df.sparkSession.conf.get(RapidsConf.ENABLE_FOLD_LOCAL_AGGREGATE.key) == "true") {
+            // if local aggregate being folded, child of (Complete)Aggregate becomes GpuSort.
+            // Databricks shims do not apply FoldLocalAggregate.
+            if (df.sparkSession.conf.get(RapidsConf.ENABLE_FOLD_LOCAL_AGGREGATE.key) == "true" &&
+                !isDatabricksRuntime) {
               assert(plan.children.head.isInstanceOf[GpuSortExec])
             } else {
               val child = plan.children.head
@@ -1558,6 +1563,11 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
       max("more_longs"))
   } { (_, gpuPlan) => checkExecPlan(gpuPlan) }
 
+  // Databricks shims replace an aggregation only when both halves can run on the GPU
+  // (https://github.com/NVIDIA/spark-rapids/issues/4963), so a mixed CPU/GPU plan never forms.
+  private def mixedAggReplacement(spark: SparkSession): (Boolean, String) =
+    (!AggregationTagging.mustReplaceBoth, "mixed CPU/GPU aggregation is not supported")
+
   // CPU -> GPU -> GPU -> GPU
   private val nonFinalOnGpuConf = replaceHashAggMode(
     "partial|partialMerge|partial&partialMerge", enableCsvConf())
@@ -2091,7 +2101,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     nullDf,
     execsAllowedNonGpu = Seq("HashAggregateExec",
       "AggregateExpression", "AttributeReference", "Alias", "Average", "Count", "Cast"),
-    conf = nonFinalOnGpuConf, repart = 2) {
+    conf = nonFinalOnGpuConf, repart = 2, assumeCondition = mixedAggReplacement) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
         s"""
@@ -2106,7 +2116,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     nullDf,
     execsAllowedNonGpu = Seq("HashAggregateExec",
       "AggregateExpression", "AttributeReference", "Alias", "Count", "Cast"),
-    conf = nonFinalOnGpuConf, repart = 2) {
+    conf = nonFinalOnGpuConf, repart = 2, assumeCondition = mixedAggReplacement) {
     frame => frame.createOrReplaceTempView("testTable")
       frame.sparkSession.sql(
         s"""
@@ -2122,6 +2132,7 @@ class HashAggregatesSuite extends SparkQueryCompareTestSuite {
     execsAllowedNonGpu = Seq("HashAggregateExec",
       "AggregateExpression", "AttributeReference", "Alias", "Sum", "Cast"),
     conf = nonFinalOnGpuConf,
+    assumeCondition = mixedAggReplacement,
     repart = 2) {
     frame =>
       frame.createOrReplaceTempView("testTable")

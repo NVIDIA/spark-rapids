@@ -33,6 +33,7 @@ package com.nvidia.spark.rapids
 import java.io.{File, FileNotFoundException}
 
 import com.nvidia.spark.rapids.shims.{GpuBatchScanExec, PartitionedFileUtilsShim}
+import org.apache.hadoop.fs.Path
 
 import org.apache.spark.{SparkConf, SparkException, SparkThrowable}
 import org.apache.spark.sql.SparkSession
@@ -83,8 +84,9 @@ class MissingFileStructuredErrorSuite extends SparkQueryCompareTestSuite {
 
       val deletedFile = deleteOneDataFile(location)
       val error = structuredMissingFile(intercept[SparkException](df.count()))
-      val expectedPath = deletedFile.toPath.toUri.toString
-      assert(error.getMessageParameters.get("path") == expectedPath)
+      // Databricks reports file:/path where Spark reports file:///path
+      val expectedPath = new Path(deletedFile.toPath.toUri)
+      assert(new Path(error.getMessageParameters.get("path")) == expectedPath)
       error.getCondition
     }
   }

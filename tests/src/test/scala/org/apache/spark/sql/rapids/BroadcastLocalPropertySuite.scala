@@ -165,6 +165,8 @@ class BroadcastLocalPropertySuite
         .set(SQLConf.ADAPTIVE_EXECUTION_ENABLED.key, "true")
         .set(SQLConf.ADAPTIVE_OPTIMIZER_EXCLUDED_RULES.key, AQEPropagateEmptyRelation.ruleName)
         .set(SQLConf.BROADCAST_TIMEOUT.key, "30")
+        // Databricks otherwise broadcasts on executors, bypassing the driver broadcast pool
+        .set("spark.databricks.execution.executorSideBroadcast.enabled", "false")
         .set("spark.rapids.sql.exec.FilterExec", (!cpuFilter).toString)
         .set("spark.rapids.sql.test.enabled", "false")
       val expected = withCpuSparkSession(spark => {

@@ -72,10 +72,7 @@ class RapidsShuffleIntegrationSuite extends AnyFunSuite with BeforeAndAfterEach 
   private var spark: SparkSession = _
   private var eventListener: ShuffleDiskSavingsEventListener = _
 
-  private def shuffleManagerClass: String = {
-    val shimVersion = ShimLoader.getShimVersion
-    s"com.nvidia.spark.rapids.spark${shimVersion.toString.replace(".", "")}.RapidsShuffleManager"
-  }
+  private def shuffleManagerClass: String = ShimLoader.getRapidsShuffleManagerClass
 
   /**
    * Create SparkSession with custom configuration.

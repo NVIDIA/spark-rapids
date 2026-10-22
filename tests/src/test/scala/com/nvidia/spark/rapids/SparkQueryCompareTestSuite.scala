@@ -164,6 +164,11 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
   import SparkSessionHolder.withSparkSession
   def enableCsvConf(): SparkConf = enableCsvConf(new SparkConf())
 
+  // Databricks rewrites some ScalaUDFs to SpecializedScalaUDF, which the plugin does not
+  // replace yet: https://github.com/NVIDIA/cudf-spark/issues/16450
+  def noSpecializedScalaUDF(conf: SparkConf = new SparkConf()): SparkConf =
+    conf.set("spark.databricks.optimizer.specializeScalaUDF.enabled", "false")
+
   override def afterAll(): Unit = {
     super.afterAll()
     TrampolineUtil.cleanupAnyExistingSession()
@@ -2276,6 +2281,9 @@ trait SparkQueryCompareTestSuite extends AnyFunSuite with BeforeAndAfterAll {
     assume(isSpark340OrLater, "Spark version not 3.4.0+")
 
   lazy val isSpark400OrLater: Boolean = cmpSparkVersion(4, 0, 0) >= 0
+
+  lazy val isDatabricksRuntime: Boolean =
+    ShimLoader.getShimVersion.isInstanceOf[DatabricksShimVersion]
 
   def assumePriorToSpark400: Assertion =
     assume(!isSpark400OrLater, "Spark version not before 4.0.0")
