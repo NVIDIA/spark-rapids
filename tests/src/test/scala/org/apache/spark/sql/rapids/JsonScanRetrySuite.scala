@@ -299,6 +299,10 @@ class JsonScanRetrySuite extends RmmSparkRetrySuiteBase {
       ("UTF-8", "unread invalid UTF-8",
         (" " * 10240).getBytes(StandardCharsets.UTF_8) :+ 0x80.toByte, false))) {
     test(s"JSON empty-array filtering preserves encoding errors: $encoding, $name") {
+      // Outside spark.testing, Databricks defaults spark.sql.legacy.codingErrorAction to true,
+      // so the decoder replaces the malformed bytes and the record is a valid empty array.
+      assume(!retain || !ShimLoader.getShimVersion.isInstanceOf[DatabricksShimVersion],
+        "Databricks replaces malformed input by default")
       val newline = Array('\n'.toByte)
       val record = "[]".getBytes(StandardCharsets.UTF_8) ++ suffix ++ newline
       var bufferedBytes = Seq.empty[Byte]
