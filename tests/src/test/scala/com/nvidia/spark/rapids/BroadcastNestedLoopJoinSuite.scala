@@ -168,28 +168,26 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
       }
     }
 
-    // An existence join's condition reads the outer side, which is its stream.
-    if (!joinType.isInstanceOf[ExistenceJoin]) {
-      test(s"$name $buildSide nested loop join accepts a rows-only stream") {
-        val streamRows = Seq(5, 0, 2)
-        for (build <- Seq(Seq.empty[Integer], Seq[Integer](null, 0, 5),
-            Seq[Integer](null, 6, 0, 9))) {
-          withClue(s"build $build: ") {
-            val matched = build.filter(matches)
-            val expected = joinType match {
-              case _: InnerLike => matched.flatMap(v => Seq.fill(streamRows.sum)(Seq(v)))
-              case LeftOuter | RightOuter =>
-                (if (matched.isEmpty) Seq[Integer](null) else matched)
-                  .flatMap(v => Seq.fill(streamRows.sum)(Seq(v)))
-              case LeftSemi if matched.nonEmpty => Seq.fill(streamRows.sum)(Seq.empty)
-              case LeftAnti if matched.isEmpty => Seq.fill(streamRows.sum)(Seq.empty)
-              case _ => Seq.empty
-            }
-            val actual = nestedLoopJoin(joinType, buildSide, intBatch(build),
-              streamRows.map(rows => () => new ColumnarBatch(Array.empty, rows)),
-              streamHasColumns = false)
-            assertResult(sorted(expected))(sorted(actual))
+    test(s"$name $buildSide nested loop join accepts a rows-only stream") {
+      val streamRows = Seq(5, 0, 2)
+      for (build <- Seq(Seq.empty[Integer], Seq[Integer](null, 0, 5),
+          Seq[Integer](null, 6, 0, 9))) {
+        withClue(s"build $build: ") {
+          val matched = build.filter(matches)
+          val expected = joinType match {
+            case _: InnerLike => matched.flatMap(v => Seq.fill(streamRows.sum)(Seq(v)))
+            case LeftOuter | RightOuter =>
+              (if (matched.isEmpty) Seq[Integer](null) else matched)
+                .flatMap(v => Seq.fill(streamRows.sum)(Seq(v)))
+            case LeftSemi if matched.nonEmpty => Seq.fill(streamRows.sum)(Seq.empty)
+            case LeftAnti if matched.isEmpty => Seq.fill(streamRows.sum)(Seq.empty)
+            case ExistenceJoin(_) => Seq.fill(streamRows.sum)(Seq(matched.nonEmpty))
+            case _ => Seq.empty
           }
+          val actual = nestedLoopJoin(joinType, buildSide, intBatch(build),
+            streamRows.map(rows => () => new ColumnarBatch(Array.empty, rows)),
+            streamHasColumns = false)
+          assertResult(sorted(expected))(sorted(actual))
         }
       }
     }

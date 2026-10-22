@@ -1438,6 +1438,28 @@ def test_degenerate_broadcast_nested_loop_existence_join(spark_tmp_table_factory
     assert_cpu_and_gpu_are_equal_collect_with_capture(do_join, capture_regexp,
                                                       conf={"spark.sql.adaptive.enabled": aqeEnabled})
 
+# Spark 4.0 keeps a sequence predicate in an existence join's condition too. With the outer value
+# folded to a literal, the condition reads only the subquery side, so the stream has no columns.
+@ignore_order(local=True)
+@pytest.mark.parametrize('k', [0, 5], ids=idfn)
+def test_broadcast_nested_loop_existence_join_one_sided_sequence_condition(
+        spark_tmp_table_factory, k):
+    outer_table_name = spark_tmp_table_factory.get()
+    sub_table_name = spark_tmp_table_factory.get()
+
+    def do_join(spark):
+        spark.range(0, 100).createOrReplaceTempView(outer_table_name)
+        spark.range(0, 30).selectExpr('IF(id % 5 = 0, NULL, CAST(id AS INT)) AS b') \
+            .createOrReplaceTempView(sub_table_name)
+        return spark.sql(
+            'SELECT EXISTS (SELECT 1 FROM {} AS s '
+            'WHERE size(sequence(s.b, s.b + 3, 1)) > s.b + k) AS e '
+            'FROM (SELECT {} AS k FROM {})'.format(sub_table_name, k, outer_table_name))
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_join,
+        exist_classes='GpuBroadcastNestedLoopJoinExec',
+        conf={'spark.sql.adaptive.enabled': 'false'})
+
 @ignore_order(local=True)
 @pytest.mark.parametrize('data_gen', [StringGen(), IntegerGen()], ids=idfn)
 @pytest.mark.parametrize("aqe_enabled", [True, False], ids=idfn)
