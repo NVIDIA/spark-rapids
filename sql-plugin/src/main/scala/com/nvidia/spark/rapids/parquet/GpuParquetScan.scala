@@ -3121,6 +3121,13 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
             doCombineHMBs(combinedMeta)
           }
           closeOnExcept(result) { combined =>
+            if (combinedEmptyMeta.allEmpty && combinedEmptyMeta.emptyNumRows > 0) {
+              val expected = combinedEmptyMeta.metaForEmpty.partitionedFile
+              val actual = combined.partitionedFile
+              require(actual.filePath == expected.filePath && actual.start == expected.start &&
+                actual.length == expected.length,
+                "Combined metadata must retain the representative file split")
+            }
             combined.setExecutionTime(selected.map(_.getFilterTime).sum,
               selected.map(_.getBufferTime).sum)
             combined.setScheduleTime(selected.map(_.getScheduleTime).sum)
@@ -3182,6 +3189,15 @@ abstract class AbstractMultiFileCloudParquetPartitionReader(
       blocks: collection.Seq[BlockMetaData]
   ): HostMemoryEmptyMetaData
 
+  /**
+   * Constructs the metadata for a combined group of metadata-only results.
+   *
+   * Implementations must retain emptyMeta.metaForEmpty.partitionedFile as the result's
+   * partitionedFile. When the group has positive rows, this is the reference file used by
+   * checkIfNeedToSplitEmpty to check compatibility. File-specific post-processing, such as
+   * Iceberg's output constants, uses the retained file identity for every combined row;
+   * selecting another file could apply constants that were not checked for compatibility.
+   */
   protected def newCombinedHMEmptyMetadata(emptyMeta: CombinedEmptyMeta,
       nonEmptyMeta: CombinedMeta): HostMemoryEmptyMetaData
 
