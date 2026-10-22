@@ -555,9 +555,10 @@ private final class CachedFilteredProbeBackend(
 /**
  * Executor-local cache of reusable hash-build artifacts.
  *
- * The cache stores [[HashArtifact]] objects accessed by [[HashBuildKey]]. Upon the first get
+ * The cache stores `HashArtifact` objects accessed by [[HashBuildKey]]. Upon the first get
  * the cache ensures one builder at a time while other threads wait. The build produces a
- * [[SharedRecomputableHandle]] that is held by the constructed HashArtifact.
+ * [[com.nvidia.spark.rapids.spill.SharedRecomputableHandle]] that is held by the constructed
+ * HashArtifact.
  *
  * Additionally the cache tracks `demand`, a count of the number of probes and total probe rows
  * for a given hash build that has not been cached yet, tracked via `observeProbe`. This is used
@@ -651,6 +652,9 @@ final class HashBuildCache extends AutoCloseable {
   private[execution] def getOrBuild(
       key: HashBuildKey,
       metrics: HashBuildMetrics)(create: => HashArtifact): (HashArtifact, Boolean) = {
+    // Waiting threads keep the GPU semaphore, so a thread must hold the semaphore before it
+    // can claim the build to avoid deadlock. This must happen outside the lock.
+    GpuSemaphore.acquireIfNecessary(TaskContext.get())
     // All threads decide whether to build or wait under the lock.
     val (future, shouldBuild) = synchronized {
       if (closed) {
