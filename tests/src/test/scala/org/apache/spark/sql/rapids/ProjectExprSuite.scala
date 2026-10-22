@@ -195,7 +195,7 @@ class ProjectExprSuite extends SparkQueryCompareTestSuite {
       GpuAlias(GpuGreatest(Seq(shared, f)), "regular")())
 
     val tiered = GpuBindReferences.bindGpuReferencesTieredNoMetrics(
-      expressions, Seq(a, b, c, d, e, f), new SQLConf())
+      expressions, Seq(a, b, c, d, e, f), new SQLConf(), enableAst = true)
 
     // After CSE:
     // tier 0: [a+b AS t1]

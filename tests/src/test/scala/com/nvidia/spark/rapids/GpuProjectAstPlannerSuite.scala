@@ -22,8 +22,8 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.apache.spark.SparkConf
 import org.apache.spark.serializer.JavaSerializer
 import org.apache.spark.sql.catalyst.expressions.{Abs, Add, Alias, And, AttributeReference,
-  BoundReference, EqualTo, Expression, GreaterThan, GreaterThanOrEqual, LessThan, Literal,
-  Multiply, Or, Subtract}
+  BoundReference, EqualTo, Expression, GreaterThan, GreaterThanOrEqual, Greatest, LessThan,
+  Literal, Multiply, Or, Subtract}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.{GpuAdd, GpuAnd, GpuGreatest, GpuMultiply, GpuOr, GpuSubtract}
 import org.apache.spark.sql.types.{FloatType, LongType}
@@ -204,18 +204,37 @@ class GpuProjectAstPlannerSuite extends AnyFunSuite {
     }
   }
 
-  test("shared inputs are materialized before simple JIT and regular consumers") {
+  test("sharing does not reduce a legacy consumer to simple arithmetic") {
     val sqlConf = conf(legacy = true, jit = true)
     SQLConf.withExistingConf(sqlConf) {
+      // Materializing a+b would leave t-c on the regular backend and split the JIT root into
+      // another program, so both outputs keep it inline.
       val expressions = Seq(
         convert(Alias(Subtract(Add(a, b), c), "legacy")(), sqlConf),
         convert(Alias(Multiply(Add(a, b), d), "jit")(), sqlConf))
       val tiers = bind(expressions, sqlConf).exprTiers
-      assertResult(Seq(1, 1))(tiers.map(collectExpressions[GpuAstJitExpression](_).size))
-      assert(collectExpressions[GpuProjectAstExpression](tiers.flatten).isEmpty)
-      assertResult(1)(collectExpressions[GpuSubtract](tiers.last).size)
-      assertResult(1)(collectExpressions[GpuAdd](tiers.flatten).size)
-      assert(collectExpressions[GpuAdd](tiers.last).isEmpty)
+      assertResult(1)(tiers.size)
+      assertResult(1)(collectExpressions[GpuAstJitExpression](tiers.head).size)
+      val legacy = collectExpressions[GpuProjectAstExpression](tiers.head)
+      assertResult(1)(legacy.size)
+      assert(legacy.head.child.find(_.isInstanceOf[GpuAdd]).isDefined)
+      assertResult(2)(collectExpressions[GpuAdd](tiers.head).size)
+    }
+  }
+
+  for (compound <- Seq(false, true)) {
+    test(s"legacy region over regular children needs an inline operation: compound=$compound") {
+      val sqlConf = conf(legacy = true, jit = false)
+      SQLConf.withExistingConf(sqlConf) {
+        val right = if (compound) Multiply(c, d) else c
+        val expression = convert(Alias(Subtract(Greatest(Seq(a, b)), right), "result")(), sqlConf)
+        val tiers = bind(Seq(expression), sqlConf).exprTiers
+        // Without an inline operation, the region would be t-c after GREATEST is materialized.
+        assertResult(if (compound) 2 else 1)(tiers.size)
+        assertResult(if (compound) 1 else 0)(
+          collectExpressions[GpuProjectAstExpression](tiers.last).size)
+        assertResult(1)(collectExpressions[GpuGreatest](tiers.flatten).size)
+      }
     }
   }
 
@@ -361,6 +380,61 @@ class GpuProjectAstPlannerSuite extends AnyFunSuite {
         assertResult(1)(collectExpressions[GpuCpuBridgeExpression](parent).size)
         assert(collectExpressions[GpuProjectAstExpressionBase](tiers.last).isEmpty)
       }
+    }
+  }
+
+  test("a node that is not a region root can still join an enclosing legacy region") {
+    val sqlConf = conf(legacy = true, jit = false)
+    SQLConf.withExistingConf(sqlConf) {
+      // greatest(a,b)+c alone would leave t+c, but it is inline in (t+c)*d.
+      val expression = convert(
+        Alias(Multiply(Add(Greatest(Seq(a, b)), c), d), "result")(), sqlConf)
+      val tiers = bind(Seq(expression), sqlConf).exprTiers
+      assertResult(2)(tiers.size)
+      val legacy = collectExpressions[GpuProjectAstExpression](tiers.last)
+      assertResult(1)(legacy.size)
+      assert(legacy.head.child.isInstanceOf[GpuMultiply])
+      assert(legacy.head.child.find(_.isInstanceOf[GpuAdd]).isDefined)
+    }
+  }
+
+  test("planning-time wrappers only show a backend that runs the final root") {
+    val sqlConf = conf(legacy = true, jit = false)
+    SQLConf.withExistingConf(sqlConf) {
+      def wrap(expressions: Seq[Expression], projectOutputs: Boolean): Seq[Expression] =
+        if (projectOutputs) {
+          GpuProjectAstPlanner.wrapProjectOutputs(
+            expressions, sqlConf, enableAst = true, enableAstJit = false)
+        } else {
+          GpuProjectAstPlanner.wrapOutputs(
+            expressions, sqlConf, enableAst = true, enableAstJit = false)
+        }
+      // CSE extracts a+b and leaves simple arithmetic, so neither output runs interpreted AST.
+      val shared = Seq(
+        convert(Alias(Multiply(Add(a, b), c), "first")(), sqlConf),
+        convert(Alias(Multiply(Add(a, b), d), "second")(), sqlConf))
+      assertResult(2)(
+        collectExpressions[GpuProjectAstExpression](wrap(shared, projectOutputs = false)).size)
+      assert(
+        collectExpressions[GpuProjectAstExpression](wrap(shared, projectOutputs = true)).isEmpty)
+      val single = Seq(convert(Alias(Subtract(Add(a, b), c), "result")(), sqlConf))
+      assertResult(1)(
+        collectExpressions[GpuProjectAstExpression](wrap(single, projectOutputs = true)).size)
+    }
+  }
+
+  test("planning-time JIT wrapper follows an output forwarded from an earlier tier") {
+    val sqlConf = conf(legacy = false, jit = true)
+    SQLConf.withExistingConf(sqlConf) {
+      val expressions = Seq(
+        convert(Alias(Multiply(Add(a, b), c), "jit")(), sqlConf),
+        GpuAlias(GpuGreatest(Seq(convert(Add(a, b), sqlConf), d)), "regular")())
+      val wrapped = GpuProjectAstPlanner.wrapProjectOutputs(
+        expressions, sqlConf, enableAst = false, enableAstJit = true)
+      // The JIT output is computed with a+b in tier 0 and forwarded by the final tier.
+      assertResult(2)(bind(expressions, sqlConf).exprTiers.size)
+      assert(GpuAstJitExpression.extractTopLevel(wrapped.head).isDefined)
+      assert(GpuProjectAstExpressionBase.extractTopLevel(wrapped(1)).isEmpty)
     }
   }
 

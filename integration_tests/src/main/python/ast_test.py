@@ -428,11 +428,17 @@ def test_ast_shared_subtree(data_gen, backend):
         'spark.rapids.sql.projectAstEnabled': str(backend != 'jit').lower(),
         'spark.rapids.sql.projectAstJitEnabled': str(backend != 'legacy').lower(),
     }
-    ast_pattern = r'AST\(' if backend == 'legacy' else 'AST_JIT'
+    if backend == 'legacy':
+        # Plugin CSE extracts a + b and leaves simple arithmetic on the regular GPU.
+        exist_classes = 'GpuProject'
+        non_exist_classes = 'GpuProjectAst,AST_JIT'
+    else:
+        exist_classes = r"GpuProject.*AST_JIT.*AS left.*AST_JIT.*AS right"
+        non_exist_classes = 'GpuProjectAst'
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         project_shared_expression,
-        exist_classes=rf"GpuProject.*{ast_pattern}.*AS left.*{ast_pattern}.*AS right",
-        non_exist_classes='AST_JIT' if backend == 'legacy' else 'GpuProjectAst',
+        exist_classes=exist_classes,
+        non_exist_classes=non_exist_classes,
         conf=conf)
 
 @pytest.mark.parametrize('data_gen', [int_gen, long_gen], ids=idfn)
@@ -523,11 +529,13 @@ def test_project_ast_keeps_skipped_side_effects(expr, backend):
         project, exist_classes='GpuProjectExec', conf=conf)
 
 @pytest.mark.parametrize('data_gen', [int_gen, long_gen], ids=idfn)
+# The first remainder keeps a + b inline in both outputs; the second materializes it for both.
+@pytest.mark.parametrize('legacy_expr', ['(a + b) - a', '(a + b) - (a * b)'], ids=idfn)
 @disable_ansi_mode
-def test_cross_backend_shared_subtree(data_gen):
+def test_cross_backend_shared_subtree(data_gen, legacy_expr):
     assert_cpu_and_gpu_are_equal_collect_with_capture(
         lambda spark: binary_op_df(spark, data_gen).selectExpr(
-            '(a + b) - a as legacy', '(a + b) * b as jit'),
+            f'{legacy_expr} as legacy', '(a + b) * b as jit'),
         exist_classes=r'GpuProject.*AST\(.*AS legacy.*AST_JIT.*AS jit',
         conf=_project_ast_jit_and_legacy_enabled_conf)
 
@@ -601,9 +609,10 @@ def test_project_ast_mixed_expressions(tiered_project_enabled):
             ('col_string', string_gen)
         ])
         shared = f.col('a') + f.col('b')
+        # Compound outputs keep AST after tiered CSE extracts the shared addition.
         return df.select(
-            (shared * f.col('c')).alias('ast_first'),
-            (shared * f.col('d')).alias('ast_second'),
+            ((shared * f.col('c')) - f.col('d')).alias('ast_first'),
+            ((shared * f.col('d')) - f.col('c')).alias('ast_second'),
             f.greatest(shared, f.col('c')).alias('gpu_shared'),
             f.length(f.col('col_string')).alias('gpu_string'),
             f.col('col_string').alias('raw_string'))

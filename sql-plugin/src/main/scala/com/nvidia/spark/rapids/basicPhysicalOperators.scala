@@ -64,7 +64,7 @@ class GpuProjectExecMeta(
     // Force list to avoid recursive Java serialization of lazy list Seq implementation
     val gpuExprs = childExprs.map(_.convertToGpu().asInstanceOf[NamedExpression]).toList
     val gpuChild = childPlans.head.convertIfNeeded()
-    val projectList = GpuProjectAstPlanner.wrapOutputs(
+    val projectList = GpuProjectAstPlanner.wrapProjectOutputs(
       gpuExprs, proj.conf, conf.isProjectAstEnabled, conf.isProjectAstJitEnabled)
         .map(_.asInstanceOf[NamedExpression]).toList
     // Report original eligibility here and final backend selection after tiering.
@@ -945,8 +945,8 @@ case class GpuProjectExec(
     
     val boundProjectList = GpuBindReferences.bindGpuReferencesTiered(
       projectList, child.output, conf, allMetrics,
-      enableAstJit = RapidsConf.ENABLE_PROJECT_AST_JIT.get(conf),
-      enableAst = RapidsConf.ENABLE_PROJECT_AST.get(conf))
+      enableAst = RapidsConf.ENABLE_PROJECT_AST.get(conf),
+      enableAstJit = RapidsConf.ENABLE_PROJECT_AST_JIT.get(conf))
     val localEnablePreSplit = enablePreSplit
 
     val rdd = child.executeColumnar()
@@ -1089,8 +1089,8 @@ case class GpuProjectExec(
           None
         }
         withResource(sbToClose) { _ =>
+          retryables.foreach(_.checkpoint())
           RmmRapidsRetryIterator.withRetryNoSplit {
-            retryables.foreach(_.checkpoint())
             withResource(sb.getColumnarBatch()) { cb =>
               withRestoreOnRetry(retryables) {
                 project(cb)

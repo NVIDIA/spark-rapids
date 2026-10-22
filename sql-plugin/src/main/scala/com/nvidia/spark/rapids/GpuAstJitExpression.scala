@@ -20,7 +20,6 @@ import scala.collection.mutable
 
 import ai.rapids.cudf.{DType, Table}
 import ai.rapids.cudf.ast.{AstExpression, AstJitProgram, CompiledExpression}
-import com.nvidia.spark.Retryable
 import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.GpuMetric._
 import com.nvidia.spark.rapids.RapidsPluginImplicits._
@@ -169,11 +168,12 @@ object GpuAstJitExpression {
   private[rapids] def explainFinalSelections(
       expressionTiers: Seq[Seq[Expression]],
       all: Boolean,
-      multiOutputEnabled: Boolean = true): String = {
+      multiOutputEnabled: Boolean = true,
+      astJitEnabled: Boolean = true): String = {
     expressionTiers.zipWithIndex.flatMap { case (expressions, tier) =>
       val explanations = expressions.iterator.zipWithIndex.collect {
-        case (expression, index) if all ||
-            (extractTopLevel(expression).isEmpty && hasJitCandidate(expression)) =>
+        case (expression, index) if all || (astJitEnabled &&
+            extractTopLevel(expression).isEmpty && hasJitCandidate(expression)) =>
           s"    output[$index] $expression final backend: ${finalBackend(expression)}\n"
       }.mkString
       if (explanations.nonEmpty) {
@@ -228,7 +228,7 @@ object GpuAstJitExpression {
 }
 
 case class GpuAstJitExpression(child: GpuExpression, groupId: Int = 0)
-    extends GpuProjectAstExpressionBase with Retryable {
+    extends GpuProjectAstExpressionBase {
 
   @transient private[this] var jitProgram: AstJitProgram = _
   @transient private[this] var jitProgramGroup: GpuAstJitExpression.JitProgramGroup = _
@@ -310,11 +310,4 @@ case class GpuAstJitExpression(child: GpuExpression, groupId: Int = 0)
   }
 
   override def toString: String = s"AST_JIT($child)"
-
-  override def checkpoint(): Unit = {
-    getCompiledExpression
-  }
-
-  // Compiled ASTs and schema-matched programs remain valid across retry attempts.
-  override def restore(): Unit = ()
 }

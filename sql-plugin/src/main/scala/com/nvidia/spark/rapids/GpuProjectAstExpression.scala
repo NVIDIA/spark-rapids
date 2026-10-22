@@ -28,7 +28,6 @@ import com.nvidia.spark.rapids.shims.ShimUnaryExpression
 
 import org.apache.spark.TaskContext
 import org.apache.spark.sql.catalyst.expressions.{Expression, NamedExpression}
-import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.DataType
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -126,16 +125,6 @@ object GpuProjectAstExpressionBase {
     } else {
       GpuAlias(child, alias.name)(alias.exprId, alias.qualifier, alias.explicitMetadata)
     }
-  }
-
-  private[rapids] def buildExprTiers(
-      expressions: Seq[Expression],
-      conf: SQLConf,
-      enableAstJit: Boolean = false,
-      enableAst: Boolean = false): Seq[Seq[Expression]] = {
-    val legacy = enableAst || expressions.exists(
-      GpuProjectAstExpression.extractTopLevel(_).isDefined)
-    GpuProjectAstPlanner.buildExprTiers(expressions, conf, legacy, enableAstJit)
   }
 
   private[rapids] def tableFromBatch(batch: ColumnarBatch): Table = {

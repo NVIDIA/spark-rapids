@@ -85,13 +85,14 @@ private[rapids] object GpuProjectAstPlanner {
       expression.children.forall(supportsLegacy)
   }
 
+  private def isArithmetic(expression: Expression): Boolean = expression match {
+    case _: GpuAdd | _: GpuSubtract | _: GpuMultiply => true
+    case _ => false
+  }
+
   private def isSimpleArithmetic(expression: Expression): Boolean = {
     val child = stripAlias(expression)
-    child match {
-      case _: GpuAdd | _: GpuSubtract | _: GpuMultiply =>
-        child.children.forall(e => isLeaf(stripAlias(e)))
-      case _ => false
-    }
+    isArithmetic(child) && child.children.forall(e => isLeaf(stripAlias(e)))
   }
 
   private def canUseLegacy(expression: Expression): Boolean = {
@@ -131,6 +132,50 @@ private[rapids] object GpuProjectAstPlanner {
     if (enableAstJit) GpuAstJitExpression.wrapTierExpressions(legacy, conf) else legacy
   }
 
+  /**
+   * Wraps Project outputs at planning time. Tiered binding replans from the unwrapped outputs, so
+   * a wrapper is kept only when the output's final root runs on that backend. The plan string can
+   * still omit subexpressions extracted to earlier tiers.
+   */
+  def wrapProjectOutputs(
+      expressions: Seq[Expression],
+      conf: SQLConf,
+      enableAst: Boolean,
+      enableAstJit: Boolean): Seq[Expression] = {
+    val wrapped = wrapOutputs(expressions, conf, enableAst, enableAstJit)
+    if (!RapidsConf.ENABLE_TIERED_PROJECT.get(conf) ||
+        !wrapped.exists(GpuProjectAstExpressionBase.extractTopLevel(_).isDefined)) {
+      wrapped
+    } else {
+      val finalWrappers = finalOutputWrappers(
+        buildExprTiers(expressions, conf, enableAst, enableAstJit))
+      require(finalWrappers.size == wrapped.size,
+        "The final expression tier must preserve the project output count")
+      wrapped.zip(finalWrappers).map { case (expression, finalWrapper) =>
+        val planned = GpuProjectAstExpressionBase.extractTopLevel(expression)
+        if (planned.map(_.getClass) == finalWrapper.map(_.getClass)) expression
+        else unwrap(expression)
+      }
+    }
+  }
+
+  // The final tier reads outputs computed in earlier tiers through their aliases.
+  private def finalOutputWrappers(
+      tiers: Seq[Seq[Expression]]): Seq[Option[GpuProjectAstExpressionBase]] = {
+    val producers = tiers.dropRight(1).flatten.collect {
+      case alias: GpuAlias => alias.exprId -> alias
+    }.toMap
+
+    def resolve(expression: Expression): Option[GpuProjectAstExpressionBase] =
+      stripAlias(expression) match {
+        case attribute: AttributeReference if producers.contains(attribute.exprId) =>
+          resolve(producers(attribute.exprId))
+        case other => GpuProjectAstExpressionBase.extractTopLevel(other)
+      }
+
+    tiers.last.map(resolve)
+  }
+
   def buildExprTiers(
       expressions: Seq[Expression],
       conf: SQLConf,
@@ -158,6 +203,7 @@ private[rapids] object GpuProjectAstPlanner {
     private val candidates = mutable.ArrayBuffer.empty[Candidate]
     // canHostRegion consults child backends, so cache by node to avoid re-walking subtrees.
     private val backends = new IdentityHashMap[Expression, Option[Backend]]()
+    private val legacyRegionMembers = new IdentityHashMap[Expression, java.lang.Boolean]()
 
     private def rootChild(expression: Expression): Expression = expression match {
       case alias: GpuAlias => stripAlias(alias.child)
@@ -190,8 +236,7 @@ private[rapids] object GpuProjectAstPlanner {
         } else if (enableAstJit && gpu.selfSupportsAstJit && gpu.selfIsAstJitOperator &&
             GpuBatchUtils.isFixedWidth(gpu.dataType) && canHostRegion(gpu, AstJit)) {
           Some(AstJit)
-        } else if (enableAst && selfSupportsLegacy(gpu) && !isSimpleArithmetic(gpu) &&
-            GpuBatchUtils.isFixedWidth(gpu.dataType) && canHostRegion(gpu, AstInterpreted)) {
+        } else if (canHostLegacyRegion(gpu) && !leavesSimpleArithmetic(gpu, _ => false)) {
           Some(AstInterpreted)
         } else {
           Some(RegularGpu)
@@ -201,9 +246,46 @@ private[rapids] object GpuProjectAstPlanner {
 
     private def backendWithin(expression: Expression, owner: Backend): Option[Backend] = {
       val child = stripAlias(expression)
-      if (owner == AstInterpreted && canUseLegacy(child)) Some(AstInterpreted)
+      if (owner == AstInterpreted && joinsLegacyRegion(child)) Some(AstInterpreted)
       else backendOf(child)
     }
+
+    private def canHostLegacyRegion(gpu: GpuExpression): Boolean =
+      enableAst && selfSupportsLegacy(gpu) && GpuBatchUtils.isFixedWidth(gpu.dataType) &&
+        canHostRegion(gpu, AstInterpreted)
+
+    // A node can join an enclosing interpreted region even when it would leave only simple
+    // arithmetic as a region of its own. JIT-capable nodes keep their own region. Cached because
+    // each enclosing region asks again.
+    private def joinsLegacyRegion(node: Expression): Boolean = {
+      val cached = legacyRegionMembers.get(node)
+      if (cached != null) {
+        cached
+      } else {
+        val joins = canUseLegacy(node) || (node match {
+          case gpu: GpuExpression if gpu.deterministic && !isLeaf(gpu) =>
+            backendOf(gpu) match {
+              case Some(AstJit) => false
+              case Some(AstInterpreted) => true
+              case _ => canHostLegacyRegion(gpu)
+            }
+          case _ => false
+        })
+        legacyRegionMembers.put(node, joins)
+        joins
+      }
+    }
+
+    // Judges an interpreted region by what it evaluates after its children read from earlier
+    // tiers become column references, which is the shape the final wrapping sees.
+    private def leavesSimpleArithmetic(
+        region: Expression,
+        readsFromEarlierTier: Expression => Boolean): Boolean =
+      isArithmetic(region) && region.children.forall { child =>
+        val node = stripAlias(child)
+        isLeaf(node) || readsFromEarlierTier(node) ||
+          !backendWithin(node, AstInterpreted).contains(AstInterpreted)
+      }
 
     // A region inlines children on its own backend and reads all other children from earlier
     // tiers, so it cannot contain a child that supports neither.
@@ -235,26 +317,52 @@ private[rapids] object GpuProjectAstPlanner {
         val equivalents = new GpuEquivalentExpressions
         expressions.foreach(equivalents.addExprTree(_))
         val common = equivalents.getCommonSubexpressions.map(GpuExpressionEquals(_)).toSet
-        val owners = mutable.HashMap.empty[GpuExpressionEquals, mutable.Set[Backend]]
+        // Each use records the backend that would evaluate the value inline and its region root.
+        val uses = mutable.ArrayBuffer.empty[(GpuExpressionEquals, Backend, Expression)]
+        // Outputs and region boundaries become columns whether or not they are shared.
+        val materialized = mutable.HashSet.empty[GpuExpressionEquals]
 
-        def visit(expression: Expression, owner: Backend): Unit = {
+        def visit(expression: Expression, owner: Backend, region: Expression): Unit = {
           val child = stripAlias(expression)
           val key = GpuExpressionEquals(child)
           if (common.contains(key) && !isLeaf(child) && canMaterialize(child)) {
-            owners.getOrElseUpdate(key, mutable.Set.empty) += owner
+            uses += ((key, owner, region))
           }
           if (canPlanChildren(child)) {
             child.children.foreach { nested =>
               val backend = backendWithin(nested, owner).getOrElse(owner)
-              val nestedOwner = if (canMaterialize(nested)) backend else owner
-              visit(nested, nestedOwner)
+              if (canMaterialize(nested) && backend != owner) {
+                val boundary = stripAlias(nested)
+                materialized += GpuExpressionEquals(boundary)
+                visit(boundary, backend, boundary)
+              } else {
+                visit(nested, owner, region)
+              }
             }
           }
         }
 
         expressions.foreach { expression =>
           val child = rootChild(expression)
-          backendOf(child).foreach(visit(child, _))
+          materialized += GpuExpressionEquals(child)
+          backendOf(child).foreach(visit(child, _, child))
+        }
+
+        // Materializing a value only for sharing must not reduce an interpreted region to simple
+        // arithmetic: the region would then run on the regular backend, and a JIT consumer would
+        // be split into another program.
+        def reducesRegion(key: GpuExpressionEquals, region: Expression): Boolean =
+          !materialized.contains(key) && leavesSimpleArithmetic(region, { node =>
+            val nodeKey = GpuExpressionEquals(node)
+            nodeKey == key || (common.contains(nodeKey) && canMaterialize(node))
+          })
+
+        val owners = mutable.HashMap.empty[GpuExpressionEquals, mutable.Set[Backend]]
+        uses.foreach { case (key, owner, region) =>
+          if (owner != AstInterpreted || GpuExpressionEquals(region) == key ||
+              !reducesRegion(key, region)) {
+            owners.getOrElseUpdate(key, mutable.Set.empty) += owner
+          }
         }
         owners.iterator.collect { case (key, backends) if backends.size > 1 => key }.toSet
       }

@@ -115,18 +115,15 @@ object GpuBroadcastHashJoinExecBase {
   /**
    * Binds a build-side projection that the executor's hash-build cache keeps for rebuilds, which
    * can run in a later task. It has no metrics, since it can outlive the task that creates it.
-   * It also uses regular GPU evaluation, because Project AST evaluators release their native
-   * state when the task that compiled them completes, even if another task is still evaluating.
+   * It also leaves both Project AST backends disabled, which drops the wrappers in the Project
+   * list, because Project AST evaluators release their native state when the task that compiled
+   * them completes, even if another task is still evaluating.
    */
   private[execution] def bindCachedBuildSideProjection(
       projectList: Seq[NamedExpression],
       input: Seq[Attribute],
-      conf: SQLConf): GpuTieredProject = {
-    val expressions = projectList.map(_.transform {
-      case ast: GpuProjectAstExpressionBase => ast.child
-    })
-    GpuBindReferences.bindGpuReferencesTieredNoMetrics(expressions, input, conf)
-  }
+      conf: SQLConf): GpuTieredProject =
+    GpuBindReferences.bindGpuReferencesTieredNoMetrics(projectList, input, conf)
 }
 
 abstract class GpuBroadcastHashJoinExecBase(
@@ -223,8 +220,8 @@ abstract class GpuBroadcastHashJoinExecBase(
       // splitting, retry, and metric behavior as a normal project.
       GpuBindReferences.bindGpuReferencesTiered(
         project.projectList, project.child.output, conf, allMetrics,
-        enableAstJit = RapidsConf.ENABLE_PROJECT_AST_JIT.get(conf),
-        enableAst = RapidsConf.ENABLE_PROJECT_AST.get(conf))
+        enableAst = RapidsConf.ENABLE_PROJECT_AST.get(conf),
+        enableAstJit = RapidsConf.ENABLE_PROJECT_AST_JIT.get(conf))
     }
   }
 

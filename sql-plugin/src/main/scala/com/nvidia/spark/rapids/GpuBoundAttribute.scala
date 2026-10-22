@@ -44,12 +44,13 @@ object GpuBindReferences extends Logging {
 
   private def explainFinalProjectAstSelection(
       tieredProject: GpuTieredProject,
-      conf: SQLConf): Unit = {
+      conf: SQLConf,
+      enableAstJit: Boolean): Unit = {
     val explain = RapidsConf.EXPLAIN.get(conf)
     if (RapidsConf.shouldExplain(explain)) {
       val explanation = GpuAstJitExpression.explainFinalSelections(
         tieredProject.exprTiers, RapidsConf.shouldExplainAll(explain),
-        RapidsConf.ENABLE_PROJECT_AST_JIT_MULTI_OUTPUT.get(conf))
+        RapidsConf.ENABLE_PROJECT_AST_JIT_MULTI_OUTPUT.get(conf), enableAstJit)
       if (explanation.nonEmpty) {
         logWarning(s"FINAL PROJECT AST SELECTION\n$explanation")
       }
@@ -142,12 +143,12 @@ object GpuBindReferences extends Logging {
       expressions: Seq[A],
       input: AttributeSeq,
       conf: SQLConf,
-      enableAstJit: Boolean,
-      enableAst: Boolean): GpuTieredProject = {
+      enableAst: Boolean,
+      enableAstJit: Boolean): GpuTieredProject = {
 
     val tieredProject = if (RapidsConf.ENABLE_TIERED_PROJECT.get(conf)) {
-      val exprTiers = GpuProjectAstExpressionBase.buildExprTiers(
-        expressions, conf, enableAstJit, enableAst)
+      val exprTiers = GpuProjectAstPlanner.buildExprTiers(
+        expressions, conf, enableAst, enableAstJit)
       val inputTiers = GpuEquivalentExpressions.getInputTiers(exprTiers, input)
       // Update ExprTiers to include the columns that are pass through and drop unneeded columns
       val newExprTiers = exprTiers.zipWithIndex.map {
@@ -187,12 +188,12 @@ object GpuBindReferences extends Logging {
       GpuTieredProject(tiered)
     } else {
       val projectExpressions = GpuProjectAstPlanner.wrapOutputs(
-        expressions, conf, enableAst, enableAstJit)
+        expressions.map(GpuProjectAstPlanner.unwrap), conf, enableAst, enableAstJit)
       GpuTieredProject(Seq(
         GpuBindReferences.bindGpuReferencesNoMetrics(projectExpressions, input)))
     }
     if (enableAst || enableAstJit) {
-      explainFinalProjectAstSelection(tieredProject, conf)
+      explainFinalProjectAstSelection(tieredProject, conf, enableAstJit)
     }
     tieredProject
   }
@@ -201,16 +202,17 @@ object GpuBindReferences extends Logging {
    * Binding method for tiered expressions without metric injection.
    * This is for use by GpuBind implementations and should not be called directly
    * from SparkPlan nodes. Use the public API that requires metrics instead, except
-   * when absolutely needed. AST JIT is opt-in; generic callers leave it disabled.
+   * when absolutely needed. Project AST backends are opt-in: existing AST wrappers are removed
+   * unless the caller enables the matching backend.
    */
   def bindGpuReferencesTieredNoMetrics[A <: Expression](
       expressions: Seq[A],
       input: AttributeSeq,
       conf: SQLConf,
-      enableAstJit: Boolean = false,
-      enableAst: Boolean = false): GpuTieredProject = {
+      enableAst: Boolean = false,
+      enableAstJit: Boolean = false): GpuTieredProject = {
     bindGpuReferencesTieredNoMetricsInternal(
-      expressions, input, conf, enableAstJit, enableAst)
+      expressions, input, conf, enableAst, enableAstJit)
   }
 
   // ========== Public "Front Door" APIs (for use by SparkPlan nodes) ==========
@@ -282,7 +284,8 @@ object GpuBindReferences extends Logging {
    * @param input The input schema
    * @param conf SQL configuration
    * @param metrics Metrics to inject into the bound expressions
-   * @param enableAst Whether eligible expressions may use interpreted AST
+   * @param enableAst Whether eligible expressions may use interpreted AST. Defaults to false so
+   *                  generic callers do not enable a Project AST backend implicitly.
    * @param enableAstJit Whether eligible expressions may use AST JIT. Defaults to false so
    *                     generic callers do not enable the experimental backend implicitly.
    */
@@ -291,9 +294,9 @@ object GpuBindReferences extends Logging {
       input: AttributeSeq,
       conf: SQLConf,
       metrics: Map[String, GpuMetric],
-      enableAstJit: Boolean = false,
-      enableAst: Boolean = false): GpuTieredProject = {
-    val bound = bindGpuReferencesTieredNoMetrics(expressions, input, conf, enableAstJit, enableAst)
+      enableAst: Boolean = false,
+      enableAstJit: Boolean = false): GpuTieredProject = {
+    val bound = bindGpuReferencesTieredNoMetrics(expressions, input, conf, enableAst, enableAstJit)
     bound.injectMetrics(metrics)
     bound
   }

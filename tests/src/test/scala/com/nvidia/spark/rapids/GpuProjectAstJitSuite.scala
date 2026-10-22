@@ -89,7 +89,9 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
       input: Seq[Attribute],
       conf: SQLConf): GpuTieredProject = {
     GpuBindReferences.bindGpuReferencesTieredNoMetrics(
-      expressions, input, conf, enableAstJit = RapidsConf.ENABLE_PROJECT_AST_JIT.get(conf))
+      expressions, input, conf,
+      enableAst = RapidsConf.ENABLE_PROJECT_AST.get(conf),
+      enableAstJit = RapidsConf.ENABLE_PROJECT_AST_JIT.get(conf))
   }
 
   private def wrapOutputs(expressions: Seq[Expression]): Seq[Expression] =
@@ -167,8 +169,9 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
       alias(GpuGreatest(Seq(shared, fourth)), "regular"))
 
     val tiered = bindProject(
-      expressions, Seq(left, right, third, fourth), projectConf())
+      expressions, Seq(left, right, third, fourth), projectConf(legacy = true))
 
+    // The regular consumer materializes left+right anyway, so the legacy root reuses it.
     // after wave planning:
     // tier 0: [AST_JIT(left+right) AS t1]
     // tier 1: [t1-third AS legacy, greatest(t1, fourth) AS regular]
@@ -542,7 +545,18 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
     assert(notOnGpu.contains("final backend: the regular GPU projection"), notOnGpu)
   }
 
-  test("project AST JIT keeps its compiled expression across retry") {
+  test("final explanation reports unselected JIT candidates only when JIT is enabled") {
+    val left = reference(0, IntegerType)
+    val right = reference(1, IntegerType)
+    val selections = Seq(Seq(alias(GpuAdd(left, right, failOnError = false)(), "sum")))
+
+    assert(GpuAstJitExpression.explainFinalSelections(selections, all = false)
+      .contains("final backend: the regular GPU projection"))
+    assertResult("")(GpuAstJitExpression.explainFinalSelections(
+      selections, all = false, astJitEnabled = false))
+  }
+
+  test("project AST JIT compiles its expression once per task") {
     val child = mock(classOf[GpuExpression])
     val ast = mock(classOf[AstExpression])
     val compiled = mock(classOf[CompiledExpression])
@@ -551,9 +565,8 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
     val jit = GpuAstJitExpression(child)
 
     TestUtils.withMockTaskContext() {
-      jit.checkpoint()
-      jit.restore()
-      jit.checkpoint()
+      assert(jit.getCompiledExpression eq compiled)
+      assert(jit.getCompiledExpression eq compiled)
       verify(ast, times(1)).compileJit()
       verify(compiled, times(0)).close()
     }
@@ -725,7 +738,7 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
 
     TestUtils.withTaskContext(taskContext) {
       val thrown = intercept[RuntimeException] {
-        jit.checkpoint()
+        jit.getCompiledExpression
       }
       assert(thrown eq registrationFailure)
       assertResult(Seq(closeFailure))(thrown.getSuppressed.toSeq)
@@ -746,7 +759,7 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
 
     TestUtils.withTaskContext(taskContext) {
       val thrown = intercept[IllegalStateException] {
-        jit.checkpoint()
+        jit.getCompiledExpression
       }
       assertResult("Task completed while registering compiled expression cleanup callback")(
         thrown.getMessage)
