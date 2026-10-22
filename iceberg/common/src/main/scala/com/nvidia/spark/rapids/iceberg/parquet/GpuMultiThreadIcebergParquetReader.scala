@@ -50,7 +50,7 @@ class GpuMultiThreadIcebergParquetReader(
 
 
   private var inited = false
-  private lazy val reader = createParquetReader()
+  private[iceberg] lazy val reader = createParquetReader()
 
   override def close(): Unit = {
     try {
