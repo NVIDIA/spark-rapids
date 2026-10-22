@@ -1472,8 +1472,9 @@ def test_iceberg_small_file_combine_with_schema_evolution(spark_tmp_table_factor
 @iceberg
 @ignore_order(local=True)
 @pytest.mark.parametrize('reader_type', rapids_reader_types)
+@pytest.mark.parametrize('projection', ['a, b, c, _spec_id, _partition', '_spec_id, _partition'])
 def test_iceberg_small_file_combine_with_partition_spec_evolution(
-        spark_tmp_table_factory, reader_type):
+        spark_tmp_table_factory, reader_type, projection):
     table = get_full_table_name(spark_tmp_table_factory)
     partition_evolution_gens = [('a', long_gen), ('b', int_gen), ('c', string_gen)]
     base_seed = get_datagen_seed()
@@ -1512,14 +1513,24 @@ def test_iceberg_small_file_combine_with_partition_spec_evolution(
         spark.sql(
             f"ALTER TABLE {table} SET TBLPROPERTIES ("
             "'read.split.target-size' = '268435456', "
+            "'read.split.open-file-cost' = '0', "
             "'read.split.planning-lookback' = '100')")
         spark.sql(f"REFRESH TABLE {table}")
 
     with_cpu_session(setup_iceberg_table)
 
+    def read_evolved_table(spark):
+        df = spark.sql(f"SELECT {projection} FROM {table}")
+        # Different partition specs and values must share a scan task for the combine check.
+        assert df.rdd.getNumPartitions() == 1
+        return df
+
     assert_gpu_and_cpu_are_equal_collect(
-        lambda spark: spark.sql(f"SELECT a, b, c, _spec_id, _partition FROM {table}"),
-        conf={'spark.rapids.sql.format.parquet.reader.type': reader_type})
+        read_evolved_table,
+        conf={
+            'spark.rapids.sql.format.parquet.reader.type': reader_type,
+            'spark.rapids.sql.reader.multithreaded.combine.sizeBytes': '64m',
+            'spark.rapids.sql.reader.multithreaded.combine.waitTime': '1000'})
 
 
 @iceberg
