@@ -263,9 +263,12 @@ The broader set of historical date/timestamp reading limitations remains tracked
 [#131](https://github.com/NVIDIA/cudf-spark/issues/131). In particular, proleptic Gregorian ORC
 timestamps near the October 1582 cutover can still differ from CPU when the writer and reader
 use different timezones. A similar issue exists for writing dates as described
-[here](https://github.com/NVIDIA/cudf-spark/issues/139). Writing timestamps, however only appears
-to work for dates after the epoch as described
-[here](https://github.com/NVIDIA/cudf-spark/issues/140).
+[here](https://github.com/NVIDIA/cudf-spark/issues/139). GPU timestamp writes in UTC are supported
+from 1590 onward. Timestamps in the last 999 milliseconds before the Unix epoch are read one second
+later, matching the Apache ORC format behavior documented in
+[NVIDIA/cudf#23391](https://github.com/NVIDIA/cudf/pull/23391). In non-UTC timezones, timestamp
+writes fall back to CPU as tracked in
+[#15385](https://github.com/NVIDIA/cudf-spark/issues/15385).
 
 ORC writes containing `DATE` columns, including nested `DATE` columns, use the CPU writer by
 default. The cuDF ORC writer does not record calendar metadata in the file footer, so readers
@@ -342,11 +345,9 @@ values occurring before the transition between the Julian and Gregorian calendar
 When writing `spark.sql.legacy.parquet.datetimeRebaseModeInWrite` is currently ignored as described
 [here](https://github.com/NVIDIA/cudf-spark/issues/144).
 
-The plugin supports reading `uncompressed`, `snappy`, `gzip` and `zstd` Parquet files and writing
-`uncompressed`, `snappy` and `zstd` Parquet files.  At this point, the plugin does not have the 
-ability to
-fall back to the CPU when reading an unsupported compression format, and will error out in that
-case.
+The plugin supports reading and writing `uncompressed`, `snappy`, `gzip` and `zstd` Parquet files.
+At this point, the plugin cannot fall back to the CPU when reading an unsupported compression
+format, and will error out in that case.
 
 ## Delta Lake low shuffle merge on Databricks Runtime 17.3
 
@@ -947,7 +948,7 @@ data.  The cuDF plugin `get_json_object` operation on the GPU will return `None`
 updated in a future release to more closely match Spark.
 
 If the JSON has a single quote `'` in the path, the GPU query may fail with `ai.rapids.cudf.CudfException`.
-More examples are in [issue-12483](https://github.com/rapidsai/cudf/issues/12483).
+More examples are in [issue-12483](https://github.com/NVIDIA/cudf/issues/12483).
 
 ## Approximate Percentile
 
@@ -956,14 +957,6 @@ The GPU implementation of `approximate_percentile` uses
 distribution. The results are not bit-for-bit identical with the Apache Spark implementation of
 `approximate_percentile`. This feature is enabled by default and can be disabled by setting
 `spark.rapids.sql.expression.ApproximatePercentile=false`.
-
-## Exact Percentile
-
-On Spark 5.0 and later, exact `percentile` aggregation over `FLOAT` or `DOUBLE` input falls back
-to CPU. Spark 5.0 changed its interpolation formula, and the GPU implementation does not yet match
-the resulting `NaN` and infinity semantics. Exact `percentile` over integral input remains GPU
-accelerated. Native GPU support for the Spark 5.0 interpolation behavior is tracked by
-[issue-15516](https://github.com/NVIDIA/cudf-spark/issues/15516).
 
 ## Conditionals and operations with side effects (ANSI mode)
 

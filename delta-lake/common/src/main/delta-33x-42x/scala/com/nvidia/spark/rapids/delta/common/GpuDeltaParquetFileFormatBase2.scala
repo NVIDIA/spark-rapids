@@ -460,10 +460,10 @@ class GpuDeltaParquetFileFormatBase2(
   }
 
   /**
-   * Per-block DV info attached to each [[ParquetSingleDataBlockMeta]].
+   * Per-block DV info attached to each `ParquetSingleDataBlockMeta`.
    * One instance per row group; multiple instances from the same file share the same
    * dvDescriptor but differ in rowGroupOffset/rowGroupNumRows.
-   * Extends [[ParquetExtraInfo]] additively — no overrides.
+   * Extends `ParquetExtraInfo` additively — no overrides.
    */
   class DeltaParquetExtraInfo(
       dateRebaseMode: DateTimeRebaseMode,
@@ -480,7 +480,7 @@ class GpuDeltaParquetFileFormatBase2(
   ) extends ParquetExtraInfo(dateRebaseMode, timestampRebaseMode, hasInt96Timestamps)
 
   /**
-   * Per-file DV entry assembled during [[augmentChunkMeta]].
+   * Per-file DV entry assembled during `augmentChunkMeta`.
    *
    * @param dvDescriptor base64-encoded DV descriptor for this file; None if no DV
    * @param filterTypeOpt controls whether bitmap-marked rows are removed or retained; None if no DV
@@ -496,17 +496,17 @@ class GpuDeltaParquetFileFormatBase2(
       partitionIndex: Int)
 
   /**
-   * Per-file DV load result produced during [[prepareForDecode]].
+   * Per-file DV load result produced during `prepareForDecode`.
    *
    * @param gpuBitmap serialized roaring bitmap buffer for the file's deletion vector
    */
   case class SerializedRoaringBitmap(gpuBitmap: SpillableHostBuffer)
 
   /**
-   * Per-batch DV info that replaces [[ParquetExtraInfo]] in [[CurrentChunkMeta]] after batch
+   * Per-batch DV info that replaces `ParquetExtraInfo` in `CurrentChunkMeta` after batch
    * assembly.  Two-phase construction:
-   *  - [[perFileEntries]] is populated by [[augmentChunkMeta]].
-   *  - [[loadedDVResults]] is filled in by [[prepareForDecode]] after the copy phase.
+   *  - [[perFileEntries]] is populated by `augmentChunkMeta`.
+   *  - [[loadedDVResults]] is filled in by `prepareForDecode` after the copy phase.
    *  [[perFileEntries]] and [[loadedDVResults]] are always parallel sequences of the same length.
    */
   case class DeltaBatchExtraInfo(
@@ -1150,11 +1150,11 @@ class GpuDeltaParquetFileFormatBase2(
    * Coalescing Parquet reader for Delta tables with Deletion Vector support.
    *
    * Overrides the standard coalescing pipeline hooks to:
-   *  - collect per-block DV descriptors during batch assembly ([[augmentChunkMeta]])
-   *  - load DV bitmaps concurrently after the copy phase ([[prepareForDecode]])
+   *  - collect per-block DV descriptors during batch assembly (`augmentChunkMeta`)
+   *  - load DV bitmaps concurrently after the copy phase (`prepareForDecode`)
    *  - pass DV info to the cuDF Parquet reader ([[readBufferToTablesAndClose]])
    *  - substitute DV-filtered alive row counts for partition routing
-   *    ([[getRowsPerPartition]])
+   *    (`getRowsPerPartition`)
    */
   class MultiFileDeltaCoalescingParquetPartitionReader(
       fileIO: RapidsFileIO,
@@ -1187,7 +1187,7 @@ class GpuDeltaParquetFileFormatBase2(
     /**
      * Builds per-file DV entries from the assembled file-major chunk, preserving the same file
      * order used by the combined buffer layout. Also records which partition index each file
-     * belongs to for use in [[getRowsPerPartition]].
+     * belongs to for use in `getRowsPerPartition`.
      */
     override protected def augmentChunkMeta(meta: CurrentChunkMeta): CurrentChunkMeta = {
       if (meta.currentChunk.isEmpty) return meta
@@ -1292,7 +1292,7 @@ class GpuDeltaParquetFileFormatBase2(
     /**
      * Loads DV bitmaps for all files in the batch concurrently after the copy phase.
      * Also computes the rows remaining in each partition after applying all of its deletion
-     * vectors (used later by [[getRowsPerPartition]]).
+     * vectors (used later by `getRowsPerPartition`).
      * Fast path: if no file in the batch has a DV, returns meta unchanged.
      */
     override protected def prepareForDecode(meta: CurrentChunkMeta): CurrentChunkMeta = {
@@ -1388,7 +1388,7 @@ class GpuDeltaParquetFileFormatBase2(
 
     /**
      * Decodes the combined Parquet buffer, applying deletion vectors when present.
-     * GPU bitmaps were pre-loaded by [[prepareForDecode]]; one entry per file in batch order.
+     * GPU bitmaps were pre-loaded by `prepareForDecode`; one entry per file in batch order.
      */
     override def readBufferToTablesAndClose(dataBuffer: HostMemoryBuffer, dataSize: Long,
         clippedSchema: SchemaBase, readDataSchema: StructType,
@@ -1428,7 +1428,7 @@ class GpuDeltaParquetFileFormatBase2(
     }
 
     /**
-     * Returns per-partition alive row counts pre-computed by [[prepareForDecode]].
+     * Returns per-partition alive row counts pre-computed by `prepareForDecode`.
      * Fast path: if no file has a DV, returns raw row counts unchanged (no I/O).
      */
     override protected def getRowsPerPartition(

@@ -254,15 +254,6 @@ private[rapids] trait RapidsConfEntries extends RapidsConfSqlEntries {
       .bytesConf(ByteUnit.BYTE)
       .createWithDefault(1024 * 1024 * 1024)
 
-  val SHUFFLE_UCX_ACTIVE_MESSAGES_FORCE_RNDV =
-    conf("spark.rapids.shuffle.ucx.activeMessages.forceRndv")
-      .doc("Set to true to force 'rndv' mode for all UCX Active Messages. " +
-        "This should only be required with UCX 1.10.x. UCX 1.11.x deployments should " +
-        "set to false.")
-      .startupOnly()
-      .booleanConf
-      .createWithDefault(false)
-
   val SHUFFLE_UCX_USE_WAKEUP = conf("spark.rapids.shuffle.ucx.useWakeup")
     .doc("When set to true, use UCX's event-based progress (epoll) in order to wake up " +
       "the progress thread when needed, instead of a hot loop.")
@@ -272,20 +263,6 @@ private[rapids] trait RapidsConfEntries extends RapidsConfSqlEntries {
 
   val SHUFFLE_UCX_LISTENER_START_PORT = conf("spark.rapids.shuffle.ucx.listenerStartPort")
     .doc("Starting port to try to bind the UCX listener.")
-    .internal()
-    .startupOnly()
-    .integerConf
-    .createWithDefault(0)
-
-  val SHUFFLE_UCX_MGMT_SERVER_HOST = conf("spark.rapids.shuffle.ucx.managementServerHost")
-    .doc("The host to be used to start the management server")
-    .startupOnly()
-    .stringConf
-    .createWithDefault(null)
-
-  val SHUFFLE_UCX_MGMT_CONNECTION_TIMEOUT =
-    conf("spark.rapids.shuffle.ucx.managementConnectionTimeout")
-    .doc("The timeout for client connections to a remote peer")
     .internal()
     .startupOnly()
     .integerConf

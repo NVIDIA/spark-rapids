@@ -45,7 +45,7 @@ import com.nvidia.spark.rapids.jni.fileio.{RapidsFileIO, RapidsInputFile}
 import com.nvidia.spark.rapids.jni.fileio.RapidsInputFile.CopyRange
 import com.nvidia.spark.rapids.parquet.ParquetPartitionReader.{LocalCopy, PARQUET_MAGIC}
 import com.nvidia.spark.rapids.shims.{ColumnDefaultValuesShims, GpuParquetCrypto, GpuTypeShims,
-  ParquetVariantShims, ShimFilePartitionReaderFactory, SparkShimImpl}
+  ParquetMissingStructShims, ParquetVariantShims, ShimFilePartitionReaderFactory, SparkShimImpl}
 import com.nvidia.spark.rapids.shims.parquet.{GpuParquetUtilsShims, ParquetLegacyNanoAsLongShims, ParquetSchemaClipShims, ParquetStringPredShims}
 import org.apache.commons.io.output.{CountingOutputStream, NullOutputStream}
 import org.apache.hadoop.conf.Configuration
@@ -582,6 +582,8 @@ protected case class GpuParquetFileFilterHandler(
   private val int96RebaseMode = SparkShimImpl.int96ParquetRebaseRead(sqlConf)
   private val readUseFieldId = ParquetSchemaClipShims.useFieldId(sqlConf)
   private val ignoreMissingParquetFieldId = ParquetSchemaClipShims.ignoreMissingIds(sqlConf)
+  private val returnNullStructIfAllFieldsMissing =
+    ParquetMissingStructShims.returnNullStructIfAllFieldsMissing(sqlConf)
 
   private val PARQUET_ENCRYPTION_CONFS = Seq("parquet.encryption.kms.client.class",
     "parquet.encryption.kms.client.class", "parquet.crypto.factory.class")
@@ -872,7 +874,8 @@ protected case class GpuParquetFileFilterHandler(
       val (clipped, clippedSchema) =
         NvtxRegistry.PARQUET_CLIP_SCHEMA {
           val clippedSchema = ParquetSchemaUtils.clipParquetSchema(
-            fileSchema, readDataSchema, isCaseSensitive, readUseFieldId)
+            fileSchema, readDataSchema, isCaseSensitive, readUseFieldId,
+            returnNullStructIfAllFieldsMissing)
           // Check if the read schema is compatible with the file schema.
           checkSchemaCompat(clippedSchema, readDataSchema,
             (t: Type, d: DataType) => throwTypeIncompatibleError(t, d, file.filePath.toString()),
@@ -2476,11 +2479,6 @@ trait ParquetPartitionReaderBase extends Logging with ScanWithMetrics
     blocks.map(_.asInstanceOf[ParquetDataBlock].dataBlock)
 }
 
-// Parquet schema wrapper
-case class ParquetSchemaWrapper(schema: MessageType) extends SchemaBase {
-  override def isEmpty: Boolean = schema.getFields.isEmpty
-}
-
 // Parquet BlockMetaData wrapper
 case class ParquetDataBlock(
     dataBlock: BlockMetaData,
@@ -2511,7 +2509,7 @@ case class ParquetSingleDataBlockMeta(
  *
  * Provides all the Parquet-specific block-copy machinery shared between the plain coalescing
  * reader and the Delta-aware coalescing reader: header/footer writing, block-split predicate,
- * batch runner, and the [[populateCurrentBlockChunk]] template method with the
+ * batch runner, and the [[populateCurrentBlockChunk():*]] template method with the
  * [[augmentChunkMeta]] extension point.
  *
  * Both [[MultiFileParquetPartitionReader]] and the Delta-aware coalescing reader extend this
@@ -2703,7 +2701,7 @@ abstract class MultiFileCoalescingParquetPartitionReaderBase(
   }
 
   /**
-   * Extension point called after each batch is assembled by [[populateCurrentBlockChunk]].
+   * Extension point called after each batch is assembled by [[populateCurrentBlockChunk():*]].
    * Subclasses override this to inject additional per-batch metadata (e.g. DV entries) into
    * the returned [[CurrentChunkMeta]] without touching the assembly loop.
    * Default implementation returns the meta unchanged.
@@ -3673,7 +3671,7 @@ object MakeParquetTableProducer extends Logging {
 }
 
 /**
- * An interator that reads Parquet files in chunks and produce a [[Table]] for each chunk.
+ * An interator that reads Parquet files in chunks and produce a `Table` for each chunk.
  */
 trait ChunkedReader extends AutoCloseable {
   def hasNext: Boolean
