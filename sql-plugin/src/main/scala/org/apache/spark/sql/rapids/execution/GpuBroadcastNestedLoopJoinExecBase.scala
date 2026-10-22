@@ -37,6 +37,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.BroadcastNestedLoopJoinExec
+import org.apache.spark.sql.rapids.{GpuEqualNullSafe, GpuNot}
 import org.apache.spark.sql.types.{BooleanType, DataType, StructType}
 import org.apache.spark.sql.vectorized.{ColumnarBatch, ColumnVector}
 
@@ -244,7 +245,7 @@ class ConditionalNestedLoopJoinIterator(
       builtBatch.checkpoint()
       withRetryNoSplit {
         withRestoreOnRetry(Seq(builtBatch, scb)) {
-          withResource(GpuProjectAstExpression.tableFromBatch(builtBatch.getBatch)) { builtTable =>
+          withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
             withResource(GpuColumnVector.from(scb.getBatch)) { streamTable =>
               val (left, right) = buildSide match {
                 case GpuBuildLeft => (builtTable, streamTable)
@@ -279,7 +280,7 @@ class ConditionalNestedLoopJoinIterator(
     batches.foreach(_.checkpoint())
     withRetryNoSplit {
       withRestoreOnRetry(batches) {
-        withResource(GpuProjectAstExpression.tableFromBatch(builtBatch.getBatch)) { builtTable =>
+        withResource(GpuColumnVector.from(builtBatch.getBatch)) { builtTable =>
           withResource(GpuColumnVector.from(cb.getBatch)) { streamTable =>
           // We need a new LSCB that will be taken over by the gatherer, or closed
           closeOnExcept(LazySpillableColumnarBatch(spillOnlyCb.getBatch, "stream_data")) {
@@ -379,6 +380,9 @@ object GpuBroadcastNestedLoopJoinExecBase {
         if (isDegenerateLeftOuterJoin(joinType, buildSide, builtBatch, streamAttributes)) {
           degenerateLeftOuterJoinIterator(stream, streamAttributes, builtBatch,
             boundCondition.get)
+        } else if (builtBatch.numCols == 0 || streamAttributes.isEmpty) {
+          degenerateJoinIterator(joinType, buildSide, builtBatch, stream, streamAttributes,
+            targetSize, sizeEstimateThreshold, boundCondition.get, opTime, joinTime)
         } else {
           val compiledAst = boundCondition.get.convertToAst(numFirstTableColumns).compile()
           new ConditionalNestedLoopJoinIterator(joinType, buildSide, builtBatch,
@@ -491,6 +495,79 @@ object GpuBroadcastNestedLoopJoinExecBase {
           }
           withResource(retTbl)(_ => GpuColumnVector.from(retTbl, scb.dataTypes))
         }
+      }
+    }
+  }
+
+  // A side with no columns adds no attributes, so the condition reads only the other side,
+  // and its bound ordinals index that side's batch directly.
+  private def degenerateJoinIterator(
+      joinType: JoinType,
+      buildSide: GpuBuildSide,
+      builtBatch: LazySpillableColumnarBatch,
+      stream: Iterator[LazySpillableColumnarBatch],
+      streamAttrs: Seq[Attribute],
+      targetSize: Long,
+      sizeEstimateThreshold: Double,
+      boundCondition: GpuExpression,
+      opTime: GpuMetric,
+      joinTime: GpuMetric): Iterator[ColumnarBatch] = {
+    (joinType, streamAttrs.isEmpty) match {
+      case (_: InnerLike, false) =>
+        // Each stream row that meets the condition joins every build row.
+        val matchedStream = stream.map { scb =>
+          withResource(filterAndClose(scb, boundCondition)) {
+            LazySpillableColumnarBatch(_, "stream_batch")
+          }
+        }
+        new CrossJoinIterator(builtBatch, matchedStream, targetSize, sizeEstimateThreshold,
+          buildSide, opTime, joinTime)
+      case (_: InnerLike, true) =>
+        // Every stream row joins each build row that meets the condition.
+        val matchedBuild = withResource(filterAndClose(builtBatch, boundCondition)) {
+          LazySpillableColumnarBatch(_, "built_batch")
+        }
+        closeOnExcept(matchedBuild) { _ =>
+          new CrossJoinIterator(matchedBuild, stream, targetSize, sizeEstimateThreshold,
+            buildSide, opTime, joinTime)
+        }
+      case (LeftSemi | LeftAnti, false) =>
+        // A stream row has a match when the build has rows and the condition is true for it.
+        val matched = if (withResource(builtBatch)(_.numRows > 0)) {
+          boundCondition
+        } else {
+          GpuLiteral(false, BooleanType)
+        }
+        val keep = if (joinType == LeftSemi) {
+          matched
+        } else {
+          GpuNot(GpuEqualNullSafe(matched, GpuLiteral(true, BooleanType)))
+        }
+        stream.map(filterAndClose(_, keep))
+      case (LeftSemi | LeftAnti, true) =>
+        // Every stream row has a match when some build row meets the condition.
+        val anyMatch = withResource(filterAndClose(builtBatch, boundCondition))(_.numRows > 0)
+        val keepStream = anyMatch == (joinType == LeftSemi)
+        stream.flatMap { scb =>
+          withResource(scb) { _ =>
+            if (keepStream) {
+              Iterator.single(new ColumnarBatch(Array.empty, scb.numRows))
+            } else {
+              Iterator.empty
+            }
+          }
+        }
+      case _ => throw new IllegalStateException(s"Unsupported join type $joinType")
+    }
+  }
+
+  private def filterAndClose(
+      batch: LazySpillableColumnarBatch,
+      condition: GpuExpression): ColumnarBatch = {
+    batch.checkpoint()
+    withRetryNoSplit(batch) { _ =>
+      withRestoreOnRetry(batch) {
+        GpuFilter(batch.getBatch, condition, NoopMetric, NoopMetric, NoopMetric)
       }
     }
   }

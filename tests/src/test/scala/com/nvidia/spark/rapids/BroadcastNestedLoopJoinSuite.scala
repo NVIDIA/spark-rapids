@@ -17,8 +17,7 @@
 package com.nvidia.spark.rapids
 
 import ai.rapids.cudf.ColumnVector
-import com.nvidia.spark.rapids.Arm.{closeOnExcept, withResource}
-import com.nvidia.spark.rapids.SplittableJoinIterator.PreparedJoinBatch
+import com.nvidia.spark.rapids.Arm.withResource
 import com.nvidia.spark.rapids.shims.OperatorsUtilShims
 
 import org.apache.spark.SparkConf
@@ -28,8 +27,8 @@ import org.apache.spark.sql.catalyst.plans.{Cross, ExistenceJoin, Inner, InnerLi
 import org.apache.spark.sql.functions.broadcast
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.rapids.GpuGreaterThan
-import org.apache.spark.sql.rapids.execution.{ConditionalNestedLoopJoinIterator,
-  GpuBroadcastNestedLoopJoinExec, GpuBroadcastNestedLoopJoinExecBase}
+import org.apache.spark.sql.rapids.execution.{GpuBroadcastNestedLoopJoinExec,
+  GpuBroadcastNestedLoopJoinExecBase}
 import org.apache.spark.sql.types.{BooleanType, IntegerType}
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
@@ -78,80 +77,6 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
   private val condition = GpuGreaterThan(
     GpuBoundReference(0, IntegerType, nullable = true)(ExprId(0), "a"),
     GpuLiteral(5, IntegerType))
-  private val inputs = Seq(
-    Seq[Integer](null, 0, 5, 6, 9),
-    Seq[Integer](6, 9),
-    Seq[Integer](null, 0, 5),
-    Seq.empty[Integer])
-
-  private def withJoin(
-      buildRows: Int,
-      values: Seq[Integer])(
-      f: (ConditionalNestedLoopJoinIterator, LazySpillableColumnarBatch) => Unit): Unit = {
-    withGpuSparkSession { _ =>
-      withResource(new ColumnarBatch(Array.empty, buildRows)) { build =>
-        withResource(LazySpillableColumnarBatch(build, "build")) { builtBatch =>
-          withResource(new ColumnarBatch(Array(GpuColumnVector.from(
-              ColumnVector.fromBoxedInts(values: _*), IntegerType)), values.length)) { stream =>
-            withResource(LazySpillableColumnarBatch(stream, "stream")) { streamBatch =>
-              val iter = closeOnExcept(condition.convertToAst(1).compile()) { compiled =>
-                new ConditionalNestedLoopJoinIterator(LeftAnti, GpuBuildRight,
-                  LazySpillableColumnarBatch.spillOnly(builtBatch), Iterator.empty,
-                  Seq(streamAttr), 1024 * 1024, 0.75, compiled, NoopMetric, NoopMetric)
-              }
-              withResource(iter)(f(_, streamBatch))
-            }
-          }
-        }
-      }
-    }
-  }
-
-  private def expectedRows(buildRows: Int, values: Seq[Integer]): Seq[Integer] = {
-    if (buildRows == 0) values else values.filter(v => v == null || v <= 5)
-  }
-
-  test("left anti row count accepts a rows-only build") {
-    for (buildRows <- Seq(0, 1, 3); values <- inputs) {
-      withClue(s"build rows $buildRows, stream $values: ") {
-        withJoin(buildRows, values) { (iter, stream) =>
-          withResource(iter.prepareJoinBatch(stream)) { prepared =>
-            assertResult(expectedRows(buildRows, values).length.toLong)(prepared.numJoinRows)
-          }
-        }
-      }
-    }
-  }
-
-  test("left anti gather maps accept a rows-only build with and without a row count") {
-    for (buildRows <- Seq(0, 1, 3); values <- inputs; prepared <- Seq(false, true)) {
-      withClue(s"build rows $buildRows, stream $values, prepared $prepared: ") {
-        withJoin(buildRows, values) { (iter, stream) =>
-          val expected = expectedRows(buildRows, values)
-          val state = if (prepared) Some(PreparedJoinBatch(expected.length)) else None
-          val gatherer = iter.createGatherer(stream, state)
-          withResource(gatherer) { _ =>
-            if (expected.isEmpty) {
-              assert(gatherer.isEmpty)
-            } else {
-              assert(gatherer.isDefined)
-              withResource(gatherer.get.gatherNext(expected.length)) { result =>
-                assertResult(1)(result.numCols())
-                withResource(result.column(0).asInstanceOf[GpuColumnVector].copyToHost()) { host =>
-                  val actual = (0 until result.numRows()).map { i =>
-                    if (host.isNullAt(i)) null else Integer.valueOf(host.getInt(i))
-                  }
-                  assertResult(expected)(actual)
-                }
-              }
-              assert(gatherer.get.isDone)
-            }
-          }
-        }
-      }
-    }
-  }
-
   private val existsAttr = AttributeReference("exists", BooleanType, nullable = false)()
 
   // The join types and build sides the GPU plans as a conditional nested loop join
@@ -205,7 +130,8 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
           val streamBatches = stream.iterator.map { make =>
             withResource(make())(LazySpillableColumnarBatch(_, "stream"))
           }
-          // A small target size splits the output into several batches.
+          // A small target size splits the output into several batches. 0.75 is the default
+          // size estimate threshold of the join gatherer.
           GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(joinType, buildSide,
             numFirstTableColumns, builtBatch, streamBatches, streamAttrs, 16, 0.75,
             Some(condition), NoopMetric, NoopMetric, NoopMetric, NoopMetric)
