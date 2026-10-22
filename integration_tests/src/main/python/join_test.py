@@ -1128,6 +1128,10 @@ def test_broadcast_nested_loop_join_rows_only_build(build_length, batch_size):
 @pytest.mark.parametrize('batch_size', ['100', '1g'], ids=idfn)
 def test_broadcast_nested_loop_join_one_sided_sequence_condition(
         join_type, build_side, predicate_side, build_length, batch_size):
+    if join_type in ['LeftSemi', 'LeftAnti'] and predicate_side == 'right' and \
+            not is_spark_400_or_later():
+        pytest.skip('Before Spark 4.0 the predicate moves below the join, so these cases plan '
+                    'an unconditional join with no output columns')
     def do_join(spark):
         values = SetValuesGen(IntegerType(), [None, 0, 5, 6, 9])
         left = gen_df(spark, [('a', values)],
