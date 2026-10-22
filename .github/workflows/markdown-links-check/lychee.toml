@@ -30,4 +30,4 @@ exclude = [
 ]
 
 # Historical changelogs account for most repository links and are immutable.
-exclude_path = ['(^|/)(CHANGELOG\.md|docs/archive\.md|docs/archives/)']
+exclude_path = ['(^|/)(CHANGELOG\.md|docs/archives/)']
