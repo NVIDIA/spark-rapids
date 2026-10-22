@@ -49,6 +49,7 @@ pytestmark = [
     pytest.mark.skipif(
         not is_spark_protobuf_available(),
         reason="from_protobuf is unavailable"),
+    pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+"),
 ]
 
 def _lacks_null_result_row(spark):
@@ -72,49 +73,25 @@ def _has_permissive_null_row_fix():
 # rejects DROPMALFORMED during analysis; PERMISSIVE then stays on CPU.
 _permissive_null_row_fix = _has_permissive_null_row_fix()
 _permissive_marks = [] if _permissive_null_row_fix else [allow_non_gpu("ProtobufDataToCatalyst")]
+_modes = [pytest.param("PERMISSIVE", marks=_permissive_marks), "FAILFAST"]
 
 
-def _permissive_test(fn):
-    for mark in _permissive_marks:
-        fn = mark(fn)
-    return fn
-
-
-def _assert_permissive_gpu_and_cpu_equal(run_on_spark):
+def _assert_permissive_gpu_and_cpu_equal(run_on_spark, conf={}):
     if not _permissive_null_row_fix:
-        assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
+        assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst", conf=conf)
     else:
-        assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+        assert_gpu_and_cpu_are_equal_collect(run_on_spark, conf=conf)
 
 
-# Random data generation configurations for simple scalars
-_random_scalar_test_configs = [
-    # (test_id, data_gen_config)
-    ("all_types", [
-        ("b", BooleanGen()),
-        ("i32", IntegerGen()),
-        ("i64", LongGen()),
-        ("f32", FloatGen()),
-        ("f64", DoubleGen()),
-        ("s", StringGen()),
-    ]),
-    ("integers_edge_cases", [
-        ("b", BooleanGen()),
-        ("i32", IntegerGen(
-            min_val=-2147483648, max_val=2147483647,
-            special_cases=[-2147483648, -1, 0, 1, 2147483647])),
-        ("i64", LongGen(
-            min_val=-9223372036854775808, max_val=9223372036854775807,
-            special_cases=[-9223372036854775808, -1, 0, 1, 9223372036854775807])),
-        ("f32", FloatGen()),
-        ("f64", DoubleGen()),
-        ("s", StringGen()),
-    ]),
-]
+def _assert_gpu_and_cpu_equal_in_mode(run_on_spark, mode, conf={}):
+    if mode == "PERMISSIVE":
+        _assert_permissive_gpu_and_cpu_equal(run_on_spark, conf=conf)
+    else:
+        assert_gpu_and_cpu_are_equal_collect(run_on_spark, conf=conf)
 
 
 # ---------------------------------------------------------------------------
-# Shared fixture and helpers to reduce per-test boilerplate
+# Shared fixtures and helpers
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -142,18 +119,61 @@ def _call_from_protobuf(from_protobuf_fn, col, message_name,
         from_protobuf_fn, col, message_name, desc_path, desc_bytes, options)
 
 
-def _build_simple_descriptor_set_bytes(spark):
-    """Build a simple scalar proto2 descriptor."""
-    return _build_proto2_descriptor(spark, "simple.proto", [
-        _msg("Simple", [
-            _field("b", 1, "BOOL"),
-            _field("i32", 2, "INT32"),
-            _field("i64", 3, "INT64"),
-            _field("f32", 4, "FLOAT"),
-            _field("f64", 5, "DOUBLE"),
-            _field("s", 6, "STRING"),
-        ]),
-    ])
+def _decode(from_protobuf_fn, desc, message, options=None):
+    """from_protobuf of the `bin` column as test.<message>."""
+    desc_path, desc_bytes = desc
+    return _call_from_protobuf(
+        from_protobuf_fn, f.col("bin"), f"test.{message}", desc_path, desc_bytes, options)
+
+
+def _get_field_by_path(expr, path):
+    current = expr
+    for name in path:
+        current = current.getField(name)
+    return current
+
+
+def _select_paths(decoded, paths):
+    """The decoded struct itself for None, otherwise the fields at the dotted paths."""
+    if paths is None:
+        return [decoded.alias("decoded")]
+    return [_get_field_by_path(decoded, path.split(".")).alias(path.replace(".", "_"))
+            for path in paths]
+
+
+def _encode_varint(value):
+    """Encode a non-negative integer as a protobuf varint (for hand-crafting test bytes)."""
+    if value < 0:
+        raise ValueError("varint value must be non-negative")
+    out = bytearray()
+    v = int(value)
+    while True:
+        b = v & 0x7F
+        v >>= 7
+        if v:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            break
+    return bytes(out)
+
+
+def _encode_tag(field_number, wire_type):
+    return _encode_varint((field_number << 3) | wire_type)
+
+
+def _encode_varint_field(field_number, value):
+    return _encode_tag(field_number, 0) + _encode_varint(value)
+
+
+def _encode_length_delimited_field(field_number, value):
+    data = value.encode("utf-8") if isinstance(value, str) else bytes(value)
+    return _encode_tag(field_number, 2) + _encode_varint(len(data)) + data
+
+
+# Eleven 0x80 bytes: a varint that never terminates. CPU `CodedInputStream.readRawVarint64`
+# raises "CodedInputStream encountered a malformed varint." after 10 continuation bytes.
+_MALFORMED_VARINT = b"\x80" * 11
 
 
 def _new_proto2_file(_spark, name):
@@ -253,6 +273,581 @@ def _build_proto2_descriptor(
     return fds.SerializeToString()
 
 
+# ---------------------------------------------------------------------------
+# Descriptors shared by several sections
+# ---------------------------------------------------------------------------
+
+def _build_simple_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(spark, "simple.proto", [
+        _msg("Simple", [
+            _field("b", 1, "BOOL"),
+            _field("i32", 2, "INT32"),
+            _field("i64", 3, "INT64"),
+            _field("f32", 4, "FLOAT"),
+            _field("f64", 5, "DOUBLE"),
+            _field("s", 6, "STRING"),
+        ]),
+    ])
+
+
+_STATUS_NAMES = ["TEN", "ONE", "FIVE"]
+
+
+def _build_enum_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(spark, "enum.proto", [
+        _msg("EnumRoot", [
+            _field("status", 1, "ENUM", type_name=".test.Status"),
+            _field("statuses", 2, "ENUM", label="repeated", type_name=".test.Status"),
+            _field("id", 3, "INT32"),
+        ]),
+    # Values are declared out of numeric order and without zero.
+    ], file_enums=[_enum("Status", [("TEN", 10), ("ONE", 1), ("FIVE", 5)])])
+
+
+# ===========================================================================
+# Valid input: the GPU decodes it and matches the CPU
+# ===========================================================================
+
+_ALL_TYPES_SCALARS = [
+    ("b", "BOOL", BooleanGen()),
+    ("i32", "INT32", IntegerGen()),
+    ("i64", "INT64", LongGen()),
+    ("u32", "UINT32", IntegerGen()),
+    ("u64", "UINT64", LongGen()),
+    ("si32", "SINT32", IntegerGen()),
+    ("si64", "SINT64", LongGen()),
+    ("fx32", "FIXED32", IntegerGen()),
+    ("fx64", "FIXED64", LongGen()),
+    ("sfx32", "SFIXED32", IntegerGen()),
+    ("sfx64", "SFIXED64", LongGen()),
+    ("f32", "FLOAT", FloatGen()),
+    ("f64", "DOUBLE", DoubleGen()),
+    ("s", "STRING", StringGen()),
+    ("payload", "BYTES", BinaryGen()),
+]
+
+# (name, type, packed, element generator)
+_ALL_TYPES_REPEATED = [
+    ("r_i32", "INT32", False, IntegerGen(nullable=False)),
+    ("r_i64", "INT64", False, LongGen(nullable=False)),
+    ("r_f32", "FLOAT", False, FloatGen(nullable=False)),
+    ("r_f64", "DOUBLE", False, DoubleGen(nullable=False)),
+    ("r_b", "BOOL", False, BooleanGen(nullable=False)),
+    ("r_s", "STRING", False, StringGen(nullable=False)),
+    ("r_bytes", "BYTES", False, BinaryGen(nullable=False)),
+    ("p_i32", "INT32", True, IntegerGen(nullable=False)),
+    ("p_si64", "SINT64", True, LongGen(nullable=False)),
+    ("p_fx32", "FIXED32", True, IntegerGen(nullable=False)),
+    ("p_f64", "DOUBLE", True, DoubleGen(nullable=False)),
+    ("p_b", "BOOL", True, BooleanGen(nullable=False)),
+]
+
+
+def _build_all_types_descriptor_set_bytes(spark):
+    fields = [_field(name, number, ftype)
+              for number, (name, ftype, _) in enumerate(_ALL_TYPES_SCALARS, start=1)]
+    fields += [_field(name, number, ftype, label="repeated", packed=packed)
+               for number, (name, ftype, packed, _) in
+               enumerate(_ALL_TYPES_REPEATED, start=len(fields) + 1)]
+    return _build_proto2_descriptor(spark, "all_types.proto", [_msg("AllTypes", fields)])
+
+
+_all_types_gen = StructGen(
+    [(name, gen) for name, _, gen in _ALL_TYPES_SCALARS] +
+    [(name, ArrayGen(gen, max_length=5, nullable=False))
+     for name, _, _, gen in _ALL_TYPES_REPEATED],
+    nullable=False)
+
+
+@ignore_order(local=True)
+def test_from_protobuf_all_field_types(local_tmp_path, from_protobuf_fn):
+    """Every scalar type and packed and unpacked repeated fields decode to the values Spark's
+    to_protobuf encoded."""
+    desc = _setup_protobuf_desc(
+        local_tmp_path, "all_types.desc", _build_all_types_descriptor_set_bytes)
+    fixture_rows, fixture_schema = materialize_protobuf_data(
+        _all_types_gen, "test.AllTypes", *desc)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(fixture_rows, fixture_schema)
+        expected = f.struct(*(f.col(field.name) for field in _all_types_gen.data_type.fields))
+        return df.select(expected.alias("expected"),
+                         _decode(from_protobuf_fn, desc, "AllTypes").alias("decoded"))
+
+    # Spark compares NaN as equal to NaN, unlike Python.
+    mismatches = with_cpu_session(
+        lambda spark: run_on_spark(spark).filter("NOT (expected <=> decoded)").count())
+    assert mismatches == 0
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+# proto2 test.UnsignedRoot with required, optional, repeated, and defaulted unsigned fields.
+# Kept as bytes so the unsigned contract does not depend on the protobuf runtime.
+_unsigned_desc_bytes = bytes.fromhex(
+    "0adb010a0a726f6f742e70726f746f120474657374229c010a0c556e7369676e"
+    "6564526f6f74121c0a0673746174757318012002280e320c2e746573742e5374"
+    "6174757312140a0c72657175697265645f75363418022002280412140a0c6f70"
+    "74696f6e616c5f75333218032001280d12140a0c72657065617465645f753332"
+    "18042003280d12140a0c72657065617465645f75363418052003280412160a0b"
+    "64656661756c745f7536341806200128043a01302a200a06537461747573120b"
+    "0a07554e4b4e4f574e100012090a0552454144591002620670726f746f32")
+
+
+@pytest.fixture
+def unsigned_desc(local_tmp_path):
+    desc_path = os.path.join(local_tmp_path, "unsigned.desc")
+    with open(desc_path, "wb") as fp:
+        fp.write(_unsigned_desc_bytes)
+    return desc_path, _unsigned_desc_bytes
+
+
+def test_from_protobuf_unsigned_boundaries(unsigned_desc, from_protobuf_fn):
+    row = (
+        _encode_tag(1, 0) + _encode_varint(2) +
+        _encode_tag(2, 0) + _encode_varint((1 << 64) - 1) +
+        _encode_tag(3, 0) + _encode_varint(1 << 31) +
+        _encode_tag(4, 0) + _encode_varint(0) +
+        _encode_tag(4, 0) + _encode_varint((1 << 32) - 1) +
+        _encode_tag(5, 0) + _encode_varint(1 << 63) +
+        _encode_tag(5, 0) + _encode_varint((1 << 64) - 1))
+
+    def run_on_spark(spark):
+        return spark.createDataFrame([(row,)], ["bin"]).select(
+            _decode(from_protobuf_fn, unsigned_desc, "UnsignedRoot").alias("decoded"))
+
+    cpu_rows = with_cpu_session(lambda spark: run_on_spark(spark).collect())
+    assert cpu_rows[0]["decoded"].asDict() == {
+        "status": "READY",
+        "required_u64": -1,
+        "optional_u32": -(1 << 31),
+        "repeated_u32": [0, -1],
+        "repeated_u64": [-(1 << 63), -1],
+        "default_u64": 0,
+    }
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+_enum_root_gen = StructGen([
+    ("status", SetValuesGen(StringType(), _STATUS_NAMES + [None])),
+    ("statuses", ArrayGen(SetValuesGen(StringType(), _STATUS_NAMES), nullable=False)),
+    ("id", IntegerGen()),
+], nullable=False)
+
+
+@pytest.mark.parametrize("enums_as_ints", [False, True], ids=["string", "int"])
+@ignore_order(local=True)
+def test_from_protobuf_enums(local_tmp_path, from_protobuf_fn, enums_as_ints):
+    """Singular and repeated enum values decode by name or by number."""
+    desc = _setup_protobuf_desc(local_tmp_path, "enum.desc", _build_enum_descriptor_set_bytes)
+    fixture_rows, fixture_schema = materialize_protobuf_data(
+        _enum_root_gen, "test.EnumRoot", *desc)
+    options = {"enums.as.ints": "true"} if enums_as_ints else None
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(fixture_rows, fixture_schema)
+        expected = f.struct(*(f.col(field.name) for field in _enum_root_gen.data_type.fields))
+        return df.select(expected.alias("expected"),
+                         _decode(from_protobuf_fn, desc, "EnumRoot", options).alias("decoded"))
+
+    if not enums_as_ints:
+        mismatches = with_cpu_session(
+            lambda spark: run_on_spark(spark).filter("NOT (expected <=> decoded)").count())
+        assert mismatches == 0
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_defaults_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(
+        spark,
+        "defaults.proto",
+        [
+            _msg("Defaults", [
+                _field("count", 1, "INT32", default=42),
+                _field("name", 2, "STRING", default="unknown"),
+                _field("flag", 3, "BOOL", default=True),
+                _field("zero_count", 4, "INT32", default=0),
+                _field("empty_name", 5, "STRING", default=""),
+                _field("language", 6, "ENUM", type_name=".test.Language", default="ZH"),
+                _field("note", 7, "STRING"),
+            ]),
+        ],
+        file_enums=[_enum("Language", [("UNKNOWN_LANGUAGE", 0), ("EN", 1), ("ZH", 2)])])
+
+
+@ignore_order(local=True)
+def test_from_protobuf_default_values(local_tmp_path, from_protobuf_fn):
+    """Absent fields take their declared defaults, or null without one."""
+    desc = _setup_protobuf_desc(
+        local_tmp_path, "defaults.desc", _build_defaults_descriptor_set_bytes)
+    rows = [
+        (0, _encode_varint_field(1, 100) + _encode_length_delimited_field(2, "test") +
+            _encode_varint_field(3, 0) + _encode_varint_field(4, 5) +
+            _encode_length_delimited_field(5, "x") + _encode_varint_field(6, 1) +
+            _encode_length_delimited_field(7, "n")),
+        (1, b""),
+        (2, _encode_varint_field(1, 100)),
+        (3, None),
+    ]
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(rows, schema="idx int, bin binary")
+        return df.select("idx", _decode(from_protobuf_fn, desc, "Defaults").alias("decoded"))
+
+    cpu_rows = {row["idx"]: row["decoded"] for row in
+                with_cpu_session(lambda spark: run_on_spark(spark).collect())}
+    assert cpu_rows[1]["zero_count"] == 0 and cpu_rows[1]["empty_name"] == ""
+    assert cpu_rows[1]["count"] == 42 and cpu_rows[1]["note"] is None
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_wire_variants_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(spark, "wire_variants.proto", [
+        _msg("Wire", [
+            _field("b", 1, "BOOL"),
+            _field("i32", 2, "INT32"),
+            _field("s", 3, "STRING"),
+            _field("flags", 4, "BOOL", label="repeated"),
+            _field("packed_ints", 5, "INT32", label="repeated", packed=True),
+            _field("unpacked_doubles", 6, "DOUBLE", label="repeated"),
+            _field("packed_fixed32", 7, "FIXED32", label="repeated", packed=True),
+        ]),
+    ])
+
+
+def _wire_variant_rows():
+    doubles = struct.pack("<dd", 1.5, -2.0)
+    fixed = struct.pack("<II", 7, 0xFFFFFFFF)
+    unknown_group = _encode_varint_field(1, 7) + _encode_length_delimited_field(2, "in group")
+    unknown_fields = (
+        _encode_varint_field(50, 300) +
+        _encode_tag(51, 1) + bytes(range(8)) +
+        _encode_length_delimited_field(52, b"\x08\x01unknown") +
+        _encode_tag(53, 3) + unknown_group + _encode_tag(53, 4) +
+        _encode_tag(54, 5) + bytes(range(4)))
+    invalid_utf8 = b"\xed\xa0\x80"
+    return {
+        "empty_message": [b""],
+        # protobuf-java reads any non-zero varint as true, including 256 whose low byte is 0.
+        "noncanonical_bool": [
+            _encode_varint_field(1, 256) + _encode_varint_field(2, 99),
+            _encode_varint_field(1, 1) + _encode_varint_field(2, 100),
+            _encode_varint_field(1, 512) + _encode_varint_field(2, 101),
+            _encode_varint_field(4, 256) + _encode_varint_field(4, 1) +
+            _encode_varint_field(4, 512),
+        ],
+        "noncanonical_tag_and_length": [
+            bytes([0x90] + [0x80] * 8 + [0]) + _encode_varint(42) +
+            _encode_tag(3, 2) + bytes([0x80] * 9 + [0]),
+        ],
+        "last_scalar_wins": [
+            _encode_varint_field(2, 1) + _encode_varint_field(2, 42),
+            _encode_varint_field(2, 3) + _encode_varint_field(2, 4) + _encode_varint_field(2, 5),
+        ],
+        "unknown_fields_of_every_wire_type": [
+            _encode_varint_field(2, 1) + unknown_fields + _encode_length_delimited_field(3, "s"),
+            unknown_fields + _encode_varint_field(1, 1),
+            unknown_fields,
+        ],
+        # Parsers accept packed and unpacked encodings regardless of the declared packing.
+        "either_packing": [
+            (_encode_varint_field(5, 1) + _encode_varint_field(5, 2) +
+             _encode_tag(7, 5) + fixed[:4] + _encode_tag(7, 5) + fixed[4:]),
+            _encode_length_delimited_field(6, doubles),
+            # Both encodings for the same field append in wire order.
+            (_encode_varint_field(5, 3) +
+             _encode_length_delimited_field(5, _encode_varint(4) + _encode_varint(5)) +
+             _encode_tag(6, 1) + doubles[:8] + _encode_length_delimited_field(6, doubles[8:]) +
+             _encode_length_delimited_field(7, fixed[:4]) + _encode_tag(7, 5) + fixed[4:]),
+        ],
+        "invalid_utf8_surrogate": [_encode_length_delimited_field(3, invalid_utf8)],
+    }
+
+
+@pytest.mark.parametrize("variant", list(_wire_variant_rows().keys()), ids=idfn)
+@ignore_order(local=True)
+def test_from_protobuf_wire_encoding_variants(local_tmp_path, from_protobuf_fn, variant):
+    """Valid but unusual encodings that protobuf-java accepts."""
+    desc = _setup_protobuf_desc(
+        local_tmp_path, "wire_variants.desc", _build_wire_variants_descriptor_set_bytes)
+    rows = [(i, row) for i, row in enumerate(_wire_variant_rows()[variant])]
+    rows.append((len(rows), None))
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(rows, schema="idx int, bin binary")
+        return df.select("idx", _decode(from_protobuf_fn, desc, "Wire").alias("decoded"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_many_repeated_fields_descriptor_set_bytes(spark, field_count):
+    return _build_proto2_descriptor(spark, "many_repeated.proto", [
+        _msg("ManyRepeated", [
+            _field(f"values_{number}", number, "INT32", label="repeated")
+            for number in range(1, field_count + 1)
+        ]),
+    ])
+
+
+@pytest.mark.parametrize("field_count", [32, 33, 65], ids=idfn)
+@pytest.mark.parametrize("select_whole_message", [True, False], ids=["whole", "field"])
+@ignore_order(local=True)
+def test_from_protobuf_many_repeated_fields(
+        local_tmp_path, from_protobuf_fn, field_count, select_whole_message):
+    """The decoder scans repeated fields in batches, so their count per message is unlimited."""
+    desc = _setup_protobuf_desc(
+        local_tmp_path,
+        f"many_repeated_{field_count}.desc",
+        lambda spark: _build_many_repeated_fields_descriptor_set_bytes(spark, field_count))
+    row = (_encode_tag(1, 0) + _encode_varint(7) +
+           _encode_tag(field_count, 0) + _encode_varint(9))
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(0, row), (1, None)], schema="idx int, bin binary")
+        decoded = _decode(from_protobuf_fn, desc, "ManyRepeated")
+        if select_whole_message:
+            return df.select("idx", decoded.alias("decoded"))
+        return df.select("idx", decoded.getField(f"values_{field_count}").alias("values"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+def _build_repeated_int_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(spark, "repeated_int.proto", [
+        _msg("WithRepeatedInt", [
+            _field("id", 1, "INT32"),
+            _field("values", 2, "INT32", label="repeated"),
+        ]),
+    ])
+
+
+@ignore_order(local=True)
+def test_from_protobuf_large_repeated_array(local_tmp_path, from_protobuf_fn):
+    """Arrays of 500-1000 elements per row."""
+    logical_gen = StructGen([
+        ("id", IntegerGen()),
+        ("values", ArrayGen(
+            IntegerGen(nullable=False), min_length=500, max_length=1000,
+            nullable=False)),
+    ], nullable=False)
+    desc = _setup_protobuf_desc(
+        local_tmp_path, "large_repeated_int.desc", _build_repeated_int_descriptor_set_bytes)
+    fixture_rows, fixture_schema = materialize_protobuf_data(
+        logical_gen, "test.WithRepeatedInt", *desc, length=128)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(fixture_rows, fixture_schema)
+        decoded = _decode(from_protobuf_fn, desc, "WithRepeatedInt")
+        return df.select(decoded.getField("id").alias("id"),
+                         decoded.getField("values").alias("values"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@ignore_order(local=True)
+def test_from_protobuf_all_null_input(local_tmp_path, from_protobuf_fn):
+    desc = _setup_protobuf_desc(
+        local_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(None,), (None,), (None,)], schema="bin binary")
+        return df.select(_decode(from_protobuf_fn, desc, "Simple").alias("decoded"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+@ignore_order(local=True)
+def test_from_protobuf_failfast_skips_rows_conditional_does_not_select(
+        local_tmp_path, from_protobuf_fn):
+    """FAILFAST decoding under a conditional only sees the rows that branch selects."""
+    desc = _setup_protobuf_desc(
+        local_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
+    valid_row = _encode_tag(2, 0) + _encode_varint(42)
+    malformed_row = bytes([0x08, 0x80])
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(
+            [(0, valid_row), (1, malformed_row)], schema="idx int, bin binary")
+        decoded = _decode(from_protobuf_fn, desc, "Simple", {"mode": "FAILFAST"})
+        return df.select(
+            "idx", f.when(f.col("idx") == 0, decoded.getField("i32")).alias("i32"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+# Kept as bytes so baseline API coverage does not depend on the Python protobuf package.
+# proto2 test.Simple { optional int32 i32 = 1; optional string s = 2; }
+_simple_desc_bytes = bytes.fromhex(
+    "0a360a0c73696d706c652e70726f746f12047465737422200a0653696d706c65"
+    "120b0a0369333218012001280512090a0173180220012809")
+
+@pytest.fixture
+def simple_desc(local_tmp_path):
+    desc_path = os.path.join(local_tmp_path, "simple_smoke.desc")
+    with open(desc_path, "wb") as fp:
+        fp.write(_simple_desc_bytes)
+    return desc_path, _simple_desc_bytes
+
+
+def _encode_simple_message(i32_value, s_value):
+    return (_encode_varint_field(1, i32_value & 0xFFFFFFFFFFFFFFFF) +
+            _encode_length_delimited_field(2, s_value))
+
+
+@pytest.mark.parametrize("api", ["descriptor_file", "binary_descriptor_set"], ids=idfn)
+def test_from_protobuf_smoke_api(simple_desc, from_protobuf_fn, api):
+    desc_path, desc_bytes = simple_desc
+    if api == "descriptor_file":
+        decode = lambda: from_protobuf_fn(f.col("bin"), "test.Simple", desc_path)
+    elif "binaryDescriptorSet" not in inspect.signature(from_protobuf_fn).parameters:
+        pytest.skip("binaryDescriptorSet kwarg is Spark 3.5+ only")
+    else:
+        decode = lambda: from_protobuf_fn(
+            f.col("bin"), "test.Simple", binaryDescriptorSet=bytearray(desc_bytes))
+    values = [(1, "a"), (-2, "bb"), (0, ""), (12345, "hello")]
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(_encode_simple_message(i, s),) for i, s in values], ["bin"])
+        return df.select(decode().alias("decoded"))
+
+    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+
+
+# ===========================================================================
+# Malformed input: PERMISSIVE nulls the row and FAILFAST fails, as on the CPU
+#
+# The CPU parses the whole payload, so cases that select fields also check that the GPU
+# validates the fields the query does not read.
+# ===========================================================================
+
+def _build_required_field_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(spark, "required.proto", [
+        _msg("WithRequired", [
+            _field("id", 1, "INT64", label="required"),
+            _field("name", 2, "STRING"),
+            _field("count", 3, "INT32"),
+        ]),
+    ])
+
+
+def _build_packed_repeated_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(spark, "packed_repeated.proto", [
+        _msg("WithPackedRepeated", [
+            _field("id", 1, "INT32"),
+            _field("int_values", 2, "INT32", label="repeated", packed=True),
+            _field("double_values", 3, "DOUBLE", label="repeated", packed=True),
+        ]),
+    ])
+
+
+_simple_valid = _encode_varint_field(1, 1) + _encode_varint_field(2, 42)
+_required_valid = (_encode_varint_field(1, 1) + _encode_length_delimited_field(2, "ok") +
+                   _encode_varint_field(3, 10))
+
+
+def _malformed_case(case_id, build_fn, message, valid, malformed, paths=None, options=None):
+    """`valid` is one or more valid rows. `paths` None selects the whole struct, which tells a
+    null row from a struct of nulls; field paths leave the rest of the message unselected."""
+    valid_rows = valid if isinstance(valid, list) else [valid]
+    return pytest.param(build_fn, message, valid_rows, malformed, paths, options or {},
+                        id=case_id)
+
+
+_malformed_cases = [
+    _malformed_case("truncated_varint", _build_simple_descriptor_set_bytes, "Simple",
+                    _simple_valid, bytes([0x08, 0x80])),
+    _malformed_case("wrong_wire_type", _build_simple_descriptor_set_bytes, "Simple",
+                    _encode_varint_field(2, 42),
+                    _encode_varint_field(2, 7) + _encode_tag(2, 5) + bytes([77, 0, 0, 0]) +
+                    _encode_varint_field(2, 42) + _encode_length_delimited_field(6, "ok")),
+    _malformed_case("unterminated_varint_in_unselected_field",
+                    _build_simple_descriptor_set_bytes, "Simple", _simple_valid,
+                    _simple_valid + _encode_tag(3, 0) + _MALFORMED_VARINT, ["b", "i32"]),
+    _malformed_case("truncated_length_in_unselected_field",
+                    _build_simple_descriptor_set_bytes, "Simple", _simple_valid,
+                    _simple_valid + _encode_tag(6, 2) + _encode_varint(100) + b"short",
+                    ["b", "i32"]),
+    _malformed_case("wrong_wire_type_in_unselected_field",
+                    _build_simple_descriptor_set_bytes, "Simple", _simple_valid,
+                    _simple_valid + _encode_length_delimited_field(3, b"x"), ["b", "i32"]),
+    _malformed_case("missing_required", _build_required_field_descriptor_set_bytes,
+                    "WithRequired", _required_valid, _encode_length_delimited_field(2, "bad")),
+    _malformed_case("missing_required_unselected", _build_required_field_descriptor_set_bytes,
+                    "WithRequired", _required_valid, _encode_length_delimited_field(2, "bad"),
+                    ["name", "count"]),
+    # Spark checks the root message for unknown enum values.
+    _malformed_case("unknown_enum", _build_enum_descriptor_set_bytes, "EnumRoot",
+                    _encode_varint_field(1, 1), _encode_varint_field(1, 999)),
+    _malformed_case("unknown_enum_as_int", _build_enum_descriptor_set_bytes, "EnumRoot",
+                    _encode_varint_field(1, 1), _encode_varint_field(1, 999),
+                    options={"enums.as.ints": "true"}),
+    _malformed_case("unknown_enum_in_unselected_field",
+                    _build_enum_descriptor_set_bytes, "EnumRoot",
+                    _encode_varint_field(1, 1) + _encode_varint_field(3, 1),
+                    _encode_varint_field(1, 999) + _encode_varint_field(3, 2), ["id"]),
+    _malformed_case("unknown_repeated_enum", _build_enum_descriptor_set_bytes, "EnumRoot",
+                    _encode_varint_field(2, 10) + _encode_varint_field(2, 5),
+                    _encode_varint_field(2, 1) + _encode_varint_field(2, 999)),
+    _malformed_case("unterminated_packed_varint_in_unselected_field",
+                    _build_packed_repeated_descriptor_set_bytes, "WithPackedRepeated",
+                    _encode_varint_field(1, 7),
+                    _encode_varint_field(1, 7) + _encode_length_delimited_field(2, b"\x80"),
+                    ["id"]),
+    _malformed_case("misaligned_packed_fixed64_in_unselected_field",
+                    _build_packed_repeated_descriptor_set_bytes, "WithPackedRepeated",
+                    _encode_varint_field(1, 7),
+                    _encode_varint_field(1, 7) + _encode_length_delimited_field(3, b"\x00"),
+                    ["id"]),
+]
+
+
+@pytest.mark.parametrize("build_fn,message,valid,malformed,paths,options", _malformed_cases)
+@pytest.mark.parametrize("mode", _modes, ids=idfn)
+@ignore_order(local=True)
+def test_from_protobuf_malformed_input(
+        local_tmp_path, from_protobuf_fn, build_fn, message, valid, malformed, paths, options,
+        mode):
+    desc = _setup_protobuf_desc(local_tmp_path, f"{message}.desc", build_fn)
+    rows = [(i, row) for i, row in enumerate(valid + [malformed, None])]
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame(rows, schema="idx int, bin binary")
+        decoded = _decode(from_protobuf_fn, desc, message, dict(options, mode=mode))
+        return df.select("idx", *_select_paths(decoded, paths))
+
+    if mode == "FAILFAST":
+        assert_gpu_and_cpu_error(lambda spark: run_on_spark(spark).collect(), {},
+                                 "MALFORMED_PROTOBUF_MESSAGE")
+    else:
+        _assert_permissive_gpu_and_cpu_equal(run_on_spark)
+
+
+@pytest.mark.parametrize("malformed", [False, True], ids=["valid", "malformed"])
+@allow_non_gpu("ProtobufDataToCatalyst")
+def test_from_protobuf_dropmalformed_mode_falls_back(
+        local_tmp_path, from_protobuf_fn, malformed):
+    """With SPARK-46275, Spark rejects DROPMALFORMED only when a malformed row reaches its error
+    handler."""
+    desc = _setup_protobuf_desc(
+        local_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
+    row = bytes([0x08, 0x80]) if malformed else _encode_varint_field(2, 42)
+
+    def run_on_spark(spark):
+        df = spark.createDataFrame([(row,)], schema="bin binary")
+        return df.select(_decode(from_protobuf_fn, desc, "Simple", {"mode": "DROPMALFORMED"})
+                         .alias("decoded"))
+
+    # Without SPARK-46275, Spark rejects DROPMALFORMED during analysis, even for valid rows.
+    if malformed or not _permissive_null_row_fix:
+        assert_gpu_and_cpu_error(
+            lambda spark: run_on_spark(spark).collect(), {}, "DROPMALFORMED")
+    else:
+        assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
+
+
+# ===========================================================================
+# Unsupported schemas, options and configs fall back to the CPU
+# ===========================================================================
+
 def _build_proto2_root_with_proto3_import(spark, reference_kind):
     root_file = _new_proto2_file(spark, f"proto3_{reference_kind}_root.proto")
     child_file = descriptor_pb2.FileDescriptorProto(
@@ -286,164 +881,6 @@ def _build_proto2_root_with_proto3_import(spark, reference_kind):
     return fds.SerializeToString()
 
 
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("reference_kind", ["message", "enum"], ids=idfn)
-@allow_non_gpu("ProtobufDataToCatalyst")
-def test_from_protobuf_proto3_import_falls_back(
-        local_tmp_path, from_protobuf_fn, reference_kind):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path,
-        f"proto3_{reference_kind}_import.desc",
-        lambda spark: _build_proto2_root_with_proto3_import(spark, reference_kind))
-    if reference_kind == "message":
-        child = _encode_tag(1, 0) + _encode_varint(7)
-        row = _encode_tag(1, 2) + _encode_varint(len(child)) + child
-    else:
-        row = _encode_tag(1, 0) + _encode_varint(1)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.Proto2Root", desc_path, desc_bytes)
-        return df.select(decoded.alias("decoded"))
-
-    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
-
-
-def _build_oneof_descriptor_set_bytes(spark):
-    """Build a proto2 descriptor containing a oneof plus an independent sibling."""
-    return _build_proto2_descriptor(spark, "oneof.proto", [
-        _msg("Choice", [
-            _field("int_value", 1, "INT32", oneof_index=0),
-            _field("string_value", 2, "STRING", oneof_index=0),
-            _field("sibling", 3, "INT32"),
-        ], oneofs=["value"]),
-    ])
-
-
-def _build_enum_descriptor_set_bytes(spark):
-    """Build a descriptor with a message-local enum field."""
-    return _build_proto2_descriptor(spark, "enum.proto", [
-        _msg("WithEnum", [
-            _field("color", 1, "ENUM", type_name=".test.WithEnum.Color"),
-            _field("count", 2, "INT32"),
-            _field("name", 3, "STRING"),
-        ], enums=[
-            _enum("Color", [("RED", 0), ("GREEN", 1), ("BLUE", 2)]),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("enum_case", [
-    "as_int",
-    pytest.param("unknown_as_int", marks=_permissive_marks),
-    "as_string",
-    pytest.param("unknown_as_string", marks=_permissive_marks),
-], ids=lambda x: x)
-@ignore_order(local=True)
-def test_from_protobuf_enum_cases(
-        local_tmp_path, from_protobuf_fn, enum_case):
-    """Parametrized enum decoding tests for int/string modes and unknown values."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "enum.desc", _build_enum_descriptor_set_bytes)
-    message_name = "test.WithEnum"
-    logical_gen = StructGen([
-        ("color", SetValuesGen(
-            StringType(), ["RED", "GREEN", "BLUE", None])),
-        ("count", IntegerGen()),
-        ("name", StringGen()),
-    ], nullable=False)
-
-    if enum_case == "as_int":
-        materialized, _ = materialize_protobuf_data(
-            logical_gen, message_name, desc_path, desc_bytes, logical_rows=[
-                {"color": "GREEN", "count": 42, "name": "test"},
-                {"color": "RED", "count": 100, "name": None},
-                {"color": None, "count": 200, "name": "hello"},
-            ])
-        rows = [(row[-1],) for row in materialized] + [(None,)]
-        options = {"enums.as.ints": "true"}
-        select_mode = "fields3"
-    elif enum_case == "unknown_as_int":
-        rows = [(_encode_varint_field(1, 999) + _encode_varint_field(2, 42),)]
-        options = {"enums.as.ints": "true", "mode": "PERMISSIVE"}
-        select_mode = "fields2"
-    elif enum_case == "as_string":
-        materialized, _ = materialize_protobuf_data(
-            logical_gen, message_name, desc_path, desc_bytes, logical_rows=[
-                {"color": "GREEN", "count": 42, "name": "test"},
-                {"color": "RED", "count": 100, "name": None},
-                {"color": "BLUE", "count": 200, "name": "hello"},
-                {"color": None, "count": 300, "name": "world"},
-            ])
-        rows = [(row[-1],) for row in materialized] + [(None,)]
-        options = None
-        select_mode = "fields3"
-    else:
-        rows = [
-            (_encode_varint_field(1, 1) + _encode_varint_field(2, 10),),
-            (_encode_varint_field(1, 999) + _encode_varint_field(2, 20),),
-            (_encode_varint_field(1, 2) + _encode_varint_field(2, 30),),
-        ]
-        options = {"mode": "PERMISSIVE"}
-        select_mode = "decoded"
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(rows, schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
-            options=options)
-        if select_mode == "fields3":
-            return df.select(
-                decoded.getField("color").alias("color"),
-                decoded.getField("count").alias("count"),
-                decoded.getField("name").alias("name"))
-        if select_mode == "fields2":
-            return df.select(
-                decoded.getField("color").alias("color"),
-                decoded.getField("count").alias("count"))
-        return df.select(decoded.alias("decoded"))
-
-    if options and options.get("mode") == "PERMISSIVE":
-        _assert_permissive_gpu_and_cpu_equal(run_on_spark)
-    else:
-        assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_out_of_order_enum_descriptor_set_bytes(spark):
-    return _build_proto2_descriptor(spark, "out_of_order_enum.proto", [
-        _msg("OutOfOrderEnum", [
-            _field("status", 1, "ENUM", type_name=".test.OutOfOrderEnum.Status"),
-        ], enums=[
-            _enum("Status", [("TEN", 10), ("ONE", 1), ("FIVE", 5)]),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("options", [None, {"enums.as.ints": "true"}],
-                         ids=["string", "int"])
-def test_from_protobuf_out_of_order_enum_values(
-        local_tmp_path, from_protobuf_fn, options):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "out_of_order_enum.desc",
-        _build_out_of_order_enum_descriptor_set_bytes)
-    rows = [
-        (_encode_tag(1, 0) + _encode_varint(value),)
-        for value in (10, 1, 5)
-    ]
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(rows, schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.OutOfOrderEnum",
-            desc_path, desc_bytes, options=options)
-        return df.select(decoded.getField("status").alias("status"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
 def _build_aliased_enum_descriptor_set_bytes(spark):
     return _build_proto2_descriptor(spark, "aliased_enum.proto", [
         _msg("AliasedEnum", [
@@ -455,341 +892,12 @@ def _build_aliased_enum_descriptor_set_bytes(spark):
     ])
 
 
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("options", [None, {"enums.as.ints": "true"}],
-                         ids=["string", "int"])
-@allow_non_gpu("ProtobufDataToCatalyst")
-def test_from_protobuf_aliased_enum_falls_back(
-        local_tmp_path, from_protobuf_fn, options):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "aliased_enum.desc", _build_aliased_enum_descriptor_set_bytes)
-    row = _encode_tag(1, 0) + _encode_varint(1)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.AliasedEnum",
-            desc_path, desc_bytes, options=options)
-        return df.select(decoded.alias("decoded"))
-
-    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
-
-
-def _build_repeated_enum_descriptor_set_bytes(spark):
-    """Build a descriptor with a repeated enum field."""
-    return _build_proto2_descriptor(spark, "repeated_enum.proto", [
-        _msg("WithRepeatedEnum", [
-            _field("id", 1, "INT32"),
-            _field("priority", 2, "ENUM", label="repeated",
-                   type_name=".test.WithRepeatedEnum.Priority"),
-        ], enums=[
-            _enum("Priority", [("UNKNOWN", 0), ("FOO", 1), ("BAR", 2)]),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-@_permissive_test
-def test_from_protobuf_repeated_enum_invalid_permissive(local_tmp_path, from_protobuf_fn):
-    """An unknown top-level repeated enum value invalidates the row, as Spark checks the root
-    UnknownFieldSet."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "repeated_enum.desc", _build_repeated_enum_descriptor_set_bytes)
-    message_name = "test.WithRepeatedEnum"
-
-    row1 = (_encode_tag(1, 0) + _encode_varint(1) +
-            _encode_tag(2, 0) + _encode_varint(0) +
-            _encode_tag(2, 0) + _encode_varint(1) +
-            _encode_tag(2, 0) + _encode_varint(2))
-    row2 = (_encode_tag(1, 0) + _encode_varint(2) +
-            _encode_tag(2, 0) + _encode_varint(1) +
-            _encode_tag(2, 0) + _encode_varint(99))
-    row3 = (_encode_tag(1, 0) + _encode_varint(3) +
-            _encode_tag(2, 0) + _encode_varint(0))
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(
-            [(row1,), (row2,), (row3,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
-            options={"mode": "PERMISSIVE"})
-        return df.select(decoded.alias("decoded"))
-
-    _assert_permissive_gpu_and_cpu_equal(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-@_permissive_test
-def test_from_protobuf_repeated_enum_string_invalid_permissive_nulls_row(
-        local_tmp_path, from_protobuf_fn):
-    """String enum mode also nulls the row for an unknown top-level repeated enum value."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "repeated_enum.desc", _build_repeated_enum_descriptor_set_bytes)
-    message_name = "test.WithRepeatedEnum"
-
-    row_valid = (_encode_tag(1, 0) + _encode_varint(1) +
-                 _encode_tag(2, 0) + _encode_varint(0) +
-                 _encode_tag(2, 0) + _encode_varint(2))
-    row_invalid = (_encode_tag(1, 0) + _encode_varint(2) +
-                   _encode_tag(2, 0) + _encode_varint(1) +
-                   _encode_tag(2, 0) + _encode_varint(99))
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(0, row_valid), (1, row_invalid)], schema="idx int, bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
-            options={"mode": "PERMISSIVE"})
-        return df.select(
-            f.col("idx"),
-            decoded.isNull().alias("decoded_is_null"),
-            decoded.getField("id").alias("id"),
-            decoded.getField("priority").alias("priority")).orderBy("idx")
-
-    _assert_permissive_gpu_and_cpu_equal(run_on_spark)
-
-
-def _build_required_field_descriptor_set_bytes(spark):
-    """Build a descriptor for top-level proto2 required-field validation."""
-    return _build_proto2_descriptor(spark, "required.proto", [
-        _msg("WithRequired", [
-            _field("id", 1, "INT64", label="required"),
-            _field("name", 2, "STRING"),
-            _field("count", 3, "INT32"),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_required_field_present(
-        local_tmp_path, from_protobuf_fn):
-    """
-    Test that required fields decode correctly when present.
-    GPU should produce same results as CPU.
-    """
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "required.desc", _build_required_field_descriptor_set_bytes)
-    logical_gen = StructGen([
-        ("id", LongGen(nullable=False)),
-        ("name", StringGen()),
-        ("count", IntegerGen()),
-    ], nullable=False)
-    fixture_rows, _ = materialize_protobuf_data(
-        logical_gen, "test.WithRequired", desc_path, desc_bytes, logical_rows=[
-            {"id": 100, "name": "test", "count": 42},
-            {"id": 200, "name": None, "count": None},
-        ])
-    test_data = [(row[-1],) for row in fixture_rows]
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(test_data, schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.WithRequired",
-            desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("id").alias("id"),
-            decoded.getField("name").alias("name"),
-            decoded.getField("count").alias("count")
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_required_field_missing_failfast(local_tmp_path, from_protobuf_fn):
-    """Required-field violations should fail consistently on CPU and GPU in FAILFAST mode."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "required.desc", _build_required_field_descriptor_set_bytes)
-    message_name = "test.WithRequired"
-
-    missing_required_row = _encode_tag(2, 2) + _encode_varint(4) + b"oops"
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(missing_required_row,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        return df.select(decoded.alias("decoded")).collect()
-
-    assert_gpu_and_cpu_error(run_on_spark, conf={}, error_message="MALFORMED_PROTOBUF_MESSAGE")
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-@_permissive_test
-def test_from_protobuf_required_field_missing_permissive(local_tmp_path, from_protobuf_fn):
-    """Required-field violations should null the whole row in PERMISSIVE mode."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "required.desc", _build_required_field_descriptor_set_bytes)
-    message_name = "test.WithRequired"
-
-    missing_required_row = _encode_tag(2, 2) + _encode_varint(5) + b"hello"
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(missing_required_row,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
-            options={"mode": "PERMISSIVE"})
-        return df.select(
-            decoded.isNull().alias("decoded_is_null"),
-            decoded.getField("id").alias("id"),
-            decoded.getField("name").alias("name"),
-            decoded.getField("count").alias("count")
-        )
-
-    _assert_permissive_gpu_and_cpu_equal(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("mode", [
-    pytest.param("PERMISSIVE", marks=_permissive_marks), "FAILFAST"], ids=idfn)
-@ignore_order(local=True)
-def test_from_protobuf_visible_known_field_wrong_wire_type_matches_spark_error_policy(
-        local_tmp_path, from_protobuf_fn, mode):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
-    row = (_encode_tag(2, 0) + _encode_varint(7) +
-           _encode_tag(2, 5) + bytes([77, 0, 0, 0]) +
-           _encode_tag(2, 0) + _encode_varint(42) +
-           _encode_tag(6, 2) + _encode_varint(2) + b"ok")
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.Simple", desc_path, desc_bytes,
-            options={"mode": mode})
-        result = df.select(decoded.alias("decoded"))
-        return result.collect() if mode == "FAILFAST" else result
-
-    if mode == "FAILFAST":
-        assert_gpu_and_cpu_error(
-            run_on_spark, conf={}, error_message="MALFORMED_PROTOBUF_MESSAGE")
-    else:
-        _assert_permissive_gpu_and_cpu_equal(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_noncanonical_raw32_tag_and_length(
-        local_tmp_path, from_protobuf_fn):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
-    overlong_i32_tag = bytes([0x90] + [0x80] * 8 + [0])
-    overlong_zero = bytes([0x80] * 9 + [0])
-    row = (overlong_i32_tag + _encode_varint(42) +
-           _encode_tag(6, 2) + overlong_zero)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.Simple", desc_path, desc_bytes)
-        return df.select(decoded.alias("decoded"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_proto2_invalid_utf8_surrogate_is_repaired_once(
-        local_tmp_path, from_protobuf_fn):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
-    invalid_utf8 = b"\xed\xa0\x80"
-    row = _encode_tag(6, 2) + _encode_varint(len(invalid_utf8)) + invalid_utf8
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.Simple", desc_path, desc_bytes)
-        return df.select(decoded.getField("s").alias("s"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
 def _build_strict_utf8_descriptor_set_bytes(spark):
     return _build_proto2_descriptor(
         spark,
         "strict_utf8.proto",
         [_msg("StrictUtf8", [_field("value", 1, "STRING")])],
         java_string_check_utf8=True)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@allow_non_gpu("ProtobufDataToCatalyst")
-def test_from_protobuf_proto2_strict_utf8_falls_back(local_tmp_path, from_protobuf_fn):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "strict_utf8.desc", _build_strict_utf8_descriptor_set_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(b"\x0a\x02ok",)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.StrictUtf8", desc_path, desc_bytes)
-        return df.select(decoded.getField("value").alias("value"))
-
-    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
-
-
-def _build_default_value_descriptor_set_bytes(spark):
-    """Build a descriptor for proto2 scalar default-value behavior."""
-    return _build_proto2_descriptor(spark, "defaults.proto", [
-        _msg("WithDefaults", [
-            _field("count", 1, "INT32", default=42),
-            _field("name", 2, "STRING", default="unknown"),
-            _field("flag", 3, "BOOL", default=True),
-            _field("zero_count", 4, "INT32", default=0),
-            _field("empty_name", 5, "STRING", default=""),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("default_case", [
-    "field_present",
-    "missing_fields",
-    "string_default_only",
-], ids=lambda x: x)
-@ignore_order(local=True)
-def test_from_protobuf_default_values_cases(local_tmp_path, from_protobuf_fn, default_case):
-    """Parametrized tests for proto2 default-value behavior."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "defaults.desc", _build_default_value_descriptor_set_bytes)
-    message_name = "test.WithDefaults"
-
-    if default_case == "field_present":
-        rows = [(_encode_varint_field(1, 100) +
-                 _encode_length_delimited_field(2, "test") +
-                 _encode_varint_field(3, 0),)]
-        select_mode = "all"
-    elif default_case == "missing_fields":
-        rows = [
-            (b"",),
-            (_encode_varint_field(1, 100),),
-        ]
-        select_mode = "all"
-    else:
-        rows = [(_encode_varint_field(1, 42) + _encode_varint_field(3, 1),)]
-        select_mode = "name_only"
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(rows, schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        if select_mode == "all":
-            return df.select(
-                decoded.getField("count").alias("count"),
-                decoded.getField("name").alias("name"),
-                decoded.getField("flag").alias("flag"),
-                decoded.getField("zero_count").alias("zero_count"),
-                decoded.getField("empty_name").alias("empty_name"))
-        return df.select(decoded.getField("name").alias("name"))
-
-    if default_case == "missing_fields":
-        cpu_rows = with_cpu_session(lambda spark: run_on_spark(spark).collect())
-        assert all(row["zero_count"] == 0 and row["empty_name"] == ""
-                   for row in cpu_rows)
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
 
 
 def _build_bytes_default_descriptor_set_bytes(spark):
@@ -800,543 +908,103 @@ def _build_bytes_default_descriptor_set_bytes(spark):
     ])
 
 
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
+def _build_oneof_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(spark, "oneof.proto", [
+        _msg("Choice", [
+            _field("int_value", 1, "INT32", oneof_index=0),
+            _field("string_value", 2, "STRING", oneof_index=0),
+            _field("sibling", 3, "INT32"),
+        ], oneofs=["value"]),
+    ])
+
+
+def _build_message_field_descriptor_set_bytes(spark):
+    return _build_proto2_descriptor(spark, "message_field.proto", [
+        _msg("Child", [_field("x", 1, "INT32")]),
+        _msg("WithChild", [
+            _field("id", 1, "INT32"),
+            _field("child", 2, "MESSAGE", type_name=".test.Child"),
+        ]),
+    ])
+
+
+def _build_empty_message_field_descriptor_set_bytes(spark, label):
+    return _build_proto2_descriptor(spark, f"empty_field_{label}.proto", [
+        _msg("Empty", []),
+        _msg("Root", [
+            _field("id", 1, "INT32"),
+            _field("empty", 2, "MESSAGE", label=label, type_name=".test.Empty"),
+        ]),
+    ])
+
+
+def _fallback_case(case_id, build_fn, message, row, paths=None, options=None, conf=None):
+    return pytest.param(build_fn, message, row, paths, options, conf or {}, id=case_id)
+
+
+_oneof_child = _encode_varint_field(1, 7) + _encode_length_delimited_field(2, b"x")
+
+_fallback_cases = [
+    _fallback_case("proto3_imported_message",
+                   lambda spark: _build_proto2_root_with_proto3_import(spark, "message"),
+                   "Proto2Root", _encode_length_delimited_field(1, _encode_varint_field(1, 7))),
+    _fallback_case("proto3_imported_enum",
+                   lambda spark: _build_proto2_root_with_proto3_import(spark, "enum"),
+                   "Proto2Root", _encode_varint_field(1, 1)),
+    _fallback_case("aliased_enum_as_string", _build_aliased_enum_descriptor_set_bytes,
+                   "AliasedEnum", _encode_varint_field(1, 1)),
+    _fallback_case("aliased_enum_as_int", _build_aliased_enum_descriptor_set_bytes,
+                   "AliasedEnum", _encode_varint_field(1, 1),
+                   options={"enums.as.ints": "true"}),
+    _fallback_case("strict_utf8", _build_strict_utf8_descriptor_set_bytes, "StrictUtf8",
+                   b"\x0a\x02ok"),
+    _fallback_case("bytes_default", _build_bytes_default_descriptor_set_bytes, "BytesDefault",
+                   b""),
+    _fallback_case("oneof_member", _build_oneof_descriptor_set_bytes, "Choice",
+                   _oneof_child + _encode_varint_field(3, 9), ["int_value", "sibling"]),
+    # Spark drops empty-message fields from its schema but still validates them.
+    _fallback_case("empty_message_field_optional",
+                   lambda spark: _build_empty_message_field_descriptor_set_bytes(
+                       spark, "optional"),
+                   "Root", _encode_varint_field(1, 7) + _encode_length_delimited_field(2, b"")),
+    _fallback_case("empty_message_field_required",
+                   lambda spark: _build_empty_message_field_descriptor_set_bytes(
+                       spark, "required"),
+                   "Root", _encode_varint_field(1, 7) + _encode_length_delimited_field(2, b"")),
+    # Message fields are not supported yet, even when unselected.
+    _fallback_case("message_field", _build_message_field_descriptor_set_bytes, "WithChild",
+                   _encode_varint_field(1, 7) +
+                   _encode_length_delimited_field(2, _encode_varint_field(1, 9)),
+                   ["id"]),
+    _fallback_case("unsupported_option", _build_simple_descriptor_set_bytes, "Simple",
+                   _simple_valid, options={"emit.default.values": "true"}),
+    _fallback_case("disabled_by_expression_config", _build_simple_descriptor_set_bytes, "Simple",
+                   _simple_valid,
+                   conf={"spark.rapids.sql.expression.ProtobufDataToCatalyst": "false"}),
+]
+
+
+@pytest.mark.parametrize("build_fn,message,row,paths,options,conf", _fallback_cases)
 @allow_non_gpu("ProtobufDataToCatalyst")
-def test_from_protobuf_bytes_default_falls_back(local_tmp_path, from_protobuf_fn):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "bytes_default.desc", _build_bytes_default_descriptor_set_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(b"",)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.BytesDefault", desc_path, desc_bytes)
-        return df.select(decoded.alias("decoded"))
-
-    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
-
-
-def _scalar_test_id(config):
-    """Generate stable test ID using only the first element (test name)."""
-    return config[0] if isinstance(config, tuple) else str(config)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("test_config", _random_scalar_test_configs, ids=_scalar_test_id)
 @ignore_order(local=True)
-def test_from_protobuf_random_scalars(
-        local_tmp_path, from_protobuf_fn, test_config):
-    """
-    Parametrized test for from_protobuf with randomly generated scalar data.
-    Covers: all types, integer edge cases, float edge cases, large datasets.
-    """
-    _, field_configs = test_config
-
-    logical_gen = StructGen(field_configs, nullable=False)
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
-    fixture_rows, fixture_schema = materialize_protobuf_data(
-        logical_gen, "test.Simple", desc_path, desc_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(fixture_rows, fixture_schema)
-
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.Simple", desc_path, desc_bytes)
-
-        # Select all decoded fields
-        return df.select(
-            decoded.getField("b").alias("b"),
-            decoded.getField("i32").alias("i32"),
-            decoded.getField("i64").alias("i64"),
-            decoded.getField("f32").alias("f32"),
-            decoded.getField("f64").alias("f64"),
-            decoded.getField("s").alias("s"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_all_scalars_descriptor_set_bytes(spark):
-    return _build_proto2_descriptor(spark, "all_scalars.proto", [
-        _msg("AllScalars", [
-            _field("b", 1, "BOOL"),
-            _field("i32", 2, "INT32"),
-            _field("i64", 3, "INT64"),
-            _field("f32", 4, "FLOAT"),
-            _field("f64", 5, "DOUBLE"),
-            _field("s", 6, "STRING"),
-            _field("si32", 7, "SINT32"),
-            _field("si64", 8, "SINT64"),
-            _field("fx32", 9, "FIXED32"),
-            _field("fx64", 10, "FIXED64"),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_all_scalar_types(
-        local_tmp_path, from_protobuf_fn):
-    """Decode all scalar wire encodings together in one message."""
-    logical_gen = StructGen([
-        ("b", BooleanGen()),
-        ("i32", IntegerGen()),
-        ("i64", LongGen()),
-        ("f32", FloatGen()),
-        ("f64", DoubleGen()),
-        ("s", StringGen()),
-        ("si32", IntegerGen(
-            special_cases=[-1, 0, 1, -2147483648, 2147483647])),
-        ("si64", LongGen(
-            special_cases=[-1, 0, 1, -9223372036854775808, 9223372036854775807])),
-        ("fx32", IntegerGen(
-            special_cases=[0, 1, -1, 2147483647, -2147483648])),
-        ("fx64", LongGen(special_cases=[0, 1, -1])),
-    ], nullable=False)
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "all_scalars.desc", _build_all_scalars_descriptor_set_bytes)
-    fixture_rows, fixture_schema = materialize_protobuf_data(
-        logical_gen, "test.AllScalars", desc_path, desc_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(fixture_rows, fixture_schema)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.AllScalars", desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("b").alias("b"),
-            decoded.getField("i32").alias("i32"),
-            decoded.getField("i64").alias("i64"),
-            decoded.getField("f32").alias("f32"),
-            decoded.getField("f64").alias("f64"),
-            decoded.getField("s").alias("s"),
-            decoded.getField("si32").alias("si32"),
-            decoded.getField("si64").alias("si64"),
-            decoded.getField("fx32").alias("fx32"),
-            decoded.getField("fx64").alias("fx64"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_scalar_bytes_descriptor_set_bytes(spark):
-    return _build_proto2_descriptor(spark, "scalar_bytes.proto", [
-        _msg("ScalarBytes", [_field("payload", 1, "BYTES")]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_scalar_bytes(
-        local_tmp_path, from_protobuf_fn):
-    """Decode optional bytes scalar field, including empty bytes."""
-    logical_gen = StructGen([
-        ("payload", BinaryGen(min_length=0, max_length=16)),
-    ], nullable=False)
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "scalar_bytes.desc", _build_scalar_bytes_descriptor_set_bytes)
-    fixture_rows, fixture_schema = materialize_protobuf_data(
-        logical_gen, "test.ScalarBytes", desc_path, desc_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(fixture_rows, fixture_schema)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.ScalarBytes", desc_path, desc_bytes)
-        return df.select(decoded.getField("payload").alias("payload"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_duplicate_fields(local_tmp_path, from_protobuf_fn):
-    """Duplicate non-repeated field should follow protobuf last-one-wins semantics."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "simple.desc", _build_simple_descriptor_set_bytes)
-    message_name = "test.Simple"
-
-    # i32 (field 2) appears twice in row0 and three times in row1.
-    test_data_row0 = bytes([0x10, 0x01, 0x10, 0x2A])
-    test_data_row1 = bytes([0x10, 0x03, 0x10, 0x04, 0x10, 0x05])
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(
-            [(test_data_row0,), (test_data_row1,), (None,)],
-            schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        return df.select(decoded.getField("i32").alias("i32"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_repeated_int_descriptor_set_bytes(spark):
-    return _build_proto2_descriptor(spark, "repeated_int.proto", [
-        _msg("WithRepeatedInt", [
-            _field("id", 1, "INT32"),
-            _field("values", 2, "INT32", label="repeated"),
-        ]),
-    ])
-
-
-def _build_repeated_string_descriptor_set_bytes(spark):
-    return _build_proto2_descriptor(spark, "repeated_string.proto", [
-        _msg("WithRepeatedString", [
-            _field("name", 1, "STRING"),
-            _field("tags", 2, "STRING", label="repeated"),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_repeated_int32(
-        local_tmp_path, from_protobuf_fn):
-    """
-    Test decoding repeated int32 field (ArrayType of integers).
-    """
-    logical_gen = StructGen([
-        ("id", IntegerGen()),
-        ("values", ArrayGen(
-            IntegerGen(nullable=False), min_length=0, max_length=10,
-            nullable=False)),
-    ], nullable=False)
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "repeated_int.desc", _build_repeated_int_descriptor_set_bytes)
-    fixture_rows, fixture_schema = materialize_protobuf_data(
-        logical_gen, "test.WithRepeatedInt", desc_path, desc_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(fixture_rows, fixture_schema)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.WithRepeatedInt",
-            desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("id").alias("id"),
-            decoded.getField("values").alias("values"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_repeated_string(
-        local_tmp_path, from_protobuf_fn):
-    """
-    Test decoding repeated string field (ArrayType of strings).
-    """
-    logical_gen = StructGen([
-        ("name", StringGen()),
-        ("tags", ArrayGen(
-            StringGen(nullable=False), min_length=0, max_length=5,
-            nullable=False)),
-    ], nullable=False)
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "repeated_string.desc",
-        _build_repeated_string_descriptor_set_bytes)
-    fixture_rows, fixture_schema = materialize_protobuf_data(
-        logical_gen, "test.WithRepeatedString", desc_path, desc_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(fixture_rows, fixture_schema)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.WithRepeatedString",
-            desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("name").alias("name"),
-            decoded.getField("tags").alias("tags"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_packed_repeated_descriptor_set_bytes(spark):
-    """Build a descriptor for packed repeated numeric and bool fields."""
-    return _build_proto2_descriptor(spark, "packed_repeated.proto", [
-        _msg("WithPackedRepeated", [
-            _field("id", 1, "INT32"),
-            _field("int_values", 2, "INT32", label="repeated", packed=True),
-            _field("double_values", 3, "DOUBLE", label="repeated", packed=True),
-            _field("bool_values", 4, "BOOL", label="repeated", packed=True),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_packed_repeated(
-        local_tmp_path, from_protobuf_fn):
-    """
-    Test packed repeated fields (int, double, bool) using DataGen.
-    """
-    logical_gen = StructGen([
-        ("id", IntegerGen()),
-        ("int_values", ArrayGen(
-            IntegerGen(nullable=False), min_length=0, max_length=10,
-            nullable=False)),
-        ("double_values", ArrayGen(
-            DoubleGen(nullable=False), min_length=0, max_length=5,
-            nullable=False)),
-        ("bool_values", ArrayGen(
-            BooleanGen(nullable=False), min_length=0, max_length=5,
-            nullable=False)),
-    ], nullable=False)
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "packed.desc", _build_packed_repeated_descriptor_set_bytes)
-    fixture_rows, fixture_schema = materialize_protobuf_data(
-        logical_gen, "test.WithPackedRepeated", desc_path, desc_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(fixture_rows, fixture_schema)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.WithPackedRepeated",
-            desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("id").alias("id"),
-            decoded.getField("int_values").alias("int_values"),
-            decoded.getField("double_values").alias("double_values"),
-            decoded.getField("bool_values").alias("bool_values"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_repeated_all_types_descriptor_set_bytes(spark):
-    return _build_proto2_descriptor(spark, "repeated_all_types.proto", [
-        _msg("WithRepeatedAllTypes", [
-            _field("id", 1, "INT32"),
-            _field("long_values", 2, "INT64", label="repeated"),
-            _field("float_values", 3, "FLOAT", label="repeated"),
-            _field("double_values", 4, "DOUBLE", label="repeated"),
-            _field("bool_values", 5, "BOOL", label="repeated"),
-            _field("bytes_values", 6, "BYTES", label="repeated"),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_repeated_all_types(
-        local_tmp_path, from_protobuf_fn):
-    """Test repeated fields of various types (int64, float, double, bool, bytes) using DataGen."""
-    logical_gen = StructGen([
-        ("id", IntegerGen()),
-        ("long_values", ArrayGen(
-            LongGen(nullable=False), min_length=0, max_length=5, nullable=False)),
-        ("float_values", ArrayGen(
-            FloatGen(nullable=False), min_length=0, max_length=5, nullable=False)),
-        ("double_values", ArrayGen(
-            DoubleGen(nullable=False), min_length=0, max_length=5, nullable=False)),
-        ("bool_values", ArrayGen(
-            BooleanGen(nullable=False), min_length=0, max_length=5, nullable=False)),
-        ("bytes_values", ArrayGen(
-            BinaryGen(nullable=False), min_length=0, max_length=5, nullable=False)),
-    ], nullable=False)
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "repeated_all.desc",
-        _build_repeated_all_types_descriptor_set_bytes)
-    fixture_rows, fixture_schema = materialize_protobuf_data(
-        logical_gen, "test.WithRepeatedAllTypes", desc_path, desc_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(fixture_rows, fixture_schema)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.WithRepeatedAllTypes",
-            desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("id").alias("id"),
-            decoded.getField("long_values").alias("long_values"),
-            decoded.getField("float_values").alias("float_values"),
-            decoded.getField("double_values").alias("double_values"),
-            decoded.getField("bool_values").alias("bool_values"),
-            decoded.getField("bytes_values").alias("bytes_values"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_large_repeated_array(
-        local_tmp_path, from_protobuf_fn):
-    """
-    Test decoding large repeated field (500-1000 elements).
-    Stress test for array handling.
-    """
-    logical_gen = StructGen([
-        ("id", IntegerGen()),
-        ("values", ArrayGen(
-            IntegerGen(nullable=False), min_length=500, max_length=1000,
-            nullable=False)),
-    ], nullable=False)
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "large_repeated_int.desc",
-        _build_repeated_int_descriptor_set_bytes)
-    fixture_rows, fixture_schema = materialize_protobuf_data(
-        logical_gen, "test.WithRepeatedInt", desc_path, desc_bytes, length=128)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(fixture_rows, fixture_schema)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.WithRepeatedInt",
-            desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("id").alias("id"),
-            f.size(decoded.getField("values")).alias("array_size"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_signed_integers_descriptor_set_bytes(spark):
-    return _build_proto2_descriptor(spark, "signed_integers.proto", [
-        _msg("WithSignedInts", [
-            _field("si32", 1, "SINT32"),
-            _field("si64", 2, "SINT64"),
-            _field("sf32", 3, "SFIXED32"),
-            _field("sf64", 4, "SFIXED64"),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_signed_integers(
-        local_tmp_path, from_protobuf_fn):
-    """Decode signed integers using zigzag and fixed-width encodings."""
-    logical_gen = StructGen([
-        ("si32", IntegerGen(
-            special_cases=[-1, 0, 1, -2147483648, 2147483647])),
-        ("si64", LongGen(
-            special_cases=[-1, 0, 1, -9223372036854775808, 9223372036854775807])),
-        ("sf32", IntegerGen(
-            special_cases=[0, 1, -1, 2147483647, -2147483648])),
-        ("sf64", LongGen(special_cases=[0, 1, -1])),
-    ], nullable=False)
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "signed.desc", _build_signed_integers_descriptor_set_bytes)
-    fixture_rows, fixture_schema = materialize_protobuf_data(
-        logical_gen, "test.WithSignedInts", desc_path, desc_bytes)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(fixture_rows, fixture_schema)
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.WithSignedInts",
-            desc_path, desc_bytes)
-
-        return df.select(
-            decoded.getField("si32").alias("si32"),
-            decoded.getField("si64").alias("si64"),
-            decoded.getField("sf32").alias("sf32"),
-            decoded.getField("sf64").alias("sf64"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_many_repeated_fields_descriptor_set_bytes(spark, field_count):
-    return _build_proto2_descriptor(spark, "many_repeated.proto", [
-        _msg("ManyRepeated", [
-            _field(f"values_{number}", number, "INT32", label="repeated")
-            for number in range(1, field_count + 1)
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("field_count", [32, 33, 65], ids=idfn)
-@pytest.mark.parametrize("select_whole_message", [True, False], ids=["whole", "field"])
-@ignore_order(local=True)
-def test_from_protobuf_many_repeated_fields(
-        local_tmp_path, from_protobuf_fn, field_count, select_whole_message):
-    """The decoder scans repeated fields in batches, so their count per message is unlimited."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path,
-        f"many_repeated_{field_count}.desc",
-        lambda spark: _build_many_repeated_fields_descriptor_set_bytes(spark, field_count))
-    row = (_encode_tag(1, 0) + _encode_varint(7) +
-           _encode_tag(field_count, 0) + _encode_varint(9))
+def test_from_protobuf_falls_back(
+        request, local_tmp_path, from_protobuf_fn, build_fn, message, row, paths, options,
+        conf):
+    desc = _setup_protobuf_desc(
+        local_tmp_path, f"{request.node.callspec.id}.desc", build_fn)
 
     def run_on_spark(spark):
         df = spark.createDataFrame([(0, row), (1, None)], schema="idx int, bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.ManyRepeated", desc_path, desc_bytes)
-        if select_whole_message:
-            return df.select("idx", decoded.alias("decoded"))
-        return df.select("idx", decoded.getField(f"values_{field_count}").alias("values"))
+        decoded = _decode(from_protobuf_fn, desc, message, options)
+        return df.select("idx", *_select_paths(decoded, paths))
 
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
+    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst", conf=conf)
 
 
-def _encode_varint(value):
-    """Encode a non-negative integer as a protobuf varint (for hand-crafting test bytes)."""
-    if value < 0:
-        raise ValueError("varint value must be non-negative")
-    out = bytearray()
-    v = int(value)
-    while True:
-        b = v & 0x7F
-        v >>= 7
-        if v:
-            out.append(b | 0x80)
-        else:
-            out.append(b)
-            break
-    return bytes(out)
+# ===========================================================================
+# Descriptor metadata read during planning
+# ===========================================================================
 
-
-def _encode_tag(field_number, wire_type):
-    return _encode_varint((field_number << 3) | wire_type)
-
-
-def _encode_varint_field(field_number, value):
-    return _encode_tag(field_number, 0) + _encode_varint(value)
-
-
-def _encode_length_delimited_field(field_number, value):
-    data = value.encode("utf-8") if isinstance(value, str) else bytes(value)
-    return _encode_tag(field_number, 2) + _encode_varint(len(data)) + data
-
-
-def _encode_simple_message(i32_value, s_value):
-    return (_encode_varint_field(1, i32_value & 0xFFFFFFFFFFFFFFFF) +
-            _encode_length_delimited_field(2, s_value))
-
-
-# This keeps the baseline API coverage independent of protobuf runtime versions.
-_simple_desc_bytes = bytes.fromhex(
-    "0a360a0c73696d706c652e70726f746f12047465737422200a0653696d706c65"
-    "120b0a0369333218012001280512090a0173180220012809")
-
-
-# proto2 test.UnsignedRoot with required, optional, repeated, and defaulted unsigned fields.
-_unsigned_desc_bytes = bytes.fromhex(
-    "0adb010a0a726f6f742e70726f746f120474657374229c010a0c556e7369676e"
-    "6564526f6f74121c0a0673746174757318012002280e320c2e746573742e5374"
-    "6174757312140a0c72657175697265645f75363418022002280412140a0c6f70"
-    "74696f6e616c5f75333218032001280d12140a0c72657065617465645f753332"
-    "18042003280d12140a0c72657065617465645f75363418052003280412160a0b"
-    "64656661756c745f7536341806200128043a01302a200a06537461747573120b"
-    "0a07554e4b4e4f574e100012090a0552454144591002620670726f746f32")
-
-
-@pytest.fixture
-def simple_desc(local_tmp_path):
-    desc_path = os.path.join(local_tmp_path, "simple.desc")
-    with open(desc_path, "wb") as fp:
-        fp.write(_simple_desc_bytes)
-    return desc_path, _simple_desc_bytes
-
-
-@pytest.fixture
-def unsigned_desc(local_tmp_path):
-    desc_path = os.path.join(local_tmp_path, "unsigned.desc")
-    with open(desc_path, "wb") as fp:
-        fp.write(_unsigned_desc_bytes)
-    return desc_path, _unsigned_desc_bytes
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="descriptor compatibility shims start at Spark 3.4")
 @pytest.mark.parametrize("check_utf8", [False, True])
 def test_protobuf_descriptor_compat(local_tmp_path, from_protobuf_fn, check_utf8):
     # proto2 test.Compat: optional int32 id = 1 [default = 7]; Status FIRST = ALIAS = 0;
@@ -1460,432 +1128,3 @@ def test_protobuf_descriptor_compat(local_tmp_path, from_protobuf_fn, check_utf8
 
     # This exercises the CPU-side metadata API, not execution of a GPU expression.
     with_cpu_session(check)
-
-
-def _make_smoke_df(spark):
-    values = [(1, "a"), (-2, "bb"), (0, ""), (12345, "hello")]
-    encoded = [(_encode_simple_message(i, s),) for i, s in values]
-    return spark.createDataFrame(encoded, ["bin"])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-def test_from_protobuf_smoke_path_api(simple_desc, from_protobuf_fn):
-    desc_path, _ = simple_desc
-
-    def run_on_spark(spark):
-        return _make_smoke_df(spark).select(
-            from_protobuf_fn(f.col("bin"), "test.Simple", desc_path).alias("decoded"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@allow_non_gpu("ProtobufDataToCatalyst")
-def test_from_protobuf_disabled_by_expression_config(simple_desc, from_protobuf_fn):
-    desc_path, _ = simple_desc
-
-    def run_on_spark(spark):
-        return _make_smoke_df(spark).select(
-            from_protobuf_fn(f.col("bin"), "test.Simple", desc_path).alias("decoded"))
-
-    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst",
-        conf={"spark.rapids.sql.expression.ProtobufDataToCatalyst": "false"})
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-def test_from_protobuf_unsigned_boundaries(unsigned_desc, from_protobuf_fn):
-    desc_path, desc_bytes = unsigned_desc
-    row = (
-        _encode_tag(1, 0) + _encode_varint(2) +
-        _encode_tag(2, 0) + _encode_varint((1 << 64) - 1) +
-        _encode_tag(3, 0) + _encode_varint(1 << 31) +
-        _encode_tag(4, 0) + _encode_varint(0) +
-        _encode_tag(4, 0) + _encode_varint((1 << 32) - 1) +
-        _encode_tag(5, 0) + _encode_varint(1 << 63) +
-        _encode_tag(5, 0) + _encode_varint((1 << 64) - 1))
-
-    def run_on_spark(spark):
-        decoded = _call_from_protobuf(
-            from_protobuf_fn,
-            f.col("bin"),
-            "test.UnsignedRoot",
-            desc_path,
-            desc_bytes)
-        return spark.createDataFrame([(row,)], ["bin"]).select(decoded.alias("decoded"))
-
-    cpu_rows = with_cpu_session(lambda spark: run_on_spark(spark).collect())
-    assert cpu_rows[0]["decoded"].asDict() == {
-        "status": "READY",
-        "required_u64": -1,
-        "optional_u32": -(1 << 31),
-        "repeated_u32": [0, -1],
-        "repeated_u64": [-(1 << 63), -1],
-        "default_u64": 0,
-    }
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-def test_from_protobuf_smoke_binary_descriptor_api(simple_desc, from_protobuf_fn):
-    if "binaryDescriptorSet" not in inspect.signature(from_protobuf_fn).parameters:
-        pytest.skip("binaryDescriptorSet kwarg is Spark 3.5+ only")
-    _, desc_bytes = simple_desc
-
-    def run_on_spark(spark):
-        return _make_smoke_df(spark).select(
-            from_protobuf_fn(
-                f.col("bin"),
-                "test.Simple",
-                binaryDescriptorSet=bytearray(desc_bytes)).alias("decoded"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-# ===========================================================================
-# Regression tests for known bugs found by code review
-# ===========================================================================
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@allow_non_gpu("ProtobufDataToCatalyst")
-def test_from_protobuf_oneof_member_falls_back(local_tmp_path, from_protobuf_fn):
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "oneof.desc", _build_oneof_descriptor_set_bytes)
-    message_name = "test.Choice"
-    row = (_encode_tag(1, 0) + _encode_varint(7) +
-           _encode_tag(2, 2) + _encode_varint(1) + b"x" +
-           _encode_tag(3, 0) + _encode_varint(9))
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(0, row), (1, None)], schema="idx int, bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        return df.select(
-            "idx",
-            decoded.getField("int_value").alias("int_value"),
-            decoded.getField("sibling").alias("sibling"))
-
-    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
-
-
-def _build_empty_message_field_descriptor_set_bytes(spark, label):
-    return _build_proto2_descriptor(spark, f"empty_field_{label}.proto", [
-        _msg("Empty", []),
-        _msg("Root", [
-            _field("id", 1, "INT32"),
-            _field("empty", 2, "MESSAGE", label=label, type_name=".test.Empty"),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("label", ["optional", "required"], ids=idfn)
-@allow_non_gpu("ProtobufDataToCatalyst")
-@ignore_order(local=True)
-def test_from_protobuf_field_missing_from_spark_schema_falls_back(
-        local_tmp_path, from_protobuf_fn, label):
-    """Spark drops empty-message fields from its schema but still validates them."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, f"empty_field_{label}.desc",
-        lambda spark: _build_empty_message_field_descriptor_set_bytes(spark, label))
-    id_7 = _encode_tag(1, 0) + _encode_varint(7)
-    rows = [
-        (0, id_7 + _encode_tag(2, 2) + _encode_varint(0)),
-        # Missing, malformed and wrongly encoded values for the dropped field.
-        (1, id_7),
-        (2, id_7 + _encode_tag(2, 2) + _encode_varint(1) + b"\x80"),
-        (3, id_7 + _encode_tag(2, 0) + _encode_varint(1)),
-        (4, None),
-    ]
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(rows, schema="idx int, bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.Root", desc_path, desc_bytes,
-            options={"mode": "PERMISSIVE"})
-        return df.select("idx", decoded.alias("decoded"))
-
-    assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
-
-
-# ---------------------------------------------------------------------------
-# Non-canonical bool varints: protobuf-java reads any non-zero varint as true, including
-# values whose low byte is zero, such as 256.
-# ---------------------------------------------------------------------------
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_bool_noncanonical_varint_scalar(local_tmp_path, from_protobuf_fn):
-    """A scalar bool encoded as a non-canonical varint such as 256 decodes as true."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "simple_bool_bug.desc", _build_simple_descriptor_set_bytes)
-    message_name = "test.Simple"
-
-    # varint(256) = 0x80 0x02, varint(512) = 0x80 0x04 — valid non-canonical bool true
-    row_bool_256 = _encode_tag(1, 0) + _encode_varint(256) + \
-                   _encode_tag(2, 0) + _encode_varint(99)
-
-    # Control row: canonical bool true (varint 1) — should work on both
-    row_bool_1 = _encode_tag(1, 0) + _encode_varint(1) + \
-                 _encode_tag(2, 0) + _encode_varint(100)
-
-    # Another non-canonical value: varint(512)
-    row_bool_512 = _encode_tag(1, 0) + _encode_varint(512) + \
-                   _encode_tag(2, 0) + _encode_varint(101)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(
-            [(row_bool_256,), (row_bool_1,), (row_bool_512,)],
-            schema="bin binary",
-        )
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("b").alias("b"),
-            decoded.getField("i32").alias("i32"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_repeated_bool_descriptor_set_bytes(spark):
-    """Build a descriptor for an optional id plus repeated bool flags."""
-    return _build_proto2_descriptor(spark, "repeated_bool.proto", [
-        _msg("WithRepeatedBool", [
-            _field("id", 1, "INT32"),
-            _field("flags", 2, "BOOL", label="repeated"),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_bool_noncanonical_varint_repeated(local_tmp_path, from_protobuf_fn):
-    """Repeated bools encoded as non-canonical varints decode as true."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "repeated_bool_bug.desc", _build_repeated_bool_descriptor_set_bytes)
-    message_name = "test.WithRepeatedBool"
-
-    # Repeated bool field 2 (wire type 0 = varint), unpacked.
-    # Three elements: varint(256), varint(1), varint(512) — all should decode as true.
-    row = (_encode_tag(1, 0) + _encode_varint(42) +
-           _encode_tag(2, 0) + _encode_varint(256) +
-           _encode_tag(2, 0) + _encode_varint(1) +
-           _encode_tag(2, 0) + _encode_varint(512))
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("id").alias("id"),
-            decoded.getField("flags").alias("flags"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-# ===========================================================================
-# FAILFAST mode tests
-# ===========================================================================
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@pytest.mark.parametrize("options", [
-    {"mode": "DROPMALFORMED"},
-    {"mode": "DROPMALFORMED", "emit.default.values": "true"},
-], ids=["dropmalformed", "dropmalformed-with-unsupported-option"])
-@pytest.mark.parametrize("malformed", [False, True], ids=["valid", "malformed"])
-@allow_non_gpu("ProtobufDataToCatalyst")
-def test_from_protobuf_dropmalformed_mode_falls_back(
-        local_tmp_path, from_protobuf_fn, options, malformed):
-    """With SPARK-46275, Spark rejects DROPMALFORMED only when a malformed row reaches its error
-    handler."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "dropmalformed.desc", _build_simple_descriptor_set_bytes)
-    message_name = "test.Simple"
-    row = bytes([0x08, 0x80]) if malformed else _encode_tag(2, 0) + _encode_varint(42)
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,)], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
-            options=options)
-        return df.select(decoded.alias("decoded"))
-
-    # Without SPARK-46275, Spark rejects DROPMALFORMED during analysis, even for valid rows.
-    if malformed or not _permissive_null_row_fix:
-        assert_gpu_and_cpu_error(
-            lambda spark: run_on_spark(spark).collect(), {}, "DROPMALFORMED")
-    else:
-        assert_gpu_fallback_collect(run_on_spark, "ProtobufDataToCatalyst")
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-def test_from_protobuf_failfast_malformed_data(local_tmp_path, from_protobuf_fn):
-    """FAILFAST mode should throw on malformed protobuf data (both CPU and GPU)."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "failfast.desc", _build_simple_descriptor_set_bytes)
-    message_name = "test.Simple"
-
-    # Craft a valid row and a malformed row (truncated varint with continuation bit)
-    valid_row = _encode_tag(1, 0) + _encode_varint(1) + \
-                _encode_tag(2, 0) + _encode_varint(42)
-    malformed_row = bytes([0x08, 0x80])  # field 1, varint, but only continuation byte -- no end
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(
-            [(valid_row,), (malformed_row,)],
-            schema="bin binary",
-        )
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
-            options={"mode": "FAILFAST"})
-        # Must call .collect() so the exception surfaces inside with_*_session
-        return df.select(decoded.getField("b").alias("b")).collect()
-
-    assert_gpu_and_cpu_error(run_on_spark, {}, "MALFORMED_PROTOBUF_MESSAGE")
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_failfast_skips_rows_conditional_does_not_select(
-        local_tmp_path, from_protobuf_fn):
-    """FAILFAST decoding under a conditional only sees the rows that branch selects."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "failfast_conditional.desc", _build_simple_descriptor_set_bytes)
-    valid_row = _encode_tag(2, 0) + _encode_varint(42)
-    malformed_row = bytes([0x08, 0x80])
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(
-            [(0, valid_row), (1, malformed_row)], schema="idx int, bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.Simple", desc_path, desc_bytes,
-            options={"mode": "FAILFAST"})
-        return df.select(
-            "idx", f.when(f.col("idx") == 0, decoded.getField("i32")).alias("i32"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_skips_unknown_fields(local_tmp_path, from_protobuf_fn):
-    """Field numbers absent from the descriptor are skipped for every wire type."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "unknown_fields.desc", _build_simple_descriptor_set_bytes)
-    group_body = _encode_varint_field(1, 7) + _encode_length_delimited_field(2, "in group")
-    unknown_fields = (
-        _encode_varint_field(50, 300) +
-        _encode_tag(51, 1) + bytes(range(8)) +
-        _encode_length_delimited_field(52, b"\x08\x01unknown") +
-        _encode_tag(53, 3) + group_body + _encode_tag(53, 4) +
-        _encode_tag(54, 5) + bytes(range(4)))
-    rows = [
-        _encode_varint_field(2, 1) + unknown_fields + _encode_length_delimited_field(6, "s"),
-        unknown_fields + _encode_varint_field(3, 5),
-        unknown_fields,
-    ]
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,) for row in rows], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.Simple", desc_path, desc_bytes)
-        return df.select(decoded.alias("decoded"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-def _build_repeated_packing_descriptor_set_bytes(spark):
-    return _build_proto2_descriptor(spark, "repeated_packing.proto", [
-        _msg("WithPacking", [
-            _field("packed_ints", 1, "INT32", label="repeated", packed=True),
-            _field("unpacked_doubles", 2, "DOUBLE", label="repeated"),
-            _field("packed_fixed32", 3, "FIXED32", label="repeated", packed=True),
-        ]),
-    ])
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_repeated_accepts_either_packing(local_tmp_path, from_protobuf_fn):
-    """Parsers accept packed and unpacked encodings regardless of the declared packing."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "repeated_packing.desc", _build_repeated_packing_descriptor_set_bytes)
-    doubles = struct.pack("<dd", 1.5, -2.0)
-    fixed = struct.pack("<II", 7, 0xFFFFFFFF)
-    rows = [
-        # Declared packed, encoded unpacked.
-        (_encode_varint_field(1, 1) + _encode_varint_field(1, 2) +
-         _encode_tag(3, 5) + fixed[:4] + _encode_tag(3, 5) + fixed[4:]),
-        # Declared unpacked, encoded packed.
-        _encode_length_delimited_field(2, doubles),
-        # Both encodings for the same field append in wire order.
-        (_encode_varint_field(1, 3) + _encode_length_delimited_field(1, _encode_varint(4) +
-         _encode_varint(5)) + _encode_tag(2, 1) + doubles[:8] +
-         _encode_length_delimited_field(2, doubles[8:]) +
-         _encode_length_delimited_field(3, fixed[:4]) + _encode_tag(3, 5) + fixed[4:]),
-    ]
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame([(row,) for row in rows], schema="bin binary")
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), "test.WithPacking", desc_path, desc_bytes)
-        return df.select(decoded.alias("decoded"))
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-@_permissive_test
-def test_from_protobuf_permissive_malformed_returns_null(local_tmp_path, from_protobuf_fn):
-    """PERMISSIVE mode returns a null row, not a struct of null fields, for malformed input.
-
-    Note: Spark's from_protobuf defaults to FAILFAST (unlike JSON/CSV which
-    default to PERMISSIVE), so mode must be set explicitly.
-    """
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "permissive.desc", _build_simple_descriptor_set_bytes)
-    message_name = "test.Simple"
-
-    valid_row = _encode_tag(2, 0) + _encode_varint(99)
-    malformed_row = bytes([0x08, 0x80])  # truncated varint
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(
-            [(valid_row,), (malformed_row,)],
-            schema="bin binary",
-        )
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes,
-            options={"mode": "PERMISSIVE"})
-        return df.select(
-            decoded.isNull().alias("decoded_is_null"),
-            decoded.getField("i32").alias("i32"),
-        )
-
-    _assert_permissive_gpu_and_cpu_equal(run_on_spark)
-
-
-@pytest.mark.skipif(is_before_spark_340(), reason="from_protobuf is Spark 3.4.0+")
-@ignore_order(local=True)
-def test_from_protobuf_all_null_input(local_tmp_path, from_protobuf_fn):
-    """All rows in the input binary column are null (not empty bytes, actual nulls).
-    GPU should produce all-null struct rows matching CPU behavior."""
-    desc_path, desc_bytes = _setup_protobuf_desc(
-        local_tmp_path, "allnull.desc", _build_simple_descriptor_set_bytes)
-    message_name = "test.Simple"
-
-    def run_on_spark(spark):
-        df = spark.createDataFrame(
-            [(None,), (None,), (None,)],
-            schema="bin binary",
-        )
-        decoded = _call_from_protobuf(
-            from_protobuf_fn, f.col("bin"), message_name, desc_path, desc_bytes)
-        return df.select(
-            decoded.getField("i32").alias("i32"),
-            decoded.getField("s").alias("s"),
-        )
-
-    assert_gpu_and_cpu_are_equal_collect(run_on_spark)
