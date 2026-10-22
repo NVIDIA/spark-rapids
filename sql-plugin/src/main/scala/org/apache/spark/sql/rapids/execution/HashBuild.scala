@@ -555,9 +555,10 @@ private final class CachedFilteredProbeBackend(
 /**
  * Executor-local cache of reusable hash-build artifacts.
  *
- * The cache stores [[HashArtifact]] objects accessed by [[HashBuildKey]]. Upon the first get
+ * The cache stores `HashArtifact` objects accessed by [[HashBuildKey]]. Upon the first get
  * the cache ensures one builder at a time while other threads wait. The build produces a
- * [[SharedRecomputableHandle]] that is held by the constructed HashArtifact.
+ * [[com.nvidia.spark.rapids.spill.SharedRecomputableHandle]] that is held by the constructed
+ * HashArtifact.
  *
  * Additionally the cache tracks `demand`, a count of the number of probes and total probe rows
  * for a given hash build that has not been cached yet, tracked via `observeProbe`. This is used
