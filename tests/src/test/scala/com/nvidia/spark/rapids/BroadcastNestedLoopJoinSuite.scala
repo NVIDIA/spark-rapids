@@ -118,7 +118,8 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
       buildSide: GpuBuildSide,
       build: => ColumnarBatch,
       stream: Seq[() => ColumnarBatch],
-      streamHasColumns: Boolean): Seq[Seq[Any]] = {
+      streamHasColumns: Boolean,
+      boundCondition: GpuExpression = condition): Seq[Seq[Any]] = {
     // The condition binds to the first table's columns, then the second's. The side with no
     // columns adds none, so the condition reads ordinal 0 of the side that has the column.
     val firstIsStream = (joinType == RightOuter) == (buildSide == GpuBuildLeft)
@@ -134,7 +135,7 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
           // size estimate threshold of the join gatherer.
           GpuBroadcastNestedLoopJoinExecBase.nestedLoopJoin(joinType, buildSide,
             numFirstTableColumns, builtBatch, streamBatches, streamAttrs, 16, 0.75,
-            Some(condition), NoopMetric, NoopMetric, NoopMetric, NoopMetric)
+            Some(boundCondition), NoopMetric, NoopMetric, NoopMetric, NoopMetric)
             .flatMap(cb => withResource(cb)(rowsOf)).toList
         }
       }
@@ -188,6 +189,25 @@ class BroadcastNestedLoopJoinSuite extends SparkQueryCompareTestSuite {
             streamRows.map(rows => () => new ColumnarBatch(Array.empty, rows)),
             streamHasColumns = false)
           assertResult(sorted(expected))(sorted(actual))
+        }
+      }
+    }
+  }
+
+  // A NOT EXISTS subquery whose predicate folds to false plans a LEFT ANTI join with that condition
+  // over two sides with no columns.
+  for ((name, joinType) <- Seq(("LeftSemi", LeftSemi), ("LeftAnti", LeftAnti))) {
+    test(s"$name GpuBuildRight nested loop join accepts rows-only build and stream") {
+      val streamRows = Seq(5, 0, 2)
+      for (buildRows <- Seq(0, 3)) {
+        withClue(s"build rows $buildRows: ") {
+          val expected =
+            if (joinType == LeftAnti) Seq.fill(streamRows.sum)(Seq.empty) else Seq.empty
+          val actual = nestedLoopJoin(joinType, GpuBuildRight,
+            new ColumnarBatch(Array.empty, buildRows),
+            streamRows.map(rows => () => new ColumnarBatch(Array.empty, rows)),
+            streamHasColumns = false, boundCondition = GpuLiteral(false, BooleanType))
+          assertResult(expected)(actual)
         }
       }
     }

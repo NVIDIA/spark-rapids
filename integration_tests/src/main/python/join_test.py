@@ -1154,6 +1154,27 @@ def test_broadcast_nested_loop_join_one_sided_sequence_condition(
         conf={'spark.sql.adaptive.enabled': 'false',
               'spark.rapids.sql.batchSizeBytes': batch_size})
 
+# A NOT EXISTS predicate that folds to false keeps its join, because Spark rewrites the subquery
+# after it drops joins with a false condition. Both sides then reach the join with no columns.
+@pytest.mark.parametrize('build_length', [0, 30], ids=idfn)
+def test_broadcast_nested_loop_join_rows_only_sides(spark_tmp_table_factory, build_length):
+    outer_table_name = spark_tmp_table_factory.get()
+    sub_table_name = spark_tmp_table_factory.get()
+
+    def do_join(spark):
+        spark.range(0, 100).selectExpr('CAST(id AS INT) AS a') \
+            .createOrReplaceTempView(outer_table_name)
+        spark.range(0, build_length).selectExpr('CAST(id AS INT) AS b') \
+            .createOrReplaceTempView(sub_table_name)
+        return spark.sql(
+            'SELECT count(*) FROM {} AS t '
+            'WHERE NOT EXISTS (SELECT 1 FROM {} AS s WHERE t.a < t.a)'.format(
+                outer_table_name, sub_table_name))
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        do_join,
+        exist_classes='GpuBroadcastNestedLoopJoinExec',
+        conf={'spark.sql.adaptive.enabled': 'false'})
+
 # Tests a GPU hash exchange of rows-only batches: the null-safe join on a literal leaves the
 # right side with no columns.
 @shuffle_test
