@@ -211,6 +211,22 @@ object GpuCSVScan extends Logging {
     // parsedOptions.maxColumns was originally a performance optimization but is not used any more
 
     val types = readSchema.map(_.dataType).toSet
+    if (supportsCorrectedDateParsing(parsedOptions)) {
+      // Empty projections still decode the smallest data field to obtain the row count.
+      val fields = if (readSchema.isEmpty && dataSchema != null && dataSchema.nonEmpty) {
+        Array(dataSchema.min(Ordering.by[StructField, Integer](_.dataType.defaultSize)))
+      } else {
+        readSchema.fields
+      }
+      fields.filter(_.dataType == DateType).foreach { field =>
+        GpuCsvUtils.dateFormatInRead(parsedOptions, field.metadata).foreach { format =>
+          if (!correctedDateFormats.contains(format)) {
+            meta.willNotWorkOnGpu(
+                s"CSV date format '$format' for column '${field.name}' is not supported")
+          }
+        }
+      }
+    }
     if (GpuOverrides.getTimeParserPolicy == LegacyTimeParserPolicy &&
         (types.contains(DateType) ||
         types.contains(TimestampType))) {
@@ -503,21 +519,17 @@ abstract class CSVPartitionReaderBase[BUFF <: LineBufferer, FACT <: LineBufferer
     }
   }
 
-  override def dateFormat: Option[String] = {
-    if (GpuCSVScan.supportsCorrectedDateParsing(parsedOptions)) {
-      parsedOptions.dateFormatInRead
-    } else {
-      Some(GpuCsvUtils.dateFormatInRead(parsedOptions))
-    }
-  }
+  override def dateFormat: Option[String] = Some(GpuCsvUtils.dateFormatInRead(parsedOptions))
   override def timestampFormat: String = GpuCsvUtils.timestampFormatInRead(parsedOptions)
 
   private lazy val enableDateParsingFallback = GpuCsvUtils.enableDateParsingFallback(parsedOptions)
 
-  override def castStringToDate(input: ColumnVector, dt: DType): ColumnVector = {
+  override def castStringToDate(input: ColumnVector, dt: DType,
+      field: StructField): ColumnVector = {
     if (GpuCSVScan.supportsCorrectedDateParsing(parsedOptions)) {
       CastStrings.parseCsvDate(
-          input, dateFormat.orNull, enableDateParsingFallback,
+          input, GpuCsvUtils.dateFormatInRead(parsedOptions, field.metadata).orNull,
+          enableDateParsingFallback,
           GpuTextBasedDateUtils.dateParsingTrimsControls)
     } else {
       super.castStringToDate(input, dt)

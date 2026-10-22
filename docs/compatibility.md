@@ -174,13 +174,18 @@ and the following explicit CSV date formats:
 
 These dates are supported in both UTC and non-UTC session and JVM time zones.
 
-In Spark 3.3, an absent `dateFormat` uses Spark's CAST-style date grammar, including year-only,
+In Apache Spark 3.3, an absent `dateFormat` uses Spark's CAST-style date grammar, including year-only,
 year-month, and signed or extended years. Spark 3.4 and later also use this grammar when
 `preferDate=false`. With the default `preferDate=true`, Spark 3.4 and later first resolve an absent
 format to `yyyy-MM-dd`; disabling parsing fallback therefore requires a strictly formatted date.
 Explicit and resolved formats require exact field widths and complete input consumption; the
 formatter does not strip leading or trailing whitespace. Invalid dates and epoch-day overflow
 produce nulls.
+
+On Databricks 14.3 and 17.3, an absent `dateFormat` with `preferDate=true` selects each date
+column's detected format from its schema metadata. A column without detected-format metadata
+uses the CAST-style default formatter, even with `preferDate=true`. GPU parsing preserves these
+per-column formats; unsupported detected formats require a CPU scan.
 
 When Spark enables date parsing fallback, a failed format parse retries the CAST-style grammar.
 Spark 3.3 always enables this fallback. Spark 3.4 and later use the read option
@@ -195,7 +200,7 @@ The CSV date parser is controlled by the following options and SQL configuration
 | Setting | Effect on CSV dates |
 | --- | --- |
 | `spark.sql.legacy.timeParserPolicy` | Selects `LEGACY`, `CORRECTED`, or `EXCEPTION` semantics. This GPU parser handles `CORRECTED`; other policies retain their existing support restrictions. |
-| `dateFormat` and `preferDate` | Select the first formatter. In Spark 3.4+, `preferDate=true` resolves an absent format to `yyyy-MM-dd` even with an explicit schema; `preferDate=false` leaves it absent for the CAST-style formatter. |
+| `dateFormat` and `preferDate` | Select the first formatter. In Apache Spark 3.4+, `preferDate=true` resolves an absent format to `yyyy-MM-dd` even with an explicit schema; `preferDate=false` leaves it absent for the CAST-style formatter. Databricks 14.3 and 17.3 use the per-column detection behavior described above. |
 | `enableDateTimeParsingFallback` | Per-read override for the parsing retry in Spark 3.4+. |
 | `spark.sql.legacy.csv.enableDateTimeParsingFallback` | Supplies the retry setting when the read option is absent. If both are absent, the original absence of `dateFormat` enables retry, independently of `preferDate`. Spark 3.3 always retries. |
 | `mode` | Handles records rejected after all parsing attempts. `PERMISSIVE` can produce a null date, `DROPMALFORMED` drops the record, and `FAILFAST` throws. The latter two modes use CPU scans. A successful parsing retry also succeeds in `FAILFAST`. |

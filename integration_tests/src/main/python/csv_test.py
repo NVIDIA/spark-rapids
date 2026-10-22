@@ -493,6 +493,120 @@ def test_csv_corrected_date_default_formatter(spark_tmp_path, prefer_date,
 
 @ignore_order(local=True)
 @allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(not (is_databricks_version(14, 3) or is_databricks_version(17, 3)),
+        reason='Requires detected CSV date-format metadata')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('parsing_fallback', ['false', 'true'])
+@pytest.mark.parametrize('date_format', [None, 'yyyy/MM/dd'], ids=idfn)
+@pytest.mark.parametrize('columns', [('a', 'b', 'c'), ('c', 'b')], ids=idfn)
+def test_csv_corrected_date_detected_formats(spark_tmp_path, v1_enabled_list,
+        parsing_fallback, date_format, columns):
+    path = spark_tmp_path + '/detected_date_formats'
+    with_cpu_session(lambda spark: spark.createDataFrame([
+        (0, '2020/05/01', '01/05/2020', '2020'),
+        (1, '2020/02/29', '29/02/2020', '+0000002020-05-01'),
+        (2, '2020-05-01', '2020-05-01', '2020-05-01'),
+        (3, 'invalid', None, '2020-5-1')], 'id int, a string, b string, c string')
+        .coalesce(1).write.csv(path))
+    # Match the metadata emitted by the runtime's CSV schema inference.
+    key = '__detected_date_formats'
+    schema = StructType([
+        StructField('id', IntegerType()),
+        StructField('a', DateType(), metadata={key: 'yyyy/MM/dd'}),
+        StructField('b', DateType(), metadata={key: 'dd/MM/yyyy'}),
+        StructField('c', DateType())])
+
+    def read(spark):
+        reader = spark.read.schema(schema).option('preferDate', 'true') \
+            .option('enableDateTimeParsingFallback', parsing_fallback)
+        if date_format is not None:
+            reader = reader.option('dateFormat', date_format)
+        return reader.csv(path).selectExpr('id', *[
+            "datediff({}, DATE '1970-01-01') as {}".format(name, name) for name in columns])
+
+    scan = 'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec'
+    assert_cpu_and_gpu_are_equal_collect_with_capture(read, exist_classes='Gpu' + scan,
+        non_exist_classes=scan, require_non_empty=True,
+        conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+              'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+              'spark.sql.session.timeZone': 'America/New_York',
+              'spark.rapids.sql.format.csv.read.enabled': 'true',
+              'spark.rapids.sql.incompatibleDateFormats.enabled': 'false'})
+
+
+@ignore_order(local=True)
+@allow_non_gpu('ProjectExec')
+@pytest.mark.skipif(not (is_databricks_version(14, 3) or is_databricks_version(17, 3)),
+        reason='Requires detected CSV date-format metadata')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('date_format,columns', [
+    pytest.param(None, ('supported',), id='pruned-unsupported-column'),
+    pytest.param('yyyy/MM/dd', ('unsupported', 'supported'), id='explicit-format-overrides-metadata')])
+def test_csv_corrected_date_ignored_detected_format(spark_tmp_path, v1_enabled_list,
+        date_format, columns):
+    path = spark_tmp_path + '/ignored_detected_date_format'
+    with_cpu_session(lambda spark: spark.createDataFrame([
+        (0, '2020/05/01', '2020/05/01'),
+        (1, '2020/02/29', '2020/02/29'),
+        (2, None, None)], 'id int, supported string, unsupported string')
+        .coalesce(1).write.csv(path))
+    schema = StructType([
+        StructField('id', IntegerType()),
+        StructField('supported', DateType(), metadata={'__detected_date_formats': 'yyyy/MM/dd'}),
+        StructField('unsupported', DateType(),
+            metadata={'__detected_date_formats': 'dd-MMM-yyyy'})])
+
+    def read(spark):
+        reader = spark.read.schema(schema).option('preferDate', 'true') \
+            .option('enableDateTimeParsingFallback', 'false')
+        if date_format is not None:
+            reader = reader.option('dateFormat', date_format)
+        return reader.csv(path).selectExpr('id', *[
+            "datediff({}, DATE '1970-01-01') as {}".format(name, name) for name in columns])
+
+    # Unsupported metadata must not force CPU scans when its column is pruned or
+    # an explicit dateFormat takes precedence over the detected format.
+    scan = 'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec'
+    assert_cpu_and_gpu_are_equal_collect_with_capture(read, exist_classes='Gpu' + scan,
+        non_exist_classes=scan, require_non_empty=True,
+        conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+              'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+              'spark.sql.session.timeZone': 'America/New_York',
+              'spark.rapids.sql.format.csv.read.enabled': 'true',
+              'spark.rapids.sql.incompatibleDateFormats.enabled': 'false'})
+
+
+@ignore_order(local=True)
+@allow_non_gpu('FileSourceScanExec', 'BatchScanExec')
+@pytest.mark.skipif(not (is_databricks_version(14, 3) or is_databricks_version(17, 3)),
+        reason='Requires detected CSV date-format metadata')
+@pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
+@pytest.mark.parametrize('date_format', ['dd-MMM-yyyy', 'dd-MM-yyyy'])
+@pytest.mark.parametrize('count_only', [False, True])
+def test_csv_corrected_date_unsupported_detected_format(spark_tmp_path, v1_enabled_list,
+        date_format, count_only):
+    path = spark_tmp_path + '/unsupported_detected_date_format'
+    with_cpu_session(lambda spark: spark.createDataFrame([
+        ('01-May-2020',), ('01-05-2020',), ('invalid',)], 'value string')
+        .coalesce(1).write.csv(path))
+    schema = StructType([
+        StructField('value', DateType(), metadata={'__detected_date_formats': date_format})])
+
+    def read(spark):
+        df = spark.read.schema(schema).option('preferDate', 'true') \
+            .option('enableDateTimeParsingFallback', 'false').csv(path)
+        return df.selectExpr('count(*) as num_rows') if count_only else df
+
+    assert_gpu_fallback_collect(read,
+        'FileSourceScanExec' if v1_enabled_list == 'csv' else 'BatchScanExec',
+        conf={'spark.sql.sources.useV1SourceList': v1_enabled_list,
+              'spark.sql.legacy.timeParserPolicy': 'CORRECTED',
+              'spark.rapids.sql.format.csv.read.enabled': 'true',
+              'spark.rapids.sql.incompatibleDateFormats.enabled': 'false'})
+
+
+@ignore_order(local=True)
+@allow_non_gpu('ProjectExec')
 @pytest.mark.parametrize('v1_enabled_list', ['', 'csv'])
 @pytest.mark.parametrize('session_tz', ['UTC', 'America/New_York'])
 @pytest.mark.parametrize('parsing_fallback', ['false', 'true'])
