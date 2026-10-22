@@ -335,11 +335,6 @@ class ConfBuilder(val key: String, val register: ConfEntry[_] => Unit) {
   }
 }
 
-object RapidsReaderType extends Enumeration {
-  type RapidsReaderType = Value
-  val AUTO, COALESCING, MULTITHREADED, PERFILE = Value
-}
-
 object RapidsConf extends Logging with RapidsConfEntries {
   object RapidsShuffleManagerMode extends Enumeration {
     val UCX, CACHE_ONLY, MULTITHREADED = Value
