@@ -26,6 +26,7 @@ import scala.reflect.ClassTag
 
 import ai.rapids.cudf.DType
 import ai.rapids.cudf.ast.{AstExpression, BinaryOperation, BinaryOperator, ColumnNameReference, ColumnReference, Literal, UnaryOperation, UnaryOperator}
+import com.nvidia.spark.rapids.{DataTypeUtils, GpuColumnVector}
 
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.catalyst.util.{quoteIfNeeded, DateTimeUtils}
@@ -88,9 +89,9 @@ case class FilterToAstConverter(
     }
     // Don't push an `IsNotNull` that a pushed predicate on the same column already implies (Spark
     // infers one beside most predicates): it changes no result but costs a per-row evaluation and
-    // a per-row-group null statistic. Null checks don't vouch for each other, or a pair of them
-    // would both be dropped.
+    // a per-row-group null statistic.
     val provenNotNull = converted.collect {
+      // Multiple null checks don't cancel each other out: one must be a non-null check.
       case (conjunct, Some(_)) if FilterToAstConverter.notNullCheckColumn(conjunct).isEmpty =>
         FilterToAstConverter.columnsProvenNotNull(conjunct).map(normalize)
     }.flatten.toSet
@@ -106,11 +107,21 @@ case class FilterToAstConverter(
       }
     }
     if (residual.nonEmpty) {
-      logDebug(s"Hybrid scan pushing [${pushed.mkString(", ")}]; " +
+      logInfo(s"Hybrid scan pushing [${pushed.mkString(", ")}]; " +
         s"[${residual.mkString(", ")}] will be applied after the scan")
     }
     FilterPushdownPlan(exprs.reduceOption(nullAwareAnd), pushed.toArray, residual.toArray)
   }
+
+  /**
+   * The AST for conjuncts that `planPushdown` pushed for the same schema, so the plan can be made
+   * where the AST, which does not serialize, will not be used.
+   */
+  def pushedAst(pushed: Array[Filter]): Option[AstExpression] =
+    pushed.map { conjunct =>
+      convertFilter(conjunct).getOrElse(
+        throw new IllegalArgumentException(s"Pushed conjunct $conjunct does not convert"))
+    }.reduceOption(nullAwareAnd)
 
   /**
    * Convert a single Spark Filter to a cuDF AST expression, or None if it cannot be
@@ -162,7 +173,7 @@ case class FilterToAstConverter(
       case other =>
         // String predicates (StringStartsWith/EndsWith/Contains) land here; libcudf ASTs have
         // no string-matching operators, so they stay residual.
-        logDebug(s"Filter not convertible to a cuDF AST: $other")
+        logInfo(s"Filter not convertible to a cuDF AST: $other")
         None
     }
   }
@@ -268,9 +279,13 @@ case class FilterToAstConverter(
   def resolvesAllColumns(filters: Array[Filter]): Boolean =
     filters.forall(FilterToAstConverter.getReferencedColumns(_).forall(columnType(_).isDefined))
 
-  /** A reference to `attribute` and its type, or None if it is not a column being read. */
+  /**
+   * A reference to `attribute` and its type, or None if it is not a column being read. None too
+   * for a name with a dot, which libcudf reads as a struct path and can resolve to a struct field.
+   */
   private def lookupColumn(attribute: String): Option[(AstExpression, DataType)] = {
-    columnsByName.get(normalize(attribute)).map { case (colIdx, field) =>
+    columnsByName.get(normalize(attribute)).collect { case (colIdx, field)
+        if !field.name.contains('.') =>
       val col = if (useColumnNames) {
         new ColumnNameReference(field.name)
       } else {
@@ -280,13 +295,13 @@ case class FilterToAstConverter(
     }
   }
 
-  /** Whether `attribute` is a list, map or struct column, which cuDF cannot null check. */
+  /**
+   * Whether `attribute` is a list, map, struct or variant column, which cuDF cannot null check.
+   * The plugin reads a variant as a struct.
+   */
   private def isNested(attribute: String): Boolean =
     lookupColumn(attribute).exists { case (_, dataType) =>
-      dataType match {
-        case _: ArrayType | _: MapType | _: StructType => true
-        case _ => false
-      }
+      DataTypeUtils.isNestedType(dataType) || GpuColumnVector.isVariantType(dataType)
     }
 
   /**
@@ -322,7 +337,7 @@ case class FilterToAstConverter(
           DateTimeUtils.instantToMicros(i)))
       case _ =>
         // Decimal needs the column's precision and scale; nested types have no AST form.
-        logDebug(s"No cuDF AST literal for $value as $dataType")
+        logInfo(s"No cuDF AST literal for $value as $dataType")
         None
     }
   }
@@ -372,22 +387,6 @@ object FilterToAstConverter {
       case other => Seq(other)
     }
     filters.flatMap(split)
-  }
-
-  /**
-   * Whether a filter has a shape the converter handles. A structural check only: `planPushdown`
-   * decides what is actually pushed.
-   */
-  def isSupportedFilter(filter: Filter): Boolean = filter match {
-    case _: EqualTo | _: EqualNullSafe => true
-    case _: GreaterThan | _: GreaterThanOrEqual => true
-    case _: LessThan | _: LessThanOrEqual => true
-    case _: IsNull | _: IsNotNull => true
-    case In(_, values) => values.nonEmpty && values.length <= MaxInValues
-    case And(left, right) => isSupportedFilter(left) && isSupportedFilter(right)
-    case Or(left, right) => isSupportedFilter(left) && isSupportedFilter(right)
-    case Not(child) => isSupportedFilter(child)
-    case _ => false
   }
 
   /**

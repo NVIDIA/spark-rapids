@@ -55,39 +55,9 @@ class FilterToAstConverterSuite extends AnyFunSuite {
     body(converter().planPushdown(filters.toArray))
   }
 
-  test("isSupportedFilter accepts comparisons, null checks and non-empty In") {
-    assert(FilterToAstConverter.isSupportedFilter(EqualTo("int_col", 1)))
-    assert(FilterToAstConverter.isSupportedFilter(EqualNullSafe("int_col", 1)))
-    assert(FilterToAstConverter.isSupportedFilter(GreaterThan("int_col", 1)))
-    assert(FilterToAstConverter.isSupportedFilter(GreaterThanOrEqual("int_col", 1)))
-    assert(FilterToAstConverter.isSupportedFilter(LessThan("int_col", 1)))
-    assert(FilterToAstConverter.isSupportedFilter(LessThanOrEqual("int_col", 1)))
-    assert(FilterToAstConverter.isSupportedFilter(IsNull("int_col")))
-    assert(FilterToAstConverter.isSupportedFilter(IsNotNull("int_col")))
-    assert(FilterToAstConverter.isSupportedFilter(In("int_col", Array(1, 2, 3))))
-  }
-
-  test("isSupportedFilter recurses through compound filters") {
-    assert(FilterToAstConverter.isSupportedFilter(
-      And(EqualTo("int_col", 1), GreaterThan("long_col", 100L))))
-    assert(FilterToAstConverter.isSupportedFilter(
-      Or(EqualTo("int_col", 1), EqualTo("int_col", 2))))
-    assert(FilterToAstConverter.isSupportedFilter(Not(EqualTo("int_col", 1))))
-    assert(!FilterToAstConverter.isSupportedFilter(
-      And(EqualTo("int_col", 1), StringContains("string_col", "x"))))
-  }
-
-  test("isSupportedFilter rejects string predicates, empty In and long In") {
-    assert(!FilterToAstConverter.isSupportedFilter(StringStartsWith("string_col", "foo")))
-    assert(!FilterToAstConverter.isSupportedFilter(StringEndsWith("string_col", "bar")))
-    assert(!FilterToAstConverter.isSupportedFilter(StringContains("string_col", "baz")))
-    assert(!FilterToAstConverter.isSupportedFilter(In("int_col", Array.empty)))
-    val tooMany = (0 to FilterToAstConverter.MaxInValues).toArray[Any]
-    assert(!FilterToAstConverter.isSupportedFilter(In("int_col", tooMany)))
-    assert(!FilterToAstConverter.canPruneWithDictionary(In("int_col", tooMany)))
-  }
-
   test("canPruneWithDictionary accepts only equality and In") {
+    val tooMany = (0 to FilterToAstConverter.MaxInValues).toArray[Any]
+    assert(!FilterToAstConverter.canPruneWithDictionary(In("int_col", tooMany)))
     assert(FilterToAstConverter.canPruneWithDictionary(EqualTo("int_col", 1)))
     assert(FilterToAstConverter.canPruneWithDictionary(EqualNullSafe("int_col", 1)))
     assert(FilterToAstConverter.canPruneWithDictionary(In("int_col", Array(1, 2))))
@@ -309,15 +279,17 @@ class FilterToAstConverterSuite extends AnyFunSuite {
 
   test("convertFilter matches a column by the quoted name Spark pushes") {
     // Spark writes struct field b of a as a.b, and quotes a column whose name has a dot or space.
+    // A dotted name stays residual: libcudf could resolve it to the struct field.
     val schema = StructType(Seq(
       StructField("a", StructType(Seq(StructField("b", IntegerType)))),
       StructField("a.b", IntegerType),
       StructField("my col", IntegerType)))
     val byIndex = FilterToAstConverter(schema, isCaseSensitive = true, useColumnNames = false)
     assert(byIndex.convertFilter(EqualTo("a.b", 1)).isEmpty)
-    assertPushes(EqualTo("`a.b`", 1), eqTo(new ColumnReference(1), Literal.ofInt(1)), byIndex)
+    assert(byIndex.convertFilter(EqualTo("`a.b`", 1)).isEmpty)
     assertPushes(EqualTo("`my col`", 1), eqTo(new ColumnReference(2), Literal.ofInt(1)), byIndex)
     val byName = FilterToAstConverter(schema, isCaseSensitive = true, useColumnNames = true)
+    assert(byName.convertFilter(EqualTo("`a.b`", 1)).isEmpty)
     assertPushes(EqualTo("`my col`", 1), eqTo(new ColumnNameReference("my col"), Literal.ofInt(1)),
       byName)
     assert(byName.resolvesAllColumns(Array(StringContains("`my col`", "x"))))
