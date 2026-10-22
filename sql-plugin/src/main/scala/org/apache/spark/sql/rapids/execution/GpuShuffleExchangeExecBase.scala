@@ -26,7 +26,7 @@ import com.nvidia.spark.rapids.RmmRapidsRetryIterator.{splitSpillableInHalfByRow
 import com.nvidia.spark.rapids.SpillPriorities.ACTIVE_ON_DECK_PRIORITY
 import com.nvidia.spark.rapids.shims.{GpuHashPartitioning, GpuRangePartitioning, ShimUnaryExecNode, ShuffleOriginUtil, SparkShimImpl}
 
-import org.apache.spark.{MapOutputStatistics, ShuffleDependency}
+import org.apache.spark.{MapOutputStatistics, Partition, ShuffleDependency, SPARK_VERSION, SparkException, TaskContext}
 import org.apache.spark.rapids.shims.GpuShuffleExchangeExec
 import org.apache.spark.rdd.{DeterministicLevel, MapPartitionsRDD, RDD}
 import org.apache.spark.serializer.Serializer
@@ -552,6 +552,21 @@ object GpuShuffleExchangeExecBase {
       }
       new MapPartitionsRDD[Product2[Int, ColumnarBatch], ColumnarBatch](
         newRdd, (_, _, iter) => partitionBatches(iter)) {
+        override def compute(
+            split: Partition,
+            context: TaskContext): Iterator[Product2[Int, ColumnarBatch]] = {
+          // Even with SPARK-51272, a result can arrive after the map-stage rollback check and
+          // be retained. Never recompute these assignments against different batch boundaries.
+          // https://issues.apache.org/jira/browse/SPARK-51272
+          if (isIndeterminate && context.stageAttemptNumber() > 0) {
+            // Check before opening the parent's iterator, including for empty map partitions.
+            throw new SparkException("Cannot retry a GPU round-robin shuffle with indeterminate " +
+              s"output on Spark $SPARK_VERSION because batch boundaries can change between " +
+              "attempts. Recreate and rerun the query to avoid reusing partial results.")
+          }
+          super.compute(split, context)
+        }
+
         override protected def getOutputDeterministicLevel: DeterministicLevel.Value = {
           if (isIndeterminate) {
             DeterministicLevel.INDETERMINATE

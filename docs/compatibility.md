@@ -40,6 +40,20 @@ setting [spark.rapids.sql.stableSort.enabled](additional-functionality/advanced_
 cuDF will try to sort all the data for a given task/partition at once on the GPU. This may change
 in the future to allow for a spillable stable sort.
 
+## Round-robin Shuffle Recovery
+
+GPU round-robin repartitioning with more than one output partition can assign rows to different
+partitions when batch boundaries change between attempts, including after an out-of-memory split.
+If Spark needs to rerun the shuffle's map stage, for example after losing shuffle output, the job
+fails explicitly to prevent missing or duplicated rows from mixing results of different attempts.
+Spark may report an indeterminate-stage recovery error. If the map stage is resubmitted, the plugin
+reports `Cannot retry a GPU round-robin shuffle with indeterminate output`. This also applies when
+`spark.sql.execution.sortBeforeRepartition` is enabled.
+
+Recreate and rerun the query from a fresh execution after this error. Splitting and retrying a batch
+within the original map attempt is still supported. Hash, range, and single-partition exchanges
+retain their existing recovery behavior. See [#16458](https://github.com/NVIDIA/cudf-spark/issues/16458).
+
 ## Floating Point
 
 For most basic floating-point operations like addition, subtraction, multiplication, and division
