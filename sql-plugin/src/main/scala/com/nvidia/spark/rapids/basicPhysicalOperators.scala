@@ -157,6 +157,12 @@ object GpuProjectExec {
           GpuProjectAstExpressionBase.extractTopLevel)
         if (astExpressions.nonEmpty) {
           withResource(GpuProjectAstExpressionBase.tableFromBatch(cb)) { table =>
+            def evalWithoutJit(expression: Expression): GpuColumnVector =
+              GpuProjectAstExpressionBase.extractTopLevel(expression) match {
+                case Some(astExpression) => astExpression.computeColumn(table)
+                case None => expression.columnarEval(cb)
+              }
+
             val jitExpressions = astExpressions.collect {
               case jitExpression: GpuAstJitExpression => jitExpression
             }
@@ -180,24 +186,18 @@ object GpuProjectExec {
                   }
                 }
                 projectWithEval { expression =>
-                  GpuProjectAstExpressionBase.extractTopLevel(expression) match {
-                    case Some(jitExpression: GpuAstJitExpression) =>
+                  GpuAstJitExpression.extractTopLevel(expression) match {
+                    case Some(jitExpression) =>
                       val columns = jitColumns.get(jitExpression)
                       require(columns != null && !columns.isEmpty,
                         s"Missing AST JIT program output for $jitExpression")
                       columns.removeFirst().incRefCount()
-                    case Some(astExpression) => astExpression.computeColumn(table)
-                    case None => expression.columnarEval(cb)
+                    case None => evalWithoutJit(expression)
                   }
                 }
               }
             } else {
-              projectWithEval { expression =>
-                GpuProjectAstExpressionBase.extractTopLevel(expression) match {
-                  case Some(astExpression) => astExpression.computeColumn(table)
-                  case None => expression.columnarEval(cb)
-                }
-              }
+              projectWithEval(evalWithoutJit)
             }
           }
         } else {

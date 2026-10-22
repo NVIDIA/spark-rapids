@@ -16,6 +16,8 @@
 
 package com.nvidia.spark.rapids
 
+import java.util.IdentityHashMap
+
 import scala.collection.mutable
 
 import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Expression, Literal}
@@ -154,6 +156,8 @@ private[rapids] object GpuProjectAstPlanner {
     private val candidatesByExpression =
       mutable.HashMap.empty[GpuExpressionEquals, Candidate]
     private val candidates = mutable.ArrayBuffer.empty[Candidate]
+    // canHostRegion consults child backends, so cache by node to avoid re-walking subtrees.
+    private val backends = new IdentityHashMap[Expression, Option[Backend]]()
 
     private def rootChild(expression: Expression): Expression = expression match {
       case alias: GpuAlias => stripAlias(alias.child)
@@ -167,7 +171,16 @@ private[rapids] object GpuProjectAstPlanner {
       }
     }
 
-    def backendOf(expression: Expression): Option[Backend] = stripAlias(expression) match {
+    def backendOf(expression: Expression): Option[Backend] = {
+      val node = stripAlias(expression)
+      Option(backends.get(node)).getOrElse {
+        val backend = selectBackend(node)
+        backends.put(node, backend)
+        backend
+      }
+    }
+
+    private def selectBackend(node: Expression): Option[Backend] = node match {
       case leaf if isLeaf(leaf) => None
       case gpu: GpuExpression if gpu.deterministic =>
         if (enableAstJit && GpuAstJitExpression.canUseAstJit(gpu)) {
@@ -175,10 +188,10 @@ private[rapids] object GpuProjectAstPlanner {
         } else if (enableAst && canUseLegacy(gpu) && !isSimpleArithmetic(gpu)) {
           Some(AstInterpreted)
         } else if (enableAstJit && gpu.selfSupportsAstJit && gpu.selfIsAstJitOperator &&
-            GpuBatchUtils.isFixedWidth(gpu.dataType)) {
+            GpuBatchUtils.isFixedWidth(gpu.dataType) && canHostRegion(gpu, AstJit)) {
           Some(AstJit)
         } else if (enableAst && selfSupportsLegacy(gpu) && !isSimpleArithmetic(gpu) &&
-            GpuBatchUtils.isFixedWidth(gpu.dataType)) {
+            GpuBatchUtils.isFixedWidth(gpu.dataType) && canHostRegion(gpu, AstInterpreted)) {
           Some(AstInterpreted)
         } else {
           Some(RegularGpu)
@@ -192,21 +205,26 @@ private[rapids] object GpuProjectAstPlanner {
       else backendOf(child)
     }
 
-    private def childrenToPlan(expression: Expression): Seq[Expression] = {
-      stripAlias(expression) match {
-        case bridge: GpuCpuBridgeExpression => bridge.gpuInputs
-        // Keep conditional evaluation and lambda scopes intact until placement models them.
-        case _: GpuIf | _: GpuCaseWhen | _: GpuCoalesce => Seq.empty
-        case gpu: GpuExpression if !gpu.disableTieredProjectCombine => gpu.children
-        case _ => Seq.empty
+    // A region inlines children on its own backend and reads all other children from earlier
+    // tiers, so it cannot contain a child that supports neither.
+    private def canHostRegion(expression: GpuExpression, backend: Backend): Boolean =
+      expression.children.forall { child =>
+        isLeaf(stripAlias(child)) || canMaterialize(child) ||
+          backendWithin(child, backend).contains(backend)
       }
+
+    // Expressions that scope their children, such as lambdas, opt out of placement. CPU
+    // expressions, including the CPU side of a bridge, stay opaque.
+    private def canPlanChildren(expression: Expression): Boolean = expression match {
+      case gpu: GpuExpression => !gpu.disableTieredProjectCombine
+      case _ => false
     }
 
-    private def canCrossBoundary(expression: Expression, backend: Backend): Boolean = {
-      expression.deterministic && (backend == RegularGpu || (expression match {
-        case gpu: GpuExpression => !gpu.hasSideEffects
-        case _ => false
-      }))
+    // A tier output is computed for every row, including rows that a parent such as AND or IF
+    // might skip, so only values without side effects can move to an earlier tier.
+    private def canMaterialize(expression: Expression): Boolean = stripAlias(expression) match {
+      case gpu: GpuExpression => gpu.deterministic && !gpu.hasSideEffects
+      case _ => false
     }
 
     private lazy val sharedAcrossBackends: Set[GpuExpressionEquals] = {
@@ -222,13 +240,15 @@ private[rapids] object GpuProjectAstPlanner {
         def visit(expression: Expression, owner: Backend): Unit = {
           val child = stripAlias(expression)
           val key = GpuExpressionEquals(child)
-          if (common.contains(key) && !isLeaf(child) && canCrossBoundary(child, owner)) {
+          if (common.contains(key) && !isLeaf(child) && canMaterialize(child)) {
             owners.getOrElseUpdate(key, mutable.Set.empty) += owner
           }
-          childrenToPlan(child).foreach { nested =>
-            val backend = backendWithin(nested, owner).getOrElse(owner)
-            val nestedOwner = if (canCrossBoundary(nested, backend)) backend else owner
-            visit(nested, nestedOwner)
+          if (canPlanChildren(child)) {
+            child.children.foreach { nested =>
+              val backend = backendWithin(nested, owner).getOrElse(owner)
+              val nestedOwner = if (canMaterialize(nested)) backend else owner
+              visit(nested, nestedOwner)
+            }
           }
         }
 
@@ -250,7 +270,8 @@ private[rapids] object GpuProjectAstPlanner {
         expression: Expression,
         ownerBackend: Backend): Seq[Candidate] = {
       val dependencies = mutable.LinkedHashMap.empty[Int, Candidate]
-      val rootKey = GpuExpressionEquals(stripAlias(expression))
+      val root = stripAlias(expression)
+      val rootKey = GpuExpressionEquals(root)
 
       def visit(node: Expression): Unit = {
         val child = stripAlias(node)
@@ -258,14 +279,13 @@ private[rapids] object GpuProjectAstPlanner {
         val shared = key != rootKey && sharedAcrossBackends.contains(key)
         backendWithin(child, ownerBackend) match {
           case Some(childBackend)
-              if (shared || childBackend != ownerBackend) &&
-                canCrossBoundary(child, childBackend) =>
+              if (shared || childBackend != ownerBackend) && canMaterialize(child) =>
             addDependency(dependencies, candidateFor(child))
-          case _ => childrenToPlan(child).foreach(visit)
+          case _ => if (canPlanChildren(child)) child.children.foreach(visit)
         }
       }
 
-      childrenToPlan(expression).foreach(visit)
+      if (canPlanChildren(root)) root.children.foreach(visit)
       dependencies.values.toSeq
     }
 
@@ -304,14 +324,10 @@ private[rapids] object GpuProjectAstPlanner {
           findCandidate(child).filter(_.depth < currentDepth)
         }
         earlierCandidate.map(_.alias.toAttribute).getOrElse {
-          child match {
-            case bridge: GpuCpuBridgeExpression =>
-              bridge.copy(gpuInputs = bridge.gpuInputs.map(recurse(_, isRoot = false)))
-            case _ =>
-              val children = childrenToPlan(child)
-              child.withNewChildren(child.children.map { nested =>
-                if (children.exists(_ eq nested)) recurse(nested, isRoot = false) else nested
-              })
+          if (canPlanChildren(child)) {
+            child.withNewChildren(child.children.map(recurse(_, isRoot = false)))
+          } else {
+            child
           }
         }
       }

@@ -21,10 +21,11 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import org.apache.spark.SparkConf
 import org.apache.spark.serializer.JavaSerializer
-import org.apache.spark.sql.catalyst.expressions.{Add, Alias, AttributeReference, BoundReference,
-  EqualTo, Expression, Literal, Multiply, Subtract}
+import org.apache.spark.sql.catalyst.expressions.{Abs, Add, Alias, And, AttributeReference,
+  BoundReference, EqualTo, Expression, GreaterThan, GreaterThanOrEqual, LessThan, Literal,
+  Multiply, Or, Subtract}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.rapids.{GpuAdd, GpuGreatest, GpuMultiply, GpuSubtract}
+import org.apache.spark.sql.rapids.{GpuAdd, GpuAnd, GpuGreatest, GpuMultiply, GpuOr, GpuSubtract}
 import org.apache.spark.sql.types.{FloatType, LongType}
 
 class GpuProjectAstPlannerSuite extends AnyFunSuite {
@@ -34,9 +35,13 @@ class GpuProjectAstPlannerSuite extends AnyFunSuite {
   private val d = AttributeReference("d", LongType)()
   private val inputs = Seq(a, b, c, d)
 
-  private def conf(legacy: Boolean, jit: Boolean, tiered: Boolean = true): SQLConf = {
+  private def conf(
+      legacy: Boolean,
+      jit: Boolean,
+      tiered: Boolean = true,
+      ansi: Boolean = false): SQLConf = {
     val sqlConf = new SQLConf
-    sqlConf.setConfString("spark.sql.ansi.enabled", "false")
+    sqlConf.setConfString("spark.sql.ansi.enabled", ansi.toString)
     sqlConf.setConfString(RapidsConf.ENABLE_PROJECT_AST.key, legacy.toString)
     sqlConf.setConfString(RapidsConf.ENABLE_PROJECT_AST_JIT.key, jit.toString)
     sqlConf.setConfString(RapidsConf.ENABLE_TIERED_PROJECT.key, tiered.toString)
@@ -215,7 +220,7 @@ class GpuProjectAstPlannerSuite extends AnyFunSuite {
   }
 
   for (jit <- Seq(false, true)) {
-    test(s"AST regions on both sides of a CPU bridge: jit=$jit") {
+    test(s"AST region below a CPU bridge does not materialize the bridge: jit=$jit") {
       val sqlConf = conf(legacy = !jit, jit = jit)
       SQLConf.withExistingConf(sqlConf) {
         val sum = convert(Multiply(Add(a, b), c), sqlConf)
@@ -228,10 +233,12 @@ class GpuProjectAstPlannerSuite extends AnyFunSuite {
         val tiers = bind(Seq(GpuAlias(product, "result")()), sqlConf).exprTiers
         val astCounts = if (jit) tiers.map(collectExpressions[GpuAstJitExpression](_).size)
           else tiers.map(collectExpressions[GpuProjectAstExpression](_).size)
-        assertResult(Seq(1, 0, 1))(astCounts)
-        val boundBridge = collectExpressions[GpuCpuBridgeExpression](tiers(1)).head
+        // The bridge may have side effects, so its consumer evaluates it instead of a tier output.
+        assertResult(Seq(1, 0))(astCounts)
+        val boundBridge = collectExpressions[GpuCpuBridgeExpression](tiers.last).head
         assertResult(cpu)(boundBridge.cpuExpression)
         assert(boundBridge.gpuInputs.head.isInstanceOf[GpuBoundReference])
+        assertResult(1)(collectExpressions[GpuMultiply](tiers.last).size)
       }
     }
   }
@@ -300,14 +307,60 @@ class GpuProjectAstPlannerSuite extends AnyFunSuite {
     }
   }
 
-  test("conditional branches do not gain eager AST producers") {
-    val sqlConf = conf(legacy = true, jit = true)
-    SQLConf.withExistingConf(sqlConf) {
-      val branch = convert(Add(a, b), sqlConf)
-      val expression = GpuAlias(GpuIf(GpuLiteral(false), branch, GpuLiteral(1L)), "result")()
-      val tiers = bind(Seq(expression), sqlConf).exprTiers
-      assertResult(1)(tiers.size)
-      assert(collectExpressions[GpuProjectAstExpressionBase](tiers.flatten).isEmpty)
+  for (ansi <- Seq(false, true)) {
+    test(s"conditional branches only materialize side-effect-free producers: ansi=$ansi") {
+      val sqlConf = conf(legacy = true, jit = true, ansi = ansi)
+      SQLConf.withExistingConf(sqlConf) {
+        val branch = convert(Add(a, b), sqlConf)
+        val expression = GpuAlias(GpuIf(GpuLiteral(false), branch, GpuLiteral(1L)), "result")()
+        val tiers = bind(Seq(expression), sqlConf).exprTiers
+        // ANSI addition can overflow for a row that IF does not select.
+        assertResult(if (ansi) 1 else 2)(tiers.size)
+        assertResult(if (ansi) 0 else 1)(
+          collectExpressions[GpuAstJitExpression](tiers.flatten).size)
+        assertResult(1)(collectExpressions[GpuAdd](tiers.flatten).size)
+        assert(collectExpressions[GpuIf](tiers.last).nonEmpty)
+      }
+    }
+  }
+
+  for (operator <- Seq("AND", "OR"); jit <- Seq(false, true)) {
+    test(s"$operator keeps an operand with side effects in its parent: jit=$jit") {
+      val sqlConf = conf(legacy = true, jit = jit, ansi = true)
+      SQLConf.withExistingConf(sqlConf) {
+        val skippable = GreaterThan(Add(b, Literal(1L)), Literal(0L))
+        val condition = if (operator == "AND") And(LessThan(a, Literal(0L)), skippable)
+          else Or(GreaterThanOrEqual(a, Literal(0L)), skippable)
+        val tiers = bind(Seq(convert(Alias(condition, "result")(), sqlConf)), sqlConf).exprTiers
+        // A tier output would evaluate the ANSI addition for rows that short circuit.
+        assert(collectExpressions[GpuAdd](tiers.init.flatten).isEmpty)
+        val parent = if (operator == "AND") collectExpressions[GpuAnd](tiers.last)
+          else collectExpressions[GpuOr](tiers.last)
+        assertResult(1)(collectExpressions[GpuAdd](parent).size)
+        assert(collectExpressions[GpuProjectAstExpressionBase](tiers.last).isEmpty)
+      }
+    }
+  }
+
+  for (jit <- Seq(false, true)) {
+    test(s"AND keeps a CPU bridge operand in its parent: jit=$jit") {
+      val sqlConf = conf(legacy = true, jit = jit)
+      SQLConf.withExistingConf(sqlConf) {
+        val cpu = Abs(BoundReference(0, LongType, nullable = true))
+        val bridge = GpuCpuBridgeExpression(
+          Seq(convert(Add(a, b), sqlConf)), cpu, LongType, outputNullable = true)
+        val condition = convert(And(LessThan(a, Literal(0L)), GreaterThan(c, Literal(0L))), sqlConf)
+        val comparison = condition.children(1)
+        val bridgedComparison = comparison.withNewChildren(Seq(bridge, comparison.children(1)))
+        val expression = GpuAlias(
+          condition.withNewChildren(Seq(condition.children.head, bridgedComparison)), "result")()
+        val tiers = bind(Seq(expression), sqlConf).exprTiers
+        // The CPU expression may throw for rows where the left operand is false.
+        assert(collectExpressions[GpuCpuBridgeExpression](tiers.init.flatten).isEmpty)
+        val parent = collectExpressions[GpuAnd](tiers.last)
+        assertResult(1)(collectExpressions[GpuCpuBridgeExpression](parent).size)
+        assert(collectExpressions[GpuProjectAstExpressionBase](tiers.last).isEmpty)
+      }
     }
   }
 

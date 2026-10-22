@@ -84,6 +84,23 @@ def test_cpu_bridge_with_ast_backends(data_gen, tiered, multi_output, backend):
         non_exist_classes='AST_JIT' if backend == 'legacy' else '', conf=conf)
 
 
+@allow_non_gpu('Cast')
+@pytest.mark.parametrize('backend', ['legacy', 'jit', 'both'])
+def test_cpu_bridge_short_circuit_with_ast_backends(backend):
+    # The bridged ANSI cast fails only on the first row, where AND skips it.
+    data = [(9, 'abc'), (-1, '5')]
+    def test_func(spark):
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data), 'a long, s string')
+        return df.selectExpr('(a < 0) AND (CAST(s AS INT) > 0) AS result')
+
+    conf = copy_and_update(create_cpu_bridge_fallback_conf(['Cast']), ansi_enabled_conf, {
+        'spark.rapids.sql.projectAstJitEnabled': str(backend != 'legacy').lower(),
+        'spark.rapids.sql.projectAstEnabled': str(backend != 'jit').lower(),
+    })
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        test_func, exist_classes='GpuCpuBridgeExpression', conf=conf)
+
+
 # MIN_ROWS_PER_SUBBATCH is 500,000: these values exercise one and two sub-batch results.
 @allow_non_gpu('Add')
 @pytest.mark.parametrize('row_count', [500000, 500001], ids=idfn)

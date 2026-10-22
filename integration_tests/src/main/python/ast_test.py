@@ -502,6 +502,26 @@ def test_jit_and_legacy_ast_mixed_project_expressions(data_gen):
         conf=_project_ast_jit_and_legacy_enabled_conf)
 
 
+@pytest.mark.parametrize('backend', ['legacy', 'jit', 'both'])
+@pytest.mark.parametrize('expr', [
+    '(a < 0) AND ((b + 1L) > 0)',
+    '(a >= 0) OR ((b + 1L) > 0)',
+    'IF(a < 0, b + 1L, 0L)',
+    'CASE WHEN a < 0 THEN b + 1L ELSE 0L END'], ids=idfn)
+def test_project_ast_keeps_skipped_side_effects(expr, backend):
+    # The ANSI addition overflows only on the first row, where the conditional skips it.
+    data = [(9, LONG_MAX), (-1, 1), (None, None)]
+    def project(spark):
+        df = spark.createDataFrame(spark.sparkContext.parallelize(data), 'a long, b long')
+        return df.selectExpr(f'{expr} AS result')
+
+    conf = copy_and_update(ansi_enabled_conf, {
+        'spark.rapids.sql.projectAstEnabled': str(backend != 'jit').lower(),
+        'spark.rapids.sql.projectAstJitEnabled': str(backend != 'legacy').lower(),
+    })
+    assert_cpu_and_gpu_are_equal_collect_with_capture(
+        project, exist_classes='GpuProjectExec', conf=conf)
+
 @pytest.mark.parametrize('data_gen', [int_gen, long_gen], ids=idfn)
 @disable_ansi_mode
 def test_cross_backend_shared_subtree(data_gen):

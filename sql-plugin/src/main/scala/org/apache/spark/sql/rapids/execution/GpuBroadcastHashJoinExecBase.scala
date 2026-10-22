@@ -23,13 +23,14 @@ import com.nvidia.spark.rapids.shims.{GpuBroadcastJoinMeta, ShimBinaryExecNode}
 import org.apache.spark.TaskContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression, NamedExpression}
 import org.apache.spark.sql.catalyst.plans.{JoinType, LeftAnti}
 import org.apache.spark.sql.catalyst.plans.physical.{BroadcastDistribution, Distribution, Partitioning, UnspecifiedDistribution}
 import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.adaptive.BroadcastQueryStageExec
 import org.apache.spark.sql.execution.exchange.ReusedExchangeExec
 import org.apache.spark.sql.execution.joins.{BroadcastHashJoinExec, HashedRelationBroadcastMode}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.vectorized.ColumnarBatch
 
 abstract class GpuBroadcastHashJoinMetaBase(
@@ -108,6 +109,24 @@ abstract class GpuBroadcastHashJoinMetaBase(
   }
 
   def convertToGpu(): GpuExec
+}
+
+object GpuBroadcastHashJoinExecBase {
+  /**
+   * Binds a build-side projection that the executor's hash-build cache keeps for rebuilds, which
+   * can run in a later task. It has no metrics, since it can outlive the task that creates it.
+   * It also uses regular GPU evaluation, because Project AST evaluators release their native
+   * state when the task that compiled them completes, even if another task is still evaluating.
+   */
+  private[execution] def bindCachedBuildSideProjection(
+      projectList: Seq[NamedExpression],
+      input: Seq[Attribute],
+      conf: SQLConf): GpuTieredProject = {
+    val expressions = projectList.map(_.transform {
+      case ast: GpuProjectAstExpressionBase => ast.child
+    })
+    GpuBindReferences.bindGpuReferencesTieredNoMetrics(expressions, input, conf)
+  }
 }
 
 abstract class GpuBroadcastHashJoinExecBase(
@@ -211,12 +230,8 @@ abstract class GpuBroadcastHashJoinExecBase(
 
   private def cachedBuildSidePostProjection: Option[ColumnarBatch => ColumnarBatch] = {
     makeBuildSidePostProjection { project =>
-      // For a post-projection that will be cached, do not include metrics
-      // since the projection can outlive the task that creates it.
-      GpuBindReferences.bindGpuReferencesTieredNoMetrics(
-        project.projectList, project.child.output, conf,
-        enableAstJit = RapidsConf.ENABLE_PROJECT_AST_JIT.get(conf),
-        enableAst = RapidsConf.ENABLE_PROJECT_AST.get(conf))
+      GpuBroadcastHashJoinExecBase.bindCachedBuildSideProjection(
+        project.projectList, project.child.output, conf)
     }
   }
 

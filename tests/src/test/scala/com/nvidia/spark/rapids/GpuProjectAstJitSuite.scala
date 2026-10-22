@@ -92,6 +92,21 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
       expressions, input, conf, enableAstJit = RapidsConf.ENABLE_PROJECT_AST_JIT.get(conf))
   }
 
+  private def wrapOutputs(expressions: Seq[Expression]): Seq[Expression] =
+    GpuProjectAstPlanner.wrapOutputs(
+      expressions, projectConf(), enableAst = false, enableAstJit = true)
+
+  private def jitGroupIds(
+      operations: Seq[Set[String]],
+      maxOps: Int,
+      maxOutputs: Int): Seq[Int] = {
+    val roots = operations.zipWithIndex.map { case (rootOperations, index) =>
+      GpuAstJitGrouping.Root(index, rootOperations)
+    }
+    val groupIds = GpuAstJitGrouping.assign(roots, GpuAstJitGrouping.Limits(maxOps, maxOutputs))
+    roots.map(root => groupIds(root.index))
+  }
+
   test("project AST JIT is disabled by default") {
     assert(!new RapidsConf(Map.empty[String, String]).isProjectAstJitEnabled)
   }
@@ -113,13 +128,13 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
         failOnError = false)(),
       "result")
 
-    val wrapped = GpuAstJitExpression.wrapProjectExpressions(List(expression))
+    val wrapped = wrapOutputs(Seq(expression))
     val jit = wrapped.head.asInstanceOf[GpuAlias].child.asInstanceOf[GpuAstJitExpression]
-    val wrappedAgain = GpuAstJitExpression.wrapProjectExpressions(wrapped)
+    val wrappedAgain = wrapOutputs(wrapped)
     assert(jit.child.isInstanceOf[GpuMultiply])
     assert(jit.child.find(_.isInstanceOf[GpuAstJitExpression]).isEmpty)
     assert(GpuAstJitExpression.extractTopLevel(wrapped.head).contains(jit))
-    assert(wrappedAgain.head eq wrapped.head)
+    assertResult(wrapped)(wrappedAgain)
   }
 
   test("project AST JIT only wraps a fully supported top-level expression") {
@@ -132,7 +147,7 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
         failOnError = false)(),
       "result")
 
-    val wrapped = GpuAstJitExpression.wrapProjectExpressions(List(expression))
+    val wrapped = wrapOutputs(Seq(expression))
     val subtract = wrapped.head.asInstanceOf[GpuAlias].child.asInstanceOf[GpuSubtract]
     assert(wrapped.forall(GpuAstJitExpression.extractTopLevel(_).isEmpty))
     assert(subtract.left.isInstanceOf[GpuAdd])
@@ -261,6 +276,21 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
     }
   }
 
+  test("JIT grouping counts an operation shared by new roots once") {
+    // The second component adds s, q1, and q2 to the existing group: 1 + 3 operations.
+    val operations = Seq(Set("p"), Set("s", "q1"), Set("s", "q2"))
+
+    assertResult(Seq(0, 0, 0))(jitGroupIds(operations, maxOps = 4, maxOutputs = 3))
+    assertResult(Seq(0, 1, 1))(jitGroupIds(operations, maxOps = 3, maxOutputs = 3))
+  }
+
+  test("JIT grouping splits an oversized component by operation overlap") {
+    val operations = Seq(Set("x", "a"), Set("x", "b"), Set("x", "c"))
+
+    assertResult(Seq(0, 0, 1))(jitGroupIds(operations, maxOps = 3, maxOutputs = 3))
+    assertResult(Seq(0, 1, 2))(jitGroupIds(operations, maxOps = 4, maxOutputs = 1))
+  }
+
   test("an individually oversized JIT root uses single-output AST JIT") {
     val left = reference(0, IntegerType)
     val right = reference(1, IntegerType)
@@ -352,12 +382,13 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
     val expression = alias(GpuMultiply(bridge, right, failOnError = false)(), "result")
 
     val tiered = bindProject(Seq(expression), Seq(left, right), projectConf())
-    // tier 0: AST_JIT(left+right); tier 1: CPU_ABS(t0); tier 2: AST_JIT(t1*right).
+    // tier 0: AST_JIT(left+right); tier 1: CPU_ABS(t0)*right. The bridge may have side effects,
+    // so it is not materialized for a JIT consumer.
     val jitTiers = tiered.exprTiers.map(_.flatMap(GpuAstJitExpression.extractTopLevel))
-    assertResult(Seq(1, 0, 1))(jitTiers.map(_.size))
+    assertResult(Seq(1, 0))(jitTiers.map(_.size))
     assert(jitTiers.head.head.child.isInstanceOf[GpuAdd])
-    assert(jitTiers.last.head.child.isInstanceOf[GpuMultiply])
-    val boundBridge = collectExpressions[GpuCpuBridgeExpression](tiered.exprTiers(1)).head
+    assertResult(1)(collectExpressions[GpuMultiply](tiered.exprTiers.last).size)
+    val boundBridge = collectExpressions[GpuCpuBridgeExpression](tiered.exprTiers.last).head
     assert(boundBridge.gpuInputs.head.isInstanceOf[GpuBoundReference])
     assertResult(cpuExpression)(boundBridge.cpuExpression)
   }
@@ -468,7 +499,7 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
     val floatMultiply = alias(
       GpuMultiply(floatLeft, floatRight, failOnError = false)(), "float_product")
 
-    val wrapped = GpuAstJitExpression.wrapProjectExpressions(List(ansiAdd, floatMultiply))
+    val wrapped = wrapOutputs(Seq(ansiAdd, floatMultiply))
     assert(wrapped.forall(_.find(_.isInstanceOf[GpuAstJitExpression]).isEmpty))
   }
 
@@ -478,7 +509,7 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
       alias(GpuLiteral(7, IntegerType), "literal"),
       GpuAlias(input, "pass_through")())
 
-    val wrapped = GpuAstJitExpression.wrapProjectExpressions(expressions)
+    val wrapped = wrapOutputs(expressions)
 
     assert(wrapped.forall(GpuAstJitExpression.extractTopLevel(_).isEmpty))
   }
@@ -494,7 +525,7 @@ class GpuProjectAstJitSuite extends AnyFunSuite {
         third,
         failOnError = false)(),
       "regular")
-    val jit = GpuAstJitExpression.wrapProjectExpressions(List(add)).head
+    val jit = wrapOutputs(Seq(add)).head
     val legacy = GpuProjectAstExpression.wrap(subtract)
     val selections = Seq(Seq(jit, legacy, subtract))
 
